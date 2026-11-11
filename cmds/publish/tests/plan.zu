@@ -53,8 +53,10 @@ def refusal(options: ?dict) {
 }
 
 before_all(@{
-  put(os.join_paths(PROJECT, 'project.toml'),
-    '[project]\nname = "kit"\nversion = "1.0.0"\ndescription = "Tools"\nlicense = "MIT"\n')
+  put(
+    os.join_paths(PROJECT, 'project.toml'),
+    '[project]\nname = "kit"\nversion = "1.0.0"\ndescription = "Tools"\nlicense = "MIT"\n',
+  )
   put(os.join_paths(PROJECT, 'README.md'), '# kit\n')
   put(os.join_paths(PROJECT, 'index.zu'), 'echo "kit"\n')
   put(os.join_paths(PROJECT, 'lib', 'old name.zu'), 'var OLD = 1\n')

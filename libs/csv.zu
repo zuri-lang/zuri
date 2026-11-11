@@ -249,12 +249,16 @@ class Dialect {
   validate() {
     if self.delimiter.length() != 1 {
       raise CsvError(
-        'Dialect.delimiter must be exactly one character', nil, nil,
+        'Dialect.delimiter must be exactly one character',
+        nil,
+        nil,
       )
     }
     if self.quote_char.length() != 1 {
       raise CsvError(
-        'Dialect.quote_char must be exactly one character', nil, nil,
+        'Dialect.quote_char must be exactly one character',
+        nil,
+        nil,
       )
     }
     if self.delimiter == self.quote_char {
@@ -262,7 +266,9 @@ class Dialect {
     }
     if self.quoting < QUOTE_MINIMAL or self.quoting > QUOTE_NONE {
       raise CsvError(
-        'Dialect.quoting must be one of the QUOTE_* constants', nil, nil,
+        'Dialect.quoting must be one of the QUOTE_* constants',
+        nil,
+        nil,
       )
     }
   }
@@ -439,7 +445,8 @@ def _parse_record(text, start, dialect, line_num) {
     if max_fs > 0 and field.length() > max_fs {
       raise CsvError(
         'field exceeds maximum size of ' + max_fs + ' characters',
-        line_num, field_col,
+        line_num,
+        field_col,
       )
     }
 
@@ -522,8 +529,9 @@ def _parse_record(text, start, dialect, line_num) {
         } else {
           raise CsvError(
             'unexpected quote character in unquoted field; ' +
-              'use lenient mode to allow this',
-            line_num, col,
+                'use lenient mode to allow this',
+            line_num,
+            col,
           )
         }
       } else {
@@ -602,7 +610,8 @@ def _parse_record(text, start, dialect, line_num) {
         } else {
           raise CsvError(
             'unexpected character after closing quote: \'' + ch + '\'',
-            line_num, col,
+            line_num,
+            col,
           )
         }
       }
@@ -618,7 +627,9 @@ def _parse_record(text, start, dialect, line_num) {
       fields.append(field)
     } else {
       raise CsvError(
-        'unterminated quoted field at end of input', line_num, field_col,
+        'unterminated quoted field at end of input',
+        line_num,
+        field_col,
       )
     }
   } else if state == _ST_QUOTE_ESCAPE {
@@ -665,8 +676,9 @@ def _encode_field(value, dialect) {
     if s.contains(delim) or s.contains('\n') or s.contains('\r') {
       raise CsvError(
         'field contains delimiter or line break but quoting is QUOTE_NONE; ' +
-          'change the quoting strategy or sanitise the data',
-        -1, -1,
+            'change the quoting strategy or sanitise the data',
+        -1,
+        -1,
       )
     }
     return s
@@ -678,14 +690,16 @@ def _encode_field(value, dialect) {
     needs_quoting = true
   } else if dialect.quoting == QUOTE_NONNUMERIC {
     # Quote unless the value is an integer or float.
-    var is_numeric = s.matches('/^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$/')
+    var is_numeric = s.matches(
+      '/^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$/',
+    )
     needs_quoting = !is_numeric
   } else {
     # QUOTE_MINIMAL: quote only when necessary.
     needs_quoting = s.contains(delim) or
-      s.contains(qchar) or
-      s.contains('\r') or
-      s.contains('\n')
+        s.contains(qchar) or
+        s.contains('\r') or
+        s.contains('\n')
   }
 
   if !needs_quoting {
@@ -706,9 +720,9 @@ def _encode_field(value, dialect) {
  */
 def _has_bom(text) {
   return text.length() >= 3 and
-    text[0].ord() == 0xef and
-    text[1].ord() == 0xbb and
-    text[2].ord() == 0xbf
+      text[0].ord() == 0xef and
+      text[1].ord() == 0xbb and
+      text[2].ord() == 0xbf
 }
 
 # ---------------------------------------------------------------------------
@@ -810,7 +824,9 @@ class Reader {
     }
 
     if dialect != nil and !instance_of(dialect, Dialect) {
-      raise TypeError('instance of csv.Dialect expected in argument 2 (dialect)')
+      raise TypeError(
+        'instance of csv.Dialect expected in argument 2 (dialect)',
+      )
     }
 
     self._file = file
@@ -834,7 +850,10 @@ class Reader {
     # Consume the header row immediately.
     if self.dialect.has_header {
       var result = _parse_record(
-        self._text, self._pos, self.dialect, self._line,
+        self._text,
+        self._pos,
+        self.dialect,
+        self._line,
       )
       if result != nil {
         self.headers = result.fields
@@ -919,9 +938,15 @@ class Reader {
 
     if flen > hlen and !self.dialect.lenient {
       raise CsvError(
-        'record ' + self.record_num + ' has ' + flen + ' fields but ' +
-          'header defines ' + hlen,
-        self._line - 1, -1,
+        'record ' +
+            self.record_num +
+            ' has ' +
+            flen +
+            ' fields but ' +
+            'header defines ' +
+            hlen,
+        self._line - 1,
+        -1,
       )
     }
 
@@ -1049,7 +1074,9 @@ class Writer {
     }
 
     if dialect != nil and !instance_of(dialect, Dialect) {
-      raise TypeError('instance of csv.Dialect expected in argument 2 (dialect)')
+      raise TypeError(
+        'instance of csv.Dialect expected in argument 2 (dialect)',
+      )
     }
 
     self._file = file
@@ -1301,7 +1328,8 @@ def parse(text, dialect) {
       if flen > hlen and !dialect.lenient {
         raise CsvError(
           'record has ' + flen + ' fields but header defines ' + hlen,
-          line_num - 1, -1,
+          line_num - 1,
+          -1,
         )
       }
 

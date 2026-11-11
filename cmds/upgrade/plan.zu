@@ -29,19 +29,27 @@ def parser() {
 
   parser.description = 'Upgrades this installation of zuri with a newer release.'
 
-  parser.add_option('version',
-    'The release to install; the newest one by default',
-    { short_name: 'V', type: args.STRING, metavar: 'version' })
   parser.add_option(
-    'check', 'Say whether a newer release exists, and exit 1 when one does',
+    'version',
+    'The release to install; the newest one by default',
+    { short_name: 'V', type: args.STRING, metavar: 'version' },
+  )
+  parser.add_option(
+    'check',
+    'Say whether a newer release exists, and exit 1 when one does',
     nil,
   )
   parser.add_option('prerelease', 'Consider pre-releases too', nil)
   parser.add_option(
-    'allow-downgrade', 'Allow installing an older release than this one', nil,
+    'allow-downgrade',
+    'Allow installing an older release than this one',
+    nil,
   )
-  parser.add_option('dry-run',
-    'Download and check the release, and replace nothing', { short_name: 'n' })
+  parser.add_option(
+    'dry-run',
+    'Download and check the release, and replace nothing',
+    { short_name: 'n' },
+  )
   parser.add_option('json', 'Print the result as JSON', nil)
 
   return parser
@@ -61,20 +69,20 @@ def installation(executable: string, zuri_root: ?string) {
   var real = os.real_path(executable)
   var root = os.dir_name(real)
 
-  if zuri_root != nil
-    and !zuri_root.is_empty()
-    and os.abs_path(zuri_root) != root {
+  if zuri_root != nil and
+      !zuri_root.is_empty() and
+      os.abs_path(zuri_root) != root {
     raise UsageError(
-      'ZURI_ROOT points this runtime at ${zuri_root}, which is not where it is installed; '
-        + 'unset it to upgrade, or upgrade however that installation was put there',
+      'ZURI_ROOT points this runtime at ${zuri_root}, which is not where it is installed; ' +
+          'unset it to upgrade, or upgrade however that installation was put there',
     )
   }
 
   for part in PARTS {
     if !os.dir_exists(os.join_paths(root, part)) {
       raise UsageError(
-        'this runtime at ${real} is not laid out the way a release is (it has no ${part} '
-          + 'beside it), so it was installed some other way; upgrade it the same way',
+        'this runtime at ${real} is not laid out the way a release is (it has no ${part} ' +
+            'beside it), so it was installed some other way; upgrade it the same way',
       )
     }
   }
@@ -139,7 +147,10 @@ def direction(current: string, offered: string) {
  * @raises CommandError when the swap failed and was undone.
  */
 def swap(
-  root: string, executable: string, staged: string, stamp: string,
+  root: string,
+  executable: string,
+  staged: string,
+  stamp: string,
   platform: string,
 ) {
   var done = []
@@ -161,8 +172,8 @@ def swap(
     # rename everywhere but Windows, which keeps it where it was set
     # aside until the next start clears it away.
     var aside = windows
-      ? executable + '.old'
-      : os.join_paths(root, '.${exe_name}.old-${stamp}')
+        ? executable + '.old'
+        : os.join_paths(root, '.${exe_name}.old-${stamp}')
 
     fsx.remove(aside)
     os.rename(executable, aside)
@@ -192,11 +203,15 @@ def swap(
           os.rename(move[0], move[1])
         }
       } as undo_error {
-        ui.complain(ui.failure('could not put back ${move[1]}: ${undo_error.message}'))
+        ui.complain(
+          ui.failure('could not put back ${move[1]}: ${undo_error.message}'),
+        )
       }
     }
 
-    raise CommandError('the upgrade failed and the installation was put back: ${error.message}')
+    raise CommandError(
+      'the upgrade failed and the installation was put back: ${error.message}',
+    )
   }
 
   # What was replaced goes once the new installation is in place. On

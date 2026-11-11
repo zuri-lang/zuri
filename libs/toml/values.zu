@@ -101,7 +101,9 @@ def _check_date(year, month, day) {
   var limit = _days_in(year, month)
 
   if day < 1 or day > limit {
-    raise TomlError('day must be from 1 to ${limit} for month ${month}, got ${day}')
+    raise TomlError(
+      'day must be from 1 to ${limit} for month ${month}, got ${day}',
+    )
   }
 }
 
@@ -209,11 +211,11 @@ class LocalDate {
    * @returns string
    */
   to_string() {
-    return _pad(self.year, 4)
-      + '-'
-      + _pad(self.month, 2)
-      + '-'
-      + _pad(self.day, 2)
+    return _pad(self.year, 4) +
+        '-' +
+        _pad(self.month, 2) +
+        '-' +
+        _pad(self.day, 2)
   }
 
   @to_string() {
@@ -232,8 +234,9 @@ class LocalDate {
       return false
     }
 
-    return self.year == other.year and self.month == other.month and
-      self.day == other.day
+    return self.year == other.year and
+        self.month == other.month and
+        self.day == other.day
   }
 
   /**
@@ -313,8 +316,12 @@ class LocalTime {
    * @returns string
    */
   to_string() {
-    return _pad(self.hour, 2) + ':' + _pad(self.minute, 2) + ':' +
-      _pad(self.second, 2) + _fraction(self.nanosecond)
+    return _pad(self.hour, 2) +
+        ':' +
+        _pad(self.minute, 2) +
+        ':' +
+        _pad(self.second, 2) +
+        _fraction(self.nanosecond)
   }
 
   @to_string() {
@@ -333,8 +340,10 @@ class LocalTime {
       return false
     }
 
-    return self.hour == other.hour and self.minute == other.minute and
-      self.second == other.second and self.nanosecond == other.nanosecond
+    return self.hour == other.hour and
+        self.minute == other.minute and
+        self.second == other.second and
+        self.nanosecond == other.nanosecond
   }
 
   /**
@@ -404,10 +413,18 @@ class LocalDateTime {
    * @returns string
    */
   to_string() {
-    return _pad(self.year, 4) + '-' + _pad(self.month, 2) + '-' +
-      _pad(self.day, 2) + 'T' + _pad(self.hour, 2) + ':' +
-      _pad(self.minute, 2) + ':' + _pad(self.second, 2) +
-      _fraction(self.nanosecond)
+    return _pad(self.year, 4) +
+        '-' +
+        _pad(self.month, 2) +
+        '-' +
+        _pad(self.day, 2) +
+        'T' +
+        _pad(self.hour, 2) +
+        ':' +
+        _pad(self.minute, 2) +
+        ':' +
+        _pad(self.second, 2) +
+        _fraction(self.nanosecond)
   }
 
   @to_string() {
@@ -426,10 +443,13 @@ class LocalDateTime {
       return false
     }
 
-    return self.year == other.year and self.month == other.month and
-      self.day == other.day and self.hour == other.hour and
-      self.minute == other.minute and self.second == other.second and
-      self.nanosecond == other.nanosecond
+    return self.year == other.year and
+        self.month == other.month and
+        self.day == other.day and
+        self.hour == other.hour and
+        self.minute == other.minute and
+        self.second == other.second and
+        self.nanosecond == other.nanosecond
   }
 
   /**
@@ -452,8 +472,16 @@ class LocalDateTime {
    * @returns Date
    */
   to_date() {
-    return date.Date(self.year, self.month, self.day, self.hour, self.minute,
-      self.second, (self.nanosecond / 1000).floor(), 0)
+    return date.Date(
+      self.year,
+      self.month,
+      self.day,
+      self.hour,
+      self.minute,
+      self.second,
+      (self.nanosecond / 1000).floor(),
+      0,
+    )
   }
 }
 
@@ -533,10 +561,19 @@ class DateTime {
    * @returns string
    */
   to_string() {
-    return _pad(self.year, 4) + '-' + _pad(self.month, 2) + '-' +
-      _pad(self.day, 2) + 'T' + _pad(self.hour, 2) + ':' +
-      _pad(self.minute, 2) + ':' + _pad(self.second, 2) +
-      _fraction(self.nanosecond) + _offset_text(self.offset_minutes)
+    return _pad(self.year, 4) +
+        '-' +
+        _pad(self.month, 2) +
+        '-' +
+        _pad(self.day, 2) +
+        'T' +
+        _pad(self.hour, 2) +
+        ':' +
+        _pad(self.minute, 2) +
+        ':' +
+        _pad(self.second, 2) +
+        _fraction(self.nanosecond) +
+        _offset_text(self.offset_minutes)
   }
 
   @to_string() {
@@ -558,11 +595,14 @@ class DateTime {
       return false
     }
 
-    return self.year == other.year and self.month == other.month and
-      self.day == other.day and self.hour == other.hour and
-      self.minute == other.minute and self.second == other.second and
-      self.nanosecond == other.nanosecond and
-      self.offset_minutes == other.offset_minutes
+    return self.year == other.year and
+        self.month == other.month and
+        self.day == other.day and
+        self.hour == other.hour and
+        self.minute == other.minute and
+        self.second == other.second and
+        self.nanosecond == other.nanosecond and
+        self.offset_minutes == other.offset_minutes
   }
 
   /**
@@ -584,8 +624,16 @@ class DateTime {
    * @returns Date
    */
   to_date() {
-    return date.Date(self.year, self.month, self.day, self.hour, self.minute,
-      self.second, (self.nanosecond / 1000).floor(), self.offset_minutes * 60)
+    return date.Date(
+      self.year,
+      self.month,
+      self.day,
+      self.hour,
+      self.minute,
+      self.second,
+      (self.nanosecond / 1000).floor(),
+      self.offset_minutes * 60,
+    )
   }
 }
 

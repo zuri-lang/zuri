@@ -9,12 +9,12 @@ import rpc
 # what a JSON-RPC client meets in the wild.
 def http_server(ready) {
   var calculator = rpc.Service()
-    .on_request('add', @(params) => params[0] + params[1])
-    .on_request(
-      'caller',
-      @(params, context) => context.request.header('x-caller', 'nobody'),
-    )
-    .on_request('later', @(params, context) => context.defer())
+      .on_request('add', @(params) => params[0] + params[1])
+      .on_request(
+        'caller',
+        @(params, context) => context.request.header('x-caller', 'nobody'),
+      )
+      .on_request('later', @(params, context) => context.defer())
 
   var server = http.server(0, '127.0.0.1')
 
@@ -40,13 +40,11 @@ def websocket_server(ready) {
   server.get('/ws', @(request, response) {
     var peer = rpc.endpoint(rpc.websocket(websocket.accept(request, response)))
 
-    peer
-      .on_request('total', @(params, context) {
-        var price = context.endpoint.request('price_of', [params.item])
+    peer.on_request('total', @(params, context) {
+      var price = context.endpoint.request('price_of', [params.item])
 
-        return price * params.count
-      })
-      .serve()
+      return price * params.count
+    }).serve()
   })
 
   server.bind()
@@ -56,11 +54,11 @@ def websocket_server(ready) {
 
 def serve_setup(endpoint, peer) {
   endpoint
-    .on_request('add', @(params) => params[0] + params[1])
-    .on_request('ask_back', @(params, context) {
-      return context.endpoint.request('double', [params[0]]) + 1
-    })
-    .on_request('secure', @() => 'over TLS')
+      .on_request('add', @(params) => params[0] + params[1])
+      .on_request('ask_back', @(params, context) {
+        return context.endpoint.request('double', [params[0]]) + 1
+      })
+      .on_request('secure', @() => 'over TLS')
 }
 
 # Runs rpc.serve() with `options`, sending the bound address and then

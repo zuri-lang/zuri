@@ -150,28 +150,46 @@ var SUPER_ATTR = 'x-super'
  * rejected at compile time.
  */
 var DIRECTIVES = [
-  IF_ATTR, ELIF_ATTR, ELSE_ATTR, NOT_ATTR,
-  FOR_ATTR, VALUE_ATTR, KEY_ATTR, LOOP_ATTR,
-  TEXT_ATTR, HTML_ATTR, ATTR_ATTR,
-  INCLUDE_ATTR, WITH_ATTR, ONLY_ATTR,
-  EXTEND_ATTR, SLOT_ATTR, DEFINE_ATTR, OVERRIDE_ATTR, SUPER_ATTR,
+  IF_ATTR,
+  ELIF_ATTR,
+  ELSE_ATTR,
+  NOT_ATTR,
+  FOR_ATTR,
+  VALUE_ATTR,
+  KEY_ATTR,
+  LOOP_ATTR,
+  TEXT_ATTR,
+  HTML_ATTR,
+  ATTR_ATTR,
+  INCLUDE_ATTR,
+  WITH_ATTR,
+  ONLY_ATTR,
+  EXTEND_ATTR,
+  SLOT_ATTR,
+  DEFINE_ATTR,
+  OVERRIDE_ATTR,
+  SUPER_ATTR,
 ]
 
 /**
  * The directives whose value is a Wire expression.
  */
 var EXPRESSION_DIRECTIVES = [
-  IF_ATTR, ELIF_ATTR, NOT_ATTR, FOR_ATTR,
-  TEXT_ATTR, HTML_ATTR, ATTR_ATTR, WITH_ATTR,
+  IF_ATTR,
+  ELIF_ATTR,
+  NOT_ATTR,
+  FOR_ATTR,
+  TEXT_ATTR,
+  HTML_ATTR,
+  ATTR_ATTR,
+  WITH_ATTR,
 ]
 
 /**
  * The directives whose value names a variable or a region, and is read
  * as a bare identifier rather than evaluated.
  */
-var NAME_DIRECTIVES = [
-  VALUE_ATTR, KEY_ATTR, LOOP_ATTR, SLOT_ATTR, DEFINE_ATTR,
-]
+var NAME_DIRECTIVES = [VALUE_ATTR, KEY_ATTR, LOOP_ATTR, SLOT_ATTR, DEFINE_ATTR]
 
 /**
  * The directives whose value is a template path, read as literal text
@@ -213,10 +231,7 @@ var PSEUDO_ELEMENTS = {
  * Only `<define name="x" override>` uses this today, which is why the
  * mapping is a single entry rather than a per-element table.
  */
-var PSEUDO_FLAGS = {
-  override: OVERRIDE_ATTR,
-  only: ONLY_ATTR,
-}
+var PSEUDO_FLAGS = { override: OVERRIDE_ATTR, only: ONLY_ATTR }
 
 # --------------------------------------------------------------------
 # Interpolation

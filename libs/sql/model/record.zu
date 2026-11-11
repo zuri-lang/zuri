@@ -105,8 +105,7 @@ class Model {
    *
    * @param Connection|Transaction db
    */
-  before_validate(db) {
-  }
+  before_validate(db) {}
 
   /**
    * Called as the record is checked, after its declared rules, to add
@@ -114,87 +113,76 @@ class Model {
    *
    * @param Errors errors
    */
-  validate(errors) {
-  }
+  validate(errors) {}
 
   /**
    * Called after the record is checked.
    *
    * @param Connection|Transaction db
    */
-  after_validate(db) {
-  }
+  after_validate(db) {}
 
   /**
    * Called before the record is written.
    *
    * @param Connection|Transaction db
    */
-  before_save(db) {
-  }
+  before_save(db) {}
 
   /**
    * Called after the record is written.
    *
    * @param Connection|Transaction db
    */
-  after_save(db) {
-  }
+  after_save(db) {}
 
   /**
    * Called before a new record is inserted.
    *
    * @param Connection|Transaction db
    */
-  before_create(db) {
-  }
+  before_create(db) {}
 
   /**
    * Called after a new record is inserted, when it has its key.
    *
    * @param Connection|Transaction db
    */
-  after_create(db) {
-  }
+  after_create(db) {}
 
   /**
    * Called before a saved record's changes are written.
    *
    * @param Connection|Transaction db
    */
-  before_update(db) {
-  }
+  before_update(db) {}
 
   /**
    * Called after a saved record's changes are written.
    *
    * @param Connection|Transaction db
    */
-  after_update(db) {
-  }
+  after_update(db) {}
 
   /**
    * Called before the record is deleted.
    *
    * @param Connection|Transaction db
    */
-  before_delete(db) {
-  }
+  before_delete(db) {}
 
   /**
    * Called after the record is deleted.
    *
    * @param Connection|Transaction db
    */
-  after_delete(db) {
-  }
+  after_delete(db) {}
 
   /**
    * Called as a record is built from a row, once its fields hold the
    * row's values.
    */
-  after_load() {
-  }
+  after_load() {}
 
   /**
    * Whether the record is in the database: loaded from it, or saved
@@ -292,14 +280,14 @@ class Model {
   fill(attributes: dict, only) {
     var definition = self._definition()
     var keys = only == nil
-      ? attributes.keys()
-      : only.filter(@(key) => attributes.contains(key))
+        ? attributes.keys()
+        : only.filter(@(key) => attributes.contains(key))
 
     for key in keys {
       if !definition.fillable_columns.contains(key) {
         raise ModelError(
           '${key} cannot be filled on ${definition.name}; the columns that can are ' +
-            '${", ".join(definition.fillable_columns)}',
+              '${", ".join(definition.fillable_columns)}',
           nil,
         )
       }
@@ -334,8 +322,8 @@ class Model {
     for unique in definition.uniques {
       if self._is_taken(db, definition, unique.columns) {
         var message = unique.message == nil
-          ? 'The ${unique.columns[0]} field has already been taken.'
-          : unique.message
+            ? 'The ${unique.columns[0]} field has already been taken.'
+            : unique.message
 
         errors.add(unique.columns[0], message)
       }
@@ -439,7 +427,8 @@ class Model {
 
     if !self._persisted {
       raise ModelError(
-        'a ${definition.name} that was never saved cannot be deleted', nil,
+        'a ${definition.name} that was never saved cannot be deleted',
+        nil,
       )
     }
 
@@ -524,16 +513,12 @@ class Model {
     using association.kind {
       when 'belongs_to' {
         var owner_key = association.key == nil
-          ? target.primary
-          : association.key
-        filter.set(
-          owner_key, getprop(self, association.foreign_key),
-        )
+            ? target.primary
+            : association.key
+        filter.set(owner_key, getprop(self, association.foreign_key))
       }
       when 'has_one', 'has_many' {
-        filter.set(
-          association.foreign_key, getprop(self, association.key),
-        )
+        filter.set(association.foreign_key, getprop(self, association.key))
       }
       when 'belongs_to_many' {
         var quote = @(name) => _driver(db).quote_identifier(name)
@@ -541,7 +526,7 @@ class Model {
 
         return query.where(
           '${quote(target.primary)} in (select ${quote(association.other_key)} from ' +
-            '${through} where ${quote(association.foreign_key)} = ?)',
+              '${through} where ${quote(association.foreign_key)} = ?)',
           [getprop(self, association.key)],
         )
       }
@@ -731,8 +716,8 @@ class Model {
   _own_filter(definition) {
     var filter = {}
     var key = self._original == nil
-      ? nil
-      : self._original.get(definition.primary, nil)
+        ? nil
+        : self._original.get(definition.primary, nil)
 
     filter.set(definition.primary, key == nil ? self.key() : key)
 
@@ -755,7 +740,7 @@ class Model {
       if !owner.is_persisted() {
         raise ModelError(
           'save the ${typeof(owner)} in ${definition.name}.${name} before the ' +
-            '${definition.name} that belongs to it',
+              '${definition.name} that belongs to it',
           nil,
         )
       }
@@ -763,9 +748,7 @@ class Model {
       var target = definition_of(association.model)
       var owner_key = association.key == nil ? target.primary : association.key
 
-      setprop(
-        self, association.foreign_key, getprop(owner, owner_key),
-      )
+      setprop(self, association.foreign_key, getprop(owner, owner_key))
     }
   }
 
@@ -798,9 +781,9 @@ class Model {
       )
     }
 
-    var key = db.insert(
-      definition.table_name, values, { returning: definition.primary },
-    )
+    var key = db.insert(definition.table_name, values, {
+      returning: definition.primary,
+    })
 
     if self.key() == nil {
       setprop(self, definition.primary, key)
@@ -819,9 +802,7 @@ class Model {
           var kind = definition.casts.get(column, nil)
           var value = row.get(column, nil)
 
-          setprop(
-            self, column, kind == nil ? value : cast(kind, value),
-          )
+          setprop(self, column, kind == nil ? value : cast(kind, value))
         }
       }
     }
@@ -868,7 +849,8 @@ class Model {
     if self._persisted {
       var own = {}
       own.set(
-        definition.primary, self._own_filter(definition)[definition.primary],
+        definition.primary,
+        self._own_filter(definition)[definition.primary],
       )
       query = query.where_not(own)
     }
@@ -883,13 +865,15 @@ class Model {
 
     if association.kind != 'belongs_to_many' {
       raise ModelError(
-        '${definition.name}.${name} is not a belongs_to_many association', nil,
+        '${definition.name}.${name} is not a belongs_to_many association',
+        nil,
       )
     }
 
     if !self._persisted {
       raise ModelError(
-        'save the ${definition.name} before joining records to it', nil,
+        'save the ${definition.name} before joining records to it',
+        nil,
       )
     }
 
@@ -906,8 +890,8 @@ class Model {
 
     return db.fetch_column(
       'select ${quote(link.association.other_key)} from ' +
-        '${_driver(db).ddl().table_name(link.association.through)} where ' +
-        '${quote(link.association.foreign_key)} = ?',
+          '${_driver(db).ddl().table_name(link.association.through)} where ' +
+          '${quote(link.association.foreign_key)} = ?',
       [link.own],
       0,
     )
@@ -930,7 +914,8 @@ def _keys_of(targets, target) {
     if instance_of(item, Model) {
       if !item.is_persisted() {
         raise ModelError(
-          'save the ${typeof(item)} before joining it to anything', nil,
+          'save the ${typeof(item)} before joining it to anything',
+          nil,
         )
       }
 

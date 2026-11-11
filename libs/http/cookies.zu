@@ -267,8 +267,10 @@ def _is_token(name) {
 
   iter var i = 0; i < name.length(); i++ {
     var c = name[i].ord()
-    var ok = (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or
-      (c >= 97 and c <= 122) or "!#$%&'*+-.^_`|~".index_of(name[i]) > -1
+    var ok = (c >= 48 and c <= 57) or
+        (c >= 65 and c <= 90) or
+        (c >= 97 and c <= 122) or
+        "!#$%&'*+-.^_`|~".index_of(name[i]) > -1
 
     if !ok {
       return false
@@ -378,8 +380,8 @@ def parse_set_cookie(header) {
 
     var split = attribute.index_of('=')
     var key = split > -1
-      ? attribute[0, split].trim().lower()
-      : attribute.lower()
+        ? attribute[0, split].trim().lower()
+        : attribute.lower()
     var attribute_value = split > -1 ? attribute[split + 1,].trim() : ''
 
     using key {
@@ -488,8 +490,8 @@ class CookieJar {
 
     if domain {
       domain = domain.lower()
-      if domain != normalized_host
-        and !normalized_host.ends_with('.' + domain) {
+      if domain != normalized_host and
+          !normalized_host.ends_with('.' + domain) {
         return false
       }
     } else {

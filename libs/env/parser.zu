@@ -251,8 +251,8 @@ class _Scanner {
 
       # A `#` only opens a comment where a reader would see one: at the
       # start of the value, or after a space. `db#1` is a password.
-      if ch == '#'
-        and (self._pos == start or _is_space(self._src[self._pos - 1])) {
+      if ch == '#' and
+          (self._pos == start or _is_space(self._src[self._pos - 1])) {
         break
       }
 
@@ -279,7 +279,9 @@ class _Scanner {
     while true {
       if self._at_end() {
         raise ParseError(
-          'unterminated ${quote} quoted value', opened_on, opened_at,
+          'unterminated ${quote} quoted value',
+          opened_on,
+          opened_at,
         )
       }
 
@@ -460,12 +462,7 @@ class _Scanner {
       parsed = self._bare_value()
     }
 
-    return {
-      name,
-      value: parsed.value,
-      expandable: parsed.expandable,
-      line,
-    }
+    return { name, value: parsed.value, expandable: parsed.expandable, line }
   }
 
   scan() {

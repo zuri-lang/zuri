@@ -109,9 +109,9 @@ var dir = scratch()
 var watcher = os.Watcher()
 
 assert watcher.add(dir) == watcher,
-  'add() must return the watcher, for chaining'
+    'add() must return the watcher, for chaining'
 assert watcher.paths() == [dir],
-  'paths() must name the directory as it was resolved'
+    'paths() must name the directory as it was resolved'
 
 var note = os.join_paths(dir, 'note.txt')
 
@@ -142,7 +142,7 @@ handle.close()
 var reads = settle(watcher)
 
 assert reads.is_empty(),
-  'reading a file must not be reported, got ${show(reads)}'
+    'reading a file must not be reported, got ${show(reads)}'
 ok('reading or opening a file is never reported')
 
 # ---------------------------------------------------------------------------
@@ -174,7 +174,7 @@ os.sleep(0.5)
 var burst = settle(watcher)
 
 assert count(burst, 'modify', renamed) == 1,
-  'five writes nobody read in between must be reported once, got ${burst}'
+    'five writes nobody read in between must be reported once, got ${burst}'
 ok('changes waiting to be handed over are merged')
 
 # ---------------------------------------------------------------------------
@@ -208,7 +208,7 @@ var leaked = below.filter(
 )
 
 assert leaked.is_empty(),
-  'a non-recursive watch must not report what happens inside a subdirectory, got ${below}'
+    'a non-recursive watch must not report what happens inside a subdirectory, got ${below}'
 ok('a non-recursive watch covers only the entries directly inside it')
 
 flat_watcher.close()
@@ -233,7 +233,7 @@ write(sibling, 'not watched')
 var beside = settle(file_watcher).filter(@(e) => e.path != config)
 
 assert beside.is_empty(),
-  'a file watch must not report the files beside it, got ${show(beside)}'
+    'a file watch must not report the files beside it, got ${show(beside)}'
 ok('watching a file reports nothing about the files beside it')
 
 var copy = os.join_paths(single, 'config.toml.tmp')
@@ -245,7 +245,7 @@ var saved = wait_for(file_watcher, 'create', config)
 saved.extend(settle(file_watcher))
 
 assert !saved.some(@(e) => e.path == copy),
-  'the temporary copy must not be reported'
+    'the temporary copy must not be reported'
 ok('a file replaced by renaming a new copy over it is reported as created')
 
 write(config, 'a = 3')
@@ -256,7 +256,7 @@ ok('the watch on a file survives the file being replaced')
 # remove(), paths(), close()
 # ---------------------------------------------------------------------------
 assert file_watcher.remove(config) == true,
-  'remove() must report that the path was watched'
+    'remove() must report that the path was watched'
 assert file_watcher.remove(config) == false, 'and that it is not any more'
 assert file_watcher.paths().is_empty(), 'paths() must not name a removed path'
 
@@ -266,12 +266,12 @@ write(config, 'a = 4')
 var after = settle(file_watcher)
 
 assert after.is_empty(),
-  'a removed path must not be reported, got ${show(after)}'
+    'a removed path must not be reported, got ${show(after)}'
 ok('remove() stops a watch and says whether there was one')
 
 var started = time()
 assert file_watcher.next(150) == nil,
-  'next() must give up when the timeout passes'
+    'next() must give up when the timeout passes'
 assert time() - started >= 0.1, 'and not before'
 assert file_watcher.next(0) == nil, 'a zero timeout must return at once'
 ok('next() returns nil once its timeout passes')
@@ -282,9 +282,9 @@ file_watcher.close()
 assert file_watcher.is_closed(), 'is_closed() must say so'
 assert file_watcher.paths().is_empty(), 'a closed watcher watches nothing'
 assert raises(@() => file_watcher.next(0)),
-  'next() on a closed watcher must raise'
+    'next() on a closed watcher must raise'
 assert raises(@() => file_watcher.add(single)),
-  'add() on a closed watcher must raise'
+    'add() on a closed watcher must raise'
 ok('close() is final, and closing twice is harmless')
 
 # ---------------------------------------------------------------------------
@@ -325,7 +325,7 @@ while !unreported.is_empty() and time() < busy_deadline {
 }
 
 assert unreported.is_empty(),
-  '${unreported.length()} of 50 files written while other paths were added and removed were never reported'
+    '${unreported.length()} of 50 files written while other paths were added and removed were never reported'
 ok('changes are reported while other paths are added and removed')
 
 busy_watcher.close()
@@ -338,10 +338,10 @@ os.remove_dir(others, true)
 var errors = os.Watcher()
 
 assert raises(@() => errors.add(os.join_paths(single, 'missing'))),
-  'add() must raise for a path with nothing at it'
+    'add() must raise for a path with nothing at it'
 assert errors.paths().is_empty(), 'a failed add() must leave nothing watched'
 assert raises(@() => errors.follow('not a process')),
-  'follow() must raise for anything but a Process'
+    'follow() must raise for anything but a Process'
 ok('add() and follow() refuse what they cannot watch')
 
 errors.close()
@@ -378,16 +378,16 @@ var child = os.spawn(os.exe_path, ['run', helper], quiet)
 var follower = os.Watcher()
 
 assert follower.follow(child) == follower,
-  'follow() must return the watcher, for chaining'
+    'follow() must return the watcher, for chaining'
 
 var exit = follower.next(PATIENCE)
 
 assert exit != nil and exit.kind == 'exit',
-  'the exit of a followed process must be reported'
+    'the exit of a followed process must be reported'
 assert exit.path == nil, 'an exit has no path'
 assert exit.process == child, 'the exit must name the process that exited'
 assert child.wait() == 7,
-  'following must leave the exit status for wait() to read'
+    'following must leave the exit status for wait() to read'
 ok('a followed process is reported when it exits, and can still be waited for')
 
 follower.follow(child)
@@ -395,7 +395,7 @@ follower.follow(child)
 var again = follower.next(PATIENCE)
 
 assert again != nil and again.kind == 'exit' and again.process == child,
-  'a process already waited for must be reported as exited at once'
+    'a process already waited for must be reported as exited at once'
 assert follower.next(QUIET) == nil, 'each exit is reported once'
 ok('a process that has already exited is reported straight away')
 
@@ -422,7 +422,7 @@ if os.platform != 'windows' {
   assert woken == nil, 'a wait cut short by a signal must return nil'
   assert caught == 1, 'the signal callback must have run'
   assert time() - before < PATIENCE / 2000,
-    'the wait must end when the signal arrives'
+      'the wait must end when the signal arrives'
   ok('a signal with a callback ends the wait at once, and the callback runs')
 
   waiting.close()
@@ -448,7 +448,7 @@ worker.cancel()
 var ended = worker.join(PATIENCE / 1000)
 
 assert ended == [true, true],
-  'cancelling the isolate must end its wait with nil, got ${ended}'
+    'cancelling the isolate must end its wait with nil, got ${ended}'
 ok('a wait inside an isolate ends when the isolate is cancelled')
 
 os.remove_dir(dir, true)

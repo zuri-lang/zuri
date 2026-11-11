@@ -84,8 +84,14 @@
 import @.record { Model }
 import @.query { Query, RecordCursor }
 import @.definition {
-  Definition, Association, definition_of,
-  BELONGS_TO, HAS_ONE, HAS_MANY, BELONGS_TO_MANY, HOOKS,
+  Definition,
+  Association,
+  definition_of,
+  BELONGS_TO,
+  HAS_ONE,
+  HAS_MANY,
+  BELONGS_TO_MANY,
+  HOOKS,
 }
 import @.errors { ModelError, RecordNotFound, RecordInvalid, Errors }
 import @.casts { CASTS }

@@ -261,16 +261,20 @@ def _marker_same(text) {
 
 def _header(lines) {
   lines.append(
-    style.dim('  ')
-      + style.green('+ expected')
-      + style.dim('  ')
-      + style.red('- received'),
+    style.dim('  ') +
+        style.green('+ expected') +
+        style.dim('  ') +
+        style.red('- received'),
   )
   lines.append('')
 }
 
 def _truncated(lines, remaining) {
-  lines.append(style.dim('  ${style.symbols().ellipsis} ${format.plural(remaining, "more line")}'))
+  lines.append(
+    style.dim(
+      '  ${style.symbols().ellipsis} ${format.plural(remaining, "more line")}',
+    ),
+  )
 }
 
 # A multi-line string is the case where a plain "expected X, received
@@ -312,8 +316,8 @@ def _string_diff(expected, received, lines) {
 # part company, marked under the text rather than described in prose.
 def _string_point(expected, received, lines) {
   var limit = expected.length() < received.length()
-    ? expected.length()
-    : received.length()
+      ? expected.length()
+      : received.length()
   var at = limit
 
   iter var index = 0; index < limit; index++ {
@@ -334,8 +338,8 @@ def _string_point(expected, received, lines) {
 
 def _list_diff(expected, received, lines) {
   var count = expected.length() > received.length()
-    ? expected.length()
-    : received.length()
+      ? expected.length()
+      : received.length()
   var shown = 0
 
   _header(lines)
@@ -349,20 +353,20 @@ def _list_diff(expected, received, lines) {
     var has_expected = index < expected.length()
     var has_received = index < received.length()
 
-    if has_expected
-      and has_received
-      and equal(expected[index], received[index]) {
+    if has_expected and
+        has_received and
+        equal(expected[index], received[index]) {
       lines.append(_marker_same('[${index}] ' + format.inline(expected[index])))
     } else {
       if has_received {
-        lines.append(_marker_removed(
-          '[${index}] ' + format.inline(received[index]),
-        ))
+        lines.append(
+          _marker_removed('[${index}] ' + format.inline(received[index])),
+        )
       }
       if has_expected {
-        lines.append(_marker_added(
-          '[${index}] ' + format.inline(expected[index]),
-        ))
+        lines.append(
+          _marker_added('[${index}] ' + format.inline(expected[index])),
+        )
       }
     }
 
@@ -384,9 +388,13 @@ def _keyed_diff(expected_keys, expected_at, received_keys, received_at, lines) {
     shown++
 
     if !received_keys.contains(key) {
-      lines.append(_marker_added(
-        '${key}: ' + format.inline(expected_at(key)) + style.dim('  (missing)'),
-      ))
+      lines.append(
+        _marker_added(
+          '${key}: ' +
+              format.inline(expected_at(key)) +
+              style.dim('  (missing)'),
+        ),
+      )
       continue
     }
 
@@ -406,11 +414,13 @@ def _keyed_diff(expected_keys, expected_at, received_keys, received_at, lines) {
       continue
     }
 
-    lines.append(_marker_removed(
-      '${key}: '
-        + format.inline(received_at(key))
-        + style.dim('  (unexpected)'),
-    ))
+    lines.append(
+      _marker_removed(
+        '${key}: ' +
+            format.inline(received_at(key)) +
+            style.dim('  (unexpected)'),
+      ),
+    )
   }
 }
 
@@ -428,16 +438,20 @@ def _render(expected, received, depth) {
   # Two different types is the whole story; annotating their insides
   # against each other would just be noise on top of it.
   if expected_type != received_type {
-    lines.append(_marker_added(
-      'expected  '
-        + format.inline(expected)
-        + style.dim('  (${expected_type})'),
-    ))
-    lines.append(_marker_removed(
-      'received  '
-        + format.inline(received)
-        + style.dim('  (${received_type})'),
-    ))
+    lines.append(
+      _marker_added(
+        'expected  ' +
+            format.inline(expected) +
+            style.dim('  (${expected_type})'),
+      ),
+    )
+    lines.append(
+      _marker_removed(
+        'received  ' +
+            format.inline(received) +
+            style.dim('  (${received_type})'),
+      ),
+    )
     return lines
   }
 
@@ -463,10 +477,12 @@ def _render(expected, received, depth) {
 
   if is_dict(expected) {
     _keyed_diff(
-      expected.keys(), @(key) {
+      expected.keys(),
+      @(key) {
         return expected[key]
       },
-      received.keys(), @(key) {
+      received.keys(),
+      @(key) {
         return received[key]
       },
       lines,
@@ -476,10 +492,12 @@ def _render(expected, received, depth) {
 
   if is_instance(expected) {
     _keyed_diff(
-      _properties(expected), @(key) {
+      _properties(expected),
+      @(key) {
         return _property(expected, key)
       },
-      _properties(received), @(key) {
+      _properties(received),
+      @(key) {
         return _property(received, key)
       },
       lines,

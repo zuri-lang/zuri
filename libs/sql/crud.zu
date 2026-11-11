@@ -90,9 +90,9 @@ def quote_table(driver, table: string) {
     return table
   }
 
-  return '.'.join(table
-    .split('.')
-    .map(@(part) => driver.quote_identifier(part)))
+  return '.'.join(
+    table.split('.').map(@(part) => driver.quote_identifier(part)),
+  )
 }
 
 /**
@@ -158,10 +158,7 @@ def where(driver, filter, start: number) {
     position++
   }
 
-  return {
-    clause: ' where ${' and '.join(parts)}',
-    values,
-  }
+  return { clause: ' where ${' and '.join(parts)}', values }
 }
 
 /**
@@ -201,7 +198,7 @@ def insert(driver, table: string, values: dict, returning) {
   }
 
   var sql = 'insert into ${quote_table(driver, table)} ' +
-    '(${', '.join(columns)}) values (${', '.join(marks)})'
+      '(${', '.join(columns)}) values (${', '.join(marks)})'
 
   if returning != nil and driver.supports('returning') {
     sql += ' returning ${driver.quote_identifier(returning)}'
@@ -245,9 +242,9 @@ def insert_many(driver, table: string, rows: list) {
     if row.length() != columns.length() {
       raise QueryError(
         'row ${index + 1} names ${row.length()} column' +
-          '${row.length() == 1 ? "" : "s"} where the first names ' +
-          '${columns.length()}; every row of one insert has to name the ' +
-          'same columns',
+            '${row.length() == 1 ? "" : "s"} where the first names ' +
+            '${columns.length()}; every row of one insert has to name the ' +
+            'same columns',
       )
     }
 
@@ -276,7 +273,7 @@ def insert_many(driver, table: string, rows: list) {
   }
 
   var sql = 'insert into ${quote_table(driver, table)} ' +
-    '(${', '.join(quoted)}) values ${', '.join(groups)}'
+      '(${', '.join(quoted)}) values ${', '.join(groups)}'
 
   return { sql, values: bound }
 }
@@ -322,8 +319,9 @@ def update(driver, table: string, values: dict, filter) {
   var clause = where(driver, filter, position)
 
   return {
-    sql: 'update ${quote_table(driver, table)} set ' +
-      '${', '.join(assignments)}${clause.clause}',
+    sql:
+        'update ${quote_table(driver, table)} set ' +
+        '${', '.join(assignments)}${clause.clause}',
     values: bound + clause.values,
   }
 }
@@ -376,7 +374,7 @@ def select(driver, table: string, filter, options) {
 
   var clause = where(driver, filter, 1)
   var sql = 'select ${projection} from ${quote_table(driver, table)}' +
-    clause.clause
+      clause.clause
 
   var order = settings.get('order', nil)
 

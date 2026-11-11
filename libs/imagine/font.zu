@@ -33,14 +33,8 @@ var _SEARCH_PATHS = {
     '~/.local/share/fonts',
     '~/.fonts',
   ],
-  osx: [
-    '/System/Library/Fonts',
-    '/Library/Fonts',
-    '~/Library/Fonts',
-  ],
-  windows: [
-    'C:/Windows/Fonts',
-  ],
+  osx: ['/System/Library/Fonts', '/Library/Fonts', '~/Library/Fonts'],
+  windows: ['C:/Windows/Fonts'],
 }
 
 /**
@@ -248,8 +242,8 @@ class Font {
 
     raise FontError(
       'no usable font was found on this system; install one, supply a font ' +
-        'file with Font.load() or Font.from_bytes(), or use Font.builtin(), ' +
-        'which never depends on what is installed',
+          'file with Font.load() or Font.from_bytes(), or use Font.builtin(), ' +
+          'which never depends on what is installed',
     )
   }
 
@@ -359,7 +353,10 @@ class Font {
    */
   measure(text, options) {
     return _imagine.measure_text(
-      self._handle, text.to_string(), self._size, options,
+      self._handle,
+      text.to_string(),
+      self._size,
+      options,
     )
   }
 
@@ -464,7 +461,10 @@ class Font {
    */
   render(text, options) {
     return _imagine.render_text(
-      self._handle, text.to_string(), self._size, options,
+      self._handle,
+      text.to_string(),
+      self._size,
+      options,
     )
   }
 

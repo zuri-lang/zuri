@@ -132,13 +132,7 @@ class Expect {
 
     raise AssertionError(
       'Expected ${self._subject()} ${self._negated ? "not " : ""}${phrase}',
-      {
-        matcher,
-        expected,
-        received,
-        has_values,
-        details,
-      },
+      { matcher, expected, received, has_values, details },
     )
   }
 
@@ -342,16 +336,16 @@ class Expect {
 
   /** Asserts the value is exactly `true`. @returns Expect */
   to_be_true() {
-    return self._check(
-      self._value == true, 'to_be_true', 'to be true', { expected: true },
-    )
+    return self._check(self._value == true, 'to_be_true', 'to be true', {
+      expected: true,
+    })
   }
 
   /** Asserts the value is exactly `false`. @returns Expect */
   to_be_false() {
-    return self._check(
-      self._value == false, 'to_be_false', 'to be false', { expected: false },
-    )
+    return self._check(self._value == false, 'to_be_false', 'to be false', {
+      expected: false,
+    })
   }
 
   /**
@@ -379,9 +373,9 @@ class Expect {
 
   /** Asserts the value is `nil`. @returns Expect */
   to_be_nil() {
-    return self._check(
-      self._value == nil, 'to_be_nil', 'to be nil', { expected: nil },
-    )
+    return self._check(self._value == nil, 'to_be_nil', 'to be nil', {
+      expected: nil,
+    })
   }
 
   /**
@@ -392,7 +386,10 @@ class Expect {
    */
   to_be_defined() {
     return self._check(
-      self._value != nil, 'to_be_defined', 'to be defined', nil,
+      self._value != nil,
+      'to_be_defined',
+      'to be defined',
+      nil,
     )
   }
 
@@ -421,7 +418,9 @@ class Expect {
     }
 
     if !is_string(type) {
-      raise TestSetupError('to_be_a() needs a type name or a class, got ${format.with_article(format.type_label(type))}')
+      raise TestSetupError(
+        'to_be_a() needs a type name or a class, got ${format.with_article(format.type_label(type))}',
+      )
     }
 
     return self._check(
@@ -435,21 +434,30 @@ class Expect {
   /** Asserts the value is a string. @returns Expect */
   to_be_string() {
     return self._check(
-      is_string(self._value), 'to_be_string', _is_a('string', self._value), nil,
+      is_string(self._value),
+      'to_be_string',
+      _is_a('string', self._value),
+      nil,
     )
   }
 
   /** Asserts the value is a number, of either kind. @returns Expect */
   to_be_number() {
     return self._check(
-      is_number(self._value), 'to_be_number', _is_a('number', self._value), nil,
+      is_number(self._value),
+      'to_be_number',
+      _is_a('number', self._value),
+      nil,
     )
   }
 
   /** Asserts the value is a number with no fractional part. @returns Expect */
   to_be_int() {
     return self._check(
-      is_int(self._value), 'to_be_int', _is_a('int', self._value), nil,
+      is_int(self._value),
+      'to_be_int',
+      _is_a('int', self._value),
+      nil,
     )
   }
 
@@ -466,43 +474,60 @@ class Expect {
   /** Asserts the value is an arbitrary-precision integer. @returns Expect */
   to_be_bigint() {
     return self._check(
-      is_bigint(self._value), 'to_be_bigint', _is_a('bigint', self._value), nil,
+      is_bigint(self._value),
+      'to_be_bigint',
+      _is_a('bigint', self._value),
+      nil,
     )
   }
 
   /** Asserts the value is a boolean. @returns Expect */
   to_be_bool() {
     return self._check(
-      is_bool(self._value), 'to_be_bool', _is_a('bool', self._value), nil,
+      is_bool(self._value),
+      'to_be_bool',
+      _is_a('bool', self._value),
+      nil,
     )
   }
 
   /** Asserts the value is a list. @returns Expect */
   to_be_list() {
     return self._check(
-      is_list(self._value), 'to_be_list', _is_a('list', self._value), nil,
+      is_list(self._value),
+      'to_be_list',
+      _is_a('list', self._value),
+      nil,
     )
   }
 
   /** Asserts the value is a dictionary. @returns Expect */
   to_be_dict() {
     return self._check(
-      is_dict(self._value), 'to_be_dict', _is_a('dict', self._value), nil,
+      is_dict(self._value),
+      'to_be_dict',
+      _is_a('dict', self._value),
+      nil,
     )
   }
 
   /** Asserts the value is a bytes buffer. @returns Expect */
   to_be_bytes() {
     return self._check(
-      is_bytes(self._value), 'to_be_bytes', _is_a('bytes', self._value), nil,
+      is_bytes(self._value),
+      'to_be_bytes',
+      _is_a('bytes', self._value),
+      nil,
     )
   }
 
   /** Asserts the value is a function. @returns Expect */
   to_be_function() {
     return self._check(
-      is_function(self._value), 'to_be_function',
-      _is_a('function', self._value), nil,
+      is_function(self._value),
+      'to_be_function',
+      _is_a('function', self._value),
+      nil,
     )
   }
 
@@ -514,7 +539,10 @@ class Expect {
    */
   to_be_callable() {
     return self._check(
-      is_callable(self._value), 'to_be_callable', 'to be callable', nil,
+      is_callable(self._value),
+      'to_be_callable',
+      'to be callable',
+      nil,
     )
   }
 
@@ -527,22 +555,30 @@ class Expect {
    */
   to_be_iterable() {
     return self._check(
-      is_iterable(self._value), 'to_be_iterable', 'to be iterable', nil,
+      is_iterable(self._value),
+      'to_be_iterable',
+      'to be iterable',
+      nil,
     )
   }
 
   /** Asserts the value is a class, not an instance of one. @returns Expect */
   to_be_class() {
     return self._check(
-      is_class(self._value), 'to_be_class', _is_a('class', self._value), nil,
+      is_class(self._value),
+      'to_be_class',
+      _is_a('class', self._value),
+      nil,
     )
   }
 
   /** Asserts the value is an instance of some class. @returns Expect */
   to_be_instance() {
     return self._check(
-      is_instance(self._value), 'to_be_instance',
-      _is_a('instance', self._value), nil,
+      is_instance(self._value),
+      'to_be_instance',
+      _is_a('instance', self._value),
+      nil,
     )
   }
 
@@ -587,7 +623,9 @@ class Expect {
   /** @param number bound @returns Expect */
   to_be_greater_than_or_equal(bound: number) {
     self._require(
-      is_number(self._value), 'to_be_greater_than_or_equal', 'a number',
+      is_number(self._value),
+      'to_be_greater_than_or_equal',
+      'a number',
     )
 
     return self._check(
@@ -613,7 +651,9 @@ class Expect {
   /** @param number bound @returns Expect */
   to_be_less_than_or_equal(bound: number) {
     self._require(
-      is_number(self._value), 'to_be_less_than_or_equal', 'a number',
+      is_number(self._value),
+      'to_be_less_than_or_equal',
+      'a number',
     )
 
     return self._check(
@@ -638,7 +678,9 @@ class Expect {
       self._value >= low and self._value <= high,
       'to_be_between',
       'to be between ${format.inline(low)} and ${format.inline(high)}',
-      { expected: [low, high] },
+      {
+        expected: [low, high],
+      },
     )
   }
 
@@ -657,9 +699,9 @@ class Expect {
   /** Asserts the value is zero, of either sign. @returns Expect */
   to_be_zero() {
     self._require(is_number(self._value), 'to_be_zero', 'a number')
-    return self._check(
-      self._value == 0, 'to_be_zero', 'to be zero', { expected: 0 },
-    )
+    return self._check(self._value == 0, 'to_be_zero', 'to be zero', {
+      expected: 0,
+    })
   }
 
   /**
@@ -749,7 +791,9 @@ class Expect {
    */
   to_contain(item) {
     self._require(
-      _is_container(self._value), 'to_contain', 'a string, list, dict or bytes',
+      _is_container(self._value),
+      'to_contain',
+      'a string, list, dict or bytes',
     )
 
     return self._check(
@@ -786,7 +830,9 @@ class Expect {
    */
   to_contain_ignoring_case(part: string) {
     self._require(
-      is_string(self._value), 'to_contain_ignoring_case', 'a string',
+      is_string(self._value),
+      'to_contain_ignoring_case',
+      'a string',
     )
 
     return self._check(
@@ -896,7 +942,8 @@ class Expect {
    */
   to_have_length(expected: int) {
     self._require(
-      _has_length(self._value), 'to_have_length',
+      _has_length(self._value),
+      'to_have_length',
       'a string, list, dict or bytes',
     )
 
@@ -918,11 +965,16 @@ class Expect {
    */
   to_be_empty() {
     self._require(
-      _has_length(self._value), 'to_be_empty', 'a string, list, dict or bytes',
+      _has_length(self._value),
+      'to_be_empty',
+      'a string, list, dict or bytes',
     )
 
     return self._check(
-      self._value.length() == 0, 'to_be_empty', 'to be empty', nil,
+      self._value.length() == 0,
+      'to_be_empty',
+      'to be empty',
+      nil,
     )
   }
 
@@ -934,7 +986,8 @@ class Expect {
    */
   to_contain_all(items: list) {
     self._require(
-      _is_container(self._value), 'to_contain_all',
+      _is_container(self._value),
+      'to_contain_all',
       'a string, list, dict or bytes',
     )
 
@@ -946,7 +999,7 @@ class Expect {
       missing.is_empty(),
       'to_contain_all',
       'to contain all of ${format.inline(items)}' +
-        (missing.is_empty() ? '' : ', missing ${format.inline(missing)}'),
+          (missing.is_empty() ? '' : ', missing ${format.inline(missing)}'),
       { expected: items },
     )
   }
@@ -959,7 +1012,8 @@ class Expect {
    */
   to_contain_any(items: list) {
     self._require(
-      _is_container(self._value), 'to_contain_any',
+      _is_container(self._value),
+      'to_contain_any',
       'a string, list, dict or bytes',
     )
 
@@ -981,7 +1035,8 @@ class Expect {
    */
   to_contain_none(items: list) {
     self._require(
-      _is_container(self._value), 'to_contain_none',
+      _is_container(self._value),
+      'to_contain_none',
       'a string, list, dict or bytes',
     )
 
@@ -993,7 +1048,7 @@ class Expect {
       found.is_empty(),
       'to_contain_none',
       'to contain none of ${format.inline(items)}' +
-        (found.is_empty() ? '' : ', but it has ${format.inline(found)}'),
+          (found.is_empty() ? '' : ', but it has ${format.inline(found)}'),
       { expected: items },
     )
   }
@@ -1076,7 +1131,7 @@ class Expect {
       missing.is_empty(),
       'to_have_keys',
       'to have the keys ${format.inline(keys)}' +
-        (missing.is_empty() ? '' : ', missing ${format.inline(missing)}'),
+          (missing.is_empty() ? '' : ', missing ${format.inline(missing)}'),
       { expected: keys },
     )
   }
@@ -1134,9 +1189,9 @@ class Expect {
       found.found and diff.equal(found.value, value),
       'to_have_property',
       'to have ${format.inline(value)} at ${format.inline(path)}' +
-        (found.found
-          ? ', not ${format.inline(found.value)}'
-          : ', but nothing is there'),
+          (found.found
+              ? ', not ${format.inline(found.value)}'
+              : ', but nothing is there'),
       {
         expected: value,
         received: found.value,
@@ -1187,9 +1242,9 @@ class Expect {
       duplicates.is_empty(),
       'to_have_unique_items',
       'to have no duplicates' +
-        (duplicates.is_empty()
-          ? ''
-          : ', but ${format.inline(duplicates)} repeats'),
+          (duplicates.is_empty()
+              ? ''
+              : ', but ${format.inline(duplicates)} repeats'),
       nil,
     )
   }
@@ -1216,10 +1271,10 @@ class Expect {
     return self._check(
       outcome.raised,
       'to_raise',
-      'to raise'
-        + (outcome.raised
-          ? ', and it raised ${_describe_error(outcome.error)}'
-          : ''),
+      'to raise' +
+          (outcome.raised
+              ? ', and it raised ${_describe_error(outcome.error)}'
+              : ''),
       { details: self._raised_details(outcome) },
     )
   }
@@ -1242,11 +1297,10 @@ class Expect {
     return self._check(
       outcome.raised and instance_of(outcome.error, klass),
       'to_raise_instance_of',
-      'to raise a ${name}' + (
-        outcome.raised ?
-          ', but it raised ${_describe_error(outcome.error)}' :
-          ', but nothing was raised'
-      ),
+      'to raise a ${name}' +
+          (outcome.raised
+              ? ', but it raised ${_describe_error(outcome.error)}'
+              : ', but nothing was raised'),
       { expected: name, details: self._raised_details(outcome) },
     )
   }
@@ -1271,19 +1325,18 @@ class Expect {
     var matched = false
 
     if is_string(message) {
-      matched = _looks_like_regex(part) ?
-        is_dict(message.match(part)) :
-        message.contains(part)
+      matched = _looks_like_regex(part)
+          ? is_dict(message.match(part))
+          : message.contains(part)
     }
 
     return self._check(
       outcome.raised and matched,
       'to_raise_with_message',
-      'to raise with a message matching ${format.inline(part)}' + (
-        outcome.raised ?
-          ', but the message was ${format.inline(message)}' :
-          ', but nothing was raised'
-      ),
+      'to raise with a message matching ${format.inline(part)}' +
+          (outcome.raised
+              ? ', but the message was ${format.inline(message)}'
+              : ', but nothing was raised'),
       {
         expected: part,
         received: message,
@@ -1322,9 +1375,9 @@ class Expect {
       target.called(),
       'to_have_been_called',
       'to have been called' +
-        (target.called()
-          ? ', and it was called ${format.plural(target.call_count(), "time")}'
-          : ''),
+          (target.called()
+              ? ', and it was called ${format.plural(target.call_count(), "time")}'
+              : ''),
       nil,
     )
   }
@@ -1572,12 +1625,16 @@ class Expect {
    */
   to_match_snapshot(name: ?string) {
     if self._negated {
-      raise TestSetupError('to_match_snapshot() cannot be negated: there is nothing useful in asserting a value is not what it used to be')
+      raise TestSetupError(
+        'to_match_snapshot() cannot be negated: there is nothing useful in asserting a value is not what it used to be',
+      )
     }
 
     var frame = context.current()
     if frame == nil {
-      raise TestSetupError('to_match_snapshot() can only be called inside a test')
+      raise TestSetupError(
+        'to_match_snapshot() can only be called inside a test',
+      )
     }
 
     var key = context.snapshot_key(name)
@@ -1586,9 +1643,9 @@ class Expect {
 
     context.record_assertion()
 
-    if outcome.status == 'match'
-      or outcome.status == 'written'
-      or outcome.status == 'updated' {
+    if outcome.status == 'match' or
+        outcome.status == 'written' or
+        outcome.status == 'updated' {
       return self
     }
 
@@ -1597,21 +1654,22 @@ class Expect {
         'Snapshot ${format.inline(key)} does not exist, and new snapshots are not written on CI',
         {
           matcher: 'to_match_snapshot',
-          details: [style.dim('  run the suite locally to record it, then commit the .snap file')],
+          details: [
+            style.dim(
+              '  run the suite locally to record it, then commit the .snap file',
+            ),
+          ],
         },
       )
     }
 
-    raise AssertionError(
-      'Snapshot ${format.inline(key)} no longer matches',
-      {
-        matcher: 'to_match_snapshot',
-        expected: outcome.expected,
-        received: outcome.received,
-        has_values: true,
-        details: diff.render(outcome.expected, outcome.received),
-      },
-    )
+    raise AssertionError('Snapshot ${format.inline(key)} no longer matches', {
+      matcher: 'to_match_snapshot',
+      expected: outcome.expected,
+      received: outcome.received,
+      has_values: true,
+      details: diff.render(outcome.expected, outcome.received),
+    })
   }
 
   # =========================================================================
@@ -1637,8 +1695,8 @@ class Expect {
       !!predicate(self._value),
       'to_satisfy',
       description != nil and description != ''
-        ? description
-        : 'to satisfy the given predicate',
+          ? description
+          : 'to satisfy the given predicate',
       nil,
     )
   }
@@ -1858,8 +1916,8 @@ def _looks_like_regex(text) {
 
   var first = text[0, 1]
 
-  return (first == '/' or first == '~' or first == '@')
-    and text.ends_with(first)
+  return (first == '/' or first == '~' or first == '@') and
+      text.ends_with(first)
 }
 
 def _args_phrase(args) {
@@ -1867,9 +1925,11 @@ def _args_phrase(args) {
     return 'no arguments'
   }
 
-  return ', '.join(args.map(@(arg) {
-    return format.inline(arg)
-  }))
+  return ', '.join(
+    args.map(@(arg) {
+      return format.inline(arg)
+    }),
+  )
 }
 
 # Under a failed mock expectation the single most useful thing to show
@@ -1884,7 +1944,11 @@ def _call_details(target) {
 
   for call in target.calls {
     if shown >= 10 {
-      lines.append(style.dim('    ${style.symbols().ellipsis} ${format.plural(target.calls.length() - shown, "more call")}'))
+      lines.append(
+        style.dim(
+          '    ${style.symbols().ellipsis} ${format.plural(target.calls.length() - shown, "more call")}',
+        ),
+      )
       break
     }
 
@@ -1948,10 +2012,9 @@ def expect(value, label: ?string) {
 def fail(message: ?string) {
   context.record_assertion()
 
-  raise AssertionError(
-    message != nil and message != '' ? message : 'Failed',
-    { matcher: 'fail' },
-  )
+  raise AssertionError(message != nil and message != '' ? message : 'Failed', {
+    matcher: 'fail',
+  })
 }
 
 /**

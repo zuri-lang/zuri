@@ -12,7 +12,8 @@ var HOME = os.join_paths(ROOT, 'home')
 # The settings for `words` on the command line and `environment`.
 def settings(words: list, environment: ?dict) {
   return plan.settings(
-    plan.parser().parse(words), environment == nil ? {} : environment,
+    plan.parser().parse(words),
+    environment == nil ? {} : environment,
   )
 }
 
@@ -44,9 +45,8 @@ describe('defaults', @{
 
     expect(chosen.storage).to_equal(storage)
     expect(chosen.config).to_equal(os.join_paths(storage, 'nyssa.toml'))
-    expect(chosen.database).to_equal(
-      'sqlite://' + os.join_paths(storage, 'nyssa.db'),
-    )
+    expect(chosen.database)
+        .to_equal('sqlite://' + os.join_paths(storage, 'nyssa.db'))
     expect(chosen.host).to_equal('127.0.0.1')
     expect(chosen.port).to_equal(3000)
     expect(chosen.public_url).to_equal('http://127.0.0.1:3000')
@@ -66,9 +66,8 @@ describe('the environment', @{
 
     expect(chosen.storage).to_equal(storage)
     expect(chosen.port).to_equal(8080)
-    expect(chosen.database).to_equal(
-      'sqlite://' + os.join_paths(storage, 'nyssa.db'),
-    )
+    expect(chosen.database)
+        .to_equal('sqlite://' + os.join_paths(storage, 'nyssa.db'))
   })
 
   it('names the configuration file', @{
@@ -77,9 +76,11 @@ describe('the environment', @{
     put(path, '[registry]\nname = "Custom"\n')
 
     expect(settings([], { NYSSA_CONFIG: path }).name).to_equal('Custom')
-    expect(failure(@{
-      settings([], { NYSSA_CONFIG: os.join_paths(ROOT, 'missing.toml') })
-    })).to_contain('there is no configuration file')
+    expect(
+      failure(@{
+        settings([], { NYSSA_CONFIG: os.join_paths(ROOT, 'missing.toml') })
+      }),
+    ).to_contain('there is no configuration file')
   })
 
   it('gives every setting', @{
@@ -117,13 +118,17 @@ describe('the environment', @{
   })
 
   it('names the variable a bad value came from', @{
-    expect(failure(@{
-      settings([], { NYSSA_PORT: 'eighty' })
-    })).to_contain('NYSSA_PORT')
+    expect(
+      failure(@{
+        settings([], { NYSSA_PORT: 'eighty' })
+      }),
+    ).to_contain('NYSSA_PORT')
 
-    expect(failure(@{
-      settings([], { NYSSA_TRUST_PROXY: 'perhaps' })
-    })).to_contain('NYSSA_TRUST_PROXY')
+    expect(
+      failure(@{
+        settings([], { NYSSA_TRUST_PROXY: 'perhaps' })
+      }),
+    ).to_contain('NYSSA_TRUST_PROXY')
   })
 })
 
@@ -138,59 +143,68 @@ describe('precedence', @{
 
     expect(settings([], nil).port).to_equal(8080)
     expect(settings([], { NYSSA_PORT: '9090' }).port).to_equal(9090)
-    expect(settings(
-      ['--port', '7070'], { NYSSA_PORT: '9090' },
-    ).port).to_equal(7070)
-    expect(settings(
-      ['--port', '7070'], { NYSSA_PORT: '9090' },
-    ).host).to_equal('0.0.0.0')
+    expect(settings(['--port', '7070'], { NYSSA_PORT: '9090' }).port)
+        .to_equal(7070)
+    expect(settings(['--port', '7070'], { NYSSA_PORT: '9090' }).host)
+        .to_equal('0.0.0.0')
   })
 
   it('takes a storage flag over the environment', @{
     var flag = os.join_paths(ROOT, 'flag')
     var variable = os.join_paths(ROOT, 'variable')
 
-    expect(settings(
-      ['--storage', flag], { NYSSA_STORAGE: variable },
-    ).storage).to_equal(flag)
+    expect(settings(['--storage', flag], { NYSSA_STORAGE: variable }).storage)
+        .to_equal(flag)
   })
 })
 
 describe('checks', @{
   it('refuses settings that cannot work', @{
-    expect(failure(@{
-      settings(['--workers', '0'], nil)
-    })).to_contain('workers must be between 1 and 256')
+    expect(
+      failure(@{
+        settings(['--workers', '0'], nil)
+      }),
+    ).to_contain('workers must be between 1 and 256')
 
-    expect(failure(@{
-      settings([], { NYSSA_SIGNUP: 'maybe' })
-    })).to_contain("signup must be 'open' or 'closed'")
+    expect(
+      failure(@{
+        settings([], { NYSSA_SIGNUP: 'maybe' })
+      }),
+    ).to_contain("signup must be 'open' or 'closed'")
 
-    expect(failure(@{
-      settings(['--max-archive-size', '10'], nil)
-    })).to_contain('the archive size limit')
+    expect(
+      failure(@{
+        settings(['--max-archive-size', '10'], nil)
+      }),
+    ).to_contain('the archive size limit')
 
-    expect(failure(@{
-      settings([], { NYSSA_PUBLIC_URL: 'packages.example.test' })
-    })).to_contain('must start with http:// or https://')
+    expect(
+      failure(@{
+        settings([], { NYSSA_PUBLIC_URL: 'packages.example.test' })
+      }),
+    ).to_contain('must start with http:// or https://')
 
-    expect(failure(@{
-      settings(['--tls-cert', os.join_paths(ROOT, 'cert.pem')], nil)
-    })).to_contain('both a certificate and its key')
+    expect(
+      failure(@{
+        settings(['--tls-cert', os.join_paths(ROOT, 'cert.pem')], nil)
+      }),
+    ).to_contain('both a certificate and its key')
   })
 
   it('warns about listening beyond this machine in the clear', @{
-    expect(plan.exposed_in_clear(settings(
-      ['--host', '0.0.0.0'], nil,
-    ))).to_be_true()
-    expect(plan.exposed_in_clear(
-      settings(['--host', '0.0.0.0', '--trust-proxy'], nil),
-    )).to_be_false()
+    expect(plan.exposed_in_clear(settings(['--host', '0.0.0.0'], nil)))
+        .to_be_true()
+    expect(
+      plan.exposed_in_clear(
+        settings(['--host', '0.0.0.0', '--trust-proxy'], nil),
+      ),
+    )
+        .to_be_false()
   })
 
   it('names localhost in the public address for a wildcard host', @{
     expect(settings(['--host', '0.0.0.0', '--port', '4000'], nil).public_url)
-      .to_equal('http://localhost:4000')
+        .to_equal('http://localhost:4000')
   })
 })
 

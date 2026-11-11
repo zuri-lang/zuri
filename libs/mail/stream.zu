@@ -53,8 +53,8 @@ class LineStream {
   @new(transport, secure: ?bool) {
     self._transport = transport
     self._secure = secure == nil
-      ? instance_of(transport, tls.TlsStream)
-      : secure
+        ? instance_of(transport, tls.TlsStream)
+        : secure
     self._buffer = bytes(0)
     self._at = 0
     self._closed = false
@@ -155,8 +155,8 @@ class LineStream {
         }
 
         var line = stop == self._at
-          ? ''
-          : self._buffer[self._at, stop].to_string()
+            ? ''
+            : self._buffer[self._at, stop].to_string()
 
         self._at = index + 1
 
@@ -189,7 +189,9 @@ class LineStream {
       if !self._fill() {
         var got = self._buffer.length() - self._at
 
-        raise ConnectionClosed('the connection ended after ${got} of ${count} bytes')
+        raise ConnectionClosed(
+          'the connection ended after ${got} of ${count} bytes',
+        )
       }
     }
 
@@ -309,8 +311,11 @@ def connect(host: string, port: number, options: dict) {
   var config = options.get('tls_config', nil)
 
   return LineStream(
-    tls.TlsStream.connect(socket, config == nil ? tls.TlsConfig() : config,
-      options.get('server_name', host)),
+    tls.TlsStream.connect(
+      socket,
+      config == nil ? tls.TlsConfig() : config,
+      options.get('server_name', host),
+    ),
     true,
   )
 }
@@ -428,12 +433,5 @@ def endpoint(url: string, schemes: dict) {
     raise ProtocolError('no host in ${url}')
   }
 
-  return {
-    scheme,
-    host,
-    port,
-    tls: schemes[scheme].tls,
-    username,
-    password,
-  }
+  return { scheme, host, port, tls: schemes[scheme].tls, username, password }
 }

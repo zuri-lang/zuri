@@ -236,8 +236,7 @@ class Broadcast {
       }
       catch {
         ch.send(value, 0)
-      } as e {
-      }
+      } as e {}
       alive.append(ch)
     }
     self._subscribers = alive

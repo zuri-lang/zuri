@@ -89,9 +89,9 @@ def critical(...args) {
 # within the module that shadows it; confirmed to affect even
 # `param: Type` annotations, not just plain expressions.
 def _looks_like_error(ex) {
-  return is_instance(ex)
-    and hasprop(ex, 'message')
-    and hasprop(ex, 'stacktrace')
+  return is_instance(ex) and
+      hasprop(ex, 'message') and
+      hasprop(ex, 'stacktrace')
 }
 
 /**
@@ -118,9 +118,7 @@ def exception(ex, message) {
       ], nil)
     }
   } else if message {
-    _write(LogLevel.Error, [
-      'Unhandled ${typeof(ex)}: ${message}',
-    ], nil)
+    _write(LogLevel.Error, ['Unhandled ${typeof(ex)}: ${message}'], nil)
   } else {
     _write(LogLevel.Error, [ex], nil)
   }

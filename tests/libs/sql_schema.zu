@@ -7,7 +7,8 @@ import sql.schema { column_shape }
 def built() {
   var db = sql.open(':memory:')
 
-  db.exec_script("
+  db.exec_script(
+    "
     create table authors (
       id integer primary key,
       name text not null unique
@@ -25,7 +26,8 @@ def built() {
     create unique index posts_title on posts (title);
 
     create view recent as select * from posts;
-  ")
+  ",
+  )
 
   return db
 }
@@ -48,7 +50,7 @@ def test_columns() {
   var columns = db.schema.columns('posts', nil)
   assert columns.length() == 5
   assert db.schema.column_names('posts', nil) ==
-    ['id', 'author_id', 'title', 'views', 'note']
+      ['id', 'author_id', 'title', 'views', 'note']
 
   # Every column carries the same keys whichever engine answered.
   for key in column_shape().keys() {

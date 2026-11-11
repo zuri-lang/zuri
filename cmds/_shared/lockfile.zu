@@ -37,8 +37,8 @@ import .names
 /** The format this module reads and writes. */
 var FORMAT = 1
 
-var _HEADER = '# Written by zuri: the exact packages this project was resolved to.\n'
-  + '# Change project.toml and run `zuri install` rather than editing this file.\n\n'
+var _HEADER = '# Written by zuri: the exact packages this project was resolved to.\n' +
+    '# Change project.toml and run `zuri install` rather than editing this file.\n\n'
 
 /**
  * Raised for a lockfile that cannot be read.
@@ -400,28 +400,33 @@ def parse(text: string, where: ?string) {
 
   if format != FORMAT {
     raise LockfileError(
-      '${where} is in format ${format}, which this version of zuri does not read; '
-        + 'delete it and run `zuri install` to write it again',
+      '${where} is in format ${format}, which this version of zuri does not read; ' +
+          'delete it and run `zuri install` to write it again',
     )
   }
 
   var lock = Lockfile()
 
   for entry in data.get('package', []) {
-    if !is_dict(entry) or !is_string(entry.get('name', nil))
-      or !is_string(entry.get('version', nil))
-      or !is_string(entry.get('source', nil)) {
-      raise LockfileError('${where} holds a package entry without a name, version and source')
+    if !is_dict(entry) or
+        !is_string(entry.get('name', nil)) or
+        !is_string(entry.get('version', nil)) or
+        !is_string(entry.get('source', nil)) {
+      raise LockfileError(
+        '${where} holds a package entry without a name, version and source',
+      )
     }
 
-    lock.put(Locked({
-      name: entry.name,
-      version: entry.version,
-      source: parse_source(entry.source),
-      checksum: entry.get('checksum', nil),
-      dependencies: entry.get('dependencies', []),
-      dev: entry.get('dev', false) == true,
-    }))
+    lock.put(
+      Locked({
+        name: entry.name,
+        version: entry.version,
+        source: parse_source(entry.source),
+        checksum: entry.get('checksum', nil),
+        dependencies: entry.get('dependencies', []),
+        dev: entry.get('dev', false) == true,
+      }),
+    )
   }
 
   return lock

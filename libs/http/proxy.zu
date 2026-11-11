@@ -271,9 +271,9 @@ class ReverseProxy {
     request.headers.each(@(name, value) {
       var lower = name.lower()
 
-      if !_HOP_BY_HOP.contains(lower)
-        and lower != 'host'
-        and lower != 'content-length' {
+      if !_HOP_BY_HOP.contains(lower) and
+          lower != 'host' and
+          lower != 'content-length' {
         forwarded.add(name, value)
       }
     })
@@ -426,8 +426,8 @@ class LoadBalancer {
 
       self._proxies[index].handle(request, response)
 
-      if response.status != status.BAD_GATEWAY
-        and response.status != status.GATEWAY_TIMEOUT {
+      if response.status != status.BAD_GATEWAY and
+          response.status != status.GATEWAY_TIMEOUT {
         self._failed_until[index] = 0
         return
       }

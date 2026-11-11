@@ -39,7 +39,9 @@ class Pointer {
   var _handle
 
   @new() {
-    raise FfiError('pointers come from the ffi module, never from the Pointer constructor')
+    raise FfiError(
+      'pointers come from the ffi module, never from the Pointer constructor',
+    )
   }
 
   /**

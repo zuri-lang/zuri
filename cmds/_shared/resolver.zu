@@ -168,7 +168,10 @@ class Solver {
    *    explanation.
    */
   @new(
-    provider, root_version: string, root_dependencies: list, root_name: ?string,
+    provider,
+    root_version: string,
+    root_dependencies: list,
+    root_name: ?string,
   ) {
     self._provider = provider
     self._root_version = root_version
@@ -281,8 +284,8 @@ class Solver {
   }
 
   _everything(term) {
-    return term.states.absent
-      and term.states.count() == self._universe(term.package).length()
+    return term.states.absent and
+        term.states.count() == self._universe(term.package).length()
   }
 
   _add(incompatibility) {
@@ -327,7 +330,11 @@ class Solver {
 
   _assign(term, cause, decision: bool) {
     var assignment = _Assignment(
-      term, self._level, self._assignments.length(), cause, decision,
+      term,
+      self._level,
+      self._assignments.length(),
+      cause,
+      decision,
     )
 
     self._assignments.append(assignment)
@@ -335,7 +342,8 @@ class Solver {
     var current = self._current.get(term.package, nil)
 
     self._current.set(
-      term.package, current == nil ? term : self._intersect(current, term),
+      term.package,
+      current == nil ? term : self._intersect(current, term),
     )
 
     if decision {
@@ -377,15 +385,17 @@ class Solver {
       }
 
       accumulated = accumulated == nil
-        ? assignment.term
-        : self._intersect(accumulated, assignment.term)
+          ? assignment.term
+          : self._intersect(accumulated, assignment.term)
 
       if _within(accumulated.states, term.states) {
         return assignment
       }
     }
 
-    raise Error('internal error: no assignment satisfies a term the solution satisfies')
+    raise Error(
+      'internal error: no assignment satisfies a term the solution satisfies',
+    )
   }
 
   # Unit propagation from `package`.
@@ -455,9 +465,9 @@ class Solver {
       return true
     }
 
-    return incompatibility.terms.length() == 1
-      and incompatibility.terms[0].package == ROOT
-      and incompatibility.terms[0].positive()
+    return incompatibility.terms.length() == 1 and
+        incompatibility.terms[0].package == ROOT and
+        incompatibility.terms[0].positive()
   }
 
   # Works out why `incompatibility` is satisfied, learns that, and
@@ -526,9 +536,10 @@ class Solver {
         terms.append(self._negate(difference))
       }
 
-      incompatibility = self._make(
-        terms, 'derived', nil, [incompatibility, recent.cause],
-      )
+      incompatibility = self._make(terms, 'derived', nil, [
+        incompatibility,
+        recent.cause,
+      ])
       learned = true
     }
 
@@ -624,17 +635,21 @@ class Solver {
 
     var wanted = self._in_range(dependency.name, dependency.range)
     var depender = Term(package, _States(only, false), version)
-    var needed = self._negate(Term(
-      dependency.name, _States(wanted, false), dependency.range,
-    ))
+    var needed = self._negate(
+      Term(dependency.name, _States(wanted, false), dependency.range),
+    )
 
-    return self._make([depender, needed], 'dependency', {
-      package,
-      version,
-      dependency: dependency.name,
-      range: dependency.range,
-      none: wanted.is_empty(),
-    })
+    return self._make(
+      [depender, needed],
+      'dependency',
+      {
+        package,
+        version,
+        dependency: dependency.name,
+        range: dependency.range,
+        none: wanted.is_empty(),
+      },
+    )
   }
 
   /**
@@ -672,8 +687,8 @@ class Solver {
 
   _name(package: string) {
     return package == ROOT
-      ? self._root_name
-      : self._provider.display_name(package)
+        ? self._root_name
+        : self._provider.display_name(package)
   }
 
   # A set of versions of `package` in words.
@@ -736,8 +751,8 @@ class Solver {
 
     if kind == 'dependency' {
       var who = data.package == ROOT
-        ? self._root_name
-        : '${self._name(data.package)} ${data.version}'
+          ? self._root_name
+          : '${self._name(data.package)} ${data.version}'
 
       if data.get('none', false) {
         if self._universe(data.dependency).is_empty() {
@@ -809,13 +824,15 @@ class Solver {
     var lines = []
 
     if failure.causes.is_empty() {
-      lines.append('    Because ${self._sentence(failure)}, version solving failed.')
+      lines.append(
+        '    Because ${self._sentence(failure)}, version solving failed.',
+      )
     } else {
       self._visit(failure, lines, [0], true)
     }
 
-    return 'no set of versions satisfies every requirement:\n\n'
-      + '\n'.join(lines)
+    return 'no set of versions satisfies every requirement:\n\n' +
+        '\n'.join(lines)
   }
 
   # Writes the steps behind `incompatibility`, causes first. Every step
@@ -860,7 +877,10 @@ class Solver {
  * @raises SolveError
  */
 def solve(
-  provider, root_version: string, dependencies: list, root_name: ?string,
+  provider,
+  root_version: string,
+  dependencies: list,
+  root_name: ?string,
 ) {
   return Solver(provider, root_version, dependencies, root_name).solve()
 }

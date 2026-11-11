@@ -77,9 +77,9 @@ assert !ran, 'declaring a test must not run it'
 var tree = test.declared()
 assert tree.cases().length() == 1, 'the tree must hold the one declared test'
 assert tree.cases()[0].full_name() == 'outer > inner > a test',
-  'a test must know its full path through the suites'
+    'a test must know its full path through the suites'
 assert tree.cases()[0].file.ends_with('test_runner.zu'),
-  'a test must know the file it was declared in'
+    'a test must know the file it was declared in'
 
 test.run({ reporter: 'silent' })
 assert ran, 'run() must be what actually runs the body'
@@ -109,7 +109,7 @@ assert counted.total() == 4, 'four tests in total'
 assert counted.ran() == 2, 'only two of them actually ran'
 assert counted.suites == 1, 'one suite had something to run'
 assert !counted.ok() and counted.exit_code() == 1,
-  'a run with a failure must not be ok'
+    'a run with a failure must not be ok'
 ok('every status is counted separately, and a failure sets the exit code')
 
 var clean = scenario(@{
@@ -121,7 +121,7 @@ var clean = scenario(@{
 }, nil)
 
 assert clean.ok() and clean.exit_code() == 0,
-  'a run with no failures must be ok'
+    'a run with no failures must be ok'
 ok('a clean run exits zero')
 
 # A test with no body is a todo, without having to say so.
@@ -179,14 +179,22 @@ scenario(@{
   })
 }, nil)
 
-assert log == [
-  'outer:all',
-  'outer:each', 'a', '/outer:each',
-  'inner:all',
-  'outer:each', 'inner:each', 'b', '/inner:each', '/outer:each',
-  '/inner:all',
-  '/outer:all',
-], 'hooks must nest correctly: before outermost first, after innermost first'
+assert log ==
+    [
+      'outer:all',
+      'outer:each',
+      'a',
+      '/outer:each',
+      'inner:all',
+      'outer:each',
+      'inner:each',
+      'b',
+      '/inner:each',
+      '/outer:each',
+      '/inner:all',
+      '/outer:all',
+    ],
+    'hooks must nest correctly: before outermost first, after innermost first'
 ok('hook ordering, in and out')
 
 # A suite nothing runs in must not run its setup either, which is the
@@ -238,9 +246,9 @@ var broken_setup = scenario(@{
 
 assert broken_setup.failed == 1, 'a failing before_each must fail the test'
 assert broken_setup.failures[0].failures[0].kind == 'hook',
-  'and must be reported as a hook failure'
+    'and must be reported as a hook failure'
 assert broken_setup.failures[0].failures[0].message.contains('before_each'),
-  'and must say which hook it was'
+    'and must say which hook it was'
 ok('a failing before_each fails the test it was setting up')
 
 # A failing before_all takes the whole suite with it, because nothing
@@ -260,7 +268,7 @@ var broken_suite = scenario(@{
 }, nil)
 
 assert broken_suite.failed == 2,
-  'a failing before_all must fail every test in the suite'
+    'a failing before_all must fail every test in the suite'
 ok('a failing before_all fails every test under it')
 
 # What a setup acquired before failing is still released.
@@ -304,7 +312,7 @@ var focused = scenario(@{
 }, nil)
 
 assert focused.passed == 1 and focused.failed == 0,
-  'only the focused test may run, whatever the others would have done'
+    'only the focused test may run, whatever the others would have done'
 assert focused.skipped == 2, 'everything else must be reported as skipped'
 ok('it_only focuses one test and skips the rest')
 
@@ -326,7 +334,7 @@ var focused_suite = scenario(@{
 }, nil)
 
 assert focused_suite.passed == 2 and focused_suite.skipped == 1,
-  'describe_only must focus everything inside it'
+    'describe_only must focus everything inside it'
 ok('describe_only focuses a whole suite')
 
 # skip has to win, or marking something broken would be undone by
@@ -343,7 +351,7 @@ var skip_wins = scenario(@{
 }, nil)
 
 assert skip_wins.skipped == 1 and skip_wins.passed == 1,
-  'skip must win over only'
+    'skip must win over only'
 ok('skip wins over only')
 
 var skipped_suite = scenario(@{
@@ -358,7 +366,7 @@ var skipped_suite = scenario(@{
 }, nil)
 
 assert skipped_suite.skipped == 2 and skipped_suite.failed == 0,
-  'describe_skip must skip everything inside it'
+    'describe_skip must skip everything inside it'
 ok('describe_skip skips a whole suite')
 
 # ---------------------------------------------------------------------------
@@ -366,13 +374,17 @@ ok('describe_skip skips a whole suite')
 # ---------------------------------------------------------------------------
 test.reset()
 
-it_each([
-  ['', 0],
-  ['a', 1],
-  ['hello', 5],
-], 'says $0 is $1 long', @(text, length) {
-  expect(text.length()).to_be(length)
-})
+it_each(
+  [
+    ['', 0],
+    ['a', 1],
+    ['hello', 5],
+  ],
+  'says $0 is $1 long',
+  @(text, length) {
+    expect(text.length()).to_be(length)
+  },
+)
 
 var table = test.run({ reporter: 'silent' })
 var names = test.declared().cases().map(@(test_case) {
@@ -380,9 +392,9 @@ var names = test.declared().cases().map(@(test_case) {
 })
 
 assert table.passed == 3, 'it_each must declare one test per row'
-assert names
-  == ["says '' is 0 long", "says 'a' is 1 long", "says 'hello' is 5 long"],
-  'the name template must be filled in from each row'
+assert names ==
+    ["says '' is 0 long", "says 'a' is 1 long", "says 'hello' is 5 long"],
+    'the name template must be filled in from each row'
 ok('it_each declares one test per row and names them from it')
 
 test.reset()
@@ -393,38 +405,46 @@ it_each([1, 2], 'row $# holds $0', @(value) {
 
 test.run({ reporter: 'silent' })
 assert test.declared().cases()[1].name == 'row 2 holds 2',
-  '$# must be the row number, counting from one, and a bare row must count as one column'
+    '$# must be the row number, counting from one, and a bare row must count as one column'
 ok('$# numbers the rows, and a non-list row is a single column')
 
 # `$10` must not be read as `$1` followed by a `0`.
 test.reset()
 
 it_each(
-  [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 'last']], 'ends with $10', @(...values) {
+  [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 'last'],
+  ],
+  'ends with $10',
+  @(...values) {
     expect(values.length()).to_be(11)
   },
 )
 
 test.run({ reporter: 'silent' })
 assert test.declared().cases()[0].name == "ends with 'last'",
-  '$10 must be the eleventh column, not the second followed by a zero'
+    '$10 must be the eleventh column, not the second followed by a zero'
 ok('a two-digit placeholder is not two placeholders')
 
 test.reset()
 
-describe_each([
-  ['first', 1],
-  ['second', 2],
-], '$0 codec', @(name, number) {
-  it('knows its number', @{
-    expect(number).to_be_int()
-  })
-})
+describe_each(
+  [
+    ['first', 1],
+    ['second', 2],
+  ],
+  '$0 codec',
+  @(name, number) {
+    it('knows its number', @{
+      expect(number).to_be_int()
+    })
+  },
+)
 
 var suites = test.run({ reporter: 'silent' })
 assert suites.passed == 2, 'describe_each must declare one suite per row'
 assert test.declared().cases()[0].suite_path() == ["'first' codec"],
-  'the suite name must be filled in from the row'
+    'the suite name must be filled in from the row'
 ok('describe_each declares one suite per row')
 
 # ---------------------------------------------------------------------------
@@ -443,7 +463,7 @@ var retried = scenario(@{
 
 assert attempts == 3, 'the body must be run again until it passes'
 assert retried.passed == 1 and retried.flaky == 1,
-  'a test that needed a retry must be reported as flaky'
+    'a test that needed a retry must be reported as flaky'
 assert retried.failures.is_empty(), 'and must not be reported as a failure'
 ok('retries re-run the body, and a late pass is reported as flaky')
 
@@ -471,9 +491,11 @@ var expected_failure = scenario(@{
 
 assert expected_failure.passed == 1, 'a failing test marked failing must pass'
 assert expected_failure.failed == 1,
-  'and a passing one marked failing must fail'
-assert expected_failure.failures[0].failures[0].message.contains('marked failing'),
-  'the message must explain why a passing test failed'
+    'and a passing one marked failing must fail'
+assert expected_failure.failures[0].failures[0].message.contains(
+  'marked failing',
+),
+    'the message must explain why a passing test failed'
 ok('failing: true inverts the outcome in both directions')
 
 # ---------------------------------------------------------------------------
@@ -484,9 +506,15 @@ def three_suites() {
     it('one', @{
       expect(1).to_be(1)
     })
-    it('two', @{
-      expect(1).to_be(1)
-    }, { tags: ['slow'] })
+    it(
+      'two',
+      @{
+        expect(1).to_be(1)
+      },
+      {
+        tags: ['slow'],
+      },
+    )
   })
 
   describe('beta', @{
@@ -498,19 +526,23 @@ def three_suites() {
 
 var by_name = scenario(three_suites, { filter: 'alpha' })
 assert by_name.passed == 2 and by_name.skipped == 1,
-  'filter must match against the full name'
+    'filter must match against the full name'
 
 var by_pattern = scenario(three_suites, { filter: '/^beta/' })
 assert by_pattern.passed == 1 and by_pattern.skipped == 2,
-  'a delimited filter must be treated as a regular expression'
+    'a delimited filter must be treated as a regular expression'
 
-var by_tag = scenario(three_suites, { tags: ['slow'] })
+var by_tag = scenario(three_suites, {
+  tags: ['slow'],
+})
 assert by_tag.passed == 1 and by_tag.skipped == 2,
-  'tags must select only what carries one'
+    'tags must select only what carries one'
 
-var without_tag = scenario(three_suites, { exclude_tags: ['slow'] })
+var without_tag = scenario(three_suites, {
+  exclude_tags: ['slow'],
+})
 assert without_tag.passed == 2 and without_tag.skipped == 1,
-  'exclude_tags must remove what carries one'
+    'exclude_tags must remove what carries one'
 ok('filter, regular-expression filter, tags and exclude_tags')
 
 # ---------------------------------------------------------------------------
@@ -536,7 +568,7 @@ var bailed = scenario(@{
 assert reached == 1, 'bail must stop before the next test runs'
 assert bailed.bailed, 'the summary must record that it stopped early'
 assert !bailed.ok(),
-  'a bailed run is never ok, even if nothing after it would have failed'
+    'a bailed run is never ok, even if nothing after it would have failed'
 ok('bail stops the run at the first failure')
 
 # ---------------------------------------------------------------------------
@@ -565,9 +597,10 @@ def ordered_suite(order) {
 }
 
 var first_order = []
-var seeded = scenario(
-  ordered_suite(first_order), { shuffle: true, seed: 12345 },
-)
+var seeded = scenario(ordered_suite(first_order), {
+  shuffle: true,
+  seed: 12345,
+})
 
 var second_order = []
 scenario(ordered_suite(second_order), { shuffle: true, seed: 12345 })
@@ -576,11 +609,11 @@ assert seeded.seed == 12345, 'the summary must report the seed it used'
 assert first_order == second_order, 'the same seed must produce the same order'
 assert first_order.length() == 5, 'shuffling must not lose or duplicate a test'
 assert first_order.clone().sort() == ['a', 'b', 'c', 'd', 'e'],
-  'and must run each exactly once'
+    'and must run each exactly once'
 
 var chosen = scenario(ordered_suite([]), { shuffle: true })
 assert chosen.seed != nil,
-  'a seed must be chosen and reported when none was given'
+    'a seed must be chosen and reported when none was given'
 ok('shuffle is reproducible from its seed and runs everything exactly once')
 
 # ---------------------------------------------------------------------------
@@ -611,11 +644,13 @@ var promises = scenario(@{
 }, nil)
 
 assert promises.passed == 2 and promises.failed == 2,
-  'a broken assertion promise must fail the test that made it'
+    'a broken assertion promise must fail the test that made it'
 assert promises.failures[0].failures[0].kind == 'assertions',
-  'a broken promise must be reported as its own kind of failure'
-assert promises.failures[0].failures[0].message.contains('Expected 2 assertions but 1 ran'),
-  'and must say what was promised and what happened'
+    'a broken promise must be reported as its own kind of failure'
+assert promises.failures[0].failures[0].message.contains(
+  'Expected 2 assertions but 1 ran',
+),
+    'and must say what was promised and what happened'
 ok('assertions() and has_assertions() hold a test to what it said')
 
 # ---------------------------------------------------------------------------
@@ -632,7 +667,7 @@ var captured = scenario(@{
 
 var noisy = test.declared().cases()[0]
 assert noisy.output == 'this must not reach the report\n',
-  'a test\'s output must be captured and attached to it'
+    'a test\'s output must be captured and attached to it'
 ok('a test\'s output is captured rather than printed')
 
 # A test that opens a capture and forgets to close it must not swallow
@@ -654,7 +689,7 @@ var unbalanced = scenario(@{
 
 assert unbalanced.passed == 2, 'both tests must run'
 assert test.declared().cases()[1].output == 'mine\n',
-  'the second test must get its own output, not inherit an unclosed frame'
+    'the second test must get its own output, not inherit an unclosed frame'
 ok('an unbalanced capture inside a test is unwound at the end of it')
 
 var uncaptured = scenario(@{
@@ -666,7 +701,7 @@ var uncaptured = scenario(@{
 }, { capture: false })
 
 assert test.declared().cases()[0].output == '',
-  'capture: false must record no output'
+    'capture: false must record no output'
 ok('capture can be turned off')
 
 # ---------------------------------------------------------------------------
@@ -686,7 +721,7 @@ var timed = scenario(@{
 
 assert timed.failed == 1, 'a test over its budget must fail'
 assert timed.failures[0].failures[0].kind == 'timeout',
-  'and must be reported as a timeout'
+    'and must be reported as a timeout'
 ok('a test that runs past its timeout is reported as one')
 
 # ---------------------------------------------------------------------------
@@ -702,12 +737,16 @@ var broken_body = scenario(@{
 }, nil)
 
 assert broken_body.passed == 1,
-  'whatever was declared before the problem must still run'
+    'whatever was declared before the problem must still run'
 assert broken_body.failed == 1,
-  'and the broken body must be reported as a failure'
-assert broken_body.failures[0].failures[0].message.contains('the suite body itself blew up'),
-  'and must carry what went wrong'
-ok('a suite body that raises is reported without losing what it had already declared')
+    'and the broken body must be reported as a failure'
+assert broken_body.failures[0].failures[0].message.contains(
+  'the suite body itself blew up',
+),
+    'and must carry what went wrong'
+ok(
+  'a suite body that raises is reported without losing what it had already declared',
+)
 
 # ---------------------------------------------------------------------------
 # Custom reporters
@@ -758,11 +797,11 @@ scenario(@{
 
 assert counter.runs == 1, 'run_started must fire exactly once'
 assert counter.started == 2,
-  'test_started must fire only for tests that actually run'
+    'test_started must fire only for tests that actually run'
 assert counter.finished == 3,
-  'test_finished must fire for every test, skipped ones included'
+    'test_finished must fire for every test, skipped ones included'
 assert counter.suites == 2,
-  'suite_started must fire for the root and for the declared suite'
+    'suite_started must fire for the root and for the declared suite'
 ok('a custom reporter sees the whole run')
 
 # ---------------------------------------------------------------------------
@@ -788,9 +827,9 @@ def auto_run(source) {
 
 var implicit = auto_run(
   "import test { * }\n" +
-    "describe('auto', @{\n" +
-    "  it('runs without being told', @{ expect(1).to_be(1) })\n" +
-    "})\n",
+      "describe('auto', @{\n" +
+      "  it('runs without being told', @{ expect(1).to_be(1) })\n" +
+      "})\n",
 )
 
 assert implicit.code == 0, 'a passing file that never calls run() must exit 0'
@@ -799,46 +838,46 @@ assert implicit.out.contains('1 passed'), 'and must still count'
 
 var implicit_failure = auto_run(
   "import test { * }\n" +
-    "describe('auto', @{\n" +
-    "  it('fails', @{ expect(1).to_be(2) })\n" +
-    "})\n",
+      "describe('auto', @{\n" +
+      "  it('fails', @{ expect(1).to_be(2) })\n" +
+      "})\n",
 )
 
 assert implicit_failure.code == 1,
-  'a failing file that never calls run() must exit 1'
+    'a failing file that never calls run() must exit 1'
 assert implicit_failure.out.contains('1 failed'), 'and must say so'
 ok('a file that declares tests runs them, and fails the process when they fail')
 
 var explicit = auto_run(
   "import test { * }\n" +
-    "describe('auto', @{\n" +
-    "  it('passes', @{ expect(1).to_be(1) })\n" +
-    "})\n" +
-    "run({ reporter: 'silent' })\n" +
-    "echo 'done'\n",
+      "describe('auto', @{\n" +
+      "  it('passes', @{ expect(1).to_be(1) })\n" +
+      "})\n" +
+      "run({ reporter: 'silent' })\n" +
+      "echo 'done'\n",
 )
 
 assert explicit.out == 'done\n',
-  'an explicit run() must take over, so the automatic one reports nothing'
+    'an explicit run() must take over, so the automatic one reports nothing'
 ok('an explicit run() takes over from the automatic one')
 
 var declared_nothing = auto_run("import test { * }\necho 'nothing here'\n")
 
 assert declared_nothing.out == 'nothing here\n',
-  'a file that declares no tests must report nothing at all'
+    'a file that declares no tests must report nothing at all'
 ok('a file with no tests reports nothing')
 
 var crashed = auto_run(
   "import test { * }\n" +
-    "describe('auto', @{\n" +
-    "  it('declared before the crash', @{ expect(1).to_be(1) })\n" +
-    "})\n" +
-    "raise ValueError('the file itself blew up')\n",
+      "describe('auto', @{\n" +
+      "  it('declared before the crash', @{ expect(1).to_be(1) })\n" +
+      "})\n" +
+      "raise ValueError('the file itself blew up')\n",
 )
 
 assert crashed.code == 1, 'a file that crashes must still exit 1'
 assert crashed.out.contains('declared before the crash'),
-  'and whatever it declared before crashing must still run'
+    'and whatever it declared before crashing must still run'
 ok('a file that crashes still runs what it had already declared')
 
 catch {
@@ -855,11 +894,11 @@ catch {
   assert false, 'a misspelt option must not be accepted in silence'
 } as option_error {
   assert typeof(option_error) == 'TestSetupError',
-    'a bad option must raise TestSetupError'
+      'a bad option must raise TestSetupError'
   assert option_error.message.contains('repoter'),
-    'and must name what it did not understand'
+      'and must name what it did not understand'
   assert option_error.message.contains('reporter'),
-    'and must list what it does understand'
+      'and must list what it does understand'
 }
 ok('an unknown option is refused, with the known ones listed')
 

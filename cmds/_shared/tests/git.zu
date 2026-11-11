@@ -41,10 +41,13 @@ def git_in(dir: string, words: list) {
 
 # Writes the package at `version` and commits it.
 def commit_version(version: string) {
-  fsx.atomic_write(os.join_paths(REPO, 'project.toml'),
-    '[project]\nname = "tools"\nversion = "${version}"\ndescription = "Tools"\n')
   fsx.atomic_write(
-    os.join_paths(REPO, 'app', 'index.zu'), 'echo "${version}"\n',
+    os.join_paths(REPO, 'project.toml'),
+    '[project]\nname = "tools"\nversion = "${version}"\ndescription = "Tools"\n',
+  )
+  fsx.atomic_write(
+    os.join_paths(REPO, 'app', 'index.zu'),
+    'echo "${version}"\n',
   )
 
   git_in(REPO, ['add', '-A'])
@@ -76,16 +79,25 @@ after_all(@{
 
 describe('addresses', @{
   it('accepts the transports that cannot run a command', @{
-    for address in ['https://example.com/tools.git',
-      'ssh://git@example.com/tools.git', 'git@example.com:acme/tools.git',
-      'file:///srv/tools.git', '../tools'] {
+    for address in [
+      'https://example.com/tools.git',
+      'ssh://git@example.com/tools.git',
+      'git@example.com:acme/tools.git',
+      'file:///srv/tools.git',
+      '../tools',
+    ] {
       expect(git.is_allowed(address)).to_be_true()
     }
   })
 
   it('refuses the ones that can, and anything git would read as a flag', @{
-    for address in ['ext::sh -c touch% /tmp/owned', 'fd::17',
-      '-uploadpack=touch', 'transport::example', ''] {
+    for address in [
+      'ext::sh -c touch% /tmp/owned',
+      'fd::17',
+      '-uploadpack=touch',
+      'transport::example',
+      '',
+    ] {
       expect(git.is_allowed(address)).to_be_false()
     }
 
@@ -105,9 +117,8 @@ describe('resolving', @{
   })
 
   it('follows a branch', @{
-    expect(git.resolve(
-      REPO, { kind: 'branch', value: 'next' },
-    )).to_equal(SECOND)
+    expect(git.resolve(REPO, { kind: 'branch', value: 'next' }))
+        .to_equal(SECOND)
   })
 
   it('takes a full commit id as it stands', @{

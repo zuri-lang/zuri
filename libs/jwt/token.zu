@@ -128,6 +128,6 @@ class Token {
    */
   @to_string() {
     return '<Token alg=${self.header.get("alg", "?")} ' +
-      'sub=${self.payload.get("sub", "(none)")}>'
+        'sub=${self.payload.get("sub", "(none)")}>'
   }
 }

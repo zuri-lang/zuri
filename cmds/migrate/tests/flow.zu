@@ -34,8 +34,8 @@ def migrate(words: list) {
 
 def migrations() {
   var names = os
-    .read_dir(os.join_paths(PROJECT, 'migrations'))
-    .filter(@(name) => name.ends_with('.zu'))
+      .read_dir(os.join_paths(PROJECT, 'migrations'))
+      .filter(@(name) => name.ends_with('.zu'))
   names.sort(@(a, b) => a.compare(b))
   return names
 }
@@ -58,8 +58,8 @@ describe('a project', @{
     var made = migrate(['new', 'create_posts', 'add_slug_to_posts'])
     var prefix = 'Created migrations${os.path_separator}'
     var created = made.out
-      .split('\n')
-      .filter(@(line) => line.starts_with(prefix))
+        .split('\n')
+        .filter(@(line) => line.starts_with(prefix))
 
     expect(made.status).to_equal(0)
     expect(created.length()).to_equal(2)
@@ -112,7 +112,7 @@ describe('a project', @{
     put(
       os.join_paths(PROJECT, 'migrations', '1_broken.zu'),
       'import sql { Connection, Transaction }\n\n' +
-        'def up(db: Transaction|Connection) {\n  db.exec("not sql", nil)\n}\n',
+          'def up(db: Transaction|Connection) {\n  db.exec("not sql", nil)\n}\n',
     )
 
     var failed = migrate([])

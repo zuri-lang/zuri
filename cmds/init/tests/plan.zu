@@ -121,8 +121,7 @@ describe('check_version', @{
   it('refuses something that is not a version at all', @{
     expect(@{
       check_version('latest')
-    })
-      .to_raise_with_message('is not a valid version')
+    }).to_raise_with_message('is not a valid version')
   })
 })
 
@@ -235,14 +234,14 @@ describe('target_of', @{
 
   it('resolves a relative path against it', @{
     expect(target_of(parse(['sub']), ROOT))
-      .to_equal(os.join_paths(os.abs_path(ROOT), 'sub'))
+        .to_equal(os.join_paths(os.abs_path(ROOT), 'sub'))
   })
 
   it('takes an absolute path as it stands', @{
     # On Windows a path rooted without a drive is on the current one.
     var expected = os.platform == 'windows'
-      ? os.cwd()[,2] + '\\srv\\app'
-      : '/srv/app'
+        ? os.cwd()[,2] + '\\srv\\app'
+        : '/srv/app'
 
     expect(target_of(parse(['/srv/app']), ROOT)).to_equal(expected)
   })
@@ -251,7 +250,7 @@ describe('target_of', @{
     var parsed = parse(['--name', 'my-app', 'sub'])
 
     expect(target_of(parsed, ROOT))
-      .to_equal(os.join_paths(os.abs_path(ROOT), 'sub'))
+        .to_equal(os.join_paths(os.abs_path(ROOT), 'sub'))
   })
 })
 

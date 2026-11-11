@@ -154,9 +154,7 @@ class TcpStream {
    * Returns a new instance of a {TcpStream}.
    */
   @new(_ptr) {
-    self._ptr = _ptr == nil ?
-      _net_tcp.tcp_new() :
-      _ptr
+    self._ptr = _ptr == nil ? _net_tcp.tcp_new() : _ptr
   }
 
   /**

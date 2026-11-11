@@ -20,7 +20,10 @@ def run(filter) {
     target.filter = filter
   }
 
-  var command = { command: 'zuri.runTests', arguments: [target] }
+  var command = {
+    command: 'zuri.runTests',
+    arguments: [target],
+  }
 
   return client.request('workspace/executeCommand', command)
 }
@@ -38,7 +41,9 @@ class _Known {
 }
 
 before_all(@{
-  client = Client(FIXTURE, { diagnostics: { delay: 0 } })
+  client = Client(FIXTURE, {
+    diagnostics: { delay: 0 },
+  })
   client.initialize(nil)
   client.wait_indexed()
   checks = client.open(CHECKS, nil)
@@ -52,14 +57,15 @@ describe('finding tests', @{
   it(
     'lists the suites and tests of a file, each with the filter that runs it',
     @{
-      var found = client.request(
-        'zuri/tests', { textDocument: { uri: checks } },
-      )
+      var found = client.request('zuri/tests', {
+        textDocument: { uri: checks },
+      })
 
-      expect(found.map(@(t) => [t.kind, t.fullName, t.filter])).to_equal([
-        ['suite', 'points', '/^points > /'],
-        ['test', 'doubles $0 to $1', '/^doubles .* to .*$/'],
-      ])
+      expect(found.map(@(t) => [t.kind, t.fullName, t.filter]))
+          .to_equal([
+            ['suite', 'points', '/^points > /'],
+            ['test', 'doubles $0 to $1', '/^doubles .* to .*$/'],
+          ])
       expect(found[0].children.map(@(t) => t.fullName)).to_equal([
         'points > measure the distance between them',
         'points > know where they are',
@@ -74,15 +80,19 @@ describe('finding tests', @{
   })
 
   it('puts a lens to run them over each', @{
-    var lenses = client.request(
-      'textDocument/codeLens', { textDocument: { uri: checks } },
-    )
+    var lenses = client.request('textDocument/codeLens', {
+      textDocument: { uri: checks },
+    })
     var titles = lenses
-      .filter(@(l) => l.get('command', nil) != nil)
-      .map(@(l) => l.command.title)
+        .filter(@(l) => l.get('command', nil) != nil)
+        .map(@(l) => l.command.title)
 
     expect(titles).to_equal([
-      'Run tests in file', 'Run suite', 'Run test', 'Run test', 'Run test',
+      'Run tests in file',
+      'Run suite',
+      'Run test',
+      'Run test',
+      'Run test',
     ])
   })
 })
@@ -92,17 +102,20 @@ describe('running tests', @{
     var result = run(nil)
 
     expect([result.passed, result.failed, result.exitCode]).to_equal([3, 1, 1])
-    expect(client.notifications
-      .filter(@(n) => n.method == 'zuri/testEvent')
-      .length()).to_equal(4)
+    expect(
+      client.notifications
+          .filter(@(n) => n.method == 'zuri/testEvent')
+          .length(),
+    )
+        .to_equal(4)
   })
 
   it('shows a failed assertion on the line it failed at', @{
     client.wait_for(@() {
       var pushed = client.diagnostics.get(checks, nil)
 
-      return pushed != nil
-        and pushed.diagnostics.some(@(d) => d.source == 'zuri test')
+      return pushed != nil and
+          pushed.diagnostics.some(@(d) => d.source == 'zuri test')
     }, 'the failure shown')
 
     var failure = client.diagnostics[checks].diagnostics.find(
@@ -110,7 +123,9 @@ describe('running tests', @{
     )
 
     expect(failure.range.start.line).to_equal(11)
-    expect(failure.message).to_contain('points > know where they are: Expected 1 to deeply equal 2')
+    expect(
+      failure.message,
+    ).to_contain('points > know where they are: Expected 1 to deeply equal 2')
   })
 
   it('runs one test, or a table of them, by its filter', @{
@@ -139,9 +154,8 @@ describe('running tests', @{
 
 describe('failure paths', @{
   it('resolves a name against where the run was', @{
-    expect(failure_path(
-      _Known([]), FIXTURE, 'checks.zu',
-    )).to_equal(os.abs_path(CHECKS))
+    expect(failure_path(_Known([]), FIXTURE, 'checks.zu'))
+        .to_equal(os.abs_path(CHECKS))
   })
 
   it('takes a whole name as it stands', @{
@@ -154,9 +168,8 @@ describe('failure paths', @{
     if os.platform == 'windows' {
       var known = os.abs_path(CHECKS)
 
-      expect(failure_path(
-        _Known([known]), FIXTURE, known.upper(),
-      )).to_equal(known)
+      expect(failure_path(_Known([known]), FIXTURE, known.upper()))
+          .to_equal(known)
     }
   })
 })

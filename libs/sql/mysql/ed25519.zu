@@ -81,9 +81,7 @@ def sign(expanded, message) {
   var nonce = _reduce(hash.sha512(prefix + message, true))
   var commitment = _encode(_scalar_mult(_base(), nonce))
 
-  var challenge = _reduce(
-    hash.sha512(commitment + public + message, true),
-  )
+  var challenge = _reduce(hash.sha512(commitment + public + message, true))
 
   var scalar = (nonce + challenge * secret) % L
 
@@ -92,12 +90,7 @@ def sign(expanded, message) {
 
 # The base point in the extended coordinates the arithmetic uses.
 def _base() {
-  return {
-    x: _BASE_X,
-    y: _BASE_Y,
-    z: 1n,
-    t: (_BASE_X * _BASE_Y) % P,
-  }
+  return { x: _BASE_X, y: _BASE_Y, z: 1n, t: (_BASE_X * _BASE_Y) % P }
 }
 
 # The signing scalar: the low half of the expanded key, with the bits

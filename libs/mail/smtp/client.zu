@@ -34,8 +34,13 @@ import net.tls
 import os
 
 import ..errors {
-  AuthenticationError, ConnectionClosed, ProtocolError, StateError,
-  SmtpError, SmtpPermanentError, SmtpTransientError,
+  AuthenticationError,
+  ConnectionClosed,
+  ProtocolError,
+  StateError,
+  SmtpError,
+  SmtpPermanentError,
+  SmtpTransientError,
 }
 import ..message { Message }
 import ..sasl
@@ -352,8 +357,8 @@ class SmtpClient {
       }
     }
 
-    if self._options.get('username', nil) != nil
-      or self._options.get('token', nil) != nil {
+    if self._options.get('username', nil) != nil or
+        self._options.get('token', nil) != nil {
       self.login()
     }
 
@@ -437,7 +442,9 @@ class SmtpClient {
       var line = self._stream.read_line(MAX_REPLY_LINE)
 
       if line.length() < 3 or !_is_digits(line[0, 3]) {
-        raise ProtocolError('the server sent something that is not a reply: ${line}')
+        raise ProtocolError(
+          'the server sent something that is not a reply: ${line}',
+        )
       }
 
       var value = line[0, 3].to_number()
@@ -566,12 +573,14 @@ class SmtpClient {
     if chosen == nil {
       if !self._stream.is_secure() {
         raise AuthenticationError(
-          'no mechanism this connection can use without TLS; '
-            + 'the server offers ${', '.join(offered)}',
+          'no mechanism this connection can use without TLS; ' +
+              'the server offers ${', '.join(offered)}',
         )
       }
 
-      raise AuthenticationError('no mechanism in common; the server offers ${', '.join(offered)}')
+      raise AuthenticationError(
+        'no mechanism in common; the server offers ${', '.join(offered)}',
+      )
     }
 
     return self.authenticate(sasl.of(chosen, self._options))
@@ -586,9 +595,9 @@ class SmtpClient {
    */
   authenticate(mechanism) {
     var initial = mechanism.start()
-    var reply = initial == nil ?
-      self.command('AUTH ${mechanism.name()}') :
-      self.command('AUTH ${mechanism.name()} ${_encode(initial)}')
+    var reply = initial == nil
+        ? self.command('AUTH ${mechanism.name()}')
+        : self.command('AUTH ${mechanism.name()} ${_encode(initial)}')
 
     while reply.is_intermediate() {
       var challenge = _decode(reply.lines.is_empty() ? '' : reply.lines[0])

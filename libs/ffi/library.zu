@@ -27,7 +27,9 @@ class Library {
   var _handle
 
   @new() {
-    raise FfiError('libraries come from ffi.open(), never from the Library constructor')
+    raise FfiError(
+      'libraries come from ffi.open(), never from the Library constructor',
+    )
   }
 
   /**

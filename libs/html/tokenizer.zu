@@ -889,7 +889,7 @@ class Tokenizer {
     }
 
     if RAWTEXT_ELEMENTS.contains(name) or
-      (self.scripting and name == 'noscript') {
+        (self.scripting and name == 'noscript') {
       self.state = 'rawtext'
     }
   }
@@ -1416,8 +1416,8 @@ class Tokenizer {
     }
 
     var appropriate = self._token != nil and
-      self._last_start_tag != nil and
-      self._token.name == self._last_start_tag
+        self._last_start_tag != nil and
+        self._token.name == self._last_start_tag
 
     if appropriate and c != nil {
       if _is_whitespace(c) {
@@ -2773,7 +2773,9 @@ class Tokenizer {
     }
 
     if c == '"' or c == '\'' {
-      self._error('missing-whitespace-between-doctype-public-and-system-identifiers')
+      self._error(
+        'missing-whitespace-between-doctype-public-and-system-identifiers',
+      )
       self._token.system_id = ''
       self.state = _quoted_system_state(c)
       return
@@ -3055,8 +3057,7 @@ def _quoted_system_state(quote: string) {
  * @returns bool
  */
 def _is_whitespace(c: string) {
-  return c == ' ' or c == '\n' or c == '\t' or
-    c == '\f' or c == '\r'
+  return c == ' ' or c == '\n' or c == '\t' or c == '\f' or c == '\r'
 }
 
 /**

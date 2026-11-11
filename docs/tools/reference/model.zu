@@ -109,7 +109,13 @@ class ClassDoc {
   capabilities() {
     var found = []
 
-    for tag in ['printable', 'serializable', 'valueable', 'numeric', 'iterable'] {
+    for tag in [
+      'printable',
+      'serializable',
+      'valueable',
+      'numeric',
+      'iterable',
+    ] {
       if self.block.has(tag) {
         found.append(tag)
       }
@@ -291,7 +297,7 @@ def _class(node, block) {
     node.fields.name,
     superclass == nil ? nil : superclass.fields.name,
     block,
-    node.line
+    node.line,
   )
 
   _paired(node.fields.properties, @(inner, member_block, documented) {
@@ -436,7 +442,8 @@ def read(name: string, path: string, is_package: bool) {
     }
 
     if inner.kind == 'Var' {
-      if _is_private(inner.fields.name) or INTRINSICS.contains(inner.fields.name) {
+      if _is_private(inner.fields.name) or
+          INTRINSICS.contains(inner.fields.name) {
         continue
       }
 
@@ -478,9 +485,9 @@ def read(name: string, path: string, is_package: bool) {
 # rather than part of its name.
 def _module_name(relative: string) {
   var trimmed = relative
-    .replace('/\/index\.zu$/', '')
-    .replace('/\.stub\.zu$/', '')
-    .replace('/\.zu$/', '')
+      .replace('/\/index\.zu$/', '')
+      .replace('/\.stub\.zu$/', '')
+      .replace('/\.zu$/', '')
 
   return trimmed.replace('/\//', '.')
 }
@@ -536,7 +543,12 @@ def _resolve(module, prefix: string, root: string) {
   }
 
   for klass in module.classes {
-    for group in [klass.fields, klass.statics, klass.methods, klass.static_methods] {
+    for group in [
+      klass.fields,
+      klass.statics,
+      klass.methods,
+      klass.static_methods,
+    ] {
       for member in group {
         member.path = '.'.join([klass.path, member.name])
       }
@@ -549,9 +561,8 @@ def _resolve(module, prefix: string, root: string) {
 
     # Not re-exported at all, or hidden behind a private alias: the
     # only way in is a direct `import package.child`.
-    if exposure.style == 'none'
-      or (exposure.style == 'namespace' and _is_private(exposure.binding))
-    {
+    if exposure.style == 'none' or
+        (exposure.style == 'namespace' and _is_private(exposure.binding)) {
       child.exposure = 'direct'
       _resolve(child, '.'.join([prefix, base]), root)
       continue
@@ -581,7 +592,12 @@ def _resolve(module, prefix: string, root: string) {
     }
 
     for klass in child.classes {
-      for group in [klass.fields, klass.statics, klass.methods, klass.static_methods] {
+      for group in [
+        klass.fields,
+        klass.statics,
+        klass.methods,
+        klass.static_methods,
+      ] {
         for member in group {
           member.path = '.'.join([klass.path, member.name])
         }

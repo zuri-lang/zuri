@@ -36,7 +36,11 @@ import .errors { MessageError }
 # The transfer encodings a part's Content-Transfer-Encoding may name.
 # The first three leave the data alone and only describe it.
 var TRANSFER_ENCODINGS = [
-  '7bit', '8bit', 'binary', 'base64', 'quoted-printable',
+  '7bit',
+  '8bit',
+  'binary',
+  'base64',
+  'quoted-printable',
 ]
 
 # The line length RFC 2045 sets for an encoded body, counting the soft
@@ -58,10 +62,10 @@ var _Q_SAFE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!*+
 # control characters, which this maps to the punctuation and symbols
 # that live there instead.
 var _CP1252_HIGH = [
-  0x20ac, 0x81, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021,
-  0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0x8d, 0x017d, 0x8f,
-  0x90, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014,
-  0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x9d, 0x017e, 0x0178,
+  0x20ac, 0x81, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030,
+  0x0160, 0x2039, 0x0152, 0x8d, 0x017d, 0x8f, 0x90, 0x2018, 0x2019, 0x201c,
+  0x201d, 0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x9d,
+  0x017e, 0x0178,
 ]
 
 # The eight places iso-8859-15 differs from iso-8859-1, by the byte
@@ -303,9 +307,9 @@ def decode_quoted_printable(text) {
       continue
     }
 
-    if index + 2 < raw.length()
-      and raw[index + 1] == 0x0d
-      and raw[index + 2] == 0x0a {
+    if index + 2 < raw.length() and
+        raw[index + 1] == 0x0d and
+        raw[index + 2] == 0x0a {
       index += 3
       continue
     }
@@ -393,8 +397,12 @@ def _canonical_charset(charset: string) {
     return 'us-ascii'
   }
 
-  if name == 'latin1' or name == 'latin-1' or name == 'iso8859-1'
-    or name == 'iso_8859-1' or name == 'l1' or name == 'cp819' {
+  if name == 'latin1' or
+      name == 'latin-1' or
+      name == 'iso8859-1' or
+      name == 'iso_8859-1' or
+      name == 'l1' or
+      name == 'cp819' {
     return 'iso-8859-1'
   }
 
@@ -462,18 +470,18 @@ def _from_utf16(data, name: string) {
   var parts = []
 
   while at + 1 < data.length() {
-    var unit = big ?
-      (data[at] << 8) | data[at + 1] :
-      (data[at + 1] << 8) | data[at]
+    var unit = big
+        ? (data[at] << 8) | data[at + 1]
+        : (data[at + 1] << 8) | data[at]
 
     at += 2
 
     # A character outside the basic plane arrives as two units that
     # have to be put back together.
     if unit >= 0xd800 and unit <= 0xdbff and at + 1 < data.length() {
-      var low = big ?
-        (data[at] << 8) | data[at + 1] :
-        (data[at + 1] << 8) | data[at]
+      var low = big
+          ? (data[at] << 8) | data[at + 1]
+          : (data[at + 1] << 8) | data[at]
 
       if low >= 0xdc00 and low <= 0xdfff {
         at += 2
@@ -588,9 +596,8 @@ def _pick_method(text: string) {
 # up in ordinary text too and a header that merely looks encoded must
 # be left alone.
 def _scan_word(text: string, start: number) {
-  if !text[start, start + 2 > text.length()
-    ? text.length()
-    : start + 2].starts_with('=?') {
+  if !text[start, start + 2 > text.length() ? text.length() : start + 2]
+      .starts_with('=?') {
     return nil
   }
 
@@ -712,10 +719,10 @@ def decode_words(text: string) {
 
     var character = text[index]
 
-    if character == ' '
-      or character == '\t'
-      or character == '\r'
-      or character == '\n' {
+    if character == ' ' or
+        character == '\t' or
+        character == '\r' or
+        character == '\n' {
       gap += character
       index++
       continue
@@ -739,8 +746,8 @@ def decode_words(text: string) {
 }
 
 # The characters RFC 2231 lets a parameter value carry unencoded.
-var _ATTRIBUTE_SAFE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-  + '0123456789!#$&+-.^_`|~'
+var _ATTRIBUTE_SAFE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' +
+    '0123456789!#$&+-.^_`|~'
 
 # How much of one continuation line the value gets, leaving room for
 # the parameter name and the markers around it.
@@ -832,9 +839,9 @@ def _percent_encode(value: string) {
     }
 
     parts.append(
-      '%'
-        + _HEX[(byte_value >> 4) & 0x0f].chr()
-        + _HEX[byte_value & 0x0f].chr(),
+      '%' +
+          _HEX[(byte_value >> 4) & 0x0f].chr() +
+          _HEX[byte_value & 0x0f].chr(),
     )
   }
 

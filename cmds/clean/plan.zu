@@ -23,25 +23,34 @@ def parser() {
   parser.description = 'Frees the space downloads, logs and installed packages take up.'
   parser.epilog = 'With nothing chosen, the download cache and the logs are cleaned.'
 
-  parser.add_option('cache',
+  parser.add_option(
+    'cache',
     'The download cache: archives, registry indexes, git checkouts',
-    { short_name: 'c' })
+    { short_name: 'c' },
+  )
   parser.add_option('runtimes', 'The runtimes zuri bundle downloaded', nil)
+  parser.add_option('logs', 'The logs install and uninstall scripts left', {
+    short_name: 'l',
+  })
   parser.add_option(
-    'logs', 'The logs install and uninstall scripts left', { short_name: 'l' },
+    'libs',
+    "The project's installed packages; zuri restore brings them back",
+    nil,
   )
-  parser.add_option('libs',
-    "The project's installed packages; zuri restore brings them back", nil)
   parser.add_option('all', 'All of the above', { short_name: 'a' })
-  parser.add_option('older-than',
-    'Only what has not changed for this long, such as 30d or 12h',
-    { type: args.STRING, metavar: 'age' })
-  parser.add_option('global',
-    "With libs, this user's packages rather than the project's",
-    { short_name: 'g' })
   parser.add_option(
-    'dry-run', 'Say what would go and remove nothing', { short_name: 'n' },
+    'older-than',
+    'Only what has not changed for this long, such as 30d or 12h',
+    { type: args.STRING, metavar: 'age' },
   )
+  parser.add_option(
+    'global',
+    "With libs, this user's packages rather than the project's",
+    { short_name: 'g' },
+  )
+  parser.add_option('dry-run', 'Say what would go and remove nothing', {
+    short_name: 'n',
+  })
 
   return parser
 }

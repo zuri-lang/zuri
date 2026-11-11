@@ -172,9 +172,10 @@ def rgb_to_ansi256(r: int, g: int, b: int) {
     return (((r - 8) / 247) * 24).round() + 232
   }
 
-  return 16 + (36 * (r / 255 * 5).round()) +
-    (6 * (g / 255 * 5).round()) +
-    (b / 255 * 5).round()
+  return 16 +
+      (36 * (r / 255 * 5).round()) +
+      (6 * (g / 255 * 5).round()) +
+      (b / 255 * 5).round()
 }
 
 /**
@@ -247,8 +248,8 @@ def _is_hex_digits(text) {
 
     # 0-9, then a-f, then A-F.
     if (code < 48 or code > 57) and
-      (code < 97 or code > 102) and
-      (code < 65 or code > 70) {
+        (code < 97 or code > 102) and
+        (code < 65 or code > 70) {
       return false
     }
   }
@@ -329,9 +330,9 @@ def hex_to_rgb(h: string) {
   var number = v.to_number(16)
 
   var a = (number & 0xFF) / 255,
-    b = (number & 0xFF00) >> 8,
-    g = (number & 0xFF0000) >> 16,
-    r = (number & 0xFF000000) >> 24
+      b = (number & 0xFF00) >> 8,
+      g = (number & 0xFF0000) >> 16,
+      r = (number & 0xFF000000) >> 24
 
   return [r, g, b, a]
 }
@@ -647,8 +648,8 @@ def rgb_to_xyz(r: int, g: int, b: int) {
   b = b > 0.04045 ? (((b + 0.055) / 1.055) ** 2.4) : (b / 12.92)
 
   var x = (r * 0.4124564) + (g * 0.3575761) + (b * 0.1804375),
-    y = (r * 0.2126729) + (g * 0.7151522) + (b * 0.072175),
-    z = (r * 0.0193339) + (g * 0.119192) + (b * 0.9503041)
+      y = (r * 0.2126729) + (g * 0.7151522) + (b * 0.072175),
+      z = (r * 0.0193339) + (g * 0.119192) + (b * 0.9503041)
 
   return [x * 100, y * 100, z * 100]
 }
@@ -676,8 +677,7 @@ def rgb_to_lab(r: int, g: int, b: int) {
   y = y > 0.008856 ? (y ** (1 / 3)) : (7.787 * y) + (16 / 116)
   z = z > 0.008856 ? (z ** (1 / 3)) : (7.787 * z) + (16 / 116)
 
-  var l = (116 * y) - 16,
-    a = 500 * (x - y)
+  var l = (116 * y) - 16, a = 500 * (x - y)
   b = 200 * (y - z)
 
   return [l, a, b]
@@ -724,8 +724,7 @@ def hsl_to_rgb(h: number, s: number, l: number) {
     t2 = l + s - l * s
   }
 
-  var t1 = 2 * l - t2,
-    rgb = [0, 0, 0]
+  var t1 = 2 * l - t2, rgb = [0, 0, 0]
 
   iter var i = 0; i < 3; i++ {
     t3 = h + 1 / 3 * -(i - 1)
@@ -792,10 +791,10 @@ def hsv_to_rgb(h: number, s: number, v: number) {
   v /= 100
 
   var hi = h.floor() % 6,
-    f = h - h.floor(),
-    x = (255 * v * (1 - s)).round(),
-    y = (255 * v * (1 - (s * f))).round(),
-    z = (255 * v * (1 - (s * (1 - f)))).round()
+      f = h - h.floor(),
+      x = (255 * v * (1 - s)).round(),
+      y = (255 * v * (1 - (s * f))).round(),
+      z = (255 * v * (1 - (s * (1 - f)))).round()
 
   v = (v * 255).round()
 
@@ -823,10 +822,7 @@ def hsv_to_hsl(h: number, s: number, v: number) {
   s /= 100
   v /= 100
 
-  var vmax = v.max(0.01),
-    l = (2 - s) * v,
-    lmax = (2 - s) * vmax,
-    sl = s * vmax
+  var vmax = v.max(0.01), l = (2 - s) * v, lmax = (2 - s) * vmax, sl = s * vmax
 
   # The divisor can be exactly 0 (e.g. s=0, v=1, where lmax works out to
   # 2), which would divide sl's already-zero numerator into NaN rather
@@ -861,8 +857,7 @@ def hwb_to_rgb(h: number, w: number, b: number) {
     h /= ratio
   }
 
-  var i = (6 * h).floor(),
-    v = 1 - b
+  var i = (6 * h).floor(), v = 1 - b
   var f = 6 * h - i
 
   if i & 0x01 != 0 {
@@ -954,17 +949,11 @@ def xyz_to_rgb(x: number, y: number, z: number) {
   b = (x * 0.0556434) + (y * -0.2040259) + (z * 1.0572252)
 
   # Assume sRGB
-  r = r > 0.0031308 ?
-    ((1.055 * (r ** (1.0 / 2.4))) - 0.055) :
-    r * 12.92
+  r = r > 0.0031308 ? ((1.055 * (r ** (1.0 / 2.4))) - 0.055) : r * 12.92
 
-  g = g > 0.0031308 ?
-    ((1.055 * (g ** (1.0 / 2.4))) - 0.055) :
-    g * 12.92
+  g = g > 0.0031308 ? ((1.055 * (g ** (1.0 / 2.4))) - 0.055) : g * 12.92
 
-  b = b > 0.0031308 ?
-    ((1.055 * (b ** (1.0 / 2.4))) - 0.055) :
-    b * 12.92
+  b = b > 0.0031308 ? ((1.055 * (b ** (1.0 / 2.4))) - 0.055) : b * 12.92
 
   r = 0.max(r).min(1)
   g = 0.max(g).min(1)
@@ -1028,7 +1017,10 @@ def lighten(hex: string, amount: number) {
   var out = hsl_to_rgb(hsl[0], hsl[1], (hsl[2] + amount).max(0).min(100))
 
   return rgb_to_hex(
-    out[0].round(), out[1].round(), out[2].round(), _alpha_byte(rgb[3]),
+    out[0].round(),
+    out[1].round(),
+    out[2].round(),
+    _alpha_byte(rgb[3]),
   )
 }
 
@@ -1059,7 +1051,10 @@ def saturate(hex: string, amount: number) {
   var out = hsl_to_rgb(hsl[0], (hsl[1] + amount).max(0).min(100), hsl[2])
 
   return rgb_to_hex(
-    out[0].round(), out[1].round(), out[2].round(), _alpha_byte(rgb[3]),
+    out[0].round(),
+    out[1].round(),
+    out[2].round(),
+    _alpha_byte(rgb[3]),
   )
 }
 
@@ -1099,7 +1094,10 @@ def invert(hex: string) {
 
   var rgb = hex_to_rgb(hex)
   return rgb_to_hex(
-    255 - rgb[0], 255 - rgb[1], 255 - rgb[2], _alpha_byte(rgb[3]),
+    255 - rgb[0],
+    255 - rgb[1],
+    255 - rgb[2],
+    _alpha_byte(rgb[3]),
   )
 }
 

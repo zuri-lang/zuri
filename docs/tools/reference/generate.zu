@@ -87,7 +87,6 @@ def main() {
   var findings = audit.run()
   var roots = model.read_all(LIBS)
 
-
   catalogue.check(roots)
 
   var index = render.build_index(roots)
@@ -99,7 +98,10 @@ def main() {
 
   for root in roots {
     for module in root.tree() {
-      file(os.join_paths(OUT, '${module.slug()}.md'), 'w').write(render.page(module, index))
+      file(
+        os.join_paths(OUT, '${module.slug()}.md'),
+        'w',
+      ).write(render.page(module, index))
 
       pages++
       members += module.members().length()
@@ -110,7 +112,10 @@ def main() {
     }
   }
 
-  file(os.join_paths(OUT, 'index.md'), 'w').write(catalogue.landing(roots, index))
+  file(
+    os.join_paths(OUT, 'index.md'),
+    'w',
+  ).write(catalogue.landing(roots, index))
   file(os.join_paths(OUT, 'SUMMARY.md'), 'w').write(_summary(roots))
 
   echo '${roots.length()} modules, ${pages} pages, ${members} documented names'

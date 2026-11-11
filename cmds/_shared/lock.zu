@@ -68,7 +68,9 @@ class Lock {
       return nil
     } as error {
       if !file(self.path).exists() {
-        raise LockError("could not create the lock '${self.path}': ${error.message}")
+        raise LockError(
+          "could not create the lock '${self.path}': ${error.message}",
+        )
       }
     }
 
@@ -77,8 +79,8 @@ class Lock {
 
       return {
         pid: lines.length() > 0 and !lines[0].is_empty()
-          ? lines[0].to_number()
-          : 0,
+            ? lines[0].to_number()
+            : 0,
         host: lines.length() > 1 ? lines[1] : '',
       }
     } as error {
@@ -150,8 +152,8 @@ class Lock {
 
       if time() >= deadline {
         raise LockError(
-          'another zuri command (process ${holder.pid}${local ? "" : " on " + holder.host}) '
-            + "is still working here; if it is not, delete '${self.path}'",
+          'another zuri command (process ${holder.pid}${local ? "" : " on " + holder.host}) ' +
+              "is still working here; if it is not, delete '${self.path}'",
         )
       }
 

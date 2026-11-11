@@ -46,9 +46,9 @@ def _answer_id(value) {
 # True for a value that has the shape of a response, which JSON-RPC
 # never answers, even when it is malformed.
 def _looks_like_response(value) {
-  return is_dict(value) and !value.contains('method') and (
-    value.contains('result') or value.contains('error')
-  )
+  return is_dict(value) and
+      !value.contains('method') and
+      (value.contains('result') or value.contains('error'))
 }
 
 # Turns one message, as its text or as the bytes of its text, into
@@ -86,7 +86,9 @@ def _decode(body) {
 
 def _check_method(method: string) {
   if method.starts_with('rpc.') {
-    raise ValueError("method names starting with 'rpc.' are reserved by JSON-RPC")
+    raise ValueError(
+      "method names starting with 'rpc.' are reserved by JSON-RPC",
+    )
   }
 }
 
@@ -123,7 +125,12 @@ class Context {
    *    its handler returns, which needs a connection to answer on.
    */
   @new(
-    endpoint, id, method: string, is_request: bool, request, can_defer: bool,
+    endpoint,
+    id,
+    method: string,
+    is_request: bool,
+    request,
+    can_defer: bool,
   ) {
     self.endpoint = endpoint
     self.id = id
@@ -167,7 +174,9 @@ class Context {
     }
 
     if !self._can_defer {
-      raise ValueError('a request answered in its own exchange cannot be deferred')
+      raise ValueError(
+        'a request answered in its own exchange cannot be deferred',
+      )
     }
 
     self._deferred = true
@@ -219,7 +228,9 @@ class Context {
 
   _answer(response) {
     if !self._deferred {
-      raise ValueError('only a deferred request is answered through its context')
+      raise ValueError(
+        'only a deferred request is answered through its context',
+      )
     }
 
     if self._answered {
@@ -470,8 +481,8 @@ class Service {
    * @returns string
    */
   to_string() {
-    var count = self._request_handlers.length()
-      + self._notification_handlers.length()
+    var count = self._request_handlers.length() +
+        self._notification_handlers.length()
 
     return 'Service(${count} methods)'
   }
@@ -509,7 +520,8 @@ class Service {
 
     if value.is_empty() {
       var empty = RpcError(
-        INVALID_REQUEST, 'Invalid Request: a batch must not be empty',
+        INVALID_REQUEST,
+        'Invalid Request: a batch must not be empty',
       )
       return Response.failure(nil, empty)
     }
@@ -517,7 +529,8 @@ class Service {
     if self._batch_limit != nil and value.length() > self._batch_limit {
       var detail = 'a batch of ${value.length()} messages is over the limit of ${self._batch_limit}'
       return Response.failure(
-        nil, RpcError(INVALID_REQUEST, 'Invalid Request: ${detail}'),
+        nil,
+        RpcError(INVALID_REQUEST, 'Invalid Request: ${detail}'),
       )
     }
 
@@ -588,7 +601,8 @@ class Service {
 
   _notify(notification, value, request) {
     var handler = self._handler_for(
-      self._notification_handlers, notification.method,
+      self._notification_handlers,
+      notification.method,
     )
 
     if handler == nil {
@@ -609,13 +623,19 @@ class Service {
 
     if handler == nil {
       var missing = RpcError(
-        METHOD_NOT_FOUND, 'Method not found: ${call.method}',
+        METHOD_NOT_FOUND,
+        'Method not found: ${call.method}',
       )
       return Response.failure(call.id, missing)
     }
 
     var context = Context(
-      self, call.id, call.method, true, request, self._can_defer(),
+      self,
+      call.id,
+      call.method,
+      true,
+      request,
+      self._can_defer(),
     )
     var result = nil
 

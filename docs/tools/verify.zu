@@ -32,7 +32,10 @@ var ROOT = os.dir_name(os.dir_name(os.dir_name(__file__)))
 # The two sets of pages this checks, in the order they are reported.
 var BOOKS = [
   { name: 'book', pages: os.join_paths(ROOT, 'docs', 'book', 'src') },
-  { name: 'reference', pages: os.join_paths(ROOT, 'target', 'reference', 'src') },
+  {
+    name: 'reference',
+    pages: os.join_paths(ROOT, 'target', 'reference', 'src'),
+  },
 ]
 
 var WORK = os.join_paths(ROOT, 'tmp', 'docverify')
@@ -150,9 +153,9 @@ def _check(book, filter: string, fail: function) {
       # An example that catches its own error still exits cleanly, so
       # "did it run" is not enough to decide whether it needs the rest of
       # the page: a wrong answer is a reason to retry too.
-      var wrong = example.expected != nil
-        and result.ok
-        and result.output.rtrim() != example.expected.rtrim()
+      var wrong = example.expected != nil and
+          result.ok and
+          result.output.rtrim() != example.expected.rtrim()
 
       if (!result.ok or wrong) and !earlier.is_empty() {
         var retry = _run('${'\n'.join(earlier)}\n${example.source}')
@@ -164,7 +167,9 @@ def _check(book, filter: string, fail: function) {
       }
 
       if !result.ok {
-        fail('${book.name}/${name}:${example.line}  did not run\n    ${result.output.lines()[0]}')
+        fail(
+          '${book.name}/${name}:${example.line}  did not run\n    ${result.output.lines()[0]}',
+        )
         continue
       }
 
@@ -183,9 +188,11 @@ def _check(book, filter: string, fail: function) {
       }
 
       if actual != expected {
-        fail('${book.name}/${name}:${example.line}  wrong output\n'
-          + '    expected: ${expected}\n'
-          + '    actual:   ${actual}')
+        fail(
+          '${book.name}/${name}:${example.line}  wrong output\n' +
+              '    expected: ${expected}\n' +
+              '    actual:   ${actual}',
+        )
       }
     }
   }
@@ -196,6 +203,6 @@ def _check(book, filter: string, fail: function) {
 if __root__ == __file__ {
   main(
     os.args.length() > 2 ? os.args[2] : '',
-    os.args.length() > 3 ? os.args[3] : ''
+    os.args.length() > 3 ? os.args[3] : '',
   )
 }

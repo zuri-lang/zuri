@@ -24,16 +24,16 @@ const _LEAVING = ['Return', 'Raise', 'Break', 'Continue']
 def _leaves(node) {
   var statement = node.kind == 'Stmt' ? node.fields.statement : node
 
-  return statement != nil
-    and is_instance(statement)
-    and _LEAVING.contains(statement.kind)
+  return statement != nil and
+      is_instance(statement) and
+      _LEAVING.contains(statement.kind)
 }
 
 # Whether `value` is a syntax tree node.
 def _is_node(value) {
-  return is_instance(value)
-    and hasprop(value, 'kind')
-    and hasprop(value, 'fields')
+  return is_instance(value) and
+      hasprop(value, 'kind') and
+      hasprop(value, 'fields')
 }
 
 # Adds to `found` the span of every statement of the list `nodes` that
@@ -130,11 +130,9 @@ def analyze(path, text: string, builtins: list) {
 
   summary.hash = digest(text)
   summary.unreachable = unreachable(parsed.nodes)
-  summary.errors = parsed.errors.map(@(error) => {
-    message: error.message,
-    start: error.start,
-    end: error.end,
-  })
+  summary.errors = parsed.errors.map(
+    @(error) => { message: error.message, start: error.start, end: error.end },
+  )
 
   return { summary, nodes: parsed.nodes }
 }

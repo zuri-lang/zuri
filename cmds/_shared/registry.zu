@@ -148,7 +148,9 @@ class Registry {
     }
 
     if parsed.scheme != 'https' and parsed.scheme != 'http' {
-      raise CommandError("'${address}' is not a registry address; it must start with https://")
+      raise CommandError(
+        "'${address}' is not a registry address; it must start with https://",
+      )
     }
 
     self.address = trimmed
@@ -180,8 +182,8 @@ class Registry {
     }
 
     raise CommandError(
-      '${self.address} is not HTTPS, and credentials are never sent over a connection '
-        + 'anyone between here and there can read; use its https:// address',
+      '${self.address} is not HTTPS, and credentials are never sent over a connection ' +
+          'anyone between here and there can read; use its https:// address',
     )
   }
 
@@ -232,7 +234,9 @@ class Registry {
     var doing = options.get('doing', 'talking to ${self.address}')
 
     if self.offline {
-      raise RegistryError('${doing}: working offline, and this needs the registry')
+      raise RegistryError(
+        '${doing}: working offline, and this needs the registry',
+      )
     }
 
     var request = options.clone()
@@ -243,14 +247,16 @@ class Registry {
       if self.token == nil {
         raise RegistryError(
           '${doing}: you are not logged in to ${self.address}; run `zuri account login`',
-          401, 'unauthenticated',
+          401,
+          'unauthenticated',
         )
       }
 
       self._check_transport()
       request.set('auth', ['bearer', self.token])
-    } else if request.get('auth', false) == 'optional' and self.token != nil
-      and (self._secure or self.insecure or _is_loopback(self._host)) {
+    } else if request.get('auth', false) == 'optional' and
+        self.token != nil and
+        (self._secure or self.insecure or _is_loopback(self._host)) {
       request.set('auth', ['bearer', self.token])
     } else {
       request.remove('auth')
@@ -274,12 +280,14 @@ class Registry {
         failure = error
       }
 
-      var retry = failure != nil
-        or (response != nil and _RETRY_STATUSES.contains(response.status))
+      var retry = failure != nil or
+          (response != nil and _RETRY_STATUSES.contains(response.status))
 
       if !retry or attempt == attempts {
         if failure != nil {
-          raise RegistryError('${doing}: could not reach ${self.address}: ${failure.message}')
+          raise RegistryError(
+            '${doing}: could not reach ${self.address}: ${failure.message}',
+          )
         }
 
         return response
@@ -303,8 +311,8 @@ class Registry {
   # Sends a request that is expected to answer with JSON and a 2xx.
   _json(method: string, path: string, options: ?dict) {
     var doing = options == nil
-      ? 'talking to ${self.address}'
-      : options.get('doing', '')
+        ? 'talking to ${self.address}'
+        : options.get('doing', '')
     var response = self.send(method, path, options)
 
     if !response.is_ok() {
@@ -318,7 +326,9 @@ class Registry {
     catch {
       return response.as_dict()
     } as error {
-      raise RegistryError('${doing}: ${self.address} answered with something that is not JSON')
+      raise RegistryError(
+        '${doing}: ${self.address} answered with something that is not JSON',
+      )
     }
   }
 
@@ -328,14 +338,14 @@ class Registry {
    * @returns dict: `{ api, name, max_archive_size, signup }`.
    */
   info() {
-    var answer = self._json(
-      'GET', '/api/v1/config', { doing: 'reading ${self.address}' },
-    )
+    var answer = self._json('GET', '/api/v1/config', {
+      doing: 'reading ${self.address}',
+    })
 
     if answer.get('api', nil) != API_VERSION {
       raise RegistryError(
-        '${self.address} speaks protocol version ${answer.get("api", "unknown")}, and this '
-          + 'version of zuri speaks ${API_VERSION}',
+        '${self.address} speaks protocol version ${answer.get("api", "unknown")}, and this ' +
+            'version of zuri speaks ${API_VERSION}',
       )
     }
 
@@ -368,7 +378,8 @@ class Registry {
       if cached == nil {
         raise RegistryError(
           "working offline, and '${name}' from ${self.address} was never downloaded here",
-          404, 'not_found',
+          404,
+          'not_found',
         )
       }
 
@@ -394,7 +405,8 @@ class Registry {
 
     if response.status == 404 {
       raise RegistryError(
-        "there is no package called '${name}' on ${self.address}", 404,
+        "there is no package called '${name}' on ${self.address}",
+        404,
         'not_found',
       )
     }
@@ -435,17 +447,16 @@ class Registry {
     if self.offline {
       raise RegistryError(
         'working offline, and ${name} ${version} was never downloaded here',
-        404, 'not_found',
+        404,
+        'not_found',
       )
     }
 
     var doing = 'downloading ${name} ${version} from ${self.address}'
     var response = self.send(
-      'GET', '/api/v1/packages/${name}/${version}/archive', {
-        doing,
-        timeout: 300000,
-        auth: 'optional',
-      },
+      'GET',
+      '/api/v1/packages/${name}/${version}/archive',
+      { doing, timeout: 300000, auth: 'optional' },
     )
 
     if !response.is_ok() {
@@ -457,10 +468,10 @@ class Registry {
 
     if actual != checksum {
       raise RegistryError(
-        '${doing}: the archive does not match its checksum\n'
-          + '  expected ${checksum}\n  received ${actual}\n'
-          + 'Nothing was installed. The download was damaged on the way, or the registry '
-          + 'is not serving what it published.',
+        '${doing}: the archive does not match its checksum\n' +
+            '  expected ${checksum}\n  received ${actual}\n' +
+            'Nothing was installed. The download was damaged on the way, or the registry ' +
+            'is not serving what it published.',
       )
     }
 
@@ -512,7 +523,8 @@ class Registry {
 
     if response.status == 404 {
       raise RegistryError(
-        "there is no package called '${name}' on ${self.address}", 404,
+        "there is no package called '${name}' on ${self.address}",
+        404,
         'not_found',
       )
     }
@@ -539,7 +551,10 @@ class Registry {
 
     form.add_field('metadata', json.encode(metadata))
     form.add_file(
-      'archive', os.base_name(path), fsx.read_bytes(path), 'application/gzip',
+      'archive',
+      os.base_name(path),
+      fsx.read_bytes(path),
+      'application/gzip',
     )
 
     return self._json('PUT', '/api/v1/packages', {
@@ -652,10 +667,12 @@ class Registry {
    * @returns list[dict]
    */
   tokens() {
-    return self._json('GET', '/api/v1/tokens', {
-      auth: true,
-      doing: 'listing tokens on ${self.address}',
-    }).get('tokens', [])
+    return self
+        ._json('GET', '/api/v1/tokens', {
+          auth: true,
+          doing: 'listing tokens on ${self.address}',
+        })
+        .get('tokens', [])
   }
 
   /**
@@ -694,6 +711,9 @@ def cached_archive(checksum: string) {
   var hex = checksum.replace('sha256:', '', false)
 
   return os.join_paths(
-    paths.cache_dir(), 'archives', hex[0, 2], hex + '.tar.gz',
+    paths.cache_dir(),
+    'archives',
+    hex[0, 2],
+    hex + '.tar.gz',
   )
 }

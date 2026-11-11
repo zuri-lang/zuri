@@ -232,8 +232,10 @@ class Ipv4 {
    * @returns bool
    */
   is_unspecified() {
-    return self._octets[0] == 0 and self._octets[1] == 0 and
-      self._octets[2] == 0 and self._octets[3] == 0
+    return self._octets[0] == 0 and
+        self._octets[1] == 0 and
+        self._octets[2] == 0 and
+        self._octets[3] == 0
   }
 
   /**
@@ -325,8 +327,9 @@ class Ipv4 {
    * @returns bool
    */
   is_shared() {
-    return self._octets[0] == 100 and self._octets[1] >= 64 and
-      self._octets[1] <= 127
+    return self._octets[0] == 100 and
+        self._octets[1] >= 64 and
+        self._octets[1] <= 127
   }
 
   /**
@@ -336,7 +339,7 @@ class Ipv4 {
    */
   is_benchmarking() {
     return self._octets[0] == 198 and
-      (self._octets[1] == 18 or self._octets[1] == 19)
+        (self._octets[1] == 18 or self._octets[1] == 19)
   }
 
   /**
@@ -388,9 +391,14 @@ class Ipv4 {
       return false
     }
 
-    return !(self.is_private() or self.is_shared() or self.is_loopback() or
-      self.is_link_local() or self.is_documentation() or
-      self.is_benchmarking() or self.is_reserved() or self.is_broadcast())
+    return !(self.is_private() or
+        self.is_shared() or
+        self.is_loopback() or
+        self.is_link_local() or
+        self.is_documentation() or
+        self.is_benchmarking() or
+        self.is_reserved() or
+        self.is_broadcast())
   }
 
   /**
@@ -419,9 +427,9 @@ class Ipv4 {
     var check = other.to_list()
 
     return self._octets[0] == check[0] and
-      self._octets[1] == check[1] and
-      self._octets[2] == check[2] and
-      self._octets[3] == check[3]
+        self._octets[1] == check[1] and
+        self._octets[2] == check[2] and
+        self._octets[3] == check[3]
   }
 
   /**
@@ -618,8 +626,14 @@ class Ipv6 {
     }
 
     return Ipv6(
-      groups[0], groups[1], groups[2], groups[3],
-      groups[4], groups[5], groups[6], groups[7],
+      groups[0],
+      groups[1],
+      groups[2],
+      groups[3],
+      groups[4],
+      groups[5],
+      groups[6],
+      groups[7],
     )
   }
 
@@ -633,9 +647,14 @@ class Ipv6 {
    */
   segments() {
     return [
-      self._segments[0], self._segments[1], self._segments[2],
-      self._segments[3], self._segments[4], self._segments[5],
-      self._segments[6], self._segments[7],
+      self._segments[0],
+      self._segments[1],
+      self._segments[2],
+      self._segments[3],
+      self._segments[4],
+      self._segments[5],
+      self._segments[6],
+      self._segments[7],
     ]
   }
 
@@ -705,7 +724,7 @@ class Ipv6 {
     var a = self._segments[0]
 
     return (a == 0x2001 and self._segments[1] == 0x0db8) or
-      (a == 0x3fff and self._segments[1] <= 0x0fff)
+        (a == 0x3fff and self._segments[1] <= 0x0fff)
   }
 
   /**
@@ -733,8 +752,9 @@ class Ipv6 {
     var a = self._segments[0]
     var b = self._segments[1]
 
-    if self.is_unspecified() or self.is_loopback() or
-      self.to_ipv4_mapped() != nil {
+    if self.is_unspecified() or
+        self.is_loopback() or
+        self.to_ipv4_mapped() != nil {
       return false
     }
 
@@ -742,8 +762,10 @@ class Ipv6 {
       return false
     }
 
-    if a == 0x100 and b == 0 and self._segments[2] == 0 and
-      self._segments[3] <= 1 {
+    if a == 0x100 and
+        b == 0 and
+        self._segments[2] == 0 and
+        self._segments[3] <= 1 {
       return false
     }
 
@@ -751,8 +773,11 @@ class Ipv6 {
       return false
     }
 
-    return !(a == 0x2002 or a == 0x5f00 or self.is_documentation() or
-      self.is_unique_local() or self.is_unicast_link_local())
+    return !(a == 0x2002 or
+        a == 0x5f00 or
+        self.is_documentation() or
+        self.is_unique_local() or
+        self.is_unicast_link_local())
   }
 
   # The allocations inside `2001::/23` the registry marks global: the
@@ -771,8 +796,9 @@ class Ipv6 {
       return false
     }
 
-    return b == 3 or (b == 4 and self._segments[2] == 0x112) or
-      (b >= 0x20 and b <= 0x3f)
+    return b == 3 or
+        (b == 4 and self._segments[2] == 0x112) or
+        (b >= 0x20 and b <= 0x3f)
   }
 
   /**

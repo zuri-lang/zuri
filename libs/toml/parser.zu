@@ -23,7 +23,13 @@
 
 import .errors { ParseError }
 import .document {
-  Document, Table, ArrayOfTables, Entry, Value, Array, InlineTable,
+  Document,
+  Table,
+  ArrayOfTables,
+  Entry,
+  Value,
+  Array,
+  InlineTable,
 }
 import .values { DateTime, LocalDateTime, LocalDate, LocalTime }
 
@@ -549,8 +555,9 @@ class _Parser {
         # A backslash at the end of a line swallows the break and every
         # space that follows it, which is how a long string is folded
         # across lines without gaining whitespace.
-        if next == '\n' or next == '\r' or
-          ((next == ' ' or next == '\t') and self._only_spaces_to_eol(1)) {
+        if next == '\n' or
+            next == '\r' or
+            ((next == ' ' or next == '\t') and self._only_spaces_to_eol(1)) {
           self._advance()
           self._spaces()
 
@@ -572,8 +579,8 @@ class _Parser {
 
       var code = ch.ord()
 
-      if (code < 32 and code != 9 and code != 10 and code != 13)
-        or code == 127 {
+      if (code < 32 and code != 9 and code != 10 and code != 13) or
+          code == 127 {
         self._fail('a string cannot hold a raw control character')
       }
 
@@ -681,8 +688,8 @@ class _Parser {
 
       var code = ch.ord()
 
-      if (code < 32 and code != 9 and code != 10 and code != 13)
-        or code == 127 {
+      if (code < 32 and code != 9 and code != 10 and code != 13) or
+          code == 127 {
         self._fail('a string cannot hold a raw control character')
       }
 
@@ -759,8 +766,8 @@ class _Parser {
   # True when a time is what starts here: two digits and a colon.
   _starts_time() {
     return _DIGITS.contains(self._peek()) and
-      _DIGITS.contains(self._peek(1)) and
-      self._peek(2) == ':'
+        _DIGITS.contains(self._peek(1)) and
+        self._peek(2) == ':'
   }
 
   _timestamp() {
@@ -769,9 +776,11 @@ class _Parser {
     if self._starts_time() {
       var clock = self._clock()
 
-      return Value('local-time',
+      return Value(
+        'local-time',
         LocalTime(clock.hour, clock.minute, clock.second, clock.nanosecond),
-        self.src[start, self.pos])
+        self.src[start, self.pos],
+      )
     }
 
     var year = self._fixed_digits(4, 'a year')
@@ -791,32 +800,56 @@ class _Parser {
     } else {
       # A space may stand in for the `T`, but only when a clock really
       # follows it; otherwise the space ends the value.
-      if self._peek() == ' ' and _DIGITS.contains(self._peek(1)) and
-        _DIGITS.contains(self._peek(2)) and self._peek(3) == ':' {
+      if self._peek() == ' ' and
+          _DIGITS.contains(self._peek(1)) and
+          _DIGITS.contains(self._peek(2)) and
+          self._peek(3) == ':' {
         self._advance()
         joined = true
       }
     }
 
     if !joined {
-      return Value('local-date', LocalDate(year, month, day),
-        self.src[start, self.pos])
+      return Value(
+        'local-date',
+        LocalDate(year, month, day),
+        self.src[start, self.pos],
+      )
     }
 
     var clock = self._clock()
     var offset = self._offset()
 
     if offset == nil {
-      return Value('local-datetime',
-        LocalDateTime(year, month, day, clock.hour, clock.minute,
-          clock.second, clock.nanosecond),
-        self.src[start, self.pos])
+      return Value(
+        'local-datetime',
+        LocalDateTime(
+          year,
+          month,
+          day,
+          clock.hour,
+          clock.minute,
+          clock.second,
+          clock.nanosecond,
+        ),
+        self.src[start, self.pos],
+      )
     }
 
-    return Value('datetime',
-      DateTime(year, month, day, clock.hour, clock.minute, clock.second,
-        clock.nanosecond, offset),
-      self.src[start, self.pos])
+    return Value(
+      'datetime',
+      DateTime(
+        year,
+        month,
+        day,
+        clock.hour,
+        clock.minute,
+        clock.second,
+        clock.nanosecond,
+        offset,
+      ),
+      self.src[start, self.pos],
+    )
   }
 
   _clock() {
@@ -904,8 +937,11 @@ class _Parser {
     if self._peek() == 'i' {
       self._word('inf')
 
-      return Value('float', sign == '-' ? -1 / 0 : 1 / 0,
-        self.src[start, self.pos])
+      return Value(
+        'float',
+        sign == '-' ? -1 / 0 : 1 / 0,
+        self.src[start, self.pos],
+      )
     }
 
     if self._peek() == 'n' {
@@ -921,8 +957,9 @@ class _Parser {
       if marker == 'x' or marker == 'o' or marker == 'b' {
         self._skip(2)
 
-        var alphabet = marker == 'x' ? _HEX_DIGITS
-          : (marker == 'o' ? _OCTAL_DIGITS : _BINARY_DIGITS)
+        var alphabet = marker == 'x'
+            ? _HEX_DIGITS
+            : (marker == 'o' ? _OCTAL_DIGITS : _BINARY_DIGITS)
         var radix = marker == 'x' ? 16 : (marker == 'o' ? 8 : 2)
         var digits = self._digit_run(alphabet)
 
@@ -1057,11 +1094,11 @@ class _Parser {
       return self._timestamp()
     }
 
-    if _DIGITS.contains(ch)
-      or ch == '+'
-      or ch == '-'
-      or ch == 'i'
-      or ch == 'n' {
+    if _DIGITS.contains(ch) or
+        ch == '+' or
+        ch == '-' or
+        ch == 'i' or
+        ch == 'n' {
       return self._number()
     }
 
@@ -1203,8 +1240,10 @@ class _Parser {
         }
 
         if child.explicit {
-          self._fail("'${name}' is already a table; it cannot be extended " +
-            'with a dotted key')
+          self._fail(
+            "'${name}' is already a table; it cannot be extended " +
+                'with a dotted key',
+          )
         }
       }
 
@@ -1321,7 +1360,8 @@ class _Parser {
     var header_raw = self.src[inner, self.pos]
 
     self._expect(
-      ']', is_array ? "']]' to close the header" : "']' to close the header",
+      ']',
+      is_array ? "']]' to close the header" : "']' to close the header",
     )
 
     if is_array {
@@ -1361,8 +1401,10 @@ class _Parser {
       }
 
       if child.dotted {
-        self._fail("table '${_dotted(path)}' was created by a dotted key " +
-          'and cannot be reopened')
+        self._fail(
+          "table '${_dotted(path)}' was created by a dotted key " +
+              'and cannot be reopened',
+        )
       }
     }
 

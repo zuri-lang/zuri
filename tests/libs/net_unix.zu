@@ -220,7 +220,7 @@ def test_accept_on_a_non_blocking_listener() {
 
   # Nobody waiting is an answer, not a failure.
   assert server.accept() == nil,
-    'accept() reports an empty queue rather than raising'
+      'accept() reports an empty queue rather than raising'
 
   var client = net.UnixStream()
   client.connect(path)
@@ -315,10 +315,11 @@ def test_postgres_over_a_socket() {
   # The server agrees it is a local connection: a client address is
   # only recorded for one that arrived over the network.
   assert db.fetch_value(
-    'select client_addr from pg_stat_activity where pid = pg_backend_pid()',
-    nil,
-    nil,
-  ) == nil
+        'select client_addr from pg_stat_activity where pid = pg_backend_pid()',
+        nil,
+        nil,
+      ) ==
+      nil
 
   db.close()
 

@@ -16,11 +16,21 @@ import ..analysis.scope { BUILTIN, STARRED }
 /** The token types and modifiers, in the order the protocol numbers them. */
 const LEGEND = {
   tokenTypes: [
-    'namespace', 'class', 'function', 'method', 'parameter', 'variable',
-    'property', 'decorator',
+    'namespace',
+    'class',
+    'function',
+    'method',
+    'parameter',
+    'variable',
+    'property',
+    'decorator',
   ],
   tokenModifiers: [
-    'declaration', 'readonly', 'static', 'defaultLibrary', 'deprecated',
+    'declaration',
+    'readonly',
+    'static',
+    'defaultLibrary',
+    'deprecated',
   ],
 }
 
@@ -164,9 +174,9 @@ class _Classifier {
         return self._token(query.canonical(self.linker, self.key, occurrence))
       }
       when 'member' {
-        var token = self._token(query.canonical(
-          self.linker, self.key, occurrence,
-        ))
+        var token = self._token(
+          query.canonical(self.linker, self.key, occurrence),
+        )
 
         if token != nil {
           return token
@@ -196,9 +206,9 @@ def _encode(server, document, start: int, end: int) {
   var last_end = -1
 
   for occurrence in query.occurrences(summary) {
-    if occurrence.end <= occurrence.start
-      or occurrence.start < start
-      or occurrence.end > end {
+    if occurrence.end <= occurrence.start or
+        occurrence.start < start or
+        occurrence.end > end {
       continue
     }
 
@@ -223,8 +233,8 @@ def _encode(server, document, start: int, end: int) {
 
     var delta_line = from.line - last_line
     var delta_character = delta_line == 0
-      ? from.character - last_character
-      : from.character
+        ? from.character - last_character
+        : from.character
 
     data.append(delta_line)
     data.append(delta_character)
@@ -294,8 +304,8 @@ def delta(server, params: dict) {
   var old_last = old.length() - 1
   var new_last = data.length() - 1
 
-  while suffix < shortest - prefix
-    and old[old_last - suffix] == data[new_last - suffix] {
+  while suffix < shortest - prefix and
+      old[old_last - suffix] == data[new_last - suffix] {
     suffix++
   }
 
@@ -307,11 +317,13 @@ def delta(server, params: dict) {
 
   return {
     resultId: id,
-    edits: [{
-      start: prefix,
-      deleteCount: old.length() - prefix - suffix,
-      data: data[prefix, data.length() - suffix],
-    }],
+    edits: [
+      {
+        start: prefix,
+        deleteCount: old.length() - prefix - suffix,
+        data: data[prefix, data.length() - suffix],
+      },
+    ],
   }
 }
 

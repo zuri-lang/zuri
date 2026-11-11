@@ -191,8 +191,7 @@ class BytesFeed {
   /**
    * Here for parity with `FileFeed`. There is nothing to release.
    */
-  close() {
-  }
+  close() {}
 }
 
 /**
@@ -593,7 +592,10 @@ class Connection {
    *    or `[method, target, version, fields, size, consumed, authority, cookie]`
    */
   read_request_head(
-    max_line, max_header_size, max_header_count, header_timeout,
+    max_line,
+    max_header_size,
+    max_header_count,
+    header_timeout,
   ) {
     self._compact()
 
@@ -730,7 +732,9 @@ class Connection {
 
     while remaining > 0 {
       if self.buffered() == 0 and self._fill() == 0 {
-        raise ProtocolError('connection closed while discarding ${length} bytes')
+        raise ProtocolError(
+          'connection closed while discarding ${length} bytes',
+        )
       }
 
       var available = self.buffered()
@@ -827,8 +831,8 @@ class Connection {
    * @returns bool
    */
   output_is_heavy() {
-    return self._feed != nil
-      or self._out.length() - self._out_at >= _WRITE_HIGH_WATER
+    return self._feed != nil or
+        self._out.length() - self._out_at >= _WRITE_HIGH_WATER
   }
 
   /**
@@ -1208,7 +1212,9 @@ def connect(host: string, port: int, options: ?dict) {
     catch {
       tcp.close()
     }
-    raise ConnectionError('TLS handshake with ${host} failed: ${tls_error.message}')
+    raise ConnectionError(
+      'TLS handshake with ${host} failed: ${tls_error.message}',
+    )
   }
 
   return Connection(stream, peer, local)
@@ -1257,7 +1263,9 @@ def tunnel(proxy: dict, host: string, port: int, options: ?dict) {
     var status = carrier.read_line(8192)
 
     if status == nil {
-      raise ConnectionError('the proxy at ${proxy.host}:${proxy.port} closed the connection')
+      raise ConnectionError(
+        'the proxy at ${proxy.host}:${proxy.port} closed the connection',
+      )
     }
 
     var parts = status.split(' ')
@@ -1274,13 +1282,15 @@ def tunnel(proxy: dict, host: string, port: int, options: ?dict) {
 
     if code < 200 or code > 299 {
       raise ConnectionError(
-        'the proxy at ${proxy.host}:${proxy.port} refused to open a tunnel to ${target}: '
-          + status,
+        'the proxy at ${proxy.host}:${proxy.port} refused to open a tunnel to ${target}: ' +
+            status,
       )
     }
 
     if carrier.buffered() > 0 {
-      raise ConnectionError('the proxy at ${proxy.host}:${proxy.port} spoke before ${host} did')
+      raise ConnectionError(
+        'the proxy at ${proxy.host}:${proxy.port} spoke before ${host} did',
+      )
     }
   } as error {
     carrier.close()
@@ -1289,7 +1299,9 @@ def tunnel(proxy: dict, host: string, port: int, options: ?dict) {
       raise error
     }
 
-    raise ConnectionError('the tunnel through ${proxy.host}:${proxy.port} failed: ${error.message}')
+    raise ConnectionError(
+      'the tunnel through ${proxy.host}:${proxy.port} failed: ${error.message}',
+    )
   }
 
   if !options.get('secure', false) {

@@ -87,7 +87,10 @@ class Loader {
 
     if wanted.is_empty() {
       raise TemplateNotFoundError(
-        'a template path cannot be empty', from, line, column,
+        'a template path cannot be empty',
+        from,
+        line,
+        column,
       )
     }
 
@@ -96,7 +99,10 @@ class Loader {
 
       if !os.path_contains(self.root, full) {
         raise TemplateNotFoundError(
-          'template "${path}" is outside the template root', from, line, column,
+          'template "${path}" is outside the template root',
+          from,
+          line,
+          column,
         )
       }
 
@@ -110,7 +116,9 @@ class Loader {
       if !os.path_contains(self.root, _canonical(full)) {
         raise TemplateNotFoundError(
           'template "${path}" links outside the template root',
-          from, line, column,
+          from,
+          line,
+          column,
         )
       }
 
@@ -119,7 +127,9 @@ class Loader {
 
     raise TemplateNotFoundError(
       'template "${path}" was not found under ${self.root}',
-      from, line, column,
+      from,
+      line,
+      column,
     )
   }
 
@@ -141,7 +151,10 @@ class Loader {
       return file(full).read()
     } as e {
       raise TemplateNotFoundError(
-        'template "${full}" could not be read: ${e.message}', full, 0, 0,
+        'template "${full}" could not be read: ${e.message}',
+        full,
+        0,
+        0,
       )
     }
   }

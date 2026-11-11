@@ -351,14 +351,14 @@ class StaticFiles {
     # A segment beginning with a dot is either the first one or sits
     # right behind a separator, which is the same answer splitting the
     # path into a list would give, without building the list.
-    if !self.allow_dotfiles
-      and (normalized.starts_with('.') or normalized.index_of('/.') > -1) {
+    if !self.allow_dotfiles and
+        (normalized.starts_with('.') or normalized.index_of('/.') > -1) {
       return nil
     }
 
-    var candidate = normalized.is_empty() ?
-      self.root :
-      os.join_paths(self.root, normalized)
+    var candidate = normalized.is_empty()
+        ? self.root
+        : os.join_paths(self.root, normalized)
 
     # Normalisation above already removed every `..`, but the root
     # itself may contain a symlink that points elsewhere, so the
@@ -456,7 +456,8 @@ class StaticFiles {
 
     if self.cache_age > 0 {
       response.headers.set(
-        'Cache-Control', 'public, max-age=${self.cache_age // 1}',
+        'Cache-Control',
+        'public, max-age=${self.cache_age // 1}',
       )
     }
 
@@ -483,8 +484,8 @@ class StaticFiles {
     # A range is only honoured when the client's If-Range validator
     # still matches; otherwise the representation changed under it and
     # it needs the whole thing.
-    if request.headers.contains('range')
-      and self._if_range_holds(request, tag, stats.mtime) {
+    if request.headers.contains('range') and
+        self._if_range_holds(request, tag, stats.mtime) {
       ranges = parse_range(request.headers.get('range', nil), size)
     }
 
@@ -528,7 +529,10 @@ class StaticFiles {
       return nil
     }
 
-    var options = [['br', '.br'], ['gzip', '.gz']]
+    var options = [
+      ['br', '.br'],
+      ['gzip', '.gz'],
+    ]
 
     for option in options {
       if negotiate.quality_of(accept, option[0]) > 0 {
@@ -567,9 +571,9 @@ class StaticFiles {
 
     if if_none_match != nil {
       if etag_matches(if_none_match, tag) {
-        return request.is_safe() ?
-          status.NOT_MODIFIED :
-          status.PRECONDITION_FAILED
+        return request.is_safe()
+            ? status.NOT_MODIFIED
+            : status.PRECONDITION_FAILED
       }
 
       return nil
@@ -601,9 +605,9 @@ class StaticFiles {
     # An If-Range carrying an entity tag must match strongly - a weak
     # tag cannot guarantee two byte ranges came from the same bytes.
     if if_range.trim().starts_with('"') {
-      return tag != nil
-        and !tag.starts_with('W/')
-        and _strip_weak(if_range) == _strip_weak(tag)
+      return tag != nil and
+          !tag.starts_with('W/') and
+          _strip_weak(if_range) == _strip_weak(tag)
     }
 
     var since = util.parse_date(if_range)

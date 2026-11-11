@@ -40,14 +40,17 @@ var MAGIC = 'ZURIBND1'
 def parser() {
   var parser = args.Parser('zuri bundle', false)
 
-  parser.description = 'Packages the project and a runtime together, into something that runs '
-    + 'on a machine with no zuri installed.'
+  parser.description = 'Packages the project and a runtime together, into something that runs ' +
+      'on a machine with no zuri installed.'
   parser.epilog = 'Run zuri restore first; a bundle carries the packages that are installed.'
 
-  parser.add_option('target',
+  parser.add_option(
+    'target',
     'host, all, or a platform such as aarch64-apple-darwin',
-    { short_name: 't', type: args.LIST, metavar: 'target' })
-  parser.add_option('format',
+    { short_name: 't', type: args.LIST, metavar: 'target' },
+  )
+  parser.add_option(
+    'format',
     'dir, archive, exe (one file) or app (macOS); archive by default',
     {
       short_name: 'f',
@@ -55,16 +58,23 @@ def parser() {
       choices: FORMATS,
       metavar: 'format',
       value: 'archive',
-    })
-  parser.add_option('output',
+    },
+  )
+  parser.add_option(
+    'output',
     'Where bundles are written; dist in the project by default',
-    { short_name: 'o', type: args.STRING, metavar: 'dir' })
-  parser.add_option('name',
+    { short_name: 'o', type: args.STRING, metavar: 'dir' },
+  )
+  parser.add_option(
+    'name',
     'What the program is called; the project name by default',
-    { type: args.STRING, metavar: 'name' })
-  parser.add_option('runtime',
+    { type: args.STRING, metavar: 'name' },
+  )
+  parser.add_option(
+    'runtime',
     'A runtime to build with, unpacked, in place of a release',
-    { type: args.STRING, metavar: 'dir' })
+    { type: args.STRING, metavar: 'dir' },
+  )
   parser.add_option('force', 'Replace a bundle that is already there', nil)
   parser.add_option('json', 'Print what was built as JSON', nil)
 
@@ -92,8 +102,8 @@ def targets(asked: ?list, host: string) {
     for target in picked {
       if target != host and !TARGETS.contains(target) {
         raise UsageError(
-          "'${target}' is not a platform zuri is released for; choose from "
-            + ', '.join(TARGETS),
+          "'${target}' is not a platform zuri is released for; choose from " +
+              ', '.join(TARGETS),
         )
       }
 
@@ -171,17 +181,20 @@ def check_format(format: string, target: string) {
  * @returns string
  */
 def marker(details: dict) {
-  return '# Written by zuri bundle. The runtime beside this file runs app/index.zu.\n\n'
-    + 'name = "${details.name}"\n'
-    + 'version = "${details.version}"\n'
-    + 'target = "${details.target}"\n'
-    + 'zuri = "${details.zuri}"\n'
+  return '# Written by zuri bundle. The runtime beside this file runs app/index.zu.\n\n' +
+      'name = "${details.name}"\n' +
+      'version = "${details.version}"\n' +
+      'target = "${details.target}"\n' +
+      'zuri = "${details.zuri}"\n'
 }
 
 # `text` escaped for an XML text node.
 def _xml(text: string) {
-  return text.replace('&', '&amp;', false).replace('<', '&lt;', false)
-    .replace('>', '&gt;', false).replace('"', '&quot;', false)
+  return text
+      .replace('&', '&amp;', false)
+      .replace('<', '&lt;', false)
+      .replace('>', '&gt;', false)
+      .replace('"', '&quot;', false)
 }
 
 /**
@@ -194,8 +207,8 @@ def _xml(text: string) {
 def info_plist(details: dict) {
   var lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
-      + '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" ' +
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
     '<plist version="1.0">',
     '<dict>',
     '  <key>CFBundleDevelopmentRegion</key><string>en</string>',
@@ -251,7 +264,9 @@ def payload(root: string) {
     }
 
     if entry.kind == 'link' {
-      raise UsageError("'${entry.path}' is a symbolic link, which a bundle cannot carry")
+      raise UsageError(
+        "'${entry.path}' is a symbolic link, which a bundle cannot carry",
+      )
     }
 
     var full = os.join_paths(root, entry.path)
@@ -266,9 +281,9 @@ def payload(root: string) {
 
   var compressed = zlib.compress(stream)
   var digest = hash.sha256(compressed, true)
-  var trailer = digest
-    + struct.pack('P', compressed.length())
-    + MAGIC.to_bytes()
+  var trailer = digest +
+      struct.pack('P', compressed.length()) +
+      MAGIC.to_bytes()
 
   return compressed + trailer
 }

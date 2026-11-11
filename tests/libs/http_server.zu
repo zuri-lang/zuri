@@ -188,11 +188,11 @@ ok('a request round-trips over a real socket')
 var user = client.get(base + '/users/42?q=hello%20there')
 assert user.as_dict().id == '42', 'a path parameter reaches the handler'
 assert user.as_dict().q == 'hello there',
-  'and so does a decoded query parameter'
+    'and so does a decoded query parameter'
 ok('path parameters and query strings')
 
 assert client.get(base + '/files/css/site.css').as_text() == 'css/site.css',
-  'a catch-all captures the remainder of the path'
+    'a catch-all captures the remainder of the path'
 ok('catch-all routes')
 
 var posted = client.post(base + '/echo', { name: 'ada' }).as_dict()
@@ -204,7 +204,7 @@ var form = client.post(base + '/form', nil, {
   form: { name: 'grace hopper', role: 'admiral' },
 }).as_dict()
 assert form.name == 'grace hopper',
-  'a form field with a space survives encoding'
+    'a form field with a space survives encoding'
 assert form.role == 'admiral', 'and so does a second field'
 ok('a form-urlencoded request body')
 
@@ -223,26 +223,28 @@ attachments.add_field('tags', 'red')
 attachments.add_field('tags', 'green')
 attachments.add_file('attachments', 'one.txt', 'a'.to_bytes())
 attachments.add_file(
-  'attachments', 'C:\\Users\\ada\\..\\two file.txt', 'bb'.to_bytes(),
+  'attachments',
+  'C:\\Users\\ada\\..\\two file.txt',
+  'bb'.to_bytes(),
 )
 
 var received = client.post(base + '/attachments', attachments).as_dict()
 assert received.tags == ['red', 'green'],
-  'form_all keeps every value of a repeated field'
+    'form_all keeps every value of a repeated field'
 assert received.saved.length() == 2, 'both files under one field name arrive'
 assert received.saved[0].name == 'one.txt', 'the first file'
 assert received.saved[0].written == 1,
-  'save_to writes it and reports the byte count'
+    'save_to writes it and reports the byte count'
 assert received.saved[1].claimed == 'C:\\Users\\ada\\..\\two file.txt',
-  'the claimed filename is preserved exactly as the client sent it'
+    'the claimed filename is preserved exactly as the client sent it'
 assert received.saved[1].name == 'two_file.txt',
-  'and safe_name() reduces it to one segment that cannot escape a directory'
+    'and safe_name() reduces it to one segment that cannot escape a directory'
 assert received.saved[1].field == 'attachments',
-  'the field name is on the upload'
+    'the field name is on the upload'
 ok('several uploads under one field name, and a repeated form field')
 
 assert client.put(base + '/put', 'data').as_text() == 'put:data',
-  'PUT carries a body'
+    'PUT carries a body'
 assert client.delete(base + '/thing').status == 204, 'DELETE answers 204'
 ok('the other methods')
 
@@ -257,7 +259,7 @@ var created = client.post(base + '/accounts', {
 })
 assert created.status == 201, 'input satisfying the schema is accepted'
 assert created.as_dict().created.name == 'Ada',
-  'and validate() hands back the data'
+    'and validate() hands back the data'
 assert created.as_dict().created.age == 36, 'with JSON types intact'
 
 var rejected = client.post(base + '/accounts', {
@@ -278,9 +280,9 @@ var by_query = client.get(
   base + '/accounts/check?name=Ada&email=ada@example.com&age=36',
 )
 assert by_query.status == 200,
-  'the same schema is satisfied over the query string'
+    'the same schema is satisfied over the query string'
 assert by_query.as_dict().ok.age == '36',
-  'where a value stays the string the wire carried'
+    'where a value stays the string the wire carried'
 
 var bad_query = client.get(
   base + '/accounts/check?name=Ada&email=ada@example.com&age=9',
@@ -289,7 +291,7 @@ assert bad_query.status == 422, 'and is refused when a value rule does not hold'
 ok('a value-rule schema validates query input as well as a JSON body')
 
 assert client.get(base + '/accounts/12').as_dict().id == '12',
-  'a route parameter is part of the merged input'
+    'a route parameter is part of the merged input'
 ok('route parameters are validated alongside the rest of the input')
 
 var merged = client.post(base + '/input?q=1&tag=a&tag=b', nil, {
@@ -299,7 +301,7 @@ assert merged.all.q == '1', 'a single query value is flattened to a scalar'
 assert merged.all.tag == ['a', 'b'], 'a repeated one stays a list'
 assert merged.all.field == 'value', 'the body is merged over the query'
 assert merged.query.q == '1' and !merged.query.contains('field'),
-  'and a single source can be taken on its own'
+    'and a single source can be taken on its own'
 ok('input() merges the request sources by the documented precedence')
 
 var missing = client.get(base + '/nowhere')
@@ -308,72 +310,72 @@ assert missing.status == 404, 'an unknown path is a 404'
 var wrong = client.request('DELETE', base + '/')
 assert wrong.status == 405, 'a known path with an unknown method is a 405'
 assert wrong.headers.get('allow').contains('GET'),
-  'and Allow says what is permitted'
+    'and Allow says what is permitted'
 ok('404 and 405, with a correct Allow header')
 
 var head = client.head(base + '/')
 assert head.status == 200, 'HEAD answers'
 assert head.body.length() == 0, 'with no body'
 assert head.headers.get('content-length') == '11',
-  'but with the Content-Length the GET would have had'
+    'but with the Content-Length the GET would have had'
 ok('HEAD is GET without the body')
 
 var preflight = client.options(base + '/')
 assert preflight.status == 204, 'OPTIONS is answered automatically'
 assert preflight.headers.get('allow').contains('GET'),
-  'with the methods the path allows'
+    'with the methods the path allows'
 ok('OPTIONS is answered without a handler')
 
 var followed = client.get(base + '/redirect')
 assert followed.status == 200 and followed.as_text() == 'arrived',
-  'a redirect is followed'
+    'a redirect is followed'
 assert followed.redirects == 1, 'and counted'
 
 var unfollowed = client.get(base + '/redirect', { follow_redirects: false })
 assert unfollowed.status == 302, 'unless asked not to'
 assert unfollowed.headers.get('location') == '/redirected',
-  'and Location is readable'
+    'and Location is readable'
 
 assert raises(@() {
   client.get(base + '/loop', { max_redirects: 3 })
 }),
-  'a redirect loop gives up rather than spinning'
+    'a redirect loop gives up rather than spinning'
 ok('redirects are followed, counted and bounded')
 
 var same_origin_auth = client.get(base + '/saw-auth', {
   auth: ['bearer', 'a-secret-token'],
 }).as_dict()
 assert same_origin_auth.authorization == 'Bearer a-secret-token',
-  'credentials reach the host they were meant for'
+    'credentials reach the host they were meant for'
 
 var cross_origin_auth = client.get(base + '/cross-origin', {
   auth: ['bearer', 'a-secret-token'],
 }).as_dict()
 assert cross_origin_auth.authorization == nil,
-  'and are dropped when a redirect leaves that origin'
+    'and are dropped when a redirect leaves that origin'
 ok('credentials do not follow a redirect to another origin')
 
 client.get(base + '/set-cookie')
 assert client.get(base + '/read-cookie').as_text() == 'abc123',
-  'the jar sent the cookie back on the next request'
+    'the jar sent the cookie back on the next request'
 ok('cookies survive a round trip through the jar')
 
 var large = client.get(base + '/large')
 assert large.as_text().length() == 2600,
-  'the body decompresses to its original length'
+    'the body decompresses to its original length'
 assert !large.headers.contains('content-encoding'),
-  'and the client removed the coding header once it decoded the body'
+    'and the client removed the coding header once it decoded the body'
 ok('a compressible response is compressed and transparently decoded')
 
 var streamed = client.get(base + '/stream')
 assert streamed.as_text() == 'chunk1\nchunk2\nchunk3\n',
-  'a chunked body reassembles'
+    'a chunked body reassembles'
 ok('a streamed response is framed with chunked encoding')
 
 var events = sse.parse(client.get(base + '/events').as_text())
 assert events.length() == 2, 'two events were dispatched'
 assert events[0].event == 'tick' and events[0].id == '1',
-  'the first carried a name and an id'
+    'the first carried a name and an id'
 assert events[0].data == '{"n":1}', 'and its data'
 assert events[1].data == 'plain text', 'the second was a plain message'
 ok('server-sent events')
@@ -381,7 +383,7 @@ ok('server-sent events')
 var failed = client.get(base + '/boom')
 assert failed.status == 500, 'a handler that raises becomes a 500'
 assert !failed.as_text().contains('deliberate failure'),
-  'and the exception message never reaches the client'
+    'and the exception message never reaches the client'
 ok('a failing handler is contained, and says nothing about why')
 
 var sent_headers = client.get(base + '/headers', {
@@ -389,7 +391,7 @@ var sent_headers = client.get(base + '/headers', {
 }).as_dict()
 assert sent_headers.host == api[1], 'the Host header names the authority'
 assert sent_headers.agent.starts_with('Zuri/'),
-  'a User-Agent is sent by default'
+    'a User-Agent is sent by default'
 assert sent_headers.custom == 'a value', 'and per-request headers get through'
 ok('request headers are sent and read back')
 
@@ -405,27 +407,27 @@ var served = client.get(base + '/static/hello.txt')
 assert served.status == 200, 'a static file is served'
 assert served.as_text() == 'static file contents', 'with its contents'
 assert served.headers.get('content-type').starts_with('text/plain'),
-  'and a guessed type'
+    'and a guessed type'
 assert served.headers.contains('etag'), 'and an ETag'
 assert served.headers.contains('last-modified'), 'and a Last-Modified'
 assert served.headers.get('cache-control').contains('max-age=60'), 'and caching'
 assert served.headers.get('accept-ranges') == 'bytes',
-  'and an offer of byte ranges'
+    'and an offer of byte ranges'
 ok('static files are served with the headers a cache needs')
 
 assert client.get(base + '/static/').as_text() == '<h1>index</h1>',
-  'a directory serves its index file'
+    'a directory serves its index file'
 ok('directory index files')
 
 assert client.get(base + '/static/nope.txt').status == 404,
-  'a missing file is a 404'
+    'a missing file is a 404'
 assert client.get(base + '/static/../../etc/passwd').status == 404,
-  'a traversal attempt does not escape the root'
-assert client.get(base + '/static/%2e%2e%2f%2e%2e%2fetc%2fpasswd').status
-  == 404,
-  'and neither does an encoded one'
+    'a traversal attempt does not escape the root'
+assert client.get(base + '/static/%2e%2e%2f%2e%2e%2fetc%2fpasswd').status ==
+    404,
+    'and neither does an encoded one'
 assert client.get(base + '/static/.env').status == 404,
-  'dotfiles are not served'
+    'dotfiles are not served'
 ok('the static handler refuses traversal and dotfiles')
 
 var tag = served.headers.get('etag')
@@ -435,7 +437,7 @@ var revalidated = client.get(base + '/static/hello.txt', {
 assert revalidated.status == 304, 'a matching ETag answers 304'
 assert revalidated.body.length() == 0, 'with no body'
 assert revalidated.headers.get('content-length', nil) != '0',
-  'and without a Content-Length claiming the representation is empty'
+    'and without a Content-Length claiming the representation is empty'
 ok('conditional requests answer 304')
 
 var ranged = client.get(base + '/static/hello.txt', {
@@ -444,7 +446,7 @@ var ranged = client.get(base + '/static/hello.txt', {
 assert ranged.status == 206, 'a range request answers 206'
 assert ranged.as_text() == 'static', 'with just those bytes'
 assert ranged.headers.get('content-range') == 'bytes 0-5/20',
-  'and a Content-Range'
+    'and a Content-Range'
 
 var suffix = client.get(base + '/static/hello.txt', {
   headers: { 'Range': 'bytes=-8' },
@@ -456,11 +458,11 @@ var unsatisfiable = client.get(base + '/static/hello.txt', {
 })
 assert unsatisfiable.status == 416, 'a range past the end is a 416'
 assert unsatisfiable.headers.get('content-range') == 'bytes */20',
-  'which reports the actual size'
+    'which reports the actual size'
 ok('byte ranges, including suffix and unsatisfiable ones')
 
 assert client.pooled_connections() > 0,
-  'the connection was kept alive and pooled'
+    'the connection was kept alive and pooled'
 ok('keep-alive connections are reused')
 
 # A timeout belongs to the request that asked for it, not to whichever
@@ -472,12 +474,12 @@ client.close()
 var timing = http.HttpClient()
 var quick = timing.get(base + '/', { timeout: 600 })
 assert quick.status == 200,
-  'a request with a short timeout opens the connection'
+    'a request with a short timeout opens the connection'
 assert timing.pooled_connections() == 1, 'which goes back in the pool'
 
 var eventually = timing.get(base + '/slow')
 assert eventually.as_text() == 'eventually',
-  'the next request on it waits as long as the client allows'
+    'the next request on it waits as long as the client allows'
 assert timing.pooled_connections() == 1, 'over that same connection'
 
 var hurried = nil
@@ -489,7 +491,7 @@ catch {
 }
 
 assert instance_of(hurried, http.TimeoutError),
-  'and a later request with a short timeout is held to it'
+    'and a later request with a short timeout is held to it'
 timing.close()
 ok('a pooled connection takes each request\'s own timeouts')
 
@@ -502,9 +504,9 @@ os.sleep(1.5)
 
 var after_idle = client.post(base + '/echo', 'sent over a stale connection')
 assert after_idle.status == 200,
-  'a POST over a reaped pooled connection still succeeds'
+    'a POST over a reaped pooled connection still succeeds'
 assert after_idle.as_dict().text == 'sent over a stale connection',
-  'and arrives intact'
+    'and arrives intact'
 ok('a request on a connection the server already closed is sent again')
 
 # ---------------------------------------------------------------------------
@@ -513,99 +515,108 @@ ok('a request on a connection the server already closed is sent again')
 
 var address = api[1]
 
-var chunked = raw_exchange(address,
+var chunked = raw_exchange(
+  address,
   'POST /echo HTTP/1.1\r\n' +
-    'Host: ${address}\r\n' +
-    'Content-Type: text/plain\r\n' +
-    'Transfer-Encoding: chunked\r\n' +
-    'Connection: close\r\n\r\n' +
-    '5\r\nhello\r\n' +
-    '6\r\n world\r\n' +
-    '0\r\n\r\n',
+      'Host: ${address}\r\n' +
+      'Content-Type: text/plain\r\n' +
+      'Transfer-Encoding: chunked\r\n' +
+      'Connection: close\r\n\r\n' +
+      '5\r\nhello\r\n' +
+      '6\r\n world\r\n' +
+      '0\r\n\r\n',
 )
 assert chunked.starts_with('HTTP/1.1 200'), 'a chunked request body is accepted'
 assert chunked.contains('hello world'), 'and reassembled in order'
 ok('a chunked request body is decoded')
 
-var both_framings = raw_exchange(address,
+var both_framings = raw_exchange(
+  address,
   'POST /echo HTTP/1.1\r\n' +
-    'Host: ${address}\r\n' +
-    'Content-Length: 5\r\n' +
-    'Transfer-Encoding: chunked\r\n\r\n' +
-    '0\r\n\r\n',
+      'Host: ${address}\r\n' +
+      'Content-Length: 5\r\n' +
+      'Transfer-Encoding: chunked\r\n\r\n' +
+      '0\r\n\r\n',
 )
 assert both_framings.starts_with('HTTP/1.1 400'),
-  'a request carrying both framings is the shape of a smuggled request and must be refused'
+    'a request carrying both framings is the shape of a smuggled request and must be refused'
 ok('Content-Length together with Transfer-Encoding is refused')
 
-var padded_name = raw_exchange(address,
+var padded_name = raw_exchange(
+  address,
   'POST /echo HTTP/1.1\r\n' +
-    'Host: ${address}\r\n' +
-    'Content-Length : 5\r\n\r\n' +
-    'hello',
+      'Host: ${address}\r\n' +
+      'Content-Length : 5\r\n\r\n' +
+      'hello',
 )
 assert padded_name.starts_with('HTTP/1.1 400'),
-  'whitespace before the colon must be refused rather than normalised away'
+    'whitespace before the colon must be refused rather than normalised away'
 ok('a padded header name is refused')
 
 var no_host = raw_exchange(address, 'GET / HTTP/1.1\r\n\r\n')
 assert no_host.starts_with('HTTP/1.1 400'),
-  'an HTTP/1.1 request without Host is invalid'
+    'an HTTP/1.1 request without Host is invalid'
 ok('a missing Host header is refused')
 
-var two_hosts = raw_exchange(address,
+var two_hosts = raw_exchange(
+  address,
   'GET / HTTP/1.1\r\nHost: a.example\r\nHost: b.example\r\n\r\n',
 )
 assert two_hosts.starts_with('HTTP/1.1 400'),
-  'two Host headers are ambiguous and refused'
+    'two Host headers are ambiguous and refused'
 ok('two Host headers are refused')
 
-var folded = raw_exchange(address,
+var folded = raw_exchange(
+  address,
   'GET / HTTP/1.1\r\nHost: ${address}\r\nX-Test: a\r\n  b\r\n\r\n',
 )
 assert folded.starts_with('HTTP/1.1 400'), 'obsolete line folding is refused'
 ok('a folded header line is refused')
 
-var pipelined = raw_exchange(address,
+var pipelined = raw_exchange(
+  address,
   'GET / HTTP/1.1\r\nHost: ${address}\r\n\r\n' +
-    'GET /users/9 HTTP/1.1\r\nHost: ${address}\r\nConnection: close\r\n\r\n',
+      'GET /users/9 HTTP/1.1\r\nHost: ${address}\r\nConnection: close\r\n\r\n',
 )
 assert pipelined.count('HTTP/1.1 200') == 2,
-  'both pipelined requests were answered'
+    'both pipelined requests were answered'
 assert pipelined.index_of('hello world') < pipelined.index_of('"id":"9"'),
-  'and in the order they were sent'
+    'and in the order they were sent'
 ok('pipelined requests are answered in order on one connection')
 
 var old_client = raw_exchange(address, 'GET / HTTP/1.0\r\n\r\n')
 assert old_client.starts_with('HTTP/1.0 200'),
-  'an HTTP/1.0 request gets an HTTP/1.0 response'
+    'an HTTP/1.0 request gets an HTTP/1.0 response'
 assert old_client.lower().contains('connection: close'),
-  'and the connection closes, since 1.0 does not keep one open by default'
+    'and the connection closes, since 1.0 does not keep one open by default'
 ok('HTTP/1.0 requests are answered in their own version')
 
-var expects = raw_exchange(address,
+var expects = raw_exchange(
+  address,
   'POST /echo HTTP/1.1\r\n' +
-    'Host: ${address}\r\n' +
-    'Content-Type: text/plain\r\n' +
-    'Content-Length: 5\r\n' +
-    'Expect: 100-continue\r\n' +
-    'Connection: close\r\n\r\n' +
-    'hello',
+      'Host: ${address}\r\n' +
+      'Content-Type: text/plain\r\n' +
+      'Content-Length: 5\r\n' +
+      'Expect: 100-continue\r\n' +
+      'Connection: close\r\n\r\n' +
+      'hello',
 )
 assert expects.starts_with('HTTP/1.1 100 Continue'),
-  'the interim response comes first'
+    'the interim response comes first'
 assert expects.contains('HTTP/1.1 200'), 'and then the real one'
 ok('Expect: 100-continue is answered before the body is read')
 
-var absolute = raw_exchange(address,
+var absolute = raw_exchange(
+  address,
   'GET http://${address}/users/3 HTTP/1.1\r\n' +
-    'Host: ${address}\r\nConnection: close\r\n\r\n',
+      'Host: ${address}\r\nConnection: close\r\n\r\n',
 )
 assert absolute.contains('"id":"3"'),
-  'an absolute-form request target is understood'
+    'an absolute-form request target is understood'
 ok('an absolute-form request target is accepted')
 
-var star = raw_exchange(address,
+var star = raw_exchange(
+  address,
   'OPTIONS * HTTP/1.1\r\nHost: ${address}\r\nConnection: close\r\n\r\n',
 )
 assert star.starts_with('HTTP/1.1 204'), 'OPTIONS * is answered'
@@ -625,34 +636,34 @@ var mw_client = http.HttpClient()
 var open_page = mw_client.get(mw_base + '/open')
 assert open_page.status == 200, 'an unguarded route answers'
 assert open_page.headers.get('x-content-type-options') == 'nosniff',
-  'security headers are set'
+    'security headers are set'
 assert open_page.headers.get('x-frame-options') == 'DENY',
-  'including the framing refusal'
+    'including the framing refusal'
 assert open_page.headers.contains('x-request-id'),
-  'and a request id was attached'
+    'and a request id was attached'
 assert open_page.headers.contains('etag'),
-  'and the ETag middleware tagged the body'
+    'and the ETag middleware tagged the body'
 ok('the security-header, request-id and ETag middleware')
 
 var conditional = mw_client.get(mw_base + '/open', {
   headers: { 'If-None-Match': open_page.headers.get('etag') },
 })
 assert conditional.status == 304,
-  'a matching ETag from the middleware answers 304'
+    'a matching ETag from the middleware answers 304'
 ok('the ETag middleware answers conditional requests')
 
 var echoed_id = mw_client.get(mw_base + '/open', {
   headers: { 'X-Request-Id': 'trace-123' },
 })
 assert echoed_id.headers.get('x-request-id') == 'trace-123',
-  'a supplied id is echoed'
+    'a supplied id is echoed'
 ok('a client-supplied request id is carried through')
 
 var denied = mw_client.get(mw_base + '/private/data')
 assert denied.status == 401,
-  'a guarded route refuses an unauthenticated request'
+    'a guarded route refuses an unauthenticated request'
 assert denied.headers.get('www-authenticate').starts_with('Basic '),
-  'and challenges, as a 401 must'
+    'and challenges, as a 401 must'
 
 var allowed = mw_client.get(mw_base + '/private/data', {
   auth: ['basic', 'admin', 'secret'],
@@ -668,16 +679,16 @@ ok('basic authentication')
 
 var no_token = mw_client.get(mw_base + '/token/data')
 assert no_token.status == 401,
-  'a bearer-guarded route refuses a request with no token'
+    'a bearer-guarded route refuses a request with no token'
 assert no_token.headers.get('www-authenticate').starts_with('Bearer '),
-  'and challenges with the Bearer scheme'
+    'and challenges with the Bearer scheme'
 
 var with_token = mw_client.get(mw_base + '/token/data', {
   auth: ['bearer', 'good-token'],
 })
 assert with_token.status == 200, 'a valid token gets through'
 assert with_token.as_dict().subject == 'svc-1',
-  'and whatever the verifier returned reaches the handler'
+    'and whatever the verifier returned reaches the handler'
 ok('bearer authentication')
 
 # A bucket of its own, so the requests above and below do not count
@@ -689,7 +700,7 @@ iter var i = 0; i < 3; i++ {
   assert within.status == 200, 'request ${i} is within the limit'
   assert within.headers.get('ratelimit-limit') == '3', 'and reports the limit'
   assert within.headers.get('ratelimit-remaining') == '${2 - i}',
-    'and what is left'
+      'and what is left'
 }
 
 var over = mw_client.get(mw_base + '/limited', { headers: limited })
@@ -697,9 +708,9 @@ assert over.status == 429, 'the fourth request is refused'
 assert over.headers.contains('retry-after'), 'with a Retry-After'
 assert over.as_dict().status == 429, 'and a JSON body saying so'
 
-var other_bucket = mw_client.get(
-  mw_base + '/limited', { headers: { 'X-Bucket': 'elsewhere' } },
-)
+var other_bucket = mw_client.get(mw_base + '/limited', {
+  headers: { 'X-Bucket': 'elsewhere' },
+})
 assert other_bucket.status == 200, 'a different key is a different bucket'
 ok('rate limiting, per key')
 
@@ -707,31 +718,31 @@ var tokens = mw_client.get(mw_base + '/tokens').as_dict()
 
 var unauthenticated = mw_client.get(mw_base + '/jwt/me')
 assert unauthenticated.status == 401,
-  'a JWT-guarded route refuses a request with no token'
+    'a JWT-guarded route refuses a request with no token'
 assert unauthenticated.headers.get('www-authenticate') == 'Bearer realm="api"',
-  'with a bare challenge, since there was no credential to fault'
+    'with a bare challenge, since there was no credential to fault'
 
 var authenticated = mw_client.get(mw_base + '/jwt/me', {
   auth: ['bearer', tokens.good],
 })
 assert authenticated.status == 200, 'a valid token gets through'
 assert authenticated.as_dict().user == 'ada',
-  'and its sub claim reaches the handler'
+    'and its sub claim reaches the handler'
 assert authenticated.as_dict().audience == 'zuri-test',
-  'along with the rest of the claims'
+    'along with the rest of the claims'
 
 var challenges = []
 
 for bad in ['expired', 'forged'] {
-  var refused = mw_client.get(
-    mw_base + '/jwt/me', { auth: ['bearer', tokens.get(bad)] },
-  )
+  var refused = mw_client.get(mw_base + '/jwt/me', {
+    auth: ['bearer', tokens.get(bad)],
+  })
 
   assert refused.status == 401, 'a ${bad} token is refused'
   assert refused.headers
-    .get('www-authenticate')
-    .contains('error="invalid_token"'),
-    'as an invalid token'
+      .get('www-authenticate')
+      .contains('error="invalid_token"'),
+      'as an invalid token'
 
   challenges.append(refused.headers.get('www-authenticate'))
 }
@@ -740,11 +751,13 @@ for bad in ['expired', 'forged'] {
 # and the presenter is told exactly the same thing about both. Which
 # check a token failed is for this server's logs.
 assert challenges[0] == challenges[1],
-  'the challenge does not say which check the token failed'
+    'the challenge does not say which check the token failed'
 
 assert mw_client.get(mw_base + '/jwt/me', {
-  headers: { 'Authorization': 'Bearer wholly.invalid.token' },
-}).status == 401, 'an unparseable token is a 401 rather than a 500'
+      headers: { 'Authorization': 'Bearer wholly.invalid.token' },
+    }).status ==
+    401,
+    'an unparseable token is a 401 rather than a 500'
 ok('JWT authentication')
 
 # A middleware built with no verifier is a middleware that is off. It
@@ -753,31 +766,35 @@ ok('JWT authentication')
 # register it inside a catch block.
 var unguarded = mw_client.get(mw_base + '/jwt/open/anything')
 assert unguarded.status == 200,
-  'jwt_auth(nil) passes a request straight through'
+    'jwt_auth(nil) passes a request straight through'
 assert unguarded.as_dict().reached, 'reaching the handler'
 assert unguarded.as_dict().user == nil, 'with nothing attached to it'
 
 assert mw_client.get(mw_base + '/jwt/open/anything', {
-  headers: { 'Authorization': 'Bearer wholly.invalid.token' },
-}).status == 200, 'and ignores a token rather than checking it'
+      headers: { 'Authorization': 'Bearer wholly.invalid.token' },
+    }).status ==
+    200,
+    'and ignores a token rather than checking it'
 ok('a jwt_auth with no verifier is disabled, not failing')
 
 assert mw_client.get(mw_base + '/jwt/scoped/items', {
-  auth: ['bearer', tokens.scoped],
-}).status == 200, 'a token carrying the required scope gets through'
+      auth: ['bearer', tokens.scoped],
+    }).status ==
+    200,
+    'a token carrying the required scope gets through'
 
 var under_scoped = mw_client.get(mw_base + '/jwt/scoped/items', {
   auth: ['bearer', tokens.narrow],
 })
 assert under_scoped.status == 403, 'a token without it is refused, but as a 403'
 assert under_scoped.headers
-  .get('www-authenticate')
-  .contains('error="insufficient_scope"'),
-  'saying which of the two problems it was'
+    .get('www-authenticate')
+    .contains('error="insufficient_scope"'),
+    'saying which of the two problems it was'
 assert under_scoped.headers
-  .get('www-authenticate')
-  .contains('scope="items:write"'),
-  'and what would have been enough'
+    .get('www-authenticate')
+    .contains('scope="items:write"'),
+    'and what would have been enough'
 ok('JWT scopes are enforced separately from authentication')
 
 var cors_preflight = mw_client.request('OPTIONS', mw_base + '/open', {
@@ -788,20 +805,20 @@ var cors_preflight = mw_client.request('OPTIONS', mw_base + '/open', {
   },
 })
 assert cors_preflight.status == 204, 'a preflight is answered'
-assert cors_preflight.headers.get('access-control-allow-origin')
-  == 'https://app.example.com',
-  'with the requesting origin'
+assert cors_preflight.headers.get('access-control-allow-origin') ==
+    'https://app.example.com',
+    'with the requesting origin'
 assert cors_preflight.headers.get('access-control-allow-credentials') == 'true',
-  'and the credentials flag'
-assert cors_preflight.headers.get('access-control-allow-headers')
-  == 'content-type',
-  'and the headers it asked about'
+    'and the credentials flag'
+assert cors_preflight.headers.get('access-control-allow-headers') ==
+    'content-type',
+    'and the headers it asked about'
 
 var cors_denied = mw_client.get(mw_base + '/open', {
   headers: { 'Origin': 'https://evil.example.com' },
 })
 assert !cors_denied.headers.contains('access-control-allow-origin'),
-  'an origin that is not allowed gets no CORS headers at all'
+    'an origin that is not allowed gets no CORS headers at all'
 ok('CORS preflights and origin checks')
 
 stop(mw[0], mw_base, mw_client)
@@ -817,7 +834,7 @@ var proxy_client = http.HttpClient()
 
 var through = proxy_client.get(proxy_base + '/api/echo/items').as_dict()
 assert through.path == '/echo/items',
-  'the prefix was stripped before forwarding'
+    'the prefix was stripped before forwarding'
 assert through.method == 'GET', 'the method survived'
 assert through.forwarded_for != nil, 'the client address was forwarded'
 assert through.forwarded_proto == 'http', 'and so was the scheme'
@@ -843,7 +860,9 @@ stop(upstream[0], 'http://${upstream[1]}', http.HttpClient())
 # ---------------------------------------------------------------------------
 
 var wsock = start(http_server_app.websocket_server)
-var socket = ws.connect('ws://${wsock[1]}/ws', { protocols: ['echo'] })
+var socket = ws.connect('ws://${wsock[1]}/ws', {
+  protocols: ['echo'],
+})
 
 assert socket.protocol == 'echo', 'the subprotocol was negotiated'
 
@@ -852,7 +871,7 @@ assert socket.receive().text() == 'echo:hello', 'a text message round-trips'
 
 socket.send('x' * 400)
 assert socket.receive().text().length() == 405,
-  'and so does one long enough to need an extended length field'
+    'and so does one long enough to need an extended length field'
 
 socket.send_binary(bytes([0, 1, 250, 255]))
 var binary = socket.receive()
@@ -862,7 +881,7 @@ assert binary.data.to_list() == [0, 1, 250, 255], 'with its bytes intact'
 socket.ping('ping'.to_bytes())
 socket.send('after ping')
 assert socket.receive().text() == 'echo:after ping',
-  'a ping does not disturb the stream'
+    'a ping does not disturb the stream'
 
 socket.close(1000, 'done')
 assert !socket.is_open(), 'the socket is closed after the handshake'
@@ -870,7 +889,7 @@ ok('a WebSocket connection, in text, binary, ping and close')
 
 var bad_handshake = http.HttpClient()
 assert bad_handshake.get('http://${wsock[1]}/ws').status >= 400,
-  'a plain GET to a WebSocket route is not a handshake'
+    'a plain GET to a WebSocket route is not a handshake'
 ok('a WebSocket route refuses a request that is not a handshake')
 
 stop(wsock[0], 'http://${wsock[1]}', http.HttpClient())
@@ -916,9 +935,9 @@ catch {
 }
 
 assert oversubscribed != nil,
-  'asking for more workers than the pool can provide must raise, not hang'
+    'asking for more workers than the pool can provide must raise, not hang'
 assert oversubscribed.message.contains('isolate pool'),
-  'and the message must say what the actual problem was'
+    'and the message must say what the actual problem was'
 ok('an over-subscribed worker pool fails loudly instead of deadlocking')
 
 # ---------------------------------------------------------------------------
@@ -939,37 +958,37 @@ assert over_tls.as_dict().version == '2', 'on both sides'
 assert over_tls.certificate != nil, 'the peer certificate is available'
 ok('HTTPS with HTTP/2 negotiated through ALPN')
 
-var h2_post = secure_client.post(
-  secure_base + '/echo', nil, { body: 'over h2' },
-)
+var h2_post = secure_client.post(secure_base + '/echo', nil, {
+  body: 'over h2',
+})
 assert h2_post.as_dict().text == 'over h2',
-  'a request body crosses an HTTP/2 stream'
+    'a request body crosses an HTTP/2 stream'
 ok('an HTTP/2 request body')
 
 var h2_large = secure_client.get(secure_base + '/large')
 assert h2_large.as_text().length() == 180000,
-  'a response larger than one flow-control window arrives whole'
+    'a response larger than one flow-control window arrives whole'
 ok('HTTP/2 flow control carries a large response')
 
-var h2_too_big = secure_client.post(
-  secure_base + '/echo', nil, { body: 'x' * 8192 },
-)
+var h2_too_big = secure_client.post(secure_base + '/echo', nil, {
+  body: 'x' * 8192,
+})
 assert h2_too_big.status == 413,
-  'a body over the limit is refused on an HTTP/2 stream too, with a real status'
+    'a body over the limit is refused on an HTTP/2 stream too, with a real status'
 ok('the request body limit is enforced per HTTP/2 stream')
 
 assert secure_client.pooled_connections() > 0, 'the HTTP/2 session is pooled'
 
 var reused = secure_client.get(secure_base + '/')
 assert reused.status == 200 and reused.version == '2',
-  'and a second request runs over the same connection'
+    'and a second request runs over the same connection'
 ok('an HTTP/2 connection is reused across requests')
 
 var untrusting = http.HttpClient()
 assert raises(@() {
   untrusting.get(secure_base + '/')
 }),
-  'a client that does not trust the test CA must refuse the connection'
+    'a client that does not trust the test CA must refuse the connection'
 ok('certificate verification is on by default')
 
 stop(secure[0], secure_base, secure_client)

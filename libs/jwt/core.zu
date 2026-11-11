@@ -155,7 +155,7 @@ def decode(token) {
   if parts.length() != 3 {
     raise MalformedTokenError(
       'malformed token: expected three dot-separated segments, got ' +
-        parts.length().to_string(),
+          parts.length().to_string(),
     )
   }
 
@@ -164,13 +164,17 @@ def decode(token) {
   catch {
     header_json = _b64_decode(parts[0])
   } as _ {
-    raise MalformedTokenError('malformed token: header segment is not valid base64url')
+    raise MalformedTokenError(
+      'malformed token: header segment is not valid base64url',
+    )
   }
 
   catch {
     payload_json = _b64_decode(parts[1])
   } as _ {
-    raise MalformedTokenError('malformed token: payload segment is not valid base64url')
+    raise MalformedTokenError(
+      'malformed token: payload segment is not valid base64url',
+    )
   }
 
   var header, payload
@@ -412,8 +416,10 @@ def verify(token, secret, options) {
     }
   } else if !accepted.contains(alg) {
     raise AlgorithmError(
-      'token algorithm "' + alg + '" is not in the accepted list: ' +
-        ', '.join(accepted),
+      'token algorithm "' +
+          alg +
+          '" is not in the accepted list: ' +
+          ', '.join(accepted),
     )
   }
 
@@ -468,8 +474,11 @@ def _finish_verify(tok, options) {
 
     if now > payload['exp'] + tolerance {
       raise TokenExpiredError(
-        'token expired at ' + payload['exp'].to_string() +
-          ' (current time: ' + now.to_string() + ')',
+        'token expired at ' +
+            payload['exp'].to_string() +
+            ' (current time: ' +
+            now.to_string() +
+            ')',
       )
     }
   }
@@ -481,8 +490,11 @@ def _finish_verify(tok, options) {
 
     if now < payload['nbf'] - tolerance {
       raise TokenExpiredError(
-        'token not valid before ' + payload['nbf'].to_string() +
-          ' (current time: ' + now.to_string() + ')',
+        'token not valid before ' +
+            payload['nbf'].to_string() +
+            ' (current time: ' +
+            now.to_string() +
+            ')',
       )
     }
   }
@@ -494,8 +506,11 @@ def _finish_verify(tok, options) {
 
     if payload['iat'] > now + tolerance {
       raise TokenExpiredError(
-        'token issued in the future at ' + payload['iat'].to_string() +
-          ' (current time: ' + now.to_string() + ')',
+        'token issued in the future at ' +
+            payload['iat'].to_string() +
+            ' (current time: ' +
+            now.to_string() +
+            ')',
       )
     }
   }
@@ -509,8 +524,11 @@ def _finish_verify(tok, options) {
 
     if payload['iss'] != options['issuer'] {
       raise ClaimError(
-        'issuer mismatch: expected "' + options['issuer'] +
-          '", got "' + payload['iss'].to_string() + '"',
+        'issuer mismatch: expected "' +
+            options['issuer'] +
+            '", got "' +
+            payload['iss'].to_string() +
+            '"',
       )
     }
   }
@@ -522,8 +540,11 @@ def _finish_verify(tok, options) {
 
     if payload['sub'] != options['subject'] {
       raise ClaimError(
-        'subject mismatch: expected "' + options['subject'] +
-          '", got "' + payload['sub'].to_string() + '"',
+        'subject mismatch: expected "' +
+            options['subject'] +
+            '", got "' +
+            payload['sub'].to_string() +
+            '"',
       )
     }
   }

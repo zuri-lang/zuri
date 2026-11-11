@@ -159,8 +159,8 @@ def resolve(target: ?string, root: ?string) {
 
   if matched.length() > 1 {
     raise UsageError(
-      "'${target}' matches ${matched.length()} files under '${TESTS}': "
-        + "${', '.join(matched)}; say which one you mean",
+      "'${target}' matches ${matched.length()} files under '${TESTS}': " +
+          "${', '.join(matched)}; say which one you mean",
     )
   }
 
@@ -274,8 +274,8 @@ def bail_of(value) {
 
   if count == nil {
     raise UsageError(
-      "--bail expects a count, got '${value}'; attach it as --bail=<count>, "
-        + 'or put the test path before the flag',
+      "--bail expects a count, got '${value}'; attach it as --bail=<count>, " +
+          'or put the test path before the flag',
     )
   }
 
@@ -325,8 +325,8 @@ def _reject_directory_flags(parsed) {
   for name in ['match', 'ignore'] {
     if parsed.options.get(name, nil) != nil {
       raise UsageError(
-        '--${name} picks files out of a directory, so it cannot be used '
-          + 'when a single test file was named',
+        '--${name} picks files out of a directory, so it cannot be used ' +
+            'when a single test file was named',
       )
     }
   }
@@ -392,35 +392,43 @@ def parser() {
   )
 
   parser.add_option(
-    'jobs', 'How many files to run at once, or "auto" for one per CPU',
+    'jobs',
+    'How many files to run at once, or "auto" for one per CPU',
     { short_name: 'j', type: args.STRING, metavar: 'count' },
   )
   parser.add_option(
-    'timeout', 'How long to give a single file before killing it, such as 30s',
+    'timeout',
+    'How long to give a single file before killing it, such as 30s',
     { short_name: 't', type: args.STRING, metavar: 'duration' },
   )
   parser.add_option(
-    'bail', 'Stop after this many failing files; on its own, stop at the first',
+    'bail',
+    'Stop after this many failing files; on its own, stop at the first',
     { short_name: 'b', type: args.OPTIONAL, metavar: 'count' },
   )
+  parser.add_option('match', 'Filename patterns to run, instead of *.zu', {
+    short_name: 'm',
+    type: args.LIST,
+    metavar: 'pattern',
+  })
   parser.add_option(
-    'match', 'Filename patterns to run, instead of *.zu',
-    { short_name: 'm', type: args.LIST, metavar: 'pattern' },
-  )
-  parser.add_option(
-    'ignore', 'Filename patterns to skip, instead of the defaults',
+    'ignore',
+    'Filename patterns to skip, instead of the defaults',
     { short_name: 'i', type: args.LIST, metavar: 'pattern' },
   )
   parser.add_option(
     'no-recursive',
-    'Only the files directly in the directory, not those below it', nil,
+    'Only the files directly in the directory, not those below it',
+    nil,
   )
   parser.add_option(
-    'env', 'Extra environment for every test process, as KEY=VALUE',
+    'env',
+    'Extra environment for every test process, as KEY=VALUE',
     { short_name: 'e', type: args.LIST, metavar: 'assignment' },
   )
   parser.add_option(
-    'list', 'Print the files that would run, one to a line, and stop',
+    'list',
+    'Print the files that would run, one to a line, and stop',
     { short_name: 'l' },
   )
 

@@ -141,9 +141,9 @@ class Statement {
   stream(params, options) {
     self._open()
 
-    return Cursor(self._statement.open_cursor(
-      self._bind(params), options or {},
-    ))
+    return Cursor(
+      self._statement.open_cursor(self._bind(params), options or {}),
+    )
   }
 
   /**

@@ -194,8 +194,8 @@ class Workspace {
     self.options = options
     self._registries = {}
     self.manifest = project.is_global
-      ? manifest_module.load_or_create(project.manifest)
-      : manifest_module.load(project.manifest)
+        ? manifest_module.load_or_create(project.manifest)
+        : manifest_module.load(project.manifest)
     self.lock = lockfile.load(project.lockfile)
     self.installed = store.load_installed(project.installed_record())
     self.aliases = config.registries(self.manifest)
@@ -225,11 +225,14 @@ class Workspace {
    */
   registry(address: string) {
     if !self._registries.contains(address) {
-      self._registries.set(address, Registry(address, {
-        token: config.token_for(address, self.aliases),
-        offline: self.options.offline,
-        insecure: self.options.insecure,
-      }))
+      self._registries.set(
+        address,
+        Registry(address, {
+          token: config.token_for(address, self.aliases),
+          offline: self.options.offline,
+          insecure: self.options.insecure,
+        }),
+      )
     }
 
     return self._registries.get(address)
@@ -267,7 +270,8 @@ class Workspace {
     }
 
     var address = manifest_module.resolve_registry(
-      dependency.registry, aliases == nil ? self.aliases : aliases,
+      dependency.registry,
+      aliases == nil ? self.aliases : aliases,
     )
 
     return { kind: 'registry', location: address, ref: nil }
@@ -284,8 +288,8 @@ class Workspace {
   source_of(place: dict, commit: ?string) {
     if place.kind == 'path' {
       var relative = os
-        .relative_path(self.project.root, place.location)
-        .replace('\\', '/', false)
+          .relative_path(self.project.root, place.location)
+          .replace('\\', '/', false)
 
       return lockfile.Source('path', relative)
     }
@@ -303,9 +307,9 @@ class Workspace {
     if source.kind == 'path' {
       return {
         kind: 'path',
-        location: os.abs_path(os.join_paths(
-          self.project.root, source.location,
-        )),
+        location: os.abs_path(
+          os.join_paths(self.project.root, source.location),
+        ),
         ref: nil,
       }
     }
@@ -365,9 +369,9 @@ class Provider {
     if known != nil {
       if !_same_place(known, place) {
         raise CommandError(
-          "'${name}' is wanted from ${_describe_place(known)} by ${self.wanted_by.get(key)} "
-            + 'and from ${_describe_place(place)} by ${who}; a package can come from one '
-            + 'place only',
+          "'${name}' is wanted from ${_describe_place(known)} by ${self.wanted_by.get(key)} " +
+              'and from ${_describe_place(place)} by ${who}; a package can come from one ' +
+              'place only',
         )
       }
 
@@ -377,7 +381,9 @@ class Provider {
     catch {
       names.check_name(name, self.workspace.stdlib)
     } as error {
-      raise CommandError('${who} depends on ${name}, which cannot be installed: ${error.message}')
+      raise CommandError(
+        '${who} depends on ${name}, which cannot be installed: ${error.message}',
+      )
     }
 
     self.places.set(key, place)
@@ -457,11 +463,11 @@ class Provider {
 
     if place.kind == 'git' {
       var commit = keep
-        ? locked.source.commit
-        : git.resolve(place.location, place.ref)
+          ? locked.source.commit
+          : git.resolve(place.location, place.ref)
       var expected = keep and locked.source.commit == commit
-        ? locked.checksum
-        : nil
+          ? locked.checksum
+          : nil
 
       self.workspace.options.say('Fetching ${name} from ${place.location}')
 
@@ -476,7 +482,9 @@ class Provider {
     var manifest_path = os.join_paths(place.location, paths.MANIFEST)
 
     if !file(manifest_path).exists() {
-      raise CommandError("'${name}' points at ${place.location}, which holds no project.toml")
+      raise CommandError(
+        "'${name}' points at ${place.location}, which holds no project.toml",
+      )
     }
 
     var found = manifest_module.load(manifest_path)
@@ -498,7 +506,9 @@ class Provider {
     var version = found.version()
 
     if version == nil or !semver.is_valid(version) {
-      raise CommandError("'${name}' does not state a valid version in its project.toml")
+      raise CommandError(
+        "'${name}' does not state a valid version in its project.toml",
+      )
     }
 
     return semver.parse(version).to_string()
@@ -508,7 +518,9 @@ class Provider {
     var needs = found.zuri_range()
 
     if needs != nil and !semver.Range(needs).satisfies(os.version) {
-      raise CommandError("'${name}' needs zuri ${needs}, and this is zuri ${os.version}")
+      raise CommandError(
+        "'${name}' needs zuri ${needs}, and this is zuri ${os.version}",
+      )
     }
   }
 
@@ -536,16 +548,17 @@ class Provider {
 
         var dep_key = names.normalized(dependency.name)
 
-        self.want(
-          dep_key, dependency.name,
-          { kind: 'registry', location: address, ref: nil }, who,
-        )
+        self.want(dep_key, dependency.name, {
+          kind: 'registry',
+          location: address,
+          ref: nil,
+        }, who)
         listed.append({ name: dep_key, range: dependency.range })
       }
     } else {
       var found = place.kind == 'git'
-        ? self.checked_out.get(key).manifest
-        : self.local.get(key)
+          ? self.checked_out.get(key).manifest
+          : self.local.get(key)
 
       var base = place.kind == 'path' ? place.location : nil
       var aliases = config.registries(found)
@@ -553,8 +566,8 @@ class Provider {
       for dependency in found.dependencies(false, self.workspace.stdlib) {
         if place.kind == 'git' and dependency.kind == 'path' {
           raise CommandError(
-            '${name} comes from git and depends on ${dependency.name} by path, which only '
-              + 'means something on the machine it was written on',
+            '${name} comes from git and depends on ${dependency.name} by path, which only ' +
+                'means something on the machine it was written on',
           )
         }
 
@@ -596,9 +609,9 @@ class Outcome {
    * @returns bool
    */
   changed_anything() {
-    return !self.added.is_empty()
-      or !self.changed.is_empty()
-      or !self.removed.is_empty()
+    return !self.added.is_empty() or
+        !self.changed.is_empty() or
+        !self.removed.is_empty()
   }
 }
 
@@ -652,8 +665,8 @@ def resolve(workspace) {
   # there for development only.
   var production = {}
   var queue = root_deps
-    .filter(@(dep) => !dev_keys.contains(dep.name))
-    .map(@(dep) => dep.name)
+      .filter(@(dep) => !dev_keys.contains(dep.name))
+      .map(@(dep) => dep.name)
 
   while !queue.is_empty() {
     var key = queue.pop()
@@ -685,20 +698,22 @@ def resolve(workspace) {
       commit = fetched.commit
     }
 
-    var dependency_names = provider
-      .dependencies(key, version)
-      .map(@(dependency) {
+    var dependency_names = provider.dependencies(key, version).map(
+      @(dependency) {
         return provider.display.get(dependency.name)
-      })
+      },
+    )
 
-    lock.put(lockfile.Locked({
-      name: provider.display.get(key),
-      version,
-      source: workspace.source_of(place, commit),
-      checksum,
-      dependencies: dependency_names,
-      dev: !production.contains(key),
-    }))
+    lock.put(
+      lockfile.Locked({
+        name: provider.display.get(key),
+        version,
+        source: workspace.source_of(place, commit),
+        checksum,
+        dependencies: dependency_names,
+        dev: !production.contains(key),
+      }),
+    )
   }
 
   return [lock, provider]
@@ -736,15 +751,15 @@ def lock_differences(workspace) {
 
     if !_same_place(workspace.place_from(entry.source), place) {
       differences.append(
-        '${dependency.name} is declared from ${_describe_place(place)} but locked from '
-          + entry.source.to_string(),
+        '${dependency.name} is declared from ${_describe_place(place)} but locked from ' +
+            entry.source.to_string(),
       )
 
       continue
     }
 
-    if dependency.range != nil
-      and !semver.Range(dependency.range).satisfies(entry.version) {
+    if dependency.range != nil and
+        !semver.Range(dependency.range).satisfies(entry.version) {
       differences.append(
         '${dependency.name} is declared as ${dependency.range} but locked at ${entry.version}',
       )
@@ -828,9 +843,9 @@ def plan(workspace, lock) {
     if record == nil {
       if present and !options.force {
         raise CommandError(
-          "'${os.relative_path(workspace.project.root, dir)}' holds code zuri did not install, "
-            + 'and ${entry.name} ${entry.version} would replace it; move it aside, or run again '
-            + 'with force to replace it',
+          "'${os.relative_path(workspace.project.root, dir)}' holds code zuri did not install, " +
+              'and ${entry.name} ${entry.version} would replace it; move it aside, or run again ' +
+              'with force to replace it',
         )
       }
 
@@ -839,9 +854,9 @@ def plan(workspace, lock) {
       continue
     }
 
-    var same = record.get('version', '') == entry.version
-      and record.get('source', '') == entry.source.to_string()
-      and record.get('checksum', nil) == entry.checksum
+    var same = record.get('version', '') == entry.version and
+        record.get('source', '') == entry.source.to_string() and
+        record.get('checksum', nil) == entry.checksum
 
     if !same {
       steps.append(Step(entry, 'change', record))
@@ -849,8 +864,8 @@ def plan(workspace, lock) {
       steps.append(Step(entry, 'add'))
     } else if entry.source.kind == 'path' {
       steps.append(Step(entry, 'refresh', record))
-    } else if options.verify
-      and fsx.tree_digest(dir) != record.get('tree', '') {
+    } else if options.verify and
+        fsx.tree_digest(dir) != record.get('tree', '') {
       steps.append(Step(entry, 'repair', record))
     } else {
       steps.append(Step(entry, 'keep', record))
@@ -911,12 +926,16 @@ def _stage(workspace, transaction, entry, provider) {
 
   if place.kind == 'registry' {
     if entry.checksum == nil {
-      raise CommandError('${entry.name} ${entry.version} is locked without a checksum')
+      raise CommandError(
+        '${entry.name} ${entry.version} is locked without a checksum',
+      )
     }
 
     var client = workspace.registry(place.location)
     var archive_path = client.download(
-      entry.name, entry.version, entry.checksum,
+      entry.name,
+      entry.version,
+      entry.checksum,
     )
 
     return transaction.stage_archive(import_name, archive_path)
@@ -929,22 +948,26 @@ def _stage(workspace, transaction, entry, provider) {
       fetched = provider.checked_out.get(names.normalized(entry.name), nil)
     }
 
-    var stale = fetched == nil or fetched.commit != entry.source.commit
-      or !file(fetched.archive).exists()
+    var stale = fetched == nil or
+        fetched.commit != entry.source.commit or
+        !file(fetched.archive).exists()
 
     if stale {
       workspace.options.say('Fetching ${entry.name} from ${place.location}')
       fetched = git.fetch(
-        entry.name, place.location, entry.source.commit, entry.checksum,
+        entry.name,
+        place.location,
+        entry.source.commit,
+        entry.checksum,
       )
     }
 
     return transaction.stage_archive(import_name, fetched.archive)
   }
 
-  var found = manifest_module.load(os.join_paths(
-    place.location, paths.MANIFEST,
-  ))
+  var found = manifest_module.load(
+    os.join_paths(place.location, paths.MANIFEST),
+  )
   var selected = files.select(place.location, {
     include: found.list('include'),
     exclude: found.list('exclude'),
@@ -970,8 +993,8 @@ def _check_staged(entry, dir: string) {
 
   var found = manifest_module.load(manifest_path)
 
-  if found.name() == nil
-    or names.normalized(found.name()) != names.normalized(entry.name) {
+  if found.name() == nil or
+      names.normalized(found.name()) != names.normalized(entry.name) {
     raise CommandError(
       "the package installed as ${entry.name} calls itself '${found.name()}'",
     )
@@ -979,8 +1002,9 @@ def _check_staged(entry, dir: string) {
 
   var version = found.version()
 
-  if version == nil or !semver.is_valid(version)
-    or semver.compare(version, entry.version) != 0 {
+  if version == nil or
+      !semver.is_valid(version) or
+      semver.compare(version, entry.version) != 0 {
     raise CommandError(
       '${entry.name} was locked at ${entry.version}, and what arrived says it is ${version}',
     )
@@ -1053,26 +1077,32 @@ def apply(workspace, lock, provider, save_manifest: ?bool) {
       # Held while archives are fetched and unpacked, so a `zuri clean`
       # cannot take one out from under the install.
       fsx.ensure_dir(paths.cache_dir())
-      lock_module.holding(os.join_paths(paths.cache_dir(), 'lock'), @{
-        for step in steps {
-          if step.action == 'keep' {
-            continue
+      lock_module.holding(
+        os.join_paths(paths.cache_dir(), 'lock'),
+        @{
+          for step in steps {
+            if step.action == 'keep' {
+              continue
+            }
+
+            options.say('Installing ${step.entry.name} ${step.entry.version}')
+
+            var dir = _stage(workspace, transaction, step.entry, provider)
+
+            staged.set(step.entry.import_name(), {
+              entry: step.entry,
+              dir,
+              manifest: _check_staged(step.entry, dir),
+              commands: store.commands_in(dir),
+            })
           }
-
-          options.say('Installing ${step.entry.name} ${step.entry.version}')
-
-          var dir = _stage(workspace, transaction, step.entry, provider)
-
-          staged.set(step.entry.import_name(), {
-            entry: step.entry,
-            dir,
-            manifest: _check_staged(step.entry, dir),
-            commands: store.commands_in(dir),
-          })
-        }
-      }, @(pid) {
-        options.say('Waiting for another zuri command (process ${pid}) to finish with the cache')
-      })
+        },
+        @(pid) {
+          options.say(
+            'Waiting for another zuri command (process ${pid}) to finish with the cache',
+          )
+        },
+      )
 
       _check_commands(workspace, steps, staged)
 
@@ -1086,8 +1116,8 @@ def apply(workspace, lock, provider, save_manifest: ?bool) {
     }
 
     # Uninstall hooks run while the packages are still in place.
-    var allowed = workspace.manifest.allowed_hooks()
-      + options.allow_hooks.map(@(name) => names.normalized(name))
+    var allowed = workspace.manifest.allowed_hooks() +
+        options.allow_hooks.map(@(name) => names.normalized(name))
 
     for import_name in planned.removals {
       var dir = project.package_dir(import_name)
@@ -1165,8 +1195,8 @@ def apply(workspace, lock, provider, save_manifest: ?bool) {
       }
 
       var own = project.is_global
-        ? nil
-        : workspace.manifest.hook('post-install')
+          ? nil
+          : workspace.manifest.hook('post-install')
 
       if own != nil and outcome.changed_anything() and !options.no_hooks {
         options.say('Running ${workspace.display_name()} post-install')
@@ -1237,7 +1267,9 @@ def apply(workspace, lock, provider, save_manifest: ?bool) {
   } else {
     fsx.ensure_dir(project.state)
     lock_module.holding(project.lock_path(), body, @(pid) {
-      options.say('Waiting for another zuri command (process ${pid}) to finish here')
+      options.say(
+        'Waiting for another zuri command (process ${pid}) to finish here',
+      )
     })
   }
 
@@ -1252,8 +1284,8 @@ def _check_commands(workspace, steps: list, staged: dict) {
     var import_name = step.entry.import_name()
     var item = staged.get(import_name, nil)
     var commands = item != nil
-      ? item.commands
-      : workspace.installed.get(import_name).get('commands', [])
+        ? item.commands
+        : workspace.installed.get(import_name).get('commands', [])
 
     for command in commands {
       var list = claims.get(command, [])
@@ -1266,8 +1298,8 @@ def _check_commands(workspace, steps: list, staged: dict) {
   for command, owners in claims {
     if owners.length() > 1 {
       raise CommandError(
-        "the command '${command}' would be provided by both ${' and '.join(owners)}; "
-          + 'only one installed package may provide a command',
+        "the command '${command}' would be provided by both ${' and '.join(owners)}; " +
+            'only one installed package may provide a command',
       )
     }
   }
@@ -1286,22 +1318,22 @@ def launcher_text(command: string, entry: string, windows: bool) {
   var runtime = os.real_path(os.exe_path)
 
   if windows {
-    return '@ECHO OFF\r\n'
-      + 'REM Runs the zuri command "${command}". Written by zuri install; do not edit.\r\n'
-      + 'SET "ZURI_EXE=${runtime}"\r\n'
-      + 'IF NOT EXIST "%ZURI_EXE%" SET "ZURI_EXE=zuri"\r\n'
-      + '"%ZURI_EXE%" run "${entry}" %*\r\n'
-      + 'EXIT /B %ERRORLEVEL%\r\n'
+    return '@ECHO OFF\r\n' +
+        'REM Runs the zuri command "${command}". Written by zuri install; do not edit.\r\n' +
+        'SET "ZURI_EXE=${runtime}"\r\n' +
+        'IF NOT EXIST "%ZURI_EXE%" SET "ZURI_EXE=zuri"\r\n' +
+        '"%ZURI_EXE%" run "${entry}" %*\r\n' +
+        'EXIT /B %ERRORLEVEL%\r\n'
   }
 
   var quoted_runtime = "'" + runtime.replace("'", "'\\''", false) + "'"
   var quoted_entry = "'" + entry.replace("'", "'\\''", false) + "'"
 
-  return '#!/bin/sh\n'
-    + '# Runs the zuri command "${command}". Written by zuri install; do not edit.\n'
-    + 'ZURI_EXE=${quoted_runtime}\n'
-    + '[ -x "$ZURI_EXE" ] || ZURI_EXE=zuri\n'
-    + 'exec "$ZURI_EXE" run ${quoted_entry} "$@"\n'
+  return '#!/bin/sh\n' +
+      '# Runs the zuri command "${command}". Written by zuri install; do not edit.\n' +
+      'ZURI_EXE=${quoted_runtime}\n' +
+      '[ -x "$ZURI_EXE" ] || ZURI_EXE=zuri\n' +
+      'exec "$ZURI_EXE" run ${quoted_entry} "$@"\n'
 }
 
 # Writes a launcher for every globally installed command, and removes
@@ -1316,7 +1348,8 @@ def _update_launchers(workspace, outcome) {
   for import_name, record in workspace.installed.packages {
     for command in record.get('commands', []) {
       var dir = os.join_paths(
-        workspace.project.package_dir(import_name), 'cmds',
+        workspace.project.package_dir(import_name),
+        'cmds',
       )
       var entry = os.join_paths(dir, command, 'index.zu')
 

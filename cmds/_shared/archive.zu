@@ -49,9 +49,28 @@ var MAX_PATH = 240
 var _BLOCK = 512
 
 var _RESERVED = [
-  'con', 'prn', 'aux', 'nul',
-  'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9',
-  'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9',
+  'con',
+  'prn',
+  'aux',
+  'nul',
+  'com1',
+  'com2',
+  'com3',
+  'com4',
+  'com5',
+  'com6',
+  'com7',
+  'com8',
+  'com9',
+  'lpt1',
+  'lpt2',
+  'lpt3',
+  'lpt4',
+  'lpt5',
+  'lpt6',
+  'lpt7',
+  'lpt8',
+  'lpt9',
 ]
 
 /**
@@ -174,21 +193,33 @@ def _split_name(path: string) {
     }
   }
 
-  raise ArchiveError("'${path}' cannot be stored: a single part is over 100 bytes")
+  raise ArchiveError(
+    "'${path}' cannot be stored: a single part is over 100 bytes",
+  )
 }
 
 # One 512-byte ustar header.
 def _header(path: string, mode: number, size: number, is_dir: bool) {
   var split = _split_name(path)
 
-  var head = _field(split[0], 100) + _octal(mode, 8) + _octal(0, 8)
-    + _octal(0, 8)
-    + _octal(size, 12) + _octal(0, 12)
+  var head = _field(split[0], 100) +
+      _octal(mode, 8) +
+      _octal(0, 8) +
+      _octal(0, 8) +
+      _octal(size, 12) +
+      _octal(0, 12)
 
-  var tail = (is_dir ? '5' : '0').to_bytes() + bytes(100) + 'ustar'.to_bytes()
-    + bytes(1)
-    + '00'.to_bytes() + bytes(32) + bytes(32) + _octal(0, 8) + _octal(0, 8)
-    + _field(split[1], 155) + bytes(12)
+  var tail = (is_dir ? '5' : '0').to_bytes() +
+      bytes(100) +
+      'ustar'.to_bytes() +
+      bytes(1) +
+      '00'.to_bytes() +
+      bytes(32) +
+      bytes(32) +
+      _octal(0, 8) +
+      _octal(0, 8) +
+      _field(split[1], 155) +
+      bytes(12)
 
   # The checksum is taken with its own field read as eight spaces.
   var blank = head + '        '.to_bytes() + tail
@@ -213,14 +244,17 @@ def _padding(size: number) {
 # Refuses a set of files that is too many or too large before any of
 # it is read, naming what takes the room so it can be left out.
 def _check_totals(
-  root: string, files: list, directories: number, limit: number,
+  root: string,
+  files: list,
+  directories: number,
+  limit: number,
 ) {
   var count = files.length() + directories
 
   if count > MAX_ENTRIES {
     raise ArchiveError(
-      'the package would hold ${count} files and directories, and holds at most ${MAX_ENTRIES}; '
-        + 'leave some out with exclude in [project]',
+      'the package would hold ${count} files and directories, and holds at most ${MAX_ENTRIES}; ' +
+          'leave some out with exclude in [project]',
     )
   }
 
@@ -231,7 +265,9 @@ def _check_totals(
     var full = os.join_paths(root, path)
 
     if os.is_symlink(full) {
-      raise ArchiveError("'${path}' is a symbolic link, which a package cannot hold")
+      raise ArchiveError(
+        "'${path}' is a symbolic link, which a package cannot hold",
+      )
     }
 
     var bytes_in = file(full).stats().size
@@ -251,8 +287,8 @@ def _check_totals(
   })
 
   raise ArchiveError(
-    'the files come to ${ui.size(total)}, more than the ${ui.size(limit)} allowed; the largest '
-      + 'are ${", ".join(largest)}. Leave them out with exclude in [project]',
+    'the files come to ${ui.size(total)}, more than the ${ui.size(limit)} allowed; the largest ' +
+        'are ${", ".join(largest)}. Leave them out with exclude in [project]',
   )
 }
 
@@ -332,7 +368,9 @@ def pack(root: string, files: list, destination: string, limit: ?number) {
     var full = os.join_paths(root, entry.path)
 
     if os.is_symlink(full) {
-      raise ArchiveError("'${entry.path}' is a symbolic link, which a package cannot hold")
+      raise ArchiveError(
+        "'${entry.path}' is a symbolic link, which a package cannot hold",
+      )
     }
 
     var data = fsx.read_bytes(full)
@@ -345,14 +383,14 @@ def pack(root: string, files: list, destination: string, limit: ?number) {
     # read is still caught.
     if unpacked > limit {
       raise ArchiveError(
-        '${entry.path} grew while it was packed, past the ${ui.size(limit)} '
-          + 'the files may come to',
+        '${entry.path} grew while it was packed, past the ${ui.size(limit)} ' +
+            'the files may come to',
       )
     }
 
-    encoder.write(_header(
-      entry.path, executable ? 0c755 : 0c644, data.length(), false,
-    ))
+    encoder.write(
+      _header(entry.path, executable ? 0c755 : 0c644, data.length(), false),
+    )
     encoder.write(data)
     encoder.write(_padding(data.length()))
   }
@@ -392,7 +430,9 @@ class _Blocks {
       self.read += chunk.length()
 
       if self.read > MAX_UNPACKED_SIZE + _BLOCK * (MAX_ENTRIES + 2) {
-        raise ArchiveError('the archive unpacks to more than ${MAX_UNPACKED_SIZE} bytes')
+        raise ArchiveError(
+          'the archive unpacks to more than ${MAX_UNPACKED_SIZE} bytes',
+        )
       }
 
       self._buffer.extend(chunk)
@@ -467,7 +507,9 @@ def read(path: string, each: ?function) {
   catch {
     blocks = _Blocks(raw)
   } as error {
-    raise ArchiveError("'${os.base_name(path)}' is not a gzip-compressed archive")
+    raise ArchiveError(
+      "'${os.base_name(path)}' is not a gzip-compressed archive",
+    )
   }
 
   var entries = []
@@ -499,7 +541,9 @@ def read(path: string, each: ?function) {
     var prefix = _text(header[345, 500])
 
     if size > MAX_UNPACKED_SIZE {
-      raise ArchiveError('the archive holds an entry larger than ${MAX_UNPACKED_SIZE} bytes')
+      raise ArchiveError(
+        'the archive holds an entry larger than ${MAX_UNPACKED_SIZE} bytes',
+      )
     }
 
     var body_size = size + _padding(size).length()
@@ -534,7 +578,9 @@ def read(path: string, each: ?function) {
     }
 
     if type != '0' and type != '' and !is_dir {
-      raise ArchiveError("'${full}' is not a plain file or directory, which a package cannot hold")
+      raise ArchiveError(
+        "'${full}' is not a plain file or directory, which a package cannot hold",
+      )
     }
 
     var reason = unsafe_reason(full)
@@ -558,7 +604,9 @@ def read(path: string, each: ?function) {
     total += size
 
     if total > MAX_UNPACKED_SIZE {
-      raise ArchiveError('the archive unpacks to more than ${MAX_UNPACKED_SIZE} bytes')
+      raise ArchiveError(
+        'the archive unpacks to more than ${MAX_UNPACKED_SIZE} bytes',
+      )
     }
 
     var data = nil

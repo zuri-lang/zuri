@@ -129,13 +129,7 @@ var TYPES = {
  *
  * @type dict
  */
-var CLASSES = {
-  IN: 1,
-  CH: 3,
-  HS: 4,
-  NONE: 254,
-  ANY: 255,
-}
+var CLASSES = { IN: 1, CH: 3, HS: 4, NONE: 254, ANY: 255 }
 
 /**
  * What a server said about the question, by name. `NOERROR` means the
@@ -700,8 +694,8 @@ class StartOfAuthority {
   }
 
   to_string() {
-    return '${self.primary} ${self.mailbox} ${self.serial} ${self.refresh} '
-      + '${self.retry} ${self.expire} ${self.minimum}'
+    return '${self.primary} ${self.mailbox} ${self.serial} ${self.refresh} ' +
+        '${self.retry} ${self.expire} ${self.minimum}'
   }
 
   @to_string() {
@@ -906,10 +900,7 @@ class Response {
       raise NameError('no such name: ${asked}')
     }
 
-    raise ServerError(
-      '${self.rcode_name} answering ${asked}',
-      self.rcode,
-    )
+    raise ServerError('${self.rcode_name} answering ${asked}', self.rcode)
   }
 
   to_string() {
@@ -946,8 +937,10 @@ def _read_rdata(reader, type: number, length: number) {
     }
 
     data = _ipv6_text(groups)
-  } else if type == TYPES.NS or type == TYPES.CNAME or type == TYPES.PTR
-    or type == TYPES.DNAME {
+  } else if type == TYPES.NS or
+      type == TYPES.CNAME or
+      type == TYPES.PTR or
+      type == TYPES.DNAME {
     data = reader.name()
   } else if type == TYPES.MX {
     var preference = reader.int2()
@@ -960,7 +953,13 @@ def _read_rdata(reader, type: number, length: number) {
     var retry = reader.int4()
     var expire = reader.int4()
     data = StartOfAuthority(
-      primary, mailbox, serial, refresh, retry, expire, reader.int4(),
+      primary,
+      mailbox,
+      serial,
+      refresh,
+      retry,
+      expire,
+      reader.int4(),
     )
   } else if type == TYPES.SRV {
     var priority = reader.int2()
@@ -979,7 +978,9 @@ def _read_rdata(reader, type: number, length: number) {
     var flags = reader.byte()
     var tag = reader.take(reader.byte()).to_string()
     data = Certification(
-      flags, tag, reader.take(end - reader.position()).to_string(),
+      flags,
+      tag,
+      reader.take(end - reader.position()).to_string(),
     )
   } else {
     data = reader.take(length)
@@ -994,8 +995,14 @@ def _read_rdata(reader, type: number, length: number) {
 # segments of an IPv6 address are handed over one at a time.
 def _ipv6_text(groups: list) {
   return Ipv6(
-    groups[0], groups[1], groups[2], groups[3],
-    groups[4], groups[5], groups[6], groups[7],
+    groups[0],
+    groups[1],
+    groups[2],
+    groups[3],
+    groups[4],
+    groups[5],
+    groups[6],
+    groups[7],
   ).to_string()
 }
 
@@ -1009,9 +1016,9 @@ def _read_records(reader, count: number) {
     var ttl = reader.int4()
     var length = reader.int2()
 
-    records.append(Record(
-      name, type, klass, ttl, _read_rdata(reader, type, length),
-    ))
+    records.append(
+      Record(name, type, klass, ttl, _read_rdata(reader, type, length)),
+    )
   }
 
   return records
@@ -1062,7 +1069,13 @@ def parse_message(data) {
   }
 
   return Response(
-    id, flags, question, answers, authorities, additionals, extended,
+    id,
+    flags,
+    question,
+    answers,
+    authorities,
+    additionals,
+    extended,
   )
 }
 
@@ -1077,7 +1090,11 @@ def parse_message(data) {
  * @returns bytes
  */
 def build_query(
-  id: number, name: string, type: number, klass: number, options: dict,
+  id: number,
+  name: string,
+  type: number,
+  klass: number,
+  options: dict,
 ) {
   var out = bytes(0)
   var flags = options.recursion ? 0x0100 : 0
@@ -1128,7 +1145,9 @@ def _server_endpoint(entry: string, default_port: number) {
     var close = entry.index_of(']')
 
     if close < 0 {
-      raise ResolverError('server address is missing its closing bracket: ${entry}')
+      raise ResolverError(
+        'server address is missing its closing bracket: ${entry}',
+      )
     }
 
     var host = entry[1, close]
@@ -1145,7 +1164,8 @@ def _server_endpoint(entry: string, default_port: number) {
 
   if first > -1 and entry.last_index_of(':') == first {
     return _endpoint(
-      entry[0, first], entry[first + 1, entry.length()].to_number(),
+      entry[0, first],
+      entry[first + 1, entry.length()].to_number(),
     )
   }
 
@@ -1285,7 +1305,9 @@ def _exchange_tcp(server: string, query, options: dict) {
 
 def _exchange_tls(server: string, query, options: dict) {
   if options.server_name == nil {
-    raise ResolverError('a resolver using TLS needs the server_name to verify against')
+    raise ResolverError(
+      'a resolver using TLS needs the server_name to verify against',
+    )
   }
 
   var stream = TcpStream()
@@ -1297,8 +1319,8 @@ def _exchange_tls(server: string, query, options: dict) {
     stream.set_write_timeout(options.timeout)
 
     var config = options.tls_config == nil
-      ? tls.TlsConfig()
-      : options.tls_config
+        ? tls.TlsConfig()
+        : options.tls_config
     secure = tls.TlsStream.connect(stream, config, options.server_name)
 
     secure.write_all(_frame(query))
@@ -1368,8 +1390,8 @@ def system_search() {
     # A lone dot is how a system says "search the root", which is the
     # same as not searching at all.
     var trimmed = suffix.ends_with('.')
-      ? suffix[0, suffix.length() - 1]
-      : suffix
+        ? suffix[0, suffix.length() - 1]
+        : suffix
 
     if trimmed != '' {
       found.append(trimmed)
@@ -1619,7 +1641,9 @@ class Resolver {
     }
 
     if response.id != id {
-      raise MalformedResponse('${server} answered a question that was not asked')
+      raise MalformedResponse(
+        '${server} answered a question that was not asked',
+      )
     }
 
     if !_answers_question(response, name, type, klass) {
@@ -1752,8 +1776,8 @@ class Resolver {
       # The server usually resolves the whole chain for us and sends
       # every step of it. When it stops short, the rest has to be asked
       # for separately.
-      if _records_named(response.answers, target, wanted).is_empty()
-        and _records_named(response.answers, target, TYPES.CNAME).is_empty() {
+      if _records_named(response.answers, target, wanted).is_empty() and
+          _records_named(response.answers, target, TYPES.CNAME).is_empty() {
         response = self.query(target, wanted, in_class).ok()
       }
     }
@@ -1911,8 +1935,8 @@ class Resolver {
    */
   ptr(address: string) {
     return self
-      .resolve(reverse_name(address), TYPES.PTR)
-      .map(@(record) => record.data)
+        .resolve(reverse_name(address), TYPES.PTR)
+        .map(@(record) => record.data)
   }
 
   /**
@@ -1928,8 +1952,8 @@ class Resolver {
 
   to_string() {
     var where = self._servers == nil
-      ? 'the system servers'
-      : ', '.join(self._servers)
+        ? 'the system servers'
+        : ', '.join(self._servers)
 
     return '<Resolver ${where}>'
   }
@@ -1943,9 +1967,22 @@ class Resolver {
 # typo that is silently ignored is a resolver that quietly does the
 # wrong thing for the rest of the program's life.
 var _OPTIONS = [
-  'servers', 'port', 'timeout', 'attempts', 'tcp', 'tls', 'server_name',
-  'tls_config', 'search', 'ndots', 'recursion', 'edns', 'udp_size',
-  'dnssec', 'cache', 'cache_size',
+  'servers',
+  'port',
+  'timeout',
+  'attempts',
+  'tcp',
+  'tls',
+  'server_name',
+  'tls_config',
+  'search',
+  'ndots',
+  'recursion',
+  'edns',
+  'udp_size',
+  'dnssec',
+  'cache',
+  'cache_size',
 ]
 
 # Whether an answer is an answer to the question that was asked. A
@@ -1958,9 +1995,9 @@ def _answers_question(response, name: string, type: number, klass: number) {
 
   var asked = name.ends_with('.') ? name[0, name.length() - 1] : name
 
-  return response.question.name.lower() == asked.lower()
-    and response.question.type == type
-    and response.question.klass == klass
+  return response.question.name.lower() == asked.lower() and
+      response.question.type == type and
+      response.question.klass == klass
 }
 
 def _records_named(records: list, name: string, type: number) {
@@ -1990,8 +2027,8 @@ def _cacheable_ttl(response) {
       }
 
       var limit = record.data.minimum < record.ttl
-        ? record.data.minimum
-        : record.ttl
+          ? record.data.minimum
+          : record.ttl
 
       if ttl == nil or limit < ttl {
         ttl = limit

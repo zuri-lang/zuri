@@ -51,27 +51,35 @@ def _subject(server, params: dict) {
   var occurrence = found.occurrence
   var target = found.target
 
-  if occurrence.kind == 'segment'
-    or (target != nil and target.contains('module')) {
+  if occurrence.kind == 'segment' or
+      (target != nil and target.contains('module')) {
     _refuse("a module is renamed by renaming its file")
   }
 
   if target == nil {
-    _refuse("'${occurrence.name}' does not resolve to a declaration that can be renamed")
+    _refuse(
+      "'${occurrence.name}' does not resolve to a declaration that can be renamed",
+    )
   }
 
   var symbol = server.linker.symbol(target)
 
   if symbol == nil {
-    _refuse("'${occurrence.name}' does not resolve to a declaration that can be renamed")
+    _refuse(
+      "'${occurrence.name}' does not resolve to a declaration that can be renamed",
+    )
   }
 
   if symbol.name.starts_with('@') {
-    _refuse("'${symbol.name}' is a decorated method, whose name the language fixes")
+    _refuse(
+      "'${symbol.name}' is a decorated method, whose name the language fixes",
+    )
   }
 
   if !server.is_workspace(target.path) {
-    _refuse("'${symbol.name}' is declared outside the workspace, in ${target.path}")
+    _refuse(
+      "'${symbol.name}' is declared outside the workspace, in ${target.path}",
+    )
   }
 
   return { document, occurrence, target, symbol }
@@ -111,8 +119,8 @@ def rename(server, params: dict, context) {
   if !common.is_identifier(name) {
     _refuse(
       common.KEYWORDS.contains(name)
-        ? "'${name}' is a keyword"
-        : "'${name}' is not a name",
+          ? "'${name}' is a keyword"
+          : "'${name}' is not a name",
     )
   }
 
@@ -164,12 +172,10 @@ def _is_shorthand(server, place: dict) {
 
   var occurrence = query.at(summary, place.start)
 
-  return occurrence != nil
-    and occurrence.kind == 'ref'
-    and occurrence.start == place.start
-    and (
-      occurrence.flags & SHORTHAND != 0
-    )
+  return occurrence != nil and
+      occurrence.kind == 'ref' and
+      occurrence.start == place.start and
+      (occurrence.flags & SHORTHAND != 0)
 }
 
 # Refuses making private what is used from outside: a module global
@@ -201,11 +207,13 @@ def _check_privacy(server, subject: dict, name: string, places: list) {
       var access = summary.members[occurrence.member]
       var text = server.text(place.path)
       var receiver = text == nil
-        ? ''
-        : text[access.object_start, access.object_end]
+          ? ''
+          : text[access.object_start, access.object_end]
 
       if receiver != 'self' and receiver != 'parent' {
-        _refuse("'${name}' would be private, but '${old}' is used through '${receiver}'")
+        _refuse(
+          "'${name}' would be private, but '${old}' is used through '${receiver}'",
+        )
       }
     }
 
@@ -215,7 +223,9 @@ def _check_privacy(server, subject: dict, name: string, places: list) {
   if symbol.scope == 0 {
     for place in places {
       if place.path != target.path {
-        _refuse("'${name}' would be private, but '${old}' is used in ${place.path}")
+        _refuse(
+          "'${name}' would be private, but '${old}' is used in ${place.path}",
+        )
       }
     }
   }
@@ -233,8 +243,8 @@ def _check_clashes(server, subject: dict, name: string, places: list) {
     var instance = { t: 'instance', path: target.path, index: symbol.owner }
     var statics = { t: 'class', path: target.path, index: symbol.owner }
 
-    if linker.member(instance, name) != nil
-      or linker.member(statics, name) != nil {
+    if linker.member(instance, name) != nil or
+        linker.member(statics, name) != nil {
       _refuse("the class already has a member named '${name}'")
     }
 
@@ -252,11 +262,13 @@ def _check_clashes(server, subject: dict, name: string, places: list) {
     var existing = visible.get(name, nil)
 
     if existing != nil {
-      _refuse("'${name}' is already declared where '${symbol.name}' is used, in ${place.path}")
+      _refuse(
+        "'${name}' is already declared where '${symbol.name}' is used, in ${place.path}",
+      )
     }
 
-    if linker.starred(place.path).contains(name)
-      or server.builtins.global(name) != nil {
+    if linker.starred(place.path).contains(name) or
+        server.builtins.global(name) != nil {
       if symbol.scope == 0 or place.path != target.path {
         _refuse("'${name}' already names something in ${place.path}")
       }
@@ -276,7 +288,9 @@ def _check_clashes(server, subject: dict, name: string, places: list) {
     if inside and refs[i + 4] == name {
       var why = "and would come to mean it"
 
-      _refuse("'${name}' is already used in the scope of '${symbol.name}', ${why}")
+      _refuse(
+        "'${name}' is already used in the scope of '${symbol.name}', ${why}",
+      )
     }
 
     i += 5
@@ -288,7 +302,11 @@ def _check_clashes(server, subject: dict, name: string, places: list) {
 # through a value of a union type, where renaming the member on one of
 # the union's types alone would leave the use broken for the others.
 def _report_left_uses(
-  server, old: string, places: list, shared: list, context,
+  server,
+  old: string,
+  places: list,
+  shared: list,
+  context,
 ) {
   var linker = server.linker
   var renamed = {}
@@ -335,11 +353,11 @@ def _report_left_uses(
 
   var shown = left.length() > _LISTED ? left[0, _LISTED] : left
   var more = left.length() > _LISTED
-    ? ' and ${left.length() - _LISTED} more'
-    : ''
+      ? ' and ${left.length() - _LISTED} more'
+      : ''
   var count = left.length()
   var message = "${count} use(s) of '.${old}' on a receiver of unknown type, " +
-    'or one that may be of several types, were left as they are: '
+      'or one that may be of several types, were left as they are: '
   message += ', '.join(shown) + more
 
   log.info(message)
@@ -365,14 +383,14 @@ def _moves(server, files: list) {
     }
 
     var prefix = from.ends_with(os.path_separator)
-      ? from
-      : from + os.path_separator
+        ? from
+        : from + os.path_separator
 
     for path in server.paths() {
       if path.starts_with(prefix) {
-        moves[path] = to
-          + os.path_separator
-          + path[prefix.length(), path.length()]
+        moves[path] = to +
+            os.path_separator +
+            path[prefix.length(), path.length()]
       }
     }
   }

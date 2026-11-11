@@ -291,10 +291,9 @@ def _end_tag(start) {
  * @returns dict
  */
 def parse(source: string, context: ?string) {
-  var stream = Normalizer(html.Tokenizer(source, {
-    scripting: false,
-    auto_content_state: false,
-  }))
+  var stream = Normalizer(
+    html.Tokenizer(source, { scripting: false, auto_content_state: false }),
+  )
 
   var builder = html.TreeBuilder(stream, { scripting: false })
 

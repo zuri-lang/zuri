@@ -130,7 +130,7 @@ class PostgresCursor < DriverCursor {
 
   to_string() {
     return '<PostgresCursor ${self._portal}' +
-      '${self._closed ? " (closed)" : ""}>'
+        '${self._closed ? " (closed)" : ""}>'
   }
 
   @to_string() {

@@ -188,7 +188,9 @@ def discover(directory: string, options: ?dict) {
   var resolved = _resolve(options)
 
   if !os.dir_exists(directory) {
-    raise TestSetupError("there is no '${directory}' directory to run tests from")
+    raise TestSetupError(
+      "there is no '${directory}' directory to run tests from",
+    )
   }
 
   var found = []
@@ -260,8 +262,10 @@ class FileResult {
 
   /** Whether the file ran cleanly and everything in it passed. @returns bool */
   ok() {
-    return self.problem == '' and self.code == 0 and
-      self.summary != nil and self.summary.get('failed', 0) == 0
+    return self.problem == '' and
+        self.code == 0 and
+        self.summary != nil and
+        self.summary.get('failed', 0) == 0
   }
 }
 
@@ -297,12 +301,7 @@ def _spawn(directory, path, options) {
   return os.spawn(
     os.exe_path,
     ['run', os.join_paths(directory, path)],
-    {
-      env: environment,
-      stdin: 'null',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
+    { env: environment, stdin: 'null', stdout: 'pipe', stderr: 'pipe' },
   )
 }
 
@@ -355,9 +354,9 @@ def _diagnose(result) {
   }
 
   if result.summary == nil {
-    result.problem = result.code == 0 ?
-      'the file declared no tests' :
-      'the file exited with status ${result.code} before reporting'
+    result.problem = result.code == 0
+        ? 'the file declared no tests'
+        : 'the file exited with status ${result.code} before reporting'
 
     return
   }
@@ -390,9 +389,12 @@ def _echo_file(result, options) {
   }
 
   echo ''
-  echo '  ' + badge + '  ' + style.bold(result.path) +
-    style.dim('  ${format.duration(result.duration)}') +
-    style.dim('  ${format.plural(result.tests.length(), "test")}')
+  echo '  ' +
+      badge +
+      '  ' +
+      style.bold(result.path) +
+      style.dim('  ${format.duration(result.duration)}') +
+      style.dim('  ${format.plural(result.tests.length(), "test")}')
 
   if result.problem != '' {
     echo '        ' + style.red(result.problem)
@@ -514,9 +516,9 @@ def conduct(directory: ?string, options: ?dict) {
   var where = source.short_path(directory)
 
   echo ''
-  echo '  '
-    + style.bold('zuri test')
-    + style.dim('  ${format.plural(paths.length(), "file")} in ${where}')
+  echo '  ' +
+      style.bold('zuri test') +
+      style.dim('  ${format.plural(paths.length(), "file")} in ${where}')
 
   if paths.is_empty() {
     echo ''
@@ -551,13 +553,7 @@ def conduct(directory: ?string, options: ?dict) {
     os.set_exit_code(1)
   }
 
-  return {
-    files: results,
-    totals,
-    duration,
-    exit_code: ok ? 0 : 1,
-    ok,
-  }
+  return { files: results, totals, duration, exit_code: ok ? 0 : 1, ok }
 }
 
 def _empty_totals() {
@@ -612,9 +608,9 @@ def _execute(directory, paths, options) {
         break
       }
 
-      running.append(_Job(
-        paths[next], _spawn(directory, paths[next], options), _now_ms(),
-      ))
+      running.append(
+        _Job(paths[next], _spawn(directory, paths[next], options), _now_ms()),
+      )
       next++
     }
 

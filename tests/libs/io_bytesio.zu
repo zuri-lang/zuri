@@ -33,10 +33,12 @@ echo '════════════════════════�
 # ---------------------------------------------------------------------------
 assert raises(@() {
   io.BytesIO('not bytes')
-}), 'BytesIO must reject a source that is not a bytearray'
+}),
+    'BytesIO must reject a source that is not a bytearray'
 assert raises(@() {
   io.BytesIO(bytes(0), 123)
-}), 'BytesIO must reject a non-string mode'
+}),
+    'BytesIO must reject a non-string mode'
 ok('BytesIO rejects invalid constructor arguments')
 
 var b = io.BytesIO('hello'.to_bytes(), 'r')
@@ -45,7 +47,7 @@ assert b.is_open(), 'a freshly constructed BytesIO must start open'
 assert !b.is_closed(), 'is_closed() must be the exact inverse of is_open()'
 assert !b.is_tty(), 'a BytesIO is never a tty'
 assert b.mode() == 'r',
-  'mode() must report back the mode passed to the constructor'
+    'mode() must report back the mode passed to the constructor'
 ok('BytesIO construction defaults')
 
 # ---------------------------------------------------------------------------
@@ -53,24 +55,24 @@ ok('BytesIO construction defaults')
 # ---------------------------------------------------------------------------
 var reader = io.BytesIO('hello world'.to_bytes(), 'r')
 assert reader.read(5).to_string() == 'hello',
-  'read(length) must return exactly that many bytes'
+    'read(length) must return exactly that many bytes'
 assert reader.is_closed(), 'read() must auto-close the stream once it returns'
 ok('BytesIO.read() with an explicit length auto-closes')
 
 assert reader.read(1).to_string() == 'h',
-  'read() must transparently auto-reopen (and so restart from position 0) on a closed stream, not raise'
+    'read() must transparently auto-reopen (and so restart from position 0) on a closed stream, not raise'
 ok('BytesIO.read() transparently auto-reopens on its next call')
 
 var reader2 = io.BytesIO('hello world'.to_bytes(), 'r')
 assert reader2.gets(5).to_string() == 'hello',
-  'gets(length) must read like read() but not auto-close'
+    'gets(length) must read like read() but not auto-close'
 assert reader2.gets(6).to_string() == ' world',
-  'a second gets() must continue from where the first left off'
+    'a second gets() must continue from where the first left off'
 ok('BytesIO.gets() reads without auto-closing')
 
 var reader3 = io.BytesIO('hello'.to_bytes(), 'r')
 assert reader3.read().to_string() == 'hello',
-  'read() with no length must read to the end of the stream'
+    'read() with no length must read to the end of the stream'
 ok('BytesIO.read() with no length reads to the end')
 
 # ---------------------------------------------------------------------------
@@ -78,23 +80,23 @@ ok('BytesIO.read() with no length reads to the end')
 # ---------------------------------------------------------------------------
 var writer = io.BytesIO(bytes(0), 'w+')
 assert writer.write('hello ') == 6,
-  'write() must return the number of bytes written'
+    'write() must return the number of bytes written'
 writer.write('world')
 assert writer.source.to_string() == 'hello world',
-  'successive write() calls must append to the source'
+    'successive write() calls must append to the source'
 ok('BytesIO.write() appends and reports byte count')
 
 var writer2 = io.BytesIO(bytes(0), 'w+')
 writer2.puts('a')
 writer2.puts('b')
 assert writer2.source.to_string() == 'ab',
-  'puts() must write like write() but never auto-close'
+    'puts() must write like write() but never auto-close'
 ok('BytesIO.puts() writes without auto-closing')
 
 assert raises(@() {
   io.BytesIO('x'.to_bytes(), 'r').write('y')
 }),
-  'writing to a read-only BytesIO must raise'
+    'writing to a read-only BytesIO must raise'
 ok('BytesIO enforces its declared mode')
 
 # ---------------------------------------------------------------------------
@@ -107,10 +109,11 @@ seeker.seek(2, io.SEEK_CUR)
 assert seeker.tell() == 5, 'SEEK_CUR must seek relative to the current position'
 seeker.seek(2, io.SEEK_END)
 assert seeker.tell() == 8,
-  'SEEK_END must seek relative to the end of the stream'
+    'SEEK_END must seek relative to the end of the stream'
 assert raises(@() {
   seeker.seek(0, 99)
-}), 'an out-of-range seek_type must raise'
+}),
+    'an out-of-range seek_type must raise'
 ok('BytesIO.seek()/tell() with all three seek types')
 
 # ---------------------------------------------------------------------------
@@ -121,47 +124,49 @@ lifecycle.close()
 assert lifecycle.is_closed(), 'close() must flip is_closed() to true'
 lifecycle.open()
 assert lifecycle.is_open(),
-  'open() must reopen a closed BytesIO for further use'
+    'open() must reopen a closed BytesIO for further use'
 ok('BytesIO close()/open() lifecycle')
 
 var original = io.BytesIO('shared'.to_bytes(), 'r')
 var copy = original.copy()
 copy.gets(6)
 assert original.tell() == 0,
-  'copy() must clone the underlying source, not alias it'
+    'copy() must clone the underlying source, not alias it'
 ok('BytesIO.copy() produces an independent clone')
 
 var stat_target = io.BytesIO('12345'.to_bytes(), 'r+')
 var stats = stat_target.stats()
 assert stats.size == 5, 'stats().size must reflect the source length'
 assert stats.is_readable and stats.is_writable,
-  'an "r+" BytesIO must report both readable and writable'
+    'an "r+" BytesIO must report both readable and writable'
 ok('BytesIO.stats() reports size and access flags')
 
 assert io.BytesIO(bytes(0), 'r').symlink('x') == false,
-  'symlink() must always be false for a BytesIO'
+    'symlink() must always be false for a BytesIO'
 assert io.BytesIO(bytes(0), 'r').rename('x') == false,
-  'rename() must always be false for a BytesIO'
+    'rename() must always be false for a BytesIO'
 assert io.BytesIO(bytes(0), 'r').chmod(0) == false,
-  'chmod() must always be false for a BytesIO'
-assert io.BytesIO(bytes(0), 'r').path() == ''
-  and io.BytesIO(bytes(0), 'r').abs_path() == '',
-  'a BytesIO has no filesystem path'
+    'chmod() must always be false for a BytesIO'
+assert io.BytesIO(bytes(0), 'r').path() == '' and
+    io.BytesIO(bytes(0), 'r').abs_path() == '',
+    'a BytesIO has no filesystem path'
 assert io.BytesIO(bytes(0), 'r').name() == '', 'a BytesIO has no name'
 ok('BytesIO filesystem-oriented methods are correctly stubbed out')
 
 var truncated = io.BytesIO('0123456789'.to_bytes(), 'r+')
 truncated.truncate(3)
 assert truncated.stats().size == 10,
-  'truncate() only affects the readable window, not the underlying source itself'
+    'truncate() only affects the readable window, not the underlying source itself'
 assert truncated.read().to_string() == '012',
-  'truncate() must actually cap what read() can return, even though the source itself is unchanged'
-ok('BytesIO.truncate() shrinks the readable window without touching the underlying source')
+    'truncate() must actually cap what read() can return, even though the source itself is unchanged'
+ok(
+  'BytesIO.truncate() shrinks the readable window without touching the underlying source',
+)
 
 var truncated_default = io.BytesIO('abcde'.to_bytes(), 'r+')
 truncated_default.truncate()
 assert truncated_default.read().to_string() == '',
-  'truncate() with no length must default to 0, making the stream unreadable'
+    'truncate() with no length must default to 0, making the stream unreadable'
 ok('BytesIO.truncate() with no argument defaults to length 0')
 
 # ---------------------------------------------------------------------------
@@ -170,30 +175,33 @@ ok('BytesIO.truncate() with no argument defaults to length 0')
 var flushable = io.BytesIO('x'.to_bytes(), 'r')
 assert !raises(@() {
   flushable.flush()
-}), 'flush() must be a safe no-op for BytesIO, never raise'
+}),
+    'flush() must be a safe no-op for BytesIO, never raise'
 ok('BytesIO.flush() is a safe no-op')
 
 assert is_number(io.BytesIO(bytes(0), 'r').number()),
-  'number() must return a numeric file-descriptor-like value'
+    'number() must return a numeric file-descriptor-like value'
 ok('BytesIO.number() returns a numeric value')
 
 var timed = io.BytesIO('x'.to_bytes(), 'r')
 assert timed.set_times(111, 222) == true,
-  'set_times() must return true on success'
+    'set_times() must return true on success'
 assert timed.stats().atime == 111, 'set_times() must actually update atime'
 assert timed.stats().mtime == 222, 'set_times() must actually update mtime'
 assert timed.set_times(-1, 999) == true,
-  'set_times() must accept -1 to mean "leave this one unchanged"'
+    'set_times() must accept -1 to mean "leave this one unchanged"'
 assert timed.stats().atime == 111,
-  'set_times(-1, ...) must leave atime untouched'
+    'set_times(-1, ...) must leave atime untouched'
 assert timed.stats().mtime == 999,
-  'set_times(..., x) must still update mtime when atime is -1'
+    'set_times(..., x) must still update mtime when atime is -1'
 assert raises(@() {
   timed.set_times('x', 0)
-}), 'set_times() must reject a non-numeric atime'
+}),
+    'set_times() must reject a non-numeric atime'
 assert raises(@() {
   timed.set_times(0, 'x')
-}), 'set_times() must reject a non-numeric mtime'
+}),
+    'set_times() must reject a non-numeric mtime'
 ok('BytesIO.set_times() updates atime/mtime, honoring -1 as "leave unchanged"')
 
 var deleted = io.BytesIO('x'.to_bytes(), 'r')
@@ -201,7 +209,8 @@ deleted.delete()
 assert deleted.is_closed(), 'delete() must close the BytesIO'
 assert raises(@() {
   deleted.gets(1)
-}), 'reading from a deleted BytesIO must raise'
+}),
+    'reading from a deleted BytesIO must raise'
 ok('BytesIO.delete() disables further use')
 
 # ===========================================================================

@@ -137,7 +137,9 @@ def verify_with_jwks(token, jwks: Jwks, options) {
   var kid = tok_header.get('kid', nil)
 
   if kid == nil {
-    raise AlgorithmError('token has no kid header parameter; cannot resolve a JWKS key')
+    raise AlgorithmError(
+      'token has no kid header parameter; cannot resolve a JWKS key',
+    )
   }
 
   var pem = jwks.to_pem(kid)

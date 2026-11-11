@@ -40,8 +40,8 @@ class Resolver {
    */
   @new(root: ?string) {
     self.root = root == nil or root.is_empty()
-      ? paths.install_root()
-      : os.abs_path(root)
+        ? paths.install_root()
+        : os.abs_path(root)
     self.stdlib = os.join_paths(self.root, 'libs')
     self.home_libs = paths.global_libs()
     self.natives = {}
@@ -179,7 +179,8 @@ class Resolver {
    */
   import_path(target: string, importer: ?string) {
     for base in [
-      self.stdlib, importer == nil ? nil : self.project_libs(importer),
+      self.stdlib,
+      importer == nil ? nil : self.project_libs(importer),
       self.home_libs,
     ] {
       if base == nil {
@@ -217,17 +218,17 @@ def relative_import(importer: string, target: string) {
 # Whether `text` is an absolute path, as against the URI an unsaved
 # document is known by.
 def _is_path(text: string) {
-  return text.starts_with('/')
-    or text.starts_with('\\\\')
-    or !!text.match('/^[A-Za-z]:[\\\\\/]/')
+  return text.starts_with('/') or
+      text.starts_with('\\\\') or
+      !!text.match('/^[A-Za-z]:[\\\\\/]/')
 }
 
 # The bare import path of `target` under `base`, or `nil` when it is
 # not under it.
 def _under(base: string, target: string) {
   var prefix = base.ends_with(os.path_separator)
-    ? base
-    : base + os.path_separator
+      ? base
+      : base + os.path_separator
 
   if !target.starts_with(prefix) {
     return nil
@@ -264,13 +265,13 @@ def _relative(from: string, target: string) {
   var separator = os.path_separator
   var here = from.split(separator).filter(@(part) => !part.is_empty())
   var there = _without_module_suffix(target)
-    .split(separator)
-    .filter(@(part) => !part.is_empty())
+      .split(separator)
+      .filter(@(part) => !part.is_empty())
   var common = 0
 
-  while common < here.length()
-    and common < there.length() - 1
-    and here[common] == there[common] {
+  while common < here.length() and
+      common < there.length() - 1 and
+      here[common] == there[common] {
     common++
   }
 

@@ -452,15 +452,17 @@ class BytesIO {
   }
 
   _can_read() {
-    return self._open and (self._mode.contains('r')
-      or self._mode.contains('+')
-      or self._mode.contains('a'))
+    return self._open and
+        (self._mode.contains('r') or
+            self._mode.contains('+') or
+            self._mode.contains('a'))
   }
 
   _can_write() {
-    return self._open and (self._mode.contains('w')
-      or self._mode.contains('+')
-      or self._mode.contains('a'))
+    return self._open and
+        (self._mode.contains('w') or
+            self._mode.contains('+') or
+            self._mode.contains('a'))
   }
 
   _do_open() {

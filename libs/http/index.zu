@@ -333,7 +333,10 @@ def server(port: ?number, host: ?string) {
  * @returns HttpServer
  */
 def tls_server(
-  port: number, cert_chain: string, private_key: string, host: ?string,
+  port: number,
+  cert_chain: string,
+  private_key: string,
+  host: ?string,
 ) {
   var instance = HttpServer(port, host)
   instance.use_tls(cert_chain, private_key)

@@ -34,7 +34,8 @@ def main() {
   parser.description = 'Runs the Zuri language server for editor integration and support.'
   parser.epilog = 'Editors start the server themselves; see the Editor Support chapter of the book.'
   parser.add_option(
-    'stdio', 'Talk over standard input and output, as the server always does',
+    'stdio',
+    'Talk over standard input and output, as the server always does',
     nil,
   )
   parser.add_option('log', 'Append the log to this file as well', {
@@ -42,7 +43,9 @@ def main() {
     metavar: 'path',
   })
   parser.add_option(
-    'log-level', 'How much to log: error, warn, info, debug or trace', {
+    'log-level',
+    'How much to log: error, warn, info, debug or trace',
+    {
       type: args.CHOICE,
       choices: logging.LEVELS,
       value: logging.DEFAULT_LEVEL,

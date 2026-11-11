@@ -147,30 +147,53 @@ def _check_date_fields(year, month, day, hour, minute, seconds) {
 # the nil is meant for proper indexing
 var _months_in_year = [
   nil,
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ]
 
 # the short name of months in a year
 # the nil is meant for proper indexing
 var _months_in_year_short = [
   nil,
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ]
 
 # the short name of days in a week
 # the nil is meant for proper indexing
-var _weekdays_short = [
-  'Sun',
-  'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
-]
+var _weekdays_short = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 # the long name of days in a week
 # the nil is meant for proper indexing
 var _weekdays_long = [
   'Sunday',
-  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
 ]
 
 # Days in the year preceding month `g`, counting from month `m` (i.e.
@@ -194,8 +217,7 @@ def _days_before_year(year) {
 }
 
 def _is_leap(year) {
-  return year % 4 == 0 and
-    (year % 100 != 0 or year % 400 == 0)
+  return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
 }
 
 def _dim(year, month) {
@@ -396,7 +418,15 @@ class Date {
    * @param ?bool is_dst
    */
   @new(
-    year, month, day, hour, minute, seconds, microseconds, gmt_offset, is_dst,
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    seconds,
+    microseconds,
+    gmt_offset,
+    is_dst,
   ) {
 
     if year != nil {
@@ -439,12 +469,20 @@ class Date {
       }
 
       # check for valid input values
-      _check_date_fields(self.year, self.month, self.day,
-        self.hour, self.minute, self.seconds)
+      _check_date_fields(
+        self.year,
+        self.month,
+        self.day,
+        self.hour,
+        self.minute,
+        self.seconds,
+      )
 
       if gmt_offset != nil {
         if !is_number(gmt_offset) {
-          raise TypeError('number expected at gmt_offset, ${typeof(gmt_offset)} given')
+          raise TypeError(
+            'number expected at gmt_offset, ${typeof(gmt_offset)} given',
+          )
         }
 
         self.gmt_offset = gmt_offset
@@ -459,8 +497,8 @@ class Date {
       }
 
       self.week_day = self.weekday()
-      self.year_day = _days_before_month(1, self.month, _is_leap(self.year))
-        + self.day
+      self.year_day = _days_before_month(1, self.month, _is_leap(self.year)) +
+          self.day
       self.zone = 'UTC'
     } else {
       var date = localtime()
@@ -569,7 +607,7 @@ class Date {
   days_before_year(year) {
     assert is_int(year), 'integer expected'
     assert year >= MIN_YEAR and year <= MAX_YEAR,
-      'year must be in 1..' + MAX_YEAR
+        'year must be in 1..' + MAX_YEAR
 
     return Date(year, 1, 1).to_ordinal() - self.to_ordinal()
   }
@@ -609,15 +647,14 @@ class Date {
       year--
     }
 
-    return (
-      (year +
-        year // 4 -
-        year // 100 +
-        year // 400 +
-        _weekday_month_offsets[month - 1] +
-        day)
-        % 7
-    ).int()
+    return ((year +
+            year // 4 -
+            year // 100 +
+            year // 400 +
+            _weekday_month_offsets[month - 1] +
+            day) %
+        7)
+        .int()
   }
 
   /**
@@ -902,9 +939,12 @@ class Date {
    */
   jd() {
     # calculate the julian day i.e. Y-m-d value
-    var jday = (367 * self.year - 7 * (self.year + (self.month + 9) / 12) / 4 +
-      275 * self.month / 9 +
-      self.day + 1721014).int()
+    var jday = (367 * self.year -
+        7 * (self.year + (self.month + 9) / 12) / 4 +
+        275 * self.month / 9 +
+        self.day +
+        1721014)
+        .int()
 
     # calculate the time i.e. h:m:s value
     var jdate = jday - 0.5
@@ -923,8 +963,15 @@ class Date {
    *    precision.
    */
   unix_time() {
-    return _date.mktime(self.year, self.month, self.day, self.hour,
-      self.minute, self.seconds, self.is_dst)
+    return _date.mktime(
+      self.year,
+      self.month,
+      self.day,
+      self.hour,
+      self.minute,
+      self.seconds,
+      self.is_dst,
+    )
   }
 
   /**
@@ -959,7 +1006,12 @@ class Date {
   clone() {
     return _copy_zone(
       Date(
-        self.year, self.month, self.day, self.hour, self.minute, self.seconds,
+        self.year,
+        self.month,
+        self.day,
+        self.hour,
+        self.minute,
+        self.seconds,
         self.microseconds,
       ),
       self,
@@ -1098,7 +1150,13 @@ class Date {
     var day = self.day.min(_dim(year, month))
 
     var result = Date(
-      year, month, day, self.hour, self.minute, self.seconds, self.microseconds,
+      year,
+      month,
+      day,
+      self.hour,
+      self.minute,
+      self.seconds,
+      self.microseconds,
     )
     return _copy_zone(result, self)
   }
@@ -1186,7 +1244,7 @@ class Date {
    */
   to_string() {
     return '<Date year: ${self.year}, month: ${self.month}, day: ${self.day}, hour: ' +
-      '${self.hour}, minute: ${self.minute}, seconds: ${self.seconds}, micro_seconds: ${self.microseconds}>'
+        '${self.hour}, minute: ${self.minute}, seconds: ${self.seconds}, micro_seconds: ${self.microseconds}>'
   }
 
   /**
@@ -1493,12 +1551,26 @@ def from_timezone(name, year, month, day, hour, minute, seconds, is_dst) {
   # so the Date this returns shows exactly the wall-clock reading asked
   # for, not a UTC-rebased approximation of it.
   var unix_time = _date.tz_from_local(
-    name, year, month, day, hour, minute, seconds, is_dst,
+    name,
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    seconds,
+    is_dst,
   )
   var offset = _date.tz_offset(name, unix_time)
 
   var result = Date(
-    year, month, day, hour, minute, seconds, 0, offset.gmt_offset,
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    seconds,
+    0,
+    offset.gmt_offset,
     offset.is_dst,
   )
   result.zone = offset.abbreviation
@@ -1617,8 +1689,20 @@ var _month_name_map = {
 
 # Weekday names: used to skip over them during auto-detection parsing.
 var _weekday_name_set = [
-  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
-  'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+  'mon',
+  'tue',
+  'wed',
+  'thu',
+  'fri',
+  'sat',
+  'sun',
 ]
 
 # ---------------------------------------------------------------------------
@@ -1630,9 +1714,9 @@ var _weekday_name_set = [
 def _scan_int(s, pos, max_digits) {
   var start = pos
   var len = s.length()
-  iter var count = 0; pos < len
-    and count < max_digits
-    and _is_digit(s[pos]); pos++ {
+  iter var count = 0; pos < len and
+      count < max_digits and
+      _is_digit(s[pos]); pos++ {
     count++
   }
   if pos == start {
@@ -1816,7 +1900,13 @@ def _default_fields() {
 def _fields_to_date(f) {
   var hour = _apply_ampm(f.hour, f.am_pm)
   var d = Date(
-    f.year, f.month, f.day, hour, f.minute, f.seconds, f.microseconds,
+    f.year,
+    f.month,
+    f.day,
+    hour,
+    f.minute,
+    f.seconds,
+    f.microseconds,
   )
   d.gmt_offset = f.gmt_offset
   d.zone = f.zone
@@ -1908,8 +1998,10 @@ def _parse_plain_iso(s) {
 
   var separator = s[10]
 
-  if length < 19 or (separator != 'T' and separator != 't' and separator != ' ')
-    or s[13] != ':' or s[16] != ':' {
+  if length < 19 or
+      (separator != 'T' and separator != 't' and separator != ' ') or
+      s[13] != ':' or
+      s[16] != ':' {
     return nil
   }
 
@@ -2515,7 +2607,9 @@ def _format_parse(s, fmt) {
         continue
       }
 
-      raise ValueError('parse_format: expected literal "${lit}" at position ${spos} in "${s}"')
+      raise ValueError(
+        'parse_format: expected literal "${lit}" at position ${spos} in "${s}"',
+      )
     }
 
     using fc {
@@ -2524,7 +2618,9 @@ def _format_parse(s, fmt) {
       when 'Y' {
         var r = _scan_int(s, spos, 4)
         if r[0] < 0 {
-          raise ValueError('parse_format: expected 4-digit year at position ${spos}')
+          raise ValueError(
+            'parse_format: expected 4-digit year at position ${spos}',
+          )
         }
 
         f.year = r[0]
@@ -2533,7 +2629,9 @@ def _format_parse(s, fmt) {
       when 'y' {
         var r = _scan_int(s, spos, 2)
         if r[0] < 0 {
-          raise ValueError('parse_format: expected 2-digit year at position ${spos}')
+          raise ValueError(
+            'parse_format: expected 2-digit year at position ${spos}',
+          )
         }
 
         f.year = r[0] < 70 ? 2000 + r[0] : 1900 + r[0]
@@ -2562,7 +2660,9 @@ def _format_parse(s, fmt) {
       when 'M' {
         var r = _scan_alpha(s, spos)
         if !_month_name_map.contains(r[0]) {
-          raise ValueError('parse_format: expected abbreviated month name at position ${spos}')
+          raise ValueError(
+            'parse_format: expected abbreviated month name at position ${spos}',
+          )
         }
 
         f.month = _month_name_map[r[0]]
@@ -2571,7 +2671,9 @@ def _format_parse(s, fmt) {
       when 'F' {
         var r = _scan_alpha(s, spos)
         if !_month_name_map.contains(r[0]) {
-          raise ValueError('parse_format: expected full month name at position ${spos}')
+          raise ValueError(
+            'parse_format: expected full month name at position ${spos}',
+          )
         }
 
         f.month = _month_name_map[r[0]]
@@ -2630,7 +2732,9 @@ def _format_parse(s, fmt) {
       when 'h' {
         var r = _scan_int(s, spos, 2)
         if r[0] < 0 {
-          raise ValueError('parse_format: expected 12h hour at position ${spos}')
+          raise ValueError(
+            'parse_format: expected 12h hour at position ${spos}',
+          )
         }
 
         f.hour = r[0]
@@ -2639,7 +2743,9 @@ def _format_parse(s, fmt) {
       when 'g' {
         var r = _scan_int(s, spos, 2)
         if r[0] < 0 {
-          raise ValueError('parse_format: expected 12h hour at position ${spos}')
+          raise ValueError(
+            'parse_format: expected 12h hour at position ${spos}',
+          )
         }
 
         f.hour = r[0]
@@ -2689,7 +2795,9 @@ def _format_parse(s, fmt) {
         var r = _scan_alpha(s, spos)
         var v = r[0].lower()
         if v != 'am' and v != 'pm' {
-          raise ValueError('parse_format: expected AM or PM at position ${spos}')
+          raise ValueError(
+            'parse_format: expected AM or PM at position ${spos}',
+          )
         }
 
         f.am_pm = v
@@ -2699,7 +2807,9 @@ def _format_parse(s, fmt) {
         var r = _scan_alpha(s, spos)
         var v = r[0].lower()
         if v != 'am' and v != 'pm' {
-          raise ValueError('parse_format: expected am or pm at position ${spos}')
+          raise ValueError(
+            'parse_format: expected am or pm at position ${spos}',
+          )
         }
 
         f.am_pm = v

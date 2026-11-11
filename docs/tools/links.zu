@@ -22,7 +22,10 @@ var ROOT = os.dir_name(os.dir_name(os.dir_name(__file__)))
 
 var BOOKS = [
   { name: 'book', pages: os.join_paths(ROOT, 'docs', 'book', 'src') },
-  { name: 'reference', pages: os.join_paths(ROOT, 'target', 'reference', 'src') },
+  {
+    name: 'reference',
+    pages: os.join_paths(ROOT, 'target', 'reference', 'src'),
+  },
 ]
 
 # mdBook derives a heading's anchor by lowercasing it and dropping
@@ -187,19 +190,25 @@ def check(book) {
       # book into the other one. Both resolve against the file system.
       if page.contains('/') {
         if !file(os.join_paths(book.pages, page)).exists() {
-          broken.append('${book.name}/${name}:${link.line}  no such file: ${page}')
+          broken.append(
+            '${book.name}/${name}:${link.line}  no such file: ${page}',
+          )
         }
 
         continue
       }
 
       if !anchors.contains(page) {
-        broken.append('${book.name}/${name}:${link.line}  no such page: ${page}')
+        broken.append(
+          '${book.name}/${name}:${link.line}  no such page: ${page}',
+        )
         continue
       }
 
       if fragment != '' and !anchors.get(page).contains(fragment) {
-        broken.append('${book.name}/${name}:${link.line}  no anchor #${fragment} on ${page}')
+        broken.append(
+          '${book.name}/${name}:${link.line}  no anchor #${fragment} on ${page}',
+        )
       }
     }
   }

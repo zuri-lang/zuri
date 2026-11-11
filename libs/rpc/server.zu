@@ -83,7 +83,8 @@ def _tls_config(settings: dict) {
 
   var config = tls.TlsConfig()
   config.set_cert_chain(
-    settings.cert_chain, settings.private_key or settings.cert_chain,
+    settings.cert_chain,
+    settings.private_key or settings.cert_chain,
   )
 
   return config
@@ -302,7 +303,9 @@ def _settings(options: ?dict) {
   }
 
   if settings.framing != 'header' and settings.framing != 'line' {
-    raise ValueError("framing must be 'header' or 'line', not '${settings.framing}'")
+    raise ValueError(
+      "framing must be 'header' or 'line', not '${settings.framing}'",
+    )
   }
 
   if settings.path != nil and settings.cert_chain != nil {
@@ -411,7 +414,7 @@ def serve(setup, options: ?dict) {
     listener.close()
     raise ValueError(
       'cannot run ${settings.workers} workers on an isolate pool of ' +
-        '${isolate.pool_size()}; call isolate.configure() first, or ask for fewer',
+          '${isolate.pool_size()}; call isolate.configure() first, or ask for fewer',
     )
   }
 
@@ -429,8 +432,8 @@ def serve(setup, options: ?dict) {
 
   if on_ready != nil {
     var address = settings.path == nil
-      ? listener.local_address()
-      : settings.path
+        ? listener.local_address()
+        : settings.path
 
     on_ready(address, @() {
       running[0] = false

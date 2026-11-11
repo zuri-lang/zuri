@@ -324,7 +324,9 @@ def get_decorator(object, name) {
     return bind_method(object, '@${name}')
   }
 
-  raise NotImplementedError("class ${typeof(object)} does not implement decorator '${name}'")
+  raise NotImplementedError(
+    "class ${typeof(object)} does not implement decorator '${name}'",
+  )
 }
 
 /**

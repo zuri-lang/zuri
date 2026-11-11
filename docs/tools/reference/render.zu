@@ -104,7 +104,9 @@ def _tags(out: list, block) {
   var returns = block.first('returns')
 
   if returns != nil {
-    var head = returns.type == '' ? '**Returns**' : '**Returns** `${returns.type}`'
+    var head = returns.type == ''
+        ? '**Returns**'
+        : '**Returns** `${returns.type}`'
 
     if returns.text == '' {
       out.append(head)
@@ -153,7 +155,14 @@ def _tags(out: list, block) {
 }
 
 # One documented member, heading and all.
-def _member(out: list, member, owner: string, level: string, owner_module, index) {
+def _member(
+  out: list,
+  member,
+  owner: string,
+  level: string,
+  owner_module,
+  index,
+) {
   out.append('${level} ${heading_of(member, owner)}')
   out.append('')
   out.append('```zuri,ignore')
@@ -161,7 +170,10 @@ def _member(out: list, member, owner: string, level: string, owner_module, index
   out.append('```')
   out.append('')
 
-  for line in demote(reflow(_references(member.block.body, owner_module, index)), level.length() + 1) {
+  for line in demote(
+    reflow(_references(member.block.body, owner_module, index)),
+    level.length() + 1,
+  ) {
     out.append(line)
   }
 
@@ -193,7 +205,10 @@ def _constant(out: list, member, level: string, owner_module, index) {
   out.append('```')
   out.append('')
 
-  for line in demote(reflow(_references(member.block.body, owner_module, index)), level.length() + 1) {
+  for line in demote(
+    reflow(_references(member.block.body, owner_module, index)),
+    level.length() + 1,
+  ) {
     out.append(line)
   }
 
@@ -228,7 +243,10 @@ def _class(out: list, klass, level: string, module, index) {
   out.append('```')
   out.append('')
 
-  for line in demote(reflow(_references(klass.block.body, module, index)), inner.length() + 1) {
+  for line in demote(
+    reflow(_references(klass.block.body, module, index)),
+    inner.length() + 1,
+  ) {
     out.append(line)
   }
 
@@ -238,7 +256,10 @@ def _class(out: list, klass, level: string, module, index) {
 
   if !capabilities.is_empty() {
     for name in capabilities {
-      for wrapped in wrap_bullet('- **${name}** — ${CAPABILITIES.get(name, '')}', 2) {
+      for wrapped in wrap_bullet(
+        '- **${name}** — ${CAPABILITIES.get(name, '')}',
+        2,
+      ) {
         out.append(wrapped)
       }
     }
@@ -272,7 +293,10 @@ def _class(out: list, klass, level: string, module, index) {
     out.append('```')
     out.append('')
 
-    for line in demote(reflow(_references(klass.constructor.block.body, module, index)), inner.length() + 1) {
+    for line in demote(
+      reflow(_references(klass.constructor.block.body, module, index)),
+      inner.length() + 1,
+    ) {
       out.append(line)
     }
 
@@ -360,7 +384,11 @@ def _resolve(name: string, module, index) {
     return nil
   }
 
-  for candidate in [bare, '${module.prefix}.${bare}', '${module.root}.${bare}'] {
+  for candidate in [
+    bare,
+    '${module.prefix}.${bare}',
+    '${module.root}.${bare}',
+  ] {
     var entry = index.get(candidate, nil)
 
     if entry != nil {
@@ -405,33 +433,33 @@ def _reach(module) {
 
   if module.exposure == 'flatten' {
     return wrap(
-      'Everything here is re-exported by `${root}`, so `import ${root}` '
-      + 'is enough and the names are called as `${module.prefix}.*`. '
-      + 'Importing `${own}` on its own works too and reaches the same '
-      + 'definitions.'
+      'Everything here is re-exported by `${root}`, so `import ${root}` ' +
+          'is enough and the names are called as `${module.prefix}.*`. ' +
+          'Importing `${own}` on its own works too and reaches the same ' +
+          'definitions.',
     )
   }
 
   if module.exposure == 'namespace' {
     return wrap(
-      '`${root}` exposes this as `${module.prefix}`, so `import ${root}` '
-      + 'is enough and the names are called as `${module.prefix}.*`. '
-      + '`import ${own}` reaches the same definitions directly.'
+      '`${root}` exposes this as `${module.prefix}`, so `import ${root}` ' +
+          'is enough and the names are called as `${module.prefix}.*`. ' +
+          '`import ${own}` reaches the same definitions directly.',
     )
   }
 
   if module.exposure == 'partial' {
     return wrap(
-      '`${root}` lifts part of this module out to its own top level; '
-      + 'each name below is shown with the path that reaches it. '
-      + 'Anything still spelled `${module.prefix}.*` needs '
-      + '`import ${own}`.'
+      '`${root}` lifts part of this module out to its own top level; ' +
+          'each name below is shown with the path that reaches it. ' +
+          'Anything still spelled `${module.prefix}.*` needs ' +
+          '`import ${own}`.',
     )
   }
 
   return wrap(
-    '`${root}` does not re-export this module, so it is reached only by '
-    + 'importing it directly.'
+    '`${root}` does not re-export this module, so it is reached only by ' +
+        'importing it directly.',
   )
 }
 
@@ -462,15 +490,24 @@ def _surface(out: list, module, index) {
 
   for entry in module.tree() {
     for member in entry.constants {
-      rows.append({ sort: member.path, row: _row(member, 'constant', index, module.slug()) })
+      rows.append({
+        sort: member.path,
+        row: _row(member, 'constant', index, module.slug()),
+      })
     }
 
     for member in entry.functions {
-      rows.append({ sort: member.path, row: _row(member, 'function', index, module.slug()) })
+      rows.append({
+        sort: member.path,
+        row: _row(member, 'function', index, module.slug()),
+      })
     }
 
     for member in entry.classes {
-      rows.append({ sort: member.path, row: _row(member, 'class', index, module.slug()) })
+      rows.append({
+        sort: member.path,
+        row: _row(member, 'class', index, module.slug()),
+      })
     }
   }
 
@@ -482,8 +519,8 @@ def _surface(out: list, module, index) {
   out.append('')
 
   for line in wrap(
-    'Every public name in `${module.name}`, wherever it is declared. '
-    + 'Each links to the page that documents it.'
+    'Every public name in `${module.name}`, wherever it is declared. ' +
+        'Each links to the page that documents it.',
   ) {
     out.append(line)
   }
@@ -531,7 +568,9 @@ def _submodules(out: list, module) {
       reached = '`import ${child.name}`'
     }
 
-    out.append('| [`${child.name}`](${child.slug()}.md) | ${reached} | ${_summary(child.overview)} |')
+    out.append(
+      '| [`${child.name}`](${child.slug()}.md) | ${reached} | ${_summary(child.overview)} |',
+    )
   }
 
   out.append('')
@@ -564,7 +603,10 @@ def page(module, index) {
     out.append('')
   }
 
-  for line in demote(reflow(_references(module.overview.body, module, index)), 2) {
+  for line in demote(
+    reflow(_references(module.overview.body, module, index)),
+    2,
+  ) {
     out.append(line)
   }
 
@@ -574,8 +616,8 @@ def page(module, index) {
     var fn = module.default_export
 
     for line in wrap(
-      'The module is callable. `${module.root}(...)` is the same call as '
-      + '`${fn.path}(...)`, documented below.'
+      'The module is callable. `${module.root}(...)` is the same call as ' +
+          '`${fn.path}(...)`, documented below.',
     ) {
       out.append(line)
     }
@@ -669,7 +711,10 @@ def build_index(roots: list) {
             var slug = anchor('${klass.name}.${method.name}')
 
             index.set(method.path, { page, anchor: slug })
-            index.set('${module.name}.${klass.name}.${method.name}', { page, anchor: slug })
+            index.set('${module.name}.${klass.name}.${method.name}', {
+              page,
+              anchor: slug,
+            })
           }
         }
       }

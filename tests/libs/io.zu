@@ -34,17 +34,17 @@ echo '════════════════════════�
 # Standard streams
 # ---------------------------------------------------------------------------
 assert is_file(io.stdin) and is_file(io.stdout) and is_file(io.stderr),
-  'stdin, stdout, and stderr must all be real file handles'
+    'stdin, stdout, and stderr must all be real file handles'
 ok('stdin/stdout/stderr are file handles')
 
 assert io.is_repl == false,
-  'this test always runs as a script, never inside the REPL'
+    'this test always runs as a script, never inside the REPL'
 ok('is_repl reflects the current execution mode')
 
 assert !io.stdout.is_tty(),
-  'stdout in this harness is always a captured pipe, never a real terminal'
+    'stdout in this harness is always a captured pipe, never a real terminal'
 assert !io.stderr.is_tty(),
-  'stderr in this harness is always a captured pipe, never a real terminal'
+    'stderr in this harness is always a captured pipe, never a real terminal'
 ok('is_tty() correctly reports false for a non-tty stream')
 
 # Being a file handle is not the same as being an open one, and a
@@ -59,10 +59,10 @@ ok('stdout and stderr are attached to something that accepts writes')
 # private duplicate the runtime holds open for it, so `number()` is
 # what tells stdout apart from stderr.
 if os.platform != 'windows' {
-  assert io.stdin.number() == 0
-    and io.stdout.number() == 1
-    and io.stderr.number() == 2,
-    'the standard streams must report descriptors 0, 1 and 2'
+  assert io.stdin.number() == 0 and
+      io.stdout.number() == 1 and
+      io.stderr.number() == 2,
+      'the standard streams must report descriptors 0, 1 and 2'
   ok('number() identifies each standard stream')
 }
 
@@ -70,7 +70,7 @@ if os.platform != 'windows' {
 # Constants
 # ---------------------------------------------------------------------------
 assert io.SEEK_SET == 0 and io.SEEK_CUR == 1 and io.SEEK_END == 2,
-  'the seek constants must match the conventional SEEK_SET/SEEK_CUR/SEEK_END values'
+    'the seek constants must match the conventional SEEK_SET/SEEK_CUR/SEEK_END values'
 ok('SEEK_* constants')
 
 # ---------------------------------------------------------------------------
@@ -85,9 +85,9 @@ var captured = io.capture(@{
 })
 
 assert captured == 'echoed\nprinted\nwritten\n',
-  'capture() must collect echo, print() and io.stdout writes in order, and nothing else'
+    'capture() must collect echo, print() and io.stdout writes in order, and nothing else'
 assert io.capture_depth() == 0,
-  'capture() must close its frame before returning'
+    'capture() must close its frame before returning'
 ok('capture() collects every Zuri-level write to standard output')
 
 var outer = io.capture(@{
@@ -98,12 +98,12 @@ var outer = io.capture(@{
   })
 
   assert inner == 'inner-only\n',
-    'an inner capture must receive only its own output'
+      'an inner capture must receive only its own output'
   echo 'outer-after'
 })
 
 assert outer == 'outer-before\nouter-after\n',
-  'an inner capture must not leak its output into the frame around it'
+    'an inner capture must not leak its output into the frame around it'
 ok('captures nest, innermost first')
 
 io.capture_begin()
@@ -112,9 +112,9 @@ assert io.capture_depth() == 1, 'capture_depth() must report the open frame'
 var manual = io.capture_end()
 
 assert manual == 'manual\n',
-  'capture_end() must return what the frame collected'
+    'capture_end() must return what the frame collected'
 assert io.capture_end() == nil,
-  'capture_end() with no frame open must return nil, not raise'
+    'capture_end() with no frame open must return nil, not raise'
 ok('capture_begin()/capture_end() work as the manual pair')
 
 assert raises(@{
@@ -122,9 +122,10 @@ assert raises(@{
     echo 'discarded'
     raise ValueError('from inside a capture')
   })
-}), 'capture() must re-raise what its body raised'
+}),
+    'capture() must re-raise what its body raised'
 assert io.capture_depth() == 0,
-  'capture() must close its frame even when the body raises'
+    'capture() must close its frame even when the body raises'
 ok('capture() closes its frame and re-raises when the body fails')
 
 # ---------------------------------------------------------------------------
@@ -135,40 +136,50 @@ ok('flush() succeeds on a real file handle')
 
 assert raises(@() {
   io.flush(io.BytesIO(bytes(0), 'r'))
-}), 'flush() must reject a non-file argument (BytesIO is not is_file())'
+}),
+    'flush() must reject a non-file argument (BytesIO is not is_file())'
 assert raises(@() {
   io.flush('not a file')
-}), 'flush() must reject a plain string argument'
+}),
+    'flush() must reject a plain string argument'
 ok('flush() validates its argument')
 
 assert raises(@() {
   io.putc(-1)
-}), 'putc() must reject a character code below 0'
+}),
+    'putc() must reject a character code below 0'
 assert raises(@() {
   io.putc(256)
-}), 'putc() must reject a character code above 255'
+}),
+    'putc() must reject a character code above 255'
 assert raises(@() {
   io.putc('ab')
-}), 'putc() must reject a multi-character string'
+}),
+    'putc() must reject a multi-character string'
 assert raises(@() {
   io.putc([])
-}), 'putc() must reject a non-string, non-number argument'
+}),
+    'putc() must reject a non-string, non-number argument'
 ok('putc() validates its argument before writing anything')
 
 assert !raises(@() {
   io.putc('x')
-}), 'putc() must accept a single-character string'
+}),
+    'putc() must accept a single-character string'
 assert !raises(@() {
   io.putc(65)
-}), 'putc() must accept a character code and write it as that character'
+}),
+    'putc() must accept a character code and write it as that character'
 ok('putc() succeeds for a valid character or character code')
 
 assert raises(@() {
   io.getc(-1)
-}), 'getc() must reject a negative length before touching stdin'
+}),
+    'getc() must reject a negative length before touching stdin'
 assert raises(@() {
   io.getc('x')
-}), 'getc() must reject a non-numeric length before touching stdin'
+}),
+    'getc() must reject a non-numeric length before touching stdin'
 ok('getc() validates its argument before touching stdin')
 
 # getch() and readline() both perform a real blocking read from stdin with

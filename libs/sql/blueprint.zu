@@ -235,13 +235,13 @@ class ForeignKey {
    */
   name_on(table: string) {
     return self.name == nil
-      ? index_name(table, self.columns, 'foreign')
-      : self.name
+        ? index_name(table, self.columns, 'foreign')
+        : self.name
   }
 
   to_string() {
     return '<ForeignKey (${", ".join(self.columns)}) -> ' +
-      '${self.table} (${", ".join(self.references)})>'
+        '${self.table} (${", ".join(self.references)})>'
   }
 
   @to_string() {
@@ -561,7 +561,7 @@ class Column {
     if self.foreign == nil {
       raise QueryError(
         '${what}() is for a column that references() another table, ' +
-          'and ${self.name} refers to none',
+            'and ${self.name} refers to none',
       )
     }
 
@@ -628,8 +628,8 @@ class Blueprint {
    */
   columns() {
     return self.operations
-      .filter(@(operation) => operation.kind == 'column')
-      .map(@(operation) => operation.column)
+        .filter(@(operation) => operation.kind == 'column')
+        .map(@(operation) => operation.column)
   }
 
   /**
@@ -895,7 +895,7 @@ class Blueprint {
     if own.length() != referred.length() {
       raise QueryError(
         'a foreign key from ${own.length()} column${own.length() == 1 ? "" : "s"} ' +
-          'has to refer to as many, not ${referred.length()}',
+            'has to refer to as many, not ${referred.length()}',
       )
     }
 
@@ -984,8 +984,8 @@ class Blueprint {
   _index(kind, columns, name) {
     var own = _names(columns)
     var chosen = name == nil
-      ? index_name(self.table, own, kind)
-      : _identifier(name, 'an index name')
+        ? index_name(self.table, own, kind)
+        : _identifier(name, 'an index name')
 
     self.operations.append({ kind, columns: own, name: chosen })
   }
@@ -995,8 +995,8 @@ class Blueprint {
 
     var columns = is_list(name) ? _names(name) : nil
     var resolved = columns != nil
-      ? index_name(self.table, columns, suffix)
-      : _identifier(name, 'an index name')
+        ? index_name(self.table, columns, suffix)
+        : _identifier(name, 'an index name')
 
     self.operations.append({ kind, name: resolved, columns })
   }
@@ -1040,11 +1040,13 @@ def _names(value) {
 
 # A whole number within bounds, or a QueryError naming what it was for.
 def _whole(value, low, high, what) {
-  if !is_number(value)
-    or value != value.floor()
-    or value < low
-    or value > high {
-    raise QueryError('${what} is a whole number from ${low} to ${high}, not ${value}')
+  if !is_number(value) or
+      value != value.floor() or
+      value < low or
+      value > high {
+    raise QueryError(
+      '${what} is a whole number from ${low} to ${high}, not ${value}',
+    )
   }
 }
 

@@ -460,9 +460,7 @@ class Set {
    * @returns string
    */
   to_string() {
-    return '<Set(${self.length()}) {' +
-      ', '.join(self._items) +
-      '}>'
+    return '<Set(${self.length()}) {' + ', '.join(self._items) + '}>'
   }
 
   @to_string() {

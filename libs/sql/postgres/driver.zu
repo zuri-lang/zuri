@@ -14,8 +14,12 @@ import net.unix
 import os
 
 import ..driver {
-  Driver, default_capabilities, READ_COMMITTED, REPEATABLE_READ,
-  SERIALIZABLE, READ_UNCOMMITTED,
+  Driver,
+  default_capabilities,
+  READ_COMMITTED,
+  REPEATABLE_READ,
+  SERIALIZABLE,
+  READ_UNCOMMITTED,
 }
 import ..errors { ConnectionError, NotSupportedError }
 import ..params { NUMBERED }
@@ -82,7 +86,10 @@ class PostgresDriver < Driver {
     caps.set('last_insert_id', false)
     caps.set('returning', true)
     caps.set('isolation_levels', [
-      READ_UNCOMMITTED, READ_COMMITTED, REPEATABLE_READ, SERIALIZABLE,
+      READ_UNCOMMITTED,
+      READ_COMMITTED,
+      REPEATABLE_READ,
+      SERIALIZABLE,
     ])
     caps.set('server_side_cursors', true)
     caps.set('arrays', true)
@@ -143,7 +150,7 @@ class PostgresDriver < Driver {
     if !is_string(dsn) {
       raise ConnectionError(
         'a postgres connection string is a string or a dictionary, ' +
-          'not ${typeof(dsn)}',
+            'not ${typeof(dsn)}',
         { driver: 'postgres' },
       )
     }
@@ -151,15 +158,14 @@ class PostgresDriver < Driver {
     var text = dsn.trim()
 
     if text.is_empty() {
-      raise ConnectionError(
-        'a postgres connection string cannot be empty',
-        { driver: 'postgres' },
-      )
+      raise ConnectionError('a postgres connection string cannot be empty', {
+        driver: 'postgres',
+      })
     }
 
-    var options = text.contains('://') ?
-      self._parse_uri(text) :
-      self._parse_keywords(text)
+    var options = text.contains('://')
+        ? self._parse_uri(text)
+        : self._parse_keywords(text)
 
     return self._defaults(options)
   }
@@ -176,9 +182,9 @@ class PostgresDriver < Driver {
     # TLS over a unix socket is neither offered nor wanted: nothing is
     # in between to protect it from, and the server refuses the request
     # outright. `sslmode` is ignored there, which is what libpq does.
-    var stream = socket != nil ?
-      self._open_unix(socket, options) :
-      self._open_socket(options)
+    var stream = socket != nil
+        ? self._open_unix(socket, options)
+        : self._open_socket(options)
 
     var secured = socket != nil ? stream : self._maybe_upgrade(stream, options)
 
@@ -222,7 +228,7 @@ class PostgresDriver < Driver {
     if !unix.is_supported() {
       raise NotSupportedError(
         'this platform has no unix domain sockets; connect over TCP ' +
-          'by giving a host name or address instead of ${path}',
+            'by giving a host name or address instead of ${path}',
         { driver: 'postgres' },
       )
     }
@@ -234,10 +240,9 @@ class PostgresDriver < Driver {
       stream.set_read_timeout(options.timeout)
       stream.set_write_timeout(options.timeout)
     } as error {
-      raise ConnectionError(
-        'could not connect to ${path}: ${error.message}',
-        { driver: 'postgres' },
-      )
+      raise ConnectionError('could not connect to ${path}: ${error.message}', {
+        driver: 'postgres',
+      })
     }
 
     return stream
@@ -350,7 +355,8 @@ class PostgresDriver < Driver {
         }
 
         options.set(
-          _decode(pair[0, mark]), _decode(pair[mark + 1, pair.length()]),
+          _decode(pair[0, mark]),
+          _decode(pair[mark + 1, pair.length()]),
         )
       }
 
@@ -382,7 +388,8 @@ class PostgresDriver < Driver {
       } else {
         options.set('user', _decode(credentials[0, colon]))
         options.set(
-          'password', _decode(credentials[colon + 1, credentials.length()]),
+          'password',
+          _decode(credentials[colon + 1, credentials.length()]),
         )
       }
     }
@@ -441,10 +448,9 @@ class PostgresDriver < Driver {
       var mark = piece.index_of('=')
 
       if mark == -1 {
-        raise ConnectionError(
-          '${piece} is not a key=value pair',
-          { driver: 'postgres' },
-        )
+        raise ConnectionError('${piece} is not a key=value pair', {
+          driver: 'postgres',
+        })
       }
 
       options.set(piece[0, mark], piece[mark + 1, piece.length()])
@@ -470,9 +476,9 @@ class PostgresDriver < Driver {
 
     if is_string(port) {
       if !port.is_number() {
-        raise ConnectionError(
-          '${port} is not a port number', { driver: 'postgres' },
-        )
+        raise ConnectionError('${port} is not a port number', {
+          driver: 'postgres',
+        })
       }
 
       port = port.to_number()
@@ -481,7 +487,8 @@ class PostgresDriver < Driver {
     filled.set('port', port)
 
     var timeout = options.get(
-      'timeout', options.get('connect_timeout', DEFAULT_TIMEOUT),
+      'timeout',
+      options.get('connect_timeout', DEFAULT_TIMEOUT),
     )
     filled.set('timeout', is_string(timeout) ? timeout.to_number() : timeout)
 
@@ -505,7 +512,8 @@ class PostgresDriver < Driver {
 
     if !parameters.contains('application_name') {
       parameters.set(
-        'application_name', options.get('application_name', 'zuri'),
+        'application_name',
+        options.get('application_name', 'zuri'),
       )
     }
 

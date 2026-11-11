@@ -417,7 +417,10 @@ def decode_wbmp(data: bytes) {
  * @returns bytes
  */
 def encode_wbmp(
-  pixels: bytes, width: number, height: number, threshold: ?number,
+  pixels: bytes,
+  width: number,
+  height: number,
+  threshold: ?number,
 ) {
   if pixels.length() != width * height * 4 {
     raise EncodeError(
@@ -447,9 +450,9 @@ def encode_wbmp(
       var at = (y * width + x) * 4
       var alpha = pixels[at + 3]
 
-      var luma = 0.299 * pixels[at]
-        + 0.587 * pixels[at + 1]
-        + 0.114 * pixels[at + 2]
+      var luma = 0.299 * pixels[at] +
+          0.587 * pixels[at + 1] +
+          0.114 * pixels[at + 2]
 
       # Composite against white before thresholding, so a faint mark on
       # a transparent background does not come out solid black.

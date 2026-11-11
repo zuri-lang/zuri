@@ -25,10 +25,10 @@ echo '════════════════════════�
 # parse(): prose, then tags
 # ---------------------------------------------------------------------------
 var block_text = 'Opens a file.\n\nMore about it.\n\n' +
-  '@param string path: Where it is\n@returns file'
+    '@param string path: Where it is\n@returns file'
 var block = zuri.doc.parse(block_text)
 assert block.body == ['Opens a file.', '', 'More about it.'],
-  'the prose keeps its lines'
+    'the prose keeps its lines'
 assert block.tags.length() == 2, 'every tag is read'
 assert block.summary() == 'Opens a file.', 'the summary is the first paragraph'
 assert block.first('param').name == 'path', 'a param names its argument'
@@ -40,7 +40,9 @@ assert block.all('param').length() == 1, 'all() lists one kind'
 assert block.first('throws') == nil, 'first() of a missing kind is nil'
 ok('parse() reads prose and tags')
 
-var aliased = zuri.doc.parse('@return number\n@raises ValueError When it fails\n@params list items')
+var aliased = zuri.doc.parse(
+  '@return number\n@raises ValueError When it fails\n@params list items',
+)
 assert aliased.tags[0].kind == 'returns', '@return is read as @returns'
 assert aliased.tags[1].kind == 'throws', '@raises is read as @throws'
 assert aliased.tags[1].type == 'ValueError', 'a raised class is its type'
@@ -48,42 +50,46 @@ assert aliased.tags[1].text == 'When it fails', 'with the rest as its text'
 assert aliased.tags[2].kind == 'param', '@params is read as @param'
 ok('every alternative spelling is read as the main one')
 
-var forms = zuri.doc.parse('@param {?string} a: The first\n@param b - The second\n@param c: number')
+var forms = zuri.doc.parse(
+  '@param {?string} a: The first\n@param b - The second\n@param c: number',
+)
 assert forms.tags[0].type == '?string' and forms.tags[0].name == 'a',
-  'a {type} before the name'
+    'a {type} before the name'
 assert forms.tags[1].type == '' and forms.tags[1].name == 'b',
-  'no type is an empty string'
+    'no type is an empty string'
 assert forms.tags[1].text == 'The second', 'a dash before the text is dropped'
 assert forms.tags[2].type == 'number' and forms.tags[2].text == '',
-  'a type after the name'
+    'a type after the name'
 
 var classes = zuri.doc.parse(
   '@param Point other: Where to\n@param ?http.Request request: Its request\n' +
-    '@param function(2) handler: Called back\n@param [Isolate] tasks: To wait on',
+      '@param function(2) handler: Called back\n@param [Isolate] tasks: To wait on',
 )
 assert classes.tags[0].type == 'Point' and classes.tags[0].name == 'other',
-  'a class is a type'
+    'a class is a type'
 assert classes.tags[0].text == 'Where to', 'and the name after it is the name'
 assert classes.tags[1].type == '?http.Request',
-  'a class reached through its module'
+    'a class reached through its module'
 assert classes.tags[1].name == 'request', 'names the argument after it'
 assert classes.tags[2].type == 'function(2)', 'a function by how many it takes'
 assert classes.tags[2].name == 'handler', 'names the argument after it'
 assert classes.tags[3].type == '[Isolate]' and classes.tags[3].name == 'tasks',
-  'a list of a class'
+    'a list of a class'
 ok('a tag reads its type and name in each spelling')
 
 var wrapped_text = ' * @param string query: The text to find,\n *    which may span\n' +
-  ' *    lines\n *\n * After the tags.'
+    ' *    lines\n *\n * After the tags.'
 var wrapped = zuri.doc.parse(wrapped_text)
 assert wrapped.first('param').text == 'The text to find, which may span lines',
-  'an indented line continues the tag above it'
+    'an indented line continues the tag above it'
 assert wrapped.body == ['After the tags.'], 'a blank line ends the run of tags'
 ok('a tag wraps onto the indented lines below it')
 
-var fenced = zuri.doc.parse('Before.\n\n```zuri\n@param not a tag\n```\n\n@returns nil')
+var fenced = zuri.doc.parse(
+  'Before.\n\n```zuri\n@param not a tag\n```\n\n@returns nil',
+)
 assert fenced.body.contains('@param not a tag'),
-  'a fenced line is kept as prose'
+    'a fenced line is kept as prose'
 assert fenced.tags.length() == 1, 'and is never read as a tag'
 ok('fenced code is kept as it was written')
 
@@ -95,12 +101,17 @@ ok('empty() and an empty block')
 # parse_lines(): lines still carrying their `*`
 # ---------------------------------------------------------------------------
 var starred_lines = [
-  '*', ' * Adds things.', ' *', ' * @param a', ' *   the first', ' *',
+  '*',
+  ' * Adds things.',
+  ' *',
+  ' * @param a',
+  ' *   the first',
+  ' *',
 ]
 var starred = zuri.doc.parse_lines(starred_lines)
 assert starred.body == ['Adds things.'], 'the leading star and blank lines go'
 assert starred.first('param').text == 'the first',
-  'the indentation after the star still wraps'
+    'the indentation after the star still wraps'
 ok('parse_lines() drops each line\'s star')
 
 # ---------------------------------------------------------------------------
@@ -135,40 +146,40 @@ var nodes = zuri.parse(source)
 
 var overview = zuri.doc.module_block(nodes)
 assert overview != nil and overview.first('module').text == 'things',
-  'the @module block is found'
+    'the @module block is found'
 assert overview.summary() == 'About the module.', 'and read'
 assert zuri.doc.module_block(zuri.parse('var x = 1')) == nil,
-  'a file without one has none'
+    'a file without one has none'
 ok('module_block() finds the module\'s own doc block')
 
 var attached = zuri.doc.attach(nodes)
 var names = attached
-  .filter(@(a) => a.node.kind == 'Function')
-  .map(@(a) => a.node.fields.name)
+    .filter(@(a) => a.node.kind == 'Function')
+    .map(@(a) => a.node.fields.name)
 assert names == ['add', 'subtract', 'multiply'],
-  'every declaration comes back in order'
-assert attached[0].documented
-  and attached[0].block.summary() == 'Adds two numbers.',
-  'a doc block documents the declaration right under it'
+    'every declaration comes back in order'
+assert attached[0].documented and
+    attached[0].block.summary() == 'Adds two numbers.',
+    'a doc block documents the declaration right under it'
 assert attached[0].node.fields.name == 'add',
-  'the module block pairs with nothing'
+    'the module block pairs with nothing'
 
 var subtract = attached.filter(@(a) => a.node.kind == 'Function')[1]
 assert !subtract.documented, 'a comment in between breaks the pairing'
 assert subtract.block.is_empty(), 'an undocumented node has an empty block'
 assert !attached[attached.length() - 1].documented,
-  'a declaration with nothing above it is not'
+    'a declaration with nothing above it is not'
 ok('attach() pairs each declaration with the doc block above it')
 
 var class_source = 'class Box {\n  ${OPEN} The width. ${CLOSE}\n  var width = 0\n\n' +
-  '  ${OPEN} Grows the box. ${CLOSE}\n  grow() {\n  }\n}'
+    '  ${OPEN} Grows the box. ${CLOSE}\n  grow() {\n  }\n}'
 var box = zuri.parse(class_source)[0]
 var field = zuri.doc.attach(box.fields.properties)[0]
 var method = zuri.doc.attach(box.fields.methods)[0]
 assert field.documented and field.block.summary() == 'The width.',
-  'a field is paired'
+    'a field is paired'
 assert method.documented and method.block.summary() == 'Grows the box.',
-  'and a method'
+    'and a method'
 ok('attach() pairs class members the same way')
 
 echo ''

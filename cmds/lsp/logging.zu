@@ -179,9 +179,10 @@ class ClientTransport < log.Transport {
       if level >= self._threshold {
         var type = _message_type(level)
 
-        self._endpoint.notify(
-          'window/logMessage', { type, message: message.text },
-        )
+        self._endpoint.notify('window/logMessage', {
+          type,
+          message: message.text,
+        })
       }
 
       if self._trace != 'off' {
@@ -220,10 +221,9 @@ def configure(level: string, path) {
   log.add_transport(client)
 
   if path != nil {
-    log.add_transport(log
-      .FileTransport(path)
-      .set_name('lsp')
-      .set_level(threshold))
+    log.add_transport(
+      log.FileTransport(path).set_name('lsp').set_level(threshold),
+    )
   }
 
   return client

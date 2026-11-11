@@ -18,7 +18,9 @@ var EVE = nil
 
 # Sends `method` to `path`, with `token` when one is given.
 def api(method: string, path: string, token: ?string, body: ?dict) {
-  var options = { headers: { Accept: 'application/json' } }
+  var options = {
+    headers: { Accept: 'application/json' },
+  }
 
   if token != nil {
     options.set('auth', ['bearer', token])
@@ -51,10 +53,12 @@ def account(username: string) {
 # A fresh token for an account that already exists, signed in with its
 # password.
 def api_token(username: string) {
-  return api('POST', '/api/v1/tokens', nil, {
-    username,
-    password: 'a long enough password',
-  }).as_dict().token
+  return api(
+    'POST',
+    '/api/v1/tokens',
+    nil,
+    { username, password: 'a long enough password' },
+  ).as_dict().token
 }
 
 # A gzip-compressed tar holding `entries`, each `{ name, text }` or a
@@ -87,8 +91,8 @@ def tarball(entries: list) {
 
 # The project.toml of a package called `name` at `version`.
 def manifest(name: string, version: string) {
-  return '[project]\nname = "${name}"\nversion = "${version}"\n'
-    + 'description = "A package"\nlicense = "MIT"\n'
+  return '[project]\nname = "${name}"\nversion = "${version}"\n' +
+      'description = "A package"\nlicense = "MIT"\n'
 }
 
 # A well-formed package.
@@ -102,15 +106,22 @@ def package(name: string, version: string) {
 # Publishes `data` as `name` at `version`, with a checksum that matches
 # unless `checksum` says otherwise.
 def publish(
-  token: ?string, data: bytes, name: string, version: string, checksum: ?string,
+  token: ?string,
+  data: bytes,
+  name: string,
+  version: string,
+  checksum: ?string,
 ) {
   var form = http.MultipartBuilder()
 
-  form.add_field('metadata', json.encode({
-    name,
-    version,
-    checksum: checksum == nil ? 'sha256:' + hash.sha256(data) : checksum,
-  }))
+  form.add_field(
+    'metadata',
+    json.encode({
+      name,
+      version,
+      checksum: checksum == nil ? 'sha256:' + hash.sha256(data) : checksum,
+    }),
+  )
   form.add_file('archive', 'package.tar.gz', data, 'application/gzip')
 
   var options = { multipart: form }
@@ -119,9 +130,11 @@ def publish(
     options.set('auth', ['bearer', token])
   }
 
-  return http
-    .HttpClient()
-    .request('PUT', world.url + '/api/v1/packages', options)
+  return http.HttpClient().request(
+    'PUT',
+    world.url + '/api/v1/packages',
+    options,
+  )
 }
 
 before_all(@{
@@ -138,39 +151,73 @@ after_all(@{
 describe('archives', @{
   it('accepts a well-formed package', @{
     var published = publish(
-      ADA, package('safe-kit', '1.0.0'), 'safe-kit', '1.0.0', nil,
+      ADA,
+      package('safe-kit', '1.0.0'),
+      'safe-kit',
+      '1.0.0',
+      nil,
     )
 
     expect(published.status).to_equal(201)
   })
 
-  it_each([
-    ['a path climbing out', [{ name: '../evil.zu', text: 'x' }]],
-    ['an absolute path', [{ name: '/etc/evil', text: 'x' }]],
+  it_each(
     [
-      'a symbolic link',
-      [{ name: 'app/link', typeflag: 2, link: '/etc/passwd' }],
+      [
+        'a path climbing out',
+        [
+          { name: '../evil.zu', text: 'x' },
+        ],
+      ],
+      [
+        'an absolute path',
+        [
+          { name: '/etc/evil', text: 'x' },
+        ],
+      ],
+      [
+        'a symbolic link',
+        [
+          { name: 'app/link', typeflag: 2, link: '/etc/passwd' },
+        ],
+      ],
+      [
+        'a hard link',
+        [
+          { name: 'app/link', typeflag: 1, link: 'project.toml' },
+        ],
+      ],
+      [
+        'a name repeated in another case',
+        [
+          { name: 'app/a.zu', text: 'x' },
+          { name: 'APP/A.zu', text: 'y' },
+        ],
+      ],
     ],
-    ['a hard link', [{ name: 'app/link', typeflag: 1, link: 'project.toml' }]],
-    ['a name repeated in another case', [
-      { name: 'app/a.zu', text: 'x' },
-      { name: 'APP/A.zu', text: 'y' },
-    ]],
-  ], 'refuses an archive holding $0', @(what, extra) {
-    var entries = [{
-      name: 'project.toml',
-      text: manifest('hostile-kit', '1.0.0'),
-    }]
-      + extra
-    var refused = publish(ADA, tarball(entries), 'hostile-kit', '1.0.0', nil)
+    'refuses an archive holding $0',
+    @(what, extra) {
+      var entries = [
+            { name: 'project.toml', text: manifest('hostile-kit', '1.0.0') },
+          ] +
+          extra
+      var refused = publish(ADA, tarball(entries), 'hostile-kit', '1.0.0', nil)
 
-    expect(refused.status).to_equal(422)
-    expect(code(refused)).to_equal('bad_archive')
-  })
+      expect(refused.status).to_equal(422)
+      expect(code(refused)).to_equal('bad_archive')
+    },
+  )
 
   it('refuses an archive with no project.toml', @{
-    var refused = publish(ADA, tarball([{ name: 'app/index.zu', text: 'x' }]),
-      'bare', '1.0.0', nil)
+    var refused = publish(
+      ADA,
+      tarball([
+        { name: 'app/index.zu', text: 'x' },
+      ]),
+      'bare',
+      '1.0.0',
+      nil,
+    )
 
     expect(refused.status).to_equal(422)
     expect(code(refused)).to_equal('bad_archive')
@@ -184,8 +231,13 @@ describe('archives', @{
   })
 
   it('refuses an upload that does not match its checksum', @{
-    var refused = publish(ADA, package('damaged', '1.0.0'), 'damaged', '1.0.0',
-      'sha256:' + '0' * 64)
+    var refused = publish(
+      ADA,
+      package('damaged', '1.0.0'),
+      'damaged',
+      '1.0.0',
+      'sha256:' + '0' * 64,
+    )
 
     expect(refused.status).to_equal(400)
     expect(code(refused)).to_equal('checksum_mismatch')
@@ -201,7 +253,11 @@ describe('archives', @{
 
   it('refuses an upload that says it is another package', @{
     var refused = publish(
-      ADA, package('real-name', '1.0.0'), 'other-name', '1.0.0', nil,
+      ADA,
+      package('real-name', '1.0.0'),
+      'other-name',
+      '1.0.0',
+      nil,
     )
 
     expect(refused.status).to_equal(422)
@@ -211,20 +267,34 @@ describe('archives', @{
 
 describe('names and versions', @{
   it('refuses a name that differs only by hyphens, underscores or case', @{
-    expect(publish(
-      ADA, package('http-extra', '1.0.0'), 'http-extra', '1.0.0', nil,
-    ).status)
-      .to_equal(201)
+    expect(
+      publish(
+        ADA,
+        package('http-extra', '1.0.0'),
+        'http-extra',
+        '1.0.0',
+        nil,
+      ).status,
+    )
+        .to_equal(201)
 
     var refused = publish(
-      EVE, package('http_extra', '1.0.0'), 'http_extra', '1.0.0', nil,
+      EVE,
+      package('http_extra', '1.0.0'),
+      'http_extra',
+      '1.0.0',
+      nil,
     )
 
     expect(code(refused)).to_equal('name_taken')
     expect(refused.status).to_equal(409)
 
     var shouted = publish(
-      EVE, package('HTTP-Extra', '1.0.0'), 'HTTP-Extra', '1.0.0', nil,
+      EVE,
+      package('HTTP-Extra', '1.0.0'),
+      'HTTP-Extra',
+      '1.0.0',
+      nil,
     )
 
     expect(code(shouted)).to_equal('bad_name')
@@ -232,7 +302,11 @@ describe('names and versions', @{
 
   it('lets only an owner publish a new version', @{
     var refused = publish(
-      EVE, package('http-extra', '2.0.0'), 'http-extra', '2.0.0', nil,
+      EVE,
+      package('http-extra', '2.0.0'),
+      'http-extra',
+      '2.0.0',
+      nil,
     )
 
     expect(refused.status).to_equal(403)
@@ -241,16 +315,19 @@ describe('names and versions', @{
 
   it('never replaces a published version, yanked or not', @{
     var again = publish(
-      ADA, package('http-extra', '1.0.0'), 'http-extra', '1.0.0', nil,
+      ADA,
+      package('http-extra', '1.0.0'),
+      'http-extra',
+      '1.0.0',
+      nil,
     )
 
     expect(again.status).to_equal(409)
     expect(code(again)).to_equal('version_exists')
 
-    expect(api(
-      'POST', '/api/v1/packages/http-extra/1.0.0/yank', ADA, nil,
-    ).status)
-      .to_equal(200)
+    expect(
+      api('POST', '/api/v1/packages/http-extra/1.0.0/yank', ADA, nil).status,
+    ).to_equal(200)
 
     var changed = tarball([
       { name: 'project.toml', text: manifest('http-extra', '1.0.0') },
@@ -278,7 +355,10 @@ describe('administrators', @{
     publish(ADA, package('guarded-kit', '1.0.0'), 'guarded-kit', '1.0.0', nil)
 
     var refused = api(
-      'POST', '/api/v1/packages/guarded-kit/1.0.0/yank', mallory, nil,
+      'POST',
+      '/api/v1/packages/guarded-kit/1.0.0/yank',
+      mallory,
+      nil,
     )
 
     expect(refused.status).to_equal(403)
@@ -286,29 +366,52 @@ describe('administrators', @{
 
     var storage = os.join_paths(world.root, 'nyssa')
     var promoted = world.zuri([
-      'serve', '--storage', storage, 'admin', 'promote', 'mallory',
-    ],
-      world.root)
+      'serve',
+      '--storage',
+      storage,
+      'admin',
+      'promote',
+      'mallory',
+    ], world.root)
 
     expect(promoted.status).to_equal(0)
-    expect(api(
-      'POST', '/api/v1/packages/guarded-kit/1.0.0/yank', mallory, nil,
-    ).status)
-      .to_equal(200)
-    expect(api(
-      'DELETE', '/api/v1/packages/guarded-kit/1.0.0/yank', mallory, nil,
-    ).status)
-      .to_equal(200)
-    expect(api(
-      'PUT', '/api/v1/packages/guarded-kit/owners', mallory,
-      { username: 'eve' },
-    ).status)
-      .to_equal(200)
+    expect(
+      api(
+        'POST',
+        '/api/v1/packages/guarded-kit/1.0.0/yank',
+        mallory,
+        nil,
+      ).status,
+    )
+        .to_equal(200)
+    expect(
+      api(
+        'DELETE',
+        '/api/v1/packages/guarded-kit/1.0.0/yank',
+        mallory,
+        nil,
+      ).status,
+    )
+        .to_equal(200)
+    expect(
+      api(
+        'PUT',
+        '/api/v1/packages/guarded-kit/owners',
+        mallory,
+        { username: 'eve' },
+      ).status,
+    )
+        .to_equal(200)
   })
 
   it('never publish into a package they do not own', @{
-    var refused = publish(api_token('mallory'), package('guarded-kit', '2.0.0'),
-      'guarded-kit', '2.0.0', nil)
+    var refused = publish(
+      api_token('mallory'),
+      package('guarded-kit', '2.0.0'),
+      'guarded-kit',
+      '2.0.0',
+      nil,
+    )
 
     expect(refused.status).to_equal(403)
     expect(code(refused)).to_equal('not_owner')
@@ -317,57 +420,71 @@ describe('administrators', @{
 
 describe('tokens', @{
   it('refuses a missing, unknown or revoked token', @{
-    expect(publish(
-      nil, package('t', '1.0.0'), 't', '1.0.0', nil,
-    ).status).to_equal(401)
-    expect(publish(
-      'nys_forged', package('t', '1.0.0'), 't', '1.0.0', nil,
-    ).status)
-      .to_equal(401)
+    expect(publish(nil, package('t', '1.0.0'), 't', '1.0.0', nil).status)
+        .to_equal(401)
+    expect(
+      publish('nys_forged', package('t', '1.0.0'), 't', '1.0.0', nil).status,
+    ).to_equal(401)
 
     var issued = api(
-      'POST', '/api/v1/tokens', ADA, { name: 'short-lived' },
+      'POST',
+      '/api/v1/tokens',
+      ADA,
+      { name: 'short-lived' },
     ).as_dict()
 
-    expect(api(
-      'DELETE', '/api/v1/tokens/${issued.id}', ADA, nil,
-    ).status).to_equal(200)
+    expect(api('DELETE', '/api/v1/tokens/${issued.id}', ADA, nil).status)
+        .to_equal(200)
     expect(api('GET', '/api/v1/me', issued.token, nil).status).to_equal(401)
   })
 
   it('does only what its scopes allow', @{
-    var yank_only = api(
-      'POST', '/api/v1/tokens', ADA, { name: 'ci', scopes: ['yank'] },
-    )
-      .as_dict().token
+    var yank_only = api('POST', '/api/v1/tokens', ADA, {
+      name: 'ci',
+      scopes: ['yank'],
+    }).as_dict().token
 
     var refused = publish(
-      yank_only, package('safe-kit', '1.1.0'), 'safe-kit', '1.1.0', nil,
+      yank_only,
+      package('safe-kit', '1.1.0'),
+      'safe-kit',
+      '1.1.0',
+      nil,
     )
 
     expect(refused.status).to_equal(403)
     expect(code(refused)).to_equal('insufficient_scope')
 
-    expect(api(
-      'POST', '/api/v1/packages/safe-kit/1.0.0/yank', yank_only, nil,
-    ).status)
-      .to_equal(200)
-    expect(api(
-      'DELETE', '/api/v1/packages/safe-kit/1.0.0/yank', yank_only, nil,
-    ).status)
-      .to_equal(200)
+    expect(
+      api(
+        'POST',
+        '/api/v1/packages/safe-kit/1.0.0/yank',
+        yank_only,
+        nil,
+      ).status,
+    )
+        .to_equal(200)
+    expect(
+      api(
+        'DELETE',
+        '/api/v1/packages/safe-kit/1.0.0/yank',
+        yank_only,
+        nil,
+      ).status,
+    )
+        .to_equal(200)
   })
 
   it('cannot hand on a scope it does not carry', @{
-    var account_only = api(
-      'POST', '/api/v1/tokens', ADA, { name: 'a', scopes: ['account'] },
-    )
-      .as_dict().token
+    var account_only = api('POST', '/api/v1/tokens', ADA, {
+      name: 'a',
+      scopes: ['account'],
+    }).as_dict().token
 
-    var refused = api(
-      'POST', '/api/v1/tokens', account_only,
-      { name: 'b', scopes: ['publish'] },
-    )
+    var refused = api('POST', '/api/v1/tokens', account_only, {
+      name: 'b',
+      scopes: ['publish'],
+    })
 
     expect(refused.status).to_equal(403)
     expect(code(refused)).to_equal('insufficient_scope')
@@ -390,7 +507,10 @@ describe('requests', @{
   it('sorts only by what it offers', @{
     for sort in ['name; drop table packages', 'published_by', 'id desc'] {
       var refused = api(
-        'GET', '/api/v1/search?q=kit&sort=' + url.encode(sort), nil, nil,
+        'GET',
+        '/api/v1/search?q=kit&sort=' + url.encode(sort),
+        nil,
+        nil,
       )
 
       expect(refused.status).to_equal(400)
@@ -398,22 +518,30 @@ describe('requests', @{
     }
 
     expect(api('GET', '/api/v1/search?q=kit', nil, nil).as_dict().total)
-      .to_be_greater_than(0)
+        .to_be_greater_than(0)
   })
 
   it('caps how many results one page holds, and how far pages go', @{
     for asked in ['5000', '100000000'] {
       var found = api(
-        'GET', '/api/v1/search?q=kit&per_page=${asked}', nil, nil,
+        'GET',
+        '/api/v1/search?q=kit&per_page=${asked}',
+        nil,
+        nil,
       ).as_dict()
 
       expect(found.per_page).to_equal(100)
     }
 
-    expect(api(
-      'GET', '/api/v1/search?q=kit&per_page=many', nil, nil,
-    ).as_dict().per_page)
-      .to_equal(20)
+    expect(
+      api(
+        'GET',
+        '/api/v1/search?q=kit&per_page=many',
+        nil,
+        nil,
+      ).as_dict().per_page,
+    )
+        .to_equal(20)
 
     var far = api('GET', '/api/v1/search?q=kit&page=999999999', nil, nil)
 
@@ -423,8 +551,12 @@ describe('requests', @{
   })
 
   it('serves nothing from outside its public files', @{
-    for path in ['/static/../db.zu', '/static/%2e%2e/db.zu',
-      '/static/..%2fdb.zu', '/static/%2e%2e%2f%2e%2e%2fnyssa.db'] {
+    for path in [
+      '/static/../db.zu',
+      '/static/%2e%2e/db.zu',
+      '/static/..%2fdb.zu',
+      '/static/%2e%2e%2f%2e%2e%2fnyssa.db',
+    ] {
       var response = http.get(world.url + path)
 
       expect(response.status).not.to_equal(200)
@@ -446,18 +578,17 @@ describe('requests', @{
   })
 
   it('names each page in its title, with what a visitor typed escaped', @{
-    expect(http
-      .get(world.url + '/')
-      .as_text()).to_contain('<title>Nyssa</title>')
+    expect(http.get(world.url + '/').as_text())
+        .to_contain('<title>Nyssa</title>')
     expect(http.get(world.url + '/login').as_text())
-      .to_contain('<title>Sign in · Nyssa</title>')
+        .to_contain('<title>Sign in · Nyssa</title>')
     expect(http.get(world.url + '/packages/safe-kit').as_text())
-      .to_contain('<title>safe-kit 1.0.0 · Nyssa</title>')
+        .to_contain('<title>safe-kit 1.0.0 · Nyssa</title>')
 
     var search = http.get(world.url + '/search?q=' + url.encode('</title><b>'))
 
     expect(search.as_text())
-      .to_contain('<title>&lt;/title&gt;&lt;b&gt; · Search · Nyssa</title>')
+        .to_contain('<title>&lt;/title&gt;&lt;b&gt; · Search · Nyssa</title>')
   })
 
   it('sends pages with a policy that runs no scripts', @{
@@ -474,9 +605,10 @@ describe('guessing passwords', @{
     account('grace')
 
     iter var i = 0; i < 5; i++ {
-      var wrong = api(
-        'POST', '/api/v1/tokens', nil, { username: 'grace', password: 'wrong' },
-      )
+      var wrong = api('POST', '/api/v1/tokens', nil, {
+        username: 'grace',
+        password: 'wrong',
+      })
 
       expect(wrong.status).to_equal(401)
     }

@@ -167,9 +167,7 @@ class DtlsSocket {
    * for incoming connections, or `connect()` to dial out to one.
    */
   @new(_ptr) {
-    self._ptr = _ptr == nil ?
-      _net_dtls.dtls_new() :
-      _ptr
+    self._ptr = _ptr == nil ? _net_dtls.dtls_new() : _ptr
   }
 
   /**
@@ -205,7 +203,10 @@ class DtlsSocket {
    */
   connect(config, address, server_name) {
     _net_dtls.dtls_connect(
-      self._ptr, config.native_ptr(), _addr_string(address), server_name,
+      self._ptr,
+      config.native_ptr(),
+      _addr_string(address),
+      server_name,
     )
   }
 

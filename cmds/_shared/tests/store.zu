@@ -51,8 +51,8 @@ describe('Transaction', @{
     expect(read(os.join_paths(LIBS, 'new', 'fresh.zu'))).to_equal('fresh')
     expect(os.dir_exists(os.join_paths(LIBS, 'gone'))).to_be_false()
     var left = os
-      .read_dir(STAGING)
-      .filter(@(name) => name != '.' and name != '..')
+        .read_dir(STAGING)
+        .filter(@(name) => name != '.' and name != '..')
 
     expect(left).to_be_empty()
   })
@@ -102,16 +102,20 @@ describe('recover', @{
     var root = os.join_paths(STAGING, 'killed')
 
     put(os.join_paths(root, 'old', 'pkg', 'index.zu'), 'the original')
-    put(os.join_paths(root, 'journal.json'), json.encode({
-      state: 'swapping',
-      libs: LIBS,
-      done: [{ name: 'pkg', old: true, new: true }],
-    }))
+    put(
+      os.join_paths(root, 'journal.json'),
+      json.encode({
+        state: 'swapping',
+        libs: LIBS,
+        done: [
+          { name: 'pkg', old: true, new: true },
+        ],
+      }),
+    )
 
     expect(recover(STAGING)).to_equal(1)
-    expect(read(os.join_paths(
-      LIBS, 'pkg', 'index.zu',
-    ))).to_equal('the original')
+    expect(read(os.join_paths(LIBS, 'pkg', 'index.zu')))
+        .to_equal('the original')
     expect(os.dir_exists(root)).to_be_false()
   })
 
@@ -122,11 +126,16 @@ describe('recover', @{
     var root = os.join_paths(STAGING, 'finished')
 
     put(os.join_paths(root, 'old', 'pkg', 'index.zu'), 'replaced')
-    put(os.join_paths(root, 'journal.json'), json.encode({
-      state: 'committed',
-      libs: LIBS,
-      done: [{ name: 'pkg', old: true, new: true }],
-    }))
+    put(
+      os.join_paths(root, 'journal.json'),
+      json.encode({
+        state: 'committed',
+        libs: LIBS,
+        done: [
+          { name: 'pkg', old: true, new: true },
+        ],
+      }),
+    )
 
     recover(STAGING)
 
@@ -145,9 +154,11 @@ describe('the installed record', @{
 
     var record = load_installed(os.join_paths(ROOT, 'installed.toml'))
 
-    record.put(
-      'web', { name: 'web', version: '1.0.0', commands: ['serve-web'] },
-    )
+    record.put('web', {
+      name: 'web',
+      version: '1.0.0',
+      commands: ['serve-web'],
+    })
     record.save()
 
     var again = load_installed(os.join_paths(ROOT, 'installed.toml'))

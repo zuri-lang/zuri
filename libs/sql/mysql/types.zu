@@ -39,8 +39,14 @@ import struct
 import ..decimal { Decimal, decimal }
 import ..errors { QueryError }
 import ..types {
-  Time, is_interval, is_structured, is_temporal, from_json, to_json,
-  integer_from_text, parse_time,
+  Time,
+  is_interval,
+  is_structured,
+  is_temporal,
+  from_json,
+  to_json,
+  integer_from_text,
+  parse_time,
 }
 
 /**
@@ -110,12 +116,7 @@ var UNSIGNED_FLAG = 0x80
 
 # The largest value each width holds, for turning an unsigned reading
 # into a signed one.
-var _WIDTHS = {
-  1: 256,
-  2: 65536,
-  3: 16777216,
-  4: 4294967296,
-}
+var _WIDTHS = { 1: 256, 2: 65536, 3: 16777216, 4: 4294967296 }
 
 var _SIGN_LIMIT = 9223372036854775808n
 var _WRAP = 18446744073709551616n
@@ -219,9 +220,9 @@ def type_name_of(column: dict) {
     name = _NAMES.get(type, '${type}')
   }
 
-  return is_unsigned(column) and (flags & FLAGS.NUM) != 0 ?
-    '${name} unsigned' :
-    name
+  return is_unsigned(column) and (flags & FLAGS.NUM) != 0
+      ? '${name} unsigned'
+      : name
 }
 
 /**
@@ -364,9 +365,9 @@ def binary_decoder_for(column: dict) {
  * @returns list[function]
  */
 def row_decoders(columns: list, binary: bool) {
-  return binary ?
-    columns.map(@(column) => binary_decoder_for(column)) :
-    columns.map(@(column) => text_decoder_for(column))
+  return binary
+      ? columns.map(@(column) => binary_decoder_for(column))
+      : columns.map(@(column) => text_decoder_for(column))
 }
 
 /**
@@ -389,9 +390,9 @@ def parameter_type(value) {
   }
 
   if is_number(value) {
-    return value.floor() == value and value.abs() < _EXACT.to_number() ?
-      { type: TYPES.LONGLONG, unsigned: false } :
-      { type: TYPES.DOUBLE, unsigned: false }
+    return value.floor() == value and value.abs() < _EXACT.to_number()
+        ? { type: TYPES.LONGLONG, unsigned: false }
+        : { type: TYPES.DOUBLE, unsigned: false }
   }
 
   if is_bigint(value) {
@@ -416,8 +417,8 @@ def parameter_type(value) {
 
   raise QueryError(
     'a ${typeof(value)} has no MySQL representation; expected nil, a ' +
-      'bool, a number, a bigint, a string, bytes, a date, a time ' +
-      'interval, a decimal, or a list or dictionary to store as JSON',
+        'bool, a number, a bigint, a string, bytes, a date, a time ' +
+        'interval, a decimal, or a list or dictionary to store as JSON',
     { driver: 'mysql' },
   )
 }
@@ -454,7 +455,7 @@ def write_parameter(writer, value) {
       if value >= _WRAP or value < -_SIGN_LIMIT {
         raise QueryError(
           'the value ${value} is too large for a MySQL integer, which ' +
-            'holds 64 bits',
+              'holds 64 bits',
           { driver: 'mysql' },
         )
       }
@@ -500,8 +501,12 @@ def write_parameter(writer, value) {
 
 # Whether a column's values are whole numbers.
 def _is_integer(type: number) {
-  return type == TYPES.TINY or type == TYPES.SHORT or type == TYPES.LONG
-    or type == TYPES.LONGLONG or type == TYPES.INT24 or type == TYPES.YEAR
+  return type == TYPES.TINY or
+      type == TYPES.SHORT or
+      type == TYPES.LONG or
+      type == TYPES.LONGLONG or
+      type == TYPES.INT24 or
+      type == TYPES.YEAR
 }
 
 # Whether a column holds bytes this adapter passes through untouched.
@@ -510,12 +515,14 @@ def _is_byte_column(type: number, column: dict) {
     return true
   }
 
-  return is_binary(column) and (
-    type == TYPES.BLOB or type == TYPES.TINY_BLOB or
-      type == TYPES.MEDIUM_BLOB or type == TYPES.LONG_BLOB or
-      type == TYPES.VAR_STRING or type == TYPES.STRING or
-      type == TYPES.VARCHAR
-  )
+  return is_binary(column) and
+      (type == TYPES.BLOB or
+          type == TYPES.TINY_BLOB or
+          type == TYPES.MEDIUM_BLOB or
+          type == TYPES.LONG_BLOB or
+          type == TYPES.VAR_STRING or
+          type == TYPES.STRING or
+          type == TYPES.VARCHAR)
 }
 
 # An unsigned reading turned signed, for the widths that fit a number.
@@ -575,8 +582,8 @@ def _date_from_text(text: string) {
 
       if dot > 0 {
         second = clock[2][0, dot].to_number()
-        micros = (clock[2][dot + 1, clock[2].length()]
-          + '000000')[0, 6].to_number()
+        micros = (clock[2][dot + 1, clock[2].length()] + '000000')[0, 6]
+            .to_number()
       } else {
         second = clock[2].to_number()
       }
@@ -584,8 +591,13 @@ def _date_from_text(text: string) {
   }
 
   return _make_date(
-    day[0].to_number(), day[1].to_number(), day[2].to_number(),
-    hour, minute, second, micros,
+    day[0].to_number(),
+    day[1].to_number(),
+    day[2].to_number(),
+    hour,
+    minute,
+    second,
+    micros,
   )
 }
 
@@ -655,14 +667,15 @@ def _make_date(year, month, day, hour, minute, second, micros) {
 }
 
 def _write_date(writer, moment) {
-  writer.byte(11)
-    .int2(moment.year)
-    .byte(moment.month)
-    .byte(moment.day)
-    .byte(moment.hour)
-    .byte(moment.minute)
-    .byte(moment.seconds)
-    .int4(moment.microseconds)
+  writer
+      .byte(11)
+      .int2(moment.year)
+      .byte(moment.month)
+      .byte(moment.day)
+      .byte(moment.hour)
+      .byte(moment.minute)
+      .byte(moment.seconds)
+      .int4(moment.microseconds)
 }
 
 def _write_time(writer, span) {
@@ -675,11 +688,12 @@ def _write_time(writer, span) {
     micros -= 1000000
   }
 
-  writer.byte(12)
-    .byte(span.is_negative() ? 1 : 0)
-    .int4((whole / 86400).floor())
-    .byte((whole / 3600).floor() % 24)
-    .byte((whole / 60).floor() % 60)
-    .byte(whole % 60)
-    .int4(micros)
+  writer
+      .byte(12)
+      .byte(span.is_negative() ? 1 : 0)
+      .int4((whole / 86400).floor())
+      .byte((whole / 3600).floor() % 24)
+      .byte((whole / 60).floor() % 60)
+      .byte(whole % 60)
+      .int4(micros)
 }

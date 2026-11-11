@@ -18,9 +18,15 @@
  */
 
 import ..errors {
-  SqlError, ConnectionError, TimeoutError, QueryError,
-  IntegrityError, UniqueViolation, ForeignKeyViolation,
-  NotNullViolation, CheckViolation,
+  SqlError,
+  ConnectionError,
+  TimeoutError,
+  QueryError,
+  IntegrityError,
+  UniqueViolation,
+  ForeignKeyViolation,
+  NotNullViolation,
+  CheckViolation,
 }
 
 /**
@@ -52,8 +58,9 @@ var _CONSTRAINT_ROWID = 2579
  */
 def class_for(code: number) {
   if primary(code) == _CONSTRAINT {
-    if code == _CONSTRAINT_UNIQUE or code == _CONSTRAINT_PRIMARYKEY
-      or code == _CONSTRAINT_ROWID {
+    if code == _CONSTRAINT_UNIQUE or
+        code == _CONSTRAINT_PRIMARYKEY or
+        code == _CONSTRAINT_ROWID {
       return UniqueViolation
     }
 
@@ -151,9 +158,5 @@ def reraise(error, query) {
   var parts = split_message(error.message)
   var kind = parts.code != nil ? class_for(parts.code) : SqlError
 
-  raise kind(parts.text, {
-    code: parts.code,
-    driver: 'sqlite',
-    query,
-  })
+  raise kind(parts.text, { code: parts.code, driver: 'sqlite', query })
 }

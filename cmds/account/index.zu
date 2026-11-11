@@ -28,8 +28,8 @@ import .plan
 def _needs_terminal(what: string) {
   if !ui.interactive() {
     raise UsageError(
-      '${what} asks for a password, which needs a terminal; sign in with a token from '
-        + 'standard input instead',
+      '${what} asks for a password, which needs a terminal; sign in with a token from ' +
+          'standard input instead',
     )
   }
 }
@@ -73,7 +73,9 @@ def _create(registry, as_json: bool) {
   echo ''
 
   if !created.email_confirmed {
-    echo ui.muted('A link to confirm ${created.email} is on its way; confirm it before publishing.')
+    echo ui.muted(
+      'A link to confirm ${created.email} is on its way; confirm it before publishing.',
+    )
   }
 }
 
@@ -142,10 +144,12 @@ def _logout(registry, as_json: bool) {
     revoked = error.status == 401
 
     if !revoked {
-      ui.complain(ui.warn(
-        'warning: the registry did not revoke the token (${error.message}); it is forgotten '
-          + 'here, and can be revoked from the account page',
-      ))
+      ui.complain(
+        ui.warn(
+          'warning: the registry did not revoke the token (${error.message}); it is forgotten ' +
+              'here, and can be revoked from the account page',
+        ),
+      )
     }
   }
 
@@ -172,7 +176,9 @@ def _whoami(registry, as_json: bool) {
   }
 
   echo '${ui.accent(me.username)} on ${registry.address}'
-  echo ui.muted('token "${me.token.name}", scopes: ${", ".join(me.token.scopes)}')
+  echo ui.muted(
+    'token "${me.token.name}", scopes: ${", ".join(me.token.scopes)}',
+  )
 }
 
 def _tokens(registry, as_json: bool) {
@@ -190,10 +196,14 @@ def _tokens(registry, as_json: bool) {
     return
   }
 
-  var rows = [[
-    ui.heading('id'), ui.heading('name'), ui.heading('scopes'),
-    ui.heading('expires'),
-  ]]
+  var rows = [
+    [
+      ui.heading('id'),
+      ui.heading('name'),
+      ui.heading('scopes'),
+      ui.heading('expires'),
+    ],
+  ]
 
   for token in tokens {
     var expires = token.expires_at == nil ? 'never' : token.expires_at[0, 10]
@@ -231,7 +241,9 @@ def main() {
   var as_json = parsed.options.get('json', false) == true
 
   if command == nil {
-    raise UsageError('say what to do: create, login, logout, whoami, tokens, token or revoke')
+    raise UsageError(
+      'say what to do: create, login, logout, whoami, tokens, token or revoke',
+    )
   }
 
   var registry = cli.registry_from(parsed)

@@ -231,8 +231,8 @@ def response_for(plugin: string, password: string, scramble, private: bool) {
     if !private {
       raise AuthenticationError(
         'the server asked for ${CLEAR}, which sends the password with ' +
-          'nothing protecting it; connect with tls, or over a unix ' +
-          'socket, or use a different plugin',
+            'nothing protecting it; connect with tls, or over a unix ' +
+            'socket, or use a different plugin',
         { driver: 'mysql' },
       )
     }
@@ -242,7 +242,7 @@ def response_for(plugin: string, password: string, scramble, private: bool) {
 
   raise AuthenticationError(
     'the server asked for the ${plugin} authentication plugin, which ' +
-      'this adapter does not implement',
+        'this adapter does not implement',
     { driver: 'mysql' },
   )
 }

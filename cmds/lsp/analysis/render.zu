@@ -38,8 +38,8 @@ def _prose(lines: list) {
         var language = trimmed[3, trimmed.length()].split(',')[0].trim()
         out.append(
           language == 'zuri-repl' or language.is_empty()
-            ? '```zuri'
-            : '```${language}',
+              ? '```zuri'
+              : '```${language}',
         )
         fenced = true
       } else {
@@ -173,9 +173,9 @@ def tag_text(text, name: string) {
  * @returns bool
  */
 def is_deprecated(text) {
-  return text != nil
-    and text.contains('@deprecated')
-    and zuri.doc.parse(text).has('deprecated')
+  return text != nil and
+      text.contains('@deprecated') and
+      zuri.doc.parse(text).has('deprecated')
 }
 
 /**
@@ -216,11 +216,13 @@ def parameters(symbol: dict) {
     return ''
   }
 
-  return ', '.join(params.map(@(param) {
-    var text = param.variadic ? '...${param.name}' : param.name
+  return ', '.join(
+    params.map(@(param) {
+      var text = param.variadic ? '...${param.name}' : param.name
 
-    return param.hint == nil ? text : '${text}: ${param.hint}'
-  }))
+      return param.hint == nil ? text : '${text}: ${param.hint}'
+    }),
+  )
 }
 
 /**
@@ -255,8 +257,8 @@ def signature(symbol: dict, owner, type) {
       var parent_text = symbol.get('superclass_text', nil)
 
       return parent_text == nil
-        ? 'class ${name}'
-        : 'class ${name}${arrow}${parent_text}'
+          ? 'class ${name}'
+          : 'class ${name}${arrow}${parent_text}'
     }
     when 'field' {
       var keyword = symbol.get('constant', false) ? 'const' : 'var'
@@ -264,9 +266,9 @@ def signature(symbol: dict, owner, type) {
       var hint = symbol.get('hint', nil)
       var shown = hint != nil ? hint : type
 
-      return shown == nil ? '${modifier}${keyword} ${prefix}${name}' : (
-        '${modifier}${keyword} ${prefix}${name}: ${shown}'
-      )
+      return shown == nil
+          ? '${modifier}${keyword} ${prefix}${name}'
+          : ('${modifier}${keyword} ${prefix}${name}: ${shown}')
     }
     when 'constant' {
       var value = symbol.get('value', nil)
@@ -277,8 +279,8 @@ def signature(symbol: dict, owner, type) {
       var hint = symbol.get('hint', nil)
 
       return hint == nil
-        ? '(parameter) ${name}'
-        : '(parameter) ${name}: ${hint}'
+          ? '(parameter) ${name}'
+          : '(parameter) ${name}: ${hint}'
     }
     when 'module' {
       return 'import ${import_text(symbol.source.segments)}'

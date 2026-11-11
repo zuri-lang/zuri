@@ -228,7 +228,9 @@ def _der_to_raw_ec(der: bytes, coord_len: number) {
   }
 
   if der[1] >= 0x80 {
-    raise MalformedTokenError('invalid ECDSA signature: unsupported long-form DER length')
+    raise MalformedTokenError(
+      'invalid ECDSA signature: unsupported long-form DER length',
+    )
   }
 
   var offset = 2

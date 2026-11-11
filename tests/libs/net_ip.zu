@@ -44,46 +44,50 @@ def each(question, asking, addresses, expected) {
 
 section('ipv4 blocks')
 
-each(
-  'is_shared', @(a) => a.is_shared(), ['100.64.0.1', '100.127.255.254'], true,
-)
-each(
-  'is_shared', @(a) => a.is_shared(), ['100.63.255.255', '100.128.0.0'], false,
-)
-each(
-  'is_benchmarking', @(a) => a.is_benchmarking(),
-  ['198.18.0.1', '198.19.255.255'], true,
-)
-each(
-  'is_benchmarking', @(a) => a.is_benchmarking(), ['198.17.0.1', '198.20.0.1'],
-  false,
-)
-each(
-  'is_reserved', @(a) => a.is_reserved(), ['240.0.0.1', '254.255.255.255'],
-  true,
-)
-each(
-  'is_reserved', @(a) => a.is_reserved(),
-  ['239.255.255.255', '255.255.255.255'], false,
-)
+each('is_shared', @(a) => a.is_shared(), [
+  '100.64.0.1',
+  '100.127.255.254',
+], true)
+each('is_shared', @(a) => a.is_shared(), [
+  '100.63.255.255',
+  '100.128.0.0',
+], false)
+each('is_benchmarking', @(a) => a.is_benchmarking(), [
+  '198.18.0.1',
+  '198.19.255.255',
+], true)
+each('is_benchmarking', @(a) => a.is_benchmarking(), [
+  '198.17.0.1',
+  '198.20.0.1',
+], false)
+each('is_reserved', @(a) => a.is_reserved(), [
+  '240.0.0.1',
+  '254.255.255.255',
+], true)
+each('is_reserved', @(a) => a.is_reserved(), [
+  '239.255.255.255',
+  '255.255.255.255',
+], false)
 
 section('ipv6 blocks')
 
-each(
-  'is_unique_local', @(a) => a.is_unique_local(), ['fc00::1', 'fd12:3456::1'],
-  true,
-)
-each(
-  'is_unique_local', @(a) => a.is_unique_local(), ['fe80::1', 'fbff::1'], false,
-)
-each(
-  'is_documentation', @(a) => a.is_documentation(),
-  ['2001:db8::1', '3fff::1', '3fff:fff::1'], true,
-)
-each(
-  'is_documentation', @(a) => a.is_documentation(),
-  ['2001:db9::1', '3fff:1000::1'], false,
-)
+each('is_unique_local', @(a) => a.is_unique_local(), [
+  'fc00::1',
+  'fd12:3456::1',
+], true)
+each('is_unique_local', @(a) => a.is_unique_local(), [
+  'fe80::1',
+  'fbff::1',
+], false)
+each('is_documentation', @(a) => a.is_documentation(), [
+  '2001:db8::1',
+  '3fff::1',
+  '3fff:fff::1',
+], true)
+each('is_documentation', @(a) => a.is_documentation(), [
+  '2001:db9::1',
+  '3fff:1000::1',
+], false)
 
 section('is_global')
 
@@ -277,7 +281,8 @@ section('either family')
 check('a private ipv4 address', net.Ip.parse('192.168.1.10').is_private(), true)
 check('a unique local ipv6 address', net.Ip.parse('fd00::1').is_private(), true)
 check(
-  'a public ipv4 address is not private', net.Ip.parse('8.8.8.8').is_private(),
+  'a public ipv4 address is not private',
+  net.Ip.parse('8.8.8.8').is_private(),
   false,
 )
 check('is_global for ipv4', net.Ip.parse('8.8.8.8').is_global(), true)

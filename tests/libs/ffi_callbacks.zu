@@ -37,12 +37,14 @@ echo '════════════════════════�
 
 var fixtures = os.get_env('ZURI_FFI_FIXTURES')
 assert fixtures,
-  'ZURI_FFI_FIXTURES names the directory the fixture libraries were built into'
+    'ZURI_FFI_FIXTURES names the directory the fixture libraries were built into'
 
-var header = file(os.join_paths(
-  os.dir_name(__file__), 'ffi_fixture', 'fixture.h',
-)).read()
-var lib = ffi.open('ffifixture', { paths: [fixtures] })
+var header = file(
+  os.join_paths(os.dir_name(__file__), 'ffi_fixture', 'fixture.h'),
+).read()
+var lib = ffi.open('ffifixture', {
+  paths: [fixtures],
+})
 var fx = ffi.declare(header).bind(lib)
 
 # Inline callbacks.
@@ -64,9 +66,10 @@ assert sum == 110, 'a callback run once per element'
 assert calls == [1, 2, 3, 4], 'in the order C calls it'
 ok('Zuri functions passed straight to a function pointer')
 
-var length = fx.fx_with_point(
-  @(p) => (p.x * p.x + p.y * p.y).sqrt(), { x: 3, y: 4 },
-)
+var length = fx.fx_with_point(@(p) => (p.x * p.x + p.y * p.y).sqrt(), {
+  x: 3,
+  y: 4,
+})
 assert length == 5, 'a record passed to a callback arrives as a dictionary'
 var made = fx.fx_point_via(@(x) {
   return { x, y: -x }
@@ -77,24 +80,28 @@ ok('records and small integers through callbacks')
 
 # Errors inside callbacks.
 
-var e = caught(@() => fx.fx_apply(@(x) {
-  raise ValueError('bad ${x}')
-}, 7))
+var e = caught(
+  @() => fx.fx_apply(@(x) {
+    raise ValueError('bad ${x}')
+  }, 7),
+)
 assert e and e.type == 'ValueError' and e.message == 'bad 7',
-  'the original error surfaces after C returns'
+    'the original error surfaces after C returns'
 
 e = caught(@() => fx.fx_apply(@(x) => 'text', 1))
 assert e and e.type == 'TypeError',
-  'a result of the wrong type is an error at the boundary'
+    'a result of the wrong type is an error at the boundary'
 
 var steps = 0
-e = caught(@() => fx.fx_reduce([1, 2, 3], 3, @(acc, x) {
-  steps++
-  if x == 2 {
-    raise ValueError('stop')
-  }
-  return acc + x
-}, 0))
+e = caught(
+  @() => fx.fx_reduce([1, 2, 3], 3, @(acc, x) {
+    steps++
+    if x == 2 {
+      raise ValueError('stop')
+    }
+    return acc + x
+  }, 0),
+)
 assert e and e.message == 'stop', 'the first error is the one raised'
 assert steps == 3, 'C runs to completion; later calls see the error value'
 ok('errors raised in a callback are raised again once C returns')
@@ -109,24 +116,28 @@ var handler = ffi.callback(@(value) {
 
 fx.fx_set_handler(handler)
 assert fx.fx_fire(1) == 1 and fx.fx_fire(2) == 1,
-  'C keeps the pointer and calls it later'
+    'C keeps the pointer and calls it later'
 assert seen == [1, 2], 'every call arrives'
 assert handler.pointer().type().kind() == 'function',
-  'the callback exposes its pointer'
+    'the callback exposes its pointer'
 assert handler.type().kind() == 'function pointer', 'and its type'
 
 handler.release()
 assert handler.is_released(), 'released'
 e = caught(@() => fx.fx_set_handler(handler))
 assert e and e.type == 'CallbackError',
-  'a released callback cannot be passed again'
+    'a released callback cannot be passed again'
 fx.fx_set_handler(nil)
 assert fx.fx_fire(3) == 0, 'nil clears the pointer'
 ok('lasting callbacks and their release')
 
-var guarded = ffi.callback(@(x) {
-  raise Error('nope')
-}, ffi.function_type(ffi.int, [ffi.int]), { error_value: -1 })
+var guarded = ffi.callback(
+  @(x) {
+    raise Error('nope')
+  },
+  ffi.function_type(ffi.int, [ffi.int]),
+  { error_value: -1 },
+)
 var apply = lib.function('fx_apply', ffi.int, [guarded.type(), ffi.int])
 e = caught(@() => apply(guarded, 5))
 assert e and e.message == 'nope', 'the error still surfaces'
@@ -135,7 +146,8 @@ ok('an error value for a lasting callback')
 
 e = caught(
   @() => ffi.callback(
-    @() => 1, ffi.function_type(ffi.int, [], { variadic: true }),
+    @() => 1,
+    ffi.function_type(ffi.int, [], { variadic: true }),
   ),
 )
 assert e and e.type == 'TypeError', 'a callback cannot be variadic'
@@ -188,7 +200,7 @@ var worker = ffi.callback(@(i) {
 var run_on_thread = ffi.threaded(fx.fx_threaded_calls)
 assert run_on_thread(worker, 5) == 5, 'the threaded call returns'
 assert from_thread == [0, 1, 2, 3, 4],
-  'every call from the C thread ran, in order'
+    'every call from the C thread ran, in order'
 ok('a threaded call answers callbacks from the thread it waits on')
 
 var later = []
@@ -225,7 +237,7 @@ while polled.length() < 3 and time() - started < 10 {
 
 join()
 assert polled == [0, 1, 2],
-  'calls from another thread run at the isolate safepoints'
+    'calls from another thread run at the isolate safepoints'
 ok('a busy isolate still answers callbacks from other threads')
 
 # A foreign call answers waiting calls before converting its own

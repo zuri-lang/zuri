@@ -354,7 +354,9 @@ class Endpoint < Service {
     var shared = zuri.reflect.has_method(self._transport, 'can_listen')
 
     if !shared or !self._transport.can_listen() {
-      raise ValueError('${self._transport} is read by the isolate that holds it; use serve()')
+      raise ValueError(
+        '${self._transport} is read by the isolate that holds it; use serve()',
+      )
     }
 
     var inbox = isolate.channel()
@@ -381,7 +383,8 @@ class Endpoint < Service {
       when 'closed' self._end()
       when 'failed' {
         self._report(
-          RpcClosedError('the connection failed: ${item.message}'), nil,
+          RpcClosedError('the connection failed: ${item.message}'),
+          nil,
         )
         self._end()
       }
@@ -486,7 +489,9 @@ class Endpoint < Service {
     self._callbacks = {}
 
     for id in waiting.keys() {
-      var ended = RpcClosedError('the connection ended before #${id} was answered')
+      var ended = RpcClosedError(
+        'the connection ended before #${id} was answered',
+      )
       self._call_back(waiting[id], nil, ended)
     }
   }

@@ -111,8 +111,8 @@ class Installed {
       table.set(key, self.packages.get(key))
     }
 
-    var text = '# Written by zuri: the packages it installed in this directory.\n\n'
-      + toml.dump({ format: _FORMAT, packages: table })
+    var text = '# Written by zuri: the packages it installed in this directory.\n\n' +
+        toml.dump({ format: _FORMAT, packages: table })
 
     fsx.atomic_write(self._path, text)
   }
@@ -136,8 +136,8 @@ def load_installed(path: string) {
     return Installed(path, is_dict(packages) ? packages : {})
   } as error {
     raise StoreError(
-      '${path} cannot be read: ${error.message}; delete it and run `zuri restore` to '
-        + 'install everything again',
+      '${path} cannot be read: ${error.message}; delete it and run `zuri restore` to ' +
+          'install everything again',
     )
   }
 }
@@ -215,11 +215,10 @@ class Transaction {
   }
 
   _write_journal(state: string) {
-    fsx.atomic_write(self._journal, json.encode({
-      state,
-      libs: self.libs,
-      done: self._done,
-    }))
+    fsx.atomic_write(
+      self._journal,
+      json.encode({ state, libs: self.libs, done: self._done }),
+    )
   }
 
   /**
@@ -326,7 +325,9 @@ class Transaction {
     } as error {
       self.rollback()
 
-      raise StoreError('could not move the new packages into ${self.libs}: ${error.message}')
+      raise StoreError(
+        'could not move the new packages into ${self.libs}: ${error.message}',
+      )
     }
 
     self._write_journal('committed')

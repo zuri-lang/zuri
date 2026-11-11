@@ -121,7 +121,9 @@ def parse_chunk_size(line) {
     size = size * 16 + digit
 
     if size > _MAX_CHUNK_SIZE {
-      raise TooLargeError('chunk size exceeds the ${_MAX_CHUNK_SIZE} byte limit')
+      raise TooLargeError(
+        'chunk size exceeds the ${_MAX_CHUNK_SIZE} byte limit',
+      )
     }
   }
 
@@ -399,7 +401,9 @@ class BodyReader {
     # A declared length over the limit can be refused before a single
     # byte of it is read, which is the whole point of the header.
     if limit != nil and self.mode == 'length' and self.length > limit {
-      raise TooLargeError('body of ${self.length} bytes exceeds the ${limit} byte limit')
+      raise TooLargeError(
+        'body of ${self.length} bytes exceeds the ${limit} byte limit',
+      )
     }
 
     # So can a chunked body seen to be over the limit from its sizes.
@@ -502,9 +506,9 @@ def reader_for(connection, headers, is_request: bool, bodiless: ?bool) {
   }
 
   # Most requests have no body, and every one of those can share this.
-  if is_request
-    and !headers.contains('transfer-encoding')
-    and !headers.contains('content-length') {
+  if is_request and
+      !headers.contains('transfer-encoding') and
+      !headers.contains('content-length') {
     return _NO_BODY
   }
 
@@ -522,7 +526,9 @@ def reader_for(connection, headers, is_request: bool, bodiless: ?bool) {
     }
 
     if encodings.length() > 1 {
-      raise ProtocolError('unsupported Transfer-Encoding: ${", ".join(encodings)}')
+      raise ProtocolError(
+        'unsupported Transfer-Encoding: ${", ".join(encodings)}',
+      )
     }
 
     has_chunked = true
@@ -670,7 +676,9 @@ def decode_content(data, encoding) {
       if instance_of(error, ProtocolError) {
         raise error
       }
-      raise ProtocolError('could not decode ${coding} content: ${error.message}')
+      raise ProtocolError(
+        'could not decode ${coding} content: ${error.message}',
+      )
     }
   }
 
@@ -753,7 +761,8 @@ def encode_content(data, coding: string, quality: ?number) {
     when 'br' {
       var level = _clamped(quality, 0, 11)
       return brotli.compress(
-        data, level == nil ? DEFAULT_BROTLI_QUALITY : level,
+        data,
+        level == nil ? DEFAULT_BROTLI_QUALITY : level,
       )
     }
     when 'zstd' {

@@ -698,9 +698,11 @@ def _parse_attribute(state: dict) {
 
   if operator != '=' {
     if ['^', '$', '*', '~', '|'].contains(operator) {
-      _fail(state,
+      _fail(
+        state,
         'the "${operator}=" attribute operator is not supported; ' +
-          'only [attr] and [attr="value"] are')
+            'only [attr] and [attr="value"] are',
+      )
     }
 
     _fail(state, 'expected "=" or "]" in an attribute selector')
@@ -787,9 +789,11 @@ def _parse_pseudo(state: dict) {
   var name = _read_identifier(state).lower()
 
   if !_SUPPORTED_PSEUDOS.contains(name) {
-    _fail(state,
+    _fail(
+      state,
       'the ":${name}" pseudo-class is not supported; ' +
-        'this engine implements :first-child, :last-child and :nth-child()')
+          'this engine implements :first-child, :last-child and :nth-child()',
+    )
   }
 
   if name != 'nth-child' {
@@ -977,8 +981,7 @@ def _skip_whitespace(state: dict) {
  * @returns bool
  */
 def _is_whitespace(c: string) {
-  return c == ' ' or c == '\t' or c == '\n' or
-    c == '\r' or c == '\f'
+  return c == ' ' or c == '\t' or c == '\n' or c == '\r' or c == '\f'
 }
 
 /**
@@ -991,8 +994,12 @@ def _is_whitespace(c: string) {
 def _is_name_start(c: string) {
   var n = c.ord()
 
-  return (n >= 65 and n <= 90) or (n >= 97 and n <= 122) or
-    n == 95 or n == 45 or n == 92 or n > 127
+  return (n >= 65 and n <= 90) or
+      (n >= 97 and n <= 122) or
+      n == 95 or
+      n == 45 or
+      n == 92 or
+      n > 127
 }
 
 /**

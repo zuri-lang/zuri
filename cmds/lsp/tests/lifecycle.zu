@@ -24,9 +24,8 @@ describe('before initialize', @{
   it('refuses requests with ServerNotInitialized', @{
     var client = Client(FIXTURE, nil)
 
-    expect(code_of(
-      @() => client.request('textDocument/hover', {}),
-    )).to_equal(-32002)
+    expect(code_of(@() => client.request('textDocument/hover', {})))
+        .to_equal(-32002)
     expect(code_of(@() => client.request('zuri/nothing', {}))).to_equal(-32002)
 
     client.notify('exit', nil)
@@ -46,7 +45,8 @@ describe('initialize', @{
     expect(offered.hoverProvider).to_be_true()
     expect(offered.renameProvider.prepareProvider).to_be_true()
     expect(offered.semanticTokensProvider.full.delta).to_be_true()
-    expect(offered.codeActionProvider.codeActionKinds).to_contain('refactor.extract')
+    expect(offered.codeActionProvider.codeActionKinds)
+        .to_contain('refactor.extract')
     expect(offered).not.to_have_key('diagnosticProvider')
     expect(client.stop()).to_equal(0)
   })
@@ -57,7 +57,8 @@ describe('initialize', @{
 
     asked.general.positionEncodings = ['utf-16', 'utf-8', 'utf-32']
 
-    expect(client.initialize(asked).capabilities.positionEncoding).to_equal('utf-32')
+    expect(client.initialize(asked).capabilities.positionEncoding)
+        .to_equal('utf-32')
     expect(client.stop()).to_equal(0)
   })
 
@@ -78,9 +79,8 @@ describe('initialize', @{
     var client = Client(FIXTURE, nil)
 
     client.initialize(nil)
-    expect(code_of(
-      @() => client.request('initialize', { capabilities: {} }),
-    )).to_equal(-32600)
+    expect(code_of(@() => client.request('initialize', { capabilities: {} })))
+        .to_equal(-32600)
     expect(client.stop()).to_equal(0)
   })
 
@@ -128,9 +128,8 @@ describe('after initialize', @{
       client.notify('zuri/unknown', { a: 1 })
       client.notify('$/unknown', nil)
 
-      expect(code_of(
-        @() => client.request('zuri/unknown', {}),
-      )).to_equal(-32601)
+      expect(code_of(@() => client.request('zuri/unknown', {})))
+          .to_equal(-32601)
       expect(client.stop()).to_equal(0)
     },
   )
@@ -140,9 +139,8 @@ describe('after initialize', @{
 
     client.initialize(nil)
     expect(client.request('shutdown', nil)).to_be_nil()
-    expect(code_of(
-      @() => client.request('textDocument/hover', {}),
-    )).to_equal(-32600)
+    expect(code_of(@() => client.request('textDocument/hover', {})))
+        .to_equal(-32600)
 
     client.notify('exit', nil)
     expect(client.child.wait(5000)).to_equal(0)

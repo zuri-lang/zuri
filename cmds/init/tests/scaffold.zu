@@ -103,9 +103,9 @@ describe('create', @{
     in_sandbox(@(directory) {
       create(directory, a_manifest(['-n', 'first']), nil)
 
-      var outcome = create(
-        directory, a_manifest(['-n', 'second']), { replace_manifest: true },
-      )
+      var outcome = create(directory, a_manifest(['-n', 'second']), {
+        replace_manifest: true,
+      })
 
       expect(outcome.created).to_equal([MANIFEST])
       expect(contents(directory, MANIFEST)).to_contain('name = "second"')
@@ -147,8 +147,7 @@ describe('create', @{
 
       expect(@{
         create(blocker, a_manifest([]), nil)
-      })
-        .to_raise_instance_of(ScaffoldError)
+      }).to_raise_instance_of(ScaffoldError)
     })
   })
 })

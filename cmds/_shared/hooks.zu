@@ -76,8 +76,8 @@ def run(details: dict) {
 
   if !os.path_contains(dir, script) {
     raise HookError(
-      "${details.name}'s ${details.hook} hook names '${details.script}', which is outside "
-        + 'the package',
+      "${details.name}'s ${details.hook} hook names '${details.script}', which is outside " +
+          'the package',
     )
   }
 
@@ -95,18 +95,22 @@ def run(details: dict) {
     '${details.hook}-${names.import_name(details.name)}-${stamp}.log',
   )
 
-  var child = spawn(os.exe_path, ['run', script], {
-    cwd: dir,
-    stdin: 'null',
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: {
-      ZURI_PACKAGE_NAME: details.name,
-      ZURI_PACKAGE_VERSION: details.version == nil ? '' : details.version,
-      ZURI_PACKAGE_DIR: dir,
-      ZURI_PROJECT_DIR: details.project,
+  var child = spawn(
+    os.exe_path,
+    ['run', script],
+    {
+      cwd: dir,
+      stdin: 'null',
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: {
+        ZURI_PACKAGE_NAME: details.name,
+        ZURI_PACKAGE_VERSION: details.version == nil ? '' : details.version,
+        ZURI_PACKAGE_DIR: dir,
+        ZURI_PROJECT_DIR: details.project,
+      },
     },
-  })
+  )
 
   var status = child.wait(HOOK_TIMEOUT * 1000)
 
@@ -122,15 +126,15 @@ def run(details: dict) {
 
   if status == nil {
     raise HookError(
-      "${details.name}'s ${details.hook} hook ran for more than ${HOOK_TIMEOUT} seconds and "
-        + 'was stopped; its output is in ${log}',
+      "${details.name}'s ${details.hook} hook ran for more than ${HOOK_TIMEOUT} seconds and " +
+          'was stopped; its output is in ${log}',
     )
   }
 
   if status != 0 {
     raise HookError(
-      "${details.name}'s ${details.hook} hook failed with status ${status}; its output is "
-        + 'in ${log}',
+      "${details.name}'s ${details.hook} hook failed with status ${status}; its output is " +
+          'in ${log}',
     )
   }
 

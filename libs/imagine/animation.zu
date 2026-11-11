@@ -99,7 +99,7 @@ class Animation {
       } else if frame.width() != width or frame.height() != height {
         raise ImageError(
           'every frame must be the same size; found ${frame.width()}x${frame.height()} ' +
-            'among ${width}x${height} frames',
+              'among ${width}x${height} frames',
         )
       }
     }
@@ -209,7 +209,9 @@ class Animation {
    */
   frame(index: number) {
     if index < 0 or index >= self._frames.length() {
-      raise ImageError('no frame ${index}; the animation has ${self._frames.length()}')
+      raise ImageError(
+        'no frame ${index}; the animation has ${self._frames.length()}',
+      )
     }
 
     return self._frames[index.floor()]
@@ -441,5 +443,7 @@ def _expand_delays(delay, count) {
     return delay.clone()
   }
 
-  raise ImageError('frame delay must be a number or a list, ${typeof(delay)} given')
+  raise ImageError(
+    'frame delay must be a number or a list, ${typeof(delay)} given',
+  )
 }

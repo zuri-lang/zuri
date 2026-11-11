@@ -501,8 +501,7 @@ class BzFile {
    * @returns bool
    */
   is_open() {
-    return self._file.is_open()
-      and !self._inner.finished()
+    return self._file.is_open() and !self._inner.finished()
   }
 
   /**
@@ -510,8 +509,7 @@ class BzFile {
    * writing and `false` otherwise.
    */
   is_closed() {
-    return self._file.is_closed()
-      or self._inner.finished()
+    return self._file.is_closed() or self._inner.finished()
   }
 
   /**

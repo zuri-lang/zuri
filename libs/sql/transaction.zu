@@ -338,7 +338,7 @@ class Transaction {
     if self._finished {
       raise TransactionError(
         'this transaction has already ' +
-          '${self.nested ? "left its savepoint" : "finished"}',
+            '${self.nested ? "left its savepoint" : "finished"}',
       )
     }
   }

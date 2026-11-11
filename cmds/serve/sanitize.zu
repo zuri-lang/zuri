@@ -78,10 +78,36 @@ var ALLOWED = {
 
 /** The elements dropped along with everything inside them. */
 var REMOVED = [
-  'script', 'style', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet',
-  'form', 'input', 'button', 'textarea', 'select', 'option', 'noscript',
-  'template', 'svg', 'math', 'link', 'meta', 'base', 'title', 'head', 'audio',
-  'video', 'source', 'track', 'canvas', 'portal', 'dialog',
+  'script',
+  'style',
+  'iframe',
+  'frame',
+  'frameset',
+  'object',
+  'embed',
+  'applet',
+  'form',
+  'input',
+  'button',
+  'textarea',
+  'select',
+  'option',
+  'noscript',
+  'template',
+  'svg',
+  'math',
+  'link',
+  'meta',
+  'base',
+  'title',
+  'head',
+  'audio',
+  'video',
+  'source',
+  'track',
+  'canvas',
+  'portal',
+  'dialog',
 ]
 
 var _VOID = ['br', 'hr', 'img']
@@ -124,9 +150,9 @@ def safe_url(value: string) {
 def _external(href: string) {
   var lower = href.trim().lower()
 
-  return lower.starts_with('http://')
-    or lower.starts_with('https://')
-    or lower.starts_with('//')
+  return lower.starts_with('http://') or
+      lower.starts_with('https://') or
+      lower.starts_with('//')
 }
 
 def _write(node, out: list) {
@@ -177,9 +203,9 @@ def _write(node, out: list) {
     parts.append(' ${lower}="${html.escape_attribute(value)}"')
   }
 
-  if tag == 'a'
-    and node.has_attribute('href')
-    and _external(node.get_attribute('href')) {
+  if tag == 'a' and
+      node.has_attribute('href') and
+      _external(node.get_attribute('href')) {
     parts.append(' rel="nofollow ugc noopener"')
   }
 

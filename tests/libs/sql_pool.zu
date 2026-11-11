@@ -134,8 +134,7 @@ def test_with_connection() {
     pool.with_connection(@(connection) {
       raise Error('stop')
     })
-  } as _error {
-  }
+  } as _error {}
 
   assert pool.in_use() == 0
 
@@ -163,8 +162,7 @@ def test_transaction_pins_one_connection() {
       tx.exec('insert into t values (3)', nil)
       raise Error('stop')
     }, nil)
-  } as _error {
-  }
+  } as _error {}
 
   assert pool.fetch_value('select count(*) from t', nil, nil) == 2
   assert pool.in_use() == 0

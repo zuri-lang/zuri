@@ -53,9 +53,9 @@ def select_result(response: dict, known) {
     return { columns: [], rows: [] }
   }
 
-  var columns = known != nil and id(response.columns) == id(known.columns) ?
-    known.described :
-    describe_columns(response.columns)
+  var columns = known != nil and id(response.columns) == id(known.columns)
+      ? known.described
+      : describe_columns(response.columns)
 
   return { columns, rows: response.rows }
 }

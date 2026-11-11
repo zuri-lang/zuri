@@ -61,8 +61,8 @@ def _client() {
   var headers = { Accept: 'application/vnd.github+json' }
   var token = os.get_env('GITHUB_TOKEN', '')
 
-  if !token.is_empty()
-    and listing_url().starts_with('https://api.github.com/') {
+  if !token.is_empty() and
+      listing_url().starts_with('https://api.github.com/') {
     headers.set('Authorization', 'Bearer ' + token)
   }
 
@@ -101,15 +101,17 @@ def available(target: string, prereleases: ?bool) {
   var response
 
   catch {
-    response = _client().get(listing_url(), { query: { per_page: '100' } })
+    response = _client().get(listing_url(), {
+      query: { per_page: '100' },
+    })
   } as error {
     raise ReleaseError('could not reach ${listing_url()}: ${error.message}')
   }
 
   if response.status == 403 or response.status == 429 {
     raise ReleaseError(
-      'GitHub refused the request, most likely for its rate limit; set GITHUB_TOKEN to a '
-        + 'token of your own and try again',
+      'GitHub refused the request, most likely for its rate limit; set GITHUB_TOKEN to a ' +
+          'token of your own and try again',
     )
   }
 
@@ -122,11 +124,15 @@ def available(target: string, prereleases: ?bool) {
   catch {
     listed = response.as_dict()
   } as error {
-    raise ReleaseError('${listing_url()} did not answer with a list of releases')
+    raise ReleaseError(
+      '${listing_url()} did not answer with a list of releases',
+    )
   }
 
   if !is_list(listed) {
-    raise ReleaseError('${listing_url()} did not answer with a list of releases')
+    raise ReleaseError(
+      '${listing_url()} did not answer with a list of releases',
+    )
   }
 
   var found = []
@@ -145,8 +151,8 @@ def available(target: string, prereleases: ?bool) {
 
     version = semver.parse(version).to_string()
 
-    var is_pre = release.get('prerelease', false) == true
-      or semver.parse(version).is_prerelease()
+    var is_pre = release.get('prerelease', false) == true or
+        semver.parse(version).is_prerelease()
 
     if is_pre and prereleases != true {
       continue
@@ -184,8 +190,13 @@ def available(target: string, prereleases: ?bool) {
  * @raises ReleaseError when there is no such release for `target`.
  */
 def find(wanted: string, target: string, prereleases: ?bool) {
-  var listed = available(target, prereleases == true or (wanted != 'latest'
-    and semver.is_valid(wanted) and semver.parse(wanted).is_prerelease()))
+  var listed = available(
+    target,
+    prereleases == true or
+        (wanted != 'latest' and
+            semver.is_valid(wanted) and
+            semver.parse(wanted).is_prerelease()),
+  )
 
   if wanted == 'latest' {
     if listed.is_empty() {
@@ -220,7 +231,9 @@ def _fetch(client, url: string, what: string) {
   }
 
   if !response.is_ok() {
-    raise ReleaseError('could not download ${what}: ${url} answered ${response.status}')
+    raise ReleaseError(
+      'could not download ${what}: ${url} answered ${response.status}',
+    )
   }
 
   return response.as_bytes()
@@ -239,13 +252,17 @@ def _fetch(client, url: string, what: string) {
 def download(release: dict, target: string, destination: string) {
   var client = _client()
   var name = asset_name(release.version, target)
-  var listed = _fetch(client, release.checksum, name + '.sha256')
-    .to_string()
-    .trim()
+  var listed = _fetch(
+    client,
+    release.checksum,
+    name + '.sha256',
+  ).to_string().trim()
   var expected = listed.split(' ')[0].lower().trim()
 
   if !is_dict(expected.match('/^[0-9a-f]{64}$/')) {
-    raise ReleaseError('the checksum published for ${name} is not a SHA-256 digest')
+    raise ReleaseError(
+      'the checksum published for ${name} is not a SHA-256 digest',
+    )
   }
 
   var data = _fetch(client, release.archive, name)
@@ -253,9 +270,9 @@ def download(release: dict, target: string, destination: string) {
 
   if actual != expected {
     raise ReleaseError(
-      '${name} does not match its published checksum\n  expected ${expected}\n  received '
-        + '${actual}\nNothing was used. The download was damaged on the way, or the release '
-        + 'is not what it claims to be.',
+      '${name} does not match its published checksum\n  expected ${expected}\n  received ' +
+          '${actual}\nNothing was used. The download was damaged on the way, or the release ' +
+          'is not what it claims to be.',
     )
   }
 
@@ -276,14 +293,19 @@ def download(release: dict, target: string, destination: string) {
  * @raises ReleaseError when the archive does not hold a runtime.
  */
 def unpack(
-  archive_path: string, destination: string, version: string, target: string,
+  archive_path: string,
+  destination: string,
+  version: string,
+  target: string,
 ) {
   fsx.ensure_dir(destination)
 
   catch {
     if archive_path.ends_with('.zip') {
       if !zip.extract(archive_path, destination) {
-        raise ReleaseError('${os.base_name(archive_path)} could not be unpacked')
+        raise ReleaseError(
+          '${os.base_name(archive_path)} could not be unpacked',
+        )
       }
     } else {
       tar.extract(archive_path, destination)
@@ -295,18 +317,23 @@ def unpack(
       raise error
     }
 
-    raise ReleaseError('${os.base_name(archive_path)} could not be unpacked: ${error.message}')
+    raise ReleaseError(
+      '${os.base_name(archive_path)} could not be unpacked: ${error.message}',
+    )
   }
 
   var root = os.join_paths(destination, 'zuri-${version}-${target}')
   var runtime = os.join_paths(
-    root, target.contains('windows') ? 'zuri.exe' : 'zuri',
+    root,
+    target.contains('windows') ? 'zuri.exe' : 'zuri',
   )
 
   if !file(runtime).exists() or !os.dir_exists(os.join_paths(root, 'libs')) {
     fsx.remove(destination)
 
-    raise ReleaseError('${os.base_name(archive_path)} does not hold a zuri runtime')
+    raise ReleaseError(
+      '${os.base_name(archive_path)} does not hold a zuri runtime',
+    )
   }
 
   return root

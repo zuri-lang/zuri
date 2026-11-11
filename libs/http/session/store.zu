@@ -217,6 +217,5 @@ class SessionStore {
    * Releases whatever the store holds open. The default does nothing,
    * which is right for a store that holds nothing.
    */
-  close() {
-  }
+  close() {}
 }

@@ -99,12 +99,12 @@ def _is_literal(line: string) {
     return true
   }
 
-  return text.starts_with('#')
-    or text.starts_with('>')
-    or text.starts_with('|')
-    or text.starts_with('- ')
-    or text.starts_with('* ')
-    or text.starts_with('```')
+  return text.starts_with('#') or
+      text.starts_with('>') or
+      text.starts_with('|') or
+      text.starts_with('- ') or
+      text.starts_with('* ') or
+      text.starts_with('```')
 }
 
 /**
@@ -151,7 +151,9 @@ def reflow(lines: list) {
       # block, so it is highlighted but not run.
       var info = text
 
-      if fenced and text.starts_with('```zuri') and !text.starts_with('```zuri-repl') {
+      if fenced and
+          text.starts_with('```zuri') and
+          !text.starts_with('```zuri-repl') {
         info = '```zuri,ignore'
       }
 
@@ -200,7 +202,6 @@ def reflow(lines: list) {
 
   return out
 }
-
 
 # The `#` count a line opens with, or 0 when it is not a heading.
 def _level(line: string) {
@@ -336,7 +337,18 @@ def squeeze(lines: list) {
 # Abbreviations that end in a full stop without ending the sentence.
 # Without these, "an IPv4 address and port, e.g. 10.0.0.1:80" summarises
 # as "an IPv4 address and port, e.g." and says nothing at all.
-var ABBREVIATIONS = ['e.g.', 'i.e.', 'etc.', 'cf.', 'vs.', 'approx.', 'Dr.', 'Mr.', 'Ms.', 'St.']
+var ABBREVIATIONS = [
+  'e.g.',
+  'i.e.',
+  'etc.',
+  'cf.',
+  'vs.',
+  'approx.',
+  'Dr.',
+  'Mr.',
+  'Ms.',
+  'St.',
+]
 
 # Where the first real sentence ends, or -1 when the text is one
 # sentence.

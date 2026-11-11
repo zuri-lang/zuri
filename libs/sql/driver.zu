@@ -358,7 +358,9 @@ class DriverConnection {
    * @param string name
    */
   release_savepoint(name: string) {
-    raise NotImplementedError('a connection has to implement release_savepoint()')
+    raise NotImplementedError(
+      'a connection has to implement release_savepoint()',
+    )
   }
 
   /**
@@ -425,9 +427,7 @@ class DriverConnection {
    * @throws NotSupportedError if the adapter has no introspection.
    */
   schema_adapter() {
-    raise NotSupportedError(
-      'this adapter does not implement introspection',
-    )
+    raise NotSupportedError('this adapter does not implement introspection')
   }
 
   /**

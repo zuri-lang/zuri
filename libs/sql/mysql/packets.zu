@@ -365,8 +365,10 @@ class Cursor {
     self._at = at + 4
 
     var data = self._data
-    return data[at] + data[at + 1] * 256 + data[at + 2] * 65536 +
-      data[at + 3] * 16777216
+    return data[at] +
+        data[at + 1] * 256 +
+        data[at + 2] * 65536 +
+        data[at + 3] * 16777216
   }
 
   /**
@@ -430,7 +432,7 @@ class Cursor {
 
     raise ProtocolError(
       'the server sent a length-encoded integer starting ${first}, ' +
-        'which is not a length',
+          'which is not a length',
       { driver: 'mysql' },
     )
   }
@@ -492,9 +494,7 @@ class Cursor {
   fixed(count: number) {
     self._need(count)
 
-    var value = count == 0 ?
-      bytes(0) :
-      self._data[self._at, self._at + count]
+    var value = count == 0 ? bytes(0) : self._data[self._at, self._at + count]
 
     self._at += count
 
@@ -776,8 +776,7 @@ class PacketStream {
       self._stream.write_all(payload)
     } as error {
       raise ConnectionError(
-        'the connection to the server failed while writing: ' +
-          error.message,
+        'the connection to the server failed while writing: ' + error.message,
         { driver: 'mysql' },
       )
     }
@@ -791,9 +790,9 @@ class PacketStream {
     var original = 0
 
     if frame.length() >= COMPRESS_THRESHOLD {
-      body = self._compression == 'zstd' ?
-        zstd.compress(frame, self._level) :
-        zlib.compress(frame, 6, nil, nil, nil)
+      body = self._compression == 'zstd'
+          ? zstd.compress(frame, self._level)
+          : zlib.compress(frame, 6, nil, nil, nil)
       original = frame.length()
     }
 
@@ -848,9 +847,9 @@ class PacketStream {
     var body = size == 0 ? bytes(0) : self._read_exact(size)
 
     if original > 0 {
-      body = self._compression == 'zstd' ?
-        zstd.decompress(body) :
-        zlib.decompress(body, nil)
+      body = self._compression == 'zstd'
+          ? zstd.decompress(body)
+          : zlib.decompress(body, nil)
     }
 
     # What was taken already goes before more is added, so the buffer
@@ -887,16 +886,15 @@ class PacketStream {
         chunk = self._stream.read(READ_SIZE)
       } as error {
         raise ConnectionError(
-          'the connection to the server failed while reading: ' +
-            error.message,
+          'the connection to the server failed while reading: ' + error.message,
           { driver: 'mysql' },
         )
       }
 
       if chunk == nil or chunk.length() == 0 {
-        raise ConnectionError(
-          'the server closed the connection', { driver: 'mysql' },
-        )
+        raise ConnectionError('the server closed the connection', {
+          driver: 'mysql',
+        })
       }
 
       if self._raw_at > 0 {

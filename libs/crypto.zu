@@ -828,12 +828,16 @@ class _Jwk {
 
     if kty == 'OKP' {
       if jwk.get('crv', nil) != 'Ed25519' {
-        raise CryptoError('jwk.to_pem(): unsupported OKP curve "${jwk.get("crv", "?")}", only Ed25519 is supported')
+        raise CryptoError(
+          'jwk.to_pem(): unsupported OKP curve "${jwk.get("crv", "?")}", only Ed25519 is supported',
+        )
       }
       return _crypto.ed25519_public_key_from_jwk(jwk['x'])
     }
 
-    raise CryptoError('jwk.to_pem(): unsupported kty "${kty}", expected RSA, EC, or OKP')
+    raise CryptoError(
+      'jwk.to_pem(): unsupported kty "${kty}", expected RSA, EC, or OKP',
+    )
   }
 }
 

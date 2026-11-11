@@ -73,10 +73,10 @@ def main() {
     } as error {
       # An upload that timed out may still have arrived. The registry
       # holding exactly this archive under this version means it did.
-      var same = instance_of(error, RegistryError)
-        and error.code == 'version_exists'
-        and error.details != nil
-        and error.details.get('checksum', nil) == packed.checksum
+      var same = instance_of(error, RegistryError) and
+          error.code == 'version_exists' and
+          error.details != nil and
+          error.details.get('checksum', nil) == packed.checksum
 
       if !same {
         raise error
@@ -98,11 +98,11 @@ def main() {
     } else if quiet {
       return
     } else if already {
-      echo '${ui.accent(published.name)} ${published.version} is already published with exactly '
-        + 'these files.'
+      echo '${ui.accent(published.name)} ${published.version} is already published with exactly ' +
+          'these files.'
     } else {
-      echo 'Published ${ui.accent(published.name)} ${published.version} '
-        + ui.muted('(${ui.size(packed.size)}, ${packed.checksum})')
+      echo 'Published ${ui.accent(published.name)} ${published.version} ' +
+          ui.muted('(${ui.size(packed.size)}, ${packed.checksum})')
     }
   } as error {
     fsx.remove(packed_path)
@@ -140,8 +140,8 @@ def _show(prepared: dict, packed: dict, root: string, as_json: bool) {
   echo ''
   ui.say(ui.table(rows))
   echo ''
-  echo '${ui.count(prepared.files.length(), "file")}, ${ui.size(packed.unpacked_size)} '
-    + 'unpacked, ${ui.size(packed.size)} packed'
+  echo '${ui.count(prepared.files.length(), "file")}, ${ui.size(packed.unpacked_size)} ' +
+      'unpacked, ${ui.size(packed.size)} packed'
   echo ui.muted(packed.checksum)
 }
 

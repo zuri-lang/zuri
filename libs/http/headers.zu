@@ -267,7 +267,10 @@ class Headers {
       self._fields.remove(key)
     }
 
-    self._fields[key] = [name, [text]]
+    self._fields[key] = [
+      name,
+      [text],
+    ]
     self._size += name.length() + text.length() + 4
 
     return self
@@ -293,7 +296,10 @@ class Headers {
     var entry = self._fields.get(key, nil)
 
     if entry == nil {
-      self._fields[key] = [name, [text]]
+      self._fields[key] = [
+        name,
+        [text],
+      ]
     } else {
       entry[1].append(text)
     }

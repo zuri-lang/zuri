@@ -202,11 +202,11 @@ def _is_cyclic(seen, value) {
 
 def _quote(text, options) {
   var body = text
-    .replace('/\\\\/', '\\\\')
-    .replace("/'/", "\\'")
-    .replace('/\n/', '\\n')
-    .replace('/\t/', '\\t')
-    .replace('/\r/', '\\r')
+      .replace('/\\\\/', '\\\\')
+      .replace("/'/", "\\'")
+      .replace('/\n/', '\\n')
+      .replace('/\t/', '\\t')
+      .replace('/\r/', '\\r')
 
   if options.max_string > 0 and body.length() > options.max_string {
     body = body[0, options.max_string] + style.symbols().ellipsis
@@ -273,7 +273,10 @@ def _instance(value, options, depth, seen) {
     }
 
     var rendered = _render(
-      property_of(value, property), options, depth + 1, seen,
+      property_of(value, property),
+      options,
+      depth + 1,
+      seen,
     )
     parts.append(_paint(options, style.white, property) + ': ' + rendered)
     shown++
@@ -295,9 +298,13 @@ def _list(value, options, depth, seen) {
   for item in value {
     if options.max_items > 0 and shown >= options.max_items {
       var remaining = value.length() - shown
-      parts.append(_paint(
-        options, style.grey, '${style.symbols().ellipsis} ${remaining} more',
-      ))
+      parts.append(
+        _paint(
+          options,
+          style.grey,
+          '${style.symbols().ellipsis} ${remaining} more',
+        ),
+      )
       break
     }
 
@@ -328,17 +335,21 @@ def _dict(value, options, depth, seen) {
   for key in keys {
     if options.max_items > 0 and shown >= options.max_items {
       var remaining = keys.length() - shown
-      parts.append(_paint(
-        options, style.grey, '${style.symbols().ellipsis} ${remaining} more',
-      ))
+      parts.append(
+        _paint(
+          options,
+          style.grey,
+          '${style.symbols().ellipsis} ${remaining} more',
+        ),
+      )
       break
     }
 
     var label = is_string(key) ? key : _render(key, options, depth + 1, seen)
     parts.append(
-      _paint(options, style.white, label)
-        + ': '
-        + _render(value[key], options, depth + 1, seen),
+      _paint(options, style.white, label) +
+          ': ' +
+          _render(value[key], options, depth + 1, seen),
     )
     shown++
   }
@@ -377,19 +388,22 @@ def _render(value, options, depth, seen) {
     if options.max_depth > 0 and depth >= options.max_depth {
       var size = value.length()
       return _paint(
-        options, style.grey,
+        options,
+        style.grey,
         is_list(value) ? '[${size} items]' : '{${size} keys}',
       )
     }
 
-    return is_list(value) ?
-      _list(value, options, depth, seen) :
-      _dict(value, options, depth, seen)
+    return is_list(value)
+        ? _list(value, options, depth, seen)
+        : _dict(value, options, depth, seen)
   }
 
   if is_class(value) {
     return _paint(
-      options, style.cyan, 'class ${reflect.class_info(value).name}',
+      options,
+      style.cyan,
+      'class ${reflect.class_info(value).name}',
     )
   }
 
@@ -412,7 +426,8 @@ def _render(value, options, depth, seen) {
   if is_callable(value) {
     var name = value.name()
     return _paint(
-      options, style.cyan,
+      options,
+      style.cyan,
       name.starts_with('@') ? 'function' : 'function ${name}',
     )
   }
@@ -422,7 +437,9 @@ def _render(value, options, depth, seen) {
   }
 
   return _paint(
-    options, style.grey, '${reflect.kind(value)} ${value.to_string()}',
+    options,
+    style.grey,
+    '${reflect.kind(value)} ${value.to_string()}',
   )
 }
 
@@ -500,7 +517,14 @@ def _block(value, options, depth, seen, out) {
       var label = is_string(key) ? key : _render(key, options, 0, [])
       var tail = index < keys.length() - 1 ? ',' : ''
       _append_entry(
-        out, pad + '  ', '${label}: ', value[key], options, depth, seen, tail,
+        out,
+        pad + '  ',
+        '${label}: ',
+        value[key],
+        options,
+        depth,
+        seen,
+        tail,
       )
       index++
     }

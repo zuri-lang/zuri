@@ -667,8 +667,10 @@ class MaildirStore < MailStore {
   }
 
   _home(username: string) {
-    if username.index_of('/') > -1 or username.index_of('\\') > -1
-      or username == '.' or username == '..' {
+    if username.index_of('/') > -1 or
+        username.index_of('\\') > -1 or
+        username == '.' or
+        username == '..' {
       raise MailboxError('${username} is not a usable account name')
     }
 
@@ -742,9 +744,11 @@ class MaildirStore < MailStore {
 
     os.create_dir(path, nil, true)
     self._ensure_maildir(path)
-    self._write_index(
-      path, { uidvalidity: time().floor(), uidnext: 1, entries: {} },
-    )
+    self._write_index(path, {
+      uidvalidity: time().floor(),
+      uidnext: 1,
+      entries: {},
+    })
   }
 
   remove(username: string, mailbox: string) {
@@ -829,9 +833,9 @@ class MaildirStore < MailStore {
         continue
       }
 
-      var moved = name.index_of(INFO_SEPARATOR) > -1 ?
-        name :
-        '${name}${INFO_SEPARATOR}2,'
+      var moved = name.index_of(INFO_SEPARATOR) > -1
+          ? name
+          : '${name}${INFO_SEPARATOR}2,'
 
       os.rename(os.join_paths(staging, name), os.join_paths(current, moved))
     }
@@ -893,12 +897,14 @@ class MaildirStore < MailStore {
 
       handle.close()
 
-      found.append(StoredMessage(
-        state.index.entries[key],
-        raw,
-        _flags_from_letters(_flag_part(name)),
-        _received_of(key),
-      ))
+      found.append(
+        StoredMessage(
+          state.index.entries[key],
+          raw,
+          _flags_from_letters(_flag_part(name)),
+          _received_of(key),
+        ),
+      )
     }
 
     return found.sort(@(left, right) => left.uid - right.uid)
@@ -1042,10 +1048,7 @@ class MaildirStore < MailStore {
   }
 
   _write_index(path: string, index: dict) {
-    var lines = [
-      'uidvalidity ${index.uidvalidity}',
-      'uidnext ${index.uidnext}',
-    ]
+    var lines = ['uidvalidity ${index.uidvalidity}', 'uidnext ${index.uidnext}']
 
     for key in index.entries.keys() {
       lines.append('${index.entries[key]} ${key}')

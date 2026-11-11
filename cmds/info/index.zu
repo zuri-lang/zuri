@@ -32,19 +32,25 @@ def parser() {
 
   parser.description = 'Describes the project and its packages, or one package on a registry.'
 
-  parser.add_index('package',
-    'A package on a registry, as name or name@version', { metavar: 'package' })
+  parser.add_index(
+    'package',
+    'A package on a registry, as name or name@version',
+    { metavar: 'package' },
+  )
   parser.add_option('tree', 'Show what depends on what', { short_name: 't' })
-  parser.add_option('depth', 'How deep the tree goes; all the way by default',
-    { type: args.INT, metavar: 'levels' })
+  parser.add_option('depth', 'How deep the tree goes; all the way by default', {
+    type: args.INT,
+    metavar: 'levels',
+  })
   parser.add_option(
-    'verify', 'Check each installed package against what was installed', nil,
+    'verify',
+    'Check each installed package against what was installed',
+    nil,
   )
   parser.add_option('readme', "Print the package's README", nil)
-  parser.add_option(
-    'global', 'Describe the packages installed for this user',
-    { short_name: 'g' },
-  )
+  parser.add_option('global', 'Describe the packages installed for this user', {
+    short_name: 'g',
+  })
   cli.add_registry_option(parser)
   cli.add_json_option(parser)
 
@@ -84,8 +90,8 @@ def _packages(workspace, verify: bool) {
 
     if record == nil {
       status = os.dir_exists(dir) ? 'unmanaged' : 'missing'
-    } else if record.get('version', '') != entry.version
-      or record.get('source', '') != entry.source.to_string() {
+    } else if record.get('version', '') != entry.version or
+        record.get('source', '') != entry.source.to_string() {
       status = 'drifted'
     } else if !os.dir_exists(dir) {
       status = 'missing'
@@ -149,13 +155,17 @@ def _tree(workspace, depth: ?number) {
   var visit = nil
 
   visit = @(
-    name: string, prefix: string, last: bool, level: number, path: list,
+    name: string,
+    prefix: string,
+    last: bool,
+    level: number,
+    path: list,
   ) {
     var entry = lock.get(name)
     var branch = last ? '└── ' : '├── '
     var label = entry == nil
-      ? '${name} ${ui.failure("(not locked)")}'
-      : '${entry.name} ${entry.version}'
+        ? '${name} ${ui.failure("(not locked)")}'
+        : '${entry.name} ${entry.version}'
     var key = names.normalized(name)
 
     if path.contains(key) {
@@ -175,8 +185,13 @@ def _tree(workspace, depth: ?number) {
     children.sort()
 
     for index, child in children {
-      visit(child, prefix + (last ? '    ' : '│   '),
-        index == children.length() - 1, level + 1, path + [key])
+      visit(
+        child,
+        prefix + (last ? '    ' : '│   '),
+        index == children.length() - 1,
+        level + 1,
+        path + [key],
+      )
     }
   }
 
@@ -196,7 +211,9 @@ def _tree(workspace, depth: ?number) {
 def _project(parsed) {
   var given = parsed.options
   var workspace = cli.workspace(
-    'info', given.get('global', false) == true, sync.Options(),
+    'info',
+    given.get('global', false) == true,
+    sync.Options(),
   )
   var rows = _packages(workspace, given.get('verify', false) == true)
   var manifest = workspace.manifest
@@ -239,8 +256,15 @@ def _project(parsed) {
     return
   }
 
-  var table = [[ui.heading('package'), ui.heading('declared'),
-    ui.heading('locked'), ui.heading('installed'), ui.heading('')]]
+  var table = [
+    [
+      ui.heading('package'),
+      ui.heading('declared'),
+      ui.heading('locked'),
+      ui.heading('installed'),
+      ui.heading(''),
+    ],
+  ]
 
   for row in rows {
     var status = row.status == 'ok' ? '' : ui.warn(row.status)
@@ -279,8 +303,8 @@ def _project(parsed) {
   if !problems.is_empty() {
     echo ''
     echo ui.muted(
-      'Run `zuri restore` to install what the lockfile names, or `zuri install` '
-        + 'when project.toml has changed.',
+      'Run `zuri restore` to install what the lockfile names, or `zuri install` ' +
+          'when project.toml has changed.',
     )
   }
 }
@@ -310,8 +334,8 @@ def _package(parsed) {
 
   if readme {
     echo about.get('readme', nil) == nil
-      ? 'The latest version has no README.'
-      : about.readme
+        ? 'The latest version has no README.'
+        : about.readme
 
     return
   }
@@ -352,8 +376,8 @@ def _package(parsed) {
   echo ''
 
   var shown = about.versions.length() > 10
-    ? about.versions[0, 10]
-    : about.versions
+      ? about.versions[0, 10]
+      : about.versions
   var listed = shown.map(@(v) {
     return v.yanked ? '${v.version} ${ui.warn("(yanked)")}' : v.version
   })

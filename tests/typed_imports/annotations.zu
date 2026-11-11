@@ -23,7 +23,7 @@ def failure(body) {
     body()
   } as error {
     assert instance_of(error, TypeError),
-      'expected a TypeError, got ${typeof(error)}'
+        'expected a TypeError, got ${typeof(error)}'
     return error.message
   }
 
@@ -40,11 +40,13 @@ for i in 0..100000 {
 }
 
 assert failure(@() {
-  area(Plain())
-}) == "area() expects parameter 'shape' (argument 1) to be a Shape, got instance"
+      area(Plain())
+    }) ==
+    "area() expects parameter 'shape' (argument 1) to be a Shape, got instance"
 assert failure(@() {
-  area(nil)
-}) != nil
+      area(nil)
+    }) !=
+    nil
 ok('an imported class accepts its instances and subclasses, and refuses others')
 
 def maybe(shape: ?Shape) {
@@ -54,8 +56,9 @@ def maybe(shape: ?Shape) {
 assert maybe(nil) == 'none'
 assert maybe(Circle()) == 'shape'
 assert failure(@() {
-  maybe(Plain())
-}) != nil
+      maybe(Plain())
+    }) !=
+    nil
 ok('a nullable imported class takes nil')
 
 def either(value: Circle|Plain) {
@@ -68,8 +71,9 @@ for i in 0..100000 {
 }
 
 assert failure(@() {
-  either(Shape())
-}) == "either() expects parameter 'value' (argument 1) to be a Circle or a Plain, got instance"
+      either(Shape())
+    }) ==
+    "either() expects parameter 'value' (argument 1) to be a Circle or a Plain, got instance"
 ok('a union of imported classes takes either one')
 
 def make_checker() {
@@ -89,8 +93,9 @@ for i in 0..100000 {
 }
 
 assert failure(@() {
-  check(Shape())
-}) == "check() expects parameter 'value' (argument 1) to be a Kind, got instance"
+      check(Shape())
+    }) ==
+    "check() expects parameter 'value' (argument 1) to be a Kind, got instance"
 ok('a class held in a local of an enclosing function')
 
 # One function, two closures, each holding a different class. Compiled
@@ -113,11 +118,13 @@ for i in 0..100000 {
 }
 
 assert failure(@() {
-  circles(Plain())
-}) != nil
+      circles(Plain())
+    }) !=
+    nil
 assert failure(@() {
-  plains(Circle())
-}) != nil
+      plains(Circle())
+    }) !=
+    nil
 ok('closures of one function, each checked against its own class')
 
 def names(shapes: list) {
@@ -126,8 +133,9 @@ def names(shapes: list) {
 
 assert names([Shape(), Circle()]) == ['mapped', 'mapped']
 assert failure(@() {
-  names([Plain()])
-}) != nil
+      names([Plain()])
+    }) !=
+    nil
 ok('a lambda parameter inside a function')
 
 class Box {
@@ -143,8 +151,9 @@ for i in 0..100000 {
 }
 
 assert failure(@() {
-  box.put(Plain())
-}) != nil
+      box.put(Plain())
+    }) !=
+    nil
 ok('a method parameter')
 
 for i in 0..100000 {
@@ -152,8 +161,9 @@ for i in 0..100000 {
 }
 
 assert failure(@() {
-  checker.accepts(Plain())
-}) == "accepts() expects parameter 'shape' (argument 1) to be a Shape, got instance"
+      checker.accepts(Plain())
+    }) ==
+    "accepts() expects parameter 'shape' (argument 1) to be a Shape, got instance"
 ok('a function in a module that has finished loading')
 
 class Own {}
@@ -167,8 +177,9 @@ for i in 0..100000 {
 }
 
 assert failure(@() {
-  own(Shape())
-}) != nil
+      own(Shape())
+    }) !=
+    nil
 ok('a class declared in the module itself is unchanged')
 
 def versioned(value: VERSION) {
@@ -176,8 +187,9 @@ def versioned(value: VERSION) {
 }
 
 assert failure(@() {
-  versioned(Shape())
-}) == "versioned() expects parameter 'value' (argument 1) to be a VERSION, got instance"
+      versioned(Shape())
+    }) ==
+    "versioned() expects parameter 'value' (argument 1) to be a VERSION, got instance"
 ok('a name that is not a class matches nothing, rather than failing to resolve')
 
 echo ''

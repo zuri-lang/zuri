@@ -39,12 +39,52 @@ import .entities
  * both box types render identically.
  */
 var INLINE_ELEMENTS = [
-  'a', 'abbr', 'b', 'bdi', 'bdo', 'br', 'button', 'cite', 'code',
-  'data', 'datalist', 'del', 'dfn', 'em', 'i', 'img', 'input',
-  'ins', 'kbd', 'label', 'map', 'mark', 'meter', 'noscript',
-  'object', 'output', 'picture', 'progress', 'q', 'ruby', 's',
-  'samp', 'select', 'slot', 'small', 'span', 'strong', 'sub',
-  'sup', 'svg', 'template', 'textarea', 'time', 'u', 'var', 'wbr',
+  'a',
+  'abbr',
+  'b',
+  'bdi',
+  'bdo',
+  'br',
+  'button',
+  'cite',
+  'code',
+  'data',
+  'datalist',
+  'del',
+  'dfn',
+  'em',
+  'i',
+  'img',
+  'input',
+  'ins',
+  'kbd',
+  'label',
+  'map',
+  'mark',
+  'meter',
+  'noscript',
+  'object',
+  'output',
+  'picture',
+  'progress',
+  'q',
+  'ruby',
+  's',
+  'samp',
+  'select',
+  'slot',
+  'small',
+  'span',
+  'strong',
+  'sub',
+  'sup',
+  'svg',
+  'template',
+  'textarea',
+  'time',
+  'u',
+  'var',
+  'wbr',
 ]
 
 /**
@@ -53,7 +93,12 @@ var INLINE_ELEMENTS = [
  * collapsed.
  */
 var PRESERVE_WHITESPACE = [
-  'pre', 'textarea', 'script', 'style', 'xmp', 'listing',
+  'pre',
+  'textarea',
+  'script',
+  'style',
+  'xmp',
+  'listing',
   'plaintext',
 ]
 
@@ -181,8 +226,7 @@ def _strip(host, keep_comments: bool, collapse: bool) {
 
     # A whitespace-only run between block level neighbours is
     # formatting, not content, and nothing renders it.
-    if collapsed == ' ' and block and
-      _has_no_inline_neighbour(child) {
+    if collapsed == ' ' and block and _has_no_inline_neighbour(child) {
       child.detach()
       continue
     }
@@ -202,8 +246,9 @@ def _strip(host, keep_comments: bool, collapse: bool) {
  * @returns bool
  */
 def _is_preserved(host) {
-  return host.is_element() and host.is_html() and
-    PRESERVE_WHITESPACE.contains(host.tag_name)
+  return host.is_element() and
+      host.is_html() and
+      PRESERVE_WHITESPACE.contains(host.tag_name)
 }
 
 /**
@@ -246,7 +291,7 @@ def _is_inline(host) {
  */
 def _has_no_inline_neighbour(child) {
   return !_is_inline(child.previous_sibling()) and
-    !_is_inline(child.next_sibling())
+      !_is_inline(child.next_sibling())
 }
 
 /**
@@ -268,8 +313,7 @@ def _trim_edges(host) {
 
   var last = host.last_child()
 
-  if last != nil and last.is_text() and
-    !_is_inline(last.previous_sibling()) {
+  if last != nil and last.is_text() and !_is_inline(last.previous_sibling()) {
     last.data = last.data.rtrim()
 
     if last.data.is_empty() {
@@ -317,8 +361,7 @@ def _collapse_whitespace(text: string) {
  * @returns bool
  */
 def _is_whitespace(c: string) {
-  return c == ' ' or c == '\n' or c == '\t' or
-    c == '\f' or c == '\r'
+  return c == ' ' or c == '\n' or c == '\t' or c == '\f' or c == '\r'
 }
 
 /**
@@ -396,9 +439,7 @@ def _indent_unit(indent) {
   }
 
   if !is_number(indent) {
-    raise ArgumentError(
-      'indent must be a number of spaces or an indent string',
-    )
+    raise ArgumentError('indent must be a number of spaces or an indent string')
   }
 
   if indent < 0 {
@@ -417,8 +458,13 @@ def _indent_unit(indent) {
  * @param bool keep_comments
  * @param list lines
  */
-def _format_node(host, depth: number, unit: string, keep_comments: bool,
-  lines: list) {
+def _format_node(
+  host,
+  depth: number,
+  unit: string,
+  keep_comments: bool,
+  lines: list,
+) {
   var pad = unit * depth
 
   if host.is_text() {

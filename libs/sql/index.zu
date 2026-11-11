@@ -90,12 +90,26 @@
 
 import @.errors { * }
 import @.driver {
-  Driver, DriverConnection, DriverStatement, DriverCursor, SchemaAdapter,
+  Driver,
+  DriverConnection,
+  DriverStatement,
+  DriverCursor,
+  SchemaAdapter,
   default_capabilities,
-  READ_UNCOMMITTED, READ_COMMITTED, REPEATABLE_READ, SERIALIZABLE,
+  READ_UNCOMMITTED,
+  READ_COMMITTED,
+  REPEATABLE_READ,
+  SERIALIZABLE,
 }
-import @.params { translate, scan, split_statements, placeholder,
-  QUESTION, NUMBERED, INDEXED }
+import @.params {
+  translate,
+  scan,
+  split_statements,
+  placeholder,
+  QUESTION,
+  NUMBERED,
+  INDEXED,
+}
 import @.decimal { Decimal, decimal }
 import @.types { Time, time, time_from_seconds, parse_time }
 import @.result { ResultSet, ExecResult }
@@ -172,8 +186,8 @@ def driver(name: string) {
   if found == nil {
     raise SqlError(
       'no database adapter called ${name} is registered; there ' +
-        '${_REGISTRY.length() == 1 ? "is" : "are"} ' +
-        '${', '.join(_REGISTRY.keys())}',
+          '${_REGISTRY.length() == 1 ? "is" : "are"} ' +
+          '${', '.join(_REGISTRY.keys())}',
     )
   }
 
@@ -206,8 +220,8 @@ def driver_for(dsn: string) {
 
   raise SqlError(
     'no database adapter handles ${scheme}:// connection strings; ' +
-      '${', '.join(_REGISTRY.keys())} ${_REGISTRY.length() == 1 ? "is" : "are"} ' +
-      'registered',
+        '${', '.join(_REGISTRY.keys())} ${_REGISTRY.length() == 1 ? "is" : "are"} ' +
+        'registered',
   )
 }
 
@@ -236,8 +250,8 @@ def driver_for(dsn: string) {
  */
 def open(dsn, options) {
   var chosen = is_dict(dsn)
-    ? driver(dsn.get('driver', 'sqlite'))
-    : driver_for(dsn)
+      ? driver(dsn.get('driver', 'sqlite'))
+      : driver_for(dsn)
   var settings = chosen.parse_dsn(dsn)
 
   if options != nil {
@@ -259,8 +273,8 @@ def open(dsn, options) {
  */
 def pool(dsn, options) {
   var chosen = is_dict(dsn)
-    ? driver(dsn.get('driver', 'sqlite'))
-    : driver_for(dsn)
+      ? driver(dsn.get('driver', 'sqlite'))
+      : driver_for(dsn)
 
   return Pool(chosen, chosen.parse_dsn(dsn), options or {})
 }

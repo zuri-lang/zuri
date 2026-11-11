@@ -105,10 +105,10 @@ class SqliteCursor < DriverCursor {
       # Closing the connection releases the statement, so a step that
       # failed on a closed connection failed for that reason.
       if self._connection.is_closed() {
-        raise ClosedError(
-          'the connection this cursor reads from was closed',
-          { driver: 'sqlite', query: self._query },
-        )
+        raise ClosedError('the connection this cursor reads from was closed', {
+          driver: 'sqlite',
+          query: self._query,
+        })
       }
 
       reraise(error, self._query)
@@ -151,7 +151,7 @@ class SqliteCursor < DriverCursor {
 
   to_string() {
     return '<SqliteCursor ${self._columns.length()} columns' +
-      '${self._closed ? ", closed" : ""}>'
+        '${self._closed ? ", closed" : ""}>'
   }
 
   @to_string() {

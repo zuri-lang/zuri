@@ -115,7 +115,7 @@ class Decimal {
 
     raise QueryError(
       'a decimal is built from text, a number or a bigint, not ' +
-        '${typeof(value)}',
+          '${typeof(value)}',
     )
   }
 

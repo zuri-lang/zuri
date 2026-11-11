@@ -35,7 +35,6 @@ catch {
   echo 'no system font found; figures will be generated without labels'
 }
 
-
 /**
  * Writes a figure and reports it, so a run of this script reads as a
  * list of what it produced.
@@ -44,7 +43,6 @@ def emit(name, image) {
   image.save('${OUT}/${name}')
   echo '  ${name}  ${image.width()}x${image.height()}'
 }
-
 
 /**
  * Puts a small caption under a panel, and returns the panel grown to
@@ -61,7 +59,6 @@ def labelled(image, text) {
   padded.text(0, image.height() + 4, text, caption, LABEL)
   return padded
 }
-
 
 /**
  * Lays panels out in a row with even gaps, on a paper background.
@@ -88,7 +85,6 @@ def row(panels, gap) {
   return sheet
 }
 
-
 /**
  * A synthetic photograph: a graded sky, a sun, hills and haze.
  *
@@ -99,49 +95,66 @@ def row(panels, gap) {
 def sample_photo(width, height) {
   var photo = Image(width, height)
 
-  photo.linear_gradient(0, 0, 0, height, [
-    '#1e3a8a', '#7dd3fc', '#fef3c7',
-  ])
+  photo.linear_gradient(0, 0, 0, height, ['#1e3a8a', '#7dd3fc', '#fef3c7'])
 
   photo.fill_circle(width * 0.72, height * 0.34, height * 0.13, '#fde68a')
 
   photo.fill_polygon([
-    0, height,
-    width * 0.28, height * 0.52,
-    width * 0.52, height * 0.78,
-    width * 0.74, height * 0.44,
-    width, height * 0.72,
-    width, height,
+    0,
+    height,
+    width * 0.28,
+    height * 0.52,
+    width * 0.52,
+    height * 0.78,
+    width * 0.74,
+    height * 0.44,
+    width,
+    height * 0.72,
+    width,
+    height,
   ], '#166534')
 
   photo.fill_polygon([
-    0, height,
-    width * 0.34, height * 0.74,
-    width * 0.66, height * 0.88,
-    width, height * 0.68,
-    width, height,
+    0,
+    height,
+    width * 0.34,
+    height * 0.74,
+    width * 0.66,
+    height * 0.88,
+    width,
+    height * 0.68,
+    width,
+    height,
   ], '#14532d')
 
-  photo.linear_gradient(0, height * 0.4, 0, height * 0.75, [
-    Color(255, 255, 255, 0),
-    Color(255, 255, 255, 70),
-  ], { blend: true })
+  photo.linear_gradient(
+    0,
+    height * 0.4,
+    0,
+    height * 0.75,
+    [Color(255, 255, 255, 0), Color(255, 255, 255, 70)],
+    { blend: true },
+  )
 
   return photo
 }
 
-
 echo 'writing figures to ${OUT}'
-
 
 # ---------------------------------------------------------------------
 # Introduction
 # ---------------------------------------------------------------------
 
-emit('first-image.png', Image(400, 200, '#0f172a')
-  .fill_circle(200, 100, 70, '#38bdf8')
-  .circle(200, 100, 70, 'white', { thickness: 3 }))
-
+emit(
+  'first-image.png',
+  Image(400, 200, '#0f172a').fill_circle(200, 100, 70, '#38bdf8').circle(
+    200,
+    100,
+    70,
+    'white',
+    { thickness: 3 },
+  ),
+)
 
 # ---------------------------------------------------------------------
 # Resizing
@@ -149,33 +162,41 @@ emit('first-image.png', Image(400, 200, '#0f172a')
 
 var wide = sample_photo(320, 180)
 
-emit('resize-modes.png', row([
-  labelled(wide.thumbnail(120, 120), 'thumbnail(120, 120)'),
-  labelled(wide.cover(120, 120), 'cover(120, 120)'),
-  labelled(wide.contain(120, 120, { background: '#e2e8f0' }), 'contain(120, 120)'),
-  labelled(wide.resize(120, 120), 'resize(120, 120)'),
-]))
+emit(
+  'resize-modes.png',
+  row([
+    labelled(wide.thumbnail(120, 120), 'thumbnail(120, 120)'),
+    labelled(wide.cover(120, 120), 'cover(120, 120)'),
+    labelled(
+      wide.contain(120, 120, { background: '#e2e8f0' }),
+      'contain(120, 120)',
+    ),
+    labelled(wide.resize(120, 120), 'resize(120, 120)'),
+  ]),
+)
 
 var tiny = Image(16, 16, '#0f172a')
 tiny.fill_rect(2, 2, 5, 5, '#38bdf8')
 tiny.fill_rect(9, 9, 5, 5, '#f472b6')
 tiny.line(1, 14, 14, 1, '#fbbf24')
 
-emit('resample-filters.png', row([
-  labelled(tiny.resize(112, 112, NEAREST), 'NEAREST'),
-  labelled(tiny.resize(112, 112, BILINEAR), 'BILINEAR'),
-  labelled(tiny.resize(112, 112, BICUBIC), 'BICUBIC'),
-  labelled(tiny.resize(112, 112, LANCZOS), 'LANCZOS'),
-]))
+emit(
+  'resample-filters.png',
+  row([
+    labelled(tiny.resize(112, 112, NEAREST), 'NEAREST'),
+    labelled(tiny.resize(112, 112, BILINEAR), 'BILINEAR'),
+    labelled(tiny.resize(112, 112, BICUBIC), 'BICUBIC'),
+    labelled(tiny.resize(112, 112, LANCZOS), 'LANCZOS'),
+  ]),
+)
 
 var bordered = Image(140, 100, '#e2e8f0')
 bordered.fill_rounded_rect(45, 30, 50, 40, 8, ACCENT)
 
-emit('trim.png', row([
-  labelled(bordered, 'before'),
-  labelled(bordered.trim(), 'trim()'),
-]))
-
+emit(
+  'trim.png',
+  row([labelled(bordered, 'before'), labelled(bordered.trim(), 'trim()')]),
+)
 
 # ---------------------------------------------------------------------
 # Drawing
@@ -190,7 +211,12 @@ shapes.circle(160, 110, 30, '#f472b6', { thickness: 3 })
 shapes.fill_ellipse(250, 45, 40, 24, '#a78bfa')
 shapes.pie(250, 120, 34, 34, 200, 90, '#fbbf24')
 shapes.arc(250, 120, 44, 44, 90, 200, INK, { thickness: 2 })
-shapes.fill_polygon([[330, 20], [400, 45], [370, 90], [320, 70]], '#4ade80')
+shapes.fill_polygon([
+  [330, 20],
+  [400, 45],
+  [370, 90],
+  [320, 70],
+], '#4ade80')
 shapes.bezier(320, 110, 350, 170, 380, 90, 410, 150, INK, { thickness: 2 })
 
 emit('shapes.png', shapes)
@@ -204,10 +230,13 @@ var smooth = Image(120, 120, PAPER)
 smooth.fill_circle(60, 60, 44, ACCENT)
 smooth.line(10, 110, 110, 10, INK, { thickness: 3 })
 
-emit('antialias.png', row([
-  labelled(jagged, 'antialias(false)'),
-  labelled(smooth, 'antialias(true)'),
-]))
+emit(
+  'antialias.png',
+  row([
+    labelled(jagged, 'antialias(false)'),
+    labelled(smooth, 'antialias(true)'),
+  ]),
+)
 
 var strokes = Image(300, 120, PAPER)
 var weights = [1, 3, 6, 12]
@@ -237,10 +266,13 @@ solid.fill_polygon(star_points(60, 60, 48), ACCENT)
 var hollow = Image(120, 120, PAPER)
 hollow.fill_polygon(star_points(60, 60, 48), ACCENT, { even_odd: true })
 
-emit('winding.png', row([
-  labelled(solid, 'non-zero (default)'),
-  labelled(hollow, 'even_odd: true'),
-]))
+emit(
+  'winding.png',
+  row([
+    labelled(solid, 'non-zero (default)'),
+    labelled(hollow, 'even_odd: true'),
+  ]),
+)
 
 var maze = Image(140, 120, PAPER)
 maze.thickness(3)
@@ -252,10 +284,10 @@ var filled = maze.clone()
 filled.flood_fill(10, 10, '#38bdf8')
 filled.flood_fill(130, 110, '#f472b6')
 
-emit('flood-fill.png', row([
-  labelled(maze, 'before'),
-  labelled(filled, 'flood_fill() twice'),
-]))
+emit(
+  'flood-fill.png',
+  row([labelled(maze, 'before'), labelled(filled, 'flood_fill() twice')]),
+)
 
 var clipped = Image(160, 120, PAPER)
 clipped.clip(30, 25, 100, 70)
@@ -265,7 +297,6 @@ clipped.clear_clip()
 clipped.rect(30, 25, 100, 70, LABEL, { thickness: 1 })
 
 emit('clipping.png', clipped)
-
 
 var caps = Image(220, 140, PAPER)
 
@@ -289,7 +320,6 @@ iter var i = 0; i < 3; i++ {
 caps.cap(CAP_ROUND)
 emit('caps.png', caps)
 
-
 # ---------------------------------------------------------------------
 # Gradients
 # ---------------------------------------------------------------------
@@ -304,31 +334,46 @@ stops.linear_gradient(0, 0, 200, 0, [
   [1, '#fef9c3'],
 ])
 
-emit('gradient-linear.png', row([
-  labelled(linear, 'three even stops'),
-  labelled(stops, 'explicit offsets'),
-]))
+emit(
+  'gradient-linear.png',
+  row([
+    labelled(linear, 'three even stops'),
+    labelled(stops, 'explicit offsets'),
+  ]),
+)
 
 var scene = sample_photo(200, 130)
 
 var vignetted = scene.clone()
-vignetted.radial_gradient(100, 65, 130, [
-  [0, Color(0, 0, 0, 0)],
-  [1, Color(0, 0, 0, 190)],
-], { blend: true })
+vignetted.radial_gradient(
+  100,
+  65,
+  130,
+  [
+    [0, Color(0, 0, 0, 0)],
+    [1, Color(0, 0, 0, 190)],
+  ],
+  { blend: true },
+)
 
 var scrimmed = scene.clone()
-scrimmed.linear_gradient(0, 60, 0, 130, [
-  Color(0, 0, 0, 0),
-  Color(0, 0, 0, 205),
-], { blend: true })
+scrimmed.linear_gradient(
+  0,
+  60,
+  0,
+  130,
+  [Color(0, 0, 0, 0), Color(0, 0, 0, 205)],
+  { blend: true },
+)
 
-emit('gradient-radial.png', row([
-  labelled(scene, 'original'),
-  labelled(vignetted, 'radial vignette'),
-  labelled(scrimmed, 'linear scrim'),
-]))
-
+emit(
+  'gradient-radial.png',
+  row([
+    labelled(scene, 'original'),
+    labelled(vignetted, 'radial vignette'),
+    labelled(scrimmed, 'linear scrim'),
+  ]),
+)
 
 # ---------------------------------------------------------------------
 # Filters
@@ -336,47 +381,68 @@ emit('gradient-radial.png', row([
 
 var base = sample_photo(150, 100)
 
-emit('filters-tone.png', row([
-  labelled(base, 'original'),
-  labelled(base.clone().brightness(40), 'brightness(40)'),
-  labelled(base.clone().contrast(35), 'contrast(35)'),
-  labelled(base.clone().gamma(0.6), 'gamma(0.6)'),
-]))
+emit(
+  'filters-tone.png',
+  row([
+    labelled(base, 'original'),
+    labelled(base.clone().brightness(40), 'brightness(40)'),
+    labelled(base.clone().contrast(35), 'contrast(35)'),
+    labelled(base.clone().gamma(0.6), 'gamma(0.6)'),
+  ]),
+)
 
-emit('filters-tone-2.png', row([
-  labelled(base.clone().levels(60, 190), 'levels(60, 190)'),
-  labelled(base.clone().posterize(4), 'posterize(4)'),
-  labelled(base.clone().threshold(128), 'threshold(128)'),
-  labelled(base.clone().invert(), 'invert()'),
-]))
+emit(
+  'filters-tone-2.png',
+  row([
+    labelled(base.clone().levels(60, 190), 'levels(60, 190)'),
+    labelled(base.clone().posterize(4), 'posterize(4)'),
+    labelled(base.clone().threshold(128), 'threshold(128)'),
+    labelled(base.clone().invert(), 'invert()'),
+  ]),
+)
 
-emit('filters-color.png', row([
-  labelled(base.clone().grayscale(), 'grayscale()'),
-  labelled(base.clone().sepia(), 'sepia()'),
-  labelled(base.clone().saturate(2.2), 'saturate(2.2)'),
-  labelled(base.clone().hue_rotate(140), 'hue_rotate(140)'),
-]))
+emit(
+  'filters-color.png',
+  row([
+    labelled(base.clone().grayscale(), 'grayscale()'),
+    labelled(base.clone().sepia(), 'sepia()'),
+    labelled(base.clone().saturate(2.2), 'saturate(2.2)'),
+    labelled(base.clone().hue_rotate(140), 'hue_rotate(140)'),
+  ]),
+)
 
-emit('filters-color-2.png', row([
-  labelled(base.clone().duotone('#1e1b4b', '#fbbf24'), "duotone('#1e1b4b', '#fbbf24')"),
-  labelled(base.clone().tint('#f472b6', 0.45), "tint('#f472b6', 0.45)"),
-  labelled(base.clone().colorize('#38bdf8'), "colorize('#38bdf8')"),
-  labelled(base.clone().quantize(8, true), 'quantize(8, true)'),
-]))
+emit(
+  'filters-color-2.png',
+  row([
+    labelled(
+      base.clone().duotone('#1e1b4b', '#fbbf24'),
+      "duotone('#1e1b4b', '#fbbf24')",
+    ),
+    labelled(base.clone().tint('#f472b6', 0.45), "tint('#f472b6', 0.45)"),
+    labelled(base.clone().colorize('#38bdf8'), "colorize('#38bdf8')"),
+    labelled(base.clone().quantize(8, true), 'quantize(8, true)'),
+  ]),
+)
 
-emit('filters-detail.png', row([
-  labelled(base.clone().blur(3), 'blur(3)'),
-  labelled(base.clone().sharpen(1.5), 'sharpen(1.5)'),
-  labelled(base.clone().edges(), 'edges()'),
-  labelled(base.clone().emboss(), 'emboss()'),
-]))
+emit(
+  'filters-detail.png',
+  row([
+    labelled(base.clone().blur(3), 'blur(3)'),
+    labelled(base.clone().sharpen(1.5), 'sharpen(1.5)'),
+    labelled(base.clone().edges(), 'edges()'),
+    labelled(base.clone().emboss(), 'emboss()'),
+  ]),
+)
 
-emit('filters-detail-2.png', row([
-  labelled(base.clone().pixelate(10), 'pixelate(10)'),
-  labelled(base.clone().smooth(), 'smooth()'),
-  labelled(base.clone().mean_removal(), 'mean_removal()'),
-  labelled(base.clone().auto_levels(), 'auto_levels()'),
-]))
+emit(
+  'filters-detail-2.png',
+  row([
+    labelled(base.clone().pixelate(10), 'pixelate(10)'),
+    labelled(base.clone().smooth(), 'smooth()'),
+    labelled(base.clone().mean_removal(), 'mean_removal()'),
+    labelled(base.clone().auto_levels(), 'auto_levels()'),
+  ]),
+)
 
 # The S-curve from the "Writing Your Own Filter" section.
 var curve = filters.build_lut(@(value) {
@@ -385,18 +451,20 @@ var curve = filters.build_lut(@(value) {
 })
 
 var swapped = base.clone().apply_matrix([
-  0, 0, 1, 0, 0,
-  0, 1, 0, 0, 0,
-  1, 0, 0, 0, 0,
-  0, 0, 0, 1, 0,
+  0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0,
 ])
 
-emit('custom-filters.png', row([
-  labelled(base, 'original'),
-  labelled(base.clone().apply_lut(curve, curve, curve, nil), 'an S-curve LUT'),
-  labelled(swapped, 'a channel-swap matrix'),
-]))
-
+emit(
+  'custom-filters.png',
+  row([
+    labelled(base, 'original'),
+    labelled(
+      base.clone().apply_lut(curve, curve, curve, nil),
+      'an S-curve LUT',
+    ),
+    labelled(swapped, 'a channel-swap matrix'),
+  ]),
+)
 
 # ---------------------------------------------------------------------
 # Compositing
@@ -412,40 +480,54 @@ def blended(mode) {
   return backdrop.clone().draw_image(sprite, 0, 0, { blend: mode })
 }
 
-emit('blend-modes.png', row([
-  labelled(blended(BLEND_NORMAL), 'normal'),
-  labelled(blended(BLEND_MULTIPLY), 'multiply'),
-  labelled(blended(BLEND_SCREEN), 'screen'),
-  labelled(blended(BLEND_OVERLAY), 'overlay'),
-]))
+emit(
+  'blend-modes.png',
+  row([
+    labelled(blended(BLEND_NORMAL), 'normal'),
+    labelled(blended(BLEND_MULTIPLY), 'multiply'),
+    labelled(blended(BLEND_SCREEN), 'screen'),
+    labelled(blended(BLEND_OVERLAY), 'overlay'),
+  ]),
+)
 
-emit('blend-modes-2.png', row([
-  labelled(blended(BLEND_DARKEN), 'darken'),
-  labelled(blended(BLEND_COLOR_DODGE), 'color_dodge'),
-  labelled(blended(BLEND_DIFFERENCE), 'difference'),
-  labelled(blended(BLEND_SOFT_LIGHT), 'soft_light'),
-]))
+emit(
+  'blend-modes-2.png',
+  row([
+    labelled(blended(BLEND_DARKEN), 'darken'),
+    labelled(blended(BLEND_COLOR_DODGE), 'color_dodge'),
+    labelled(blended(BLEND_DIFFERENCE), 'difference'),
+    labelled(blended(BLEND_SOFT_LIGHT), 'soft_light'),
+  ]),
+)
 
 var subject = sample_photo(130, 130)
 var stencil = subject.layer()
 stencil.fill_circle(65, 65, 58, 'white')
 
-emit('mask.png', row([
-  labelled(subject, 'image'),
-  labelled(stencil, 'mask'),
-  labelled(subject.clone().mask(stencil), 'mask() applied'),
-]))
+emit(
+  'mask.png',
+  row([
+    labelled(subject, 'image'),
+    labelled(stencil, 'mask'),
+    labelled(subject.clone().mask(stencil), 'mask() applied'),
+  ]),
+)
 
 var lit = sample_photo(220, 140)
 var glow = lit.layer()
 glow.fill_circle(160, 45, 34, '#fbbf24')
 glow.blur(22)
 
-emit('layers-glow.png', row([
-  labelled(lit, 'original'),
-  labelled(lit.clone().draw_image(glow, 0, 0, { blend: BLEND_SCREEN, opacity: 0.9 }), 'glow layer screened in'),
-]))
-
+emit(
+  'layers-glow.png',
+  row([
+    labelled(lit, 'original'),
+    labelled(
+      lit.clone().draw_image(glow, 0, 0, { blend: BLEND_SCREEN, opacity: 0.9 }),
+      'glow layer screened in',
+    ),
+  ]),
+)
 
 # ---------------------------------------------------------------------
 # Analysis
@@ -459,11 +541,10 @@ iter var i = 0; i < palette.length(); i++ {
   strip.fill_rect(i * 40, 0, 40, 34, palette[i])
 }
 
-emit('dominant-colors.png', row([
-  labelled(swatched, 'image'),
-  labelled(strip, 'dominant_colors(5)'),
-]))
-
+emit(
+  'dominant-colors.png',
+  row([labelled(swatched, 'image'), labelled(strip, 'dominant_colors(5)')]),
+)
 
 # ---------------------------------------------------------------------
 # Text
@@ -475,7 +556,13 @@ if caption != nil {
 
   var typeset = Image(420, 150, PAPER)
   typeset.text(24, 22, 'Imagine', heading, INK)
-  typeset.text(24, 66, 'Glyphs are placed by advance width,\nwith kerning applied.', body, LABEL)
+  typeset.text(
+    24,
+    66,
+    'Glyphs are placed by advance width,\nwith kerning applied.',
+    body,
+    LABEL,
+  )
   typeset.place_text('bottom right', body, ACCENT, BOTTOM_RIGHT, { margin: 14 })
 
   emit('text.png', typeset)
@@ -491,7 +578,7 @@ if caption != nil {
   emit('text-align.png', row(aligned))
 
   var prose = 'The imagine module covers the whole path an image takes ' +
-    'through a program, from decoding all the way to encoding.'
+      'through a program, from decoding all the way to encoding.'
 
   var narrow = Image(200, 150, PAPER)
   narrow.text(12, 12, prose, body, INK, { width: 176, line_height: 1.35 })
@@ -499,12 +586,11 @@ if caption != nil {
   var loose = Image(300, 150, PAPER)
   loose.text(12, 12, prose, body, INK, { width: 276, line_height: 1.35 })
 
-  emit('text-wrap.png', row([
-    labelled(narrow, 'width: 176'),
-    labelled(loose, 'width: 276'),
-  ]))
+  emit(
+    'text-wrap.png',
+    row([labelled(narrow, 'width: 176'), labelled(loose, 'width: 276')]),
+  )
 }
-
 
 # ---------------------------------------------------------------------
 # Animation
@@ -524,7 +610,6 @@ iter var i = 0; i < 24; i++ {
 var pulse = Animation(frames, 45, 0)
 pulse.save('${OUT}/animation.gif')
 echo '  animation.gif  ${pulse.width()}x${pulse.height()}, ${pulse.length()} frames'
-
 
 # ---------------------------------------------------------------------
 # Recipes
@@ -553,14 +638,19 @@ if caption != nil {
 
   var box = card.text_size('Raster images in Zuri', card_heading)
   card.text(48, 110, 'Raster images in Zuri', card_heading, 'white')
-  card.text(48, 110 + box.height + 14, 'Decode, draw, filter and encode without leaving the standard library.',
-    card_body, '#94a3b8', { width: 500 })
+  card.text(
+    48,
+    110 + box.height + 14,
+    'Decode, draw, filter and encode without leaving the standard library.',
+    card_body,
+    '#94a3b8',
+    { width: 500 },
+  )
 
   emit('recipe-card.png', card)
 }
 
 echo 'done'
-
 
 # ---------------------------------------------------------------------
 # The built-in font
@@ -587,7 +677,12 @@ emit('builtin-specimen.png', specimen)
 
 var weights = []
 
-for entry in [[0.05, 'light'], [0.085, 'regular'], [0.115, 'medium'], [0.15, 'bold']] {
+for entry in [
+  [0.05, 'light'],
+  [0.085, 'regular'],
+  [0.115, 'medium'],
+  [0.15, 'bold'],
+] {
   var panel = Image(110, 52, PAPER)
   panel.text(8, 12, 'Aa Bb', StrokeFont(30, entry[0]), INK)
   weights.append(labelled(panel, entry[1]))

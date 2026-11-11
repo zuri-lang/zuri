@@ -138,22 +138,22 @@ def check_name(raw: string, stdlib: ?dict) {
 
   if name.length() > NAME_LIMIT {
     raise UsageError(
-      "'${name}' is ${name.length()} characters long, but a package name can be "
-        + 'at most ${NAME_LIMIT}',
+      "'${name}' is ${name.length()} characters long, but a package name can be " +
+          'at most ${NAME_LIMIT}',
     )
   }
 
   if !is_dict(name.match(_NAME_PATTERN)) {
     raise UsageError(
-      "'${name}' cannot be a package name; use lowercase letters, digits, hyphens "
-        + 'and underscores, begin with a letter, and end with a letter or a digit',
+      "'${name}' cannot be a package name; use lowercase letters, digits, hyphens " +
+          'and underscores, begin with a letter, and end with a letter or a digit',
     )
   }
 
   if !is_identifier(import_name(name)) {
     raise UsageError(
-      "'${name}' cannot be a package name; '${import_name(name)}' is not something "
-        + '`import` can name',
+      "'${name}' cannot be a package name; '${import_name(name)}' is not something " +
+          '`import` can name',
     )
   }
 
@@ -167,8 +167,8 @@ def check_name(raw: string, stdlib: ?dict) {
 
   if stdlib.contains(normalized(name)) {
     raise UsageError(
-      "'${name}' is the name of a standard library module; a package by that name "
-        + 'would take its place in every import',
+      "'${name}' is the name of a standard library module; a package by that name " +
+          'would take its place in every import',
     )
   }
 

@@ -121,10 +121,10 @@ class MySqlStatement < DriverStatement {
 
   _require_open() {
     if self._closed {
-      raise ClosedError(
-        'this statement has been closed',
-        { driver: 'mysql', query: self._sql },
-      )
+      raise ClosedError('this statement has been closed', {
+        driver: 'mysql',
+        query: self._sql,
+      })
     }
   }
 

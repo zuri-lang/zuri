@@ -324,7 +324,9 @@ class Isolate {
       raise IsolateTimeoutError('join() timed out after ${timeout} seconds')
     }
     if r[0] == 'cancelled' {
-      raise IsolateCancelledError('join() was interrupted: the calling isolate was cancelled')
+      raise IsolateCancelledError(
+        'join() was interrupted: the calling isolate was cancelled',
+      )
     }
     if r[0] == 'error' {
       raise IsolateError(r[1])
@@ -695,8 +697,8 @@ def scope(body: function) {
     catch {
       c.join()
     } as e {
-      if first_failure == nil
-        and !e.message.starts_with('IsolateCancelledError:') {
+      if first_failure == nil and
+          !e.message.starts_with('IsolateCancelledError:') {
         first_failure = e
       }
     }
@@ -727,7 +729,9 @@ def scope(body: function) {
  */
 def configure(threads: int) {
   if threads < 1 {
-    raise ValueError('configure() expects threads to be at least 1, got ${threads}')
+    raise ValueError(
+      'configure() expects threads to be at least 1, got ${threads}',
+    )
   }
   return _isolate.configure(threads)
 }
@@ -833,7 +837,9 @@ def wait_any(isolates: list, timeout: ?number) {
     raise IsolateTimeoutError('wait_any() timed out after ${timeout} seconds')
   }
   if r[0] == 'cancelled' {
-    raise IsolateCancelledError('wait_any() was interrupted: the calling isolate was cancelled')
+    raise IsolateCancelledError(
+      'wait_any() was interrupted: the calling isolate was cancelled',
+    )
   }
   return isolates[r[1]]
 }
@@ -866,7 +872,9 @@ def wait_all(isolates: list, timeout: ?number) {
     raise IsolateTimeoutError('wait_all() timed out after ${timeout} seconds')
   }
   if status == 'cancelled' {
-    raise IsolateCancelledError('wait_all() was interrupted: the calling isolate was cancelled')
+    raise IsolateCancelledError(
+      'wait_all() was interrupted: the calling isolate was cancelled',
+    )
   }
   var results = []
   for c in isolates {
@@ -902,7 +910,9 @@ def map(fn: function, items: list, timeout: ?number) {
     raise IsolateTimeoutError('map() timed out after ${timeout} seconds')
   }
   if r[0] == 'cancelled' {
-    raise IsolateCancelledError('map() was interrupted: the calling isolate was cancelled')
+    raise IsolateCancelledError(
+      'map() was interrupted: the calling isolate was cancelled',
+    )
   }
   if r[0] == 'error' {
     raise IsolateError(r[1])

@@ -201,7 +201,9 @@ def scopes_of(requested) {
     }
 
     if !SCOPES.contains(trimmed) {
-      raise Error("'${trimmed}' is not a scope; a token can carry ${', '.join(SCOPES)}")
+      raise Error(
+        "'${trimmed}' is not a scope; a token can carry ${', '.join(SCOPES)}",
+      )
     }
 
     if !chosen.contains(trimmed) {

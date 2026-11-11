@@ -15,14 +15,7 @@ import enum
  *
  * @type enum
  */
-var LogLevel = enum([
-  'None',
-  'Debug',
-  'Info',
-  'Warning',
-  'Error',
-  'Critical',
-])
+var LogLevel = enum(['None', 'Debug', 'Info', 'Warning', 'Error', 'Critical'])
 
 var _level_lookup_table = enum.to_value_dict(LogLevel)
 var _default_log_level = LogLevel.None

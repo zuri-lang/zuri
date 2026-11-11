@@ -618,21 +618,21 @@ def bind_plan(plan: dict, params) {
     if !is_list(params) {
       raise QueryError(
         'this statement uses ? placeholders, so its parameters have ' +
-          'to be a list, not ${typeof(params)}',
+            'to be a list, not ${typeof(params)}',
       )
     }
 
     if positional > params.length() {
       raise QueryError(
         'the statement has more ? placeholders than the ' +
-          '${params.length()} values given',
+            '${params.length()} values given',
       )
     }
 
     if positional < params.length() {
       raise QueryError(
         '${params.length()} values were given for a statement with ' +
-          '${positional} ? placeholder${positional == 1 ? "" : "s"}',
+            '${positional} ? placeholder${positional == 1 ? "" : "s"}',
       )
     }
 
@@ -648,7 +648,7 @@ def bind_plan(plan: dict, params) {
   if !is_dict(params) {
     raise QueryError(
       'this statement uses :name placeholders, so its parameters ' +
-        'have to be a dictionary, not ${typeof(params)}',
+          'have to be a dictionary, not ${typeof(params)}',
     )
   }
 
@@ -656,7 +656,7 @@ def bind_plan(plan: dict, params) {
     if !params.contains(name) {
       raise QueryError(
         'the statement mentions :${name}, which the parameters ' +
-          'do not hold',
+            'do not hold',
       )
     }
   }

@@ -384,9 +384,9 @@ def _wrap_node(value) {
     return result
   }
 
-  if is_dict(value)
-    and value.get('kind', nil) != nil
-    and value.get('fields', nil) != nil {
+  if is_dict(value) and
+      value.get('kind', nil) != nil and
+      value.get('fields', nil) != nil {
     return Node.from_dict(value)
   }
 
@@ -429,9 +429,9 @@ def _dump_scalar(value) {
 # A `name_span`, a `key_span`, a `value_span` or an import segment: a
 # plain dict holding a position.
 def _is_span(value) {
-  return is_dict(value)
-    and value.contains('start')
-    and value.contains('end_col')
+  return is_dict(value) and
+      value.contains('start') and
+      value.contains('end_col')
 }
 
 # Shared by `Node.to_string()` and `dump()`'s own node header line.

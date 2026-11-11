@@ -274,7 +274,8 @@ def _heading(text) {
     return text
   }
   return colors.text(
-    colors.text(text, colors.text_color.green), colors.style.bold,
+    colors.text(text, colors.text_color.green),
+    colors.style.bold,
   )
 }
 
@@ -283,7 +284,8 @@ def _accent(text) {
     return text
   }
   return colors.text(
-    colors.text(text, colors.text_color.cyan), colors.style.bold,
+    colors.text(text, colors.text_color.cyan),
+    colors.style.bold,
   )
 }
 
@@ -443,7 +445,9 @@ def _get_real_value(item, value) {
     if lv == 'false' or lv == '0' or lv == 'no' or lv == 'off' {
       return false
     }
-    raise ArgsError('expected a boolean (true/false/1/0/yes/no/on/off), got "${value}"')
+    raise ArgsError(
+      'expected a boolean (true/false/1/0/yes/no/on/off), got "${value}"',
+    )
   } else if item.type == STRING {
     return value.to_string()
   } else if item.type == LIST {
@@ -472,8 +476,17 @@ class ArgsError < Error {}
 # ---------------------------------------------------------------------------
 
 class _Option {
-  @new(long_name, help, short_name, type, value, choices,
-    required, metavar, deprecated) {
+  @new(
+    long_name,
+    help,
+    short_name,
+    type,
+    value,
+    choices,
+    required,
+    metavar,
+    deprecated,
+  ) {
     self.long_name = long_name
     self.help = help ? help : ''
     self.short_name = short_name
@@ -532,7 +545,9 @@ class _Optionable {
       }
       var sn = opts.get('short_name')
       if sn != nil and o.short_name == sn {
-        raise ArgsError('short option "-${sn}" already in use by "--${o.long_name}"')
+        raise ArgsError(
+          'short option "-${sn}" already in use by "--${o.long_name}"',
+        )
       }
     }
 
@@ -555,8 +570,17 @@ class _Optionable {
     }
 
     self.options.append(
-      _Option(name, help, short_name, type, value, choices,
-        required, metavar, deprecated),
+      _Option(
+        name,
+        help,
+        short_name,
+        type,
+        value,
+        choices,
+        required,
+        metavar,
+        deprecated,
+      ),
     )
 
     if instance_of(self, _Command) {
@@ -682,9 +706,9 @@ class Parser < _Optionable {
     self.terminal_width = _terminal_width()
 
     # Built-in -h / --help
-    self.add_option(
-      'help', 'Show this help message and exit', { short_name: 'h' },
-    )
+    self.add_option('help', 'Show this help message and exit', {
+      short_name: 'h',
+    })
   }
 
   # -------------------------------------------------------------------------
@@ -832,14 +856,14 @@ class Parser < _Optionable {
 
     if !self.indexes.is_empty() and self.indexes.last().type == LIST {
       raise ArgsError(
-        'positional "${name}" cannot follow "${self.indexes.last().name}", which takes every '
-          + 'remaining word',
+        'positional "${name}" cannot follow "${self.indexes.last().name}", which takes every ' +
+            'remaining word',
       )
     }
 
-    self.indexes.append(_Positional(
-      name, help, type, choices, value, required, metavar,
-    ))
+    self.indexes.append(
+      _Positional(name, help, type, choices, value, required, metavar),
+    )
   }
 
   /**
@@ -883,11 +907,7 @@ class Parser < _Optionable {
     }
 
     var cli_args = raw_args
-    var parsed_args = {
-      options: {},
-      command: nil,
-      indexes: [],
-    }
+    var parsed_args = { options: {}, command: nil, indexes: [] }
 
     var help_shown = false
     var command_found = false
@@ -937,9 +957,10 @@ class Parser < _Optionable {
             os.exit(0)
           } else {
             # --help [command_name]?
-            var next = (i + 1 < cli_args.length()
-              and !cli_args[i + 1].starts_with('-')) ?
-              cli_args[i + 1] : nil
+            var next = (i + 1 < cli_args.length() and
+                    !cli_args[i + 1].starts_with('-'))
+                ? cli_args[i + 1]
+                : nil
             self._help_action(next)
           }
           i++
@@ -962,8 +983,10 @@ class Parser < _Optionable {
         if matched == nil {
           # Unknown flag
           if command_found {
-            self._command_error(command.name,
-              'unknown option ${lookup} for command "${command.name}"')
+            self._command_error(
+              command.name,
+              'unknown option ${lookup} for command "${command.name}"',
+            )
           } else {
             self._option_error(lookup, 'unknown option: ${lookup}')
           }
@@ -972,13 +995,17 @@ class Parser < _Optionable {
         # Consume the flag's value(s)
         for option in matched {
           if option.deprecated {
-            io.stderr.write(_warn('warning: option --${option.long_name} is deprecated\n'))
+            io.stderr.write(
+              _warn('warning: option --${option.long_name} is deprecated\n'),
+            )
           }
 
           if option.type == NONE {
             if inline != nil {
-              self._option_error(option.long_name,
-                'option --${option.long_name} takes no value')
+              self._option_error(
+                option.long_name,
+                'option --${option.long_name} takes no value',
+              )
             }
             parsed_args.options.set(option.long_name, true)
           } else if option.type == OPTIONAL {
@@ -993,8 +1020,8 @@ class Parser < _Optionable {
               }
               self._validate_choice(option, inline, '--${option.long_name}')
               parsed_args.options.set(option.long_name, attached)
-            } else if i + 1 < cli_args.length()
-              and !cli_args[i + 1].starts_with('-') {
+            } else if i + 1 < cli_args.length() and
+                !cli_args[i + 1].starts_with('-') {
               i++
               var v
               catch {
@@ -1004,7 +1031,9 @@ class Parser < _Optionable {
                 self._option_error(option.long_name, e.message)
               }
               self._validate_choice(
-                option, cli_args[i], '--${option.long_name}',
+                option,
+                cli_args[i],
+                '--${option.long_name}',
               )
               parsed_args.options.set(option.long_name, v)
             } else {
@@ -1021,16 +1050,18 @@ class Parser < _Optionable {
               lst.append(inline)
             } else {
               # Collect all following non-flag tokens as list elements
-              while i + 1 < cli_args.length()
-                and !cli_args[i + 1].starts_with('-') {
+              while i + 1 < cli_args.length() and
+                  !cli_args[i + 1].starts_with('-') {
                 i++
                 lst.append(cli_args[i])
               }
             }
 
             if lst.is_empty() {
-              self._option_error(option.long_name,
-                'option --${option.long_name} expects at least one value')
+              self._option_error(
+                option.long_name,
+                'option --${option.long_name} expects at least one value',
+              )
             }
             # Merge with any previously collected values (option may appear multiple times)
             var existing = parsed_args.options.get(option.long_name)
@@ -1045,16 +1076,17 @@ class Parser < _Optionable {
           } else {
             # All other typed options expect exactly one value token
             if inline == nil and
-              (i + 1 >= cli_args.length() or cli_args[i + 1].starts_with('-')) {
+                (i + 1 >= cli_args.length() or
+                    cli_args[i + 1].starts_with('-')) {
               var word = option.metavar
-                ? option.metavar
-                : option.long_name.lower()
-              var msg = 'option --${option.long_name} expects '
-                + _metavar(word, option.type)
+                  ? option.metavar
+                  : option.long_name.lower()
+              var msg = 'option --${option.long_name} expects ' +
+                  _metavar(word, option.type)
               if option.type == CHOICE and !option.choices.is_empty() {
                 var keys = is_dict(option.choices)
-                  ? option.choices.keys()
-                  : option.choices
+                    ? option.choices.keys()
+                    : option.choices
                 msg += ': one of {\'${"', '".join(keys)}\'}'
               }
               self._option_error(option.long_name, msg)
@@ -1105,19 +1137,21 @@ class Parser < _Optionable {
 
               if command.type == CHOICE and !command.choices.is_empty() {
                 var keys = is_dict(command.choices)
-                  ? command.choices.keys()
-                  : command.choices
+                    ? command.choices.keys()
+                    : command.choices
                 if !keys.contains(raw_val) {
-                  self._command_error(command.name,
+                  self._command_error(
+                    command.name,
                     'command "${command.name}" expects one of ' +
-                      '{\'${"', '".join(keys)}\'}, got "${raw_val}"')
+                        '{\'${"', '".join(keys)}\'}, got "${raw_val}"',
+                  )
                 }
               }
 
               if command.type == LIST {
                 var lst = [raw_val]
-                while i + 1 < cli_args.length()
-                  and !cli_args[i + 1].starts_with('-') {
+                while i + 1 < cli_args.length() and
+                    !cli_args[i + 1].starts_with('-') {
                   i++
                   lst.append(cli_args[i])
                 }
@@ -1126,13 +1160,15 @@ class Parser < _Optionable {
               } else {
                 parsed_args.command = { name: command.name, value: v }
               }
-            } else if command.type != OPTIONAL
-              and !_asks_for_help(cli_args, i + 1) {
+            } else if command.type != OPTIONAL and
+                !_asks_for_help(cli_args, i + 1) {
               var word = command.metavar
-                ? command.metavar
-                : _type_name[command.type]
-              self._command_error(command.name,
-                'command "${command.name}" expects ${_metavar(word, command.type)}')
+                  ? command.metavar
+                  : _type_name[command.type]
+              self._command_error(
+                command.name,
+                'command "${command.name}" expects ${_metavar(word, command.type)}',
+              )
             } else {
               parsed_args.command = { name: command.name, value: nil }
             }
@@ -1150,8 +1186,9 @@ class Parser < _Optionable {
 
       # A trailing LIST positional keeps gathering every word after its
       # first.
-      if idx_pos > 0 and idx_pos == self.indexes.length()
-        and self.indexes.last().type == LIST {
+      if idx_pos > 0 and
+          idx_pos == self.indexes.length() and
+          self.indexes.last().type == LIST {
         var gathering = self.indexes.last()
 
         self._validate_choice(gathering, arg, gathering.name)
@@ -1199,7 +1236,8 @@ class Parser < _Optionable {
       for opt in command.options {
         if opt.value != nil and !parsed_args.options.contains(opt.long_name) {
           parsed_args.options.add(
-            opt.long_name, _get_real_value(opt, opt.value),
+            opt.long_name,
+            _get_real_value(opt, opt.value),
           )
         }
       }
@@ -1226,7 +1264,8 @@ class Parser < _Optionable {
     for opt in self.options {
       if opt.required and !parsed_args.options.contains(opt.long_name) {
         self._option_error(
-          opt.long_name, 'required option --${opt.long_name} is missing',
+          opt.long_name,
+          'required option --${opt.long_name} is missing',
         )
       }
     }
@@ -1235,8 +1274,10 @@ class Parser < _Optionable {
     if command_found and command {
       for opt in command.options {
         if opt.required and !parsed_args.options.contains(opt.long_name) {
-          self._command_error(command.name,
-            'required option --${opt.long_name} is missing for command "${command.name}"')
+          self._command_error(
+            command.name,
+            'required option --${opt.long_name} is missing for command "${command.name}"',
+          )
         }
       }
     }
@@ -1244,11 +1285,11 @@ class Parser < _Optionable {
     # Required positional check
     iter var j = 0; j < self.indexes.length(); j++ {
       var idx = self.indexes[j]
-      if idx.required
-        and (j >= parsed_args.indexes.length()
-          or parsed_args.indexes[j] == nil) {
+      if idx.required and
+          (j >= parsed_args.indexes.length() or parsed_args.indexes[j] == nil) {
         self._option_error(
-          idx.name, 'required positional argument <${idx.name}> is missing',
+          idx.name,
+          'required positional argument <${idx.name}> is missing',
         )
       }
     }
@@ -1256,10 +1297,10 @@ class Parser < _Optionable {
     # -----------------------------------------------------------------------
     # Execute command action if provided
     # -----------------------------------------------------------------------
-    if command_found
-      and command
-      and command.action
-      and is_function(command.action) {
+    if command_found and
+        command and
+        command.action and
+        is_function(command.action) {
       command.action(
         parsed_args.options,
         parsed_args.command ? parsed_args.command.value : nil,
@@ -1270,8 +1311,8 @@ class Parser < _Optionable {
     # Show help if nothing was matched and default_help is on
     # -----------------------------------------------------------------------
     var has_input = parsed_args.command != nil or
-      parsed_args.options.length() > 0 or
-      parsed_args.indexes.length() > 0
+        parsed_args.options.length() > 0 or
+        parsed_args.indexes.length() > 0
 
     if !has_input and self._default_help and !help_shown {
       self._usage_hint()
@@ -1298,8 +1339,8 @@ class Parser < _Optionable {
     if item.type == CHOICE and !item.choices.is_empty() {
       var choices = is_dict(item.choices) ? item.choices.keys() : item.choices
       var raw = is_dict(item.choices)
-        ? (item.choices.contains(value) ? value : nil)
-        : value
+          ? (item.choices.contains(value) ? value : nil)
+          : value
       if !choices.contains(value) {
         self._option_error(
           item.long_name,
@@ -1403,7 +1444,9 @@ class Parser < _Optionable {
         var handle = file(path, 'r')
 
         if !handle.exists() {
-          io.stderr.write(_error_text('error: cannot open argument file: ${path}\n'))
+          io.stderr.write(
+            _error_text('error: cannot open argument file: ${path}\n'),
+          )
           os.exit(1)
         }
 

@@ -27,18 +27,88 @@ import .namespaces { XLINK_NAMESPACE, XML_NAMESPACE, XMLNS_NAMESPACE }
  * algorithm's own category.
  */
 var SPECIAL_HTML = [
-  'address', 'applet', 'area', 'article', 'aside', 'base',
-  'basefont', 'bgsound', 'blockquote', 'body', 'br', 'button',
-  'caption', 'center', 'col', 'colgroup', 'dd', 'details', 'dir',
-  'div', 'dl', 'dt', 'embed', 'fieldset', 'figcaption', 'figure',
-  'footer', 'form', 'frame', 'frameset', 'h1', 'h2', 'h3', 'h4',
-  'h5', 'h6', 'head', 'header', 'hgroup', 'hr', 'html', 'iframe',
-  'img', 'input', 'keygen', 'li', 'link', 'listing', 'main',
-  'marquee', 'menu', 'meta', 'nav', 'noembed', 'noframes',
-  'noscript', 'object', 'ol', 'p', 'param', 'plaintext', 'pre',
-  'script', 'search', 'section', 'select', 'source', 'style',
-  'summary', 'table', 'tbody', 'td', 'template', 'textarea',
-  'tfoot', 'th', 'thead', 'title', 'tr', 'track', 'ul', 'wbr',
+  'address',
+  'applet',
+  'area',
+  'article',
+  'aside',
+  'base',
+  'basefont',
+  'bgsound',
+  'blockquote',
+  'body',
+  'br',
+  'button',
+  'caption',
+  'center',
+  'col',
+  'colgroup',
+  'dd',
+  'details',
+  'dir',
+  'div',
+  'dl',
+  'dt',
+  'embed',
+  'fieldset',
+  'figcaption',
+  'figure',
+  'footer',
+  'form',
+  'frame',
+  'frameset',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'head',
+  'header',
+  'hgroup',
+  'hr',
+  'html',
+  'iframe',
+  'img',
+  'input',
+  'keygen',
+  'li',
+  'link',
+  'listing',
+  'main',
+  'marquee',
+  'menu',
+  'meta',
+  'nav',
+  'noembed',
+  'noframes',
+  'noscript',
+  'object',
+  'ol',
+  'p',
+  'param',
+  'plaintext',
+  'pre',
+  'script',
+  'search',
+  'section',
+  'select',
+  'source',
+  'style',
+  'summary',
+  'table',
+  'tbody',
+  'td',
+  'template',
+  'textarea',
+  'tfoot',
+  'th',
+  'thead',
+  'title',
+  'tr',
+  'track',
+  'ul',
+  'wbr',
   'xmp',
 ]
 
@@ -58,8 +128,20 @@ var SPECIAL_SVG = ['foreignObject', 'desc', 'title']
  * a fresh `<b>` inside the paragraph.
  */
 var FORMATTING_ELEMENTS = [
-  'a', 'b', 'big', 'code', 'em', 'font', 'i', 'nobr', 's',
-  'small', 'strike', 'strong', 'tt', 'u',
+  'a',
+  'b',
+  'big',
+  'code',
+  'em',
+  'font',
+  'i',
+  'nobr',
+  's',
+  'small',
+  'strike',
+  'strong',
+  'tt',
+  'u',
 ]
 
 /**
@@ -68,8 +150,15 @@ var FORMATTING_ELEMENTS = [
  * add to this list rather than replacing it.
  */
 var SCOPE_HTML = [
-  'applet', 'caption', 'html', 'table', 'td', 'th', 'marquee',
-  'object', 'template',
+  'applet',
+  'caption',
+  'html',
+  'table',
+  'td',
+  'th',
+  'marquee',
+  'object',
+  'template',
 ]
 
 /**
@@ -77,7 +166,15 @@ var SCOPE_HTML = [
  * that `<li>a<li>b` produces two list items rather than nesting.
  */
 var IMPLIED_END_TAGS = [
-  'dd', 'dt', 'li', 'optgroup', 'option', 'p', 'rb', 'rp', 'rt',
+  'dd',
+  'dt',
+  'li',
+  'optgroup',
+  'option',
+  'p',
+  'rb',
+  'rp',
+  'rt',
   'rtc',
 ]
 
@@ -87,9 +184,24 @@ var IMPLIED_END_TAGS = [
  * is what `</template>` and the table sections do.
  */
 var THOROUGH_IMPLIED_END_TAGS = [
-  'caption', 'colgroup', 'dd', 'dt', 'li', 'optgroup', 'option',
-  'p', 'rb', 'rp', 'rt', 'rtc', 'tbody', 'td', 'tfoot', 'th',
-  'thead', 'tr',
+  'caption',
+  'colgroup',
+  'dd',
+  'dt',
+  'li',
+  'optgroup',
+  'option',
+  'p',
+  'rb',
+  'rp',
+  'rt',
+  'rtc',
+  'tbody',
+  'td',
+  'tfoot',
+  'th',
+  'thead',
+  'tr',
 ]
 
 /**
@@ -110,11 +222,50 @@ var SVG_HTML_INTEGRATION_POINTS = ['foreignObject', 'desc', 'title']
  * insertion point is reached.
  */
 var FOREIGN_BREAKOUT_TAGS = [
-  'b', 'big', 'blockquote', 'body', 'br', 'center', 'code', 'dd',
-  'div', 'dl', 'dt', 'em', 'embed', 'h1', 'h2', 'h3', 'h4', 'h5',
-  'h6', 'head', 'hr', 'i', 'img', 'li', 'listing', 'menu', 'meta',
-  'nobr', 'ol', 'p', 'pre', 'ruby', 's', 'small', 'span', 'strong',
-  'strike', 'sub', 'sup', 'table', 'tt', 'u', 'ul', 'var',
+  'b',
+  'big',
+  'blockquote',
+  'body',
+  'br',
+  'center',
+  'code',
+  'dd',
+  'div',
+  'dl',
+  'dt',
+  'em',
+  'embed',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'head',
+  'hr',
+  'i',
+  'img',
+  'li',
+  'listing',
+  'menu',
+  'meta',
+  'nobr',
+  'ol',
+  'p',
+  'pre',
+  'ruby',
+  's',
+  'small',
+  'span',
+  'strong',
+  'strike',
+  'sub',
+  'sup',
+  'table',
+  'tt',
+  'u',
+  'ul',
+  'var',
 ]
 
 /**
@@ -230,9 +381,7 @@ var SVG_ATTRIBUTES = {
 /**
  * The one MathML attribute whose case the tokenizer destroys.
  */
-var MATHML_ATTRIBUTES = {
-  definitionurl: 'definitionURL',
-}
+var MATHML_ATTRIBUTES = { definitionurl: 'definitionURL' }
 
 /**
  * Attributes in foreign content that belong to a namespace, mapping
@@ -348,7 +497,7 @@ var HTML4_TRANSITIONAL_PREFIXES = [
  * in lowercase.
  */
 var QUIRKS_SYSTEM_ID = 'http://www.ibm.com/data/dtd/v11/' +
-  'ibmxhtml1-transitional.dtd'
+    'ibmxhtml1-transitional.dtd'
 
 /**
  * True when the element _name_ in namespace _namespace_ is one of the
@@ -383,7 +532,7 @@ def is_special(namespace: string, name: string) {
  */
 def is_mathml_text_integration_point(element) {
   return element.namespace == MATHML_NAMESPACE and
-    MATHML_TEXT_INTEGRATION_POINTS.contains(element.tag_name)
+      MATHML_TEXT_INTEGRATION_POINTS.contains(element.tag_name)
 }
 
 /**
@@ -412,7 +561,7 @@ def is_html_integration_point(element) {
   }
 
   return element.namespace == SVG_NAMESPACE and
-    SVG_HTML_INTEGRATION_POINTS.contains(element.tag_name)
+      SVG_HTML_INTEGRATION_POINTS.contains(element.tag_name)
 }
 
 /**
@@ -485,8 +634,12 @@ def _rename_attributes(attributes: dict, renames: dict) {
  * @param bool force_quirks
  * @returns string
  */
-def doctype_mode(name: ?string, public_id: ?string, system_id: ?string,
-  force_quirks: bool) {
+def doctype_mode(
+  name: ?string,
+  public_id: ?string,
+  system_id: ?string,
+  force_quirks: bool,
+) {
   if force_quirks or name != 'html' {
     return 'quirks'
   }

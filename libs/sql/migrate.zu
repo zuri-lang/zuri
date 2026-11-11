@@ -194,7 +194,8 @@ class Migration {
 
       if !_exports_function(loaded, 'up') {
         raise MigrationError(
-          '${self.name} does not export an up() function', self.name,
+          '${self.name} does not export an up() function',
+          self.name,
         )
       }
 
@@ -309,7 +310,8 @@ class Migrator {
   migrations() {
     if !os.dir_exists(self.directory) {
       raise MigrationError(
-        'there is no directory of migrations at ${self.directory}', nil,
+        'there is no directory of migrations at ${self.directory}',
+        nil,
       )
     }
 
@@ -333,7 +335,7 @@ class Migrator {
       if !parsed {
         raise MigrationError(
           '${entry} is not named as a migration is: a version, an underscore and ' +
-            'a name of letters, digits and underscores, such as 20261011143000_create_posts.zu',
+              'a name of letters, digits and underscores, such as 20261011143000_create_posts.zu',
           name,
         )
       }
@@ -349,9 +351,9 @@ class Migrator {
       }
 
       versions.set(key, name)
-      found.append(Migration(
-        path, name, version, hash.sha256(file(path).read()),
-      ))
+      found.append(
+        Migration(path, name, version, hash.sha256(file(path).read())),
+      )
     }
 
     found.sort(@(a, b) {
@@ -376,7 +378,8 @@ class Migrator {
     }).rows
 
     rows.sort(@(a, b) {
-      var order = _ordering(_version_of(a.name)).compare(_ordering(_version_of(b.name)))
+      var order = _ordering(_version_of(a.name))
+          .compare(_ordering(_version_of(b.name)))
       return order != 0 ? order : a.name.compare(b.name)
     })
 
@@ -390,9 +393,9 @@ class Migrator {
    */
   pending() {
     var applied = self.applied().map(@(row) => row.name)
-    return self
-      .migrations()
-      .filter(@(migration) => !applied.contains(migration.name))
+    return self.migrations().filter(
+      @(migration) => !applied.contains(migration.name),
+    )
   }
 
   /**
@@ -426,8 +429,10 @@ class Migrator {
 
       var migration = files.get(row.name, nil)
       var state = migration == nil
-        ? 'missing'
-        : migration.checksum == row.checksum ? 'applied' : 'changed'
+          ? 'missing'
+          : migration.checksum == row.checksum
+          ? 'applied'
+          : 'changed'
 
       entries.append({
         name: row.name,
@@ -444,7 +449,8 @@ class Migrator {
     }
 
     entries.sort(@(a, b) {
-      var order = _ordering(_version_of(a.name)).compare(_ordering(_version_of(b.name)))
+      var order = _ordering(_version_of(a.name))
+          .compare(_ordering(_version_of(b.name)))
       return order != 0 ? order : a.name.compare(b.name)
     })
 
@@ -481,12 +487,13 @@ class Migrator {
         chosen = pending[0, _steps(settings.steps).min(pending.length())]
       } else if settings.get('to', nil) != nil {
         var at = pending
-          .map(@(migration) => migration.name)
-          .index_of(settings.to)
+            .map(@(migration) => migration.name)
+            .index_of(settings.to)
 
         if at == -1 {
           raise MigrationError(
-            '${settings.to} is not a pending migration', settings.to,
+            '${settings.to} is not a pending migration',
+            settings.to,
           )
         }
 
@@ -545,7 +552,8 @@ class Migrator {
 
         if at == -1 {
           raise MigrationError(
-            '${settings.to} is not an applied migration', settings.to,
+            '${settings.to} is not an applied migration',
+            settings.to,
           )
         }
 
@@ -625,12 +633,16 @@ class Migrator {
 
       migration.module().up(db)
 
-      self.connection.insert(self.table, {
-        name: migration.name,
-        batch,
-        checksum: migration.checksum,
-        applied_at: date.from_time(time()),
-      }, { returning: 'name' })
+      self.connection.insert(
+        self.table,
+        {
+          name: migration.name,
+          batch,
+          checksum: migration.checksum,
+          applied_at: date.from_time(time()),
+        },
+        { returning: 'name' },
+      )
 
       return true
     }, migration.in_transaction())
@@ -679,7 +691,9 @@ class Migrator {
     var ddl = self.connection.driver().ddl()
 
     return ddl.migration_lock(
-      self.connection, 'zuri_migrate_' + self.table, body,
+      self.connection,
+      'zuri_migrate_' + self.table,
+      body,
     )
   }
 
@@ -746,7 +760,7 @@ def create(directory: string, name: string) {
   if !is_name(name) {
     raise MigrationError(
       '"${name}" is not a migration name; use letters, digits and underscores, ' +
-        'such as create_posts',
+          'such as create_posts',
       nil,
     )
   }
@@ -791,30 +805,30 @@ def _template(name) {
     var table = creating[1]
 
     return '# ${described[0].upper()}${described[1,]}.\n' +
-      '\n' +
-      'import sql { Blueprint, Connection, Transaction }\n' +
-      '\n' +
-      'def up(db: Transaction|Connection) {\n' +
-      "  db.schema.create_table('${table}', @(table: Blueprint) {\n" +
-      '    table.id()\n' +
-      '    table.timestamps()\n' +
-      '  })\n' +
-      '}\n' +
-      '\n' +
-      'def down(db: Transaction|Connection) {\n' +
-      "  db.schema.drop_table('${table}')\n" +
-      '}\n'
+        '\n' +
+        'import sql { Blueprint, Connection, Transaction }\n' +
+        '\n' +
+        'def up(db: Transaction|Connection) {\n' +
+        "  db.schema.create_table('${table}', @(table: Blueprint) {\n" +
+        '    table.id()\n' +
+        '    table.timestamps()\n' +
+        '  })\n' +
+        '}\n' +
+        '\n' +
+        'def down(db: Transaction|Connection) {\n' +
+        "  db.schema.drop_table('${table}')\n" +
+        '}\n'
   }
 
   return '# ${described[0].upper()}${described[1,]}.\n' +
-    '\n' +
-    'import sql { Connection, Transaction }\n' +
-    '\n' +
-    'def up(db: Transaction|Connection) {\n' +
-    '}\n' +
-    '\n' +
-    'def down(db: Transaction|Connection) {\n' +
-    '}\n'
+      '\n' +
+      'import sql { Connection, Transaction }\n' +
+      '\n' +
+      'def up(db: Transaction|Connection) {\n' +
+      '}\n' +
+      '\n' +
+      'def down(db: Transaction|Connection) {\n' +
+      '}\n'
 }
 
 # Whether `module` exports a function called `name`.

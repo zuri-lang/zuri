@@ -629,7 +629,8 @@ class Compiler {
 
     if extend != nil {
       template.extends = self.path_segments(
-        _directive(extend, EXTEND_ATTR), extend,
+        _directive(extend, EXTEND_ATTR),
+        extend,
       )
       template.blocks = self._definitions(extend)
 
@@ -682,7 +683,7 @@ class Compiler {
 
       for section in child.children {
         var implied = section.is_element() and
-          (section.tag_name == 'head' or section.tag_name == 'body')
+            (section.tag_name == 'head' or section.tag_name == 'body')
 
         var written = parsed.saw_head
         if implied and section.tag_name == 'body' {
@@ -720,7 +721,9 @@ class Compiler {
         if found != nil {
           raise TemplateSyntaxError(
             'a template can extend only one base',
-            self.path, element.source_line, element.source_column,
+            self.path,
+            element.source_line,
+            element.source_column,
           )
         }
 
@@ -755,9 +758,11 @@ class Compiler {
       if !_has_directive(node, DEFINE_ATTR) {
         raise TemplateSyntaxError(
           '<${node.tag_name}> is not allowed directly inside an extending ' +
-            'template, since the base decides the structure; put it in an ' +
-            'x-define',
-          self.path, node.source_line, node.source_column,
+              'template, since the base decides the structure; put it in an ' +
+              'x-define',
+          self.path,
+          node.source_line,
+          node.source_column,
         )
       }
 
@@ -769,8 +774,10 @@ class Compiler {
       if blocks.contains(name) and !_has_directive(node, OVERRIDE_ATTR) {
         raise TemplateSyntaxError(
           '"${name}" is defined twice; add x-override to the second one to ' +
-            'replace the first on purpose',
-          self.path, node.source_line, node.source_column,
+              'replace the first on purpose',
+          self.path,
+          node.source_line,
+          node.source_column,
         )
       }
 
@@ -810,8 +817,10 @@ class Compiler {
 
         raise TemplateSyntaxError(
           '<${node.tag_name}> is outside the x-extend and would never be ' +
-            'rendered; the base template decides what surrounds a definition',
-          self.path, node.source_line, node.source_column,
+              'rendered; the base template decides what surrounds a definition',
+          self.path,
+          node.source_line,
+          node.source_column,
         )
       }
 
@@ -837,8 +846,10 @@ class Compiler {
 
     raise TemplateSyntaxError(
       'text in an extending template would never be rendered; put it in an ' +
-        'x-define',
-      self.path, extend.source_line, extend.source_column,
+          'x-define',
+      self.path,
+      extend.source_line,
+      extend.source_column,
     )
   }
 
@@ -878,7 +889,9 @@ class Compiler {
 
         raise TemplateSyntaxError(
           '${which} has no x-if in front of it',
-          self.path, node.source_line, node.source_column,
+          self.path,
+          node.source_line,
+          node.source_column,
         )
       }
 
@@ -920,7 +933,8 @@ class Compiler {
     if _has_directive(opener, FOR_ATTR) {
       var repeated = Conditional(
         [self._branch(opener, false)],
-        opener.source_line, opener.source_column,
+        opener.source_line,
+        opener.source_column,
       )
 
       return [self._loop(opener, repeated), next]
@@ -946,7 +960,9 @@ class Compiler {
         if closed {
           raise TemplateSyntaxError(
             'x-elif comes after the x-else that closed the chain',
-            self.path, candidate.source_line, candidate.source_column,
+            self.path,
+            candidate.source_line,
+            candidate.source_column,
           )
         }
 
@@ -968,7 +984,8 @@ class Compiler {
     }
 
     return [
-      Conditional(branches, opener.source_line, opener.source_column), next,
+      Conditional(branches, opener.source_line, opener.source_column),
+      next,
     ]
   }
 
@@ -1082,7 +1099,9 @@ class Compiler {
     var raw_literal = html.RAW_TEXT_ELEMENTS.contains(tag)
 
     return Text(
-      self.segments(node.data, context, node.parent_node), context, raw_literal,
+      self.segments(node.data, context, node.parent_node),
+      context,
+      raw_literal,
     )
   }
 
@@ -1125,7 +1144,8 @@ class Compiler {
       return Slot(
         self.name_of(node, SLOT_ATTR),
         self.children(_children_of(node)),
-        node.source_line, node.source_column,
+        node.source_line,
+        node.source_column,
       )
     }
 
@@ -1136,7 +1156,9 @@ class Compiler {
     if _has_directive(node, DEFINE_ATTR) {
       raise TemplateSyntaxError(
         'x-define is only meaningful directly inside an x-extend',
-        self.path, node.source_line, node.source_column,
+        self.path,
+        node.source_line,
+        node.source_column,
       )
     }
 
@@ -1166,7 +1188,8 @@ class Compiler {
 
       out.attributes.append(
         Attribute(
-          name, self.segments(value, escape.attribute_context(name), node),
+          name,
+          self.segments(value, escape.attribute_context(name), node),
         ),
       )
     }
@@ -1207,7 +1230,9 @@ class Compiler {
 
     var include = Include(
       self.path_segments(_directive(node, INCLUDE_ATTR), node),
-      context, node.source_line, node.source_column,
+      context,
+      node.source_line,
+      node.source_column,
     )
 
     if _has_directive(node, WITH_ATTR) {
@@ -1231,7 +1256,8 @@ class Compiler {
   _loop(node, body) {
     var loop = Loop(
       self.expression_of(node, FOR_ATTR),
-      node.source_line, node.source_column,
+      node.source_line,
+      node.source_column,
     )
 
     if _has_directive(node, VALUE_ATTR) {
@@ -1270,17 +1296,22 @@ class Compiler {
       if !DIRECTIVES.contains(name) {
         raise TemplateSyntaxError(
           '"${name}" is not a Wire directive',
-          self.path, node.source_line, node.source_column,
+          self.path,
+          node.source_line,
+          node.source_column,
         )
       }
 
       var needs_value = EXPRESSION_DIRECTIVES.contains(name) or
-        NAME_DIRECTIVES.contains(name) or PATH_DIRECTIVES.contains(name)
+          NAME_DIRECTIVES.contains(name) or
+          PATH_DIRECTIVES.contains(name)
 
       if needs_value and is_blank(value) {
         raise TemplateSyntaxError(
           '${name} needs a value',
-          self.path, node.source_line, node.source_column,
+          self.path,
+          node.source_line,
+          node.source_column,
         )
       }
     }
@@ -1296,8 +1327,10 @@ class Compiler {
    */
   expression_of(node, directive: string) {
     return expression.parse(
-      _directive(node, directive), self.path,
-      node.source_line, node.source_column,
+      _directive(node, directive),
+      self.path,
+      node.source_line,
+      node.source_column,
     )
   }
 
@@ -1315,14 +1348,18 @@ class Compiler {
     if name.match('/^[A-Za-z_][A-Za-z0-9_\\-]*$/') == false {
       raise TemplateSyntaxError(
         '${directive} needs a plain name, not "${name}"',
-        self.path, node.source_line, node.source_column,
+        self.path,
+        node.source_line,
+        node.source_column,
       )
     }
 
     if name.starts_with('_') {
       raise TemplateSyntaxError(
         '"${name}" cannot start with an underscore',
-        self.path, node.source_line, node.source_column,
+        self.path,
+        node.source_line,
+        node.source_column,
       )
     }
 
@@ -1346,7 +1383,9 @@ class Compiler {
     if is_blank(value) {
       raise TemplateSyntaxError(
         'a template path cannot be empty',
-        self.path, node.source_line, node.source_column,
+        self.path,
+        node.source_line,
+        node.source_column,
       )
     }
 
@@ -1427,7 +1466,10 @@ def _split(value: string, path: string, line: number, column: number) {
 
       if end < 0 {
         raise TemplateSyntaxError(
-          '"${here}" was never closed with "${closing}"', path, line, column,
+          '"${here}" was never closed with "${closing}"',
+          path,
+          line,
+          column,
         )
       }
 
@@ -1474,14 +1516,21 @@ def _split(value: string, path: string, line: number, column: number) {
  * @returns string
  * @throws TemplateSyntaxError when it is not a bare name.
  */
-def _call_source(source: string, closing: string, path: string, line: number,
-  column: number) {
+def _call_source(
+  source: string,
+  closing: string,
+  path: string,
+  line: number,
+  column: number,
+) {
 
   if source.match('/^[A-Za-z_][A-Za-z0-9_]*$/') == false {
     raise TemplateSyntaxError(
       '"${CALL_OPEN} ${CALL_CLOSE}" calls a function by name; write ' +
-        '"${VAR_OPEN} ${source} ${VAR_CLOSE}" for anything else',
-      path, line, column,
+          '"${VAR_OPEN} ${source} ${VAR_CLOSE}" for anything else',
+      path,
+      line,
+      column,
     )
   }
 

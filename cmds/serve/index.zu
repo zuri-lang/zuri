@@ -45,11 +45,13 @@ def _session_secret(storage: string) {
 
 def _check(settings: dict) {
   var nyssa = Nyssa(settings)
-  var rows = nyssa.db.connection.fetch_all('
+  var rows = nyssa.db.connection.fetch_all(
+    '
     select packages.name, versions.version, versions.checksum
     from versions join packages on packages.id = versions.package_id
     order by packages.name_key, versions.id
-  ')
+  ',
+  )
 
   var problems = []
 
@@ -59,7 +61,9 @@ def _check(settings: dict) {
     if path == nil or !file(path).exists() {
       problems.append('${row.name} ${row.version}: its archive is missing')
     } else if archive.checksum(path, true) != row.checksum {
-      problems.append('${row.name} ${row.version}: its archive does not match its checksum')
+      problems.append(
+        '${row.name} ${row.version}: its archive does not match its checksum',
+      )
     }
   }
 
@@ -82,8 +86,8 @@ def _backup(settings: dict, target: string) {
 
   if nyssa.db.engine != 'sqlite' {
     raise UsageError(
-      'backup copies a SQLite database; back up ${nyssa.db.engine} with its own tools, '
-        + 'such as pg_dump or mysqldump',
+      'backup copies a SQLite database; back up ${nyssa.db.engine} with its own tools, ' +
+          'such as pg_dump or mysqldump',
     )
   }
 
@@ -95,7 +99,9 @@ def _backup(settings: dict, target: string) {
 
 def _admin(settings: dict, words: list) {
   if words.length() != 2 {
-    raise UsageError('admin takes an action and a username, such as: admin promote ada')
+    raise UsageError(
+      'admin takes an action and a username, such as: admin promote ada',
+    )
   }
 
   var action = words[0]
@@ -111,8 +117,12 @@ def _admin(settings: dict, words: list) {
     }
 
     catch {
-      var created = service.create_account(nyssa, { username, email, password },
-        'command line', true)
+      var created = service.create_account(
+        nyssa,
+        { username, email, password },
+        'command line',
+        true,
+      )
 
       nyssa.db.revoke_token(created.token.id, created.publisher.id)
 
@@ -151,8 +161,8 @@ def _admin(settings: dict, words: list) {
     }
     default {
       raise UsageError(
-        "'${action}' is not an admin action; use create, promote, demote, "
-          + 'suspend or restore',
+        "'${action}' is not an admin action; use create, promote, demote, " +
+            'suspend or restore',
       )
     }
   }
@@ -163,11 +173,13 @@ def _admin(settings: dict, words: list) {
 
 def _serve(settings: dict) {
   if plan.exposed_in_clear(settings) {
-    ui.complain(ui.warn(
-      'warning: listening on ${settings.host} without TLS; passwords and tokens will cross '
-        + 'the network in the clear. Give --tls-cert and --tls-key, or put a proxy that '
-        + 'terminates TLS in front and pass --trust-proxy.',
-    ))
+    ui.complain(
+      ui.warn(
+        'warning: listening on ${settings.host} without TLS; passwords and tokens will cross ' +
+            'the network in the clear. Give --tls-cert and --tls-key, or put a proxy that ' +
+            'terminates TLS in front and pass --trust-proxy.',
+      ),
+    )
   }
 
   var options = {
@@ -176,7 +188,9 @@ def _serve(settings: dict) {
     workers: settings.workers,
     on_ready: @(address, stop) {
       echo '${ui.heading(settings.name)} is serving ${settings.public_url}'
-      echo ui.muted('listening on ${address.to_string()}, storage in ${settings.storage}')
+      echo ui.muted(
+        'listening on ${address.to_string()}, storage in ${settings.storage}',
+      )
 
       var stopping = @() {
         echo ui.muted('stopping')
@@ -228,8 +242,8 @@ def main() {
   using command.name {
     when 'migrate' {
       echo applied == 0
-        ? 'The database is up to date.'
-        : 'Applied ${ui.count(applied, "migration")}.'
+          ? 'The database is up to date.'
+          : 'Applied ${ui.count(applied, "migration")}.'
     }
     when 'check' _check(settings)
     when 'backup' _backup(settings, command.value)

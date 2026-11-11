@@ -15,10 +15,20 @@
  */
 
 import ..errors {
-  SqlError, ConnectionError, AuthenticationError, TimeoutError,
-  QueryError, IntegrityError, UniqueViolation, ForeignKeyViolation,
-  NotNullViolation, CheckViolation, TransactionError,
-  SerializationError, DeadlockError, NotSupportedError,
+  SqlError,
+  ConnectionError,
+  AuthenticationError,
+  TimeoutError,
+  QueryError,
+  IntegrityError,
+  UniqueViolation,
+  ForeignKeyViolation,
+  NotNullViolation,
+  CheckViolation,
+  TransactionError,
+  SerializationError,
+  DeadlockError,
+  NotSupportedError,
 }
 
 /**
@@ -136,10 +146,5 @@ def raise_for(report: dict, query) {
     text += ' (${hint})'
   }
 
-  raise kind(text, {
-    code: sqlstate,
-    sqlstate,
-    driver: 'postgres',
-    query,
-  })
+  raise kind(text, { code: sqlstate, sqlstate, driver: 'postgres', query })
 }

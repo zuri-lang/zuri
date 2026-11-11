@@ -22,37 +22,54 @@ var LOGIN_DAYS = 365
 def parser() {
   var parser = args.Parser('zuri account', true)
 
-  parser.description = 'Signs this machine in to a registry, and manages the account and its '
-    + 'tokens there.'
+  parser.description = 'Signs this machine in to a registry, and manages the account and its ' +
+      'tokens there.'
 
   cli.add_registry_option(parser)
   cli.add_json_option(parser)
 
   parser.add_command(
-    'create', 'Creates an account on the registry and signs in to it',
+    'create',
+    'Creates an account on the registry and signs in to it',
   )
   parser
-    .add_command(
-      'login', 'Signs in, with a password or a token, and saves a token here',
-    )
-    .add_option('token-stdin',
-      'Read a token from standard input instead of asking for a password', nil)
-    .add_option('username', 'The account to sign in to',
-      { short_name: 'u', type: args.STRING, metavar: 'name' })
+      .add_command(
+        'login',
+        'Signs in, with a password or a token, and saves a token here',
+      )
+      .add_option(
+        'token-stdin',
+        'Read a token from standard input instead of asking for a password',
+        nil,
+      )
+      .add_option('username', 'The account to sign in to', {
+        short_name: 'u',
+        type: args.STRING,
+        metavar: 'name',
+      })
   parser.add_command(
-    'logout', 'Revokes the saved token on the registry and forgets it here',
+    'logout',
+    'Revokes the saved token on the registry and forgets it here',
   )
   parser.add_command('whoami', 'Says which account the saved token belongs to')
   parser.add_command('tokens', 'Lists the tokens the account holds')
-  parser.add_command('token', 'Issues a new token, printed once',
-    { type: args.OPTIONAL, metavar: 'name' })
-    .add_option('scopes', 'What it may do: publish, yank, owners, account',
-      { type: args.LIST, metavar: 'scope' })
-    .add_option('days', 'How long it lasts; 365 by default',
-      { type: args.INT, metavar: 'days' })
-  parser.add_command(
-    'revoke', 'Revokes a token by its id', { type: args.STRING, metavar: 'id' },
-  )
+  parser
+      .add_command('token', 'Issues a new token, printed once', {
+        type: args.OPTIONAL,
+        metavar: 'name',
+      })
+      .add_option('scopes', 'What it may do: publish, yank, owners, account', {
+        type: args.LIST,
+        metavar: 'scope',
+      })
+      .add_option('days', 'How long it lasts; 365 by default', {
+        type: args.INT,
+        metavar: 'days',
+      })
+  parser.add_command('revoke', 'Revokes a token by its id', {
+    type: args.STRING,
+    metavar: 'id',
+  })
 
   return parser
 }

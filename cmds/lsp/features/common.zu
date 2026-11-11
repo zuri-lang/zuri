@@ -11,16 +11,56 @@ import ..analysis.scope { BUILTIN, STARRED }
 
 /** The words the language reserves, which no name can be. */
 const KEYWORDS = [
-  'and', 'as', 'assert', 'break', 'catch', 'class', 'const', 'continue',
-  'def', 'default', 'do', 'echo', 'else', 'false', 'for', 'if', 'import',
-  'in', 'iter', 'nil', 'or', 'parent', 'raise', 'return', 'self', 'static',
-  'true', 'using', 'var', 'when', 'while',
+  'and',
+  'as',
+  'assert',
+  'break',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'def',
+  'default',
+  'do',
+  'echo',
+  'else',
+  'false',
+  'for',
+  'if',
+  'import',
+  'in',
+  'iter',
+  'nil',
+  'or',
+  'parent',
+  'raise',
+  'return',
+  'self',
+  'static',
+  'true',
+  'using',
+  'var',
+  'when',
+  'while',
 ]
 
 /** The words a type hint names a built-in type by. */
 const TYPE_WORDS = [
-  'any', 'bool', 'int', 'number', 'bigint', 'string', 'bytes', 'list',
-  'dict', 'range', 'file', 'function', 'type', 'callable', 'iterable',
+  'any',
+  'bool',
+  'int',
+  'number',
+  'bigint',
+  'string',
+  'bytes',
+  'list',
+  'dict',
+  'range',
+  'file',
+  'function',
+  'type',
+  'callable',
+  'iterable',
 ]
 
 /** The decorated methods a class can declare, with their parameters. */
@@ -109,13 +149,13 @@ def symbol_kind(symbol: dict) {
     when 'class' return SYMBOL_KIND['class']
     when 'method' {
       return symbol.name == '@new'
-        ? SYMBOL_KIND.constructor
-        : SYMBOL_KIND.method
+          ? SYMBOL_KIND.constructor
+          : SYMBOL_KIND.method
     }
     when 'field' {
       return symbol.get('constant', false)
-        ? SYMBOL_KIND.constant
-        : SYMBOL_KIND.field
+          ? SYMBOL_KIND.constant
+          : SYMBOL_KIND.field
     }
     when 'function' return SYMBOL_KIND.function
     when 'constant' return SYMBOL_KIND.constant
@@ -137,8 +177,8 @@ def completion_kind(symbol: dict) {
     when 'class' return COMPLETION_KIND['class']
     when 'method' {
       return symbol.name == '@new'
-        ? COMPLETION_KIND.constructor
-        : COMPLETION_KIND.method
+          ? COMPLETION_KIND.constructor
+          : COMPLETION_KIND.method
     }
     when 'field' return COMPLETION_KIND.field
     when 'function' return COMPLETION_KIND.function
@@ -290,8 +330,8 @@ def visible_names(summary: dict, offset: int) {
 
       # A local exists from its declaration on; a function's siblings
       # and the module's globals exist throughout.
-      var hoisted = symbol.kind == 'function'
-        or scope == 0 and symbol.kind != 'module'
+      var hoisted = symbol.kind == 'function' or
+          scope == 0 and symbol.kind != 'module'
 
       if hoisted or symbol.name_start < offset {
         found[name] = index
@@ -359,9 +399,9 @@ def targets_of(linker, path: string, found: dict) {
  * @returns bool
  */
 def is_node(value) {
-  return is_instance(value)
-    and hasprop(value, 'kind')
-    and hasprop(value, 'fields')
+  return is_instance(value) and
+      hasprop(value, 'kind') and
+      hasprop(value, 'fields')
 }
 
 /**
@@ -410,10 +450,10 @@ def path_to(nodes: list, offset: int) {
     var inner = nil
 
     for node in level {
-      if is_node(node)
-        and node.start <= offset
-        and offset <= node.end
-        and node.end > node.start {
+      if is_node(node) and
+          node.start <= offset and
+          offset <= node.end and
+          node.end > node.start {
         if inner == nil or node.end - node.start < inner.end - inner.start {
           inner = node
         }
@@ -436,9 +476,9 @@ def _last_started(level: list, offset: int) {
   var last = nil
 
   for node in level {
-    if is_node(node)
-      and node.start <= offset
-      and (last == nil or node.start >= last.start) {
+    if is_node(node) and
+        node.start <= offset and
+        (last == nil or node.start >= last.start) {
       last = node
     }
   }
@@ -574,8 +614,8 @@ def callable(linker, callee) {
     for one in callee.of[1,] {
       var other = callable(linker, one)
 
-      if other == nil
-        or _parameters(other.symbol) != _parameters(first.symbol) {
+      if other == nil or
+          _parameters(other.symbol) != _parameters(first.symbol) {
         return nil
       }
     }
@@ -605,9 +645,9 @@ def callable(linker, callee) {
     for index in owner.get('members', []) {
       var member = linker.symbol({ path: ref.path, index })
 
-      if member != nil
-        and member.name == '@new'
-        and !member.get('is_static', false) {
+      if member != nil and
+          member.name == '@new' and
+          !member.get('is_static', false) {
         return {
           symbol: member,
           name: class_symbol.name,
@@ -685,9 +725,9 @@ def import_line(nodes: list, lines) {
 
     if is_node(statement) and statement.kind == 'Import' {
       last = node.end
-    } else if node.kind == 'DocBlock'
-      and last == nil
-      and node.fields.text.contains('@module') {
+    } else if node.kind == 'DocBlock' and
+        last == nil and
+        node.fields.text.contains('@module') {
       last = node.end
     }
   }
@@ -706,7 +746,10 @@ def import_line(nodes: list, lines) {
 def import_edit(nodes: list, lines, text: string) {
   var position = { line: import_line(nodes, lines), character: 0 }
 
-  return { range: { start: position, end: position }, newText: text + '\n' }
+  return {
+    range: { start: position, end: position },
+    newText: text + '\n',
+  }
 }
 
 /**

@@ -180,36 +180,42 @@ class Spec < Reporter {
 
     using test.status {
       when result.PASSED {
-        echo indent
-          + style.green(symbols.pass)
-          + ' '
-          + style.dim(test.name)
-          + self._timing(test)
+        echo indent +
+            style.green(symbols.pass) +
+            ' ' +
+            style.dim(test.name) +
+            self._timing(test)
       }
       when result.FLAKY {
-        echo indent + style.magenta(symbols.flaky) + ' ' + test.name +
-          style.magenta(' (passed on attempt ${test.attempts})') +
-          self._timing(test)
+        echo indent +
+            style.magenta(symbols.flaky) +
+            ' ' +
+            test.name +
+            style.magenta(' (passed on attempt ${test.attempts})') +
+            self._timing(test)
       }
       when result.FAILED {
-        echo indent
-          + style.red(symbols.fail)
-          + ' '
-          + style.red(test.name)
-          + self._timing(test)
+        echo indent +
+            style.red(symbols.fail) +
+            ' ' +
+            style.red(test.name) +
+            self._timing(test)
       }
       when result.SKIPPED {
-        echo indent + style.yellow(symbols.skip) + ' ' + style.dim(test.name) +
-          style.yellow(
-            test.skip_reason == '' ? ' [skipped]' : ' [${test.skip_reason}]',
-          )
+        echo indent +
+            style.yellow(symbols.skip) +
+            ' ' +
+            style.dim(test.name) +
+            style.yellow(
+              test.skip_reason == '' ? ' [skipped]' : ' [${test.skip_reason}]',
+            )
       }
       when result.TODO {
-        echo indent
-          + style.blue(symbols.todo)
-          + ' '
-          + style.dim(test.name)
-          + style.blue(' [todo]')
+        echo indent +
+            style.blue(symbols.todo) +
+            ' ' +
+            style.dim(test.name) +
+            style.blue(' [todo]')
       }
     }
 
@@ -256,11 +262,12 @@ def _echo_output(output, depth) {
 
 def _echo_failure(number, test) {
   echo ''
-  echo style.red('  ${number}) ') + style.dim(' > '.join(test.suite_path())) +
-    (test.suite_path().is_empty()
-      ? ''
-      : style.dim(' ${style.symbols().arrow} ')) +
-    style.bold(style.red(test.name))
+  echo style.red('  ${number}) ') +
+      style.dim(' > '.join(test.suite_path())) +
+      (test.suite_path().is_empty()
+          ? ''
+          : style.dim(' ${style.symbols().arrow} ')) +
+      style.bold(style.red(test.name))
 
   for failure in test.failures {
     echo ''
@@ -300,21 +307,23 @@ def _echo_summary(summary, slow) {
   echo ''
 
   if !summary.slow.is_empty() and slow > 0 {
-    echo style.yellow('  Slow tests')
-      + style.dim(' (over ${format.duration(slow)})')
+    echo style.yellow('  Slow tests') +
+        style.dim(' (over ${format.duration(slow)})')
 
     var shown = 0
     for test in summary.slow {
       if shown >= 5 {
-        echo '    '
-          + style.dim('${symbols.ellipsis} ${format.plural(summary.slow.length() - shown, "more")}')
+        echo '    ' +
+            style.dim(
+              '${symbols.ellipsis} ${format.plural(summary.slow.length() - shown, "more")}',
+            )
         break
       }
 
-      echo '    '
-        + style.yellow(format.duration(test.duration).lpad(8, ' '))
-        + '  '
-        + style.dim(test.full_name())
+      echo '    ' +
+          style.yellow(format.duration(test.duration).lpad(8, ' ')) +
+          '  ' +
+          style.dim(test.full_name())
       shown++
     }
 
@@ -359,12 +368,17 @@ def _echo_summary(summary, slow) {
   parts.append(style.dim('${summary.total()} total'))
 
   echo '  ' + style.dim('  ${symbols.bullet}  ').join(parts)
-  echo '  ' + style.dim('suites ') + summary.suites.to_string() +
-    style.dim('   time ') + format.duration(summary.duration)
+  echo '  ' +
+      style.dim('suites ') +
+      summary.suites.to_string() +
+      style.dim('   time ') +
+      format.duration(summary.duration)
 
   if summary.seed != nil {
-    echo '  ' + style.dim('seed ') + summary.seed.to_string() +
-      style.dim('   rerun this order with { seed: ${summary.seed} }')
+    echo '  ' +
+        style.dim('seed ') +
+        summary.seed.to_string() +
+        style.dim('   rerun this order with { seed: ${summary.seed} }')
   }
 
   _echo_snapshot_summary(summary.snapshots)
@@ -401,9 +415,12 @@ def _echo_snapshot_summary(snapshots) {
     return
   }
 
-  echo '  ' + style.dim('snapshots ') + '  '.join(parts) +
-    (snapshots.get('obsolete', 0) > 0 ?
-      style.dim('   remove them with ZURI_UPDATE_SNAPSHOTS=1') : '')
+  echo '  ' +
+      style.dim('snapshots ') +
+      '  '.join(parts) +
+      (snapshots.get('obsolete', 0) > 0
+          ? style.dim('   remove them with ZURI_UPDATE_SNAPSHOTS=1')
+          : '')
 }
 
 # =========================================================================
@@ -522,9 +539,9 @@ class Tap < Reporter {
     }
 
     echo 'ok ${self._number} - ${name}' +
-      (test.status == result.FLAKY
-        ? ' # flaky, passed on attempt ${test.attempts}'
-        : '')
+        (test.status == result.FLAKY
+            ? ' # flaky, passed on attempt ${test.attempts}'
+            : '')
   }
 
   _diagnostics(test) {
@@ -580,7 +597,7 @@ class Junit < Reporter {
   run_finished(summary, root) {
     echo '<?xml version="1.0" encoding="UTF-8"?>'
     echo '<testsuites name="zuri" tests="${summary.total()}" failures="${summary.failed}" ' +
-      'skipped="${summary.skipped + summary.todo}" time="${(summary.duration / 1000).fixed(3)}">'
+        'skipped="${summary.skipped + summary.todo}" time="${(summary.duration / 1000).fixed(3)}">'
 
     for suite in root.suites() {
       var cases = suite.children.filter(@(child) {
@@ -613,7 +630,7 @@ class Junit < Reporter {
     var name = suite.path().is_empty() ? 'root' : ' > '.join(suite.path())
 
     echo '  <testsuite name="${_xml(name)}" tests="${cases.length()}" ' +
-      'failures="${failed}" skipped="${skipped}" time="${(time / 1000).fixed(3)}">'
+        'failures="${failed}" skipped="${skipped}" time="${(time / 1000).fixed(3)}">'
 
     for test in cases {
       self._case(test, name)
@@ -624,7 +641,7 @@ class Junit < Reporter {
 
   _case(test, suite_name) {
     var head = '    <testcase classname="${_xml(suite_name)}" name="${_xml(test.name)}" ' +
-      'time="${(test.duration / 1000).fixed(3)}"'
+        'time="${(test.duration / 1000).fixed(3)}"'
 
     if test.status == result.SKIPPED or test.status == result.TODO {
       echo head + '>'
@@ -643,8 +660,8 @@ class Junit < Reporter {
     for failure in test.failures {
       var origin = failure.origin()
       var where = origin == nil
-        ? ''
-        : '\n${source.short_path(origin.file)}:${origin.line}'
+          ? ''
+          : '\n${source.short_path(origin.file)}:${origin.line}'
 
       echo '      <failure type="${_xml(failure.kind)}" message="${_xml(style.strip(failure.message))}">'
       echo _xml(style.strip(failure.message) + where)
@@ -660,11 +677,12 @@ class Junit < Reporter {
 }
 
 def _xml(text) {
-  return text.to_string()
-    .replace('/&/', '&amp;')
-    .replace('/</', '&lt;')
-    .replace('/>/', '&gt;')
-    .replace('/"/', '&quot;')
+  return text
+      .to_string()
+      .replace('/&/', '&amp;')
+      .replace('/</', '&lt;')
+      .replace('/>/', '&gt;')
+      .replace('/"/', '&quot;')
 }
 
 # =========================================================================
@@ -724,10 +742,7 @@ class Json < Reporter {
   }
 
   run_finished(summary, root) {
-    echo json.encode({
-      summary: summary.to_dict(),
-      tests: self._cases,
-    })
+    echo json.encode({ summary: summary.to_dict(), tests: self._cases })
   }
 }
 

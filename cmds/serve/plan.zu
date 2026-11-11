@@ -148,48 +148,85 @@ def parser() {
   parser.description = 'Runs Nyssa, the package repository and the registry API.'
   parser.epilog = 'With no subcommand, the repository starts and serves until stopped.'
 
-  parser.add_option('host', 'The address to listen on; 127.0.0.1 by default',
-    { short_name: 'n', type: args.STRING, metavar: 'address' })
-  parser.add_option('port', 'The port to listen on; 3000 by default',
-    { short_name: 'p', type: args.INT, metavar: 'port' })
-  parser.add_option('storage', 'Where the database and archives live',
-    { short_name: 's', type: args.STRING, metavar: 'dir' })
-  parser.add_option('config',
-    'The configuration file; nyssa.toml in the storage directory',
-    { short_name: 'c', type: args.STRING, metavar: 'file' })
-  parser.add_option('public-url', 'The address people reach the repository at',
-    { type: args.STRING, metavar: 'url' })
-  parser.add_option('workers',
-    'How many connections to serve at once; one per CPU, up to 8, by default',
-    { short_name: 'w', type: args.INT, metavar: 'count' })
+  parser.add_option('host', 'The address to listen on; 127.0.0.1 by default', {
+    short_name: 'n',
+    type: args.STRING,
+    metavar: 'address',
+  })
+  parser.add_option('port', 'The port to listen on; 3000 by default', {
+    short_name: 'p',
+    type: args.INT,
+    metavar: 'port',
+  })
+  parser.add_option('storage', 'Where the database and archives live', {
+    short_name: 's',
+    type: args.STRING,
+    metavar: 'dir',
+  })
   parser.add_option(
-    'trust-proxy', 'Believe the forwarding headers a proxy in front adds', nil,
+    'config',
+    'The configuration file; nyssa.toml in the storage directory',
+    { short_name: 'c', type: args.STRING, metavar: 'file' },
+  )
+  parser.add_option(
+    'public-url',
+    'The address people reach the repository at',
+    { type: args.STRING, metavar: 'url' },
+  )
+  parser.add_option(
+    'workers',
+    'How many connections to serve at once; one per CPU, up to 8, by default',
+    { short_name: 'w', type: args.INT, metavar: 'count' },
+  )
+  parser.add_option(
+    'trust-proxy',
+    'Believe the forwarding headers a proxy in front adds',
+    nil,
   )
   parser.add_option('read-only', 'Serve packages but accept no changes', nil)
-  parser.add_option('tls-cert', 'A certificate chain to serve HTTPS with',
-    { type: args.STRING, metavar: 'file' })
-  parser.add_option('tls-key', 'The private key for the certificate',
-    { type: args.STRING, metavar: 'file' })
-  parser.add_option('database',
+  parser.add_option('tls-cert', 'A certificate chain to serve HTTPS with', {
+    type: args.STRING,
+    metavar: 'file',
+  })
+  parser.add_option('tls-key', 'The private key for the certificate', {
+    type: args.STRING,
+    metavar: 'file',
+  })
+  parser.add_option(
+    'database',
     'A connection string; SQLite in the storage directory by default',
-    { short_name: 'd', type: args.STRING, metavar: 'url' })
-  parser.add_option('signup',
+    { short_name: 'd', type: args.STRING, metavar: 'url' },
+  )
+  parser.add_option(
+    'signup',
     'Whether anyone may create an account: open or closed',
-    { type: args.CHOICE, choices: ['open', 'closed'], metavar: 'mode' })
-  parser.add_option('max-archive-size',
+    {
+      type: args.CHOICE,
+      choices: ['open', 'closed'],
+      metavar: 'mode',
+    },
+  )
+  parser.add_option(
+    'max-archive-size',
     'The largest archive accepted, in bytes',
-    { type: args.INT, metavar: 'bytes' })
+    { type: args.INT, metavar: 'bytes' },
+  )
 
   parser.add_command('migrate', 'Brings the database up to date and exits')
   parser.add_command(
-    'check', 'Checks every stored archive against its checksum',
+    'check',
+    'Checks every stored archive against its checksum',
   )
-  parser.add_command('backup',
+  parser.add_command(
+    'backup',
     'Copies the database to a file while it is in use',
-    { type: args.STRING, metavar: 'file' })
-  parser.add_command('admin',
+    { type: args.STRING, metavar: 'file' },
+  )
+  parser.add_command(
+    'admin',
     'create, promote, demote, suspend or restore <username>',
-    { type: args.LIST, metavar: 'action username' })
+    { type: args.LIST, metavar: 'action username' },
+  )
 
   return parser
 }
@@ -342,15 +379,17 @@ def check(chosen: dict) {
   }
 
   if !['open', 'closed'].contains(chosen.signup) {
-    raise UsageError("signup must be 'open' or 'closed', not '${chosen.signup}'")
+    raise UsageError(
+      "signup must be 'open' or 'closed', not '${chosen.signup}'",
+    )
   }
 
   var size = chosen.max_archive_size
 
   if size < MIN_ARCHIVE_SIZE or size > MAX_ARCHIVE_SIZE {
     raise UsageError(
-      'the archive size limit must be between ${MIN_ARCHIVE_SIZE} and ${MAX_ARCHIVE_SIZE} '
-        + 'bytes, not ${size}',
+      'the archive size limit must be between ${MIN_ARCHIVE_SIZE} and ${MAX_ARCHIVE_SIZE} ' +
+          'bytes, not ${size}',
     )
   }
 
@@ -371,8 +410,8 @@ def check(chosen: dict) {
   if public_url == nil {
     var scheme = chosen.tls_cert == nil ? 'http' : 'https'
     var host = chosen.host == '0.0.0.0' or chosen.host == '::'
-      ? 'localhost'
-      : chosen.host
+        ? 'localhost'
+        : chosen.host
 
     public_url = '${scheme}://${host}:${chosen.port}'
   }
@@ -381,16 +420,19 @@ def check(chosen: dict) {
     public_url = public_url[0, public_url.length() - 1]
   }
 
-  if !public_url.starts_with('http://')
-    and !public_url.starts_with('https://') {
-    raise UsageError("the public address must start with http:// or https://, not '${public_url}'")
+  if !public_url.starts_with('http://') and
+      !public_url.starts_with('https://') {
+    raise UsageError(
+      "the public address must start with http:// or https://, not '${public_url}'",
+    )
   }
 
   chosen.set('public_url', public_url)
 
   if chosen.database == nil or chosen.database.trim().is_empty() {
     chosen.set(
-      'database', 'sqlite://' + os.join_paths(chosen.storage, 'nyssa.db'),
+      'database',
+      'sqlite://' + os.join_paths(chosen.storage, 'nyssa.db'),
     )
   }
 

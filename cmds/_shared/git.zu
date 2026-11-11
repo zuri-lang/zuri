@@ -100,7 +100,9 @@ def run(args: list, cwd: ?string) {
   if status != 0 {
     var said = err.replace('/\\s+/', ' ', true).trim()
 
-    raise GitError('git ${args[0]} failed: ${said.is_empty() ? "no reason given" : said}')
+    raise GitError(
+      'git ${args[0]} failed: ${said.is_empty() ? "no reason given" : said}',
+    )
   }
 
   return out
@@ -118,7 +120,9 @@ def run(args: list, cwd: ?string) {
  */
 def resolve(address: string, ref: ?dict) {
   if !is_allowed(address) {
-    raise GitError("'${address}' is not a repository address git may be pointed at")
+    raise GitError(
+      "'${address}' is not a repository address git may be pointed at",
+    )
   }
 
   if ref != nil and ref.kind == 'rev' {
@@ -216,33 +220,46 @@ def fetch(name: ?string, address: string, commit: string, checksum: ?string) {
 
   catch {
     run(['init', '--quiet'], scratch)
-    run(
-      [
-        '-c', 'protocol.ext.allow=never', 'remote', 'add', 'origin', '--',
-        address,
-      ],
-      scratch,
-    )
+    run([
+      '-c',
+      'protocol.ext.allow=never',
+      'remote',
+      'add',
+      'origin',
+      '--',
+      address,
+    ], scratch)
 
     # A shallow fetch of the one commit, where the server allows it,
     # then the whole history where it does not.
     catch {
-      run(
-        ['-c', 'protocol.ext.allow=never', 'fetch', '--quiet', '--depth', '1',
-          'origin', commit],
-        scratch,
-      )
+      run([
+        '-c',
+        'protocol.ext.allow=never',
+        'fetch',
+        '--quiet',
+        '--depth',
+        '1',
+        'origin',
+        commit,
+      ], scratch)
     } as shallow {
-      run(
-        ['-c', 'protocol.ext.allow=never', 'fetch', '--quiet', 'origin'],
-        scratch,
-      )
+      run([
+        '-c',
+        'protocol.ext.allow=never',
+        'fetch',
+        '--quiet',
+        'origin',
+      ], scratch)
     }
 
-    run(
-      ['-c', 'advice.detachedHead=false', 'checkout', '--quiet', commit],
-      scratch,
-    )
+    run([
+      '-c',
+      'advice.detachedHead=false',
+      'checkout',
+      '--quiet',
+      commit,
+    ], scratch)
 
     var full = run(['rev-parse', 'HEAD'], scratch).trim()
 
@@ -285,12 +302,17 @@ def _read_manifest_from(path: string) {
  * @returns dict
  */
 def pack_checkout(
-  name: ?string, root: string, commit: string, checksum: ?string,
+  name: ?string,
+  root: string,
+  commit: string,
+  checksum: ?string,
 ) {
   var manifest_path = os.join_paths(root, 'project.toml')
 
   if !file(manifest_path).exists() {
-    raise GitError('the repository at commit ${commit[0, 12]} holds no project.toml at its root')
+    raise GitError(
+      'the repository at commit ${commit[0, 12]} holds no project.toml at its root',
+    )
   }
 
   var found = manifest_module.load(manifest_path)
@@ -315,7 +337,9 @@ def pack_checkout(
   })
 
   if !selected.links.is_empty() {
-    raise GitError('${name} holds symbolic links, which a package cannot: ${selected.links[0]}')
+    raise GitError(
+      '${name} holds symbolic links, which a package cannot: ${selected.links[0]}',
+    )
   }
 
   var staged = os.join_paths(paths.cache_dir(), 'git', fsx.unique() + '.tar.gz')
@@ -325,8 +349,8 @@ def pack_checkout(
     fsx.remove(staged)
 
     raise GitError(
-      '${name} at commit ${commit[0, 12]} no longer packs to the checksum the lockfile '
-        + 'recorded; the repository was rewritten, or its files changed',
+      '${name} at commit ${commit[0, 12]} no longer packs to the checksum the lockfile ' +
+          'recorded; the repository was rewritten, or its files changed',
     )
   }
 

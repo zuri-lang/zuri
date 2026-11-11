@@ -23,7 +23,9 @@ import .error { RpcError, PARSE_ERROR, INVALID_REQUEST }
 # JSON-RPC carries parameters by position or by name, and nothing else.
 def _check_params(params) {
   if params != nil and !is_list(params) and !is_dict(params) {
-    raise ValueError('params must be a list, a dictionary or nil, not ${typeof(params)}')
+    raise ValueError(
+      'params must be a list, a dictionary or nil, not ${typeof(params)}',
+    )
   }
 }
 
@@ -319,7 +321,8 @@ def _read_one(value) {
 
   if value.contains('error') {
     return Response.failure(
-      value.get('id', nil), _read_error(value.get('error', nil)),
+      value.get('id', nil),
+      _read_error(value.get('error', nil)),
     )
   }
 

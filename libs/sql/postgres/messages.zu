@@ -317,10 +317,7 @@ class Reader {
   read_message() {
     var tag = self.next_message()
 
-    return {
-      tag: tag.chr(),
-      payload: self.buffer[self.start, self.end],
-    }
+    return { tag: tag.chr(), payload: self.buffer[self.start, self.end] }
   }
 
   # Reads from the stream until at least `count` unread bytes are
@@ -333,16 +330,15 @@ class Reader {
         chunk = self._stream.read(READ_SIZE)
       } as error {
         raise ConnectionError(
-          'the connection to the server failed while reading: ' +
-            error.message,
+          'the connection to the server failed while reading: ' + error.message,
           { driver: 'postgres' },
         )
       }
 
       if chunk == nil or chunk.length() == 0 {
-        raise ConnectionError(
-          'the server closed the connection', { driver: 'postgres' },
-        )
+        raise ConnectionError('the server closed the connection', {
+          driver: 'postgres',
+        })
       }
 
       # What was read already is dropped before more is added, so the
@@ -374,8 +370,5 @@ def read_cstring(payload, at: number) {
     end++
   }
 
-  return {
-    value: end > at ? payload[at, end].to_string() : '',
-    next: end + 1,
-  }
+  return { value: end > at ? payload[at, end].to_string() : '', next: end + 1 }
 }

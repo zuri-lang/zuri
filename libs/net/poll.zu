@@ -184,7 +184,7 @@ class Poller {
     if !is_instance(socket) {
       raise TypeError(
         'add() expects a TcpStream, UnixStream or TlsStream, got ' +
-          '${typeof(socket)}',
+            '${typeof(socket)}',
       )
     }
 
@@ -343,7 +343,9 @@ class Poller {
     var milliseconds = timeout == nil ? -1 : timeout
 
     var ready = _net_poll.poll_wait(
-      self._sockets, self._interests, milliseconds,
+      self._sockets,
+      self._interests,
+      milliseconds,
     )
     var events = []
 

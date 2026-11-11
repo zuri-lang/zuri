@@ -113,8 +113,8 @@ class MailboxInfo {
    * @returns bool
    */
   is_selectable() {
-    return !self.flags.contains('\\Noselect')
-      and !self.flags.contains('\\NonExistent')
+    return !self.flags.contains('\\Noselect') and
+        !self.flags.contains('\\NonExistent')
   }
 
   to_string() {
@@ -194,7 +194,10 @@ class BodyPart {
    * @param string section
    */
   @new(
-    type: string, subtype: string, parameters: dict, size: ?number,
+    type: string,
+    subtype: string,
+    parameters: dict,
+    size: ?number,
     section: string,
   ) {
     self.type = type
@@ -352,10 +355,9 @@ def _addresses_of(values: list, index: number) {
     }
 
     catch {
-      found.append(address.Address(
-        domain == nil ? local : '${local}@${domain}',
-        name,
-      ))
+      found.append(
+        address.Address(domain == nil ? local : '${local}@${domain}', name),
+      )
     } as error {
       # An envelope entry that will not make an address is skipped
       # rather than failing the whole fetch.
@@ -483,7 +485,9 @@ class ImapClient {
 
     if hello.status == 'BYE' {
       raise ImapError(
-        '${self._host} will not talk: ${hello.text}', 'BYE', hello.code_name,
+        '${self._host} will not talk: ${hello.text}',
+        'BYE',
+        hello.code_name,
       )
     }
 
@@ -512,8 +516,8 @@ class ImapClient {
     }
 
     if self.state == 'not-authenticated' {
-      if self._options.get('username', nil) != nil
-        or self._options.get('token', nil) != nil {
+      if self._options.get('username', nil) != nil or
+          self._options.get('token', nil) != nil {
         self.login()
       }
     }
@@ -629,8 +633,8 @@ class ImapClient {
     # and it is the fallback when SASL offers nothing usable.
     if self.supports('LOGINDISABLED') or !self._stream.is_secure() {
       raise AuthenticationError(
-        'no mechanism this connection can use without TLS; '
-          + 'the server offers ${', '.join(offered)}',
+        'no mechanism this connection can use without TLS; ' +
+            'the server offers ${', '.join(offered)}',
       )
     }
 
@@ -679,9 +683,9 @@ class ImapClient {
         var answer = nil
 
         catch {
-          answer = sent_initial ?
-            mechanism.step(_decode(response.tokens[0])) :
-            initial
+          answer = sent_initial
+              ? mechanism.step(_decode(response.tokens[0]))
+              : initial
         } as error {
           self._stream.write_line('*')
           self._stream.flush()
@@ -770,7 +774,9 @@ class ImapClient {
       var response = self._reader.next()
 
       if response.kind == 'continuation' {
-        raise ProtocolError('the server asked for more than ${name} had to give')
+        raise ProtocolError(
+          'the server asked for more than ${name} had to give',
+        )
       }
 
       if response.kind == 'untagged' {
@@ -1083,11 +1089,13 @@ class ImapClient {
         continue
       }
 
-      found.append(MailboxInfo(
-        self._read_mailbox_name(_as_text(listed[2])),
-        _strings(listed[0]),
-        listed[1] == nil ? nil : _as_text(listed[1]),
-      ))
+      found.append(
+        MailboxInfo(
+          self._read_mailbox_name(_as_text(listed[2])),
+          _strings(listed[0]),
+          listed[1] == nil ? nil : _as_text(listed[1]),
+        ),
+      )
     }
 
     return found
@@ -1106,12 +1114,13 @@ class ImapClient {
    * @returns dict of the items asked for, by name.
    */
   status(name: string, items: ?list) {
-    var wanted = items == nil ?
-      ['MESSAGES', 'RECENT', 'UIDNEXT', 'UIDVALIDITY', 'UNSEEN'] :
-      items
+    var wanted = items == nil
+        ? ['MESSAGES', 'RECENT', 'UIDNEXT', 'UIDVALIDITY', 'UNSEEN']
+        : items
 
     var responses = self.run('STATUS', [
-      self._mailbox_name(name), '(${' '.join(wanted)})',
+      self._mailbox_name(name),
+      '(${' '.join(wanted)})',
     ])
     var found = {}
 
@@ -1274,15 +1283,14 @@ class ImapClient {
   fetch(ids, items: ?string, by_uid: ?bool) {
     self._need_mailbox('fetch')
 
-    var wanted = items == nil ?
-      'ENVELOPE FLAGS INTERNALDATE RFC822.SIZE' :
-      items
+    var wanted = items == nil
+        ? 'ENVELOPE FLAGS INTERNALDATE RFC822.SIZE'
+        : items
 
-    var responses = self._maybe_uid(
-      'FETCH',
-      by_uid,
-      [_id_set(ids), wanted.starts_with('(') ? wanted : '(${wanted})'],
-    )
+    var responses = self._maybe_uid('FETCH', by_uid, [
+      _id_set(ids),
+      wanted.starts_with('(') ? wanted : '(${wanted})',
+    ])
 
     var found = []
 
@@ -1323,7 +1331,9 @@ class ImapClient {
    */
   fetch_message(id: number, by_uid: ?bool, mark_seen: ?bool) {
     var found = self.fetch(
-      id, mark_seen == true ? 'BODY[]' : 'BODY.PEEK[]', by_uid,
+      id,
+      mark_seen == true ? 'BODY[]' : 'BODY.PEEK[]',
+      by_uid,
     )
 
     if found.is_empty() {
@@ -1366,11 +1376,11 @@ class ImapClient {
   store(ids, action: string, flags: list, by_uid: ?bool) {
     self._need_mailbox('change flags')
 
-    var responses = self._maybe_uid(
-      'STORE',
-      by_uid,
-      [_id_set(ids), action, '(${' '.join(flags)})'],
-    )
+    var responses = self._maybe_uid('STORE', by_uid, [
+      _id_set(ids),
+      action,
+      '(${' '.join(flags)})',
+    ])
 
     var found = []
 
@@ -1466,9 +1476,10 @@ class ImapClient {
     self._need_mailbox('move')
 
     if self.supports('MOVE') {
-      self._maybe_uid(
-        'MOVE', by_uid, [_id_set(ids), self._mailbox_name(target)],
-      )
+      self._maybe_uid('MOVE', by_uid, [
+        _id_set(ids),
+        self._mailbox_name(target),
+      ])
 
       return self
     }
@@ -1576,9 +1587,9 @@ class ImapClient {
     var collected = []
 
     catch {
-      self._stream
-        .transport()
-        .set_read_timeout(timeout == nil ? 1500000 : timeout)
+      self._stream.transport().set_read_timeout(
+        timeout == nil ? 1500000 : timeout,
+      )
     } as error {
       # A transport with no timeout of its own simply waits.
     }
@@ -1735,9 +1746,9 @@ class ImapClient {
       var values = arguments[0]
 
       iter var index = 0; index + 1 < values.length(); index += 2 {
-        found['${values[index]}'] = values[index + 1] == nil ?
-          nil :
-          _as_text(values[index + 1])
+        found['${values[index]}'] = values[index + 1] == nil
+            ? nil
+            : _as_text(values[index + 1])
       }
     }
 
@@ -1864,8 +1875,10 @@ def _read_fetch(sequence: number, values: list) {
 
     var open = key.index_of('[')
 
-    if open > -1 or key == 'RFC822' or key == 'RFC822.HEADER'
-      or key == 'RFC822.TEXT' {
+    if open > -1 or
+        key == 'RFC822' or
+        key == 'RFC822.HEADER' or
+        key == 'RFC822.TEXT' {
       var section = key
 
       if open > -1 {
@@ -1874,9 +1887,9 @@ def _read_fetch(sequence: number, values: list) {
         section = close > open ? key[open + 1, close] : ''
       }
 
-      info.parts[section] = instance_of(value, Literal) ?
-        value.data :
-        (value == nil ? bytes(0) : '${value}'.to_bytes())
+      info.parts[section] = instance_of(value, Literal)
+          ? value.data
+          : (value == nil ? bytes(0) : '${value}'.to_bytes())
     }
   }
 

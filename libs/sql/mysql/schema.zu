@@ -74,10 +74,10 @@ class MySqlSchema < SchemaAdapter {
 
     var rows = self._query(
       'select column_name, column_type, is_nullable, column_default, ' +
-        '  ordinal_position ' +
-        'from information_schema.columns ' +
-        'where table_name = ? and table_schema = coalesce(?, database()) ' +
-        'order by ordinal_position',
+          '  ordinal_position ' +
+          'from information_schema.columns ' +
+          'where table_name = ? and table_schema = coalesce(?, database()) ' +
+          'order by ordinal_position',
       [table, schema],
     )
 
@@ -105,9 +105,9 @@ class MySqlSchema < SchemaAdapter {
   primary_key_columns(table: string, schema) {
     var rows = self._query(
       'select column_name from information_schema.key_column_usage ' +
-        "where table_name = ? and table_schema = coalesce(?, database()) " +
-        "  and constraint_name = 'PRIMARY' " +
-        'order by ordinal_position',
+          "where table_name = ? and table_schema = coalesce(?, database()) " +
+          "  and constraint_name = 'PRIMARY' " +
+          'order by ordinal_position',
       [table, schema],
     )
 
@@ -126,9 +126,9 @@ class MySqlSchema < SchemaAdapter {
   indexes(table: string, schema) {
     var rows = self._query(
       'select index_name, non_unique, column_name ' +
-        'from information_schema.statistics ' +
-        'where table_name = ? and table_schema = coalesce(?, database()) ' +
-        'order by index_name, seq_in_index',
+          'from information_schema.statistics ' +
+          'where table_name = ? and table_schema = coalesce(?, database()) ' +
+          'order by index_name, seq_in_index',
       [table, schema],
     )
 
@@ -159,19 +159,19 @@ class MySqlSchema < SchemaAdapter {
   foreign_keys(table: string, schema) {
     var rows = self._query(
       'select key_columns.constraint_name, key_columns.column_name, ' +
-        '  key_columns.referenced_table_name, ' +
-        '  key_columns.referenced_column_name, ' +
-        '  constraint_rules.update_rule, constraint_rules.delete_rule ' +
-        'from information_schema.key_column_usage as key_columns ' +
-        'join information_schema.referential_constraints as constraint_rules ' +
-        '  on constraint_rules.constraint_name = ' +
-        '    key_columns.constraint_name ' +
-        '  and constraint_rules.constraint_schema = ' +
-        '    key_columns.table_schema ' +
-        'where key_columns.table_name = ? ' +
-        '  and key_columns.table_schema = coalesce(?, database()) ' +
-        '  and key_columns.referenced_table_name is not null ' +
-        'order by key_columns.constraint_name, key_columns.ordinal_position',
+          '  key_columns.referenced_table_name, ' +
+          '  key_columns.referenced_column_name, ' +
+          '  constraint_rules.update_rule, constraint_rules.delete_rule ' +
+          'from information_schema.key_column_usage as key_columns ' +
+          'join information_schema.referential_constraints as constraint_rules ' +
+          '  on constraint_rules.constraint_name = ' +
+          '    key_columns.constraint_name ' +
+          '  and constraint_rules.constraint_schema = ' +
+          '    key_columns.table_schema ' +
+          'where key_columns.table_name = ? ' +
+          '  and key_columns.table_schema = coalesce(?, database()) ' +
+          '  and key_columns.referenced_table_name is not null ' +
+          'order by key_columns.constraint_name, key_columns.ordinal_position',
       [table, schema],
     )
 
@@ -203,8 +203,8 @@ class MySqlSchema < SchemaAdapter {
   _relations(kind, schema) {
     var rows = self._query(
       'select table_name from information_schema.tables ' +
-        'where table_type = ? and table_schema = coalesce(?, database()) ' +
-        'order by table_name',
+          'where table_type = ? and table_schema = coalesce(?, database()) ' +
+          'order by table_name',
       [kind, schema],
     )
 

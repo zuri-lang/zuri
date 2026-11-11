@@ -57,7 +57,8 @@ var FILE_MODE = 0c600
  */
 def default_directory() {
   return os.join_paths(
-    os.temp_dir(), 'zuri-sessions-' + hash.sha256(os.cwd())[0, 16],
+    os.temp_dir(),
+    'zuri-sessions-' + hash.sha256(os.cwd())[0, 16],
   )
 }
 
@@ -266,7 +267,7 @@ class FileStore < SessionStore {
       } as error {
         raise SessionError(
           'could not create the session directory ${self._directory}: ' +
-            error.message,
+              error.message,
         )
       }
     }
@@ -289,8 +290,8 @@ class FileStore < SessionStore {
     if mode & 0c007 != 0 {
       raise SessionError(
         'the session directory ${self._directory} is open to every user ' +
-          'on this machine (mode ${mode.oct()}); tighten it, or pass ' +
-          'strict_permissions: false to use it anyway',
+            'on this machine (mode ${mode.oct()}); tighten it, or pass ' +
+            'strict_permissions: false to use it anyway',
       )
     }
   }

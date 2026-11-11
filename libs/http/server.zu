@@ -660,11 +660,7 @@ class HttpServer {
   load_certs(cert_path: string, key_path: ?string, options: ?dict) {
     var key = key_path == nil ? cert_path : key_path
 
-    return self.use_tls(
-      file(cert_path).read(),
-      file(key).read(),
-      options,
-    )
+    return self.use_tls(file(cert_path).read(), file(key).read(), options)
   }
 
   /**
@@ -743,7 +739,9 @@ class HttpServer {
     } as error
 
     if error {
-      raise HttpError('could not bind ${self.host}:${self.port}: ${error.message}')
+      raise HttpError(
+        'could not bind ${self.host}:${self.port}: ${error.message}',
+      )
     }
 
     self._acceptor = net.Acceptor(self.socket)
@@ -974,15 +972,16 @@ class HttpServer {
     }
 
     var request = self._accepted_head(
-      connection, self._read_request_head(connection),
+      connection,
+      self._read_request_head(connection),
     )
 
     if request == nil {
       return false
     }
 
-    if request.content_length() > 0
-      or request.headers.contains('transfer-encoding') {
+    if request.content_length() > 0 or
+        request.headers.contains('transfer-encoding') {
       connection.set_read_timeout(self.read_timeout)
     }
 
@@ -996,7 +995,7 @@ class HttpServer {
       # An idle keep-alive connection timing out, or a peer closing
       # between requests, is the normal end of a connection.
       if instance_of(request, TimeoutError) or
-        instance_of(request, ConnectionError) {
+          instance_of(request, ConnectionError) {
         return nil
       }
 
@@ -1027,7 +1026,8 @@ class HttpServer {
    */
   request_from_head(connection, head) {
     return self._accepted_head(
-      connection, self._request_from_head_safe(connection, head),
+      connection,
+      self._request_from_head_safe(connection, head),
     )
   }
 
@@ -1083,9 +1083,9 @@ class HttpServer {
    * @returns bool: whether to keep the connection open
    */
   answer(connection, request, served) {
-    var is_final = self.max_keep_alive_requests != nil
-      and self.max_keep_alive_requests > 0
-      and served + 1 >= self.max_keep_alive_requests
+    var is_final = self.max_keep_alive_requests != nil and
+        self.max_keep_alive_requests > 0 and
+        served + 1 >= self.max_keep_alive_requests
 
     if !self._serve_one(connection, request, is_final) {
       return false
@@ -1299,15 +1299,16 @@ class HttpServer {
       return false
     }
 
-    var opts = {
-      server_name: self.server_name,
-    }
+    var opts = { server_name: self.server_name }
     if is_final == true {
       opts['keep_alive'] = false
     }
 
     var keep_alive = self._write_response_safe(
-      connection, request, response, opts,
+      connection,
+      request,
+      response,
+      opts,
     )
     if keep_alive == nil {
       return false
@@ -1380,8 +1381,8 @@ class HttpServer {
         return false
       }
 
-      if !request.context.get('continued', false)
-        and !self._send_continue_safe(connection) {
+      if !request.context.get('continued', false) and
+          !self._send_continue_safe(connection) {
         return false
       }
     }
@@ -1430,7 +1431,8 @@ class HttpServer {
     if request.method == 'OPTIONS' and request.path == '*' {
       response.status = status.NO_CONTENT
       response.headers.set(
-        'Allow', 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS',
+        'Allow',
+        'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS',
       )
       return
     }
@@ -1599,7 +1601,9 @@ class HttpServer {
   _compress_body_safe(response, coding) {
     catch {
       var compressed = body.encode_content(
-        response.body, coding, self.compression_quality,
+        response.body,
+        coding,
+        self.compression_quality,
       )
 
       # Compression that makes a body bigger is worse than none.
@@ -1620,9 +1624,9 @@ class HttpServer {
 
     if instance_of(error, TooLargeError) {
       var message = error.message.lower()
-      code = message.contains('header') or message.contains('line') ?
-        status.REQUEST_HEADER_FIELDS_TOO_LARGE :
-        status.CONTENT_TOO_LARGE
+      code = message.contains('header') or message.contains('line')
+          ? status.REQUEST_HEADER_FIELDS_TOO_LARGE
+          : status.CONTENT_TOO_LARGE
     }
 
     self._report(error, connection)
@@ -1630,12 +1634,12 @@ class HttpServer {
     catch {
       var reason = status.reason(code)
       var head = 'HTTP/1.1 ${code} ${reason}\r\n' +
-        'Date: ${util.format_date()}\r\n' +
-        'Server: ${self.server_name}\r\n' +
-        'Content-Type: text/plain; charset=utf-8\r\n' +
-        'Content-Length: ${(code.to_string() + " " + reason).length()}\r\n' +
-        'Connection: close\r\n\r\n' +
-        '${code} ${reason}'
+          'Date: ${util.format_date()}\r\n' +
+          'Server: ${self.server_name}\r\n' +
+          'Content-Type: text/plain; charset=utf-8\r\n' +
+          'Content-Length: ${(code.to_string() + " " + reason).length()}\r\n' +
+          'Connection: close\r\n\r\n' +
+          '${code} ${reason}'
 
       connection.write(head)
       connection.flush()

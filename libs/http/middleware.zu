@@ -56,9 +56,15 @@ def cors(options: ?dict) {
   var settings = options == nil ? {} : options
 
   var origins = settings.get('origins', ['*'])
-  var methods = settings.get(
-    'methods', ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  )
+  var methods = settings.get('methods', [
+    'GET',
+    'HEAD',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'OPTIONS',
+  ])
   var allowed_headers = settings.get('headers', nil)
   var expose = settings.get('expose', nil)
   var credentials = settings.get('credentials', false)
@@ -101,13 +107,14 @@ def cors(options: ?dict) {
       response.headers.set('Access-Control-Expose-Headers', ', '.join(expose))
     }
 
-    if request.method == 'OPTIONS'
-      and request.headers.contains('access-control-request-method') {
+    if request.method == 'OPTIONS' and
+        request.headers.contains('access-control-request-method') {
       response.headers.set('Access-Control-Allow-Methods', ', '.join(methods))
 
       if allowed_headers != nil {
         response.headers.set(
-          'Access-Control-Allow-Headers', ', '.join(allowed_headers),
+          'Access-Control-Allow-Headers',
+          ', '.join(allowed_headers),
         )
       } else {
         var asked = request.header('access-control-request-headers', nil)
@@ -157,7 +164,12 @@ def logger(options: ?dict) {
     # would log whatever it was before.
     response.on_finish(@{
       _log_line(
-        request, response, (time() - started) * 1000, format, sink, trust_proxy,
+        request,
+        response,
+        (time() - started) * 1000,
+        format,
+        sink,
+        trust_proxy,
       )
     })
 
@@ -178,13 +190,13 @@ def _log_line(request, response, elapsed, format, sink, trust_proxy) {
     # the size has to come from the header the protocol layer set;
     # reading `body` alone would log every static file as 0 bytes.
     var declared = response.headers.get('content-length', nil)
-    var length = declared != nil ?
-      declared :
-      (response.body == nil ? 0 : response.body.length())
+    var length = declared != nil
+        ? declared
+        : (response.body == nil ? 0 : response.body.length())
 
     line = '${who} - [${util.format_date()}] ' +
-      '"${request.method} ${request.target} HTTP/${request.version}" ' +
-      '${response.status} ${length} ${_round(elapsed, 2)}ms'
+        '"${request.method} ${request.target} HTTP/${request.version}" ' +
+        '${response.status} ${length} ${_round(elapsed, 2)}ms'
   }
 
   if sink != nil {
@@ -225,7 +237,8 @@ def security_headers(options: ?dict) {
   var csp = settings.get('content_security_policy', nil)
   var frame_options = settings.get('frame_options', 'DENY')
   var referrer = settings.get(
-    'referrer_policy', 'strict-origin-when-cross-origin',
+    'referrer_policy',
+    'strict-origin-when-cross-origin',
   )
   var hsts_max_age = settings.get('hsts_max_age', 31536000)
   var hsts_subdomains = settings.get('hsts_subdomains', false)
@@ -306,7 +319,8 @@ def basic_auth(verify, realm: ?string) {
     if credentials == nil or !verify(credentials[0], credentials[1]) {
       response.status = status.UNAUTHORIZED
       response.headers.set(
-        'WWW-Authenticate', 'Basic realm=${util.quote(name)}, charset="UTF-8"',
+        'WWW-Authenticate',
+        'Basic realm=${util.quote(name)}, charset="UTF-8"',
       )
       response.text('401 Unauthorized')
       return
@@ -345,7 +359,8 @@ def bearer_auth(verify, realm: ?string) {
     if !subject {
       response.status = status.UNAUTHORIZED
       response.headers.set(
-        'WWW-Authenticate', 'Bearer realm=${util.quote(name)}',
+        'WWW-Authenticate',
+        'Bearer realm=${util.quote(name)}',
       )
       response.json({ error: 'unauthorized', status: 401 })
       return
@@ -467,8 +482,11 @@ def jwt_auth(verifier, options: ?dict) {
     # presented it. The challenge says only that it was not accepted.
     if error != nil or !is_dict(claims) {
       _bearer_challenge(
-        response, realm, 'invalid_token',
-        'the access token is invalid or has expired', 401,
+        response,
+        realm,
+        'invalid_token',
+        'the access token is invalid or has expired',
+        401,
       )
       response.json({ error: 'invalid_token', status: 401 })
 
@@ -481,13 +499,16 @@ def jwt_auth(verifier, options: ?dict) {
       for wanted in required_scopes {
         if !granted.contains(wanted) {
           _bearer_challenge(
-            response, realm, 'insufficient_scope',
-            'the access token does not carry the required scope', 403,
+            response,
+            realm,
+            'insufficient_scope',
+            'the access token does not carry the required scope',
+            403,
           )
           response.headers.set(
             'WWW-Authenticate',
             response.headers.get('www-authenticate') +
-              ', scope=${util.quote(" ".join(required_scopes))}',
+                ', scope=${util.quote(" ".join(required_scopes))}',
           )
           response.json({ error: 'insufficient_scope', status: 403 })
 
@@ -569,9 +590,9 @@ def rate_limit(options: ?dict) {
   var counters = {}
 
   return @(request, response, next) {
-    var key = key_of != nil ?
-      key_of(request) :
-      (request.client_ip(trust_proxy) or 'unknown')
+    var key = key_of != nil
+        ? key_of(request)
+        : (request.client_ip(trust_proxy) or 'unknown')
 
     var now = time()
     var entry = counters.get(key, nil)

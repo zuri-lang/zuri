@@ -77,10 +77,7 @@ class PostgresStatement < DriverStatement {
 
     var result = self._run(values, 0)
 
-    return {
-      rows_affected: affected_rows(result.tag),
-      last_insert_id: nil,
-    }
+    return { rows_affected: affected_rows(result.tag), last_insert_id: nil }
   }
 
   /**
@@ -94,11 +91,7 @@ class PostgresStatement < DriverStatement {
 
     var result = self._run(values, 0)
 
-    return {
-      columns: self.columns(),
-      rows: result.rows,
-      command: result.tag,
-    }
+    return { columns: self.columns(), rows: result.rows, command: result.tag }
   }
 
   /**
@@ -190,16 +183,16 @@ class PostgresStatement < DriverStatement {
 
   _open() {
     if self._closed {
-      raise ClosedError(
-        'this prepared statement was closed',
-        { driver: 'postgres', query: self._sql },
-      )
+      raise ClosedError('this prepared statement was closed', {
+        driver: 'postgres',
+        query: self._sql,
+      })
     }
   }
 
   to_string() {
     return '<PostgresStatement ${self._sql}' +
-      '${self._closed ? " (closed)" : ""}>'
+        '${self._closed ? " (closed)" : ""}>'
   }
 
   @to_string() {

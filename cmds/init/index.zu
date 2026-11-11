@@ -208,8 +208,8 @@ def main() {
 
   if scaffold.has_project(directory) and !force {
     raise plan.UsageError(
-      "a project already exists in '${directory}'; use --force to rewrite its "
-        + '${scaffold.MANIFEST} and leave everything else alone',
+      "a project already exists in '${directory}'; use --force to rewrite its " +
+          '${scaffold.MANIFEST} and leave everything else alone',
     )
   }
 
@@ -232,9 +232,10 @@ def main() {
   # refused while the directory is still untouched.
   var git = plan.wants_git(parsed, directory)
 
-  var outcome = scaffold.create(
-    directory, manifest, { dry_run, replace_manifest: force },
-  )
+  var outcome = scaffold.create(directory, manifest, {
+    dry_run,
+    replace_manifest: force,
+  })
 
   if git and !dry_run {
     git = scaffold.init_git(directory)

@@ -162,7 +162,11 @@ class _Finder {
 
     if node.kind == 'Call' {
       var function_name = _test_function(
-        self.server, self.key, self.summary, node, self.directory,
+        self.server,
+        self.key,
+        self.summary,
+        node,
+        self.directory,
       )
 
       if function_name != nil {
@@ -176,14 +180,17 @@ class _Finder {
             var inner_patterns = patterns.clone()
 
             inner_names.append(item.name)
-            inner_patterns.append(_pattern_of(
-              item.name, item.modifier == 'each',
-            ))
+            inner_patterns.append(
+              _pattern_of(item.name, item.modifier == 'each'),
+            )
 
             var body = node.fields.arguments.last()
 
             self.collect(
-              common.children(body), inner_names, inner_patterns, item.children,
+              common.children(body),
+              inner_names,
+              inner_patterns,
+              item.children,
             )
           }
         }
@@ -345,14 +352,18 @@ def lenses(server, document) {
   }
 
   var key = document.key
-  var found = [{
-    range: server.range(key, items[0].name_start, items[0].name_end),
-    command: {
-      title: 'Run tests in file',
-      command: RUN_COMMAND,
-      arguments: [{ uri: document.uri }],
+  var found = [
+    {
+      range: server.range(key, items[0].name_start, items[0].name_end),
+      command: {
+        title: 'Run tests in file',
+        command: RUN_COMMAND,
+        arguments: [
+          { uri: document.uri },
+        ],
+      },
     },
-  }]
+  ]
 
   for item in items {
     var title = item.kind == 'suite' ? 'Run suite' : 'Run test'
@@ -362,11 +373,9 @@ def lenses(server, document) {
       command: {
         title,
         command: RUN_COMMAND,
-        arguments: [{
-          uri: document.uri,
-          name: item.full_name,
-          filter: item.filter,
-        }],
+        arguments: [
+          { uri: document.uri, name: item.full_name, filter: item.filter },
+        ],
       },
     })
   }
@@ -391,8 +400,8 @@ def working_directory(server, path: string) {
 
   for folder in server.folders {
     var prefix = folder.ends_with(os.path_separator)
-      ? folder
-      : folder + os.path_separator
+        ? folder
+        : folder + os.path_separator
 
     if path.starts_with(prefix) {
       return folder
@@ -433,13 +442,11 @@ def run_file(id: int, path: string, cwd: string, filter, results) {
   var child = nil
 
   catch {
-    child = spawn(os.exe_path, ['run', path], {
-      cwd,
-      env,
-      stdin: 'null',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    child = spawn(
+      os.exe_path,
+      ['run', path],
+      { cwd, env, stdin: 'null', stdout: 'pipe', stderr: 'pipe' },
+    )
   } as error {
     results.send({ id, kind: 'failed', message: error.message })
     return true
@@ -475,7 +482,10 @@ def run_file(id: int, path: string, cwd: string, filter, results) {
   var stderr = child.read_stderr()
 
   results.send({
-    id, kind: 'finished', code, stderr: stderr == nil ? '' : stderr.to_string(),
+    id,
+    kind: 'finished',
+    code,
+    stderr: stderr == nil ? '' : stderr.to_string(),
   })
 
   return true
@@ -565,13 +575,13 @@ def failure_diagnostics(server, cwd: string, tests: list) {
       }
 
       var text = lines.line_text(line - 1)
-      var start = lines.line_start(line - 1)
-        + (text.length() - text.ltrim().length())
+      var start = lines.line_start(line - 1) +
+          (text.length() - text.ltrim().length())
       var end = lines.line_start(line - 1) + text.rtrim().length()
       var message = '${test.full_name}: ${failure.message}'
 
-      if failure.get('expected', nil) != nil
-        or failure.get('received', nil) != nil {
+      if failure.get('expected', nil) != nil or
+          failure.get('received', nil) != nil {
         message += '\nexpected ${failure.expected}\nreceived ${failure.received}'
       }
 

@@ -189,7 +189,9 @@ class Router {
 
       if segment.starts_with('*') {
         if i != segments.length() - 1 {
-          raise HttpError('a catch-all may only be the last segment: ${pattern}')
+          raise HttpError(
+            'a catch-all may only be the last segment: ${pattern}',
+          )
         }
 
         var wildcard_name = segment[1,]

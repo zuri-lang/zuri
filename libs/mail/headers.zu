@@ -48,9 +48,19 @@ var LINE_WIDTH = 78
 # The headers whose values are addresses, so that `Message` knows which
 # ones to hand to the address parser without being told.
 var ADDRESS_HEADERS = [
-  'from', 'sender', 'reply-to', 'to', 'cc', 'bcc',
-  'resent-from', 'resent-sender', 'resent-to', 'resent-cc', 'resent-bcc',
-  'return-path', 'disposition-notification-to',
+  'from',
+  'sender',
+  'reply-to',
+  'to',
+  'cc',
+  'bcc',
+  'resent-from',
+  'resent-sender',
+  'resent-to',
+  'resent-cc',
+  'resent-bcc',
+  'return-path',
+  'disposition-notification-to',
 ]
 
 /**
@@ -227,10 +237,7 @@ class Headers {
    * @returns Headers itself.
    */
   add(name: string, value) {
-    self._entries.append({
-      name: _tidy(name),
-      value: _tidy('${value}'),
-    })
+    self._entries.append({ name: _tidy(name), value: _tidy('${value}') })
 
     return self
   }
@@ -248,10 +255,7 @@ class Headers {
    * @returns Headers itself.
    */
   prepend(name: string, value) {
-    self._entries.insert({
-      name: _tidy(name),
-      value: _tidy('${value}'),
-    }, 0)
+    self._entries.insert({ name: _tidy(name), value: _tidy('${value}') }, 0)
 
     return self
   }

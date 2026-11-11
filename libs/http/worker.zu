@@ -67,14 +67,17 @@ def worker_main(connections, setup, options) {
 
   if cert_chain != nil {
     instance.use_tls(
-      cert_chain, private_key or cert_chain, options.get('tls', nil),
+      cert_chain,
+      private_key or cert_chain,
+      options.get('tls', nil),
     )
   }
 
   setup(instance)
 
   var loop = ConnectionLoop(
-    instance, options.get('max_connections_per_worker', _MAX_PER_WORKER),
+    instance,
+    options.get('max_connections_per_worker', _MAX_PER_WORKER),
   )
 
   while true {
@@ -233,8 +236,8 @@ def serve(setup, options: ?dict) {
   if available < workers {
     raise HttpError(
       'cannot run ${workers} workers: the isolate pool has only ${available} ' +
-        'thread(s). Call isolate.configure(${workers + _POOL_HEADROOM}) before ' +
-        'anything else uses an isolate, or ask for fewer workers.',
+          'thread(s). Call isolate.configure(${workers + _POOL_HEADROOM}) before ' +
+          'anything else uses an isolate, or ask for fewer workers.',
     )
   }
 

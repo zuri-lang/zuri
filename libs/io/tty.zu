@@ -527,7 +527,9 @@ class TTY {
    */
   @new(std) {
     if !is_file(std) {
-      raise TypeError('TTY expects a standard file as argument, ${typeof(std)} given')
+      raise TypeError(
+        'TTY expects a standard file as argument, ${typeof(std)} given',
+      )
     }
 
     self.std = std
@@ -596,20 +598,20 @@ class TTY {
 
     var new_attr = _io.TTY.tcgetattr(self.std, false)
 
-    new_attr[TTY.TTY_IFLAG] &= ~(TTY.IGNBRK
-      | TTY.BRKINT
-      | TTY.PARMRK
-      | TTY.ISTRIP
-      | TTY.INLCR
-      | TTY.IGNCR
-      | TTY.ICRNL
-      | TTY.IXON)
+    new_attr[TTY.TTY_IFLAG] &= ~(TTY.IGNBRK |
+        TTY.BRKINT |
+        TTY.PARMRK |
+        TTY.ISTRIP |
+        TTY.INLCR |
+        TTY.IGNCR |
+        TTY.ICRNL |
+        TTY.IXON)
     new_attr[TTY.TTY_OFLAG] &= ~TTY.OPOST
-    new_attr[TTY.TTY_LFLAG] &= ~(TTY.ECHO
-      | TTY.ECHONL
-      | TTY.ICANON
-      | TTY.ISIG
-      | TTY.IEXTEN)
+    new_attr[TTY.TTY_LFLAG] &= ~(TTY.ECHO |
+        TTY.ECHONL |
+        TTY.ICANON |
+        TTY.ISIG |
+        TTY.IEXTEN)
     new_attr[TTY.TTY_CFLAG] &= ~(TTY.CSIZE | TTY.PARENB)
     new_attr[TTY.TTY_CFLAG] |= TTY.CS8
 
@@ -649,10 +651,7 @@ class TTY {
   get_size() {
     var size = _io.TTY.getsize(self.std)
 
-    return {
-      cols: size.first(),
-      rows: size.last(),
-    }
+    return { cols: size.first(), rows: size.last() }
   }
 
   /**

@@ -58,7 +58,7 @@ class Result {
 
   to_string() {
     return '<env.Result ${self.values.length()} values, ' +
-      '${self.applied.length()} applied, ${self.skipped.length()} skipped>'
+        '${self.applied.length()} applied, ${self.skipped.length()} skipped>'
   }
 
   @to_string() {
