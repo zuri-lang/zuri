@@ -107,7 +107,7 @@ that delegates its setup to a helper must declare those fields:
 
 ```zuri
 class Delayed {
-  var ready          # required: setup() cannot declare it
+  var ready # required: setup() cannot declare it
 
   @new() {
     self.setup()
@@ -335,7 +335,7 @@ fields with `var`:
 
 ```zuri
 class A {
-  var from_helper          # required
+  var from_helper # required
 
   @new() {
     self.setup()

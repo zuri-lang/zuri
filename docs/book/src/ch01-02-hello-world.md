@@ -269,9 +269,17 @@ Here is a file written in a hurry:
 <span class="filename">Filename: rooms.zu</span>
 
 ```zuri
-def area(width,height){return width*height}
-var rooms=[ [3,4],[5,6] ]
-for room in rooms { echo area(room[0],room[1]) }
+def area(width, height) {
+  return width * height
+}
+
+var rooms = [
+  [3, 4],
+  [5, 6],
+]
+for room in rooms {
+  echo area(room[0], room[1])
+}
 ```
 
 ```console

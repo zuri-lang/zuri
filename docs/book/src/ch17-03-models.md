@@ -85,18 +85,18 @@ class Post < Model {
   var created_at
   var updated_at
 
-  var author        # holds the association, once loaded
+  var author # holds the association, once loaded
 
   static define(model: Definition) {
-    model.table('articles')         # the plural of the class otherwise
-    model.primary_key('id')         # id otherwise
-    model.timestamps()              # created_at and updated_at
+    model.table('articles') # the plural of the class otherwise
+    model.primary_key('id') # id otherwise
+    model.timestamps() # created_at and updated_at
     model.cast('published', 'bool')
     model.belongs_to('author', Author)
     model.validate('title', validate.required().string().max_length(200))
     model.fillable(['title', 'published'])
     model.hidden(['internal_notes'])
-    model.transient(['preview'])    # fields that are not columns
+    model.transient(['preview']) # fields that are not columns
     model.scope('published', @(query, _) => query.where({ published: true }))
   }
 }
@@ -251,7 +251,11 @@ db.schema.create_table('authors', @(table: Blueprint) {
 
 db.model(Author).create({ name: 'Ada', born: 1815, died: 1852 })
 
-for attempt in [{ name: 'Ada' }, { name: 'Grace', born: 1906, died: 1900 }, { name: '' }] {
+for attempt in [
+  { name: 'Ada' },
+  { name: 'Grace', born: 1906, died: 1900 },
+  { name: '' },
+] {
   catch {
     db.model(Author).create(attempt)
   } as error {
@@ -346,8 +350,7 @@ echo db.model(Post).create({ title: 'On Engines' }).slug
 
 catch {
   db.model(Post).create({ title: 'Refused' })
-} as _error {
-}
+} as _error {}
 
 echo db.model(Post).count()
 echo db.fetch_column('select what from audit', nil, nil)
@@ -384,7 +387,10 @@ class Post < Model {
 
   static define(model: Definition) {
     model.cast('published', 'bool')
-    model.scope('popular', @(query, least) => query.where('views >= ?', [least]))
+    model.scope(
+      'popular',
+      @(query, least) => query.where('views >= ?', [least]),
+    )
   }
 }
 
@@ -409,7 +415,9 @@ var published = db.model(Post).where({ published: true })
 echo published.count()
 echo published.order('views desc').limit(2).pluck('title')
 echo published.scope('popular', 500).pluck('title')
-echo db.model(Post).where({ title: ['On Looms', 'On Bugs'] }).count()
+echo db.model(Post).where({
+  title: ['On Looms', 'On Bugs'],
+}).count()
 echo db.model(Post).where_not({ published: true }).first().title
 echo db.model(Post).sum('views')
 echo db.model(Post).order('id').page(2, 3).records.map(@(post) => post.title)
@@ -480,10 +488,15 @@ declares. The keys are named for the class name in snake case and
 options name them otherwise:
 
 ```zuri,ignore
-model.belongs_to('writer', Author, { foreign_key: 'written_by', owner_key: 'id' })
+model.belongs_to('writer', Author, {
+  foreign_key: 'written_by',
+  owner_key: 'id',
+})
 model.has_many('posts', Post, { foreign_key: 'written_by', local_key: 'id' })
 model.belongs_to_many('tags', Tag, {
-  through: 'taggings', foreign_key: 'post_id', other_key: 'tag_id',
+  through: 'taggings',
+  foreign_key: 'post_id',
+  other_key: 'tag_id',
 })
 ```
 

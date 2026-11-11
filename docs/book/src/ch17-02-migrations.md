@@ -150,11 +150,11 @@ var directory = os.create_temp_dir('guide-')
 def write(name, table) {
   file(os.join_paths(directory, name), 'w').write(
     'import sql { Blueprint, Connection, Transaction }\n\n' +
-      'def up(db: Transaction|Connection) {\n' +
-      "  db.schema.create_table('${table}', @(table: Blueprint) {\n" +
-      '    table.id()\n  })\n}\n\n' +
-      'def down(db: Transaction|Connection) {\n' +
-      "  db.schema.drop_table('${table}')\n}\n",
+        'def up(db: Transaction|Connection) {\n' +
+        "  db.schema.create_table('${table}', @(table: Blueprint) {\n" +
+        '    table.id()\n  })\n}\n\n' +
+        'def down(db: Transaction|Connection) {\n' +
+        "  db.schema.drop_table('${table}')\n}\n",
   )
 }
 
@@ -184,10 +184,10 @@ Both directions take a limit. `steps` counts migrations; `to` names
 one:
 
 ```zuri,ignore
-migrator.up({ steps: 1 })                       # the next one
-migrator.up({ to: '20261012091500_add_slug' })  # up to and including it
-migrator.down({ steps: 2 })                     # the two most recent
-migrator.down({ to: '20261011143000_create' })  # leave it the latest
+migrator.up({ steps: 1 }) # the next one
+migrator.up({ to: '20261012091500_add_slug' }) # up to and including it
+migrator.down({ steps: 2 }) # the two most recent
+migrator.down({ to: '20261011143000_create' }) # leave it the latest
 ```
 
 Every migration about to be rolled back is checked before the first
@@ -252,17 +252,19 @@ import sql.migrate { Migrator }
 var directory = os.create_temp_dir('guide-')
 
 var head = 'import sql { Blueprint, Connection, Transaction }\n\n' +
-  'def up(db: Transaction|Connection) {\n'
+    'def up(db: Transaction|Connection) {\n'
 
 file(os.join_paths(directory, '1_create_posts.zu'), 'w').write(
-  head + "  db.schema.create_table('posts', @(table: Blueprint) {\n" +
-    '    table.id()\n  })\n}\n',
+  head +
+      "  db.schema.create_table('posts', @(table: Blueprint) {\n" +
+      '    table.id()\n  })\n}\n',
 )
 
 file(os.join_paths(directory, '2_broken.zu'), 'w').write(
-  head + "  db.schema.create_table('half', @(table: Blueprint) {\n" +
-    '    table.id()\n  })\n' +
-    "  db.exec('this is not sql', nil)\n}\n",
+  head +
+      "  db.schema.create_table('half', @(table: Blueprint) {\n" +
+      '    table.id()\n  })\n' +
+      "  db.exec('this is not sql', nil)\n}\n",
 )
 
 var db = sql.open(':memory:')
@@ -310,7 +312,10 @@ import sql.migrate { Migrator }
 
 var db = sql.open(env.require('DATABASE_URL'))
 
-Migrator(db, { directory: os.join_paths(os.dir_name(__file__), 'migrations') }).up()
+Migrator(
+  db,
+  { directory: os.join_paths(os.dir_name(__file__), 'migrations') },
+).up()
 ```
 
 A migration directory found from `__file__` travels with the program

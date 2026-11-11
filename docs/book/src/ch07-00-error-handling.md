@@ -550,7 +550,9 @@ def only_handle_missing(work) {
 echo only_handle_missing(@() => 'fine')
 
 catch {
-  only_handle_missing(@() { raise ValueError('not mine') })
+  only_handle_missing(@() {
+    raise ValueError('not mine')
+  })
 } as e {
   echo '${e.type}: ${e.message}'
 }

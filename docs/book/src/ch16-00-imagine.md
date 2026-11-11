@@ -82,10 +82,14 @@ make one — the module can draw its own test subject:
 import imagine { Image }
 
 Image(320, 240, '#1e3a5f')
-  .fill_circle(220, 70, 40, '#ffd166')
-  .fill_rect(0, 170, 320, 70, '#2a9d8f')
-  .fill_polygon([[40, 170], [110, 80], [180, 170]], '#264653')
-  .save('photo.jpg')
+    .fill_circle(220, 70, 40, '#ffd166')
+    .fill_rect(0, 170, 320, 70, '#2a9d8f')
+    .fill_polygon([
+      [40, 170],
+      [110, 80],
+      [180, 170],
+    ], '#264653')
+    .save('photo.jpg')
 
 echo Image.open('photo.jpg').size()
 ```
@@ -103,9 +107,7 @@ Everything from here on assumes that file exists in the working directory.
 ```zuri
 import imagine { Image }
 
-Image.open('photo.jpg')
-  .thumbnail(400, 400)
-  .save('thumb.webp')
+Image.open('photo.jpg').thumbnail(400, 400).save('thumb.webp')
 ```
 
 Three lines: decode, shrink, encode. The format on the way in comes
@@ -118,9 +120,9 @@ Building an image from scratch works the same way.
 import imagine { Image, Color }
 
 Image(400, 200, '#0f172a')
-  .fill_circle(200, 100, 70, '#38bdf8')
-  .circle(200, 100, 70, 'white', { thickness: 3 })
-  .save('badge.png')
+    .fill_circle(200, 100, 70, '#38bdf8')
+    .circle(200, 100, 70, 'white', { thickness: 3 })
+    .save('badge.png')
 ```
 
 ![A dark rectangle with a cyan circle outlined in white](imagine/images/first-image.png)
@@ -143,17 +145,17 @@ return it so the chain continues.
 ```zuri
 var original = Image.open('photo.jpg')
 
-var small = original.thumbnail(200, 200)   # original is untouched
-small.grayscale()                          # small is now grey
+var small = original.thumbnail(200, 200) # original is untouched
+small.grayscale() # small is now grey
 
-echo original.size()                       # still the full size, still colour
+echo original.size() # still the full size, still colour
 ```
 
 That means a mixed chain reads correctly, and it means `clone()` is what
 you reach for when you want to keep an image before filtering it.
 
 ```zuri,ignore
-var greyed = photo.clone().grayscale()     # photo keeps its colour
+var greyed = photo.clone().grayscale() # photo keeps its colour
 ```
 
 ## Colours
@@ -189,18 +191,18 @@ import imagine { Color }
 
 var brand = Color.hex('#4f46e5')
 
-brand.r                    # 79
-brand.to_hex()             # '#4f46e5'
-brand.to_packed()          # 0x4F46E5FF
+brand.r # 79
+brand.to_hex() # '#4f46e5'
+brand.to_packed() # 0x4F46E5FF
 
-brand.with_alpha(128)      # half transparent
-brand.fade(0.5)            # halves whatever alpha it already had
-brand.lighten(20)          # 20 percentage points of HSL lightness
+brand.with_alpha(128) # half transparent
+brand.fade(0.5) # halves whatever alpha it already had
+brand.lighten(20) # 20 percentage points of HSL lightness
 brand.darken(20)
 brand.saturate(15)
 brand.desaturate(15)
 brand.rotate_hue(180)
-brand.mix('white', 0.25)   # a quarter of the way to white
+brand.mix('white', 0.25) # a quarter of the way to white
 brand.invert()
 brand.to_grayscale()
 ```
@@ -209,7 +211,7 @@ brand.to_grayscale()
 what happens when it is drawn onto something solid:
 
 ```zuri
-Color(255, 0, 0, 128).over('white')    # '#ff7f7f'
+Color(255, 0, 0, 128).over('white') # '#ff7f7f'
 ```
 
 ### Colour Spaces
@@ -219,14 +221,14 @@ the same ones it and CSS use: hue in degrees, everything else in
 percentage points from 0 to 100.
 
 ```zuri
-Color.hsl(240, 100, 50)            # '#0000ff'
-Color.hsv(120, 100, 100)           # '#00ff00'
-Color.hwb(0, 0, 0)                 # '#ff0000'
-Color.cmyk(0, 100, 100, 0)         # '#ff0000'
-Color.lab(40.7, 50.6, -79.1)       # perceptually uniform
+Color.hsl(240, 100, 50) # '#0000ff'
+Color.hsv(120, 100, 100) # '#00ff00'
+Color.hwb(0, 0, 0) # '#ff0000'
+Color.cmyk(0, 100, 100, 0) # '#ff0000'
+Color.lab(40.7, 50.6, -79.1) # perceptually uniform
 Color.xyz(0.2, 0.15, 0.7)
 
-brand.to_hsl()      # { h: 243.4, s: 75.4, l: 58.6, a: 255 }
+brand.to_hsl() # { h: 243.4, s: 75.4, l: 58.6, a: 255 }
 brand.to_hsv()
 brand.to_hwb()
 brand.to_cmyk()
@@ -244,10 +246,10 @@ generating colours and wrong for predicting a printing press.
 ```zuri
 var background = Color.hex('#1e293b')
 
-background.luminance()                  # 0 to 1, WCAG relative luminance
-background.contrast_ratio('#ffffff')    # 1 to 21
-background.is_dark()                    # true
-background.best_contrast()              # white, since the background is dark
+background.luminance() # 0 to 1, WCAG relative luminance
+background.contrast_ratio('#ffffff') # 1 to 21
+background.is_dark() # true
+background.best_contrast() # white, since the background is dark
 ```
 
 WCAG asks for a ratio of at least 4.5 for normal text and 3 for large
@@ -265,9 +267,9 @@ card.text(20, 20, name, font, label)
 ### Opening an Image
 
 ```zuri,ignore
-var photo = Image.open('photo.jpg')          # from a path
-var photo = Image.open(file('photo.jpg'))    # from an open file
-var photo = Image.decode(upload)             # from bytes in memory
+var photo = Image.open('photo.jpg') # from a path
+var photo = Image.open(file('photo.jpg')) # from an open file
+var photo = Image.decode(upload) # from bytes in memory
 ```
 
 The format is detected from the contents rather than the name, so a
@@ -278,8 +280,8 @@ file extension.
 `Image.decode()` takes options:
 
 ```zuri,ignore
-Image.decode(upload, { format: 'png' })   # fail unless it really is a PNG
-Image.decode(raw, { orient: false })      # skip EXIF auto-rotation
+Image.decode(upload, { format: 'png' }) # fail unless it really is a PNG
+Image.decode(raw, { orient: false }) # skip EXIF auto-rotation
 ```
 
 Naming the format explicitly is worth doing when you already know it
@@ -320,7 +322,7 @@ the format name.
 ```zuri,ignore
 photo.save('out.png')
 photo.save('out.jpg', { quality: 90 })
-photo.save('out.dat', { format: 'webp' })   # extension overridden
+photo.save('out.dat', { format: 'webp' }) # extension overridden
 ```
 
 The format comes from the extension unless `format` says otherwise. To
@@ -447,9 +449,9 @@ differ in what they sacrifice — `cover()` loses part of the image,
 `contain()` adds bars:
 
 ```zuri,ignore
-photo.cover(300, 300)                              # crops to a square
-photo.cover(300, 300, { anchor: TOP })             # keeps the top, crops the bottom
-photo.contain(300, 300, { background: 'white' })   # letterboxes instead
+photo.cover(300, 300) # crops to a square
+photo.cover(300, 300, { anchor: TOP }) # keeps the top, crops the bottom
+photo.contain(300, 300, { background: 'white' }) # letterboxes instead
 ```
 
 The same 320x180 image asked for a 120x120 result four ways:
@@ -477,7 +479,7 @@ face is rarely in the bottom third.
 
 ```zuri,ignore
 photo.thumbnail(200, 200, LANCZOS)
-sprite.scale(4, NEAREST)             # keeps pixel art crisp
+sprite.scale(4, NEAREST) # keeps pixel art crisp
 ```
 
 A 16x16 sprite enlarged seven times over, so the differences are
@@ -496,11 +498,11 @@ the fallback when that shows.
 ### Cropping, Padding and Trimming
 
 ```zuri,ignore
-photo.crop(100, 50, 400, 300)      # x, y, width, height
-photo.pad(20)                      # 20 pixels on every side
+photo.crop(100, 50, 400, 300) # x, y, width, height
+photo.pad(20) # 20 pixels on every side
 photo.pad(10, 20, 10, 20, 'white') # top, right, bottom, left, colour
-photo.trim()                       # remove a uniform border
-photo.trim({ tolerance: 8 })       # allow for JPEG noise in the border
+photo.trim() # remove a uniform border
+photo.trim({ tolerance: 8 }) # allow for JPEG noise in the border
 ```
 
 `crop()` requires its rectangle to fit inside the image and raises
@@ -518,15 +520,15 @@ because a "white" border from a lossy format is not exactly white.
 ### Rotating and Mirroring
 
 ```zuri,ignore
-photo.rotate_90()                  # lossless
+photo.rotate_90() # lossless
 photo.rotate_180()
 photo.rotate_270()
-photo.rotate(37, 'white')          # resamples, grows the canvas
+photo.rotate(37, 'white') # resamples, grows the canvas
 
 photo.flip_horizontal()
 photo.flip_vertical()
 photo.flip(FLIP_BOTH)
-photo.transpose()                  # reflect across the main diagonal
+photo.transpose() # reflect across the main diagonal
 ```
 
 Quarter turns are exact: every pixel is moved, none is resampled. Any
@@ -541,8 +543,8 @@ meant to be displayed upright. `Image.open()` and `Image.decode()`
 handle this for you.
 
 ```zuri
-Image.open('photo.jpg')                       # upright
-Image.open('photo.jpg', { orient: false })    # exactly as stored
+Image.open('photo.jpg') # upright
+Image.open('photo.jpg', { orient: false }) # exactly as stored
 ```
 
 All eight orientation values are handled, including the four mirrored
@@ -559,15 +561,15 @@ photo.grayscale().contrast(15).sharpen(0.5)
 ### Tone and Exposure
 
 ```zuri,ignore
-photo.brightness(20)         # -255 to 255, added to each channel
-photo.contrast(15)           # -100 to 100, around mid-grey
-photo.gamma(1.2)             # above 1 lifts midtones, below 1 lowers them
-photo.levels(20, 235)        # stretch this input range to full scale
-photo.levels(20, 235, 1.1)   # ...with a midtone curve
-photo.threshold(128)         # every pixel to black or white
-photo.posterize(6)           # six evenly spaced steps per channel
-photo.invert()               # a photographic negative
-photo.opacity(0.5)           # scale the alpha channel
+photo.brightness(20) # -255 to 255, added to each channel
+photo.contrast(15) # -100 to 100, around mid-grey
+photo.gamma(1.2) # above 1 lifts midtones, below 1 lowers them
+photo.levels(20, 235) # stretch this input range to full scale
+photo.levels(20, 235, 1.1) # ...with a midtone curve
+photo.threshold(128) # every pixel to black or white
+photo.posterize(6) # six evenly spaced steps per channel
+photo.invert() # a photographic negative
+photo.opacity(0.5) # scale the alpha channel
 ```
 
 `levels()` is the single most useful correction for a flat or
@@ -584,8 +586,8 @@ Note the difference between `posterize()` and `quantize()`:
 to suit the image, so a photograph survives far fewer of them.
 
 ```zuri,ignore
-photo.quantize(32)                # 32 well-chosen colours
-photo.quantize(16, true)          # ...with dithering
+photo.quantize(32) # 32 well-chosen colours
+photo.quantize(16, true) # ...with dithering
 ```
 
 `auto_levels()` does the same job as `levels()` without being told
@@ -597,12 +599,12 @@ below.
 ```zuri,ignore
 photo.grayscale()
 photo.sepia()
-photo.saturate(1.4)               # 0 removes colour, 1 is unchanged
+photo.saturate(1.4) # 0 removes colour, 1 is unchanged
 photo.hue_rotate(45)
-photo.tint('#ff8800', 0.3)        # blend a flat colour in
-photo.colorize('#4f46e5')         # monochrome in one colour
+photo.tint('#ff8800', 0.3) # blend a flat colour in
+photo.colorize('#4f46e5') # monochrome in one colour
 photo.duotone('#1e1b4b', '#fbbf24')
-photo.flatten('white')            # composite over a colour, drop alpha
+photo.flatten('white') # composite over a colour, drop alpha
 ```
 
 `grayscale()` weights the channels for perceived brightness, so a bright
@@ -616,9 +618,9 @@ from `saturate(0)`, which keeps HSL lightness and makes both mid-grey.
 ### Blur, Sharpen and Detail
 
 ```zuri,ignore
-photo.blur(3)                # Gaussian; the argument is its sigma
+photo.blur(3) # Gaussian; the argument is its sigma
 photo.sharpen(0.8)
-photo.smooth()               # a cheap, harsher 3x3 average
+photo.smooth() # a cheap, harsher 3x3 average
 photo.emboss()
 photo.edges()
 photo.mean_removal()
@@ -654,7 +656,7 @@ var curve = filters.build_lut(@(value) {
   return 255 * t * t * (3 - 2 * t)
 })
 
-photo.apply_lut(curve, curve, curve, nil)   # nil leaves alpha alone
+photo.apply_lut(curve, curve, curve, nil) # nil leaves alpha alone
 ```
 
 **A colour matrix** covers anything that mixes channels — saturation,
@@ -664,12 +666,7 @@ constant in 0-255 units.
 
 ```zuri,ignore
 # Swap the red and blue channels.
-photo.apply_matrix([
-  0, 0, 1, 0, 0,
-  0, 1, 0, 0, 0,
-  1, 0, 0, 0, 0,
-  0, 0, 0, 1, 0,
-])
+photo.apply_matrix([0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0])
 ```
 
 Applying several matrices in a row is both slower and less accurate than
@@ -678,7 +675,7 @@ combining them and applying the result once:
 ```zuri,ignore
 var both = filters.combine_matrices(
   filters.grayscale_matrix(),
-  filters.saturation_matrix(1.2)
+  filters.saturation_matrix(1.2),
 )
 
 photo.apply_matrix(both)
@@ -688,11 +685,7 @@ photo.apply_matrix(both)
 neighbours.
 
 ```zuri,ignore
-photo.convolve([
-  0, -1, 0,
-  -1, 5, -1,
-  0, -1, 0,
-])
+photo.convolve([0, -1, 0, -1, 5, -1, 0, -1, 0])
 ```
 
 The kernel must be square with an odd side. The default divisor of 0
@@ -730,9 +723,9 @@ pixel corners rather than centres, so a rectangle from (0, 0) to
 (10, 10) covers exactly the first ten pixels in each direction.
 
 ```zuri,ignore
-image.pixel(x, y, color)                        # one pixel, blended
+image.pixel(x, y, color) # one pixel, blended
 image.line(x1, y1, x2, y2, color)
-image.rect(x, y, w, h, color)                   # outline
+image.rect(x, y, w, h, color) # outline
 image.fill_rect(x, y, w, h, color)
 image.rounded_rect(x, y, w, h, radius, color)
 image.fill_rounded_rect(x, y, w, h, radius, color)
@@ -741,8 +734,8 @@ image.fill_circle(cx, cy, r, color)
 image.ellipse(cx, cy, rx, ry, color)
 image.fill_ellipse(cx, cy, rx, ry, color)
 image.arc(cx, cy, rx, ry, start, end, color)
-image.pie(cx, cy, rx, ry, start, end, color)    # closed through the centre
-image.chord(cx, cy, rx, ry, start, end, color)  # closed along the chord
+image.pie(cx, cy, rx, ry, start, end, color) # closed through the centre
+image.chord(cx, cy, rx, ry, start, end, color) # closed along the chord
 image.bezier(x1, y1, cx1, cy1, cx2, cy2, x2, y2, color)
 ```
 
@@ -758,8 +751,8 @@ partly overlaps.
 ### Strokes and Anti-aliasing
 
 ```zuri,ignore
-image.thickness(4)         # applies to every subsequent stroke
-image.antialias(false)     # hard edges
+image.thickness(4) # applies to every subsequent stroke
+image.antialias(false) # hard edges
 ```
 
 Both are settings on the image rather than per-call arguments, though a
@@ -788,9 +781,9 @@ How an open stroke finishes at its two ends is a separate choice from
 its width:
 
 ```zuri,ignore
-image.cap(CAP_ROUND)     # a half-disc. The default.
-image.cap(CAP_SQUARE)    # a square, reaching the same distance
-image.cap(CAP_BUTT)      # stops dead at the endpoint
+image.cap(CAP_ROUND) # a half-disc. The default.
+image.cap(CAP_SQUARE) # a square, reaching the same distance
+image.cap(CAP_BUTT) # stops dead at the endpoint
 ```
 
 ![the same line drawn with butt, round and square caps, with its endpoints marked](imagine/images/caps.png)
@@ -821,9 +814,21 @@ stroke and goes through the same one. A shape not listed above can be
 drawn by supplying the points:
 
 ```zuri,ignore
-image.fill_polygon([[10, 10], [90, 30], [50, 80]], '#4f46e5')
-image.polygon([[10, 10], [90, 30], [50, 80]], 'black')     # outline, closed
-image.polyline([[10, 10], [90, 30], [50, 80]], 'black')    # not closed
+image.fill_polygon([
+  [10, 10],
+  [90, 30],
+  [50, 80],
+], '#4f46e5')
+image.polygon([
+  [10, 10],
+  [90, 30],
+  [50, 80],
+], 'black') # outline, closed
+image.polyline([
+  [10, 10],
+  [90, 30],
+  [50, 80],
+], 'black') # not closed
 ```
 
 Points may be a list of `[x, y]` pairs or a flat list of alternating
@@ -840,10 +845,10 @@ other convention, which leaves its middle empty.
 ### Filling Areas
 
 ```zuri,ignore
-image.fill('#0f172a')          # every pixel, ignoring the clip
-image.clear()                  # every pixel to transparent
+image.fill('#0f172a') # every pixel, ignoring the clip
+image.clear() # every pixel to transparent
 image.flood_fill(x, y, color)
-image.flood_fill(x, y, color, 12)   # with a tolerance
+image.flood_fill(x, y, color, 12) # with a tolerance
 ```
 
 Gradients get [their own section](#gradients) below.
@@ -900,15 +905,22 @@ photo.radial_gradient(
   photo.width() / 2,
   photo.height() / 2,
   photo.width() * 0.7,
-  [[0, Color(0, 0, 0, 0)], [1, Color(0, 0, 0, 180)]],
-  { blend: true }
+  [
+    [0, Color(0, 0, 0, 0)],
+    [1, Color(0, 0, 0, 180)],
+  ],
+  { blend: true },
 )
 
 # a caption scrim along the bottom
-photo.linear_gradient(0, photo.height() - 120, 0, photo.height(), [
-  Color(0, 0, 0, 0),
-  Color(0, 0, 0, 200),
-], { blend: true })
+photo.linear_gradient(
+  0,
+  photo.height() - 120,
+  0,
+  photo.height(),
+  [Color(0, 0, 0, 0), Color(0, 0, 0, 200)],
+  { blend: true },
+)
 ```
 
 `{ rect: {x, y, width, height} }` confines the fill to a rectangle
@@ -923,7 +935,7 @@ left.
 
 ```zuri,ignore
 image.clip(20, 20, 100, 100)
-image.fill_rect(0, 0, 500, 500, 'red')   # only the clip is painted
+image.fill_rect(0, 0, 500, 500, 'red') # only the clip is painted
 image.clear_clip()
 ```
 
@@ -943,9 +955,11 @@ always works:
 ```zuri
 import imagine { Image, StrokeFont }
 
-Image(300, 70, 'white')
-  .text(16, 20, 'Always available', StrokeFont(28), '#0f172a')
-  .save('label.png')
+Image(
+  300,
+  70,
+  'white',
+).text(16, 20, 'Always available', StrokeFont(28), '#0f172a').save('label.png')
 ```
 
 `Font.builtin(size)` is the same thing under a name you will find from
@@ -961,7 +975,7 @@ than part of the design:
 ![the built-in font at four weights](imagine/images/builtin-weights.png)
 
 ```zuri
-StrokeFont(24)              # regular
+StrokeFont(24) # regular
 StrokeFont(24).weight(0.13) # bold
 StrokeFont(24).weight(0.05) # light
 ```
@@ -1170,7 +1184,7 @@ composite the layer.
 var stencil = photo.layer()
 stencil.fill_circle(200, 200, 150, 'white')
 
-photo.mask(stencil)     # everything outside the circle becomes transparent
+photo.mask(stencil) # everything outside the circle becomes transparent
 ```
 
 Each pixel keeps its colour and takes its transparency from the mask:
@@ -1204,13 +1218,13 @@ photo.draw_image(glow, 0, 0, { blend: BLEND_SCREEN, opacity: 0.7 })
 ## Inspecting an Image
 
 ```zuri,ignore
-photo.width()          # dimensions
+photo.width() # dimensions
 photo.height()
-photo.size()           # { width, height }
-photo.bounds()         # { x: 0, y: 0, width, height }
-photo.format()         # what it was decoded from, or nil
-photo.is_opaque()      # walks the alpha channel
-photo.info()           # all of the above, plus a pixel count
+photo.size() # { width, height }
+photo.bounds() # { x: 0, y: 0, width, height }
+photo.format() # what it was decoded from, or nil
+photo.is_opaque() # walks the alpha channel
+photo.info() # all of the above, plus a pixel count
 ```
 
 Beyond the shape, four methods read what is actually in the image.
@@ -1242,7 +1256,7 @@ palette first, so it costs about the same whatever the original size.
 ```zuri,ignore
 var accent = photo.dominant_colors(1)[0]
 
-page.fill(accent.darken(40))       # a placeholder while the photo loads
+page.fill(accent.darken(40)) # a placeholder while the photo loads
 ```
 
 ![an image beside the five colours occupying most of it](imagine/images/dominant-colors.png)
@@ -1263,10 +1277,10 @@ import imagine { Animation }
 
 var animation = Animation.open('loading.gif')
 
-animation.length()      # frame count
-animation.duration()    # milliseconds for one pass
-animation.frame(0)      # one frame, as an Image
-animation.frames()      # the live list
+animation.length() # frame count
+animation.duration() # milliseconds for one pass
+animation.frame(0) # one frame, as an Image
+animation.frames() # the live list
 ```
 
 Frames come back already composited against whatever preceded them, so
@@ -1285,18 +1299,18 @@ iter var i = 0; i < 30; i++ {
   frames.append(frame)
 }
 
-Animation(frames, 40, 0).save('pulse.gif')     # 40ms per frame, loops forever
+Animation(frames, 40, 0).save('pulse.gif') # 40ms per frame, loops forever
 ```
 
 ![an animated GIF of a growing, colour-shifting circle](imagine/images/animation.gif)
 
 ```zuri,ignore
 animation
-  .map(@(frame) {
-    return frame.grayscale().blur(1)
-  })
-  .repeat(3)
-  .save('out.gif')
+    .map(@(frame) {
+      return frame.grayscale().blur(1)
+    })
+    .repeat(3)
+    .save('out.gif')
 ```
 
 `map()` copies each frame before the function sees it, so a filter chain
@@ -1323,7 +1337,7 @@ var buffer = image.pixels()
 var total = buffer.length()
 
 iter var at = 0; at < total; at += 4 {
-  buffer[at] = 255 - buffer[at]        # invert red only
+  buffer[at] = 255 - buffer[at] # invert red only
 }
 ```
 
@@ -1349,7 +1363,7 @@ a destructive filter and restore it afterwards:
 var saved = image.pixels().clone()
 
 image.blur(8)
-image.set_pixels(saved)     # back where it started
+image.set_pixels(saved) # back where it started
 ```
 
 `Image.from_pixels()` builds an image around a buffer that came from
@@ -1401,9 +1415,9 @@ image.rotate('sideways')
 between "not a colour" and "not a string":
 
 ```zuri,ignore
-Color.hex('nonsense')        # ValueError, from colors
-Color.named('chartroose')    # ValueError, from colors
-Color.hex(42)                # TypeError, from the type declaration
+Color.hex('nonsense') # ValueError, from colors
+Color.named('chartroose') # ValueError, from colors
+Color.hex(42) # TypeError, from the type declaration
 ```
 
 A value of the right type but the wrong *range* is still an
@@ -1411,8 +1425,8 @@ A value of the right type but the wrong *range* is still an
 rather than a type the runtime can check:
 
 ```zuri,ignore
-Image(0, 100)                # BoundsError, not TypeError
-filters.gamma_lut(-1)        # ImageError
+Image(0, 100) # BoundsError, not TypeError
+filters.gamma_lut(-1) # ImageError
 ```
 
 `DecodeError` is the one to always be ready for, since anything arriving
@@ -1473,9 +1487,9 @@ def make_thumbnail(upload) {
   }
 
   return Image.decode(upload)
-    .cover(400, 400, { anchor: TOP, filter: LANCZOS })
-    .sharpen(0.4)
-    .encode('webp')
+      .cover(400, 400, { anchor: TOP, filter: LANCZOS })
+      .sharpen(0.4)
+      .encode('webp')
 }
 ```
 

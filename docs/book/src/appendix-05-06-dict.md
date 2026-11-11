@@ -370,7 +370,7 @@ provided callback function with the value and key as arguments.
 Example:
 
 ```zuri,ignore
-var myDict = {a: 1, b: 2, c: 3}
+var myDict = { a: 1, b: 2, c: 3 }
 myDict.each(@(value, key) {
   echo '${key}: ${value}'
 })
@@ -403,7 +403,7 @@ called with the value and key as arguments.
 Example:
 
 ```zuri,ignore
-var myDict = {a: 1, b: 2, c: 3}
+var myDict = { a: 1, b: 2, c: 3 }
 var filteredDict = myDict.filter(@(value, key) {
   return value > 1
 })
@@ -436,7 +436,7 @@ otherwise it returns false.
 Example:
 
 ```zuri,ignore
-var myDict = {a: 1, b: 2, c: 3}
+var myDict = { a: 1, b: 2, c: 3 }
 var hasGreaterThanTwo = myDict.some(@(value, key) {
   return value > 2
 })
@@ -470,7 +470,7 @@ false.
 Example:
 
 ```zuri,ignore
-var myDict = {a: 1, b: 2, c: 3}
+var myDict = { a: 1, b: 2, c: 3 }
 var allGreaterThanZero = myDict.every(@(value, key) {
   return value > 0
 })
@@ -504,7 +504,7 @@ after processing all key-value pairs in the dictionary.
 Example:
 
 ```zuri,ignore
-var myDict = {a: 1, b: 2, c: 3}
+var myDict = { a: 1, b: 2, c: 3 }
 var sum = myDict.reduce(@(accumulator, value, key) {
   return accumulator + value
 }, 0)

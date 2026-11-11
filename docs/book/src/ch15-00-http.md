@@ -219,7 +219,7 @@ import http
 
 var page = http.get('https://example.com')
 
-echo page.status          # 200
+echo page.status # 200
 echo page.headers.get('content-type')
 echo page.as_text()
 ```
@@ -284,7 +284,9 @@ import http
 
 # Reading
 http.get('https://example.com/items')
-http.get('https://example.com/items', { query: { page: 2 } })
+http.get('https://example.com/items', {
+  query: { page: 2 },
+})
 
 # Creating and updating
 http.post('https://example.com/items', { name: 'Widget' })
@@ -340,11 +342,11 @@ The second argument to `post()`, `put()` and `patch()` is the body,
 and what it is decides how it is sent:
 
 ```zuri,ignore
-api.post('/items', { name: 'Widget', price: 9 })   # JSON
-api.post('/items', ['a', 'b'])                     # JSON
-api.post('/items', 'raw text')                     # sent as-is
+api.post('/items', { name: 'Widget', price: 9 }) # JSON
+api.post('/items', ['a', 'b']) # JSON
+api.post('/items', 'raw text') # sent as-is
 api.post('/items', file('photo.jpg', 'rb').read()) # sent as-is
-api.post('/items', form_builder)                   # multipart
+api.post('/items', form_builder) # multipart
 ```
 
 A dictionary or list becomes JSON with a matching `Content-Type`; a
@@ -376,7 +378,10 @@ api.put('/documents/1', nil, {
 
 # A form whose field repeats
 api.post('/search', nil, {
-  form: { tag: ['new', 'featured'], q: 'zuri' },
+  form: {
+    tag: ['new', 'featured'],
+    q: 'zuri',
+  },
 })
 ```
 
@@ -396,7 +401,12 @@ var form = http.MultipartBuilder()
 
 form.add_field('title', 'Holiday')
 form.add_field('album', '2026')
-form.add_file('photo', 'beach.jpg', file('beach.jpg', 'rb').read(), 'image/jpeg')
+form.add_file(
+  'photo',
+  'beach.jpg',
+  file('beach.jpg', 'rb').read(),
+  'image/jpeg',
+)
 
 var response = http.post('https://example.com/photos', form)
 ```
@@ -433,10 +443,7 @@ it somewhere this client is not going — build it yourself:
 ```zuri,ignore
 var body = form.build()
 
-api.post('/photos', nil, {
-  body,
-  content_type: form.content_type(),
-})
+api.post('/photos', nil, { body, content_type: form.content_type() })
 ```
 
 > **Note**
@@ -454,18 +461,18 @@ boundary a peer can write into a field value to forge extra parts.
 ```zuri,ignore
 var response = api.get('/items/1')
 
-response.status              # 200
-response.reason_phrase()     # 'OK'
-response.version             # '1.1' or '2'
+response.status # 200
+response.reason_phrase() # 'OK'
+response.version # '1.1' or '2'
 response.headers.get('etag')
 
-response.as_text()           # the body, decoded as UTF-8
-response.as_dict()           # the body, parsed as JSON
-response.as_bytes()          # the body, untouched
+response.as_text() # the body, decoded as UTF-8
+response.as_dict() # the body, parsed as JSON
+response.as_bytes() # the body, untouched
 
-response.is_ok()             # 2xx
-response.is_redirect()       # 3xx
-response.is_error()          # 4xx or 5xx
+response.is_ok() # 2xx
+response.is_redirect() # 3xx
+response.is_error() # 4xx or 5xx
 ```
 
 `raise_for_status()` turns a 4xx or 5xx into a `StatusError` and
@@ -491,7 +498,11 @@ second time.
 
 ```zuri,ignore
 api.get('/search', {
-  query: { q: 'zuri', page: 2, tag: ['new', 'featured'] },
+  query: {
+    q: 'zuri',
+    page: 2,
+    tag: ['new', 'featured'],
+  },
   headers: { 'Accept-Language': 'en-GB' },
 })
 ```
@@ -503,8 +514,12 @@ merged over the client's own.
 ### Authentication
 
 ```zuri,ignore
-api.get('/me', { auth: ['bearer', token] })
-api.get('/me', { auth: ['basic', 'ada', 'lovelace'] })
+api.get('/me', {
+  auth: ['bearer', token],
+})
+api.get('/me', {
+  auth: ['basic', 'ada', 'lovelace'],
+})
 ```
 
 Credentials passed this way are scoped to the origin you addressed. If
@@ -521,8 +536,8 @@ number followed is on the response:
 ```zuri
 var final = http.get('https://example.com/old')
 
-final.redirects    # how many were followed
-final.responder    # the URL that finally answered
+final.redirects # how many were followed
+final.responder # the URL that finally answered
 ```
 
 A `303`, and in practice a `301` or `302`, becomes a `GET` with no
@@ -548,8 +563,10 @@ login and the requests after it behave the way a browser would:
 var session = http.client('https://example.com')
 session.enable_cookies()
 
-session.post('/login', nil, { form: { user: 'ada', password: secret } })
-session.get('/dashboard')     # sends the session cookie
+session.post('/login', nil, {
+  form: { user: 'ada', password: secret },
+})
+session.get('/dashboard') # sends the session cookie
 ```
 
 The jar applies RFC 6265's matching rules: a cookie without a `Domain`
@@ -567,7 +584,7 @@ var api = http.client('https://api.example.com', {
   write_timeout: 10000,
 })
 
-api.get('/slow', { timeout: 30000 })   # this one request
+api.get('/slow', { timeout: 30000 }) # this one request
 ```
 
 All timeouts are milliseconds. `max_retries` retries a failed request,
@@ -698,29 +715,29 @@ Name a route to build URLs from it later:
 ```zuri,ignore
 server.get('/users/:id', show_user, 'user.show')
 
-server.routes().url_for('user.show', { id: 42 })    # '/users/42'
+server.routes().url_for('user.show', { id: 42 }) # '/users/42'
 ```
 
 ### The Request Object
 
 ```zuri,ignore
 server.post('/items', @(request, response) {
-  request.method          # 'POST'
-  request.path            # decoded and normalised
-  request.target          # exactly as it arrived on the wire
-  request.version         # '1.1' or '2'
-  request.secure          # whether it came over TLS
+  request.method # 'POST'
+  request.path # decoded and normalised
+  request.target # exactly as it arrived on the wire
+  request.version # '1.1' or '2'
+  request.secure # whether it came over TLS
 
-  request.param('id')                 # a route parameter
-  request.query_param('page', '1')    # a query parameter, with a default
-  request.header('accept')            # a header field
-  request.cookie('session')           # a cookie
-  request.bearer_token()              # the token from an Authorization header
+  request.param('id') # a route parameter
+  request.query_param('page', '1') # a query parameter, with a default
+  request.header('accept') # a header field
+  request.cookie('session') # a cookie
+  request.bearer_token() # the token from an Authorization header
 
-  request.text()          # the body as text
-  request.json_body()     # the body parsed as JSON
-  request.form()          # urlencoded or multipart fields
-  request.file('avatar')  # an uploaded file
+  request.text() # the body as text
+  request.json_body() # the body parsed as JSON
+  request.form() # urlencoded or multipart fields
+  request.file('avatar') # an uploaded file
 })
 ```
 
@@ -734,9 +751,9 @@ An uploaded file is an `UploadedFile`:
 ```zuri,ignore
 var upload = request.file('avatar')
 
-upload.filename       # what the client claimed
-upload.safe_name()    # that, reduced to one path-safe segment
-upload.content_type   # what the client declared
+upload.filename # what the client claimed
+upload.safe_name() # that, reduced to one path-safe segment
+upload.content_type # what the client declared
 upload.size()
 upload.save_to('/var/uploads/' + upload.safe_name())
 ```
@@ -863,8 +880,8 @@ one, or a NUL byte meant to truncate a later check. Never join it to a
 path directly:
 
 ```zuri,ignore
-os.join_paths('./uploads', upload.filename)     # no
-os.join_paths('./uploads', upload.safe_name())  # yes
+os.join_paths('./uploads', upload.filename) # no
+os.join_paths('./uploads', upload.safe_name()) # yes
 ```
 
 `safe_name()` drops every directory component — both separators — and
@@ -909,7 +926,7 @@ The body is read into memory, bounded by the server's
 `max_body_size` — 10 MiB by default, which is deliberately small:
 
 ```zuri,ignore
-server.max_body_size = 50 * 1024 * 1024   # accept uploads up to 50 MB
+server.max_body_size = 50 * 1024 * 1024 # accept uploads up to 50 MB
 ```
 
 A request that *announces* a body over the limit is refused with `413
@@ -938,9 +955,9 @@ import http
 import validate
 
 var create_user = validate.schema({
-  name:  validate.required().string().max_length(100),
+  name: validate.required().string().max_length(100),
   email: validate.required().string().email(),
-  age:   validate.required().integer().gte(18).lte(120),
+  age: validate.required().integer().gte(18).lte(120),
 })
 
 server.post('/users', @(request, response) {
@@ -1001,9 +1018,9 @@ the handler caring which arrived.
 Take one source on its own by naming it:
 
 ```zuri,ignore
-request.validate(schema, 'body')     # only the body
-request.validate(schema, 'query')    # only the query string
-request.validate(schema, 'params')   # only the route parameters
+request.validate(schema, 'body') # only the body
+request.validate(schema, 'query') # only the query string
+request.validate(schema, 'params') # only the route parameters
 ```
 
 Two things are deliberately left out of the merge:
@@ -1074,18 +1091,18 @@ through `form_all()` or `request.query` directly and validated with
 ### The Response Object
 
 ```zuri,ignore
-response.text('plain')                    # text/plain
-response.html('<h1>hi</h1>')              # text/html
-response.json({ ok: true })               # application/json
-response.xml('<doc/>')                    # application/xml
-response.write('more')                    # append, no content type
+response.text('plain') # text/plain
+response.html('<h1>hi</h1>') # text/html
+response.json({ ok: true }) # application/json
+response.xml('<doc/>') # application/xml
+response.write('more') # append, no content type
 
-response.file('/var/www/report.pdf')      # streamed from disk
-response.download('/var/www/report.pdf')  # ...as an attachment
-response.render('pages/home', { user })   # a Wire template
+response.file('/var/www/report.pdf') # streamed from disk
+response.download('/var/www/report.pdf') # ...as an attachment
+response.render('pages/home', { user }) # a Wire template
 
-response.redirect('/elsewhere')           # 302 by default
-response.redirect('/elsewhere', 308)      # method-preserving
+response.redirect('/elsewhere') # 302 by default
+response.redirect('/elsewhere', 308) # method-preserving
 
 response.status = 201
 response.header('X-Thing', 'value')
@@ -1119,7 +1136,7 @@ server.use(@(request, response, next) {
   var started = time()
   next()
   echo '${request.method} ${request.path} ${response.status} ' +
-    '${(time() - started) * 1000}ms'
+      '${(time() - started) * 1000}ms'
 })
 ```
 
@@ -1152,7 +1169,7 @@ server.use(@(request, response, next) {
 
   response.on_finish(@{
     echo '${request.method} ${request.path} ${response.status} ' +
-      '${(time() - started) * 1000}ms'
+        '${(time() - started) * 1000}ms'
   })
 
   next()
@@ -1272,8 +1289,8 @@ cannot serve a compressed body to a client that asked for none.
 Turning it off, or moving the threshold:
 
 ```zuri,ignore
-server.compression = false          # off entirely
-server.compression_min_size = 4096  # only bodies over 4 KiB
+server.compression = false # off entirely
+server.compression_min_size = 4096 # only bodies over 4 KiB
 ```
 
 The list is an allowlist rather than a denylist on purpose. A JPEG, an
@@ -1351,10 +1368,10 @@ identifier in the cookie. [Sessions](#sessions) covers it.
 ```zuri,ignore
 import http.negotiate
 
-var type = negotiate.best_match(
-  request.header('accept'),
-  ['application/json', 'text/html']
-)
+var type = negotiate.best_match(request.header('accept'), [
+  'application/json',
+  'text/html',
+])
 ```
 
 `best_match()` picks what the client would most like out of what you
@@ -1426,26 +1443,32 @@ file logs its real size rather than zero.
 | `trust_proxy` | `false` | log the forwarded client address rather than the peer |
 
 ```zuri
-server.use(middleware.logger({
-  sink: @(line) { log_file.puts(line + '\n') },
-  trust_proxy: true,
-}))
+server.use(
+  middleware.logger({
+    sink: @(line) {
+      log_file.puts(line + '\n')
+    },
+    trust_proxy: true,
+  }),
+)
 ```
 
 Structured logging is a `format` that returns JSON:
 
 ```zuri
-server.use(middleware.logger({
-  format: @(request, response, elapsed) {
-    return json.encode({
-      method: request.method,
-      path: request.path,
-      status: response.status,
-      ms: elapsed,
-      id: request.context.get('request_id', nil),
-    })
-  },
-}))
+server.use(
+  middleware.logger({
+    format: @(request, response, elapsed) {
+      return json.encode({
+        method: request.method,
+        path: request.path,
+        status: response.status,
+        ms: elapsed,
+        id: request.context.get('request_id', nil),
+      })
+    },
+  }),
+)
 ```
 
 A request that raises is logged too, with the status the client was
@@ -1493,11 +1516,13 @@ server.use(middleware.security_headers())
 | `content_security_policy` | not set | `Content-Security-Policy` |
 
 ```zuri
-server.use(middleware.security_headers({
-  content_security_policy: "default-src 'self'; img-src 'self' data:",
-  hsts_subdomains: true,
-  frame_options: 'SAMEORIGIN',
-}))
+server.use(
+  middleware.security_headers({
+    content_security_policy: "default-src 'self'; img-src 'self' data:",
+    hsts_subdomains: true,
+    frame_options: 'SAMEORIGIN',
+  }),
+)
 ```
 
 Pass `nil` for any of them to leave that header off entirely.
@@ -1519,10 +1544,12 @@ Answers CORS preflights and adds the headers a browser needs before it
 will let script read a response from another origin.
 
 ```zuri
-server.use(middleware.cors({
-  origins: ['https://app.example.com'],
-  credentials: true,
-}))
+server.use(
+  middleware.cors({
+    origins: ['https://app.example.com'],
+    credentials: true,
+  }),
+)
 ```
 
 | Option | Default | Meaning |
@@ -1557,9 +1584,11 @@ another.
 Requires HTTP Basic authentication.
 
 ```zuri
-server.use(middleware.basic_auth(@(user, password) {
-  return user == 'admin' and http.util.secure_equals(password, secret)
-}, 'Admin area'))
+server.use(
+  middleware.basic_auth(@(user, password) {
+    return user == 'admin' and http.util.secure_equals(password, secret)
+  }, 'Admin area'),
+)
 ```
 
 The first argument is called with the username and password and
@@ -1603,10 +1632,12 @@ of the site.
 Requires a bearer token — the usual shape for an API.
 
 ```zuri
-server.use(middleware.bearer_auth(@(token) {
-  var claims = verify_jwt(token)
-  return claims == nil ? false : claims.subject
-}))
+server.use(
+  middleware.bearer_auth(@(token) {
+    var claims = verify_jwt(token)
+    return claims == nil ? false : claims.subject
+  }),
+)
 ```
 
 The verifier is called with the token and returns either something
@@ -1636,9 +1667,14 @@ Requires a valid JSON Web Token, verified by the `jwt` module.
 import http.middleware
 import jwt
 
-server.use(middleware.jwt_auth(
-  jwt.Verifier(secret, { algorithms: ['HS256'], audience: 'api' })
-))
+server.use(
+  middleware.jwt_auth(
+    jwt.Verifier(secret, {
+      algorithms: ['HS256'],
+      audience: 'api',
+    }),
+  ),
+)
 ```
 
 The first argument is either a `jwt.Verifier` or any function taking
@@ -1647,9 +1683,11 @@ key set resolved by `kid`, or anything else the `jwt` module can do
 that a fixed verifier cannot:
 
 ```zuri
-server.use(middleware.jwt_auth(@(token) {
-  return jwt.verify_with_jwks(token, keys, { audience: 'api' })
-}))
+server.use(
+  middleware.jwt_auth(@(token) {
+    return jwt.verify_with_jwks(token, keys, { audience: 'api' })
+  }),
+)
 ```
 
 | Option | Default | Meaning |
@@ -1755,13 +1793,17 @@ Over the limit is `429 Too Many Requests` with a `Retry-After`.
 Rate-limit per API key rather than per address by supplying a `key`:
 
 ```zuri
-server.use(middleware.rate_limit({
-  limit: 1000,
-  window: 3600,
-  key: @(request) {
-    return request.header('x-api-key', nil) or request.client_ip() or 'anonymous'
-  },
-}))
+server.use(
+  middleware.rate_limit({
+    limit: 1000,
+    window: 3600,
+    key: @(request) {
+      return request.header('x-api-key', nil) or
+          request.client_ip() or
+          'anonymous'
+    },
+  }),
+)
 ```
 
 > **Note**
@@ -1826,14 +1868,14 @@ Middleware run outermost first, so the order they are registered in is
 the order they wrap the request. A workable default:
 
 ```zuri,ignore
-server.use(middleware.request_id())        # so everything after can log it
-server.use(middleware.logger())            # so it sees the final status
-server.use(middleware.force_https())       # before any work is done
+server.use(middleware.request_id()) # so everything after can log it
+server.use(middleware.logger()) # so it sees the final status
+server.use(middleware.force_https()) # before any work is done
 server.use(middleware.security_headers())
 server.use(middleware.cors({ origins: allowed }))
 server.use(middleware.rate_limit({ limit: 100 }))
-server.use(middleware.jwt_auth(verifier))   # after the cheap refusals
-server.use(middleware.etag())              # innermost: it needs the finished body
+server.use(middleware.jwt_auth(verifier)) # after the cheap refusals
+server.use(middleware.etag()) # innermost: it needs the finished body
 ```
 
 The reasoning behind each position: identifiers before anything that
@@ -1970,9 +2012,9 @@ on most of them at every reboot, so name your own for anything that
 has to outlive the host:
 
 ```zuri,ignore
-server.use(http.session({
-  store: http.session.FileStore('/var/lib/app/sessions'),
-}))
+server.use(
+  http.session({ store: http.session.FileStore('/var/lib/app/sessions') }),
+)
 ```
 
 A session file is a bearer credential in the same way the cookie is.
@@ -2017,7 +2059,11 @@ class RedisStore < http.session.SessionStore {
   }
 
   write(key, payload, expires_at) {
-    self._client.set_with_ttl('session:' + key, payload, (expires_at - time()).ceil())
+    self._client.set_with_ttl(
+      'session:' + key,
+      payload,
+      (expires_at - time()).ceil(),
+    )
   }
 
   destroy(key) {
@@ -2127,10 +2173,12 @@ import http
 import http.session
 
 def setup(server) {
-  server.use(http.session({
-    store: http.session.FileStore('/var/lib/app/sessions'),
-    secret: os.get_env('SESSION_SECRET'),
-  }))
+  server.use(
+    http.session({
+      store: http.session.FileStore('/var/lib/app/sessions'),
+      secret: os.get_env('SESSION_SECRET'),
+    }),
+  )
 
   server.get('/', @(request, response) {
     response.text(request.session().get('account', 'nobody'))
@@ -2218,7 +2266,9 @@ directly.
 import http.websocket as ws
 
 server.get('/ws', @(request, response) {
-  var socket = ws.accept(request, response, { protocols: ['chat'] })
+  var socket = ws.accept(request, response, {
+    protocols: ['chat'],
+  })
 
   while socket.is_open() {
     var message = socket.receive()
@@ -2277,9 +2327,7 @@ stream resumes where it left off instead of replaying from the start.
 ## Reverse Proxying
 
 ```zuri
-var api = http.ReverseProxy('http://127.0.0.1:9000', {
-  strip_prefix: '/api',
-})
+var api = http.ReverseProxy('http://127.0.0.1:9000', { strip_prefix: '/api' })
 
 server.any('/api/' + '*path', @(request, response) {
   api.handle(request, response)
@@ -2301,10 +2349,10 @@ upstream that fails taken out of rotation for a while rather than
 retried on every request:
 
 ```zuri
-var pool = http.LoadBalancer([
-  'http://10.0.0.1:9000',
-  'http://10.0.0.2:9000',
-], { recovery_time: 30 })
+var pool = http.LoadBalancer(
+  ['http://10.0.0.1:9000', 'http://10.0.0.2:9000'],
+  { recovery_time: 30 },
+)
 ```
 
 ## Running in Production
@@ -2339,11 +2387,7 @@ def setup(server) {
 import http
 import .app
 
-http.serve(app.setup, {
-  host: '0.0.0.0',
-  port: 3000,
-  workers: 8,
-})
+http.serve(app.setup, { host: '0.0.0.0', port: 3000, workers: 8 })
 ```
 
 `setup` is called once inside each worker with that worker's own

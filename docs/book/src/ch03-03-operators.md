@@ -50,7 +50,7 @@ identity for everything else. A class changes that for its instances with
 ```zuri
 echo 1 == 1.0
 echo [1, 2] == [1, 2]
-echo {a: 1} == {a: 1}
+echo { a: 1 } == { a: 1 }
 echo '1' == 1
 ```
 

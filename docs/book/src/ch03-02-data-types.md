@@ -3,7 +3,18 @@
 Zuri has ten built-in types. `typeof()` names the one you are holding:
 
 ```zuri
-var values = [1, 1.5, 'text', true, nil, [1], {a: 1}, 1..3, 10n, bytes(2)]
+var values = [
+  1,
+  1.5,
+  'text',
+  true,
+  nil,
+  [1],
+  { a: 1 },
+  1..3,
+  10n,
+  bytes(2),
+]
 
 for v in values {
   echo typeof(v)
@@ -68,9 +79,9 @@ Numeric literals come in five forms:
 
 ```zuri
 var decimal = 1_000_000
-var binary = 0b1010          # 10
-var octal = 0c17             # 15
-var hexadecimal = 0xff       # 255
+var binary = 0b1010 # 10
+var octal = 0c17 # 15
+var hexadecimal = 0xff # 255
 var scientific = 6.02e23
 
 echo [decimal, binary, octal, hexadecimal, scientific]
@@ -290,7 +301,7 @@ the end:
 ```zuri
 var s = 'hello world'
 echo s[0]
-echo s[0,5]
+echo s[0, 5]
 echo s[-5,]
 ```
 
@@ -322,7 +333,12 @@ An ordered, growable sequence, written in square brackets. Elements may be
 of any type, including other lists:
 
 ```zuri
-var mixed = [1, 'two', [3], { four: 4 }]
+var mixed = [
+  1,
+  'two',
+  [3],
+  { four: 4 },
+]
 echo mixed.length()
 ```
 

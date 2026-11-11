@@ -36,10 +36,7 @@ class Account {
   }
 }
 
-var accounts = [
-  Account('ada', 100),
-  Account('grace', 250),
-]
+var accounts = [Account('ada', 100), Account('grace', 250)]
 
 for account in accounts {
   account.deposit(50)

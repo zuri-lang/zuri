@@ -128,11 +128,15 @@ at the moment it crosses:
 ```zuri
 import ffi
 
-var c = ffi.open(ffi.LIBC).declare('
+var c = ffi
+    .open(ffi.LIBC)
+    .declare(
+      '
   int abs(int n);
   typedef struct { int quot; int rem; } div_t;
   div_t div(int numerator, int denominator);
-')
+',
+    )
 
 echo c.abs(-7)
 echo c.div(17, 5)
@@ -160,9 +164,11 @@ RangeError: abs() argument 1 'n': 3000000000 is out of range for 'int', which ho
 path, a file name, or a bare name the platform's conventions complete:
 
 ```zuri,ignore
-var sqlite = ffi.open('sqlite3')                    # libsqlite3.so, libsqlite3.dylib, sqlite3.dll
-var local = ffi.open('./build/libgeometry.so')      # a path, as given
-var vendored = ffi.open('geometry', { paths: ['vendor/lib'] })
+var sqlite = ffi.open('sqlite3') # libsqlite3.so, libsqlite3.dylib, sqlite3.dll
+var local = ffi.open('./build/libgeometry.so') # a path, as given
+var vendored = ffi.open('geometry', {
+  paths: ['vendor/lib'],
+})
 ```
 
 A bare name is tried in the directories given as `paths` first, then in
@@ -407,8 +413,11 @@ So integers cross the boundary this way:
 ```zuri
 import ffi
 
-var strtoull = ffi.open(ffi.LIBC).function('strtoull', ffi.uint64,
-  [ffi.string, ffi.ptr, ffi.int])
+var strtoull = ffi.open(ffi.LIBC).function('strtoull', ffi.uint64, [
+  ffi.string,
+  ffi.ptr,
+  ffi.int,
+])
 
 echo strtoull('42', nil, 10)
 echo strtoull('18446744073709551615', nil, 10)
@@ -460,11 +469,13 @@ library. Binding it to one produces a namespace:
 ```zuri
 import ffi
 
-var api = ffi.declare('
+var api = ffi.declare(
+  '
   typedef struct { long quot; long rem; } ldiv_t;
   ldiv_t ldiv(long numerator, long denominator);
   long labs(long n);
-')
+',
+)
 
 var c = api.bind(ffi.open(ffi.LIBC))
 
@@ -516,7 +527,8 @@ and not bound, because the library need not export it.
 ```zuri
 import ffi
 
-var api = ffi.declare('
+var api = ffi.declare(
+  '
   struct node;
   typedef struct node node;
   struct node { int value; node *next; };
@@ -527,7 +539,8 @@ var api = ffi.declare('
   } shape;
 
   _Static_assert(sizeof(shape) == 24, "shape is 24 bytes");
-')
+',
+)
 
 echo api.type('node').size()
 echo api.type('shape').offset_of('tag')
@@ -567,7 +580,8 @@ preprocessor runs for it to read as written:
 ```zuri
 import ffi
 
-var api = ffi.declare('
+var api = ffi.declare(
+  '
   #include <stdint.h>
   #define VERSION_MAJOR 2
   #define VERSION_MINOR 7
@@ -583,7 +597,8 @@ var api = ffi.declare('
   #pragma pack(push, 1)
   typedef struct { uint8_t kind; uint32_t length; } header;
   #pragma pack(pop)
-')
+',
+)
 
 echo api.constant('VERSION')
 echo api.constant('NAME')
@@ -616,10 +631,14 @@ program reads and releases. The same holds for `const wchar_t *`.
 ```zuri
 import ffi
 
-var c = ffi.open(ffi.LIBC).declare('
+var c = ffi
+    .open(ffi.LIBC)
+    .declare(
+      '
   int setenv(const char *name, const char *value, int overwrite);
   const char *getenv(const char *name);
-')
+',
+    )
 
 c.setenv('ZURI_FFI_DEMO', 'hello', 1)
 echo c.getenv('ZURI_FFI_DEMO')
@@ -646,10 +665,11 @@ import ffi
 
 var common = ffi.declare('typedef struct { double x, y; } point;')
 
-var shapes = ffi.declarations()
-  .include(common)
-  .declare('typedef struct { point from, to; } segment;')
-  .declare('double length(segment s);')
+var shapes = ffi
+    .declarations()
+    .include(common)
+    .declare('typedef struct { point from, to; } segment;')
+    .declare('double length(segment s);')
 
 echo shapes.type('segment').size()
 echo shapes.functions().length.signature().params[0].name()
@@ -717,7 +737,11 @@ the Zuri side reads the same file:
 import ffi
 
 var source = file('shapes/src/lib.rs').read()
-var shapes = ffi.open('shapes', { paths: ['shapes/target/release'] }).declare_rust(source)
+var shapes = ffi
+    .open('shapes', {
+      paths: ['shapes/target/release'],
+    })
+    .declare_rust(source)
 
 echo shapes.area({ variant: 'Rect', w: 2, h: 3 })
 echo shapes.midpoint({ x: 0, y: 0 }, { x: 4, y: 2 })
@@ -863,8 +887,10 @@ A list or dictionary is written back only when the pointer is not to a
 ```zuri
 import ffi
 
-var frexp = ffi.open(ffi.LIBM).function('frexp', ffi.double,
-  [ffi.double, ffi.pointer(ffi.int)])
+var frexp = ffi.open(ffi.LIBM).function('frexp', ffi.double, [
+  ffi.double,
+  ffi.pointer(ffi.int),
+])
 
 var exponent = [0]
 echo frexp(48, exponent)
@@ -882,8 +908,11 @@ the bytes directly:
 ```zuri
 import ffi
 
-var memset = ffi.open(ffi.LIBC).function('memset', ffi.ptr,
-  [ffi.ptr, ffi.int, ffi.size_t])
+var memset = ffi.open(ffi.LIBC).function('memset', ffi.ptr, [
+  ffi.ptr,
+  ffi.int,
+  ffi.size_t,
+])
 
 var buffer = bytes(6)
 memset(buffer, 65, 4)
@@ -967,10 +996,11 @@ compiler lays it out:
 ```zuri
 import ffi
 
-var Header = ffi.struct('Header')
-  .add_field('tag', ffi.uint8)
-  .add_field('length', ffi.uint32)
-  .add_field('checksum', ffi.uint64)
+var Header = ffi
+    .struct('Header')
+    .add_field('tag', ffi.uint8)
+    .add_field('length', ffi.uint32)
+    .add_field('checksum', ffi.uint64)
 
 echo Header.size()
 echo Header.offset_of('length')
@@ -991,7 +1021,11 @@ takes a minimum alignment for one member, as `_Alignas` gives:
 ```zuri
 import ffi
 
-var Packed = ffi.struct('Packed').add_field('tag', ffi.uint8).add_field('length', ffi.uint32).set_packed()
+var Packed = ffi
+    .struct('Packed')
+    .add_field('tag', ffi.uint8)
+    .add_field('length', ffi.uint32)
+    .set_packed()
 var Wide = ffi.struct('Wide').add_field('tag', ffi.uint8).set_align(64)
 
 echo Packed.size()
@@ -1014,12 +1048,16 @@ bytes:
 ```zuri
 import ffi
 
-var Item = ffi.struct('Item')
-  .add_field('name', ffi.char.array(8))
-  .add_field('counts', ffi.int.array(3))
+var Item = ffi
+    .struct('Item')
+    .add_field('name', ffi.char.array(8))
+    .add_field('counts', ffi.int.array(3))
 
 var item = ffi.alloc(Item)
-item.set(0, { name: 'widget', counts: [1, 2] })
+item.set(0, {
+  name: 'widget',
+  counts: [1, 2],
+})
 
 echo item.get()
 echo item.get_field('counts')
@@ -1044,10 +1082,11 @@ unit:
 ```zuri
 import ffi
 
-var Flags = ffi.struct('Flags')
-  .add_bitfield('ready', ffi.uint, 1)
-  .add_bitfield('mode', ffi.uint, 3)
-  .add_bitfield('delta', ffi.int, 4)
+var Flags = ffi
+    .struct('Flags')
+    .add_bitfield('ready', ffi.uint, 1)
+    .add_bitfield('mode', ffi.uint, 3)
+    .add_bitfield('delta', ffi.int, 4)
 
 var flags = ffi.alloc(Flags)
 flags.set_field('mode', 5)
@@ -1078,7 +1117,10 @@ because only the program knows which one is meaningful:
 ```zuri
 import ffi
 
-var Bits = ffi.union('Bits').add_field('f', ffi.float).add_field('u', ffi.uint32)
+var Bits = ffi
+    .union('Bits')
+    .add_field('f', ffi.float)
+    .add_field('u', ffi.uint32)
 var value = ffi.alloc(Bits)
 value.set(0, { f: 1 })
 
@@ -1101,17 +1143,24 @@ applied to the record's real layout, packed and over-aligned records and
 bitfields included:
 
 ```zuri,ignore
-var geometry = ffi.open('geometry').declare('
+var geometry = ffi
+    .open('geometry')
+    .declare(
+      '
   typedef struct { double x, y; } point;
   double distance(point a, point b);
   point midpoint(const point *a, const point *b);
   void scale_all(point *points, size_t n, double k);
-')
+',
+    )
 
 echo geometry.distance({ x: 0, y: 0 }, { x: 3, y: 4 })
 echo geometry.midpoint({ x: 0, y: 0 }, { x: 4, y: 2 })
 
-var points = [{ x: 1, y: 1 }, { x: 2, y: 3 }]
+var points = [
+  { x: 1, y: 1 },
+  { x: 2, y: 3 },
+]
 geometry.scale_all(points, 2, 10)
 echo points
 ```
@@ -1134,9 +1183,7 @@ number, and anywhere one goes in, a constant's name may go instead:
 ```zuri
 import ffi
 
-var Level = ffi.enum('Level')
-  .add_constant('LOW', 1)
-  .add_constant('HIGH', 10)
+var Level = ffi.enum('Level').add_constant('LOW', 1).add_constant('HIGH', 10)
 
 echo Level.constants()
 echo Level.value('HIGH')
@@ -1168,10 +1215,14 @@ function pointer for the length of that call:
 ```zuri
 import ffi
 
-var c = ffi.open(ffi.LIBC).declare('
+var c = ffi
+    .open(ffi.LIBC)
+    .declare(
+      '
   void qsort(void *base, size_t count, size_t size,
              int (*compare)(const void *, const void *));
-')
+',
+    )
 
 var numbers = ffi.alloc(ffi.int, 5)
 for i, n in [42, 7, 19, 3, 25] {
@@ -1223,10 +1274,14 @@ again, as it was, the moment the C function returns:
 ```zuri
 import ffi
 
-var c = ffi.open(ffi.LIBC).declare('
+var c = ffi
+    .open(ffi.LIBC)
+    .declare(
+      '
   void qsort(void *base, size_t count, size_t size,
              int (*compare)(const void *, const void *));
-')
+',
+    )
 
 var numbers = ffi.alloc(ffi.int, 3)
 
@@ -1265,12 +1320,16 @@ runs on a helper thread while the isolate keeps answering:
 ```zuri
 import ffi
 
-var c = ffi.open(ffi.LIBC).declare('
+var c = ffi
+    .open(ffi.LIBC)
+    .declare(
+      '
   typedef unsigned long pthread_t;
   int pthread_create(pthread_t *thread, const void *attributes,
                      void *(*start)(void *), void *argument);
   int pthread_join(pthread_t thread, void **result);
-')
+',
+    )
 
 var seen = []
 var start = ffi.callback(@(argument) {
@@ -1320,15 +1379,28 @@ apply on top: a `float` travels as a `double`, and a type narrower than
 ```zuri
 import ffi
 
-var snprintf = ffi.open(ffi.LIBC).function('snprintf', ffi.int,
-  [ffi.pointer(ffi.char), ffi.size_t, ffi.string], { variadic: true })
+var snprintf = ffi
+    .open(ffi.LIBC)
+    .function(
+      'snprintf',
+      ffi.int,
+      [ffi.pointer(ffi.char), ffi.size_t, ffi.string],
+      { variadic: true },
+    )
 
 var buffer = ffi.alloc(ffi.char, 64)
 
 snprintf(buffer, 64, '%s has %d items at %.2f each', 'cart', 3, 4.5)
 echo buffer.read_string()
 
-snprintf(buffer, 64, '%.1f, %ld, %c', ffi.double.of(2), ffi.long.of(-7), ffi.char.of('z'))
+snprintf(
+  buffer,
+  64,
+  '%.1f, %ld, %c',
+  ffi.double.of(2),
+  ffi.long.of(-7),
+  ffi.char.of('z'),
+)
 echo buffer.read_string()
 ```
 
@@ -1368,8 +1440,11 @@ call on this isolate left there:
 ```zuri
 import ffi
 
-var strtol = ffi.open(ffi.LIBC).function('strtol', ffi.long,
-  [ffi.string, ffi.ptr, ffi.int])
+var strtol = ffi.open(ffi.LIBC).function('strtol', ffi.long, [
+  ffi.string,
+  ffi.ptr,
+  ffi.int,
+])
 
 echo strtol('123', nil, 10)
 echo ffi.errno()
@@ -1410,10 +1485,14 @@ memory the C allocator's `free()` releases:
 ```zuri
 import ffi
 
-var c = ffi.open(ffi.LIBC).declare('
+var c = ffi
+    .open(ffi.LIBC)
+    .declare(
+      '
   char *strdup(const char *text);
   void free(void *pointer);
-')
+',
+    )
 
 var copy = c.strdup('owned by Zuri now').own(c.free)
 echo copy.read_string()
@@ -1448,7 +1527,9 @@ at run time as it stands. `ffi.link()` hands it to the platform's linker,
 which links every object in it into a shared library, and loads that:
 
 ```zuri,ignore
-var geometry = ffi.link('build/libgeometry.a', { libraries: ['m'] })
+var geometry = ffi.link('build/libgeometry.a', {
+  libraries: ['m'],
+})
 var rust = ffi.link('shapes/target/release/libshapes.a')
 ```
 

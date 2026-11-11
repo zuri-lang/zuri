@@ -22,7 +22,11 @@ thing you are about to write by hand is already here.
 ```zuri
 import json
 
-var data = { name: 'Ada', langs: ['zuri', 'rust'], active: true }
+var data = {
+  name: 'Ada',
+  langs: ['zuri', 'rust'],
+  active: true,
+}
 
 echo json.encode(data)
 echo json.decode('{"a":1}').a
@@ -499,7 +503,9 @@ def greet(name) {
   echo 'Hello, ${name}!'
 }
 
-var out = io.capture(@{ greet('Ada') })
+var out = io.capture(@{
+  greet('Ada')
+})
 
 echo 'captured ${out.length()} characters'
 ```
@@ -569,7 +575,10 @@ A command-line parser with subcommands, typed options, automatic
 import args
 
 var parser = args.Parser('greet')
-parser.add_option('name', 'Who to greet', { short_name: 'n', type: args.STRING })
+parser.add_option('name', 'Who to greet', {
+  short_name: 'n',
+  type: args.STRING,
+})
 parser.add_command('history', 'Show past greetings')
 
 var parsed = parser.parse()
@@ -651,9 +660,10 @@ var ends = rpc.pipe()
 isolate.spawn(@(transport) {
   import rpc
 
-  rpc.endpoint(transport)
-    .on_request('add', @(params) => params[0] + params[1])
-    .serve()
+  rpc
+      .endpoint(transport)
+      .on_request('add', @(params) => params[0] + params[1])
+      .serve()
 }, ends[1])
 
 var client = rpc.endpoint(ends[0])
@@ -711,12 +721,16 @@ mail on disk in Maildir format and one keeps it in the process.
 ```zuri,ignore
 import mail
 
-mail.send('smtp://mail.example.com', mail.message({
-  from: 'reports@example.com',
-  to: 'ann@example.com',
-  subject: 'Quarterly report',
-  text: 'The numbers are in.',
-}), { username: 'reports', password: secret })
+mail.send(
+  'smtp://mail.example.com',
+  mail.message({
+    from: 'reports@example.com',
+    to: 'ann@example.com',
+    subject: 'Quarterly report',
+    text: 'The numbers are in.',
+  }),
+  { username: 'reports', password: secret },
+)
 ```
 
 Covered in [Chapter 18](ch18-00-mail.md).
@@ -741,9 +755,9 @@ reading and writing the common formats.
 import imagine { Image }
 
 Image(400, 200, '#0f172a')
-  .fill_circle(200, 100, 70, '#38bdf8')
-  .circle(200, 100, 70, 'white', { thickness: 3 })
-  .save('badge.png')
+    .fill_circle(200, 100, 70, '#38bdf8')
+    .circle(200, 100, 70, 'white', { thickness: 3 })
+    .save('badge.png')
 ```
 
 Almost every method returns an image, so operations chain.
@@ -751,9 +765,7 @@ Almost every method returns an image, so operations chain.
 contents rather than the extension:
 
 ```zuri,ignore
-Image.open('photo.jpg')
-  .thumbnail(400, 400)
-  .save('thumb.webp')
+Image.open('photo.jpg').thumbnail(400, 400).save('thumb.webp')
 ```
 
 Decoding and encoding are native; everything between them — filters,

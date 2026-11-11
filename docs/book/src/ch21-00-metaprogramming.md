@@ -452,9 +452,10 @@ import zuri
 
 var plugins = os.create_temp_dir('plugins-')
 
-file(os.join_paths(plugins, 'greeter.zu'), 'w').write(
-  "def greet(name) {\n  return 'hello ' + name\n}\n",
-)
+file(
+  os.join_paths(plugins, 'greeter.zu'),
+  'w',
+).write("def greet(name) {\n  return 'hello ' + name\n}\n")
 
 for name in os.read_dir(plugins).filter(@(entry) => entry.ends_with('.zu')) {
   var plugin = zuri.import_file(os.join_paths(plugins, name))
@@ -677,9 +678,11 @@ case only matching nodes are called:
 ```zuri
 import zuri
 
-var tree = zuri.parse('def a() {}
+var tree = zuri.parse(
+  'def a() {}
 def b() {}
-var c = 1')
+var c = 1',
+)
 var names = []
 
 zuri.walk_nodes(tree, {
@@ -835,9 +838,11 @@ on, so one mistake costs one statement and is reported once:
 ```zuri
 import zuri
 
-var result = zuri.parse_partial('var a = 1
+var result = zuri.parse_partial(
+  'var a = 1
 var = 2
-var c = 3')
+var c = 3',
+)
 
 echo result.is_clean()
 echo result.errors
@@ -933,8 +938,8 @@ def documented_functions(text) {
 }
 
 var source = "/**\n * Adds two numbers.\n *\n * @param number a\n * @param number b\n */\n" +
-  "def add(a: number, b: number) {\n  return a + b\n}\n\n" +
-  "def undocumented(x) {\n  return x\n}\n"
+    "def add(a: number, b: number) {\n  return a + b\n}\n\n" +
+    "def undocumented(x) {\n  return x\n}\n"
 
 for fn in documented_functions(source) {
   var takes = fn.doc.all('param').map(@(tag) => '${tag.name}: ${tag.type}')
@@ -1000,8 +1005,8 @@ def long_signatures(source, limit) {
 }
 
 var source = "def small(a, b) {}\n" +
-  "def large(a, b, c, d, e) {}\n" +
-  "def also_large(a, b, c, d) {}\n"
+    "def large(a, b, c, d, e) {}\n" +
+    "def also_large(a, b, c, d) {}\n"
 
 for problem in long_signatures(source, 3) {
   echo 'line ${problem.line}: ${problem.name}() takes ${problem.count}'

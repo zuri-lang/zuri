@@ -129,10 +129,10 @@ A path starting with `.` or `..` is resolved against the directory of the
 file doing the importing, and is never searched for anywhere else.
 
 ```zuri,ignore
-import .helpers             # next to this file
-import .models.user         # models/ next to this file, then user
-import ..shared.config      # up one directory, then shared/, then config
-import .. ..shared.config   # up two directories, then shared/, then config
+import .helpers # next to this file
+import .models.user # models/ next to this file, then user
+import ..shared.config # up one directory, then shared/, then config
+import .. ..shared.config # up two directories, then shared/, then config
 ```
 
 Each `..` climbs one directory, so `.. ..` climbs two and `.. .. ..` three.
@@ -170,9 +170,9 @@ Now everything `util.zu` exposed is part of this module's public surface
 too. All three forms take the prefix:
 
 ```zuri,ignore
-import @.module            # the module itself is re-exported
-import @.module { item }   # just that item
-import @.module { * }      # everything
+import @.module # the module itself is re-exported
+import @.module { item } # just that item
+import @.module { * } # everything
 ```
 
 This is how a package's `index.zu` assembles a public API out of several
@@ -226,9 +226,9 @@ pkg/
 ```
 
 ```zuri,ignore
-import .pkg            # runs pkg/index.zu
-import .pkg.util       # runs pkg/util.zu
-import .pkg.sub.deep   # runs pkg/sub/deep.zu
+import .pkg # runs pkg/index.zu
+import .pkg.util # runs pkg/util.zu
+import .pkg.sub.deep # runs pkg/sub/deep.zu
 ```
 
 The same rule applies to `zuri run pkg` on the command line, which is what

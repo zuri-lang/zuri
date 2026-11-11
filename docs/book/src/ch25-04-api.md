@@ -31,15 +31,15 @@ this file free of any decision about where the data lives.
 ### Listing, With an Optional Filter
 
 ```zuri,ignore
-  server.get('/api/tasks', @(request, response) {
-    var column = request.query_param('column', nil)
-    var tasks = column == nil ? board.all() : board.in_column(column)
+server.get('/api/tasks', @(request, response) {
+  var column = request.query_param('column', nil)
+  var tasks = column == nil ? board.all() : board.in_column(column)
 
-    response.json({
-      tasks: tasks.map(@(task) => task.to_view()),
-      summary: board.summary(),
-    })
+  response.json({
+    tasks: tasks.map(@(task) => task.to_view()),
+    summary: board.summary(),
   })
+})
 ```
 
 One route serving two questions: every task, or every task in one column.
@@ -57,9 +57,9 @@ for one screen.
 ### Fetching One
 
 ```zuri,ignore
-  server.get('/api/tasks/:id', @(request, response) {
-    response.json(board.get(request.param('id')).to_view())
-  })
+server.get('/api/tasks/:id', @(request, response) {
+  response.json(board.get(request.param('id')).to_view())
+})
 ```
 
 One line, and it can fail. `board.get()` raises `NotFoundError` for an
@@ -69,16 +69,16 @@ of the section below.
 ### Creating
 
 ```zuri,ignore
-  server.post('/api/tasks', @(request, response) {
-    var body = request.json_body() or {}
+server.post('/api/tasks', @(request, response) {
+  var body = request.json_body() or {}
 
-    var task = board.add(body.get('title', nil), {
-      notes: body.get('notes', nil),
-      column: body.get('column', nil),
-    })
-
-    response.json(task.to_view(), 201)
+  var task = board.add(body.get('title', nil), {
+    notes: body.get('notes', nil),
+    column: body.get('column', nil),
   })
+
+  response.json(task.to_view(), 201)
+})
 ```
 
 `request.json_body()` returns `nil` for a request with no body, or a body

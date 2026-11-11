@@ -28,10 +28,7 @@ import .storage { Board, NotFoundError }
 def build(port, data_dir) {
   var board = Board(data_dir)
 
-  var view = wire({
-    root: config.TEMPLATE_DIR,
-    auto_reload: true,
-  })
+  var view = wire({ root: config.TEMPLATE_DIR, auto_reload: true })
 
   var server = http.HttpServer(port == nil ? config.PORT : port, config.HOST)
 
@@ -115,7 +112,9 @@ def _install_middleware(server) {
     next()
 
     var elapsed = ((time() - started) * 1000).round()
-    log.info('${request.method} ${request.path} -> ${response.status} (${elapsed}ms)')
+    log.info(
+      '${request.method} ${request.path} -> ${response.status} (${elapsed}ms)',
+    )
   })
 
   server.use(@(request, response, next) {
@@ -141,14 +140,16 @@ and the call in the middle is the seam between them.
 ### Reading the Logger
 
 ```zuri,ignore
-  server.use(@(request, response, next) {
-    var started = time()
+server.use(@(request, response, next) {
+  var started = time()
 
-    next()
+  next()
 
-    var elapsed = ((time() - started) * 1000).round()
-    log.info('${request.method} ${request.path} -> ${response.status} (${elapsed}ms)')
-  })
+  var elapsed = ((time() - started) * 1000).round()
+  log.info(
+    '${request.method} ${request.path} -> ${response.status} (${elapsed}ms)',
+  )
+})
 ```
 
 The timestamp is taken on the way in, before anything else runs. The log
@@ -162,13 +163,13 @@ between.
 ### Reading the Error Handler
 
 ```zuri,ignore
-  server.use(@(request, response, next) {
-    catch {
-      next()
-    } as error {
-      _render_error(request, response, error)
-    }
-  })
+server.use(@(request, response, next) {
+  catch {
+    next()
+  } as error {
+    _render_error(request, response, error)
+  }
+})
 ```
 
 This one has nothing before `next()` and nothing after it. All its work is

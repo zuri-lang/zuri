@@ -5,7 +5,12 @@ including other lists, and it grows and shrinks as you work with it.
 
 ```zuri
 var items = [3, 1, 4, 1, 5]
-var mixed = [1, 'two', [3], { four: 4 }]
+var mixed = [
+  1,
+  'two',
+  [3],
+  { four: 4 },
+]
 var empty = []
 
 echo items.length()
@@ -121,9 +126,9 @@ gives you a new list:
 var l = [1, 2, 3, 4, 5]
 
 echo l[1, 3]
-echo l[, 3]
-echo l[3, ]
-echo l[-2, ]
+echo l[,3]
+echo l[3,]
+echo l[-2,]
 ```
 
 ```console
@@ -193,7 +198,11 @@ echo part
 A list holds lists, and indexes chain:
 
 ```zuri
-var grid = [[1, 2], [3, 4], [5, 6]]
+var grid = [
+  [1, 2],
+  [3, 4],
+  [5, 6],
+]
 
 echo grid[1]
 echo grid[1][0]
@@ -271,7 +280,10 @@ There is one trap. Repetition copies the *elements*, and when an element is
 itself a list, all the copies are the same list:
 
 ```zuri
-var grid = [[0, 0]] * 3
+var grid = [
+      [0, 0],
+    ] *
+    3
 
 grid[0][0] = 9
 
@@ -304,7 +316,14 @@ nest:
 
 ```zuri
 echo [1, 2] == [1, 2]
-echo [1, [2, 3]] == [1, [2, 3]]
+echo [
+      1,
+      [2, 3],
+    ] ==
+    [
+      1,
+      [2, 3],
+    ]
 echo [1, 2] == [2, 1]
 echo [1, 2] == [1, 2, 3]
 ```
@@ -433,11 +452,12 @@ returns a negative number to put the first one first, a positive number to
 put the second one first, and zero to leave them as they are:
 
 ```zuri
-var people = [{ name: 'Ada', age: 36 }, { name: 'Bob', age: 24 }]
+var people = [
+  { name: 'Ada', age: 36 },
+  { name: 'Bob', age: 24 },
+]
 
-var by_age = people
-  .sort(@(a, b) => a.age - b.age)
-  .map(@(p) => p.name)
+var by_age = people.sort(@(a, b) => a.age - b.age).map(@(p) => p.name)
 
 echo by_age
 ```
@@ -653,7 +673,11 @@ which stop on their own.
 
 ```zuri
 echo ['a', 'b'].zip([1, 2])
-echo [1, 2, 3].zip_from([[4, 5, 6]])
+echo [
+  1, 2, 3,
+].zip_from([
+  [4, 5, 6],
+])
 ```
 
 ```console
@@ -683,7 +707,10 @@ Use `clone()` when you need an independent copy. The clone is shallow:
 nested lists inside it are still shared.
 
 ```zuri
-var original = [[1, 2], 3]
+var original = [
+  [1, 2],
+  3,
+]
 var copy = original.clone()
 
 copy[1] = 99
@@ -748,11 +775,9 @@ var sales = [
 def totals_by_region(records) {
   var totals = {}
 
-  records
-    .filter(@(r) => r.amount != nil)
-    .each(@(r) {
-      totals[r.region] = totals.get(r.region, 0) + r.amount
-    })
+  records.filter(@(r) => r.amount != nil).each(@(r) {
+    totals[r.region] = totals.get(r.region, 0) + r.amount
+  })
 
   return totals
 }
@@ -760,12 +785,9 @@ def totals_by_region(records) {
 var totals = totals_by_region(sales)
 var grand = totals.values().reduce(@(acc, n) => acc + n, 0)
 
-totals
-  .to_list()[0]
-  .sort()
-  .each(@(region) {
-    echo '${region.rpad(6)} ${totals[region]}'
-  })
+totals.to_list()[0].sort().each(@(region) {
+  echo '${region.rpad(6)} ${totals[region]}'
+})
 
 echo 'total  ${grand}'
 ```

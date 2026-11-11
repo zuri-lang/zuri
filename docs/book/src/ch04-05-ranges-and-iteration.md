@@ -172,7 +172,9 @@ what makes it useful: `3..6` yields values 3, 4, 5 at positions 0, 1, 2.
 `loop()` is the callback form. It honours the step and the direction:
 
 ```zuri
-25..18.loop(@(i) { print('${i} ') })
+25..18.loop(@(i) {
+  print('${i} ')
+})
 print('\n')
 ```
 

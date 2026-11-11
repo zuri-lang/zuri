@@ -17,7 +17,9 @@ if ready {
   echo 'launching'
 }
 
-if ready echo 'launching again'
+if ready {
+  echo 'launching again'
+}
 ```
 
 ```console
@@ -112,11 +114,7 @@ choice visible:
 ```zuri
 var n = 7
 
-var size = n > 100
-  ? 'large'
-  : n > 5
-    ? 'medium'
-    : 'small'
+var size = n > 100 ? 'large' : n > 5 ? 'medium' : 'small'
 
 echo size
 ```
@@ -227,10 +225,7 @@ The header may be spread over several lines, which is worth doing when the
 condition is long:
 
 ```zuri
-iter var i = 1;
-  i <= 3;
-  i++
-{
+iter var i = 1; i <= 3; i++ {
   echo i
 }
 ```
