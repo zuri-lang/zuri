@@ -224,12 +224,13 @@ write(config, 'a = 1')
 
 var file_watcher = os.Watcher().add(config)
 
-# FSEvents can deliver the write just before the watch started after it,
-# so anything already on its way is taken first.
+# FSEvents can deliver the write to the file itself, made just before the
+# watch started, at any point after it, so only events about other paths
+# count here.
 settle(file_watcher)
 write(sibling, 'not watched')
 
-var beside = settle(file_watcher)
+var beside = settle(file_watcher).filter(@(e) => e.path != config)
 
 assert beside.is_empty(),
   'a file watch must not report the files beside it, got ${show(beside)}'
