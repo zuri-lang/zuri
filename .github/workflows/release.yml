@@ -359,6 +359,12 @@ jobs:
           set -eu
           SHELL=/bin/sh sh /work/install.sh --version "${VERSION}"
 
+          # Again, piped the way the website gives it, over the top of the
+          # first.
+          newest=''
+          case "${VERSION}" in *-*) newest='--prerelease' ;; esac
+          cat /work/install.sh | SHELL=/bin/sh sh -s -- ${newest}
+
           "${HOME}/.zuri/bin/zuri" --version | grep -F "Zuri ${VERSION}"
 
           echo "echo 'installed'" > /tmp/check.zu
