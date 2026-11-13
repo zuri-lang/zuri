@@ -168,6 +168,16 @@ class Config {
   var members = []
 
   /**
+   * The other documentation built into the same site, which a link can
+   * lead into: `{ source, prefix, index }` each, its directory of pages,
+   * the path from this site's front page to its own, and where it is
+   * among the sites built together. `build()` in `build.zu` sets it.
+   *
+   * @type list[dict]
+   */
+  var siblings = []
+
+  /**
    * How the pages are generated from doc blocks, or `nil` when they are
    * written by hand: `{ modules, package, exclude, intro, groups }`,
    * `modules` and `intro` being absolute paths or `nil`, `package` a
@@ -189,6 +199,7 @@ class Config {
     self.markdown = {}
     self.redirects = {}
     self.members = []
+    self.siblings = []
   }
 
   /**

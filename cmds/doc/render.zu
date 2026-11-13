@@ -26,6 +26,7 @@
 import markdown
 import markdown.node { Node }
 import markdown.renderer { HtmlRenderer }
+import os
 import url
 
 import .documentation { Documentation, Chapter, normalize, page_path, root_of }
@@ -307,7 +308,9 @@ class Renderer {
    * `{ from, line, page, source, fragment }` for a link to a chapter,
    * with the target's page and Markdown file, and `{ from, line, file }`
    * for anything else, with the target's path under the source
-   * directory.
+   * directory. A link into other documentation built into the same site
+   * also has `site`, that documentation's index among them, and its
+   * page and file are that documentation's own.
    *
    * @type list
    */
@@ -400,7 +403,13 @@ class Renderer {
     }
 
     for image in doc.find_all('image') {
-      self._note_file(image.destination, _line_of(image))
+      var across = self._across_file(image.destination, _line_of(image))
+
+      if across == nil {
+        self._note_file(image.destination, _line_of(image))
+      } else {
+        image.destination = across
+      }
     }
 
     if self._print {
@@ -464,6 +473,11 @@ class Renderer {
     }
 
     var target = normalize(_directory(chapter.source) + url.decode(parts.path))
+    var elsewhere = target.starts_with('..') ? self._sibling_of(target) : nil
+
+    if elsewhere != nil {
+      return self._link_across(elsewhere, parts, line)
+    }
 
     if !target.lower().ends_with('.md') {
       self._note_file(destination, line)
@@ -493,6 +507,98 @@ class Renderer {
     return written +
         parts.query +
         (parts.fragment.is_empty() ? '' : '#' + parts.fragment)
+  }
+
+  # The documentation built into the same site whose pages _target_, a
+  # path that climbs out of this documentation's own, leads into:
+  # `{ sibling, path }`, with the path inside its directory of pages, or
+  # `nil` when it leads into none of them.
+  _sibling_of(target: string) {
+    var siblings = self.docs.config.siblings
+
+    if siblings.is_empty() {
+      return nil
+    }
+
+    var full = os.abs_path(os.join_paths(self.docs.config.source, target))
+
+    for sibling in siblings {
+      var source = sibling.source
+
+      if full.starts_with(source + os.path_separator) {
+        return {
+          sibling,
+          path: os.relative_path(source, full).replace('\\', '/', false),
+        }
+      }
+    }
+
+    return nil
+  }
+
+  # The path from the page being rendered back to the root of its site.
+  # The print page sits at the root.
+  _root() {
+    return self._print ? '' : root_of(self._chapter.path)
+  }
+
+  # A link into other documentation built into the same site, pointed at
+  # the page it becomes there and recorded to be checked once that has
+  # been built.
+  _link_across(elsewhere: dict, parts: dict, line: number) {
+    var sibling = elsewhere.sibling
+    var path = elsewhere.path
+    var chapter = self._chapter
+    var fragment = parts.fragment.is_empty() ? '' : '#' + parts.fragment
+
+    if !path.lower().ends_with('.md') {
+      if !self._print {
+        self.links.append({
+          from: chapter.source,
+          line,
+          site: sibling.index,
+          file: path,
+        })
+      }
+
+      return self._root() + sibling.prefix + path + parts.query + fragment
+    }
+
+    var page = page_path(path)
+
+    if !self._print {
+      self.links.append({
+        from: chapter.source,
+        line,
+        site: sibling.index,
+        page,
+        source: path,
+        fragment: parts.fragment,
+      })
+    }
+
+    return self._root() + sibling.prefix + page + parts.query + fragment
+  }
+
+  # An image or file in other documentation built into the same site, as
+  # this page reaches it there, or `nil` when _destination_ is not one.
+  _across_file(destination: string, line: number) {
+    if _is_external(destination) or destination.starts_with('#') {
+      return nil
+    }
+
+    var parts = _strip(destination)
+
+    if parts.path.is_empty() {
+      return nil
+    }
+
+    var target = normalize(
+      _directory(self._chapter.source) + url.decode(parts.path),
+    )
+    var elsewhere = target.starts_with('..') ? self._sibling_of(target) : nil
+
+    return elsewhere == nil ? nil : self._link_across(elsewhere, parts, line)
   }
 }
 

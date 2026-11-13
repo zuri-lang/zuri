@@ -122,32 +122,97 @@ def _member(outer: Config, directory: string) {
   return member
 }
 
-# Puts the links between the sites at the front of each one's own.
+# The path from the front page of the site at _from_ to the front page
+# of the one at _to_, by their places among the sites built together,
+# the outer one first.
+def _path_between(from: number, to: number, names: list) {
+  if from == to {
+    return ''
+  }
+
+  if from == 0 {
+    return '${names[to]}/'
+  }
+
+  return to == 0 ? '../' : '../${names[to]}/'
+}
+
+# Puts the links between the sites at the front of each one's own, and
+# tells each where the others' pages are, so a link between them leads
+# where it should.
 def _link(sites: list) {
   var outer = sites[0]
   var names = sites.map(@(each) => os.base_name(each.root))
 
   iter var i = 0; i < sites.length(); i++ {
     var here = sites[i]
-    var up = i == 0 ? '' : '../'
-    var links = [
-      { url: '${up}index.html', label: label_of(outer, true), current: i == 0 },
-    ]
+    var links = []
 
-    iter var j = 1; j < sites.length(); j++ {
-      var url = i == j ? 'index.html' : '${up}${names[j]}/index.html'
+    iter var j = 0; j < sites.length(); j++ {
+      var path = _path_between(i, j, names)
 
-      links.append({ url, label: label_of(sites[j], false), current: i == j })
+      links.append({
+        url: '${path}index.html',
+        label: label_of(sites[j], j == 0),
+        current: i == j,
+      })
+
+      if i != j {
+        here.siblings.append({
+          source: sites[j].source,
+          prefix: path,
+          index: j,
+        })
+      }
     }
 
     here.links = links + here.links
   }
 }
 
+# Checks each link one site makes into another, now that all of them are
+# built, and adds a warning for each that leads nowhere to the site the
+# link is in.
+def _check_across(sites: list, built: list) {
+  iter var i = 0; i < sites.length(); i++ {
+    for each in sites[i].across {
+      var link = each.link
+      var target = sites[link.site]
+      var name = label_of(target.config, link.site == 0)
+
+      if link.get('file') != nil {
+        if !target.has_file(link.file) {
+          built[i].links.append(
+            '${each.where}: links to ${link.file} in ${name}, which is not there',
+          )
+        }
+
+        continue
+      }
+
+      if !target.has_page(link.page) {
+        built[i].links.append(
+          "${each.where}: links to ${link.source} in ${name}, which its SUMMARY.md does not list",
+        )
+        continue
+      }
+
+      if !link.fragment.is_empty() and
+          !target.has_id(link.page, link.fragment) {
+        built[i].links.append(
+          '${each.where}: ${link.source} in ${name} has no heading or id #${link.fragment}',
+        )
+      }
+    }
+  }
+}
+
 /**
  * Builds the documentation at _settings_ and every member of it, the
  * outer one first, since building it empties the site the members are
- * built into.
+ * built into. A reference's pages are all generated before anything is
+ * built, and the links between the sites are checked once every one of
+ * them is.
  *
  * @param Config settings
  * @param ?bool live: whether the pages reload themselves when
@@ -156,29 +221,34 @@ def _link(sites: list) {
  * @throws UsageError When any of them cannot be read or built
  */
 def build(settings: Config, live: ?bool) {
-  var sites = [settings] +
+  var configs = [settings] +
       settings.members.map(@(directory) => _member(settings, directory))
 
-  if sites.length() > 1 {
-    _link(sites)
+  if configs.length() > 1 {
+    _link(configs)
   }
 
-  var built = []
+  var built = configs.map(@(each) => Built(each))
 
-  for each in sites {
-    var outcome = Built(each)
-
-    if each.reference != nil {
-      outcome.warnings = reference.generate(each).warnings
+  iter var i = 0; i < configs.length(); i++ {
+    if configs[i].reference != nil {
+      built[i].warnings = reference.generate(configs[i]).warnings
     }
-
-    var report = Site(documentation.load(each), live).build()
-
-    outcome.pages = report.pages
-    outcome.seconds = report.seconds
-    outcome.links = report.warnings
-    built.append(outcome)
   }
+
+  var sites = []
+
+  iter var i = 0; i < configs.length(); i++ {
+    var site = Site(documentation.load(configs[i]), live)
+    var report = site.build()
+
+    built[i].pages = report.pages
+    built[i].seconds = report.seconds
+    built[i].links = report.warnings
+    sites.append(site)
+  }
+
+  _check_across(sites, built)
 
   return built
 }

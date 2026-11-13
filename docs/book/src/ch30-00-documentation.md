@@ -391,6 +391,13 @@ around it, so the whole reads as one site, and its `url` is the outer
 `zuri doc build docs/reference`, it is a site of its own and takes none
 of that.
 
+A link from one to another is written the way it would be on GitHub, as
+the path from one Markdown file to the other. From `docs/src/guide.md`,
+`[greet](../reference/src/weather-app.md#greet)` reaches the heading for
+`greet()` on the reference's page for `weather.app`. The site points the
+link at the page that file becomes, and the build checks it with the
+rest, naming the documentation it leads into when it leads nowhere.
+
 ## Settings
 
 `doc.toml` has five tables, and every key in them is optional. A key a

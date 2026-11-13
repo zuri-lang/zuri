@@ -151,3 +151,56 @@ describe('label_of', @{
     },
   )
 })
+
+describe('links between the sites', @{
+  it('lead to the page the target becomes in the other site', @{
+    write_project(nil, nil)
+    put(
+      'docs/src/welcome.md',
+      '# Welcome\n\nSee [today](../reference/src/weather.md#today).\n',
+    )
+
+    var built = build(docs())
+
+    expect(read('docs/site/welcome.html'))
+        .to_contain('href="reference/weather.html#today"')
+    expect(built[0].links).to_equal([])
+  })
+
+  it('lead back out of a site inside', @{
+    write_project(nil, nil)
+    put('docs/extra/doc.toml', '[documentation]\ntitle = "Extra"\n')
+    put('docs/extra/src/SUMMARY.md', '# Summary\n\n[More](more.md)\n')
+    put(
+      'docs/extra/src/more.md',
+      '# More\n\nBack to [the welcome](../../src/welcome.md#welcome) and [today](../../reference/src/weather.md#today).\n',
+    )
+
+    var built = build(docs())
+    var more = read('docs/site/extra/more.html')
+
+    expect(more).to_contain('href="../welcome.html#welcome"')
+    expect(more).to_contain('href="../reference/weather.html#today"')
+    expect(built[1].links).to_equal([])
+  })
+
+  it('are reported with the site they lead into when they lead nowhere', @{
+    write_project(nil, nil)
+    put(
+      'docs/src/welcome.md',
+      '# Welcome\n\n[a](../reference/src/weather.md#tomorrow) [b](../reference/src/radar.md) [c](../reference/src/chart.png)\n',
+    )
+
+    var links = build(docs())[0].links
+
+    expect(links.length()).to_be(3)
+    expect(links[0]).to_contain(
+      'welcome.md:3: weather.md in API Reference has no heading or id #tomorrow',
+    )
+    expect(links[1]).to_contain(
+      'links to radar.md in API Reference, which its SUMMARY.md does not list',
+    )
+    expect(links[2])
+        .to_contain('links to chart.png in API Reference, which is not there')
+  })
+})

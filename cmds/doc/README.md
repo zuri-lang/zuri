@@ -22,6 +22,8 @@ A directory beside the pages that holds a `doc.toml` of its own, such as
 `docs/reference`, is built along with the documentation around it, into
 the site directory of the same name, and every page links to each site
 from its top bar: Docs, API Reference, or whatever `[site] label` says.
+A link from one to another is written as the path between the two
+Markdown files, and is checked like any other.
 
 With no command, the documentation is built. It is the directory named,
 or the current directory when it holds a `doc.toml`, or the `docs`

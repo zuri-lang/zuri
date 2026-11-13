@@ -109,8 +109,21 @@ class Site {
   /** Whether pages reload when the documentation changes. @type bool */
   var live = false
 
+  /**
+   * The links into other documentation built into the same site, which
+   * only that documentation can check: `{ where, link }` each, where the
+   * link is, as a warning would name it, and the link as the renderer
+   * recorded it. `build()` fills it in.
+   *
+   * @type list[dict]
+   */
+  var across = []
+
   # The rendered pages, by path.
   var _pages = {}
+
+  # The ids on each page, by path, worked out when first asked for.
+  var _ids = {}
 
   var _view
   var _version = ''
@@ -125,7 +138,60 @@ class Site {
     self.docs = docs
     self.config = docs.config
     self.live = live == true
+    self.across = []
     self._pages = {}
+    self._ids = {}
+  }
+
+  /**
+   * Whether the site has a page at _path_, once it is built.
+   *
+   * @param string path
+   * @returns bool
+   */
+  has_page(path: string) {
+    return self._pages.contains(path)
+  }
+
+  /**
+   * Whether the documentation's source directory holds _path_, a file
+   * or a directory.
+   *
+   * @param string path: relative to the source directory, with `/`.
+   * @returns bool
+   */
+  has_file(path: string) {
+    var full = os.join_paths(self.config.source, path)
+
+    return file(full).exists() or os.dir_exists(full)
+  }
+
+  /**
+   * Whether the page at _path_ has an element with the id _id_, once
+   * the site is built.
+   *
+   * @param string path
+   * @param string id
+   * @returns bool
+   */
+  has_id(path: string, id: string) {
+    var known = self._ids.get(path)
+
+    if known == nil {
+      known = {}
+
+      var page = self._pages.get(path)
+
+      if page != nil {
+        for found in page.html.matches('/\sid="([^"]+)"/').get(1, []) {
+          known.set(found, true)
+        }
+      }
+
+      self._ids.set(path, known)
+    }
+
+    return known.contains(id)
   }
 
   /**
@@ -699,41 +765,21 @@ class Site {
 
   # Every link inside the documentation that leads nowhere, as a line each.
   _check_links() {
-    var ids = {}
     var warnings = []
     var config = self.config
-
-    var ids_of = @(path) {
-      var known = ids.get(path)
-
-      if known == nil {
-        known = {}
-
-        var page = self._pages.get(path)
-
-        if page != nil {
-          var found = page.html.matches('/\sid="([^"]+)"/')
-
-          for id in found.get(1, []) {
-            known.set(id, true)
-          }
-        }
-
-        ids.set(path, known)
-      }
-
-      return known
-    }
 
     for link in self._renderer.links {
       var where = '${_shown(config, link.from)}:${link.line}'
 
+      if link.get('site') != nil {
+        self.across.append({ where, link })
+        continue
+      }
+
       if link.get('file') != nil {
         var target = link.file
 
-        if !target.starts_with('..') and
-            !file(os.join_paths(config.source, target)).exists() and
-            !os.dir_exists(os.join_paths(config.source, target)) {
+        if !target.starts_with('..') and !self.has_file(target) {
           warnings.append(
             '${where}: links to ${target}, which is not in the documentation',
           )
@@ -742,15 +788,14 @@ class Site {
         continue
       }
 
-      if !self._pages.contains(link.page) {
+      if !self.has_page(link.page) {
         warnings.append(
           '${where}: links to ${link.source}, which SUMMARY.md does not list',
         )
         continue
       }
 
-      if !link.fragment.is_empty() and
-          !ids_of(link.page).contains(link.fragment) {
+      if !link.fragment.is_empty() and !self.has_id(link.page, link.fragment) {
         warnings.append(
           '${where}: ${link.source} has no heading or id #${link.fragment}',
         )
