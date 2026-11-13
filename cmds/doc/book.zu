@@ -1,0 +1,559 @@
+/**
+ * The book: every chapter `SUMMARY.md` lists, numbered, placed, and
+ * read from disk.
+ *
+ * Each chapter's page is written at its source path with `.md` swapped
+ * for `.html`, so `guide/setup.md` becomes `guide/setup.html` and a link
+ * between two pages works the same in the source and on the site. A
+ * `README.md` becomes its directory's `index.html`.
+ *
+ * Two directives are read out of a page before it is rendered:
+ *
+ * - `{{#include path}}` is replaced by the file at _path_, relative to
+ *   the page. `path:10` takes line 10 alone, `path:5:10` lines 5 to 10,
+ *   `path:5:` from line 5 on and `path::10` up to line 10. `path:name`
+ *   takes the lines between `ANCHOR: name` and `ANCHOR_END: name`, which
+ *   are usually written as comments in the file. Lines marking an
+ *   anchor are left out of whatever is included.
+ * - `{{#title text}}` gives the page a title of its own, for the
+ *   browser's tab, in place of the one the contents show.
+ *
+ * A backslash before the braces, `\{{#include x}}`, writes the
+ * directive itself.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+
+import .._shared.errors { UsageError }
+import .._shared.fsx
+import .config { Config }
+import .summary
+import .summary { Entry }
+
+# How deep an included file may include another.
+var _INCLUDE_DEPTH = 10
+
+/**
+ * One chapter of the book.
+ */
+class Chapter {
+
+  /** The title the contents give it. @type string */
+  var title = ''
+
+  /** The title its page asks for with `{{#title}}`, or `nil`. @type ?string */
+  var page_title
+
+  /** The summary's entry for it. @type Entry */
+  var entry
+
+  /**
+   * The Markdown file, relative to the source directory and written
+   * with `/`, or `nil` for a draft.
+   *
+   * @type ?string
+   */
+  var source
+
+  /** The page, relative to the site and written with `/`, or `nil`. @type ?string */
+  var path
+
+  /** Its section number, as `[4, 2]` for 4.2, or `nil`. @type ?list */
+  var number
+
+  /** How deeply it is nested, from 0 at the top. @type number */
+  var depth = 0
+
+  /** The part it belongs to, or `nil`. @type ?Entry */
+  var part
+
+  /** Which part that is, counting from 1, or 0 for none. @type number */
+  var part_index = 0
+
+  /** The chapter it is a section of, or `nil`. @type ?Chapter */
+  var owner
+
+  /** Its sections. @type list[Chapter] */
+  var children = []
+
+  /** Its place in reading order, or -1 for a draft. @type number */
+  var position = -1
+
+  /** Its Markdown, with the directives applied. @type string */
+  var text = ''
+
+  /** How it reads in the contents, once the site has worked that out. @type ?string */
+  var toc_html
+
+  @new(entry: Entry) {
+    self.entry = entry
+    self.title = entry.title
+    self.children = []
+  }
+
+  /**
+   * Its number as written: `4.2`, or an empty string.
+   *
+   * @returns string
+   */
+  label() {
+    if self.number == nil {
+      return ''
+    }
+
+    return '.'.join(self.number.map(@(n) => '${n}'))
+  }
+
+  /**
+   * Whether it has a page; a draft does not.
+   *
+   * @returns bool
+   */
+  has_page() {
+    return self.path != nil
+  }
+
+  /**
+   * The path from its page back to the root of the site: `''` for a page
+   * at the top, `'../'` for one a directory down.
+   *
+   * @returns string
+   */
+  root() {
+    return root_of(self.path == nil ? '' : self.path)
+  }
+
+  @to_string() {
+    return '<Chapter ${self.label()} ${self.title}>'
+  }
+}
+
+/**
+ * The path from the page at _path_ back to the root of the site.
+ *
+ * @param string path
+ * @returns string
+ */
+def root_of(path: string) {
+  return '../' * path.count('/')
+}
+
+/**
+ * The page a Markdown file at _source_ becomes.
+ *
+ * @param string source
+ * @returns string
+ */
+def page_path(source: string) {
+  var slash = source.last_index_of('/')
+  var directory = slash < 0 ? '' : source[0, slash + 1]
+  var name = source[slash + 1,]
+
+  if name.lower() == 'readme.md' {
+    return directory + 'index.html'
+  }
+
+  return directory + name[0, name.length() - 3] + '.html'
+}
+
+/**
+ * _path_ with `.` and `..` segments worked out, and `/` between
+ * segments. Climbing above the start leaves a leading `..`.
+ *
+ * @param string path
+ * @returns string
+ */
+def normalize(path: string) {
+  var parts = []
+
+  for part in path.replace('\\', '/', false).split('/') {
+    if part == '' or part == '.' {
+      continue
+    }
+
+    if part == '..' and !parts.is_empty() and parts.last() != '..' {
+      parts.pop()
+    } else {
+      parts.append(part)
+    }
+  }
+
+  return '/'.join(parts)
+}
+
+# The name after _marker_ on _line_, which is how a file marks where a
+# part of it starts and ends, or `nil` when the line has no marker.
+def _anchor_name(line: string, marker: string) {
+  var at = line.index_of(marker)
+
+  if at < 0 {
+    return nil
+  }
+
+  var rest = line[at + marker.length(),].ltrim()
+  var end = 0
+
+  while end < rest.length() and
+      (rest[end].is_alnum() or rest[end] == '_' or rest[end] == '-') {
+    end++
+  }
+
+  return rest[0, end]
+}
+
+# The lines of _text_ an include's selector asks for.
+def _select(text: string, selector: ?string, where: string) {
+  var lines = text.split('\n')
+
+  if text.ends_with('\n') {
+    lines.pop()
+  }
+
+  var unmarked = @(chosen) => chosen.filter(
+    @(line) => !line.contains('ANCHOR:') and !line.contains('ANCHOR_END:'),
+  )
+
+  if selector == nil or selector.is_empty() {
+    return '\n'.join(unmarked(lines))
+  }
+
+  var range = selector.match('/^(\d*)(:(\d*))?$/')
+
+  if range != false {
+    var count = lines.length()
+    var from = range[1].is_empty() ? 1 : range[1].to_number()
+    var to = from
+
+    if range.get(2) != nil and !range[2].is_empty() {
+      to = range.get(3, '').is_empty() ? count : range[3].to_number()
+    } else if range[1].is_empty() {
+      to = count
+    }
+
+    from = from.max(1)
+    to = to.min(count)
+
+    if from > to {
+      return ''
+    }
+
+    return '\n'.join(unmarked(lines[from - 1, to]))
+  }
+
+  var start = -1
+  var end = -1
+
+  iter var i = 0; i < lines.length(); i++ {
+    var line = lines[i]
+
+    if start < 0 and _anchor_name(line, 'ANCHOR:') == selector {
+      start = i + 1
+    } else if start >= 0 and _anchor_name(line, 'ANCHOR_END:') == selector {
+      end = i
+      break
+    }
+  }
+
+  if start < 0 {
+    raise UsageError("${where}: no anchor '${selector}' to include")
+  }
+
+  return '\n'.join(unmarked(lines[start, end < 0 ? lines.length() : end]))
+}
+
+/**
+ * _text_, the Markdown of the file at _path_, with its `{{#include}}`
+ * and `{{#title}}` directives applied.
+ *
+ * @param string text
+ * @param string path: the file's own path, which includes are relative to.
+ * @param ?number depth: how many includes deep this already is.
+ * @returns dict: `{ text, title }`, with `title` `nil` unless the text
+ *    gives one.
+ * @throws UsageError When an included file is missing, or includes run
+ *    too deep
+ */
+def preprocess(text: string, path: string, depth: ?number) {
+  var level = depth == nil ? 0 : depth
+  var out = []
+  var title = nil
+  var at = 0
+
+  while true {
+    var open = text.index_of('{{#', at)
+
+    if open < 0 {
+      break
+    }
+
+    var close = text.index_of('}}', open + 3)
+
+    if close < 0 {
+      break
+    }
+
+    if open > 0 and text[open - 1] == '\\' {
+      out.append(text[at, open - 1])
+      out.append(text[open, close + 2])
+      at = close + 2
+      continue
+    }
+
+    var body = text[open + 3, close].trim()
+    var space = body.index_of(' ')
+    var name = space < 0 ? body : body[0, space]
+    var argument = space < 0 ? '' : body[space + 1,].trim()
+
+    using name {
+      when 'include', 'rustdoc_include', 'playground' {
+        if level >= _INCLUDE_DEPTH {
+          raise UsageError(
+            '${path}: includes nest more than ${_INCLUDE_DEPTH} deep',
+          )
+        }
+
+        # A Windows drive letter is not a selector.
+        var colon = argument.index_of(
+          ':',
+          argument.length() > 2 and argument[1] == ':' ? 2 : 0,
+        )
+        var target = colon < 0 ? argument : argument[0, colon]
+        var selector = colon < 0 ? nil : argument[colon + 1,]
+        var full = os.abs_path(os.join_paths(os.dir_name(path), target))
+
+        if !file(full).exists() {
+          raise UsageError(
+            '${path}: cannot include ${target}; there is no such file',
+          )
+        }
+
+        var included = preprocess(fsx.read_text(full), full, level + 1).text
+
+        out.append(text[at, open])
+        out.append(_select(included, selector, path))
+      }
+      when 'title' {
+        out.append(text[at, open])
+        title = argument
+      }
+      default {
+        # Not a directive this knows, so it is left as it was written.
+        out.append(text[at, close + 2])
+      }
+    }
+
+    at = close + 2
+  }
+
+  out.append(text[at,])
+
+  return { text: ''.join(out), title }
+}
+
+/**
+ * A book: its settings, its contents and its chapters.
+ */
+class Book {
+
+  /** @type Config */
+  var config
+
+  /**
+   * The contents' top level in order: parts and separators as summary
+   * entries, chapters as `Chapter`s with their sections inside them.
+   *
+   * @type list
+   */
+  var contents = []
+
+  /** Every chapter with a page, in reading order. @type list[Chapter] */
+  var chapters = []
+
+  /** Every part, in order. @type list[Entry] */
+  var parts = []
+
+  /** Each chapter by its source path. @type dict */
+  var by_source = {}
+
+  /** Each chapter by its page's path. @type dict */
+  var by_path = {}
+
+  @new(config: Config) {
+    self.config = config
+    self.contents = []
+    self.chapters = []
+    self.parts = []
+    self.by_source = {}
+    self.by_path = {}
+  }
+
+  /**
+   * The chapter a page at _path_ shows, or `nil`.
+   *
+   * @param string path
+   * @returns ?Chapter
+   */
+  chapter_at(path: string) {
+    return self.by_path.get(path)
+  }
+
+  /**
+   * The first chapter with a page, or `nil` for a book with none.
+   *
+   * @returns ?Chapter
+   */
+  first() {
+    return self.chapters.is_empty() ? nil : self.chapters[0]
+  }
+
+  @to_string() {
+    return '<Book ${self.config.title}>'
+  }
+}
+
+# Turns one summary entry into a chapter, numbering it from _counter_,
+# the numbers its siblings have reached.
+def _chapter(
+  book: Book,
+  entry: Entry,
+  owner: ?Chapter,
+  part: ?Entry,
+  part_index: number,
+  counter: list,
+) {
+  var chapter = Chapter(entry)
+
+  chapter.owner = owner
+  chapter.part = part
+  chapter.part_index = part_index
+  chapter.depth = owner == nil ? 0 : owner.depth + 1
+
+  if entry.numbered and !entry.unnumbered and book.config.numbers {
+    counter[0]++
+    chapter.number = (owner == nil or owner.number == nil
+            ? []
+            : owner.number.clone()) +
+        [counter[0]]
+  }
+
+  if entry.target != nil {
+    var source = normalize(entry.target)
+
+    if source.starts_with('..') or source.is_empty() {
+      raise UsageError(
+        "SUMMARY.md:${entry.line}: '${entry.target}' is outside the source directory",
+      )
+    }
+
+    if !source.lower().ends_with('.md') {
+      raise UsageError(
+        "SUMMARY.md:${entry.line}: '${entry.target}' is not a Markdown file",
+      )
+    }
+
+    if book.by_source.contains(source) {
+      raise UsageError(
+        "SUMMARY.md:${entry.line}: ${source} is listed twice; a page can only be in the book once",
+      )
+    }
+
+    chapter.source = source
+    chapter.path = page_path(source)
+    book.by_source.set(source, chapter)
+    book.by_path.set(chapter.path, chapter)
+  }
+
+  var inner = [0]
+
+  for child in entry.children {
+    chapter.children.append(
+      _chapter(book, child, chapter, part, part_index, inner),
+    )
+  }
+
+  return chapter
+}
+
+# Every chapter with a page beneath _chapters_, depth first.
+def _in_order(chapters: list, out: list) {
+  for chapter in chapters {
+    if chapter.has_page() {
+      out.append(chapter)
+    }
+
+    _in_order(chapter.children, out)
+  }
+}
+
+# Reads a chapter's Markdown, making the file first when the summary
+# names one that is not there and the settings say to.
+def _read(book: Book, chapter: Chapter) {
+  var full = os.join_paths(book.config.source, chapter.source)
+
+  if !file(full).exists() {
+    if !book.config.create_missing {
+      raise UsageError(
+        "SUMMARY.md:${chapter.entry.line}: '${chapter.title}' is ${chapter.source}, which does not exist",
+      )
+    }
+
+    fsx.ensure_dir(os.dir_name(full))
+    file(full, 'w').write('# ${chapter.title}\n')
+  }
+
+  var read = preprocess(fsx.read_text(full), full)
+
+  chapter.text = read.text
+  chapter.page_title = read.title
+}
+
+/**
+ * The book whose settings are _config_, with every page read.
+ *
+ * @param Config config
+ * @returns Book
+ * @throws UsageError When there is no `SUMMARY.md`, it cannot be read, or
+ *    it names a page that cannot be
+ */
+def load(config: Config) {
+  var summary_path = os.join_paths(config.source, 'SUMMARY.md')
+
+  if !file(summary_path).exists() {
+    raise UsageError('there is no SUMMARY.md in ${config.source}')
+  }
+
+  var book = Book(config)
+  var entries = summary.parse(fsx.read_text(summary_path))
+  var counter = [0]
+  var part = nil
+  var part_index = 0
+
+  for entry in entries {
+    if entry.kind == 'part' {
+      part = entry
+      part_index++
+      book.parts.append(entry)
+      book.contents.append(entry)
+    } else if entry.kind == 'separator' {
+      book.contents.append(entry)
+    } else {
+      book.contents.append(
+        _chapter(book, entry, nil, part, part_index, counter),
+      )
+    }
+  }
+
+  _in_order(
+    book.contents.filter(@(item) => instance_of(item, Chapter)),
+    book.chapters,
+  )
+
+  iter var i = 0; i < book.chapters.length(); i++ {
+    book.chapters[i].position = i
+    _read(book, book.chapters[i])
+  }
+
+  return book
+}

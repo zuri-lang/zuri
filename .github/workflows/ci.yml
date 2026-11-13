@@ -201,18 +201,29 @@ jobs:
         with:
           key: docs
 
-      # The reference's pages are generated rather than committed, so
-      # they have to exist before anything can be checked against them.
-      # This needs no mdBook: it writes markdown and stops.
       # The patched crates are built from vendor/patches rather than
       # committed, and the workspace does not load without them.
       - name: Patch crates
         run: cargo patch-crates
 
-      - name: Build and generate the reference
+      - name: Build
+        run: cargo build --locked
+
+      # The reference's pages are generated rather than committed, so
+      # they have to exist before anything can be checked against them.
+      - name: Generate the reference
+        run: ./target/debug/zuri run docs/tools/reference/generate.zu
+        env:
+          ZURI_ROOT: ${{ github.workspace }}
+
+      # Building checks every link inside each book against the pages
+      # it actually wrote, and --strict fails on one that leads nowhere.
+      - name: Build both books
         run: |
-          cargo build --locked
-          cargo docs generate
+          ./target/debug/zuri doc build docs/book --strict
+          ./target/debug/zuri doc build docs/reference --strict
+        env:
+          ZURI_ROOT: ${{ github.workspace }}
 
       # A defect in a doc block in `libs/` becomes a defect in both
       # books, so the blocks are checked at their source.
@@ -244,10 +255,13 @@ jobs:
       - name: Patch crates
         run: cargo patch-crates
 
-      - name: Build and generate the reference
-        run: |
-          cargo build --locked
-          cargo docs generate
+      - name: Build
+        run: cargo build --locked
+
+      - name: Generate the reference
+        run: ./target/debug/zuri run docs/tools/reference/generate.zu
+        env:
+          ZURI_ROOT: ${{ github.workspace }}
 
       # Every runnable example in both books is run and its output
       # compared against what the page claims it prints. This is the

@@ -5,8 +5,8 @@
  *
  * Two rules shape every page here. The first is that a heading's text
  * is the bare member name, never the qualified call path, because
- * mdBook derives an anchor from the heading and a path full of dots
- * and brackets makes an anchor nobody can link to by hand. The
+ * `zuri doc` derives an anchor from the heading and a path full of
+ * dots and brackets makes an anchor nobody can link to by hand. The
  * qualified path goes in the signature block directly underneath,
  * where it is what a reader copies.
  *
@@ -19,8 +19,9 @@
 
 import ..markdown { * }
 
-# mdBook derives a heading's anchor by lowercasing it and dropping
-# everything that is not a letter, a digit, a dash or an underscore.
+# `zuri doc` derives a heading's anchor by lowercasing it, making each
+# space a dash, and dropping everything that is not a letter, a digit,
+# a dash or an underscore.
 # Anchors are written by hand in a few places here, so this has to
 # match what it does rather than approximate it.
 def anchor(text: string) {

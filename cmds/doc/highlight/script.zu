@@ -1,0 +1,215 @@
+/**
+ * JavaScript and CSS, read well enough to colour the scripts and styles
+ * a page carries: comments, strings, numbers and names. Neither is
+ * parsed, so a regular expression literal in JavaScript is shown as the
+ * operators and names it is made of.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .spans { escape, is_word, line_end, quoted_end, run_end, span, words }
+
+var _JS_KEYWORDS = words(
+  'async await break case catch class const continue debugger default delete do else export extends finally for from function if import in instanceof let new of return static switch throw try typeof var void while with yield',
+)
+
+var _JS_VALUES = {
+  'true': 'lit',
+  'false': 'lit',
+  'null': 'lit',
+  'undefined': 'lit',
+  'NaN': 'lit',
+  'Infinity': 'lit',
+  'this': 'self',
+  'super': 'self',
+}
+
+# Where a number starting at _start_ ends: digits, with a fraction, an
+# exponent, a hexadecimal or binary prefix and separators all allowed.
+def _number_end(text: string, start: number) {
+  return run_end(text, start, @(c) => c.is_alnum() or c == '.' or c == '_')
+}
+
+# The next character after _start_ that is not a space or tab.
+def _next_visible(text: string, start: number) {
+  var i = start
+
+  while i < text.length() and (text[i] == ' ' or text[i] == '\t') {
+    i++
+  }
+
+  return i < text.length() ? text[i] : ''
+}
+
+/**
+ * JavaScript as highlighted markup.
+ *
+ * @param string source
+ * @returns string
+ */
+def highlight_js(source: string) {
+  var out = []
+  var length = source.length()
+  var i = 0
+  var previous = ''
+
+  while i < length {
+    var c = source[i]
+
+    if c == '/' and i + 1 < length and source[i + 1] == '/' {
+      var end = line_end(source, i)
+
+      out.append(span('com', source[i, end]))
+      i = end
+      continue
+    }
+
+    if c == '/' and i + 1 < length and source[i + 1] == '*' {
+      var end = source.index_of('*/', i + 2)
+
+      end = end < 0 ? length : end + 2
+      out.append(span('com', source[i, end]))
+      i = end
+      continue
+    }
+
+    if c == '"' or c == "'" or c == '`' {
+      var end = quoted_end(source, i)
+
+      out.append(span('str', source[i, end]))
+      i = end
+      continue
+    }
+
+    if c.is_number() {
+      var end = _number_end(source, i)
+
+      out.append(span('num', source[i, end]))
+      i = end
+      continue
+    }
+
+    if is_word(c) or c == '$' {
+      var end = run_end(source, i, @(x) => is_word(x) or x == '$')
+      var word = source[i, end]
+      var value = _JS_VALUES.get(word)
+
+      if value != nil {
+        out.append(span(value, word))
+      } else if _JS_KEYWORDS.contains(word) {
+        out.append(span('kw', word))
+      } else if previous == 'function' or previous == 'class' {
+        out.append(span(previous == 'class' ? 'type' : 'def', word))
+      } else if _next_visible(source, end) == '(' {
+        out.append(span('fn', word))
+      } else if i > 0 and source[i - 1] == '.' {
+        out.append(span('prop', word))
+      } else {
+        out.append(escape(word))
+      }
+
+      previous = word
+      i = end
+      continue
+    }
+
+    if !c.is_space() {
+      previous = c
+    }
+
+    out.append(escape(c))
+    i++
+  }
+
+  return ''.join(out)
+}
+
+/**
+ * CSS as highlighted markup: selectors, property names, values, at-rules
+ * and comments.
+ *
+ * @param string source
+ * @returns string
+ */
+def highlight_css(source: string) {
+  var out = []
+  var length = source.length()
+  var i = 0
+  var depth = 0
+  var in_value = false
+
+  while i < length {
+    var c = source[i]
+
+    if c == '/' and i + 1 < length and source[i + 1] == '*' {
+      var end = source.index_of('*/', i + 2)
+
+      end = end < 0 ? length : end + 2
+      out.append(span('com', source[i, end]))
+      i = end
+      continue
+    }
+
+    if c == '"' or c == "'" {
+      var end = quoted_end(source, i)
+
+      out.append(span('str', source[i, end]))
+      i = end
+      continue
+    }
+
+    if c == '@' {
+      var end = run_end(source, i + 1, @(x) => is_word(x) or x == '-')
+
+      out.append(span('kw', source[i, end]))
+      i = end
+      continue
+    }
+
+    if c == '{' {
+      depth++
+      in_value = false
+    } else if c == '}' {
+      depth = (depth - 1).max(0)
+      in_value = false
+    } else if c == ';' {
+      in_value = false
+    } else if c == ':' and depth > 0 and !in_value {
+      in_value = true
+    }
+
+    if is_word(c) or c == '-' or c == '#' or c == '.' {
+      var end = run_end(
+        source,
+        i + 1,
+        @(x) => is_word(x) or x == '-' or x == '%',
+      )
+      var word = source[i, end]
+
+      if depth == 0 {
+        out.append(span('tag', word))
+      } else if !in_value {
+        out.append(span('attr', word))
+      } else if c.is_number() or
+          c == '#' or
+          (c == '.' and end > i + 1 and source[i + 1].is_number()) or
+          (c == '-' and end > i + 1 and source[i + 1].is_number()) {
+        out.append(span('num', word))
+      } else if word == '!important' {
+        out.append(span('kw', word))
+      } else if _next_visible(source, end) == '(' {
+        out.append(span('fn', word))
+      } else {
+        out.append(span('lit', word))
+      }
+
+      i = end
+      continue
+    }
+
+    out.append(escape(c))
+    i++
+  }
+
+  return ''.join(out)
+}

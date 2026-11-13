@@ -37,8 +37,9 @@ var target: string = _os.target
 var vm_version: string = _os.vm_version
 
 /**
- * The name of the current platform in string or `unknown` if the
- * platform name could not be determined.
+ * The operating system the runtime was built for: `'linux'`,
+ * `'macos'`, `'windows'`, `'freebsd'`, `'openbsd'`, `'netbsd'` and so
+ * on, the name Rust's standard library gives it.
  * @type string
  *
  * Example,
@@ -46,7 +47,7 @@ var vm_version: string = _os.vm_version
  * ```zuri-repl
  * %> import os
  * %> os.platform
- * 'osx'
+ * 'macos'
  * ```
  */
 var platform: string = _os.platform

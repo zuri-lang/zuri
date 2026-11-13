@@ -1,0 +1,224 @@
+/**
+ * What `zuri doc` was asked to do, and which book it was asked to do it
+ * to, worked out before anything is read or written.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+import os
+import toml
+
+import .._shared.errors { UsageError }
+import .._shared.paths
+import .config { FILE_NAME }
+
+/** The port `serve` listens on unless told otherwise. */
+var DEFAULT_PORT = 3000
+
+/** The address `serve` listens on unless told otherwise. */
+var DEFAULT_HOST = '127.0.0.1'
+
+# _path_ as given on the command line, made absolute against _base_.
+def _absolute(path: string, base: string) {
+  return os.abs_path(paths.is_absolute(path) ? path : os.join_paths(base, path))
+}
+
+/**
+ * The command's parser.
+ *
+ * @returns args.Parser
+ */
+def parser() {
+  var parser = args.Parser('zuri doc', false)
+
+  parser.description = 'Builds a documentation site from a book written in Markdown.'
+  parser.epilog = 'With no command, the book is built. The book is the directory holding ' +
+      'doc.toml: the one named, the current directory, or docs in the project.'
+
+  parser.add_command('build', 'Builds the site')
+  parser.add_command(
+    'serve',
+    'Builds and serves the site, rebuilding it as the book changes',
+  )
+  parser.add_command('init', 'Starts a new book')
+  parser.add_command('clean', 'Removes the built site')
+
+  parser.add_index('dir', 'The book: a directory holding doc.toml', {
+    metavar: 'dir',
+  })
+
+  parser.add_option(
+    'out',
+    'Writes the site here instead of where doc.toml says',
+    { short_name: 'o', type: args.STRING, metavar: 'dir' },
+  )
+  parser.add_option('open', 'Opens the site in a browser once it is built', nil)
+  parser.add_option(
+    'strict',
+    'With build, fails when a link inside the book leads nowhere',
+    nil,
+  )
+  parser.add_option(
+    'port',
+    'With serve, the port to listen on; ${DEFAULT_PORT} by default',
+    { short_name: 'p', type: args.INT, metavar: 'port' },
+  )
+  parser.add_option(
+    'host',
+    'With serve, the address to listen on; ${DEFAULT_HOST}, this machine only, by default',
+    { type: args.STRING, metavar: 'address' },
+  )
+  parser.add_option('title', "With init, the book's title", {
+    type: args.STRING,
+    metavar: 'text',
+  })
+
+  return parser
+}
+
+/**
+ * The book's directory: _given_ when one was named, which may also be
+ * the path of its `doc.toml`; otherwise _cwd_ when it holds a
+ * `doc.toml`; otherwise the `docs` directory of the project _cwd_ is in.
+ *
+ * @param ?string given
+ * @param string cwd
+ * @returns string
+ * @throws UsageError When none of those holds a `doc.toml`
+ */
+def find_book(given: ?string, cwd: string) {
+  if given != nil {
+    var path = _absolute(given, cwd)
+
+    if os.base_name(path) == FILE_NAME and file(path).exists() {
+      return os.dir_name(path)
+    }
+
+    if file(os.join_paths(path, FILE_NAME)).exists() {
+      return path
+    }
+
+    raise UsageError(
+      'there is no ${FILE_NAME} in ${given}; `zuri doc init ${given}` starts a book there',
+    )
+  }
+
+  if file(os.join_paths(cwd, FILE_NAME)).exists() {
+    return cwd
+  }
+
+  var project = paths.find_root(cwd)
+
+  if project != nil {
+    var docs = os.join_paths(project, 'docs')
+
+    if file(os.join_paths(docs, FILE_NAME)).exists() {
+      return docs
+    }
+  }
+
+  raise UsageError(
+    'there is no ${FILE_NAME} here; `zuri doc init` starts a book',
+  )
+}
+
+/**
+ * Where `init` puts a new book: _given_ when one was named, otherwise
+ * the `docs` directory of the project _cwd_ is in, otherwise _cwd_.
+ *
+ * @param ?string given
+ * @param string cwd
+ * @returns string
+ */
+def init_target(given: ?string, cwd: string) {
+  if given != nil {
+    return _absolute(given, cwd)
+  }
+
+  var project = paths.find_root(cwd)
+
+  return project == nil ? cwd : os.join_paths(project, 'docs')
+}
+
+/**
+ * The title a new book in _target_ is given when none was asked for:
+ * the name of the project it documents, or else its directory's name.
+ *
+ * @param string target
+ * @returns string
+ */
+def default_title(target: string) {
+  var project = paths.find_root(target)
+
+  if project != nil {
+    catch {
+      var manifest = toml.parse(
+        file(os.join_paths(project, 'project.toml')).read(),
+      )
+      var name = manifest.get('project', {}).get('name')
+
+      if is_string(name) and !name.is_empty() {
+        return name
+      }
+    } as error {}
+  }
+
+  var name = os.base_name(target)
+
+  return name == 'docs' and project != nil ? os.base_name(project) : name
+}
+
+/**
+ * The settings for a parse of the command line.
+ *
+ * @param args.Result parsed
+ * @param ?string cwd: Default the working directory.
+ * @returns dict: `{ command, dir, out, open, strict, port, host,
+ *    title }`, `dir` being the directory named on the command line or
+ *    `nil`, and `out` an absolute path or `nil`.
+ * @throws UsageError For options that do not go with the command
+ */
+def settings(parsed, cwd: ?string) {
+  var base = cwd == nil ? os.cwd() : cwd
+  var command = parsed.command == nil ? 'build' : parsed.command.name
+  var options = parsed.options
+  var indexes = parsed.indexes
+  var given = indexes.is_empty() ? nil : indexes[0]
+
+  var only = {
+    strict: ['build'],
+    port: ['serve'],
+    host: ['serve'],
+    open: ['build', 'serve'],
+    out: ['build', 'serve', 'clean'],
+    title: ['init'],
+  }
+
+  for name, commands in only {
+    if options.get(name) != nil and !commands.contains(command) {
+      raise UsageError(
+        '--${name} goes with ${" or ".join(commands)}, not ${command}',
+      )
+    }
+  }
+
+  var port = options.get('port', DEFAULT_PORT)
+
+  if port < 0 or port > 65535 {
+    raise UsageError('--port is a number from 0 to 65535, not ${port}')
+  }
+
+  var out = options.get('out')
+
+  return {
+    command,
+    dir: given,
+    out: out == nil ? nil : _absolute(out, base),
+    open: options.get('open', false) == true,
+    strict: options.get('strict', false) == true,
+    port,
+    host: options.get('host', DEFAULT_HOST),
+    title: options.get('title'),
+  }
+}

@@ -1,0 +1,331 @@
+# Tests for what a book is made of: its settings, its contents, and its
+# chapters read from disk.
+
+import os
+import os.tempfile { create_temp_dir }
+import test { * }
+
+import ..book { load, normalize, page_path, preprocess, root_of }
+import ..config { parse }
+import ..summary
+
+var ROOT = '/books/guide'
+
+# A directory nobody else is using, thrown away afterwards.
+def in_sandbox(work: function) {
+  var directory = create_temp_dir('zuri-doc-')
+
+  catch {
+    work(directory)
+  } as error {
+    os.remove_dir(directory, true)
+
+    raise error
+  }
+
+  os.remove_dir(directory, true)
+}
+
+def put(directory: string, path: string, text: string) {
+  var full = os.join_paths(directory, path)
+
+  os.create_dir(os.dir_name(full), 0c755, true)
+  file(full, 'w').write(text)
+}
+
+# The message _work_ raises its error with.
+def refusal(work: function) {
+  var message = nil
+
+  catch {
+    work()
+  } as error {
+    message = error.message
+  }
+
+  expect(message).not.to_be_nil()
+
+  return message
+}
+
+describe('config', @{
+  it('fills in what the file leaves out', @{
+    var config = parse('', ROOT)
+
+    expect(config.title).to_be('guide')
+    expect(config.language).to_be('en')
+    expect(config.source).to_be(os.join_paths(ROOT, 'src'))
+    expect(config.output).to_be(os.join_paths(ROOT, 'site'))
+    expect(config.theme).to_be('system')
+    expect(config.fold).to_be_nil()
+    expect(config.numbers).to_be_true()
+    expect(config.search).to_be_true()
+  })
+
+  it('reads every table', @{
+    var config = parse(
+      '[book]\ntitle = "Guide"\nsource = "pages"\noutput = "../out"\n' +
+          '[site]\nurl = "https://example.com/guide"\nfold = 2\ntheme = "dark"\n' +
+          'links = [{ url = "../api/", label = "API" }]\n' +
+          '[site.home]\nurl = "../"\n' +
+          '[markdown]\nsmart = true\n' +
+          '[redirects]\n"/old.html" = "new.html"\n',
+      ROOT,
+    )
+
+    expect(config.title).to_be('Guide')
+    expect(config.source).to_be('/books/guide/pages')
+    expect(config.output).to_be('/books/out')
+    expect(config.url).to_be('https://example.com/guide/')
+    expect(config.fold).to_be(2)
+    expect(config.theme).to_be('dark')
+    expect(config.links)
+        .to_equal([
+          { url: '../api/', label: 'API' },
+        ])
+    expect(config.home).to_equal({ url: '../', label: '../' })
+    expect(config.markdown).to_equal({ smart: true })
+    expect(config.redirects).to_equal({ 'old.html': 'new.html' })
+  })
+
+  it('opens the first level of the contents for fold = true', @{
+    expect(parse('[site]\nfold = true\n', ROOT).fold).to_be(1)
+  })
+
+  it('refuses a key it does not know, naming it', @{
+    var message = refusal(@{
+      parse('[site]\ncolour = "red"\n', ROOT)
+    })
+
+    expect(message).to_contain("'colour'")
+  })
+
+  it('refuses a value of the wrong type', @{
+    expect(
+      refusal(@{
+        parse('[book]\ntitle = 3\n', ROOT)
+      }),
+    ).to_contain('title must be string')
+  })
+
+  it('refuses a theme it has no name for', @{
+    expect(
+      refusal(@{
+        parse('[site]\ntheme = "blue"\n', ROOT)
+      }),
+    ).to_contain("'blue'")
+  })
+
+  it('refuses markdown options the site decides', @{
+    expect(
+      refusal(@{
+        parse('[markdown]\nrenderer = "x"\n', ROOT)
+      }),
+    ).to_contain('renderer')
+  })
+
+  it('refuses an output that would hold the pages', @{
+    expect(
+      refusal(@{
+        parse('[book]\noutput = "."\nsource = "src"\n', ROOT)
+      }),
+    ).to_contain('output')
+  })
+
+  it('reports a file that is not TOML', @{
+    expect(
+      refusal(@{
+        parse('[book\n', ROOT)
+      }),
+    ).to_contain('doc.toml')
+  })
+})
+
+describe('summary', @{
+  it('reads chapters, parts, sections, drafts and separators', @{
+    var entries = summary.parse(
+      '# Summary\n\n[Intro](intro.md)\n\n# Part One\n\n- [A](a.md)\n  - [B](a/b.md)\n- [Draft]()\n\n---\n\n[End](end.md)\n',
+    )
+
+    expect(entries.map(@(e) => e.kind)).to_equal([
+      'chapter',
+      'part',
+      'chapter',
+      'chapter',
+      'separator',
+      'chapter',
+    ])
+    expect(entries[0].numbered).to_be_false()
+    expect(entries[1].title).to_be('Part One')
+    expect(entries[2].numbered).to_be_true()
+    expect(entries[2].children[0].target).to_be('a/b.md')
+    expect(entries[3].target).to_be_nil()
+    expect(entries[5].line).to_be(13)
+  })
+
+  it('leaves a part marked unnumbered unnumbered', @{
+    var entries = summary.parse(
+      '# Summary\n\n# Appendices {.unnumbered}\n\n- [A](a.md)\n  - [B](b.md)\n',
+    )
+
+    expect(entries[0].unnumbered).to_be_true()
+    expect(entries[1].unnumbered).to_be_true()
+    expect(entries[1].children[0].unnumbered).to_be_true()
+  })
+
+  it('decodes an address written with escapes', @{
+    expect(summary.parse('- [A](my%20page.md)\n')[0].target).to_be('my page.md')
+  })
+
+  it('names the line of an item that is not a link', @{
+    expect(
+      refusal(@{
+        summary.parse('# Summary\n\n- [A](a.md)\n- just words\n')
+      }),
+    ).to_contain('SUMMARY.md:4')
+  })
+})
+
+describe('paths', @{
+  it('puts each page beside its source', @{
+    expect(page_path('guide/setup.md')).to_be('guide/setup.html')
+    expect(page_path('README.md')).to_be('index.html')
+    expect(page_path('guide/readme.md')).to_be('guide/index.html')
+  })
+
+  it('works out dots in a path', @{
+    expect(normalize('a/./b/../c.md')).to_be('a/c.md')
+    expect(normalize('../x.md')).to_be('../x.md')
+  })
+
+  it('climbs back to the root of the site', @{
+    expect(root_of('index.html')).to_be('')
+    expect(root_of('a/b/c.html')).to_be('../../')
+  })
+})
+
+describe('preprocess', @{
+  it('includes a file, a range of it, or a part marked by anchors', @{
+    in_sandbox(@(directory) {
+      put(
+        directory,
+        'code.zu',
+        'one\n# ANCHOR: middle\ntwo\nthree\n# ANCHOR_END: middle\nfour\n',
+      )
+
+      var page = os.join_paths(directory, 'page.md')
+      var whole = preprocess('{{#include code.zu}}', page).text
+      var lines = preprocess('{{#include code.zu:3:4}}', page).text
+      var from = preprocess('{{#include code.zu:6:}}', page).text
+      var marked = preprocess('{{#include code.zu:middle}}', page).text
+
+      expect(whole).to_be('one\ntwo\nthree\nfour')
+      expect(lines).to_be('two\nthree')
+      expect(from).to_be('four')
+      expect(marked).to_be('two\nthree')
+    })
+  })
+
+  it('takes a title out of the page', @{
+    var read = preprocess('{{#title Another Name}}\n# Heading', '/x/page.md')
+
+    expect(read.title).to_be('Another Name')
+    expect(read.text).to_be('\n# Heading')
+  })
+
+  it('writes an escaped directive as it is', @{
+    expect(preprocess('\\{{#include x.zu}}', '/x/page.md').text)
+        .to_be('{{#include x.zu}}')
+  })
+
+  it('leaves a directive it does not know alone', @{
+    expect(preprocess('{{#tabs}}', '/x/page.md').text).to_be('{{#tabs}}')
+  })
+
+  it('refuses a file that is not there', @{
+    expect(
+      refusal(@{
+        preprocess('{{#include nowhere.zu}}', '/x/page.md')
+      }),
+    ).to_contain('nowhere.zu')
+  })
+})
+
+describe('load', @{
+  it('numbers chapters and reads them in order', @{
+    in_sandbox(@(directory) {
+      put(
+        directory,
+        'src/SUMMARY.md',
+        '[Intro](intro.md)\n\n- [One](one.md)\n  - [Inner](one/inner.md)\n- [Two](two.md)\n\n# Extra {.unnumbered}\n\n- [Notes](notes.md)\n',
+      )
+
+      for name in ['intro.md', 'one.md', 'one/inner.md', 'two.md', 'notes.md'] {
+        put(directory, 'src/' + name, '# ${name}\n')
+      }
+
+      var book = load(parse('', directory))
+      var labels = book.chapters.map(@(c) => c.label())
+
+      expect(labels).to_equal(['', '1', '1.1', '2', ''])
+      expect(book.chapters.map(@(c) => c.path)).to_equal([
+        'intro.html',
+        'one.html',
+        'one/inner.html',
+        'two.html',
+        'notes.html',
+      ])
+      expect(book.chapters[2].owner.title).to_be('One')
+      expect(book.chapters[4].part.title).to_be('Extra')
+      expect(book.chapters[1].text).to_be('# one.md\n')
+    })
+  })
+
+  it('names a chapter whose file is missing', @{
+    in_sandbox(@(directory) {
+      put(directory, 'src/SUMMARY.md', '- [Gone](gone.md)\n')
+
+      expect(
+        refusal(@{
+          load(parse('', directory))
+        }),
+      ).to_contain('gone.md')
+    })
+  })
+
+  it('writes a missing chapter when asked to', @{
+    in_sandbox(@(directory) {
+      put(directory, 'src/SUMMARY.md', '- [Gone](gone.md)\n')
+
+      load(parse('[book]\ncreate-missing = true\n', directory))
+
+      expect(file(os.join_paths(directory, 'src', 'gone.md')).read())
+          .to_be('# Gone\n')
+    })
+  })
+
+  it('refuses a page listed twice', @{
+    in_sandbox(@(directory) {
+      put(directory, 'src/SUMMARY.md', '- [A](a.md)\n- [Again](a.md)\n')
+      put(directory, 'src/a.md', '# A\n')
+
+      expect(
+        refusal(@{
+          load(parse('', directory))
+        }),
+      ).to_contain('twice')
+    })
+  })
+
+  it('refuses a page outside the source directory', @{
+    in_sandbox(@(directory) {
+      put(directory, 'src/SUMMARY.md', '- [Out](../out.md)\n')
+
+      expect(
+        refusal(@{
+          load(parse('', directory))
+        }),
+      ).to_contain('outside')
+    })
+  })
+})

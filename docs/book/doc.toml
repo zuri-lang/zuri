@@ -1,0 +1,28 @@
+# The Zuri Programming Language, built with `zuri doc`.
+#
+# The site is written under target/, not beside the source: it is build
+# output, and target/ is already ignored by git.
+
+[book]
+title = "The Zuri Programming Language"
+description = "An introduction to Zuri, from your first line of code to a full-stack web application."
+authors = ["The Zuri Project"]
+language = "en"
+output = "../../target/book"
+
+[site]
+url = "https://zuri-lang.github.io/zuri/book/"
+repository = "https://github.com/zuri-lang/zuri"
+edit = "https://github.com/zuri-lang/zuri/edit/main/docs/book/src/{path}"
+logo = "../site/zuri-butterfly.svg"
+favicon = "../site/zuri-butterfly.svg"
+fold = 1
+
+# Both books sit under the landing page, and each links to the other.
+[site.home]
+url = "../"
+label = "Zuri"
+
+[[site.links]]
+label = "Standard Library"
+url = "../reference/"

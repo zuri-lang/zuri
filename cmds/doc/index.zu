@@ -1,0 +1,148 @@
+/**
+ * @command doc
+ * @description Builds a documentation site from a book written in
+ *    Markdown.
+ *
+ *   zuri doc [build|serve|init|clean] [dir] [options]
+ *
+ * A book is a directory holding a `doc.toml` and a `src` directory of
+ * Markdown pages, with `src/SUMMARY.md` listing them in reading order.
+ * `zuri doc` turns it into a site: one page for each chapter, with the
+ * contents beside it, a search box, a page for printing the whole book,
+ * light and dark themes, and every code block coloured. Zuri, REPL
+ * sessions, HTML and Wire, XML, JSON, shell scripts and terminal
+ * sessions, TOML and INI are coloured as the site is built, so a page
+ * reads the same with scripts turned off.
+ *
+ * `serve` builds the site, serves it on this machine, and builds it
+ * again whenever the book changes, reloading every open page.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+
+import .._shared.errors { CommandError, UsageError, run }
+import .._shared.fsx
+import .._shared.ui
+
+import .book
+import .config
+import .plan
+import .scaffold
+import .serve
+import .site
+import .site { Site }
+
+# The book's settings, with the output directory the command line asked
+# for.
+def _settings(root: string, out: ?string) {
+  var settings = config.load(root)
+
+  if out != nil {
+    settings.output = out
+  }
+
+  return settings
+}
+
+# A path as the person running the command would type it.
+def _shown(path: string) {
+  var relative = os.relative_path(os.cwd(), path)
+
+  return relative.starts_with('..') ? path : relative
+}
+
+def _build(chosen: dict) {
+  var root = plan.find_book(chosen.dir, os.cwd())
+  var settings = _settings(root, chosen.out)
+  var report = Site(book.load(settings)).build()
+
+  for warning in report.warnings {
+    ui.complain(ui.warn('warning: ') + warning)
+  }
+
+  echo '${ui.heading(settings.title)}: ${ui.count(report.pages, "page")} in ${report.seconds.fixed(2)}s'
+  echo ui.muted('  ${_shown(settings.output)}')
+
+  if chosen.strict and !report.warnings.is_empty() {
+    raise CommandError(
+      '${ui.count(report.warnings.length(), "link")} inside the book lead${report.warnings.length() == 1 ? "s" : ""} nowhere',
+    )
+  }
+
+  if chosen.open {
+    serve.open_browser('file://' + os.join_paths(settings.output, 'index.html'))
+  }
+}
+
+def _serve(chosen: dict) {
+  var root = plan.find_book(chosen.dir, os.cwd())
+
+  serve.run(root, {
+    host: chosen.host,
+    port: chosen.port,
+    open: chosen.open,
+    output: chosen.out,
+  })
+}
+
+def _init(chosen: dict) {
+  var target = plan.init_target(chosen.dir, os.cwd())
+
+  if file(os.join_paths(target, config.FILE_NAME)).exists() {
+    raise UsageError('${_shown(target)} already holds a book')
+  }
+
+  var title = chosen.title == nil ? plan.default_title(target) : chosen.title
+  var written = []
+
+  for path, contents in scaffold.files(title) {
+    var full = os.join_paths(target, path)
+
+    if file(full).exists() {
+      continue
+    }
+
+    fsx.ensure_dir(os.dir_name(full))
+    file(full, 'w').write(contents)
+    written.append(path)
+  }
+
+  echo 'Started ${ui.heading(title)} in ${_shown(target)}'
+  ui.say(written.map(@(path) => ui.muted('  ${path}')))
+  echo ''
+  echo 'Build it with ${ui.accent("zuri doc build")}, or read it as you write with ${ui.accent("zuri doc serve")}.'
+}
+
+def _clean(chosen: dict) {
+  var root = plan.find_book(chosen.dir, os.cwd())
+  var settings = _settings(root, chosen.out)
+
+  if site.clean(settings) {
+    echo 'Removed ${_shown(settings.output)}'
+  } else {
+    echo 'Nothing to remove'
+  }
+}
+
+def main() {
+  var chosen = plan.settings(plan.parser().parse())
+
+  using chosen.command {
+    when 'build' {
+      _build(chosen)
+    }
+    when 'serve' {
+      _serve(chosen)
+    }
+    when 'init' {
+      _init(chosen)
+    }
+    when 'clean' {
+      _clean(chosen)
+    }
+  }
+}
+
+run('doc', main)

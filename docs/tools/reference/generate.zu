@@ -48,7 +48,7 @@ def _clean() {
   }
 }
 
-# The nesting mdBook reads as a sub-chapter: two spaces per level.
+# The nesting SUMMARY.md reads as a section: two spaces per level.
 def _summary(roots: list) {
   var out = []
 

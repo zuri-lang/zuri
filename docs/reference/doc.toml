@@ -1,0 +1,33 @@
+# The Zuri Standard Library, built with `zuri doc`.
+#
+# Nothing about this book is kept in the repository but this file. The
+# pages are generated from the doc blocks in `libs/` on every build, so
+# a page and the doc block it came from cannot disagree, and both the
+# Markdown and the site are build output under `target/`.
+
+[book]
+title = "The Zuri Standard Library"
+description = "Every module Zuri ships with, generated from the library's own doc blocks."
+authors = ["The Zuri Project"]
+language = "en"
+source = "../../target/reference/src"
+output = "../../target/reference/html"
+
+# The pages are generated, so there is no "suggest an edit" link: the
+# next generator run would overwrite the file it pointed at. The doc
+# block in `libs/` is what anyone should be editing.
+[site]
+url = "https://zuri-lang.github.io/zuri/reference/"
+repository = "https://github.com/zuri-lang/zuri"
+logo = "../site/zuri-butterfly.svg"
+favicon = "../site/zuri-butterfly.svg"
+fold = 1
+numbers = false
+
+[site.home]
+url = "../"
+label = "Zuri"
+
+[[site.links]]
+label = "The Book"
+url = "../book/"

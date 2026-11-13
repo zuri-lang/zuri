@@ -1,0 +1,167 @@
+/**
+ * What every highlighter writes with: text escaped for a page, and a
+ * span naming the kind of thing the text is. The stylesheet decides
+ * what each kind looks like.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+/**
+ * _text_ with the characters that mean something in HTML text replaced
+ * by references.
+ *
+ * @param string text
+ * @returns string
+ */
+def escape(text: string) {
+  return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+}
+
+/**
+ * _text_ escaped and wrapped in a span of class _kind_, or escaped and
+ * bare when _kind_ is `nil`. Empty text gives an empty string.
+ *
+ * @param ?string kind
+ * @param string text
+ * @returns string
+ */
+def span(kind: ?string, text: string) {
+  if text.is_empty() {
+    return ''
+  }
+
+  if kind == nil {
+    return escape(text)
+  }
+
+  return '<span class="${kind}">${escape(text)}</span>'
+}
+
+/**
+ * A list of `[kind, text]` pairs as markup. Neighbours of the same kind
+ * share one span.
+ *
+ * @param list pieces
+ * @returns string
+ */
+def render(pieces: list) {
+  var out = []
+  var kind = nil
+  var run = []
+
+  for piece in pieces {
+    if piece[0] != kind and !run.is_empty() {
+      out.append(span(kind, ''.join(run)))
+      run = []
+    }
+
+    kind = piece[0]
+    run.append(piece[1])
+  }
+
+  if !run.is_empty() {
+    out.append(span(kind, ''.join(run)))
+  }
+
+  return ''.join(out)
+}
+
+/**
+ * A set of the space-separated words in _text_, as a dictionary from
+ * each word to `true`.
+ *
+ * @param string text
+ * @returns dict
+ */
+def words(text: string) {
+  var set = {}
+
+  for word in text.split(' ') {
+    if !word.is_empty() {
+      set.set(word, true)
+    }
+  }
+
+  return set
+}
+
+/**
+ * Whether _c_ can be part of a name: a letter, a digit or `_`.
+ *
+ * @param string c
+ * @returns bool
+ */
+def is_word(c: string) {
+  return c == '_' or c.is_alnum()
+}
+
+/**
+ * Where the run of characters starting at _start_ that _test_ accepts
+ * ends.
+ *
+ * @param string text
+ * @param number start
+ * @param function test
+ * @returns number
+ */
+def run_end(text: string, start: number, test: function) {
+  var i = start
+  var length = text.length()
+
+  while i < length and test(text[i]) {
+    i++
+  }
+
+  return i
+}
+
+/**
+ * Where the line holding _start_ ends: the index of its newline, or the
+ * end of _text_.
+ *
+ * @param string text
+ * @param number start
+ * @returns number
+ */
+def line_end(text: string, start: number) {
+  var found = text.index_of('\n', start)
+
+  return found < 0 ? text.length() : found
+}
+
+/**
+ * Where a string opened by the quote at _start_ ends, just past its
+ * closing quote, with a backslash escaping whatever follows it. An
+ * unclosed string runs to the end of its line.
+ *
+ * @param string text
+ * @param number start
+ * @param ?bool escapes: Default `true`. Whether a backslash escapes.
+ * @returns number
+ */
+def quoted_end(text: string, start: number, escapes: ?bool) {
+  var quote = text[start]
+  var length = text.length()
+  var i = start + 1
+
+  while i < length {
+    var c = text[i]
+
+    if c == '\\' and escapes != false {
+      i += 2
+      continue
+    }
+
+    if c == quote {
+      return i + 1
+    }
+
+    if c == '\n' and quote != '`' {
+      return i
+    }
+
+    i++
+  }
+
+  return length
+}

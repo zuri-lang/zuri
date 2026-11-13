@@ -33,7 +33,7 @@ var _SEARCH_PATHS = {
     '~/.local/share/fonts',
     '~/.fonts',
   ],
-  osx: ['/System/Library/Fonts', '/Library/Fonts', '~/Library/Fonts'],
+  macos: ['/System/Library/Fonts', '/Library/Fonts', '~/Library/Fonts'],
   windows: ['C:/Windows/Fonts'],
 }
 

@@ -6,9 +6,9 @@ Zuri programs that generate and check them.
 | | |
 | --- | --- |
 | [`book/`](book) | **The Zuri Programming Language**, the narrative text |
-| [`reference/`](reference) | **The Zuri Standard Library**: one `book.toml`, generated from `libs/` |
+| [`reference/`](reference) | **The Zuri Standard Library**: one `doc.toml`, generated from `libs/` |
 | [`site/`](site) | the landing page the two books sit under; the installers it serves live at the repository root |
-| [`tools/`](tools) | the generators, the audit, the verifier, the link checker |
+| [`tools/`](tools) | the build, the generators, the audit, the verifier, the link checker |
 
 ## The Book
 
@@ -19,9 +19,9 @@ operators, decorated methods, every built-in function, every method on
 every built-in type, the standard library index, the error hierarchy
 and writing commands of your own.
 
-It is written as mdBook source under [`book/`](book), so it reads fine as
-plain markdown on GitHub and renders to a searchable site with
-`cargo run-docs`.
+It is written as Markdown under [`book/`](book), so it reads fine as
+plain markdown on GitHub, and `zuri doc` builds it into a searchable site;
+`cargo run-docs` does that and serves it.
 
 Start at [the introduction](book/src/ch00-00-introduction.md), or jump to
 what you need:
@@ -43,7 +43,7 @@ ships with, every public name in each one, and what each takes and
 returns. Read it with `cargo run-docs -- reference`.
 
 It is **generated**, not written, and **none of it is kept in the
-repository**. `docs/reference` holds a `book.toml` and nothing else:
+repository**. `docs/reference` holds a `doc.toml` and nothing else:
 the pages are written to `target/reference/src` and rendered into
 `target/reference/html`, both build output, both thrown away by
 `cargo clean-docs`. A page and the doc block it came from therefore
@@ -57,8 +57,8 @@ before rendering, so there is usually nothing to do by hand. To write
 the pages without rendering anything:
 
 ```console
-$ cargo docs generate reference
-generating reference from libs/
+$ cargo docs generate
+generating the reference from libs/
 ... modules, ... pages, ... documented names
 ```
 
@@ -70,13 +70,6 @@ $ zuri run docs/tools/reference/generate.zu
 
 Editing a page under `reference/src` is pointless; the next run
 overwrites it. Edit the library's doc block instead.
-
-A plain `cargo build` renders whichever books already have pages. On a
-fresh clone that is the book alone, and it says so:
-
-```console
-warning: the reference has no pages yet; run `cargo build-docs` to generate them
-```
 
 Three rules decide what appears:
 
@@ -143,14 +136,15 @@ out again after changing it, without re-rendering either book:
 $ cargo docs site
 ```
 
-Both commands need [mdBook](https://rust-lang.github.io/mdBook). If it is
-not installed they offer to install it for you, and nothing is installed
-without your say-so.
+Both books are built by `zuri doc`, run with the `zuri` binary that
+`cargo build` put beside the docs tool, so run `cargo build` first. That
+binary reads `libs/` and `cmds/` straight from this checkout, so a change
+to either shows in the books without another build. The same command
+works on its own, which is quicker while writing:
 
-A plain `cargo build` also rebuilds the book, but only when mdBook is
-already installed and only when something under `docs/book/src` actually
-changed. Without mdBook you get one line of warning and the build carries
-on, because the book is markdown that reads perfectly well unrendered.
+```console
+$ zuri doc serve docs/book
+```
 
 To throw the rendered output away:
 
@@ -224,16 +218,19 @@ runtime rather than in a stub and which is maintained by hand.
 ## The Tools
 
 Both books are generated and checked by Zuri programs in
-[`tools/`](tools). Four of them are shared, because both books read the
-same doc blocks and emit the same kind of markdown:
+[`tools/`](tools). Both read the library's doc blocks through the
+standard library's own [`zuri.doc`](../libs/zuri/doc.zu) module, which
+holds the doc block grammar: prose, `@tag` lines, and the wrapping rule
+that decides where a tag ends. These programs serve both books:
 
 | | |
 | --- | --- |
-| [`docs.zu`](tools/docs.zu) | the doc block grammar: prose, `@tag` lines, and the wrapping rule that decides where a tag ends |
-| [`markdown.zu`](tools/markdown.zu) | reflowing, wrapping, heading normalisation, escaping |
+| [`markdown.zu`](tools/markdown.zu) | the markdown both generators emit: reflowing, wrapping, heading levels, escaping |
 | [`audit.zu`](tools/audit.zu) | checks every doc block in `libs/` |
 | [`verify.zu`](tools/verify.zu) | runs every example and compares its output |
+| [`blocks.zu`](tools/blocks.zu) | pulls each runnable example, and the output it claims, out of a page for `verify.zu` |
 | [`links.zu`](tools/links.zu) | checks that every internal link and anchor resolves |
+| [`site.zu`](tools/site.zu) | builds both books with `zuri doc` and lays out the website, for the `cargo` aliases |
 
 The rest is per-book: [`tools/book`](tools/book) generates the
 appendices, [`tools/reference`](tools/reference) generates the library

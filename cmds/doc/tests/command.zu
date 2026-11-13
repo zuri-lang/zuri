@@ -1,0 +1,107 @@
+# Tests for the whole command, run as a reader runs it: starting a book,
+# building it, and cleaning up after it.
+
+import os
+import os.process { spawn }
+import os.tempfile { create_temp_dir }
+import test { * }
+
+var DIR = nil
+
+def doc(words: list) {
+  var child = spawn(os.exe_path, ['doc'] + words, {
+    cwd: DIR,
+    stdin: 'null',
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env: { NO_COLOR: '1' },
+  })
+
+  var status = child.wait()
+  var out = child.read_stdout().to_string()
+  var err = child.read_stderr().to_string()
+
+  return { status, all: out + err }
+}
+
+def put(path: string, text: string) {
+  var full = os.join_paths(DIR, path)
+
+  os.create_dir(os.dir_name(full), 0c755, true)
+  file(full, 'w').write(text)
+}
+
+def exists(path: string) {
+  return file(os.join_paths(DIR, path)).exists()
+}
+
+before_each(@{
+  DIR = create_temp_dir('zuri-doc-command-')
+})
+
+after_each(@{
+  os.remove_dir(DIR, true)
+})
+
+describe('zuri doc', @{
+  it('starts a book and builds it', @{
+    var started = doc(['init', 'manual', '--title', 'Manual'])
+
+    expect(started.status).to_be(0)
+    expect(started.all).to_contain('Started Manual in manual')
+
+    var built = doc(['build', 'manual'])
+
+    expect(built.status).to_be(0)
+    expect(built.all).to_contain('Manual: 5 pages')
+    expect(exists('manual/site/index.html')).to_be_true()
+    expect(exists('manual/site/getting-started.html')).to_be_true()
+  })
+
+  it('will not start a book over another', @{
+    doc(['init', 'manual'])
+
+    var again = doc(['init', 'manual'])
+
+    expect(again.status).to_be(1)
+    expect(again.all).to_contain('already holds a book')
+  })
+
+  it('fails a strict build over a link that leads nowhere', @{
+    doc(['init', 'manual'])
+    put(
+      'manual/src/introduction.md',
+      '# Manual\n\nSee [nothing](nothing.md).\n',
+    )
+
+    var loose = doc(['build', 'manual'])
+    var strict = doc(['build', 'manual', '--strict'])
+
+    expect(loose.status).to_be(0)
+    expect(loose.all)
+        .to_contain('links to nothing.md, which SUMMARY.md does not list')
+    expect(strict.status).to_be(1)
+    expect(strict.all).to_contain('1 link inside the book leads nowhere')
+  })
+
+  it('says what is wrong with doc.toml', @{
+    doc(['init', 'manual'])
+    put('manual/doc.toml', '[site]\nthem = "dark"\n')
+
+    var built = doc(['build', 'manual'])
+
+    expect(built.status).to_be(1)
+    expect(built.all).to_contain("doc: doc.toml: [site] has no setting 'them'")
+  })
+
+  it('removes what it built', @{
+    doc(['init', 'manual'])
+    doc(['build', 'manual'])
+
+    var cleaned = doc(['clean', 'manual'])
+
+    expect(cleaned.all).to_contain('Removed')
+    expect(os.dir_exists(os.join_paths(DIR, 'manual', 'site'))).to_be_false()
+    expect(doc(['clean', 'manual']).all).to_contain('Nothing to remove')
+  })
+})

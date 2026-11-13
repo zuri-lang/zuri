@@ -28,8 +28,9 @@ var BOOKS = [
   },
 ]
 
-# mdBook derives a heading's anchor by lowercasing it and dropping
-# everything that is not a letter, a digit, a dash or an underscore.
+# `zuri doc` derives a heading's anchor by lowercasing it, making each
+# space a dash, and dropping everything that is not a letter, a digit,
+# a dash or an underscore.
 def _anchor(text: string) {
   var out = ''
 
@@ -47,8 +48,8 @@ def _anchor(text: string) {
   return out
 }
 
-# Every anchor a page offers: one per heading, plus mdBook's numbered
-# suffixes for headings that repeat.
+# Every anchor a page offers: one per heading, with a numbered suffix
+# on each heading that repeats one before it.
 def _anchors(source: string) {
   var found = []
   var seen = {}

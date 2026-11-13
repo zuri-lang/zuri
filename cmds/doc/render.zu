@@ -1,0 +1,633 @@
+/**
+ * A chapter's Markdown as the HTML of its page.
+ *
+ * Pages are parsed by the standard library's `markdown` module:
+ * CommonMark and GitHub Flavored Markdown, with raw HTML allowed and
+ * attributes written after a heading, as in `## Results {#results}`. A
+ * book's `[markdown]` table can change any of that. On top of the
+ * module's own rendering, a page here gets:
+ *
+ * - a link beside each heading, to that heading;
+ * - every code block coloured, labelled with its language, and a block
+ *   of program output joined to the code above it;
+ * - a file name written just above a code block, as
+ *   `<span class="filename">Filename: main.zu</span>`, shown as the
+ *   block's caption instead;
+ * - every link to another page's Markdown file pointed at that page;
+ * - wide tables scrolled within the page rather than widening it.
+ *
+ * Rendering also collects what the rest of the site needs from a page:
+ * the headings for its outline, its text for searching, and every link
+ * it makes inside the book, for checking.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import markdown
+import markdown.node { Node }
+import markdown.renderer { HtmlRenderer }
+import url
+
+import .book { Book, Chapter, normalize, page_path, root_of }
+import .highlight
+import .highlight.spans { escape }
+
+/**
+ * The Markdown options every book starts from, before its own
+ * `[markdown]` table.
+ */
+var DEFAULTS = {
+  preset: 'gfm',
+  html: true,
+  tag_filter: false,
+  heading_ids: 'github',
+  attributes: true,
+}
+
+# How much of one section's text the search index keeps.
+var _SEARCH_TEXT = 6000
+
+/**
+ * _text_ escaped to go inside an attribute value.
+ *
+ * @param string text
+ * @returns string
+ */
+def escape_attribute(text: string) {
+  return escape(text).replace('"', '&quot;')
+}
+
+/**
+ * The inline content of _node_ as markup, keeping only what reads the
+ * same in a title, a list of headings or the contents: text, code,
+ * emphasis and strikethrough. Links keep their text and lose the link.
+ *
+ * @param Node node
+ * @returns string
+ */
+def inline_html(node: Node) {
+  var out = []
+
+  for child in node.children {
+    using child.type {
+      when 'text' {
+        out.append(escape(child.literal))
+      }
+      when 'code' {
+        out.append('<code>${escape(child.literal)}</code>')
+      }
+      when 'emphasis' {
+        out.append('<em>${inline_html(child)}</em>')
+      }
+      when 'strong' {
+        out.append('<strong>${inline_html(child)}</strong>')
+      }
+      when 'strikethrough' {
+        out.append('<del>${inline_html(child)}</del>')
+      }
+      when 'softbreak', 'linebreak' {
+        out.append(' ')
+      }
+      when 'html_inline', 'footnote_reference', 'image' {}
+      default {
+        out.append(inline_html(child))
+      }
+    }
+  }
+
+  return ''.join(out).trim()
+}
+
+# The plain text of _node_ for searching, with a space wherever one
+# block or line ends and the next begins.
+def _plain(node: Node, out: list) {
+  using node.type {
+    when 'text', 'code' {
+      out.append(node.literal)
+      return
+    }
+    when 'code_block' {
+      out.append(node.literal)
+      out.append(' ')
+      return
+    }
+    when 'softbreak', 'linebreak' {
+      out.append(' ')
+      return
+    }
+    when 'html_block', 'html_inline', 'footnote_reference' {
+      return
+    }
+  }
+
+  for child in node.children {
+    _plain(child, out)
+  }
+
+  if node.is_block() {
+    out.append(' ')
+  }
+}
+
+/**
+ * The plain text of _node_, as searching reads it.
+ *
+ * @param Node node
+ * @returns string
+ */
+def plain_text(node: Node) {
+  var out = []
+
+  _plain(node, out)
+
+  return ''.join(out).replace('/\s+/', ' ').trim()
+}
+
+# The fence name and label of a code block.
+def _language(node: Node) {
+  var language = highlight.language_of(node.info)
+
+  return { language, label: highlight.label(language, node.literal) }
+}
+
+def _is_output(node: ?Node) {
+  return node != nil and
+      node.type == 'code_block' and
+      _language(node).label == 'Output'
+}
+
+/**
+ * The renderer behind every page: the `markdown` module's own, with
+ * headings, code blocks and tables written for the site.
+ */
+class PageRenderer < HtmlRenderer {
+
+  /**
+   * @param dict options
+   * @constructor
+   */
+  @new(options: dict) {
+    parent(options)
+  }
+
+  /**
+   * A heading, with a link to itself for every level below the page's
+   * title.
+   *
+   * @param Node node
+   */
+  heading(node: Node) {
+    var id = node.attributes.get('id')
+
+    self.cr()
+    self.write('<h${node.level}${self.attributes(node)}>')
+
+    if id != nil and node.level > 1 {
+      self.write(
+        '<a class="anchor" href="#${escape_attribute(id)}" aria-hidden="true" tabindex="-1"></a>',
+      )
+    }
+
+    self.render_children(node)
+    self.write('</h${node.level}>')
+    self.cr()
+  }
+
+  /**
+   * A code block, coloured and labelled. A block of output directly
+   * after code is marked so the two are shown as one.
+   *
+   * @param Node node
+   */
+  code_block(node: Node) {
+    var found = _language(node)
+    var language = found.language
+    var output = found.label == 'Output'
+    var caption = node.attributes.get('data-file')
+    var classes = ['code']
+
+    if caption != nil {
+      node.attributes.remove('data-file')
+    }
+
+    if output {
+      classes.append('output')
+
+      var before = node.previous_sibling()
+
+      if before != nil and before.type == 'code_block' and !_is_output(before) {
+        classes.append('follows-code')
+      }
+    } else if _is_output(node.next_sibling()) {
+      classes.append('has-output')
+    }
+
+    if caption != nil {
+      classes.append('has-caption')
+    }
+
+    var code_class = language.is_empty()
+        ? ''
+        : ' class="language-${escape_attribute(language)}"'
+
+    self.cr()
+    self.write('<figure class="${' '.join(classes)}">')
+
+    if caption != nil {
+      self.write('<figcaption>${escape(caption)}</figcaption>')
+    }
+
+    self.write('<pre${self.attributes(node)}><code${code_class}>')
+    self.write(highlight.highlight(node.literal, language))
+    self.write('</code></pre>')
+
+    if found.label != nil {
+      self.write('<span class="code-label">${escape(found.label)}</span>')
+    }
+
+    self.write('</figure>')
+    self.cr()
+  }
+
+  /**
+   * A table, in a box that scrolls sideways when it is wider than the
+   * page.
+   *
+   * @param Node node
+   */
+  table(node: Node) {
+    self.cr()
+    self.write('<div class="table-wrap">')
+    parent.table(node)
+    self.write('</div>')
+    self.cr()
+  }
+}
+
+/**
+ * One rendered page.
+ */
+class Page {
+
+  /** The chapter it shows. @type Chapter */
+  var chapter
+
+  /** The HTML of its content. @type string */
+  var html = ''
+
+  /** Its headings below the title: `{ level, id, html }` each. @type list */
+  var outline = []
+
+  /** Its sections, for searching: `{ id, title, text }` each. @type list */
+  var sections = []
+
+  /** The plain text of its first heading, or `nil`. @type ?string */
+  var heading
+
+  @new(chapter: Chapter) {
+    self.chapter = chapter
+    self.outline = []
+    self.sections = []
+  }
+}
+
+/**
+ * Renders the pages of one book.
+ */
+class Renderer {
+
+  /** @type Book */
+  var book
+
+  /** The `markdown` instance pages are parsed with. */
+  var md
+
+  /**
+   * Every link a page made to a page or file inside the book:
+   * `{ from, line, page, source, fragment }` for a link to a chapter,
+   * with the target's page and Markdown file, and `{ from, line, file }`
+   * for anything else, with the target's path under the source
+   * directory.
+   *
+   * @type list
+   */
+  var links = []
+
+  # The chapter being rendered, and whether it is for the print page.
+  var _chapter
+  var _print = false
+
+  /**
+   * @param Book book
+   * @throws ValueError When the book's `[markdown]` options are not ones
+   *    the module takes
+   */
+  @new(book: Book) {
+    self.book = book
+    self.links = []
+
+    var options = DEFAULTS.clone()
+
+    for key, value in book.config.markdown {
+      options.set(key, value)
+    }
+
+    options.set('renderer', PageRenderer)
+
+    self.md = markdown(options).use(@(doc) {
+      self._transform(doc)
+    })
+  }
+
+  /**
+   * The page for _chapter_.
+   *
+   * @param Chapter chapter
+   * @returns Page
+   */
+  render(chapter: Chapter) {
+    self._chapter = chapter
+    self._print = false
+
+    var doc = self.md.parse(chapter.text)
+    var page = Page(chapter)
+
+    page.html = self.md.to_html(doc)
+    _collect(doc, page)
+
+    return page
+  }
+
+  /**
+   * The HTML of _chapter_ as the print page holds it: every heading's
+   * id, and every link between pages, made to work within one page with
+   * every chapter on it.
+   *
+   * @param Chapter chapter
+   * @returns string
+   */
+  render_for_print(chapter: Chapter) {
+    self._chapter = chapter
+    self._print = true
+
+    var html = self.md.to_html(self.md.parse(chapter.text))
+    var prefix = print_id(chapter.path) + '--'
+
+    self._print = false
+
+    # Footnotes number from one on every page.
+    return html
+        .replace('id="fn', 'id="${prefix}fn')
+        .replace('href="#fn', 'href="#${prefix}fn')
+  }
+
+  /**
+   * _text_, a line of Markdown such as a title, as inline markup.
+   *
+   * @param string text
+   * @returns string
+   */
+  render_inline(text: string) {
+    return self.md.render_inline(text)
+  }
+
+  # Everything done to a page between parsing and rendering.
+  _transform(doc: Node) {
+    _captions(doc)
+
+    for link in doc.find_all('link') {
+      link.destination = self._rewrite(link.destination, _line_of(link))
+    }
+
+    for image in doc.find_all('image') {
+      self._note_file(image.destination, _line_of(image))
+    }
+
+    if self._print {
+      var prefix = print_id(self._chapter.path) + '--'
+
+      for heading in doc.find_all('heading') {
+        var id = heading.attributes.get('id')
+
+        if id != nil {
+          heading.attributes.set('id', prefix + id)
+        }
+      }
+    }
+  }
+
+  # Records a link to a file in the book that is not a page.
+  _note_file(destination: string, line: number) {
+    if self._print or
+        _is_external(destination) or
+        destination.starts_with('#') {
+      return
+    }
+
+    var path = _strip(destination).path
+
+    if path.is_empty() {
+      return
+    }
+
+    self.links.append({
+      from: self._chapter.source,
+      line,
+      file: normalize(_directory(self._chapter.source) + url.decode(path)),
+    })
+  }
+
+  # A link's destination as the site needs it.
+  _rewrite(destination: string, line: number) {
+    if destination.is_empty() or _is_external(destination) {
+      return destination
+    }
+
+    var parts = _strip(destination)
+    var chapter = self._chapter
+
+    if parts.path.is_empty() {
+      # A link to a heading on the same page.
+      if self._print {
+        return '#' + print_id(chapter.path) + '--' + parts.fragment
+      }
+
+      self.links.append({
+        from: chapter.source,
+        line,
+        page: chapter.path,
+        source: chapter.source,
+        fragment: parts.fragment,
+      })
+
+      return destination
+    }
+
+    var target = normalize(_directory(chapter.source) + url.decode(parts.path))
+
+    if !target.lower().ends_with('.md') {
+      self._note_file(destination, line)
+
+      return destination
+    }
+
+    var found = self.book.by_source.get(target)
+    var page = found != nil ? found.path : page_path(target)
+
+    if self._print {
+      return parts.fragment.is_empty()
+          ? '#' + print_id(page)
+          : '#' + print_id(page) + '--' + parts.fragment
+    }
+
+    self.links.append({
+      from: chapter.source,
+      line,
+      page,
+      source: target,
+      fragment: parts.fragment,
+    })
+
+    var written = root_of(chapter.path) + page
+
+    return written +
+        parts.query +
+        (parts.fragment.is_empty() ? '' : '#' + parts.fragment)
+  }
+}
+
+/**
+ * The id the print page gives the chapter whose page is at _path_.
+ *
+ * @param string path
+ * @returns string
+ */
+def print_id(path: string) {
+  var bare = path.ends_with('.html') ? path[0, path.length() - 5] : path
+
+  return 'page-' + bare.replace('/', '-')
+}
+
+# The line _node_ is on. Only blocks know theirs, so an inline node
+# answers with the block it sits in.
+def _line_of(node: Node) {
+  var at = node
+
+  while at != nil {
+    if at.line != nil {
+      return at.line
+    }
+
+    at = at.parent_node
+  }
+
+  return 0
+}
+
+# Whether _destination_ leaves the book: it has a scheme, or starts at
+# the root of a host.
+def _is_external(destination: string) {
+  return destination.starts_with('/') or
+      destination.match('/^[A-Za-z][A-Za-z0-9+.-]*:/') != false
+}
+
+# _destination_ split into its path, `?query` and fragment.
+def _strip(destination: string) {
+  var fragment = ''
+  var query = ''
+  var path = destination
+  var hash = path.index_of('#')
+
+  if hash >= 0 {
+    fragment = path[hash + 1,]
+    path = path[0, hash]
+  }
+
+  var question = path.index_of('?')
+
+  if question >= 0 {
+    query = path[question,]
+    path = path[0, question]
+  }
+
+  return { path, query, fragment }
+}
+
+# The directory part of a source path, with its trailing `/`.
+def _directory(source: string) {
+  var slash = source.last_index_of('/')
+
+  return slash < 0 ? '' : source[0, slash + 1]
+}
+
+# Moves `<span class="filename">Filename: main.zu</span>`, written as a
+# paragraph of its own just before a code block, onto the block as its
+# caption.
+def _captions(doc: Node) {
+  for paragraph in doc.find_all('paragraph') {
+    var next = paragraph.next_sibling()
+
+    if next == nil or next.type != 'code_block' {
+      continue
+    }
+
+    var children = paragraph.children
+
+    if children.length() != 3 or
+        children[0].type != 'html_inline' or
+        children[1].type != 'text' or
+        children[2].type != 'html_inline' or
+        !children[0].literal.contains('class="filename"') {
+      continue
+    }
+
+    var name = children[1].literal.trim()
+
+    if name.starts_with('Filename:') {
+      name = name[9,].trim()
+    }
+
+    next.attributes.set('data-file', name)
+    paragraph.detach()
+  }
+}
+
+# The outline and the search sections of a rendered page.
+def _collect(doc: Node, page: Page) {
+  var section = { id: '', title: page.chapter.title, text: [] }
+
+  for block in doc.children {
+    if block.type == 'heading' {
+      var id = block.attributes.get('id', '')
+
+      if block.level == 1 and page.heading == nil {
+        page.heading = block.text_content().trim()
+        section.title = page.heading
+        section.id = ''
+        continue
+      }
+
+      if block.level <= 3 and id != '' {
+        page.outline.append({
+          level: block.level,
+          id,
+          html: inline_html(block),
+        })
+      }
+
+      page.sections.append(section)
+      section = { id, title: block.text_content().trim(), text: [] }
+      continue
+    }
+
+    section.text.append(plain_text(block))
+  }
+
+  page.sections.append(section)
+
+  for found in page.sections {
+    var text = ' '.join(found.text)
+
+    found.text = text.length() > _SEARCH_TEXT ? text[0, _SEARCH_TEXT] : text
+  }
+}

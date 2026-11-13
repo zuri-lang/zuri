@@ -1,0 +1,423 @@
+/**
+ * A documentation site's settings: its `doc.toml`, read, checked and
+ * filled in with defaults.
+ *
+ * Every path in the file is relative to the directory holding it. A key
+ * the file does not know, or a value of the wrong type, is refused with
+ * the key named, rather than ignored, so a misspelt setting is noticed
+ * the first time the site is built.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+import toml
+
+import .._shared.errors { UsageError }
+import .._shared.paths
+
+/** The name of the settings file. */
+var FILE_NAME = 'doc.toml'
+
+# Every key each table may hold, and the type its value must have.
+var _BOOK = {
+  title: 'string',
+  description: 'string',
+  authors: 'list',
+  language: 'string',
+  source: 'string',
+  output: 'string',
+  'create-missing': 'bool',
+}
+
+var _SITE = {
+  url: 'string',
+  repository: 'string',
+  edit: 'string',
+  logo: 'string',
+  favicon: 'string',
+  theme: 'string',
+  fold: 'number|bool',
+  numbers: 'bool',
+  search: 'bool',
+  print: 'bool',
+  css: 'list',
+  js: 'list',
+  cname: 'string',
+  home: 'dict',
+  links: 'list',
+}
+
+var _TABLES = ['book', 'site', 'markdown', 'redirects']
+
+# Markdown options the site decides for itself and a book cannot change.
+var _RESERVED = ['renderer', 'highlight', 'toc', 'metadata']
+
+var _THEMES = ['system', 'light', 'dark']
+
+/**
+ * A documentation site's settings.
+ */
+class Config {
+
+  /** The directory holding `doc.toml`. @type string */
+  var root
+
+  /** The book's title. @type string */
+  var title = ''
+
+  /** One sentence describing the book. @type string */
+  var description = ''
+
+  /** @type list[string] */
+  var authors = []
+
+  /** The language the book is written in, as a BCP 47 tag. @type string */
+  var language = 'en'
+
+  /** The directory of Markdown pages and `SUMMARY.md`. @type string */
+  var source
+
+  /** The directory the site is written into. @type string */
+  var output
+
+  /** Whether a chapter `SUMMARY.md` lists without a file is created. @type bool */
+  var create_missing = false
+
+  /** Where the site is published, ending in `/`, or `nil`. @type ?string */
+  var url
+
+  /** The source repository's address, or `nil`. @type ?string */
+  var repository
+
+  /** An address for editing a page, with `{path}` in it, or `nil`. @type ?string */
+  var edit
+
+  /** The logo's absolute path, or `nil`. @type ?string */
+  var logo
+
+  /** The favicon's absolute path, or `nil`. @type ?string */
+  var favicon
+
+  /** `'system'`, `'light'` or `'dark'`. @type string */
+  var theme = 'system'
+
+  /**
+   * How many levels of the contents start open. `nil` opens every level.
+   * @type ?number
+   */
+  var fold
+
+  /** Whether chapters are numbered. @type bool */
+  var numbers = true
+
+  /** Whether the site can be searched. @type bool */
+  var search = true
+
+  /** Whether the site has a page with every chapter on it, for printing. @type bool */
+  var print = true
+
+  /** Absolute paths of stylesheets added to every page. @type list[string] */
+  var css = []
+
+  /** Absolute paths of scripts added to every page. @type list[string] */
+  var js = []
+
+  /** The custom domain GitHub Pages serves the site at, or `nil`. @type ?string */
+  var cname
+
+  /** A link out to the site above this one: `{ url, label }`, or `nil`. @type ?dict */
+  var home
+
+  /** Links shown in the top bar: `{ url, label }` each. @type list[dict] */
+  var links = []
+
+  /** Options for the `markdown` module. @type dict */
+  var markdown = {}
+
+  /** Old page paths to the addresses they now redirect to. @type dict */
+  var redirects = {}
+
+  /** The theme directory beside `doc.toml`, when it has one. @type ?string */
+  var theme_dir
+
+  @new(root: string) {
+    self.root = root
+    self.source = os.join_paths(root, 'src')
+    self.output = os.join_paths(root, 'site')
+    self.authors = []
+    self.css = []
+    self.js = []
+    self.links = []
+    self.markdown = {}
+    self.redirects = {}
+  }
+
+  /**
+   * _path_ from the settings file, made absolute against the directory
+   * holding it.
+   *
+   * @param string path
+   * @returns string
+   */
+  resolve(path: string) {
+    if paths.is_absolute(path) {
+      return os.abs_path(path)
+    }
+
+    return os.abs_path(os.join_paths(self.root, path))
+  }
+
+  @to_string() {
+    return '<Config ${self.title}>'
+  }
+}
+
+# Whether _value_ has one of the types in _types_, written as `a|b`.
+def _has_type(value, types: string) {
+  for type in types.split('|') {
+    using type {
+      when 'string' {
+        if is_string(value) {
+          return true
+        }
+      }
+      when 'bool' {
+        if is_bool(value) {
+          return true
+        }
+      }
+      when 'number' {
+        if is_number(value) {
+          return true
+        }
+      }
+      when 'list' {
+        if is_list(value) {
+          return true
+        }
+      }
+      when 'dict' {
+        if is_dict(value) {
+          return true
+        }
+      }
+    }
+  }
+
+  return false
+}
+
+# Checks every key of _table_ against _known_.
+def _check(table: dict, known: dict, name: string) {
+  for key, value in table {
+    var type = known.get(key)
+
+    if type == nil {
+      raise UsageError(
+        "${FILE_NAME}: [${name}] has no setting '${key}'; it takes " +
+            ', '.join(known.keys()),
+      )
+    }
+
+    if !_has_type(value, type) {
+      raise UsageError(
+        "${FILE_NAME}: [${name}] ${key} must be ${type.replace('|', ' or ')}",
+      )
+    }
+  }
+}
+
+# A list setting whose every entry must be a string.
+def _strings(value: list, name: string) {
+  for item in value {
+    if !is_string(item) {
+      raise UsageError('${FILE_NAME}: ${name} must be a list of strings')
+    }
+  }
+
+  return value
+}
+
+# A `{ url, label }` link.
+def _link(value, name: string) {
+  if !is_dict(value) or !is_string(value.get('url')) {
+    raise UsageError('${FILE_NAME}: ${name} needs a url')
+  }
+
+  for key in value.keys() {
+    if key != 'url' and key != 'label' {
+      raise UsageError(
+        "${FILE_NAME}: ${name} has no setting '${key}'; it takes url, label",
+      )
+    }
+  }
+
+  var label = value.get('label', value.url)
+
+  if !is_string(label) {
+    raise UsageError('${FILE_NAME}: ${name} label must be a string')
+  }
+
+  return { url: value.url, label }
+}
+
+/**
+ * The settings in _text_, the contents of the `doc.toml` in _root_.
+ *
+ * @param string text
+ * @param string root
+ * @returns Config
+ * @throws UsageError When the file is not valid TOML, or holds a key or
+ *    value it should not
+ */
+def parse(text: string, root: string) {
+  var data
+
+  catch {
+    data = toml.parse(text)
+  } as error {
+    raise UsageError('${FILE_NAME}: ${error.message}')
+  }
+
+  var config = Config(root)
+
+  for key, value in data {
+    if !_TABLES.contains(key) {
+      raise UsageError(
+        "${FILE_NAME}: there is no [${key}] table; it takes " +
+            ', '.join(_TABLES),
+      )
+    }
+
+    if !is_dict(value) {
+      raise UsageError('${FILE_NAME}: ${key} must be a table')
+    }
+  }
+
+  var book = data.get('book', {})
+  var site = data.get('site', {})
+
+  _check(book, _BOOK, 'book')
+  _check(site, _SITE, 'site')
+
+  config.title = book.get('title', os.base_name(root))
+  config.description = book.get('description', '')
+  config.authors = _strings(book.get('authors', []), 'authors')
+  config.language = book.get('language', 'en')
+  config.source = config.resolve(book.get('source', 'src'))
+  config.output = config.resolve(book.get('output', 'site'))
+  config.create_missing = book.get('create-missing', false)
+
+  if config.output == config.source or
+      config.source.starts_with(config.output + os.path_separator) {
+    raise UsageError(
+      '${FILE_NAME}: the output directory would hold the pages it is built from',
+    )
+  }
+
+  var url = site.get('url')
+
+  if url != nil {
+    config.url = url.ends_with('/') ? url : url + '/'
+  }
+
+  config.repository = site.get('repository')
+  config.edit = site.get('edit')
+  config.cname = site.get('cname')
+
+  if site.get('logo') != nil {
+    config.logo = config.resolve(site.logo)
+  }
+
+  if site.get('favicon') != nil {
+    config.favicon = config.resolve(site.favicon)
+  }
+
+  config.theme = site.get('theme', 'system')
+
+  if !_THEMES.contains(config.theme) {
+    raise UsageError(
+      "${FILE_NAME}: [site] theme must be 'system', 'light' or 'dark', not '${config.theme}'",
+    )
+  }
+
+  var fold = site.get('fold', false)
+
+  if fold == true {
+    config.fold = 1
+  } else if is_number(fold) {
+    if fold < 1 or !is_int(fold) {
+      raise UsageError(
+        '${FILE_NAME}: [site] fold must be a whole number from 1, or false',
+      )
+    }
+
+    config.fold = fold
+  }
+
+  config.numbers = site.get('numbers', true)
+  config.search = site.get('search', true)
+  config.print = site.get('print', true)
+  config.css = _strings(
+    site.get('css', []),
+    'css',
+  ).map(@(path) => config.resolve(path))
+  config.js = _strings(
+    site.get('js', []),
+    'js',
+  ).map(@(path) => config.resolve(path))
+
+  if site.get('home') != nil {
+    config.home = _link(site.home, '[site.home]')
+  }
+
+  for link in site.get('links', []) {
+    config.links.append(_link(link, '[[site.links]]'))
+  }
+
+  var options = data.get('markdown', {})
+
+  for key in options.keys() {
+    if _RESERVED.contains(key) {
+      raise UsageError(
+        "${FILE_NAME}: [markdown] ${key} is decided by zuri doc and cannot be set",
+      )
+    }
+  }
+
+  config.markdown = options
+
+  for from, to in data.get('redirects', {}) {
+    if !is_string(to) {
+      raise UsageError('${FILE_NAME}: [redirects] "${from}" must be an address')
+    }
+
+    config.redirects.set(from.ltrim('/'), to)
+  }
+
+  var theme_dir = os.join_paths(root, 'theme')
+
+  if os.dir_exists(theme_dir) {
+    config.theme_dir = theme_dir
+  }
+
+  return config
+}
+
+/**
+ * The settings in the `doc.toml` inside _root_.
+ *
+ * @param string root
+ * @returns Config
+ * @throws UsageError When there is no such file, or it is not valid
+ */
+def load(root: string) {
+  var path = os.join_paths(root, FILE_NAME)
+
+  if !file(path).exists() {
+    raise UsageError('no ${FILE_NAME} in ${root}')
+  }
+
+  return parse(file(path).read(), os.abs_path(root))
+}

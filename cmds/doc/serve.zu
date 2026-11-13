@@ -1,0 +1,221 @@
+/**
+ * `zuri doc serve`: the site on a local web server, built again
+ * whenever the book changes, with every open page reloading itself to
+ * show the change.
+ *
+ * The server runs in an isolate of its own, serving whatever the output
+ * directory holds. This thread watches the book's pages, its `doc.toml`
+ * and its theme, builds the site again when they change, and then tells
+ * the server, which tells the pages: each one asks every moment whether
+ * the site has been built since it loaded, and reloads when it has.
+ *
+ * A build that fails leaves the last good site in place and says why,
+ * and the next change tries again.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import http
+import isolate
+import os
+
+import .._shared.errors { CommandError, UsageError }
+import .._shared.ui
+import .book
+import .config
+import .site { Site, THEME }
+
+# How long changes have to stop arriving before the site is rebuilt, in
+# milliseconds, so one save written in several steps builds once.
+var _QUIET = 120
+
+# Serves _output_ on _host_ and _port_ until the process ends. Each
+# build sends its number on _builds_, and pages ask for the latest.
+def _serve(output: string, host: string, port: number, builds) {
+  var server = http.server(port, host)
+  var latest = '0'
+
+  server.get('/__zuri_doc/version', @(request, response) {
+    while true {
+      var next = builds.try_recv()
+
+      if next == nil {
+        break
+      }
+
+      latest = '${next}'
+    }
+
+    response.no_cache()
+    response.text(latest)
+  })
+
+  server.not_found(@(request, response) {
+    var missing = os.join_paths(output, '404.html')
+
+    if file(missing).exists() {
+      response.html(file(missing).read(), 404)
+    } else {
+      response.text('Not found', 404)
+    }
+  })
+
+  server.serve_files('/', output, { cache_age: 0 })
+  server.listen()
+}
+
+# Builds the site once, reporting what happened. Returns whether it
+# succeeded.
+def _build(root: string, output: ?string) {
+  var started = time()
+  var report
+
+  catch {
+    var settings = config.load(root)
+
+    if output != nil {
+      settings.output = output
+    }
+
+    report = Site(book.load(settings), true).build()
+  } as error {
+    if instance_of(error, UsageError) {
+      ui.complain('doc: ${error.message}')
+      return false
+    }
+
+    raise error
+  }
+
+  for warning in report.warnings {
+    ui.complain(ui.warn('warning: ') + warning)
+  }
+
+  echo ui.muted(
+    'Built ${ui.count(report.pages, "page")} in ${(time() - started).fixed(2)}s',
+  )
+
+  return true
+}
+
+# Whether a change at _path_ is one the site is built from.
+def _matters(path: string, output: string) {
+  if path == output or path.starts_with(output + os.path_separator) {
+    return false
+  }
+
+  var name = os.base_name(path)
+
+  return !(name.starts_with('.') or
+      name.ends_with('~') or
+      name.ends_with('.swp'))
+}
+
+# Opens _address_ in the default browser, if there is a way to.
+def open_browser(address: string) {
+  catch {
+    using os.platform {
+      when 'macos' {
+        os.spawn(
+          'open',
+          [address],
+          { stdin: 'null', stdout: 'null', stderr: 'null' },
+        )
+      }
+      when 'windows' {
+        os.spawn(
+          'cmd',
+          ['/c', 'start', '', address],
+          { stdin: 'null', stdout: 'null', stderr: 'null' },
+        )
+      }
+      default {
+        os.spawn(
+          'xdg-open',
+          [address],
+          { stdin: 'null', stdout: 'null', stderr: 'null' },
+        )
+      }
+    }
+  } as error {
+    ui.complain('Open ${address} in a browser to read it.')
+  }
+}
+
+/**
+ * Builds the book in _root_, serves it and rebuilds it on every change,
+ * until the process is stopped.
+ *
+ * @param string root: the directory holding `doc.toml`.
+ * @param dict options: `{ host, port, open, output }`, `output` being
+ *    `nil` for the directory `doc.toml` names.
+ * @throws UsageError When the book cannot be built the first time
+ * @throws CommandError When the server cannot listen on the port
+ */
+def run(root: string, options: dict) {
+  var settings = config.load(root)
+  var output = options.output == nil ? settings.output : options.output
+
+  if !_build(root, options.output) {
+    raise CommandError('the book has to build once before it can be served')
+  }
+
+  var builds = isolate.channel()
+  var server = isolate.spawn(_serve, output, options.host, options.port, builds)
+
+  # A port that is taken fails the server at once.
+  os.sleep(0.25)
+
+  if server.is_done() {
+    catch {
+      server.try_join()
+    } as error {
+      raise CommandError(
+        'cannot serve on ${options.host}:${options.port}: ${error.message}',
+      )
+    }
+
+    raise CommandError('the server stopped as soon as it started')
+  }
+
+  var address = 'http://${options.host == "0.0.0.0" ? "localhost" : options.host}:${options.port}/'
+
+  echo ''
+  echo '  ${ui.heading(settings.title)} at ${ui.accent(address)}'
+  echo ui.muted(
+    '  Changes to the book rebuild it, and open pages reload. Ctrl+C stops.',
+  )
+  echo ''
+
+  if options.open {
+    open_browser(address)
+  }
+
+  var watcher = os.Watcher()
+
+  watcher.add(settings.source)
+  watcher.add(os.join_paths(root, config.FILE_NAME))
+  watcher.add(THEME)
+
+  if settings.theme_dir != nil {
+    watcher.add(settings.theme_dir)
+  }
+
+  var count = 0
+
+  while true {
+    var event = watcher.next()
+
+    if event == nil or (event.path != nil and !_matters(event.path, output)) {
+      continue
+    }
+
+    # Gather the rest of the change before building.
+    while watcher.next(_QUIET) != nil {}
+
+    if _build(root, options.output) {
+      count++
+      builds.send(count)
+    }
+  }
+}

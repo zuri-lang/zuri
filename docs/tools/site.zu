@@ -1,0 +1,274 @@
+/**
+ * Builds and serves the two books in `docs/`, and lays the website out.
+ *
+ * Reached through the cargo aliases in `.cargo/config.toml`, which build
+ * `zuri` and run this with it:
+ *
+ * ```
+ * cargo build-docs                 build both books and assemble the site
+ * cargo run-docs                   serve the book, rebuilding as it changes
+ * cargo run-docs -- reference      serve the library reference instead
+ * cargo run-docs -- -p 4000        serve on a different port
+ * cargo docs generate              write the reference's pages, build nothing
+ * cargo docs site                  assemble target/site from what is built
+ * cargo clean-docs                 remove everything built
+ * ```
+ *
+ * Or run it from the repository root with any `zuri`:
+ *
+ * ```
+ * zuri run docs/tools/site.zu build
+ * ```
+ *
+ * Both books are built by `zuri doc`, run with the same `zuri` that runs
+ * this. The reference's pages are generated from the doc blocks in
+ * `libs/` first, every time, so a page and the doc block it came from
+ * cannot disagree.
+ *
+ * `build` with no book named finishes by assembling `target/site`, the
+ * whole website:
+ *
+ * ```
+ * target/site/index.html     the landing page, from docs/site
+ * target/site/install.sh     the installers, from the repository root
+ * target/site/install.ps1
+ * target/site/book/          the book
+ * target/site/reference/     the standard library reference
+ * ```
+ *
+ * Exits non-zero when a step fails. A link inside either book that leads
+ * nowhere is reported, and fails the build when `--strict` is given.
+ */
+
+import os
+
+var ROOT = os.dir_name(os.dir_name(os.dir_name(__file__)))
+var TARGET = os.join_paths(ROOT, 'target')
+
+# Both books, in the order they are built. The first is what `serve`
+# picks when nothing is named.
+var BOOKS = [
+  {
+    name: 'book',
+    dir: os.join_paths(ROOT, 'docs', 'book'),
+    site: os.join_paths(TARGET, 'book'),
+    owns: os.join_paths(TARGET, 'book'),
+    generator: nil,
+  },
+  {
+    name: 'reference',
+    dir: os.join_paths(ROOT, 'docs', 'reference'),
+    site: os.join_paths(TARGET, 'reference', 'html'),
+    owns: os.join_paths(TARGET, 'reference'),
+    generator: os.join_paths(ROOT, 'docs', 'tools', 'reference', 'generate.zu'),
+  },
+]
+
+var INSTALLERS = ['install.sh', 'install.ps1']
+
+var HELP = 'Builds and serves the Zuri documentation.
+
+  build [book|reference] [--strict]    build both books, or one, and assemble the site
+  serve [book|reference] [-p port]     serve one book, rebuilding it as it changes
+  generate                             write the reference\'s pages, build nothing
+  site                                 assemble target/site from what is built
+  clean                                remove everything built'
+
+def fail(message: string) {
+  echo 'error: ${message}'
+  os.exit(1)
+}
+
+# Runs `zuri` with _words_, sharing this terminal, and fails when it does.
+def zuri(words: list) {
+  var child = os.spawn(os.exe_path, words, {
+    cwd: ROOT,
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
+  })
+
+  return child.wait()
+}
+
+def book_named(name: ?string) {
+  if name == nil {
+    return BOOKS[0]
+  }
+
+  for book in BOOKS {
+    if book.name == name {
+      return book
+    }
+  }
+
+  fail("unknown book '${name}'; expected book or reference")
+}
+
+# Writes a generated book's pages. A generator that exits non-zero has
+# found a defect in a doc block; it still wrote the pages, and saying so
+# is enough, since a stale book helps nobody.
+def generate(book: dict) {
+  if book.generator == nil {
+    return
+  }
+
+  echo 'generating the ${book.name} from libs/'
+
+  if zuri(['run', book.generator]) != 0 {
+    echo 'warning: the ${book.name} generator reported problems above'
+  }
+}
+
+def build_book(book: dict, strict: bool) {
+  generate(book)
+
+  var words = ['doc', 'build', book.dir]
+
+  if strict {
+    words.append('--strict')
+  }
+
+  if zuri(words) != 0 {
+    fail('the ${book.name} did not build')
+  }
+}
+
+# Copies the tree at _from_ into _to_.
+def copy_tree(from: string, to: string) {
+  os.create_dir(to, nil, true)
+
+  for name in os.read_dir(from, true) {
+    if name == '.' or name == '..' {
+      continue
+    }
+
+    var source = os.join_paths(from, name)
+    var target = os.join_paths(to, name)
+
+    if os.dir_exists(source) {
+      os.create_dir(target, nil, true)
+    } else {
+      os.create_dir(os.dir_name(target), nil, true)
+      file(source).copy(target)
+    }
+  }
+}
+
+# Lays the website out under `target/site`, from scratch, so a page
+# deleted from `docs/site` does not linger and get published again.
+def assemble() {
+  var site = os.join_paths(TARGET, 'site')
+  var landing = os.join_paths(ROOT, 'docs', 'site')
+
+  for book in BOOKS {
+    if !file(os.join_paths(book.site, 'index.html')).exists() {
+      fail('the ${book.name} has not been built; run `cargo build-docs` first')
+    }
+  }
+
+  if os.dir_exists(site) {
+    os.remove_dir(site, true)
+  }
+
+  copy_tree(landing, site)
+
+  for installer in INSTALLERS {
+    file(os.join_paths(ROOT, installer)).copy(os.join_paths(site, installer))
+  }
+
+  for book in BOOKS {
+    copy_tree(book.site, os.join_paths(site, book.name))
+  }
+
+  echo 'assembled ${os.relative_path(ROOT, site)}'
+}
+
+def clean() {
+  var removed = 0
+
+  for path in [os.join_paths(TARGET, 'site')] +
+      BOOKS.map(@(book) => book.owns) {
+    if os.dir_exists(path) {
+      os.remove_dir(path, true)
+      echo 'removed ${os.relative_path(ROOT, path)}'
+      removed++
+    }
+  }
+
+  if removed == 0 {
+    echo 'nothing to clean'
+  }
+}
+
+def main() {
+  var words = os.args[2,]
+  var command = words.is_empty() ? 'serve' : words[0]
+  var rest = words.is_empty() ? [] : words[1,]
+  var named = nil
+  var strict = false
+  var port = '3000'
+  var i = 0
+
+  while i < rest.length() {
+    var word = rest[i]
+
+    if word == '--strict' {
+      strict = true
+    } else if word == '-p' or word == '--port' {
+      if i + 1 >= rest.length() {
+        fail('${word} needs a port number')
+      }
+
+      port = rest[i + 1]
+      i++
+    } else if word.starts_with('-') {
+      fail("unknown option '${word}'")
+    } else {
+      named = word
+    }
+
+    i++
+  }
+
+  using command {
+    when 'build' {
+      if named == nil {
+        for book in BOOKS {
+          build_book(book, strict)
+        }
+
+        assemble()
+      } else {
+        build_book(book_named(named), strict)
+      }
+    }
+    when 'serve' {
+      var book = book_named(named)
+
+      generate(book)
+      os.exit(zuri(['doc', 'serve', book.dir, '--port', port, '--open']))
+    }
+    when 'generate' {
+      for book in BOOKS {
+        generate(book)
+      }
+    }
+    when 'site' {
+      assemble()
+    }
+    when 'clean' {
+      clean()
+    }
+    when 'help', '-h', '--help' {
+      echo HELP
+    }
+    default {
+      fail(
+        "unknown command '${command}'; expected build, serve, generate, site or clean",
+      )
+    }
+  }
+}
+
+main()

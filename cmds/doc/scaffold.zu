@@ -1,0 +1,67 @@
+/**
+ * What `zuri doc init` writes: a `doc.toml`, a contents page and two
+ * chapters, enough to build and to show where everything goes.
+ *
+ * Each file is returned as a string, so what a new book starts with can
+ * be read and tested without writing anything.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+/**
+ * The files of a new book called _title_, by path from the book's
+ * directory.
+ *
+ * @param string title
+ * @returns dict
+ */
+def files(title: string) {
+  var quoted = title.replace('\\', '\\\\', false).replace('"', '\\"', false)
+
+  return {
+    'doc.toml': '\n'.join([
+      '[book]',
+      'title = "${quoted}"',
+      'description = ""',
+      'authors = []',
+      'language = "en"',
+      'source = "src"',
+      'output = "site"',
+      '',
+      '[site]',
+      '# The address the site is published at, for links search engines',
+      '# and the page for a missing address use.',
+      '# url = "https://example.com/docs/"',
+      '# repository = "https://github.com/you/project"',
+      '# edit = "https://github.com/you/project/edit/main/docs/src/{path}"',
+      '',
+    ]),
+    '.gitignore': '# The built site.\n/site/\n',
+    'src/SUMMARY.md': '\n'.join([
+      '# Summary',
+      '',
+      '[Introduction](introduction.md)',
+      '',
+      '- [Getting Started](getting-started.md)',
+      '',
+    ]),
+    'src/introduction.md': '\n'.join([
+      '# ${title}',
+      '',
+      'This page comes first. Every page is a Markdown file in `src`, and',
+      '`SUMMARY.md` lists them in the order they are read.',
+      '',
+    ]),
+    'src/getting-started.md': '\n'.join([
+      '# Getting Started',
+      '',
+      'A numbered chapter. Sections go in a list inside its item in',
+      '`SUMMARY.md`, each a page of its own.',
+      '',
+      '```zuri',
+      "echo 'Hello from ${quoted}'",
+      '```',
+      '',
+    ]),
+  }
+}
