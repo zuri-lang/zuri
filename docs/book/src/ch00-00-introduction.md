@@ -78,7 +78,7 @@ subcommand of `zuri`, and every one has its place in this book:
 | `zuri test` | runs a project's tests | [Chapter 23](ch23-00-testing.md) |
 | `zuri migrate` | applies and rolls back database migrations | [Chapter 17](ch17-02-migrations.md) |
 | `zuri lsp` | the language server behind your editor | [Chapter 29](ch29-00-editors.md) |
-| `zuri doc` | builds a documentation site, like this book, from Markdown | [Chapter 30](ch30-00-documentation.md) |
+| `zuri doc` | builds a documentation site, like this book, from Markdown, and an API reference from doc blocks | [Chapter 30](ch30-00-documentation.md) |
 | `zuri install` | adds packages, resolved into a lockfile | [Chapter 27](ch27-02-installing.md) |
 | `zuri publish` | shares a package on a registry | [Chapter 27](ch27-03-publishing.md) |
 | `zuri serve` | runs Nyssa, a package registry of your own | [Chapter 27](ch27-06-nyssa.md) |

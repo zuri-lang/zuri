@@ -1,6 +1,7 @@
 /**
  * What `zuri doc init` writes: a `doc.toml`, a contents page and two
- * chapters, enough to build and to show where everything goes.
+ * chapters, enough to build and to show where everything goes. And
+ * what `zuri doc generate` starts a reference with.
  *
  * Each file is returned as a string, so what new documentation starts with
  * can be read and tested without writing anything.
@@ -63,5 +64,46 @@ def files(title: string) {
       '```',
       '',
     ]),
+  }
+}
+
+/**
+ * The files of a new API reference called _title_, by path from its
+ * directory. Its pages are generated, so they are left out of git along
+ * with the site.
+ *
+ * @param string title
+ * @returns dict
+ */
+def reference_files(title: string) {
+  var quoted = title.replace('\\', '\\\\', false).replace('"', '\\"', false)
+
+  return {
+    'doc.toml': '\n'.join([
+      '# An API reference, generated from the doc blocks in the project by',
+      '# `zuri doc generate`. `zuri doc build` and `zuri doc serve` generate',
+      '# the pages again first, so the doc blocks are what to edit.',
+      '',
+      '[documentation]',
+      'title = "${quoted}"',
+      'source = "src"',
+      'output = "site"',
+      '',
+      '[reference]',
+      '# Patterns for files to leave out, relative to the project.',
+      '# exclude = ["internal/**"]',
+      '',
+      '# Groups of modules, each a part of the contents. Without them',
+      '# every module is listed in one list.',
+      '# [[reference.groups]]',
+      '# title = "Storage"',
+      '# description = "Where tasks are kept."',
+      '# modules = ["tasks.storage"]',
+      '',
+      '[site]',
+      '# url = "https://example.com/docs/reference/"',
+      '',
+    ]),
+    '.gitignore': '# The generated pages and the built site.\n/src/\n/site/\n',
   }
 }

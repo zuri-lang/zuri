@@ -106,3 +106,52 @@ describe('zuri doc', @{
     expect(doc(['clean', 'manual']).all).to_contain('Nothing to remove')
   })
 })
+
+describe('zuri doc generate', @{
+  before_each(@{
+    put('project.toml', '[project]\nname = "weather"\n')
+    put(
+      'index.zu',
+      '/**\n * @module weather\n *\n * Forecasts.\n */\n\n/** Today\'s. */\ndef today() {}\n',
+    )
+  })
+
+  it('starts a reference in docs/reference, and build generates it again', @{
+    var generated = doc(['generate'])
+
+    expect(generated.status).to_be(0)
+    expect(generated.all).to_contain('Started weather API Reference in docs')
+    expect(generated.all)
+        .to_contain('weather API Reference: 1 module, 1 name documented')
+    expect(exists('docs/reference/src/weather.md')).to_be_true()
+
+    put(
+      'index.zu',
+      '/**\n * @module weather\n *\n * Forecasts.\n */\n\n/** Tomorrow\'s. */\ndef tomorrow() {}\n',
+    )
+
+    var built = doc(['build', 'docs/reference'])
+
+    expect(built.status).to_be(0)
+    expect(
+      file(os.join_paths(DIR, 'docs', 'reference', 'site', 'weather.html'))
+          .read(),
+    )
+        .to_contain('tomorrow')
+  })
+
+  it('fails a strict run over a warning', @{
+    doc(['generate'])
+    file(
+      os.join_paths(DIR, 'docs', 'reference', 'doc.toml'),
+      'a',
+    ).write('\n[[reference.groups]]\ntitle = "None"\nmodules = []\n')
+
+    var strict = doc(['generate', '--strict'])
+
+    expect(strict.status).to_be(1)
+    expect(strict.all)
+        .to_contain("'weather' is in none of the [reference] groups")
+    expect(strict.all).to_contain('generating the reference gave 1 warning')
+  })
+})

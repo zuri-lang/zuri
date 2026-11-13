@@ -1,0 +1,284 @@
+/**
+ * The reference's contents and its front page: which modules are
+ * listed together, and the order they are listed in.
+ *
+ * Without groups every module is listed under the one before it, the
+ * way the files sit. With them, each group is a part of the contents,
+ * and each module named in a group is listed there with the modules
+ * beneath it that no group names for itself. A module that no group
+ * reaches is listed under "Other Modules" at the end, with a warning,
+ * so adding one never makes it quietly vanish.
+ */
+
+import .text { * }
+
+# The modules _roots_ hold, by name.
+def _by_name(roots: list) {
+  var found = {}
+
+  for root in roots {
+    for module in root.tree() {
+      found.set(module.name, module)
+    }
+  }
+
+  return found
+}
+
+# Every name the groups list, in order.
+def _named(groups: list) {
+  var names = []
+
+  for group in groups {
+    for name in group.modules {
+      names.append(name)
+    }
+  }
+
+  return names
+}
+
+/**
+ * The parts of the contents: `{ title, description, modules }` each,
+ * `modules` holding the modules listed at the top of that part.
+ *
+ * @param list roots
+ * @param list groups: `{ title, description, modules }` each, as
+ *    `doc.toml` gives them, `modules` being names.
+ * @param list warnings: where a name no module has, and a module no
+ *    group reaches, are reported.
+ * @returns list[dict]
+ */
+def parts(roots: list, groups: list, warnings: list) {
+  if groups.is_empty() {
+    return [
+      { title: nil, description: nil, modules: roots },
+    ]
+  }
+
+  var by_name = _by_name(roots)
+  var named = _named(groups)
+  var found = []
+
+  for group in groups {
+    var modules = []
+
+    for name in group.modules {
+      var module = by_name.get(name, nil)
+
+      if module == nil {
+        warnings.append(
+          "[reference] groups name '${name}', but there is no such module",
+        )
+        continue
+      }
+
+      modules.append(module)
+    }
+
+    found.append({
+      title: group.title,
+      description: group.get('description', nil),
+      modules,
+    })
+  }
+
+  var others = []
+
+  def reached(module) {
+    var at = module
+
+    while at != nil {
+      if named.contains(at.name) {
+        return true
+      }
+
+      at = at.owner
+    }
+
+    return false
+  }
+
+  for name in by_name.keys() {
+    var module = by_name.get(name)
+
+    if reached(module) {
+      continue
+    }
+
+    # Only the top of an unlisted branch is listed; what is under it
+    # comes with it.
+    if module.owner == nil or reached(module.owner) {
+      others.append(module)
+      warnings.append(
+        "module '${name}' is in none of the [reference] groups, so it is listed under Other Modules",
+      )
+    }
+  }
+
+  if !others.is_empty() {
+    found.append({ title: 'Other Modules', description: nil, modules: others })
+  }
+
+  return found
+}
+
+/**
+ * The reference's `SUMMARY.md`.
+ *
+ * @param string title: what the front page is called.
+ * @param list sections: from `parts()`.
+ * @param list groups: as `parts()` takes them, so that a module a group
+ *    names is not listed again under its owner.
+ * @returns string
+ */
+def summary(title: string, sections: list, groups: list) {
+  var named = _named(groups)
+  var out = ['# Summary', '', '[${title}](index.md)', '']
+
+  def walk(module, depth: number) {
+    out.append('${' ' * (depth * 2)}- [${module.name}](${module.slug()}.md)')
+
+    for child in module.children {
+      if !named.contains(child.name) {
+        walk(child, depth + 1)
+      }
+    }
+  }
+
+  for section in sections {
+    if section.title != nil {
+      out.append('# ${section.title}')
+      out.append('')
+    }
+
+    for module in section.modules {
+      walk(module, 0)
+    }
+
+    out.append('')
+  }
+
+  return '${'\n'.join(out)}\n'
+}
+
+# The first sentence of a module's own `@module` block, for the front
+# page's tables.
+def _summary(module) {
+  var text = module.overview.summary().replace(
+    '/\{([A-Za-z_][A-Za-z0-9_.]*)\}/',
+    '`$1`',
+  )
+
+  return escape(summarise(text, 130))
+}
+
+# One table of modules, each with the sentence that says what it is for.
+def _table(out: list, modules: list) {
+  out.append('| Module | What it is for |')
+  out.append('| --- | --- |')
+
+  for module in modules {
+    out.append(
+      '| [`${module.name}`](${module.slug()}.md) | ${_summary(module)} |',
+    )
+  }
+
+  out.append('')
+}
+
+/**
+ * The reference's front page.
+ *
+ * @param string title
+ * @param ?string intro: Markdown to open the page with, or `nil`.
+ * @param list sections: from `parts()`.
+ * @returns string
+ */
+def landing(title: string, intro: ?string, sections: list) {
+  var out = ['# ${title}', '']
+
+  if intro != nil and !intro.trim().is_empty() {
+    for line in intro.trim().split('\n') {
+      out.append(line)
+    }
+
+    out.append('')
+  }
+
+  out.append('## How to Read a Page')
+  out.append('')
+
+  for line in wrap(
+    'Every module page opens with the import that reaches it, then the ' +
+        'module\'s own description, then its members. A package also ' +
+        'carries an index of its whole public surface, because a name ' +
+        'reached through a package may well be declared in a file called ' +
+        'something else.',
+  ) {
+    out.append(line)
+  }
+
+  out.append('')
+  out.append('Signatures are written the way the source declares them:')
+  out.append('')
+
+  for entry in [
+    '`name: string` is a parameter that must be a string, enforced at the call.',
+    '`name: ?string` accepts a string or `nil`, which is how an optional argument is spelled.',
+    '`...values` takes any number of arguments and arrives as a list.',
+    '`-> string` is what the call gives back.',
+  ] {
+    for line in wrap_bullet('- ${entry}', 2) {
+      out.append(line)
+    }
+  }
+
+  out.append('')
+
+  for line in wrap(
+    'A name beginning with an underscore is private: the compiler ' +
+        'refuses to import it across a module boundary, so none appear ' +
+        'here.',
+  ) {
+    out.append(line)
+  }
+
+  out.append('')
+  out.append('## The Modules')
+  out.append('')
+
+  for section in sections {
+    var modules = section.modules
+
+    # Without groups, the table lists every module, not only the ones at
+    # the top, since there is no other index of them.
+    if section.title == nil {
+      var all = []
+
+      for module in modules {
+        for each in module.tree() {
+          all.append(each)
+        }
+      }
+
+      _table(out, all)
+      continue
+    }
+
+    out.append('### ${section.title}')
+    out.append('')
+
+    if section.description != nil {
+      for line in wrap(section.description) {
+        out.append(line)
+      }
+
+      out.append('')
+    }
+
+    _table(out, modules)
+  }
+
+  return '${'\n'.join(squeeze(out))}\n'
+}

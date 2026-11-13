@@ -123,14 +123,15 @@ jobs:
           PY
 
       # The whole site is built by Zuri: the reference's pages are
-      # generated from `libs/`, and both books are built by `zuri doc`.
+      # generated from `libs/`, and the book and the reference are both
+      # built by `zuri doc`.
       - name: Build the interpreter
         run: cargo build --locked
 
       # One command does the lot: it writes the reference's pages from
-      # the doc blocks in `libs/`, builds both books with `zuri doc`, and
-      # lays the finished website out under `target/site` with the
-      # landing page from `docs/site` over the top.
+      # the doc blocks in `libs/`, builds the book and the reference with
+      # `zuri doc`, and lays the finished website out under `target/site`
+      # with the landing page from `docs/site` over the top.
       - name: Build the site
         run: ./target/debug/zuri run docs/tools/site.zu build
         env:

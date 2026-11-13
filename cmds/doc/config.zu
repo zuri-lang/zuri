@@ -32,6 +32,7 @@ var _DOCUMENTATION = {
 
 var _SITE = {
   url: 'string',
+  label: 'string',
   repository: 'string',
   edit: 'string',
   logo: 'string',
@@ -48,7 +49,15 @@ var _SITE = {
   links: 'list',
 }
 
-var _TABLES = ['documentation', 'site', 'markdown', 'redirects']
+var _REFERENCE = {
+  modules: 'string',
+  package: 'string',
+  exclude: 'list',
+  intro: 'string',
+  groups: 'list',
+}
+
+var _TABLES = ['documentation', 'site', 'reference', 'markdown', 'redirects']
 
 # Markdown options the site decides for itself and documentation cannot
 # change.
@@ -142,6 +151,33 @@ class Config {
   /** The theme directory beside `doc.toml`, when it has one. @type ?string */
   var theme_dir
 
+  /**
+   * What the links at the top of every page call it when it is built
+   * together with other documentation, or `nil` for the usual name.
+   *
+   * @type ?string
+   */
+  var label
+
+  /**
+   * The directories beside its pages that hold documentation of their
+   * own, built into the site with it. `load()` finds them.
+   *
+   * @type list[string]
+   */
+  var members = []
+
+  /**
+   * How the pages are generated from doc blocks, or `nil` when they are
+   * written by hand: `{ modules, package, exclude, intro, groups }`,
+   * `modules` and `intro` being absolute paths or `nil`, `package` a
+   * name or `nil`, `exclude` a list of patterns, and `groups` a list of
+   * `{ title, description, modules }`.
+   *
+   * @type ?dict
+   */
+  var reference
+
   @new(root: string) {
     self.root = root
     self.source = os.join_paths(root, 'src')
@@ -152,6 +188,7 @@ class Config {
     self.links = []
     self.markdown = {}
     self.redirects = {}
+    self.members = []
   }
 
   /**
@@ -263,6 +300,55 @@ def _link(value, name: string) {
   return { url: value.url, label }
 }
 
+# The `[reference]` table, checked, with its paths made absolute.
+def _reference(table: dict, config: Config) {
+  _check(table, _REFERENCE, 'reference')
+
+  var groups = []
+
+  for group in table.get('groups', []) {
+    if !is_dict(group) or !is_string(group.get('title')) {
+      raise UsageError('${FILE_NAME}: each of [reference] groups needs a title')
+    }
+
+    for key in group.keys() {
+      if !['title', 'description', 'modules'].contains(key) {
+        raise UsageError(
+          "${FILE_NAME}: [reference] groups have no setting '${key}'; they take title, description, modules",
+        )
+      }
+    }
+
+    var description = group.get('description')
+
+    if description != nil and !is_string(description) {
+      raise UsageError(
+        '${FILE_NAME}: the description of [reference] group ${group.title} must be a string',
+      )
+    }
+
+    groups.append({
+      title: group.title,
+      description,
+      modules: _strings(
+        group.get('modules', []),
+        '[reference] group ${group.title} modules',
+      ),
+    })
+  }
+
+  var modules = table.get('modules')
+  var intro = table.get('intro')
+
+  return {
+    modules: modules == nil ? nil : config.resolve(modules),
+    package: table.get('package'),
+    exclude: _strings(table.get('exclude', []), '[reference] exclude'),
+    intro: intro == nil ? nil : config.resolve(intro),
+    groups,
+  }
+}
+
 /**
  * The settings in _text_, the contents of the `doc.toml` in _root_.
  *
@@ -324,6 +410,7 @@ def parse(text: string, root: string) {
   }
 
   config.repository = site.get('repository')
+  config.label = site.get('label')
   config.edit = site.get('edit')
   config.cname = site.get('cname')
 
@@ -357,7 +444,13 @@ def parse(text: string, root: string) {
     config.fold = fold
   }
 
-  config.numbers = site.get('numbers', true)
+  if data.contains('reference') {
+    config.reference = _reference(data.reference, config)
+  }
+
+  # Module names read best without numbers, so a reference has none
+  # unless it asks.
+  config.numbers = site.get('numbers', config.reference == nil)
   config.search = site.get('search', true)
   config.print = site.get('print', true)
   config.css = _strings(
@@ -407,7 +500,9 @@ def parse(text: string, root: string) {
 }
 
 /**
- * The settings in the `doc.toml` inside _root_.
+ * The settings in the `doc.toml` inside _root_, with the documentation
+ * inside it found: each directory directly in _root_ that holds a
+ * `doc.toml` of its own, other than the pages, the site and the theme.
  *
  * @param string root
  * @returns Config
@@ -420,5 +515,25 @@ def load(root: string) {
     raise UsageError('no ${FILE_NAME} in ${root}')
   }
 
-  return parse(file(path).read(), os.abs_path(root))
+  var config = parse(file(path).read(), os.abs_path(root))
+  var taken = [config.source, config.output, config.theme_dir]
+
+  for name in os.read_dir(config.root) {
+    var full = os.join_paths(config.root, name)
+
+    if name.starts_with('.') or
+        name.starts_with('_') or
+        taken.contains(full) or
+        !os.dir_exists(full) {
+      continue
+    }
+
+    if file(os.join_paths(full, FILE_NAME)).exists() {
+      config.members.append(full)
+    }
+  }
+
+  config.members.sort()
+
+  return config
 }

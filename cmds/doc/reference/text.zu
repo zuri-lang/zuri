@@ -1,8 +1,7 @@
 /**
- * @module markdown
- *
- * Markdown the two generators both emit: reflowing prose, wrapping
- * bullets, and escaping the characters a table cell cannot hold.
+ * The Markdown a generated reference is written in: reflowing prose,
+ * wrapping bullets, and escaping the characters a table cell cannot
+ * hold.
  *
  * Doc blocks are hard-wrapped narrow so they sit comfortably in a
  * source file. Markdown does not care where the source broke its

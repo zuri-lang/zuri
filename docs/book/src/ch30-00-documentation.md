@@ -2,7 +2,8 @@
 
 `zuri doc` turns a directory of Markdown into a website: a page for each
 chapter with the contents beside it, a search box, a page that prints all
-of it at once, light and dark themes, and every code block coloured.
+of it at once, light and dark themes, and every code block coloured. It
+also writes an API reference from the doc blocks in a project's code.
 This book is built with it, and so is the standard library reference.
 
 What it writes is a directory of plain files. Any web server can serve
@@ -16,6 +17,8 @@ straight from disk.
   - [Code](#code)
   - [Including Files](#including-files)
 - [Building and Serving](#building-and-serving)
+- [Generating an API Reference](#generating-an-api-reference)
+- [Documentation Inside Documentation](#documentation-inside-documentation)
 - [Settings](#settings)
 - [Changing the Look](#changing-the-look)
 - [Publishing](#publishing)
@@ -53,10 +56,11 @@ docs/
   site/                 the built site, which .gitignore leaves out
 ```
 
-Every command finds the documentation the same way: the directory named on the
-command line, or else the current directory when it holds a `doc.toml`,
-or else the `docs` directory of the project you are in. So `zuri doc
-build` works from anywhere inside the project.
+Every command finds the documentation the same way: the directory named
+on the command line, or else the current directory when it holds a
+`doc.toml`, or else the `docs` directory of the project you are in, or
+failing that its `docs/reference`. So `zuri doc build` works from
+anywhere inside the project.
 
 ## The Contents
 
@@ -272,9 +276,124 @@ lets other machines read it, and `--open` opens it.
 
 `zuri doc clean` removes the built site.
 
+## Generating an API Reference
+
+`zuri doc generate` writes a reference for the project from its doc
+blocks: a page for every public module, with each function, constant and
+class in it, what they take and what they return, and links between
+them.
+
+```console
+$ zuri doc generate
+Started weather API Reference in docs/reference
+  doc.toml
+  .gitignore
+
+weather API Reference: 2 modules, 2 names documented
+  docs/reference/src
+
+Build it with zuri doc build docs/reference, or read it with zuri doc serve docs/reference.
+```
+
+The reference is documentation like any other, with a `doc.toml` of its
+own, in `docs/reference` unless a directory is named. Its pages are
+Markdown in `src`, written afresh on every run, so its `.gitignore` leaves
+them out along with the site. `zuri doc build` and `zuri doc serve`
+generate them again before building, and `serve` rebuilds when a module
+changes, so the reference is never older than the code. The doc blocks
+are what to edit, never the pages.
+
+Every `.zu` file in the project is a module, except:
+
+- a file with any part of its path starting with an underscore, which
+  the compiler keeps private;
+- tests, as `*.test.zu` files, and the `tests`, `docs`, `examples`,
+  `benchmarks` and `cmds` directories at the top of the project;
+- what `[project] include` and `exclude` in `project.toml` leave out of
+  the package, and what `.gitignore` ignores.
+
+A module is named the way it is imported. The project's `index.zu` is
+the package itself, `weather`, `app/index.zu` is `weather.app`, and
+`app/forecast.zu` would be `weather.app.forecast`. A name is documented on
+the page of the file that declares it, and written with the path a
+reader types to reach it: when `index.zu` lifts `app` with
+`import @.app { * }`, `app`'s `greet` is `weather.greet`. A package's own
+page also lists every public name reached through it, wherever it is
+declared.
+
+A module's description is its doc block tagged `@module`, or failing that
+the doc block at the top of the file when an import follows it. The tags
+of a declaration's doc block become the sections of its entry:
+`@param`, `@returns`, `@throws`, `@note`, `@deprecated` and `@see`. A
+name in braces in the prose, as in `{Forecast}` or `{greet()}`, links to
+where that name is documented, and `@internal` keeps a declaration out
+of the reference altogether.
+
+The `[reference]` table in `doc.toml` is what makes documentation a
+reference:
+
+| Key | Default | What it is |
+| --- | --- | --- |
+| `modules` | the project `doc.toml` is in | the directory of modules to document |
+| `package` | the project's name, each `-` made `_` | the name the modules are imported under; `""` for none |
+| `exclude` | `[]` | patterns for files to leave out, relative to `modules` |
+| `intro` | none | a Markdown file the front page opens with, in place of the description |
+| `groups` | none | parts of the contents, each with a `title`, a `description` and its `modules` |
+
+Without groups, every module is listed in one list, each beneath the one
+it belongs to. With them, each group is a part of the contents:
+
+```toml
+[[reference.groups]]
+title = "Forecasts"
+description = "Asking about the weather."
+modules = ["weather", "weather.app"]
+```
+
+A module no group reaches is listed at the end, under Other Modules, with
+a warning, and `--strict` fails over it, so a new module cannot quietly go
+missing from the contents. The standard library reference is generated
+this way.
+
+## Documentation Inside Documentation
+
+A directory beside `src` that holds a `doc.toml` of its own is
+documentation too, and it is built along with the documentation around
+it, into the directory of the site with the same name. The reference
+`zuri doc generate` writes to `docs/reference` is the usual case: with a
+guide in `docs` as well, `zuri doc build` builds both,
+
+```console
+$ zuri doc build
+weather: 5 pages in 0.39s
+  docs/site
+weather API Reference: 5 pages in 0.36s
+  docs/site/reference
+```
+
+and `zuri doc serve` serves both, rebuilding when a page or a module
+changes.
+
+The top of every page then links to each of them, and marks the one it
+belongs to. The documentation around the others is called Docs, a
+reference API Reference, and any other by its title. `label` in a
+site's own `[site]` table calls it something else:
+
+```toml
+[site]
+label = "Guide"
+```
+
+What a site inside leaves unset of the logo, favicon, repository,
+`[site.home]`, `[[site.links]]`, `css` and `js`, it takes from the one
+around it, so the whole reads as one site, and its `url` is the outer
+`url` with its directory's name added. Built on its own, as
+`zuri doc build docs/reference`, it is a site of its own and takes none
+of that.
+
 ## Settings
 
-`doc.toml` has four tables, and every key in them is optional. A key a
+`doc.toml` has five tables, and every key in them is optional. A key a
 table does not have, or a value of the wrong type, stops the build with
 the key named.
 
@@ -332,19 +451,22 @@ smart = true
 | `favicon` | none | the icon a browser tab shows |
 | `theme` | `"system"` | how a page first appears: `"system"`, `"light"` or `"dark"` |
 | `fold` | `false` | how many levels of the contents start open; `false` opens every level |
-| `numbers` | `true` | whether chapters are numbered |
+| `numbers` | `true`, or `false` for a reference | whether chapters are numbered |
 | `search` | `true` | whether the site can be searched |
 | `print` | `true` | whether the site has a page that prints all of it at once |
 | `css` | `[]` | stylesheets added to every page |
 | `js` | `[]` | scripts added to every page |
 | `cname` | none | the domain GitHub Pages serves the site at |
+| `label` | `"Docs"`, `"API Reference"` or the title | what the links at the top call this site when it is built with others |
 
 The contents always open as far as the page being read, whatever `fold`
 says. `[site.home]` puts a link back to a site above this one beside its
 title, and each `[[site.links]]` adds a link to the top of every page; an
 address that is not absolute is relative to the front page.
-`[markdown]` is described under [Writing Pages](#writing-pages), and
-`[redirects]` keeps an old address working by sending it on to a new one.
+`[markdown]` is described under [Writing Pages](#writing-pages),
+`[reference]` under [Generating an API Reference](#generating-an-api-reference),
+and `[redirects]` keeps an old address working by sending it on to a new
+one.
 
 Every path in the file is relative to the directory holding it.
 

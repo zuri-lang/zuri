@@ -1,9 +1,9 @@
 /**
  * @command doc
  * @description Builds a documentation site from pages written in
- *    Markdown.
+ *    Markdown, or from the doc blocks in a project.
  *
- *   zuri doc [build|serve|init|clean] [dir] [options]
+ *   zuri doc [build|serve|init|generate|clean] [dir] [options]
  *
  * Documentation is a directory holding a `doc.toml` and a `src`
  * directory of Markdown pages, with `src/SUMMARY.md` listing them in
@@ -17,6 +17,13 @@
  * `serve` builds the site, serves it on this machine, and builds it
  * again whenever the documentation changes, reloading every open page.
  *
+ * `generate` writes an API reference from the doc blocks in a project:
+ * a page for each public module, every function, constant and class in
+ * it, and links between them. The reference is documentation like any
+ * other, in `docs/reference` unless told otherwise, and `build` and
+ * `serve` generate its pages again before building it, so it is never
+ * older than the code.
+ *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
@@ -26,13 +33,13 @@ import .._shared.errors { CommandError, UsageError, run }
 import .._shared.fsx
 import .._shared.ui
 
-import .documentation
+import .build
 import .config
 import .plan
+import .reference
 import .scaffold
 import .serve
 import .site
-import .site { Site }
 
 # The documentation's settings, with the output directory the command
 # line asked for.
@@ -53,21 +60,38 @@ def _shown(path: string) {
   return relative.starts_with('..') ? path : relative
 }
 
+def _complain(warnings: list) {
+  for warning in warnings {
+    ui.complain(ui.warn('warning: ') + warning)
+  }
+}
+
 def _build(chosen: dict) {
   var root = plan.find_documentation(chosen.dir, os.cwd())
   var settings = _settings(root, chosen.out)
-  var report = Site(documentation.load(settings)).build()
+  var generated = []
+  var links = []
 
-  for warning in report.warnings {
-    ui.complain(ui.warn('warning: ') + warning)
+  for built in build.build(settings) {
+    _complain(built.warnings)
+    _complain(built.links)
+
+    generated = generated + built.warnings
+    links = links + built.links
+
+    echo '${ui.heading(built.config.title)}: ${ui.count(built.pages, "page")} in ${built.seconds.fixed(2)}s'
+    echo ui.muted('  ${_shown(built.config.output)}')
   }
 
-  echo '${ui.heading(settings.title)}: ${ui.count(report.pages, "page")} in ${report.seconds.fixed(2)}s'
-  echo ui.muted('  ${_shown(settings.output)}')
-
-  if chosen.strict and !report.warnings.is_empty() {
+  if chosen.strict and !links.is_empty() {
     raise CommandError(
-      '${ui.count(report.warnings.length(), "link")} inside the documentation lead${report.warnings.length() == 1 ? "s" : ""} nowhere',
+      '${ui.count(links.length(), "link")} inside the documentation lead${links.length() == 1 ? "s" : ""} nowhere',
+    )
+  }
+
+  if chosen.strict and !generated.is_empty() {
+    raise CommandError(
+      'generating the reference gave ${ui.count(generated.length(), "warning")}',
     )
   }
 
@@ -87,17 +111,12 @@ def _serve(chosen: dict) {
   })
 }
 
-def _init(chosen: dict) {
-  var target = plan.init_target(chosen.dir, os.cwd())
-
-  if file(os.join_paths(target, config.FILE_NAME)).exists() {
-    raise UsageError('${_shown(target)} already holds documentation')
-  }
-
-  var title = chosen.title == nil ? plan.default_title(target) : chosen.title
+# Writes the files new documentation starts with into _target_, leaving
+# any already there alone, and says what it wrote.
+def _start(target: string, files: dict) {
   var written = []
 
-  for path, contents in scaffold.files(title) {
+  for path, contents in files {
     var full = os.join_paths(target, path)
 
     if file(full).exists() {
@@ -109,10 +128,68 @@ def _init(chosen: dict) {
     written.append(path)
   }
 
+  return written
+}
+
+def _init(chosen: dict) {
+  var target = plan.init_target(chosen.dir, os.cwd())
+
+  if file(os.join_paths(target, config.FILE_NAME)).exists() {
+    raise UsageError('${_shown(target)} already holds documentation')
+  }
+
+  var title = chosen.title == nil ? plan.default_title(target) : chosen.title
+  var written = _start(target, scaffold.files(title))
+
   echo 'Started ${ui.heading(title)} in ${_shown(target)}'
   ui.say(written.map(@(path) => ui.muted('  ${path}')))
   echo ''
   echo 'Build it with ${ui.accent("zuri doc build")}, or read it as you write with ${ui.accent("zuri doc serve")}.'
+}
+
+def _generate(chosen: dict) {
+  var target = plan.reference_target(chosen.dir, os.cwd())
+  var started = !file(os.join_paths(target, config.FILE_NAME)).exists()
+
+  if started {
+    var title = chosen.title == nil
+        ? '${plan.default_title(target)} API Reference'
+        : chosen.title
+    var written = _start(target, scaffold.reference_files(title))
+
+    echo 'Started ${ui.heading(title)} in ${_shown(target)}'
+    ui.say(written.map(@(path) => ui.muted('  ${path}')))
+    echo ''
+  } else if chosen.title != nil {
+    raise UsageError(
+      '--title is for a new reference, and ${_shown(target)} has one; its title is in ${config.FILE_NAME}',
+    )
+  }
+
+  var settings = config.load(target)
+  var report = reference.generate(settings)
+
+  _complain(report.warnings)
+
+  echo '${ui.heading(settings.title)}: ${ui.count(report.pages, "module")}, ${ui.count(report.names, "name")} documented'
+  echo ui.muted('  ${_shown(settings.source)}')
+
+  if started {
+    # A reference inside other documentation is built along with it.
+    var outer = os.dir_name(target)
+    var shown = _shown(
+      file(os.join_paths(outer, config.FILE_NAME)).exists() ? outer : target,
+    )
+
+    echo ''
+    echo 'Build it with ${ui.accent("zuri doc build ${shown}")}, or read it with ${ui.accent("zuri doc serve ${shown}")}.'
+  }
+
+  if chosen.strict and !report.warnings.is_empty() {
+    raise CommandError(
+      'generating the reference gave ${ui.count(report.warnings.length(), "warning")}',
+    )
+  }
 }
 
 def _clean(chosen: dict) {
@@ -138,6 +215,9 @@ def main() {
     }
     when 'init' {
       _init(chosen)
+    }
+    when 'generate' {
+      _generate(chosen)
     }
     when 'clean' {
       _clean(chosen)

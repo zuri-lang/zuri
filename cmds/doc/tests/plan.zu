@@ -12,9 +12,10 @@ import ..plan {
   find_documentation,
   init_target,
   parser,
+  reference_target,
   settings,
 }
-import ..scaffold { files }
+import ..scaffold { files, reference_files }
 
 var DIR = nil
 
@@ -119,6 +120,14 @@ describe('find_documentation', @{
         .to_be(os.join_paths(DIR, 'docs'))
   })
 
+  it("takes the project's generated reference when it has no other", @{
+    put('project.toml', '[project]\nname = "weather"\n')
+    put('docs/reference/doc.toml', '[reference]\n')
+
+    expect(find_documentation(nil, DIR))
+        .to_be(os.join_paths(DIR, 'docs', 'reference'))
+  })
+
   it('says how to start documentation when there is none', @{
     expect(
       refusal(@{
@@ -155,5 +164,58 @@ describe('init', @{
 
     expect(written.keys()).to_contain('src/SUMMARY.md')
     expect(written['doc.toml']).to_contain('title = "Weather \\"Now\\""')
+  })
+})
+
+describe('generate', @{
+  it("writes to the project's docs/reference", @{
+    put('project.toml', '[project]\nname = "weather"\n')
+    put('app/index.zu', '')
+
+    expect(reference_target(nil, os.join_paths(DIR, 'app')))
+        .to_be(os.join_paths(DIR, 'docs', 'reference'))
+  })
+
+  it('writes to the current directory when it holds a reference', @{
+    put('api/doc.toml', '[reference]\n')
+
+    var api = os.join_paths(DIR, 'api')
+
+    expect(reference_target(nil, api)).to_be(api)
+    expect(reference_target('api/doc.toml', DIR)).to_be(api)
+  })
+
+  it('will not write over documentation written by hand', @{
+    put('project.toml', '[project]\nname = "weather"\n')
+    put('docs/doc.toml', '[documentation]\ntitle = "Guide"\n')
+
+    expect(
+      refusal(@{
+        reference_target('docs', DIR)
+      }),
+    ).to_contain('written by hand')
+  })
+
+  it('needs a project to document', @{
+    expect(
+      refusal(@{
+        reference_target(nil, DIR)
+      }),
+    ).to_contain('no project here')
+  })
+
+  it('takes --strict and --title', @{
+    var given = chosen(['generate', '--strict', '--title', 'API'])
+
+    expect(given.command).to_be('generate')
+    expect(given.strict).to_be_true()
+    expect(given.title).to_be('API')
+  })
+
+  it('starts a reference whose pages are left out of git', @{
+    var written = reference_files('Weather API')
+
+    expect(written['doc.toml']).to_contain('[reference]')
+    expect(written['.gitignore']).to_contain('/src/')
   })
 })

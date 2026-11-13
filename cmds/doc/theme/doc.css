@@ -439,6 +439,13 @@ kbd {
   color: var(--ink);
 }
 
+/* The site this page belongs to, when several are built together. */
+.bar-links a[aria-current] {
+  background: var(--paper-3);
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
 .bar-tools {
   display: flex;
   align-items: center;

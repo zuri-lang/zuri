@@ -58,9 +58,14 @@ def accent_of(index: number) {
   return _ACCENTS[(index.max(1) - 1) % _ACCENTS.length()]
 }
 
-# Whether _address_ stands on its own rather than being relative to the
-# root of the site.
-def _is_absolute(address: string) {
+/**
+ * Whether _address_ stands on its own rather than being relative to the
+ * root of the site.
+ *
+ * @param string address
+ * @returns bool
+ */
+def is_absolute(address: string) {
   return address.starts_with('/') or
       address.starts_with('#') or
       address.match('/^[A-Za-z][A-Za-z0-9+.-]*:/') != false
@@ -68,7 +73,7 @@ def _is_absolute(address: string) {
 
 # _address_ as a page at _root_ reaches it.
 def _from_root(address: string, root: string) {
-  return _is_absolute(address) ? address : root + address
+  return is_absolute(address) ? address : root + address
 }
 
 /**
@@ -435,7 +440,11 @@ class Site {
     }
 
     var links = config.links.map(
-      @(link) => { url: _from_root(link.url, root), label: link.label },
+      @(link) => {
+        url: _from_root(link.url, root),
+        label: link.label,
+        current: link.get('current', false) == true,
+      },
     )
     var assets = root + 'assets/'
 

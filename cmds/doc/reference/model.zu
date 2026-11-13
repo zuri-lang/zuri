@@ -1,7 +1,6 @@
 /**
- * @module model
- *
- * Reads `libs/` and builds the tree the reference is rendered from.
+ * Reads a project's modules and builds the tree its reference is
+ * rendered from.
  *
  * Nothing here guesses at source text. `zuri.parse()` supplies the
  * declarations, their parameter lists and the doc blocks sitting
@@ -396,6 +395,21 @@ def read(name: string, path: string, is_package: bool) {
   # documentation; a second is a stray.
   var overview = zuri.doc.module_block(nodes)
 
+  # Without an `@module` tag, a file's first doc block still describes
+  # the module when an import follows it, since an import is nothing a
+  # doc block documents.
+  if overview == nil {
+    for attached in zuri.doc.attach(nodes) {
+      if attached.documented {
+        if _unwrap(attached.node).kind == 'Import' {
+          overview = attached.block
+        }
+
+        break
+      }
+    }
+  }
+
   if overview != nil {
     module.overview = overview
     module.copyright = overview.first('copyright')
@@ -479,17 +493,25 @@ def read(name: string, path: string, is_package: bool) {
   return module
 }
 
-# The dotted module name a path under `libs/` maps to. `os/path.zu` is
-# `os.path`, `http/h2/index.zu` is `http.h2`, and the `.stub.zu` suffix
-# is an implementation detail of how a built-in module is documented
-# rather than part of its name.
-def _module_name(relative: string) {
-  var trimmed = relative
-      .replace('/\/index\.zu$/', '')
-      .replace('/\.stub\.zu$/', '')
-      .replace('/\.zu$/', '')
+# The dotted module name a path maps to, under _package_ when there is
+# one. `os/path.zu` is `os.path`, `http/h2/index.zu` is `http.h2`, and
+# the `.stub.zu` suffix is an implementation detail of how a built-in
+# module is documented rather than part of its name. The `index.zu` at
+# the top of a package is the package itself.
+def _module_name(relative: string, package: ?string) {
+  var trimmed = relative == 'index.zu'
+      ? ''
+      : relative
+            .replace('/\/index\.zu$/', '')
+            .replace('/\.stub\.zu$/', '')
+            .replace('/\.zu$/', '')
+  var name = trimmed.replace('/\//', '.')
 
-  return trimmed.replace('/\//', '.')
+  if package == nil or package.is_empty() {
+    return name
+  }
+
+  return name.is_empty() ? package : '${package}.${name}'
 }
 
 # True for a path that is not API: anything with an underscore-prefixed
@@ -607,33 +629,60 @@ def _resolve(module, prefix: string, root: string) {
 }
 
 /**
- * Reads every public module in `libs/`.
+ * Whether the file at _relative_ is a public module: a `.zu` file with
+ * no part of its path starting with an underscore, which is not a test.
  *
- * One recursive `os.read_dir()` gives every candidate path in the
- * tree; the rest is deciding which of them are modules and hanging
- * them off each other. A directory is a package when it holds an
- * `index.zu`, and that file fronts the package rather than sitting
- * inside it.
+ * @param string relative: the path, relative to the modules' directory
+ *    and written with `/`.
+ * @returns bool
+ */
+def is_module(relative: string) {
+  return relative.ends_with('.zu') and
+      !relative.ends_with('.test.zu') and
+      !_is_hidden(relative)
+}
+
+/**
+ * Reads the public modules among _relatives_, the files under _root_.
  *
- * @param string libs: the directory to read
+ * Deciding which files are modules is `is_module()`'s job; the rest is
+ * hanging the modules off each other. A directory is a package when it
+ * holds an `index.zu`, and that file fronts the package rather than
+ * sitting inside it.
+ *
+ * A file that cannot be parsed is left out, and said so in
+ * _problems_.
+ *
+ * @param string root: the directory the modules are in.
+ * @param list relatives: paths relative to _root_, written with `/`.
+ * @param ?string package: the name the modules are imported under, or
+ *    `nil` when each one is imported by its own name.
+ * @param ?list problems: where a file that cannot be read is reported.
  * @returns list[Module]: the root modules, alphabetically
  */
-def read_all(libs: string) {
+def read_all(root: string, relatives: list, package: ?string, problems: ?list) {
   var modules = {}
 
-  for relative in os.read_dir(libs, true) {
-    if relative == '.' or relative == '..' or _is_hidden(relative) {
+  for relative in relatives {
+    if !is_module(relative) {
       continue
     }
 
-    if !relative.ends_with('.zu') {
+    var name = _module_name(relative, package)
+
+    if name.is_empty() {
       continue
     }
 
-    var name = _module_name(relative)
-    var path = os.join_paths(libs, relative)
+    var path = os.join_paths(root, relative)
 
-    modules.set(name, read(name, path, relative.ends_with('index.zu')))
+    catch {
+      modules.set(name, read(name, path, relative.ends_with('index.zu')))
+    } as error {
+      if problems != nil {
+        problems.append('${relative} could not be read: ${error.message}')
+      }
+    }
   }
 
   var names = modules.keys()

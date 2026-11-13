@@ -1,0 +1,184 @@
+/**
+ * Builds documentation together with the documentation inside it.
+ *
+ * A directory beside the pages that holds a `doc.toml` of its own is
+ * more documentation, such as the API reference `zuri doc generate`
+ * writes to `docs/reference`. It is built into the directory of the site
+ * with the same name, so one site holds them all, and the top of every
+ * page links to each: the outer documentation as "Docs", a reference as
+ * "API Reference", anything else by its title, unless its own `[site]
+ * label` says otherwise. What a member leaves unset of the outer one's
+ * logo, favicon, repository, link home, stylesheets, scripts and links
+ * it takes from there, so the pages look like one site.
+ *
+ * A reference's pages are generated again before it is built, so it is
+ * never older than the code.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+
+import .config
+import .config { Config }
+import .documentation
+import .reference
+import .site { Site, is_absolute }
+
+/**
+ * One site built: its settings, and what building it reported.
+ */
+class Built {
+
+  /** @type Config */
+  var config
+
+  /** How many pages it has. @type number */
+  var pages = 0
+
+  /** How long building it took, in seconds. @type number */
+  var seconds = 0
+
+  /** What generating its pages reported, for a reference. @type list[string] */
+  var warnings = []
+
+  /** Each link inside it that leads nowhere. @type list[string] */
+  var links = []
+
+  @new(config: Config) {
+    self.config = config
+    self.warnings = []
+    self.links = []
+  }
+}
+
+/**
+ * The name the links at the top of the pages give _settings_.
+ *
+ * @param Config settings
+ * @param bool outer: whether it is the documentation the others are in.
+ * @returns string
+ */
+def label_of(settings: Config, outer: bool) {
+  if settings.label != nil {
+    return settings.label
+  }
+
+  if outer {
+    return 'Docs'
+  }
+
+  return settings.reference == nil ? settings.title : 'API Reference'
+}
+
+# _address_, written for the outer site's front page, as the front page
+# of a member one directory down reaches it.
+def _deeper(address: string) {
+  return is_absolute(address) ? address : '../' + address
+}
+
+# The settings of the member in _directory_, written into the outer
+# site and taking what it leaves unset from it.
+def _member(outer: Config, directory: string) {
+  var member = config.load(directory)
+  var name = os.base_name(directory)
+
+  member.output = os.join_paths(outer.output, name)
+
+  if outer.url != nil {
+    member.url = '${outer.url}${name}/'
+  }
+
+  if member.logo == nil {
+    member.logo = outer.logo
+  }
+
+  if member.favicon == nil {
+    member.favicon = outer.favicon
+  }
+
+  if member.repository == nil {
+    member.repository = outer.repository
+  }
+
+  if member.home == nil and outer.home != nil {
+    member.home = { url: _deeper(outer.home.url), label: outer.home.label }
+  }
+
+  if member.css.is_empty() {
+    member.css = outer.css
+  }
+
+  if member.js.is_empty() {
+    member.js = outer.js
+  }
+
+  if member.links.is_empty() {
+    member.links = outer.links.map(
+      @(link) => { url: _deeper(link.url), label: link.label },
+    )
+  }
+
+  return member
+}
+
+# Puts the links between the sites at the front of each one's own.
+def _link(sites: list) {
+  var outer = sites[0]
+  var names = sites.map(@(each) => os.base_name(each.root))
+
+  iter var i = 0; i < sites.length(); i++ {
+    var here = sites[i]
+    var up = i == 0 ? '' : '../'
+    var links = [
+      { url: '${up}index.html', label: label_of(outer, true), current: i == 0 },
+    ]
+
+    iter var j = 1; j < sites.length(); j++ {
+      var url = i == j ? 'index.html' : '${up}${names[j]}/index.html'
+
+      links.append({ url, label: label_of(sites[j], false), current: i == j })
+    }
+
+    here.links = links + here.links
+  }
+}
+
+/**
+ * Builds the documentation at _settings_ and every member of it, the
+ * outer one first, since building it empties the site the members are
+ * built into.
+ *
+ * @param Config settings
+ * @param ?bool live: whether the pages reload themselves when
+ *    `zuri doc serve` rebuilds them.
+ * @returns list[Built]: the outer documentation first.
+ * @throws UsageError When any of them cannot be read or built
+ */
+def build(settings: Config, live: ?bool) {
+  var sites = [settings] +
+      settings.members.map(@(directory) => _member(settings, directory))
+
+  if sites.length() > 1 {
+    _link(sites)
+  }
+
+  var built = []
+
+  for each in sites {
+    var outcome = Built(each)
+
+    if each.reference != nil {
+      outcome.warnings = reference.generate(each).warnings
+    }
+
+    var report = Site(documentation.load(each), live).build()
+
+    outcome.pages = report.pages
+    outcome.seconds = report.seconds
+    outcome.links = report.warnings
+    built.append(outcome)
+  }
+
+  return built
+}

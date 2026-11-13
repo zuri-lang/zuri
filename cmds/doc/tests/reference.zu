@@ -1,0 +1,343 @@
+# Tests for an API reference generated from a project's doc blocks:
+# which files are modules, what the pages say, and what a run writes.
+
+import os
+import os.tempfile { create_temp_dir }
+import test { * }
+
+import ..config { load }
+import ..documentation
+import ..reference { MARKER, generate }
+import ..reference.model { is_module }
+import ..site { Site }
+
+var DIR = nil
+
+def put(path: string, text: string) {
+  var full = os.join_paths(DIR, path)
+
+  os.create_dir(os.dir_name(full), 0c755, true)
+  file(full, 'w').write(text)
+}
+
+def read(path: string) {
+  return file(os.join_paths(DIR, path)).read()
+}
+
+def exists(path: string) {
+  return file(os.join_paths(DIR, path)).exists()
+}
+
+# A small package. Its root lifts everything in `app` and exposes
+# `store` as a namespace, and beside them sit files that are not
+# modules: a private one, a test and an example.
+def write_project() {
+  put(
+    'project.toml',
+    '[project]\nname = "weather-kit"\ndescription = "Forecasts in your terminal."\n',
+  )
+  put(
+    'index.zu',
+    '/**\n * Forecasts for anywhere.\n */\n\nimport @.app { * }\nimport @.store\n',
+  )
+  put(
+    'app/index.zu',
+    '\n'.join([
+      '/**',
+      ' * @module app',
+      ' *',
+      ' * The forecasts.',
+      ' */',
+      '',
+      '/**',
+      ' * The forecast for _place_, as a {Forecast}.',
+      ' *',
+      ' * @param string place: where to look.',
+      ' * @returns Forecast',
+      ' */',
+      'def forecast(place: string) {',
+      '  return Forecast(place)',
+      '}',
+      '',
+      '/**',
+      ' * One forecast. {forecast()} makes them.',
+      ' */',
+      'class Forecast {',
+      '',
+      '  /** Where it is for. @type string */',
+      '  var place',
+      '',
+      '  @new(place: string) {',
+      '    self.place = place',
+      '  }',
+      '',
+      '  /**',
+      '   * It, said aloud.',
+      '   *',
+      '   * @returns string',
+      '   */',
+      '  say() {',
+      "    return 'Rain in ' + self.place",
+      '  }',
+      '}',
+      '',
+    ]),
+  )
+  put(
+    'store.zu',
+    '/**\n * @module store\n *\n * Where forecasts are kept.\n */\n\n/**\n * Keeps _forecast_.\n */\ndef save(forecast) {}\n',
+  )
+  put('_secret.zu', '/** Hidden. */\ndef hidden() {}\n')
+  put('tests/app.test.zu', '/** A test. */\ndef check() {}\n')
+  put('examples/demo.zu', '/** A demo. */\ndef demo() {}\n')
+}
+
+# The reference's settings: `docs/reference/doc.toml` with _extra_ after
+# a `[reference]` table.
+def reference_at(extra: ?string) {
+  put(
+    'docs/reference/doc.toml',
+    '[documentation]\ntitle = "Weather Kit API"\n\n[reference]\n' +
+        (extra == nil ? '' : extra),
+  )
+
+  return load(os.join_paths(DIR, 'docs', 'reference'))
+}
+
+def page(name: string) {
+  return read(os.join_paths('docs', 'reference', 'src', name))
+}
+
+def refusal(work: function) {
+  var message = nil
+
+  catch {
+    work()
+  } as error {
+    message = error.message
+  }
+
+  expect(message).not.to_be_nil()
+
+  return message
+}
+
+before_each(@{
+  DIR = os.real_path(create_temp_dir('zuri-doc-reference-'))
+})
+
+after_each(@{
+  os.remove_dir(DIR, true)
+})
+
+describe('which files are modules', @{
+  it('takes Zuri files that are neither private nor tests', @{
+    expect(is_module('app/index.zu')).to_be_true()
+    expect(is_module('store.zu')).to_be_true()
+    expect(is_module('app/_helpers.zu')).to_be_false()
+    expect(is_module('_internal/store.zu')).to_be_false()
+    expect(is_module('app.test.zu')).to_be_false()
+    expect(is_module('README.md')).to_be_false()
+  })
+})
+
+describe('generate', @{
+  it("names the modules after the package they are imported through", @{
+    write_project()
+    generate(reference_at(nil))
+
+    var summary = page('SUMMARY.md')
+
+    expect(summary).to_contain('[Weather Kit API](index.md)')
+    expect(summary).to_contain('- [weather_kit](weather_kit.md)')
+    expect(summary).to_contain('  - [weather_kit.app](weather_kit-app.md)')
+    expect(summary).to_contain('  - [weather_kit.store](weather_kit-store.md)')
+  })
+
+  it('leaves out private files, tests, examples and the documentation', @{
+    write_project()
+
+    var report = generate(reference_at(nil))
+    var summary = page('SUMMARY.md')
+
+    expect(report.pages).to_be(3)
+    expect(summary).not.to_contain('secret')
+    expect(summary).not.to_contain('demo')
+    expect(summary).not.to_contain('test')
+  })
+
+  it('writes each name with the path that reaches it', @{
+    write_project()
+    generate(reference_at(nil))
+
+    expect(page('weather_kit-app.md'))
+        .to_contain('weather_kit.forecast(place: string) -> Forecast')
+    expect(page('weather_kit-store.md'))
+        .to_contain('weather_kit.store.save(forecast)')
+    expect(page('weather_kit.md'))
+        .to_contain('[`weather_kit.forecast`](weather_kit-app.md#forecast)')
+  })
+
+  it('links a name written in braces to where it is documented', @{
+    write_project()
+    generate(reference_at(nil))
+
+    var app = page('weather_kit-app.md')
+
+    expect(app).to_contain('as a [`Forecast`](#forecast).')
+    expect(app).to_contain('[`forecast()`](#forecast) makes them.')
+    expect(app).to_contain('### `Forecast.say()`')
+  })
+
+  it("takes a module's description from the doc block above its imports", @{
+    write_project()
+    generate(reference_at(nil))
+
+    expect(page('weather_kit.md')).to_contain('Forecasts for anywhere.')
+  })
+
+  it("opens the front page with the project's description", @{
+    write_project()
+    generate(reference_at(nil))
+
+    var front = page('index.md')
+
+    expect(front).to_contain('# Weather Kit API')
+    expect(front).to_contain('Forecasts in your terminal.')
+    expect(front).to_contain(
+      '| [`weather_kit.store`](weather_kit-store.md) | Where forecasts are kept. |',
+    )
+  })
+
+  it('opens the front page with the introduction it is given instead', @{
+    write_project()
+    put('docs/reference/intro.md', 'Read this *first*.\n')
+    generate(reference_at('intro = "intro.md"\n'))
+
+    var front = page('index.md')
+
+    expect(front).to_contain('Read this *first*.')
+    expect(front).not.to_contain('Forecasts in your terminal.')
+  })
+
+  it('leaves no page behind for a module that has gone', @{
+    write_project()
+    generate(reference_at(nil))
+    file(os.join_paths(DIR, 'store.zu')).delete()
+    generate(reference_at(nil))
+
+    expect(exists('docs/reference/src/weather_kit-store.md')).to_be_false()
+    expect(exists('docs/reference/src/${MARKER}')).to_be_true()
+  })
+
+  it('will not write over pages someone wrote', @{
+    write_project()
+    put('docs/reference/src/notes.md', '# Mine\n')
+
+    var message = refusal(@{
+      generate(reference_at(nil))
+    })
+
+    expect(message).to_contain('did not write')
+    expect(exists('docs/reference/src/notes.md')).to_be_true()
+  })
+
+  it('leaves out what it is told to', @{
+    write_project()
+    generate(reference_at('exclude = ["store.zu"]\n'))
+
+    expect(page('SUMMARY.md')).not.to_contain('store')
+  })
+
+  it('documents a directory of modules under their own names', @{
+    put(
+      'lib/clock.zu',
+      '/**\n * @module clock\n *\n * The time.\n */\n\n/** Now. */\ndef now() {}\n',
+    )
+    put(
+      'docs/doc.toml',
+      '[documentation]\ntitle = "Lib"\n\n[reference]\nmodules = "../lib"\n',
+    )
+    generate(load(os.join_paths(DIR, 'docs')))
+
+    expect(read('docs/src/SUMMARY.md')).to_contain('- [clock](clock.md)')
+  })
+
+  it('says why there is nothing to document', @{
+    put('project.toml', '[project]\nname = "empty"\n')
+
+    expect(
+      refusal(@{
+        generate(reference_at(nil))
+      }),
+    ).to_contain('no public modules')
+  })
+})
+
+describe('groups', @{
+  it('makes each group a part of the contents', @{
+    write_project()
+    generate(
+      reference_at(
+        '[[reference.groups]]\ntitle = "Forecasts"\ndescription = "Asking."\nmodules = ["weather_kit"]\n\n' +
+            '[[reference.groups]]\ntitle = "Storage"\nmodules = ["weather_kit.store"]\n',
+      ),
+    )
+
+    var summary = page('SUMMARY.md')
+
+    expect(summary).to_contain(
+      '# Forecasts\n\n- [weather_kit](weather_kit.md)\n  - [weather_kit.app](weather_kit-app.md)\n\n# Storage\n\n- [weather_kit.store](weather_kit-store.md)\n',
+    )
+    expect(page('index.md')).to_contain('### Forecasts\n\nAsking.')
+  })
+
+  it('lists a module no group reaches under Other Modules, and says so', @{
+    write_project()
+
+    var report = generate(
+      reference_at(
+        '[[reference.groups]]\ntitle = "Storage"\nmodules = ["weather_kit.store", "weather_kit.radar"]\n',
+      ),
+    )
+
+    expect(page('SUMMARY.md'))
+        .to_contain('# Other Modules\n\n- [weather_kit](weather_kit.md)')
+    expect(report.warnings.length()).to_be(2)
+    expect(report.warnings[0]).to_contain("no such module")
+    expect(report.warnings[1]).to_contain("'weather_kit' is in none")
+  })
+})
+
+describe('a generated reference', @{
+  it('builds into a site with nothing reported', @{
+    write_project()
+
+    var config = reference_at(nil)
+
+    generate(config)
+
+    var report = Site(documentation.load(config)).build()
+
+    expect(report.warnings).to_equal([])
+    expect(exists('docs/reference/site/weather_kit-app.html')).to_be_true()
+    expect(exists('docs/reference/site/.zuri-doc-generated')).to_be_false()
+  })
+
+  it('leaves its pages unnumbered unless asked', @{
+    write_project()
+
+    expect(reference_at(nil).numbers).to_be_false()
+    expect(reference_at('[site]\nnumbers = true\n').numbers).to_be_true()
+  })
+
+  it('refuses a group with no title', @{
+    write_project()
+
+    expect(
+      refusal(@{
+        reference_at('[[reference.groups]]\nmodules = ["a"]\n')
+      }),
+    ).to_contain('needs a title')
+  })
+})

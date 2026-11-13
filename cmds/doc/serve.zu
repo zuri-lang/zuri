@@ -4,8 +4,9 @@
  * itself to show the change.
  *
  * The server runs in an isolate of its own, serving whatever the output
- * directory holds. This thread watches the pages, its `doc.toml`
- * and its theme, builds the site again when they change, and then tells
+ * directory holds. This thread watches the pages, its `doc.toml` and
+ * its theme, or for a reference the project's modules, builds the site
+ * again when they change, and then tells
  * the server, which tells the pages: each one asks every moment whether
  * the site has been built since it loaded, and reloads when it has.
  *
@@ -21,9 +22,10 @@ import os
 
 import .._shared.errors { CommandError, UsageError }
 import .._shared.ui
-import .documentation
+import .build
 import .config
-import .site { Site, THEME }
+import .reference
+import .site { THEME }
 
 # How long changes have to stop arriving before the site is rebuilt, in
 # milliseconds, so one save written in several steps builds once.
@@ -68,7 +70,7 @@ def _serve(output: string, host: string, port: number, builds) {
 # succeeded.
 def _build(root: string, output: ?string) {
   var started = time()
-  var report
+  var built
 
   catch {
     var settings = config.load(root)
@@ -77,7 +79,7 @@ def _build(root: string, output: ?string) {
       settings.output = output
     }
 
-    report = Site(documentation.load(settings), true).build()
+    built = build.build(settings, true)
   } as error {
     if instance_of(error, UsageError) {
       ui.complain('doc: ${error.message}')
@@ -87,28 +89,89 @@ def _build(root: string, output: ?string) {
     raise error
   }
 
-  for warning in report.warnings {
-    ui.complain(ui.warn('warning: ') + warning)
+  var pages = 0
+
+  for each in built {
+    for warning in each.warnings + each.links {
+      ui.complain(ui.warn('warning: ') + warning)
+    }
+
+    pages += each.pages
   }
 
   echo ui.muted(
-    'Built ${ui.count(report.pages, "page")} in ${(time() - started).fixed(2)}s',
+    'Built ${ui.count(pages, "page")} in ${(time() - started).fixed(2)}s',
   )
 
   return true
 }
 
-# Whether a change at _path_ is one the site is built from.
-def _matters(path: string, output: string) {
-  if path == output or path.starts_with(output + os.path_separator) {
+# What a change has to touch to rebuild the site: `{ ignored, sources,
+# modules, settings, themes }`, lists of the directories built into or
+# generated, the directories of pages, the projects references are
+# generated from, the settings files, and the theme directories.
+def _watched(settings) {
+  var watch = {
+    ignored: [settings.output],
+    sources: [],
+    modules: [],
+    settings: [],
+    themes: [THEME],
+  }
+
+  for each in [settings] + settings.members.map(@(dir) => config.load(dir)) {
+    watch.settings.append(os.join_paths(each.root, config.FILE_NAME))
+
+    if each.theme_dir != nil {
+      watch.themes.append(each.theme_dir)
+    }
+
+    # A reference's pages are generated, so what is watched is the code
+    # they are generated from.
+    if each.reference == nil {
+      watch.sources.append(each.source)
+      continue
+    }
+
+    watch.ignored.append(each.source)
+    watch.ignored.append(each.output)
+    watch.modules.append(reference.source_of(each).root)
+
+    if each.reference.intro != nil {
+      watch.settings.append(each.reference.intro)
+    }
+  }
+
+  return watch
+}
+
+# Whether a change at _path_ is one the site is built from, given what
+# `_watched()` found.
+def _matters(path: string, watch: dict) {
+  var inside = @(directories) => directories.some(
+    @(directory) => path == directory or
+        path.starts_with(directory + os.path_separator),
+  )
+
+  if inside(watch.ignored) {
     return false
   }
 
   var name = os.base_name(path)
 
-  return !(name.starts_with('.') or
-      name.ends_with('~') or
-      name.ends_with('.swp'))
+  if name.starts_with('.') or name.ends_with('~') or name.ends_with('.swp') {
+    return false
+  }
+
+  # Among a project's files only its modules matter, and the pages,
+  # settings and themes that may be kept there too.
+  if inside(watch.modules) and !inside(watch.sources) {
+    return name.ends_with('.zu') or
+        watch.settings.contains(path) or
+        inside(watch.themes)
+  }
+
+  return true
 }
 
 # Opens _address_ in the default browser, if there is a way to.
@@ -156,6 +219,8 @@ def run(root: string, options: dict) {
   var settings = config.load(root)
   var output = options.output == nil ? settings.output : options.output
 
+  settings.output = output
+
   if !_build(root, options.output) {
     raise CommandError(
       'the documentation has to build once before it can be served',
@@ -194,13 +259,14 @@ def run(root: string, options: dict) {
   }
 
   var watcher = os.Watcher()
+  var watch = _watched(settings)
 
-  watcher.add(settings.source)
-  watcher.add(os.join_paths(root, config.FILE_NAME))
-  watcher.add(THEME)
+  for directory in watch.sources + watch.modules + watch.themes {
+    watcher.add(directory)
+  }
 
-  if settings.theme_dir != nil {
-    watcher.add(settings.theme_dir)
+  for path in watch.settings {
+    watcher.add(path)
   }
 
   var count = 0
@@ -208,7 +274,7 @@ def run(root: string, options: dict) {
   while true {
     var event = watcher.next()
 
-    if event == nil or (event.path != nil and !_matters(event.path, output)) {
+    if event == nil or (event.path != nil and !_matters(event.path, watch)) {
       continue
     }
 

@@ -1,0 +1,153 @@
+# Tests for building documentation together with the documentation
+# inside it: one site holding them all, with links between them.
+
+import os
+import os.tempfile { create_temp_dir }
+import test { * }
+
+import ..build { build, label_of }
+import ..config { load, parse }
+
+var DIR = nil
+
+def put(path: string, text: string) {
+  var full = os.join_paths(DIR, path)
+
+  os.create_dir(os.dir_name(full), 0c755, true)
+  file(full, 'w').write(text)
+}
+
+def read(path: string) {
+  return file(os.join_paths(DIR, path)).read()
+}
+
+def exists(path: string) {
+  return file(os.join_paths(DIR, path)).exists()
+}
+
+# The links at the top of the page at _path_.
+def bar(path: string) {
+  var page = read(path)
+  var start = page.index_of('<nav class="bar-links"')
+
+  return page[start, page.index_of('</nav>', start)]
+}
+
+# A project with a guide in `docs`, written by hand, and an API
+# reference generated into `docs/reference`. _guide_ and _reference_ are
+# added to their `doc.toml` files.
+def write_project(guide: ?string, reference: ?string) {
+  put('project.toml', '[project]\nname = "weather"\n')
+  put(
+    'index.zu',
+    '/**\n * @module weather\n *\n * Forecasts.\n */\n\n/** Today. */\ndef today() {}\n',
+  )
+  put('docs/doc.toml', '[documentation]\ntitle = "Weather"\n' + (guide or ''))
+  put('docs/src/SUMMARY.md', '# Summary\n\n[Welcome](welcome.md)\n')
+  put('docs/src/welcome.md', '# Welcome\n')
+  put(
+    'docs/reference/doc.toml',
+    '[documentation]\ntitle = "Weather API"\n\n[reference]\n' +
+        (reference or ''),
+  )
+}
+
+def docs() {
+  return load(os.join_paths(DIR, 'docs'))
+}
+
+before_each(@{
+  DIR = os.real_path(create_temp_dir('zuri-doc-build-'))
+})
+
+after_each(@{
+  os.remove_dir(DIR, true)
+})
+
+describe('documentation inside documentation', @{
+  it('is found beside the pages', @{
+    write_project(nil, nil)
+    put('docs/notes/readme.txt', 'not documentation')
+    put('docs/.drafts/doc.toml', '')
+
+    expect(docs().members).to_equal([os.join_paths(DIR, 'docs', 'reference')])
+  })
+
+  it('is built into the site, the outer documentation first', @{
+    write_project(nil, nil)
+
+    var built = build(docs())
+
+    expect(built.map(@(each) => each.config.title))
+        .to_equal(['Weather', 'Weather API'])
+    expect(exists('docs/site/index.html')).to_be_true()
+    expect(exists('docs/site/reference/weather.html')).to_be_true()
+    expect(built[1].config.output)
+        .to_be(os.join_paths(DIR, 'docs', 'site', 'reference'))
+  })
+
+  it('links every site from the top of every page, marking the one it is', @{
+    write_project(nil, nil)
+    build(docs())
+
+    expect(bar('docs/site/index.html')).to_contain(
+      '<a href="index.html" aria-current="true">Docs</a><a href="reference/index.html">API Reference</a>',
+    )
+    expect(bar('docs/site/reference/weather.html')).to_contain(
+      '<a href="../index.html">Docs</a><a href="index.html" aria-current="true">API Reference</a>',
+    )
+  })
+
+  it('names each site by its own label when it has one', @{
+    write_project('[site]\nlabel = "Guide"\n', '[site]\nlabel = "API"\n')
+    build(docs())
+
+    var links = bar('docs/site/index.html')
+
+    expect(links).to_contain('>Guide</a>')
+    expect(links).to_contain('>API</a>')
+  })
+
+  it('takes the outer address, logo and links where it sets none', @{
+    write_project(
+      '[site]\nurl = "https://example.com/docs/"\nlogo = "logo.svg"\n\n[[site.links]]\nurl = "../"\nlabel = "Home"\n',
+      nil,
+    )
+    put('docs/logo.svg', '<svg xmlns="http://www.w3.org/2000/svg"/>')
+
+    var built = build(docs())
+    var member = built[1].config
+
+    expect(member.url).to_be('https://example.com/docs/reference/')
+    expect(member.logo).to_be(os.join_paths(DIR, 'docs', 'logo.svg'))
+    expect(bar('docs/site/reference/weather.html'))
+        .to_contain('<a href="../../">Home</a>')
+  })
+
+  it('stands alone when built on its own', @{
+    write_project(nil, nil)
+
+    var built = build(load(os.join_paths(DIR, 'docs', 'reference')))
+
+    expect(built.length()).to_be(1)
+    expect(exists('docs/reference/site/weather.html')).to_be_true()
+    expect(read('docs/reference/site/weather.html')).not
+        .to_contain('class="bar-links"')
+  })
+})
+
+describe('label_of', @{
+  it(
+    'calls the outer documentation Docs, a reference API Reference, and the rest by title',
+    @{
+      var guide = parse('[documentation]\ntitle = "Guide"\n', DIR)
+      var api = parse('[documentation]\ntitle = "API"\n[reference]\n', DIR)
+
+      expect(label_of(guide, true)).to_be('Docs')
+      expect(label_of(api, false)).to_be('API Reference')
+      expect(label_of(guide, false)).to_be('Guide')
+      expect(label_of(parse('[site]\nlabel = "Manual"\n', DIR), true))
+          .to_be('Manual')
+    },
+  )
+})

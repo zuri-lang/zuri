@@ -69,7 +69,7 @@
     </button>
 
     <nav class="bar-links" x-if="links" aria-label="Elsewhere">
-      <a x-for="links" x-value="link" href="{{ link.url }}">{{ link.label }}</a>
+      <a x-for="links" x-value="link" href="{{ link.url }}" x-attr="{ 'aria-current': link.current ? 'true' : nil }">{{ link.label }}</a>
     </nav>
 
     <div class="bar-tools">

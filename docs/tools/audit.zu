@@ -11,7 +11,8 @@
  * and describes itself in its doc block, and `zuri --help` lists it by
  * those two tags and nothing else.
  *
- * Run it on its own, or let `reference.zu` run it for you:
+ * Run it on its own, or let `site.zu` run it before it generates the
+ * standard library reference:
  *
  * ```
  * zuri run docs/tools/audit.zu

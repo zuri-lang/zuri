@@ -4,10 +4,11 @@
  * Prose arrives hard-wrapped to sit comfortably in a source file and
  * is re-wrapped here at the width the rest of the book uses; that,
  * and the rest of the shared markdown plumbing, lives in
- * `markdown.zu`.
+ * `cmds/doc/reference/text.zu`, which the API reference is written
+ * with too.
  */
 
-import ..markdown { * }
+import .. .. ..cmds.doc.reference.text { * }
 
 # The one-line signature that heads every entry.
 def _signature(member, receiver: string) {

@@ -209,24 +209,19 @@ jobs:
       - name: Build
         run: cargo build --locked
 
-      # The reference's pages are generated rather than committed, so
-      # they have to exist before anything can be checked against them.
-      - name: Generate the reference
-        run: ./target/debug/zuri run docs/tools/reference/generate.zu
-        env:
-          ZURI_ROOT: ${{ github.workspace }}
-
-      # Building checks every link inside each book against the pages
-      # it actually wrote, and --strict fails on one that leads nowhere.
-      - name: Build both books
+      # Building checks every link inside each against the pages it
+      # actually wrote, and --strict fails on one that leads nowhere. The
+      # reference's pages are generated from `libs/` as it is built, and
+      # --strict also fails on a module none of its groups lists.
+      - name: Build the book and the reference
         run: |
           ./target/debug/zuri doc build docs/book --strict
           ./target/debug/zuri doc build docs/reference --strict
         env:
           ZURI_ROOT: ${{ github.workspace }}
 
-      # A defect in a doc block in `libs/` becomes a defect in both
-      # books, so the blocks are checked at their source.
+      # A defect in a doc block in `libs/` becomes a defect in the book
+      # and the reference, so the blocks are checked at their source.
       - name: Audit the library's doc blocks
         run: ./target/debug/zuri run docs/tools/audit.zu
         env:
@@ -258,14 +253,16 @@ jobs:
       - name: Build
         run: cargo build --locked
 
+      # The reference's pages are generated rather than committed, and
+      # its examples are run along with the book's.
       - name: Generate the reference
-        run: ./target/debug/zuri run docs/tools/reference/generate.zu
+        run: ./target/debug/zuri doc generate docs/reference
         env:
           ZURI_ROOT: ${{ github.workspace }}
 
-      # Every runnable example in both books is run and its output
-      # compared against what the page claims it prints. This is the
-      # slow one, which is why it is its own job.
+      # Every runnable example in the book and the reference is run and
+      # its output compared against what the page claims it prints. This
+      # is the slow one, which is why it is its own job.
       - name: Run every example
         run: ./target/debug/zuri run docs/tools/verify.zu
         env:
