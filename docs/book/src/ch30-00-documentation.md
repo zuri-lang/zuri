@@ -1,15 +1,15 @@
 # Documenting a Project
 
 `zuri doc` turns a directory of Markdown into a website: a page for each
-chapter with the contents beside it, a search box, a page that prints the
-whole book, light and dark themes, and every code block coloured. This
-book is built with it, and so is the standard library reference.
+chapter with the contents beside it, a search box, a page that prints all
+of it at once, light and dark themes, and every code block coloured.
+This book is built with it, and so is the standard library reference.
 
 What it writes is a directory of plain files. Any web server can serve
 it, GitHub Pages can publish it as it is, and a browser can read it
 straight from disk.
 
-- [Starting a Book](#starting-a-book)
+- [Starting Documentation](#starting-documentation)
 - [The Contents](#the-contents)
 - [Writing Pages](#writing-pages)
   - [Links and Files](#links-and-files)
@@ -20,9 +20,10 @@ straight from disk.
 - [Changing the Look](#changing-the-look)
 - [Publishing](#publishing)
 
-## Starting a Book
+## Starting Documentation
 
-Inside a project, `zuri doc init` starts a book in its `docs` directory:
+Inside a project, `zuri doc init` starts documentation in its `docs`
+directory:
 
 ```console
 $ zuri doc init
@@ -36,11 +37,11 @@ Started weather in docs
 Build it with zuri doc build, or read it as you write with zuri doc serve.
 ```
 
-The book takes the project's name as its title, and `--title` gives it
+The documentation takes the project's name as its title, and `--title` gives it
 another. Outside a project it starts in the current directory, and
 naming a directory starts it there instead: `zuri doc init manual`.
 
-A book is laid out like this:
+Documentation is laid out like this:
 
 ```text
 docs/
@@ -52,7 +53,7 @@ docs/
   site/                 the built site, which .gitignore leaves out
 ```
 
-Every command finds the book the same way: the directory named on the
+Every command finds the documentation the same way: the directory named on the
 command line, or else the current directory when it holds a `doc.toml`,
 or else the `docs` directory of the project you are in. So `zuri doc
 build` works from anywhere inside the project.
@@ -60,7 +61,7 @@ build` works from anywhere inside the project.
 ## The Contents
 
 `src/SUMMARY.md` lists the pages in the order they are read. A page it
-does not list is not in the book.
+does not list is not in the documentation.
 
 ```markdown
 # Summary
@@ -141,9 +142,10 @@ Images, and any other file in `src` that is not Markdown, are copied into
 the site beside the pages at the same paths, so an image written as
 `![a chart](images/rain.png)` shows in both places too.
 
-Building checks every link that stays inside the book, and reports one
-that leads to a page `SUMMARY.md` does not list, to a heading a page does
-not have, or to a file that is not there, with the line it is on.
+Building checks every link that stays inside the documentation, and
+reports one that leads to a page `SUMMARY.md` does not list, to a heading
+a page does not have, or to a file that is not there, with the line it is
+on.
 
 ### Code
 
@@ -235,7 +237,7 @@ weather: 5 pages in 0.04s
   docs/site
 ```
 
-When a link inside the book leads nowhere, it says where:
+When a link inside the documentation leads nowhere, it says where:
 
 ```console
 $ zuri doc build --strict
@@ -243,16 +245,16 @@ warning: docs/src/getting-started.md:10: introduction.md has no heading or id #i
 warning: docs/src/getting-started.md:10: links to forecasts.md, which SUMMARY.md does not list
 weather: 5 pages in 0.03s
   docs/site
-doc: 2 links inside the book lead nowhere
+doc: 2 links inside the documentation lead nowhere
 ```
 
 Without `--strict` the warnings are printed and the build succeeds. With
-it the command fails, which is how a CI job keeps a book's links whole.
+it the command fails, which is how a CI job keeps the links whole.
 `--out` writes the site somewhere other than where `doc.toml` says, and
 `--open` opens it in a browser once it is built.
 
 While you write, `zuri doc serve` builds the site, serves it on this
-machine, and builds it again each time the book changes:
+machine, and builds it again each time the documentation changes:
 
 ```console
 $ zuri doc serve
@@ -260,7 +262,7 @@ Built 5 pages in 0.03s
 
   weather at http://127.0.0.1:3000/
 
-  Changes to the book rebuild it, and open pages reload. Ctrl+C stops.
+  Changes to the documentation rebuild it, and open pages reload. Ctrl+C stops.
 ```
 
 A page open in a browser reloads itself after every rebuild. A build that
@@ -277,7 +279,7 @@ table does not have, or a value of the wrong type, stops the build with
 the key named.
 
 ```toml
-[book]
+[documentation]
 title = "Weather"
 description = "Forecasts in your terminal."
 authors = ["Ada"]
@@ -307,14 +309,14 @@ smart = true
 "setup.html" = "getting-started/installing.html"
 ```
 
-`[book]` says what the book is:
+`[documentation]` says what the documentation is:
 
 | Key | Default | What it is |
 | --- | --- | --- |
-| `title` | the directory's name | the book's title, shown at the top of every page |
+| `title` | the directory's name | the title, shown at the top of every page |
 | `description` | none | one sentence, for search engines |
 | `authors` | none | the authors' names |
-| `language` | `"en"` | the language the book is written in |
+| `language` | `"en"` | the language it is written in |
 | `source` | `"src"` | the directory of pages |
 | `output` | `"site"` | where the site is written |
 | `create-missing` | `false` | write an empty page for a chapter whose file is missing, rather than stopping |
@@ -332,15 +334,15 @@ smart = true
 | `fold` | `false` | how many levels of the contents start open; `false` opens every level |
 | `numbers` | `true` | whether chapters are numbered |
 | `search` | `true` | whether the site can be searched |
-| `print` | `true` | whether the site has a page that prints the whole book |
+| `print` | `true` | whether the site has a page that prints all of it at once |
 | `css` | `[]` | stylesheets added to every page |
 | `js` | `[]` | scripts added to every page |
 | `cname` | none | the domain GitHub Pages serves the site at |
 
 The contents always open as far as the page being read, whatever `fold`
-says. `[site.home]` puts a link back to a site above the book beside its
+says. `[site.home]` puts a link back to a site above this one beside its
 title, and each `[[site.links]]` adds a link to the top of every page; an
-address that is not absolute is relative to the book's own front page.
+address that is not absolute is relative to the front page.
 `[markdown]` is described under [Writing Pages](#writing-pages), and
 `[redirects]` keeps an old address working by sending it on to a new one.
 
@@ -357,7 +359,7 @@ Every page is written through one Wire template, `page.html`, styled by
 beside `doc.toml` replaces any of the three with a file of the same name.
 The ones `zuri doc` uses are in `cmds/doc/theme` beside the `zuri`
 executable, and a copy of one is the place to start from. The `css` and
-`js` settings add to them instead, which is all most books need:
+`js` settings add to them instead, which is usually all it takes:
 
 ```css
 :root {

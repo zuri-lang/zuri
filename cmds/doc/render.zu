@@ -3,8 +3,8 @@
  *
  * Pages are parsed by the standard library's `markdown` module:
  * CommonMark and GitHub Flavored Markdown, with raw HTML allowed and
- * attributes written after a heading, as in `## Results {#results}`. A
- * book's `[markdown]` table can change any of that. On top of the
+ * attributes written after a heading, as in `## Results {#results}`. The
+ * `[markdown]` table in `doc.toml` can change any of that. On top of the
  * module's own rendering, a page here gets:
  *
  * - a link beside each heading, to that heading;
@@ -18,7 +18,7 @@
  *
  * Rendering also collects what the rest of the site needs from a page:
  * the headings for its outline, its text for searching, and every link
- * it makes inside the book, for checking.
+ * it makes inside the documentation, for checking.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -28,12 +28,12 @@ import markdown.node { Node }
 import markdown.renderer { HtmlRenderer }
 import url
 
-import .book { Book, Chapter, normalize, page_path, root_of }
+import .documentation { Documentation, Chapter, normalize, page_path, root_of }
 import .highlight
 import .highlight.spans { escape }
 
 /**
- * The Markdown options every book starts from, before its own
+ * The Markdown options all documentation starts from, before its own
  * `[markdown]` table.
  */
 var DEFAULTS = {
@@ -292,18 +292,18 @@ class Page {
 }
 
 /**
- * Renders the pages of one book.
+ * Renders the pages of the documentation.
  */
 class Renderer {
 
-  /** @type Book */
-  var book
+  /** @type Documentation */
+  var docs
 
   /** The `markdown` instance pages are parsed with. */
   var md
 
   /**
-   * Every link a page made to a page or file inside the book:
+   * Every link a page made to a page or file inside the documentation:
    * `{ from, line, page, source, fragment }` for a link to a chapter,
    * with the target's page and Markdown file, and `{ from, line, file }`
    * for anything else, with the target's path under the source
@@ -318,17 +318,17 @@ class Renderer {
   var _print = false
 
   /**
-   * @param Book book
-   * @throws ValueError When the book's `[markdown]` options are not ones
+   * @param Documentation docs
+   * @throws ValueError When the `[markdown]` options are not ones
    *    the module takes
    */
-  @new(book: Book) {
-    self.book = book
+  @new(docs: Documentation) {
+    self.docs = docs
     self.links = []
 
     var options = DEFAULTS.clone()
 
-    for key, value in book.config.markdown {
+    for key, value in docs.config.markdown {
       options.set(key, value)
     }
 
@@ -416,7 +416,7 @@ class Renderer {
     }
   }
 
-  # Records a link to a file in the book that is not a page.
+  # Records a link to a file in the documentation that is not a page.
   _note_file(destination: string, line: number) {
     if self._print or
         _is_external(destination) or
@@ -471,7 +471,7 @@ class Renderer {
       return destination
     }
 
-    var found = self.book.by_source.get(target)
+    var found = self.docs.by_source.get(target)
     var page = found != nil ? found.path : page_path(target)
 
     if self._print {
@@ -524,8 +524,8 @@ def _line_of(node: Node) {
   return 0
 }
 
-# Whether _destination_ leaves the book: it has a scheme, or starts at
-# the root of a host.
+# Whether _destination_ leaves the documentation: it has a scheme, or
+# starts at the root of a host.
 def _is_external(destination: string) {
   return destination.starts_with('/') or
       destination.match('/^[A-Za-z][A-Za-z0-9+.-]*:/') != false

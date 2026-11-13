@@ -1,6 +1,6 @@
 /**
- * The book: every chapter `SUMMARY.md` lists, numbered, placed, and
- * read from disk.
+ * The documentation: every chapter `SUMMARY.md` lists, numbered,
+ * placed, and read from disk.
  *
  * Each chapter's page is written at its source path with `.md` swapped
  * for `.html`, so `guide/setup.md` becomes `guide/setup.html` and a link
@@ -36,7 +36,7 @@ import .summary { Entry }
 var _INCLUDE_DEPTH = 10
 
 /**
- * One chapter of the book.
+ * One chapter of the documentation.
  */
 class Chapter {
 
@@ -353,9 +353,9 @@ def preprocess(text: string, path: string, depth: ?number) {
 }
 
 /**
- * A book: its settings, its contents and its chapters.
+ * Documentation: its settings, its contents and its chapters.
  */
-class Book {
+class Documentation {
 
   /** @type Config */
   var config
@@ -400,7 +400,7 @@ class Book {
   }
 
   /**
-   * The first chapter with a page, or `nil` for a book with none.
+   * The first chapter with a page, or `nil` when there is none.
    *
    * @returns ?Chapter
    */
@@ -409,14 +409,14 @@ class Book {
   }
 
   @to_string() {
-    return '<Book ${self.config.title}>'
+    return '<Documentation ${self.config.title}>'
   }
 }
 
 # Turns one summary entry into a chapter, numbering it from _counter_,
 # the numbers its siblings have reached.
 def _chapter(
-  book: Book,
+  docs: Documentation,
   entry: Entry,
   owner: ?Chapter,
   part: ?Entry,
@@ -430,7 +430,7 @@ def _chapter(
   chapter.part_index = part_index
   chapter.depth = owner == nil ? 0 : owner.depth + 1
 
-  if entry.numbered and !entry.unnumbered and book.config.numbers {
+  if entry.numbered and !entry.unnumbered and docs.config.numbers {
     counter[0]++
     chapter.number = (owner == nil or owner.number == nil
             ? []
@@ -453,23 +453,23 @@ def _chapter(
       )
     }
 
-    if book.by_source.contains(source) {
+    if docs.by_source.contains(source) {
       raise UsageError(
-        "SUMMARY.md:${entry.line}: ${source} is listed twice; a page can only be in the book once",
+        "SUMMARY.md:${entry.line}: ${source} is listed twice; a page can only be listed once",
       )
     }
 
     chapter.source = source
     chapter.path = page_path(source)
-    book.by_source.set(source, chapter)
-    book.by_path.set(chapter.path, chapter)
+    docs.by_source.set(source, chapter)
+    docs.by_path.set(chapter.path, chapter)
   }
 
   var inner = [0]
 
   for child in entry.children {
     chapter.children.append(
-      _chapter(book, child, chapter, part, part_index, inner),
+      _chapter(docs, child, chapter, part, part_index, inner),
     )
   }
 
@@ -489,11 +489,11 @@ def _in_order(chapters: list, out: list) {
 
 # Reads a chapter's Markdown, making the file first when the summary
 # names one that is not there and the settings say to.
-def _read(book: Book, chapter: Chapter) {
-  var full = os.join_paths(book.config.source, chapter.source)
+def _read(docs: Documentation, chapter: Chapter) {
+  var full = os.join_paths(docs.config.source, chapter.source)
 
   if !file(full).exists() {
-    if !book.config.create_missing {
+    if !docs.config.create_missing {
       raise UsageError(
         "SUMMARY.md:${chapter.entry.line}: '${chapter.title}' is ${chapter.source}, which does not exist",
       )
@@ -510,10 +510,10 @@ def _read(book: Book, chapter: Chapter) {
 }
 
 /**
- * The book whose settings are _config_, with every page read.
+ * The documentation whose settings are _config_, with every page read.
  *
  * @param Config config
- * @returns Book
+ * @returns Documentation
  * @throws UsageError When there is no `SUMMARY.md`, it cannot be read, or
  *    it names a page that cannot be
  */
@@ -524,7 +524,7 @@ def load(config: Config) {
     raise UsageError('there is no SUMMARY.md in ${config.source}')
   }
 
-  var book = Book(config)
+  var docs = Documentation(config)
   var entries = summary.parse(fsx.read_text(summary_path))
   var counter = [0]
   var part = nil
@@ -534,26 +534,26 @@ def load(config: Config) {
     if entry.kind == 'part' {
       part = entry
       part_index++
-      book.parts.append(entry)
-      book.contents.append(entry)
+      docs.parts.append(entry)
+      docs.contents.append(entry)
     } else if entry.kind == 'separator' {
-      book.contents.append(entry)
+      docs.contents.append(entry)
     } else {
-      book.contents.append(
-        _chapter(book, entry, nil, part, part_index, counter),
+      docs.contents.append(
+        _chapter(docs, entry, nil, part, part_index, counter),
       )
     }
   }
 
   _in_order(
-    book.contents.filter(@(item) => instance_of(item, Chapter)),
-    book.chapters,
+    docs.contents.filter(@(item) => instance_of(item, Chapter)),
+    docs.chapters,
   )
 
-  iter var i = 0; i < book.chapters.length(); i++ {
-    book.chapters[i].position = i
-    _read(book, book.chapters[i])
+  iter var i = 0; i < docs.chapters.length(); i++ {
+    docs.chapters[i].position = i
+    _read(docs, docs.chapters[i])
   }
 
-  return book
+  return docs
 }

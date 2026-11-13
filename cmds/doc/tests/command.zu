@@ -1,5 +1,5 @@
-# Tests for the whole command, run as a reader runs it: starting a book,
-# building it, and cleaning up after it.
+# Tests for the whole command, run as a reader runs it: starting
+# documentation, building it, and cleaning up after it.
 
 import os
 import os.process { spawn }
@@ -44,7 +44,7 @@ after_each(@{
 })
 
 describe('zuri doc', @{
-  it('starts a book and builds it', @{
+  it('starts documentation and builds it', @{
     var started = doc(['init', 'manual', '--title', 'Manual'])
 
     expect(started.status).to_be(0)
@@ -58,13 +58,13 @@ describe('zuri doc', @{
     expect(exists('manual/site/getting-started.html')).to_be_true()
   })
 
-  it('will not start a book over another', @{
+  it('will not start documentation over another', @{
     doc(['init', 'manual'])
 
     var again = doc(['init', 'manual'])
 
     expect(again.status).to_be(1)
-    expect(again.all).to_contain('already holds a book')
+    expect(again.all).to_contain('already holds documentation')
   })
 
   it('fails a strict build over a link that leads nowhere', @{
@@ -81,7 +81,8 @@ describe('zuri doc', @{
     expect(loose.all)
         .to_contain('links to nothing.md, which SUMMARY.md does not list')
     expect(strict.status).to_be(1)
-    expect(strict.all).to_contain('1 link inside the book leads nowhere')
+    expect(strict.all)
+        .to_contain('1 link inside the documentation leads nowhere')
   })
 
   it('says what is wrong with doc.toml', @{

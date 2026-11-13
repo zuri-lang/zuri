@@ -1,10 +1,10 @@
 /**
  * `zuri doc serve`: the site on a local web server, built again
- * whenever the book changes, with every open page reloading itself to
- * show the change.
+ * whenever the documentation changes, with every open page reloading
+ * itself to show the change.
  *
  * The server runs in an isolate of its own, serving whatever the output
- * directory holds. This thread watches the book's pages, its `doc.toml`
+ * directory holds. This thread watches the pages, its `doc.toml`
  * and its theme, builds the site again when they change, and then tells
  * the server, which tells the pages: each one asks every moment whether
  * the site has been built since it loaded, and reloads when it has.
@@ -21,7 +21,7 @@ import os
 
 import .._shared.errors { CommandError, UsageError }
 import .._shared.ui
-import .book
+import .documentation
 import .config
 import .site { Site, THEME }
 
@@ -77,7 +77,7 @@ def _build(root: string, output: ?string) {
       settings.output = output
     }
 
-    report = Site(book.load(settings), true).build()
+    report = Site(documentation.load(settings), true).build()
   } as error {
     if instance_of(error, UsageError) {
       ui.complain('doc: ${error.message}')
@@ -143,13 +143,13 @@ def open_browser(address: string) {
 }
 
 /**
- * Builds the book in _root_, serves it and rebuilds it on every change,
- * until the process is stopped.
+ * Builds the documentation in _root_, serves it and rebuilds it on
+ * every change, until the process is stopped.
  *
  * @param string root: the directory holding `doc.toml`.
  * @param dict options: `{ host, port, open, output }`, `output` being
  *    `nil` for the directory `doc.toml` names.
- * @throws UsageError When the book cannot be built the first time
+ * @throws UsageError When the documentation cannot be built the first time
  * @throws CommandError When the server cannot listen on the port
  */
 def run(root: string, options: dict) {
@@ -157,7 +157,9 @@ def run(root: string, options: dict) {
   var output = options.output == nil ? settings.output : options.output
 
   if !_build(root, options.output) {
-    raise CommandError('the book has to build once before it can be served')
+    raise CommandError(
+      'the documentation has to build once before it can be served',
+    )
   }
 
   var builds = isolate.channel()
@@ -183,7 +185,7 @@ def run(root: string, options: dict) {
   echo ''
   echo '  ${ui.heading(settings.title)} at ${ui.accent(address)}'
   echo ui.muted(
-    '  Changes to the book rebuild it, and open pages reload. Ctrl+C stops.',
+    '  Changes to the documentation rebuild it, and open pages reload. Ctrl+C stops.',
   )
   echo ''
 

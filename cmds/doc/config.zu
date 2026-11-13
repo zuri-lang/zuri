@@ -20,7 +20,7 @@ import .._shared.paths
 var FILE_NAME = 'doc.toml'
 
 # Every key each table may hold, and the type its value must have.
-var _BOOK = {
+var _DOCUMENTATION = {
   title: 'string',
   description: 'string',
   authors: 'list',
@@ -48,9 +48,10 @@ var _SITE = {
   links: 'list',
 }
 
-var _TABLES = ['book', 'site', 'markdown', 'redirects']
+var _TABLES = ['documentation', 'site', 'markdown', 'redirects']
 
-# Markdown options the site decides for itself and a book cannot change.
+# Markdown options the site decides for itself and documentation cannot
+# change.
 var _RESERVED = ['renderer', 'highlight', 'toc', 'metadata']
 
 var _THEMES = ['system', 'light', 'dark']
@@ -63,16 +64,16 @@ class Config {
   /** The directory holding `doc.toml`. @type string */
   var root
 
-  /** The book's title. @type string */
+  /** The title. @type string */
   var title = ''
 
-  /** One sentence describing the book. @type string */
+  /** One sentence describing the documentation. @type string */
   var description = ''
 
   /** @type list[string] */
   var authors = []
 
-  /** The language the book is written in, as a BCP 47 tag. @type string */
+  /** The language it is written in, as a BCP 47 tag. @type string */
   var language = 'en'
 
   /** The directory of Markdown pages and `SUMMARY.md`. @type string */
@@ -295,19 +296,19 @@ def parse(text: string, root: string) {
     }
   }
 
-  var book = data.get('book', {})
+  var documentation = data.get('documentation', {})
   var site = data.get('site', {})
 
-  _check(book, _BOOK, 'book')
+  _check(documentation, _DOCUMENTATION, 'documentation')
   _check(site, _SITE, 'site')
 
-  config.title = book.get('title', os.base_name(root))
-  config.description = book.get('description', '')
-  config.authors = _strings(book.get('authors', []), 'authors')
-  config.language = book.get('language', 'en')
-  config.source = config.resolve(book.get('source', 'src'))
-  config.output = config.resolve(book.get('output', 'site'))
-  config.create_missing = book.get('create-missing', false)
+  config.title = documentation.get('title', os.base_name(root))
+  config.description = documentation.get('description', '')
+  config.authors = _strings(documentation.get('authors', []), 'authors')
+  config.language = documentation.get('language', 'en')
+  config.source = config.resolve(documentation.get('source', 'src'))
+  config.output = config.resolve(documentation.get('output', 'site'))
+  config.create_missing = documentation.get('create-missing', false)
 
   if config.output == config.source or
       config.source.starts_with(config.output + os.path_separator) {

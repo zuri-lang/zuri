@@ -1,5 +1,5 @@
 # Tests for the planning layer: what the command line asks for, and
-# where the book it is asked about is.
+# where the documentation it is asked about is.
 
 import os
 import os.tempfile { create_temp_dir }
@@ -9,7 +9,7 @@ import ..plan {
   DEFAULT_HOST,
   DEFAULT_PORT,
   default_title,
-  find_book,
+  find_documentation,
   init_target,
   parser,
   settings,
@@ -61,7 +61,7 @@ describe('settings', @{
     expect(given.host).to_be(DEFAULT_HOST)
   })
 
-  it('takes the book after the command', @{
+  it('takes the documentation after the command', @{
     var given = chosen(['serve', 'manual', '-p', '4000'])
 
     expect(given.command).to_be('serve')
@@ -95,19 +95,19 @@ describe('settings', @{
   })
 })
 
-describe('find_book', @{
+describe('find_documentation', @{
   it('takes the directory named, or the doc.toml in it', @{
     put('manual/doc.toml', '')
 
     var manual = os.join_paths(DIR, 'manual')
 
-    expect(find_book('manual', DIR)).to_be(manual)
-    expect(find_book('manual/doc.toml', DIR)).to_be(manual)
+    expect(find_documentation('manual', DIR)).to_be(manual)
+    expect(find_documentation('manual/doc.toml', DIR)).to_be(manual)
   })
 
-  it('takes the current directory when it holds a book', @{
+  it('takes the current directory when it holds documentation', @{
     put('doc.toml', '')
-    expect(find_book(nil, DIR)).to_be(DIR)
+    expect(find_documentation(nil, DIR)).to_be(DIR)
   })
 
   it("takes the project's docs from anywhere in the project", @{
@@ -115,26 +115,26 @@ describe('find_book', @{
     put('docs/doc.toml', '')
     put('app/index.zu', '')
 
-    expect(find_book(nil, os.join_paths(DIR, 'app')))
+    expect(find_documentation(nil, os.join_paths(DIR, 'app')))
         .to_be(os.join_paths(DIR, 'docs'))
   })
 
-  it('says how to start a book when there is none', @{
+  it('says how to start documentation when there is none', @{
     expect(
       refusal(@{
-        find_book(nil, DIR)
+        find_documentation(nil, DIR)
       }),
     ).to_contain('zuri doc init')
     expect(
       refusal(@{
-        find_book('nowhere', DIR)
+        find_documentation('nowhere', DIR)
       }),
     ).to_contain('nowhere')
   })
 })
 
 describe('init', @{
-  it("starts a book in the project's docs", @{
+  it("starts documentation in the project's docs", @{
     put('project.toml', '[project]\nname = "weather"\n')
 
     var target = init_target(nil, DIR)
@@ -143,14 +143,14 @@ describe('init', @{
     expect(default_title(target)).to_be('weather')
   })
 
-  it('starts a book where it is told to, named after the directory', @{
+  it('starts documentation where it is told to, named after the directory', @{
     var target = init_target('manual', DIR)
 
     expect(target).to_be(os.join_paths(DIR, 'manual'))
     expect(default_title(target)).to_be('manual')
   })
 
-  it('writes a book that builds', @{
+  it('writes documentation that builds', @{
     var written = files('Weather "Now"')
 
     expect(written.keys()).to_contain('src/SUMMARY.md')

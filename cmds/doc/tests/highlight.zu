@@ -220,11 +220,11 @@ describe('shell', @{
 describe('toml and ini', @{
   it('colours sections, keys and values', @{
     var markup = highlight(
-      '[book]\ntitle = "A" # c\nfold = 1\non = true',
+      '[documentation]\ntitle = "A" # c\nfold = 1\non = true',
       'toml',
     )
 
-    expect(spans_of(markup, 'sect')).to_equal(['[book]'])
+    expect(spans_of(markup, 'sect')).to_equal(['[documentation]'])
     expect(spans_of(markup, 'key')).to_equal(['title', 'fold', 'on'])
     expect(spans_of(markup, 'num')).to_equal(['1'])
     expect(spans_of(markup, 'lit')).to_equal(['true'])

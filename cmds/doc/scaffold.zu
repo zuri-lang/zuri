@@ -2,14 +2,14 @@
  * What `zuri doc init` writes: a `doc.toml`, a contents page and two
  * chapters, enough to build and to show where everything goes.
  *
- * Each file is returned as a string, so what a new book starts with can
- * be read and tested without writing anything.
+ * Each file is returned as a string, so what new documentation starts with
+ * can be read and tested without writing anything.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
 /**
- * The files of a new book called _title_, by path from the book's
+ * The files of new documentation called _title_, by path from its
  * directory.
  *
  * @param string title
@@ -20,7 +20,7 @@ def files(title: string) {
 
   return {
     'doc.toml': '\n'.join([
-      '[book]',
+      '[documentation]',
       'title = "${quoted}"',
       'description = ""',
       'authors = []',

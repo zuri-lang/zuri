@@ -1,21 +1,21 @@
 /**
  * @command doc
- * @description Builds a documentation site from a book written in
+ * @description Builds a documentation site from pages written in
  *    Markdown.
  *
  *   zuri doc [build|serve|init|clean] [dir] [options]
  *
- * A book is a directory holding a `doc.toml` and a `src` directory of
- * Markdown pages, with `src/SUMMARY.md` listing them in reading order.
- * `zuri doc` turns it into a site: one page for each chapter, with the
- * contents beside it, a search box, a page for printing the whole book,
- * light and dark themes, and every code block coloured. Zuri, REPL
- * sessions, HTML and Wire, XML, JSON, shell scripts and terminal
- * sessions, TOML and INI are coloured as the site is built, so a page
- * reads the same with scripts turned off.
+ * Documentation is a directory holding a `doc.toml` and a `src`
+ * directory of Markdown pages, with `src/SUMMARY.md` listing them in
+ * reading order. `zuri doc` turns it into a site: one page for each
+ * chapter, with the contents beside it, a search box, a page for
+ * printing all of it at once, light and dark themes, and every code
+ * block coloured. Zuri, REPL sessions, HTML and Wire, XML, JSON, shell
+ * scripts and terminal sessions, TOML and INI are coloured as the site
+ * is built, so a page reads the same with scripts turned off.
  *
  * `serve` builds the site, serves it on this machine, and builds it
- * again whenever the book changes, reloading every open page.
+ * again whenever the documentation changes, reloading every open page.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -26,7 +26,7 @@ import .._shared.errors { CommandError, UsageError, run }
 import .._shared.fsx
 import .._shared.ui
 
-import .book
+import .documentation
 import .config
 import .plan
 import .scaffold
@@ -34,8 +34,8 @@ import .serve
 import .site
 import .site { Site }
 
-# The book's settings, with the output directory the command line asked
-# for.
+# The documentation's settings, with the output directory the command
+# line asked for.
 def _settings(root: string, out: ?string) {
   var settings = config.load(root)
 
@@ -54,9 +54,9 @@ def _shown(path: string) {
 }
 
 def _build(chosen: dict) {
-  var root = plan.find_book(chosen.dir, os.cwd())
+  var root = plan.find_documentation(chosen.dir, os.cwd())
   var settings = _settings(root, chosen.out)
-  var report = Site(book.load(settings)).build()
+  var report = Site(documentation.load(settings)).build()
 
   for warning in report.warnings {
     ui.complain(ui.warn('warning: ') + warning)
@@ -67,7 +67,7 @@ def _build(chosen: dict) {
 
   if chosen.strict and !report.warnings.is_empty() {
     raise CommandError(
-      '${ui.count(report.warnings.length(), "link")} inside the book lead${report.warnings.length() == 1 ? "s" : ""} nowhere',
+      '${ui.count(report.warnings.length(), "link")} inside the documentation lead${report.warnings.length() == 1 ? "s" : ""} nowhere',
     )
   }
 
@@ -77,7 +77,7 @@ def _build(chosen: dict) {
 }
 
 def _serve(chosen: dict) {
-  var root = plan.find_book(chosen.dir, os.cwd())
+  var root = plan.find_documentation(chosen.dir, os.cwd())
 
   serve.run(root, {
     host: chosen.host,
@@ -91,7 +91,7 @@ def _init(chosen: dict) {
   var target = plan.init_target(chosen.dir, os.cwd())
 
   if file(os.join_paths(target, config.FILE_NAME)).exists() {
-    raise UsageError('${_shown(target)} already holds a book')
+    raise UsageError('${_shown(target)} already holds documentation')
   }
 
   var title = chosen.title == nil ? plan.default_title(target) : chosen.title
@@ -116,7 +116,7 @@ def _init(chosen: dict) {
 }
 
 def _clean(chosen: dict) {
-  var root = plan.find_book(chosen.dir, os.cwd())
+  var root = plan.find_documentation(chosen.dir, os.cwd())
   var settings = _settings(root, chosen.out)
 
   if site.clean(settings) {

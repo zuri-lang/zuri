@@ -1,6 +1,6 @@
 /**
- * What `zuri doc` was asked to do, and which book it was asked to do it
- * to, worked out before anything is read or written.
+ * What `zuri doc` was asked to do, and which documentation it was asked
+ * to do it to, worked out before anything is read or written.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -32,19 +32,19 @@ def _absolute(path: string, base: string) {
 def parser() {
   var parser = args.Parser('zuri doc', false)
 
-  parser.description = 'Builds a documentation site from a book written in Markdown.'
-  parser.epilog = 'With no command, the book is built. The book is the directory holding ' +
+  parser.description = 'Builds a documentation site from pages written in Markdown.'
+  parser.epilog = 'With no command, the documentation is built. It is the directory holding ' +
       'doc.toml: the one named, the current directory, or docs in the project.'
 
   parser.add_command('build', 'Builds the site')
   parser.add_command(
     'serve',
-    'Builds and serves the site, rebuilding it as the book changes',
+    'Builds and serves the site, rebuilding it as the documentation changes',
   )
-  parser.add_command('init', 'Starts a new book')
+  parser.add_command('init', 'Starts new documentation')
   parser.add_command('clean', 'Removes the built site')
 
-  parser.add_index('dir', 'The book: a directory holding doc.toml', {
+  parser.add_index('dir', 'The documentation: a directory holding doc.toml', {
     metavar: 'dir',
   })
 
@@ -56,7 +56,7 @@ def parser() {
   parser.add_option('open', 'Opens the site in a browser once it is built', nil)
   parser.add_option(
     'strict',
-    'With build, fails when a link inside the book leads nowhere',
+    'With build, fails when a link inside the documentation leads nowhere',
     nil,
   )
   parser.add_option(
@@ -69,7 +69,7 @@ def parser() {
     'With serve, the address to listen on; ${DEFAULT_HOST}, this machine only, by default',
     { type: args.STRING, metavar: 'address' },
   )
-  parser.add_option('title', "With init, the book's title", {
+  parser.add_option('title', "With init, the documentation's title", {
     type: args.STRING,
     metavar: 'text',
   })
@@ -78,16 +78,17 @@ def parser() {
 }
 
 /**
- * The book's directory: _given_ when one was named, which may also be
- * the path of its `doc.toml`; otherwise _cwd_ when it holds a
- * `doc.toml`; otherwise the `docs` directory of the project _cwd_ is in.
+ * The documentation's directory: _given_ when one was named, which
+ * may also be the path of its `doc.toml`; otherwise _cwd_ when it
+ * holds a `doc.toml`; otherwise the `docs` directory of the project
+ * _cwd_ is in.
  *
  * @param ?string given
  * @param string cwd
  * @returns string
  * @throws UsageError When none of those holds a `doc.toml`
  */
-def find_book(given: ?string, cwd: string) {
+def find_documentation(given: ?string, cwd: string) {
   if given != nil {
     var path = _absolute(given, cwd)
 
@@ -100,7 +101,7 @@ def find_book(given: ?string, cwd: string) {
     }
 
     raise UsageError(
-      'there is no ${FILE_NAME} in ${given}; `zuri doc init ${given}` starts a book there',
+      'there is no ${FILE_NAME} in ${given}; `zuri doc init ${given}` starts documentation there',
     )
   }
 
@@ -119,13 +120,14 @@ def find_book(given: ?string, cwd: string) {
   }
 
   raise UsageError(
-    'there is no ${FILE_NAME} here; `zuri doc init` starts a book',
+    'there is no ${FILE_NAME} here; `zuri doc init` starts documentation',
   )
 }
 
 /**
- * Where `init` puts a new book: _given_ when one was named, otherwise
- * the `docs` directory of the project _cwd_ is in, otherwise _cwd_.
+ * Where `init` puts new documentation: _given_ when one was named,
+ * otherwise the `docs` directory of the project _cwd_ is in, otherwise
+ * _cwd_.
  *
  * @param ?string given
  * @param string cwd
@@ -142,8 +144,9 @@ def init_target(given: ?string, cwd: string) {
 }
 
 /**
- * The title a new book in _target_ is given when none was asked for:
- * the name of the project it documents, or else its directory's name.
+ * The title new documentation in _target_ is given when none was
+ * asked for: the name of the project it documents, or else its
+ * directory's name.
  *
  * @param string target
  * @returns string

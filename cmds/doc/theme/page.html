@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
-  The page every chapter is written into. A book can replace it with a
-  page.html of its own in a theme directory beside its doc.toml; this
+  The page every chapter is written into. Documentation can replace it
+  with a page.html of its own in a theme directory beside its doc.toml; this
   file is the place to start from.
 -->
 <html lang="{{ language }}" data-theme-default="{{ theme }}">
@@ -54,7 +54,7 @@
 
     <a class="brand" href="{{ root }}index.html">
       <img x-if="logo" class="brand-logo" src="{{ logo }}" alt="" width="26" height="26">
-      <span class="brand-title">{{ book_title }}</span>
+      <span class="brand-title">{{ site_title }}</span>
     </a>
 
     <a x-if="home" class="home-link" href="{{ home.url }}">
@@ -94,7 +94,7 @@
         </div>
       </div>
 
-      <a x-if="print" class="icon-button" href="{{ root }}print.html?print" title="Print the whole book" aria-label="Print the whole book">
+      <a x-if="print" class="icon-button" href="{{ root }}print.html?print" title="Print every page" aria-label="Print every page">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v6.5H7z"/></svg>
       </a>
 
@@ -156,7 +156,7 @@
     <div class="search-panel">
       <div class="search-field">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
-        <input type="search" placeholder="Search {{ book_title }}" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <input type="search" placeholder="Search {{ site_title }}" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
         <kbd>esc</kbd>
       </div>
       <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>

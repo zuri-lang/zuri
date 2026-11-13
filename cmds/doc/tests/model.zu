@@ -1,17 +1,17 @@
-# Tests for what a book is made of: its settings, its contents, and its
-# chapters read from disk.
+# Tests for what documentation is made of: its settings, its contents,
+# and its chapters read from disk.
 
 import os
 import os.tempfile { create_temp_dir }
 import test { * }
 
-import ..book { load, normalize, page_path, preprocess, root_of }
+import ..documentation { load, normalize, page_path, preprocess, root_of }
 import ..config { parse }
 import ..summary
 
 # Absolute on every platform, so on Windows it carries the drive that
 # making a path absolute gives it.
-var ROOT = os.abs_path(os.join_paths(os.path_separator, 'books', 'guide'))
+var ROOT = os.abs_path(os.join_paths(os.path_separator, 'docs', 'guide'))
 
 # A directory nobody else is using, thrown away afterwards.
 def in_sandbox(work: function) {
@@ -66,7 +66,7 @@ describe('config', @{
 
   it('reads every table', @{
     var config = parse(
-      '[book]\ntitle = "Guide"\nsource = "pages"\noutput = "../out"\n' +
+      '[documentation]\ntitle = "Guide"\nsource = "pages"\noutput = "../out"\n' +
           '[site]\nurl = "https://example.com/guide"\nfold = 2\ntheme = "dark"\n' +
           'links = [{ url = "../api/", label = "API" }]\n' +
           '[site.home]\nurl = "../"\n' +
@@ -105,7 +105,7 @@ describe('config', @{
   it('refuses a value of the wrong type', @{
     expect(
       refusal(@{
-        parse('[book]\ntitle = 3\n', ROOT)
+        parse('[documentation]\ntitle = 3\n', ROOT)
       }),
     ).to_contain('title must be string')
   })
@@ -129,7 +129,7 @@ describe('config', @{
   it('refuses an output that would hold the pages', @{
     expect(
       refusal(@{
-        parse('[book]\noutput = "."\nsource = "src"\n', ROOT)
+        parse('[documentation]\noutput = "."\nsource = "src"\n', ROOT)
       }),
     ).to_contain('output')
   })
@@ -137,7 +137,7 @@ describe('config', @{
   it('reports a file that is not TOML', @{
     expect(
       refusal(@{
-        parse('[book\n', ROOT)
+        parse('[documentation\n', ROOT)
       }),
     ).to_contain('doc.toml')
   })
@@ -266,20 +266,20 @@ describe('load', @{
         put(directory, 'src/' + name, '# ${name}\n')
       }
 
-      var book = load(parse('', directory))
-      var labels = book.chapters.map(@(c) => c.label())
+      var docs = load(parse('', directory))
+      var labels = docs.chapters.map(@(c) => c.label())
 
       expect(labels).to_equal(['', '1', '1.1', '2', ''])
-      expect(book.chapters.map(@(c) => c.path)).to_equal([
+      expect(docs.chapters.map(@(c) => c.path)).to_equal([
         'intro.html',
         'one.html',
         'one/inner.html',
         'two.html',
         'notes.html',
       ])
-      expect(book.chapters[2].owner.title).to_be('One')
-      expect(book.chapters[4].part.title).to_be('Extra')
-      expect(book.chapters[1].text).to_be('# one.md\n')
+      expect(docs.chapters[2].owner.title).to_be('One')
+      expect(docs.chapters[4].part.title).to_be('Extra')
+      expect(docs.chapters[1].text).to_be('# one.md\n')
     })
   })
 
@@ -299,7 +299,7 @@ describe('load', @{
     in_sandbox(@(directory) {
       put(directory, 'src/SUMMARY.md', '- [Gone](gone.md)\n')
 
-      load(parse('[book]\ncreate-missing = true\n', directory))
+      load(parse('[documentation]\ncreate-missing = true\n', directory))
 
       expect(file(os.join_paths(directory, 'src', 'gone.md')).read())
           .to_be('# Gone\n')

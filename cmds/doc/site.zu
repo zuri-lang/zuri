@@ -1,5 +1,5 @@
 /**
- * Builds a book into a site: a directory of plain files that any web
+ * Builds documentation into a site: a directory of plain files that any web
  * server, or a browser opening them from disk, can show as they are.
  *
  * ```text
@@ -15,10 +15,10 @@
  * Everything in the source directory that is not Markdown, such as
  * images, is copied across beside the pages.
  *
- * Each page is written through `theme/page.html`, a Wire template. A
- * book with a `theme` directory of its own beside its `doc.toml` can
- * replace that template, the stylesheet `doc.css` and the script
- * `doc.js`, each by putting a file of the same name there.
+ * Each page is written through `theme/page.html`, a Wire template.
+ * Documentation with a `theme` directory of its own beside its
+ * `doc.toml` can replace that template, the stylesheet `doc.css` and
+ * the script `doc.js`, each by putting a file of the same name there.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -30,7 +30,7 @@ import wire
 
 import .._shared.errors { UsageError }
 import .._shared.fsx
-import .book { Book, Chapter, root_of }
+import .documentation { Documentation, Chapter, root_of }
 import .config { Config }
 import .highlight.spans { escape }
 import .render { Page, Renderer, escape_attribute, inline_html, print_id }
@@ -59,7 +59,7 @@ def accent_of(index: number) {
 }
 
 # Whether _address_ stands on its own rather than being relative to the
-# root of the book.
+# root of the site.
 def _is_absolute(address: string) {
   return address.starts_with('/') or
       address.starts_with('#') or
@@ -91,17 +91,17 @@ class Report {
 }
 
 /**
- * One book and the site built from it.
+ * The documentation and the site built from it.
  */
 class Site {
 
   /** @type Config */
   var config
 
-  /** @type Book */
-  var book
+  /** @type Documentation */
+  var docs
 
-  /** Whether pages reload themselves when the book changes. @type bool */
+  /** Whether pages reload when the documentation changes. @type bool */
   var live = false
 
   # The rendered pages, by path.
@@ -112,13 +112,13 @@ class Site {
   var _renderer
 
   /**
-   * @param Book book
+   * @param Documentation docs
    * @param ?bool live: Default `false`. Whether pages reload themselves
-   *    when `zuri doc serve` sees the book change.
+   *    when `zuri doc serve` sees the documentation change.
    */
-  @new(book: Book, live: ?bool) {
-    self.book = book
-    self.config = book.config
+  @new(docs: Documentation, live: ?bool) {
+    self.docs = docs
+    self.config = docs.config
     self.live = live == true
     self._pages = {}
   }
@@ -136,7 +136,7 @@ class Site {
     var report = Report()
     var output = self.config.output
 
-    self._renderer = Renderer(self.book)
+    self._renderer = Renderer(self.docs)
     self._view = self._template_view()
     self._version = self._asset_version()
     _prepare(self.config)
@@ -144,16 +144,16 @@ class Site {
     self._copy_sources()
     self._write_assets()
 
-    for chapter in self.book.chapters {
+    for chapter in self.docs.chapters {
       self._pages.set(chapter.path, self._renderer.render(chapter))
     }
 
-    for chapter in self.book.chapters {
+    for chapter in self.docs.chapters {
       self._write(chapter.path, self._chapter_page(chapter, chapter.path))
       report.pages++
     }
 
-    var first = self.book.first()
+    var first = self.docs.first()
 
     if first != nil and !self._pages.contains('index.html') {
       if first.path.contains('/') {
@@ -207,7 +207,7 @@ class Site {
     return report
   }
 
-  # The Wire instance pages are rendered with: the book's own theme
+  # The Wire instance pages are rendered with: the documentation's own theme
   # when it has a page template, the one shipped here otherwise.
   _template_view() {
     var view = wire()
@@ -222,7 +222,7 @@ class Site {
     return view
   }
 
-  # The theme file _name_: the book's own copy when it has one.
+  # The theme file _name_: the documentation's own copy when it has one.
   _theme_file(name: string) {
     var theme = self.config.theme_dir
 
@@ -278,7 +278,7 @@ class Site {
     }
   }
 
-  # The stylesheet, the script, the fonts, and the book's own logo,
+  # The stylesheet, the script, the fonts, and the documentation's own logo,
   # favicon, stylesheets and scripts.
   _write_assets() {
     var assets = os.join_paths(self.config.output, 'assets')
@@ -399,7 +399,7 @@ class Site {
       heading = nil
     }
 
-    for item in self.book.contents {
+    for item in self.docs.contents {
       if instance_of(item, Chapter) {
         items.append(self._toc_item(item, active, root))
       } else if item.kind == 'part' {
@@ -442,7 +442,7 @@ class Site {
     return {
       language: config.language,
       theme: config.theme,
-      book_title: config.title,
+      site_title: config.title,
       description: config.description.is_empty() ? nil : config.description,
       root,
       assets,
@@ -480,9 +480,9 @@ class Site {
 
   # A page's title in the browser.
   _page_title(name: string) {
-    var book = self.config.title
+    var whole = self.config.title
 
-    return name == book or name.is_empty() ? book : '${name} · ${book}'
+    return name == whole or name.is_empty() ? whole : '${name} · ${whole}'
   }
 
   # How a neighbouring chapter is shown at the foot of a page.
@@ -521,7 +521,7 @@ class Site {
     var page = self._pages.get(chapter.path)
     var values = self._common(root)
     var position = chapter.position
-    var chapters = self.book.chapters
+    var chapters = self.docs.chapters
     var config = self.config
 
     values.set('kind', 'chapter')
@@ -570,7 +570,7 @@ class Site {
     var values = self._common('')
     var sections = []
 
-    for chapter in self.book.chapters {
+    for chapter in self.docs.chapters {
       var kicker = self._kicker(chapter)
       var top = kicker == nil
           ? ''
@@ -625,7 +625,7 @@ class Site {
       'content',
       '<p class="missing-code">404</p><h1>There is no page here</h1>' +
           '<p>The address may be mistyped, or the page may have moved since it was linked to. ' +
-          'Try searching the book, or start again from <a href="index.html">the first page</a>.</p>',
+          'Try searching, or start again from <a href="index.html">the first page</a>.</p>',
     )
 
     return self._view.render('page', values)
@@ -637,7 +637,7 @@ class Site {
     var pages = []
     var sections = []
 
-    for chapter in self.book.chapters {
+    for chapter in self.docs.chapters {
       var page = self._pages.get(chapter.path)
       var where = []
 
@@ -676,7 +676,7 @@ class Site {
       '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
     ]
 
-    for chapter in self.book.chapters {
+    for chapter in self.docs.chapters {
       var address = self.config.url +
           (chapter.position == 0 ? '' : chapter.path)
 
@@ -688,7 +688,7 @@ class Site {
     return '\n'.join(out) + '\n'
   }
 
-  # Every link inside the book that leads nowhere, as a line each.
+  # Every link inside the documentation that leads nowhere, as a line each.
   _check_links() {
     var ids = {}
     var warnings = []
@@ -726,7 +726,7 @@ class Site {
             !file(os.join_paths(config.source, target)).exists() and
             !os.dir_exists(os.join_paths(config.source, target)) {
           warnings.append(
-            '${where}: links to ${target}, which is not in the book',
+            '${where}: links to ${target}, which is not in the documentation',
           )
         }
 
@@ -773,7 +773,7 @@ def _shown(config: Config, source: string) {
   return os.relative_path(os.cwd(), os.join_paths(config.source, source))
 }
 
-# Every file the book adds to the assets directory itself.
+# Every file the documentation adds to the assets directory itself.
 def _own_assets(config: Config) {
   var paths = []
 
@@ -814,7 +814,7 @@ def _redirect_page(target: string, canonical: ?string) {
  *
  * @param Config config
  * @throws UsageError When the directory holds something other than a
- *    site, or the book itself
+ *    site, or the documentation itself
  */
 def _prepare(config: Config) {
   var output = config.output
@@ -837,13 +837,13 @@ def _prepare(config: Config) {
 
   if holds(config.root) or holds(config.source) {
     raise UsageError(
-      'the output directory ${output} holds the book itself; set [book] output elsewhere',
+      'the output directory ${output} holds the documentation itself; set [documentation] output elsewhere',
     )
   }
 
   if !names.contains(_MARKER) and !names.contains('index.html') {
     raise UsageError(
-      '${output} holds files that are not a site zuri doc built; empty it, or set [book] output elsewhere',
+      '${output} holds files that are not a site zuri doc built; empty it, or set [documentation] output elsewhere',
     )
   }
 
@@ -853,7 +853,7 @@ def _prepare(config: Config) {
 }
 
 /**
- * Removes a site the book at _config_ built, if there is one.
+ * Removes a site the documentation at _config_ built, if there is one.
  *
  * @param Config config
  * @returns bool: whether there was anything to remove.

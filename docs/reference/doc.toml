@@ -1,11 +1,11 @@
 # The Zuri Standard Library, built with `zuri doc`.
 #
-# Nothing about this book is kept in the repository but this file. The
-# pages are generated from the doc blocks in `libs/` on every build, so
-# a page and the doc block it came from cannot disagree, and both the
-# Markdown and the site are build output under `target/`.
+# Nothing about this documentation is kept in the repository but this
+# file. The pages are generated from the doc blocks in `libs/` on every
+# build, so a page and the doc block it came from cannot disagree, and
+# both the Markdown and the site are build output under `target/`.
 
-[book]
+[documentation]
 title = "The Zuri Standard Library"
 description = "Every module Zuri ships with, generated from the library's own doc blocks."
 authors = ["The Zuri Project"]

@@ -1,12 +1,12 @@
-# Tests for turning a book into a site: what each page holds, what the
-# site around the pages holds, and what a build reports.
+# Tests for turning documentation into a site: what each page holds,
+# what the site around the pages holds, and what a build reports.
 
 import json
 import os
 import os.tempfile { create_temp_dir }
 import test { * }
 
-import ..book { load }
+import ..documentation { load }
 import ..config { parse }
 import ..render { Renderer, inline_html, plain_text }
 import ..site { Site, clean }
@@ -28,9 +28,12 @@ def exists(path: string) {
   return file(os.join_paths(DIR, path)).exists()
 }
 
-# A small book with a part, sections, a draft and an image.
-def write_book(settings: ?string) {
-  put('doc.toml', settings == nil ? '[book]\ntitle = "Guide"\n' : settings)
+# Small documentation with a part, sections, a draft and an image.
+def write_docs(settings: ?string) {
+  put(
+    'doc.toml',
+    settings == nil ? '[documentation]\ntitle = "Guide"\n' : settings,
+  )
   put(
     'src/SUMMARY.md',
     '# Summary\n\n[Welcome](README.md)\n\n# Using It\n\n- [Setup](setup.md)\n  - [Unix](setup/unix.md)\n- [Later]()\n',
@@ -51,7 +54,7 @@ def write_book(settings: ?string) {
 }
 
 def build(settings: ?string) {
-  write_book(settings)
+  write_docs(settings)
 
   var config = parse(read('doc.toml'), DIR)
 
@@ -77,7 +80,7 @@ describe('a page', @{
     expect(unix).to_contain('href="../index.html"')
   })
 
-  it('leaves a link out of the book alone', @{
+  it('leaves a link out of the documentation alone', @{
     build(nil)
     expect(read('site/setup.html')).to_contain('href="https://example.com"')
   })
@@ -107,7 +110,7 @@ describe('a page', @{
     expect(read('site/setup.html')).to_contain('<div class="table-wrap">')
   })
 
-  it('shows where it is in the book', @{
+  it('shows where it is in the documentation', @{
     build(nil)
 
     var page = read('site/setup/unix.html')
@@ -181,7 +184,7 @@ describe('the site', @{
 
   it('writes a sitemap and canonical addresses when it knows its address', @{
     build(
-      '[book]\ntitle = "Guide"\n[site]\nurl = "https://example.com/guide"\n',
+      '[documentation]\ntitle = "Guide"\n[site]\nurl = "https://example.com/guide"\n',
     )
 
     expect(read('site/sitemap.xml'))
@@ -194,21 +197,21 @@ describe('the site', @{
 
   it('sends an old address on to a new one', @{
     build(
-      '[book]\ntitle = "Guide"\n[redirects]\n"old/setup.html" = "setup.html"\n',
+      '[documentation]\ntitle = "Guide"\n[redirects]\n"old/setup.html" = "setup.html"\n',
     )
 
     expect(read('site/old/setup.html')).to_contain('url=../setup.html')
   })
 
   it('leaves chapters unnumbered when asked to', @{
-    build('[book]\ntitle = "Guide"\n[site]\nnumbers = false\n')
+    build('[documentation]\ntitle = "Guide"\n[site]\nnumbers = false\n')
     expect(read('site/setup/unix.html')).not.to_contain('toc-number')
   })
 })
 
 describe('links that lead nowhere', @{
   it('are reported with the file and line they are on', @{
-    write_book(nil)
+    write_docs(nil)
     put(
       'src/setup/unix.md',
       '# Unix\n\n[a](../setup.md#nothing) [b](missing.md) [c](gone.png)\n',
@@ -221,8 +224,9 @@ describe('links that lead nowhere', @{
         .to_contain('unix.md:3: setup.md has no heading or id #nothing')
     expect(report.warnings[1])
         .to_contain('links to setup/missing.md, which SUMMARY.md does not list')
-    expect(report.warnings[2])
-        .to_contain('links to setup/gone.png, which is not in the book')
+    expect(
+      report.warnings[2],
+    ).to_contain('links to setup/gone.png, which is not in the documentation')
   })
 })
 
@@ -236,7 +240,7 @@ describe('the output directory', @{
   })
 
   it('is refused when it holds something other than a site', @{
-    write_book(nil)
+    write_docs(nil)
     put('site/notes.txt', 'mine')
 
     var message = nil
@@ -262,13 +266,13 @@ describe('the output directory', @{
 
 describe('text', @{
   it('keeps code and emphasis in a title', @{
-    write_book(nil)
+    write_docs(nil)
     put('src/setup.md', '# The `run()` *call*\n')
 
     var config = parse(read('doc.toml'), DIR)
-    var book = load(config)
-    var renderer = Renderer(book)
-    var page = renderer.render(book.chapters[1])
+    var docs = load(config)
+    var renderer = Renderer(docs)
+    var page = renderer.render(docs.chapters[1])
 
     expect(page.heading).to_be('The run() call')
     expect(
@@ -277,10 +281,10 @@ describe('text', @{
   })
 
   it('spaces out the blocks of a section for searching', @{
-    write_book(nil)
+    write_docs(nil)
 
-    var book = load(parse(read('doc.toml'), DIR))
-    var renderer = Renderer(book)
+    var docs = load(parse(read('doc.toml'), DIR))
+    var renderer = Renderer(docs)
     var doc = renderer.md.parse('- one\n- two\n\nthree')
 
     expect(plain_text(doc)).to_be('one two three')
