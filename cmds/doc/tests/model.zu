@@ -9,7 +9,9 @@ import ..book { load, normalize, page_path, preprocess, root_of }
 import ..config { parse }
 import ..summary
 
-var ROOT = '/books/guide'
+# Absolute on every platform, so on Windows it carries the drive that
+# making a path absolute gives it.
+var ROOT = os.abs_path(os.join_paths(os.path_separator, 'books', 'guide'))
 
 # A directory nobody else is using, thrown away afterwards.
 def in_sandbox(work: function) {
@@ -74,8 +76,8 @@ describe('config', @{
     )
 
     expect(config.title).to_be('Guide')
-    expect(config.source).to_be('/books/guide/pages')
-    expect(config.output).to_be('/books/out')
+    expect(config.source).to_be(os.join_paths(ROOT, 'pages'))
+    expect(config.output).to_be(os.join_paths(os.dir_name(ROOT), 'out'))
     expect(config.url).to_be('https://example.com/guide/')
     expect(config.fold).to_be(2)
     expect(config.theme).to_be('dark')
