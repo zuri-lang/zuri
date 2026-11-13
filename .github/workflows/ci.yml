@@ -14,6 +14,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # The Alpine the musl suite runs on, the one release.yml builds on.
+  ALPINE: alpine:3.22
 
 jobs:
   test:
@@ -110,6 +112,68 @@ jobs:
             echo "===== $report"
             cat "$report"
           done
+
+  # The same suite on musl, built and run on Alpine. GitHub's own actions
+  # do not run inside Alpine on ARM, so the runner checks the code out and
+  # every other step runs in one Alpine container kept up for the job.
+  test-alpine:
+    name: test (alpine, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The suite sets TZ to named zones, which musl reads from tzdata.
+      # The checkout belongs to the runner's user rather than to root in
+      # the container, which git refuses unless told it is safe.
+      - name: Start Alpine
+        run: |
+          docker run -d --name alpine -v "${PWD}:/work" -w /work \
+            -e PATH=/root/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            -e CARGO_TERM_COLOR -e RUST_BACKTRACE=full \
+            "${ALPINE}" sleep infinity
+          docker exec alpine apk add --no-cache build-base curl git linux-headers tzdata
+          docker exec alpine git config --global --add safe.directory /work
+          docker exec alpine sh -c \
+            'curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable'
+
+      - name: Patch crates
+        run: docker exec alpine cargo patch-crates
+
+      - name: Build
+        run: docker exec alpine cargo build --locked
+
+      # The build container has libgcc, so it would never notice the
+      # runtime needing it. A bare Alpine has only musl.
+      - name: Run on a bare Alpine
+        run: docker run --rm -v "${PWD}:/work:ro" "${ALPINE}" /work/target/debug/zuri --version
+
+      - name: Test
+        shell: bash
+        run: |
+          set -o pipefail
+          docker exec alpine cargo test --locked --test zuri 2>&1 | tee test-output.txt
+
+      - name: Test with Kebbi alone
+        shell: bash
+        run: |
+          set -o pipefail
+          docker exec -e ZURI_JIT_BAYELSA=0 alpine cargo test --locked --test zuri 2>&1 |
+            tee -a test-output.txt
+
+      - name: Upload the test log
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log-alpine-${{ matrix.os }}
+          path: test-output.txt
+          retention-days: 7
 
   format:
     name: format

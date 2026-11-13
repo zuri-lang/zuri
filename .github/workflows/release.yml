@@ -15,11 +15,18 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # The musl builds are made on this Alpine and installed on it to test them.
+  ALPINE: alpine:3.22
 
 jobs:
   build:
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    # A program built against a GNU C library runs only on that version
+    # and later ones, so the GNU builds are made on AlmaLinux 8, whose
+    # glibc 2.28 is the oldest they support. The other builds leave
+    # `container` empty, which runs them on the runner itself.
+    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix:
@@ -27,9 +34,21 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             archive: tar.gz
+            container: quay.io/pypa/manylinux_2_28_x86_64
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             archive: tar.gz
+            container: quay.io/pypa/manylinux_2_28_aarch64
+          # GitHub's own actions do not run inside Alpine on ARM, so the
+          # musl builds run on the runner and only compile inside Alpine.
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            archive: tar.gz
+            alpine: true
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            archive: tar.gz
+            alpine: true
           - os: macos-15-intel
             target: x86_64-apple-darwin
             archive: tar.gz
@@ -49,7 +68,10 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # Alpine writes the build as root, which the cache cannot clean up
+      # on the runner afterwards.
       - uses: Swatinem/rust-cache@v2
+        if: ${{ !matrix.alpine }}
         with:
           key: release-${{ matrix.target }}
 
@@ -119,7 +141,35 @@ jobs:
       # The production profile is the release build without debug info,
       # which would otherwise make up most of what a user downloads.
       - name: Build
+        if: ${{ !matrix.alpine }}
         run: cargo build --locked --profile production --target ${{ matrix.target }}
+
+      # .cargo/config.toml links musl dynamically, so that `ffi` can load
+      # libraries, and build.rs links libgcc's unwinder in statically.
+      - name: Build on Alpine
+        if: matrix.alpine
+        run: |
+          docker run --rm -v "${PWD}:/work" -w /work "${ALPINE}" sh -euc '
+            apk add --no-cache build-base curl linux-headers > /dev/null
+            curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+            . "${HOME}/.cargo/env"
+            cargo build --locked --profile production --target ${{ matrix.target }}
+          '
+
+      # The GNU build is still inside the container it was built in, which
+      # has the oldest C library it supports, so starting it here shows it
+      # needs nothing newer.
+      - name: Run on glibc 2.28
+        if: matrix.container
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          zuri="target/${{ matrix.target }}/production/zuri"
+          "${zuri}" --version
+
+          echo "echo 'ran'" > "${RUNNER_TEMP}/check.zu"
+          test "$("${zuri}" run "${RUNNER_TEMP}/check.zu")" = ran
 
       # The binary alone is not a working install: at startup it looks
       # for `libs` beside itself (or at $ZURI_ROOT), and without it no
@@ -202,6 +252,12 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            alpine: true
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            alpine: true
           - os: macos-15-intel
             target: x86_64-apple-darwin
           - os: macos-latest
@@ -243,7 +299,7 @@ jobs:
           echo "ZURI_VERSION_UNDER_TEST=${version}" >> "$GITHUB_ENV"
 
       - name: install.sh
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && !matrix.alpine
         shell: bash
         run: |
           set -euo pipefail
@@ -281,6 +337,40 @@ jobs:
             profile="${home}/.bash_profile"
           fi
           test "$(grep -c '.zuri/bin' "${profile}")" = 1
+
+      # A bare Alpine with nothing added, so the installer has only
+      # BusyBox's tools and the runtime has only musl.
+      - name: install.sh on Alpine
+        if: matrix.alpine
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          (cd dist && exec python3 -m http.server 8765 --bind 127.0.0.1 > /dev/null 2>&1) &
+          server=$!
+          trap 'kill ${server} 2> /dev/null || true' EXIT
+
+          for _ in $(seq 1 50); do
+            curl -fs -o /dev/null http://127.0.0.1:8765/releases.json && break
+            sleep 0.2
+          done
+
+          cat > "${RUNNER_TEMP}/alpine.sh" <<'SH'
+          set -eu
+          SHELL=/bin/sh sh /work/install.sh --version "${VERSION}"
+
+          "${HOME}/.zuri/bin/zuri" --version | grep -F "Zuri ${VERSION}"
+
+          echo "echo 'installed'" > /tmp/check.zu
+          test "$("${HOME}/.zuri/bin/zuri" run /tmp/check.zu)" = installed
+          test "$(grep -c '.zuri/bin' "${HOME}/.profile")" = 1
+          SH
+
+          docker run --rm --network host \
+            -v "${PWD}:/work:ro" -v "${RUNNER_TEMP}:/check:ro" \
+            -e VERSION="${ZURI_VERSION_UNDER_TEST}" \
+            -e ZURI_RELEASES_URL=http://127.0.0.1:8765/releases.json \
+            "${ALPINE}" sh /check/alpine.sh
 
       - name: install.ps1
         if: runner.os == 'Windows'

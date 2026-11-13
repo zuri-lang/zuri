@@ -44,12 +44,13 @@ def tests(xs) {
   return count
 }
 
-# Every method at once on a single value, for the edges.
+# Every method at once on a single value, for the edges. C libraries
+# disagree on the last digit of atan2, so it is compared to 12 places.
 def all_of(x) {
   return [
     x.sqrt(), x.abs(), x.floor(), x.ceil(), x.trunc(), x.round(),
     x.sign(), x.int(), x.max(0), x.min(0), x.is_nan(), x.is_inf(),
-    x.is_finite(), x.to_bool(), x.exp(), x.atan2(-1)
+    x.is_finite(), x.to_bool(), x.exp(), x.atan2(-1).fixed(12)
   ]
 }
 

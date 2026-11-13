@@ -2,6 +2,16 @@
 # linker = "clang"
 # rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 
+# musl builds link the C library dynamically, as Alpine's own programs do.
+# A statically linked musl program cannot load a shared library, so `ffi`
+# would have nothing to open. build.rs links libgcc's unwinder in
+# statically, so the build needs only musl where it runs.
+[target.x86_64-unknown-linux-musl]
+rustflags = ["-C", "target-feature=-crt-static"]
+
+[target.aarch64-unknown-linux-musl]
+rustflags = ["-C", "target-feature=-crt-static"]
+
 # Documentation. See docs/README.md, or `cargo docs help`.
 #
 # `--quiet` keeps cargo's own compile chatter out of the way; the docs

@@ -73,8 +73,74 @@ fn main() {
   println!("cargo:rerun-if-changed=xtask/src/sync.rs");
 
   check_patched_crates(root);
+  link_unwinder_statically();
   generate_zu_conformance_tests(&manifest_dir);
   build_docs(&manifest_dir);
+}
+
+/// Links libgcc's unwinder into a dynamically linked musl build, so the
+/// program needs nothing on the machine it runs on but musl itself.
+///
+/// `.cargo/config.toml` links musl dynamically, since a statically linked
+/// musl program cannot load a shared library and `ffi` has to. The
+/// standard library then asks for its unwinder as `-lgcc_s`, the shared
+/// libgcc, which a bare Alpine does not have. A `libgcc_s.a` holding
+/// libgcc's static unwinder, put first on the search path, answers that
+/// request instead. It is libgcc's unwinder either way, which is the one
+/// `jit::unwind` registers compiled code with on Linux. `-lgcc` goes last
+/// because the unwinder calls helpers in it, such as ARM's atomics.
+fn link_unwinder_statically() {
+  let musl = env::var("CARGO_CFG_TARGET_ENV").is_ok_and(|env| env == "musl");
+  let static_crt = env::var("CARGO_CFG_TARGET_FEATURE")
+    .is_ok_and(|features| features.split(',').any(|feature| feature == "crt-static"));
+
+  if !musl || static_crt {
+    return;
+  }
+
+  let target = env::var("TARGET").unwrap_or_default();
+  let names = [
+    format!("CC_{}", target.replace('-', "_")),
+    format!("CC_{target}"),
+    "TARGET_CC".to_string(),
+    "CC".to_string(),
+  ];
+
+  for name in &names {
+    println!("cargo:rerun-if-env-changed={name}");
+  }
+
+  let compiler = names
+    .iter()
+    .find_map(|name| env::var(name).ok())
+    .unwrap_or_else(|| "cc".to_string());
+  let mut words = compiler.split_whitespace();
+  let program = words.next().unwrap_or("cc");
+
+  let found = Command::new(program)
+    .args(words)
+    .arg("-print-file-name=libgcc_eh.a")
+    .stderr(Stdio::null())
+    .output()
+    .ok()
+    .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+    .map(std::path::PathBuf::from)
+    .filter(|path| path.is_absolute() && path.is_file());
+
+  let Some(unwinder) = found else {
+    println!(
+      "cargo:warning={compiler} has no libgcc_eh.a, so this build needs libgcc's shared library where it runs"
+    );
+    return;
+  };
+
+  let dir = Path::new(&env::var("OUT_DIR").unwrap()).join("static-unwind");
+  fs::create_dir_all(&dir).expect("Could not create the static unwinder's directory");
+  fs::copy(&unwinder, dir.join("libgcc_s.a")).expect("Could not copy libgcc's static unwinder");
+
+  println!("cargo:rustc-link-search=native={}", dir.display());
+  println!("cargo:rustc-link-arg=-static-libgcc");
+  println!("cargo:rustc-link-arg=-lgcc");
 }
 
 /// Renders both books whenever mdBook is installed and either has
@@ -232,24 +298,26 @@ fn mdbook_available() -> bool {
 /// The profile directory that holds the built binaries, which is what
 /// the runtime payload is copied beside.
 ///
-/// Derived by walking up from `OUT_DIR`
-/// (`<profile>/build/<pkg>-<hash>/out`) rather than by rebuilding
+/// Derived by walking up from `OUT_DIR` rather than by rebuilding
 /// `target/[{triple}/]{profile}` from parts, so a cross-compiled build's
 /// extra target-triple component is handled without having to detect it.
 /// The directory is recognised by the `build` directory inside it, not
 /// by `PROFILE`: Cargo sets that to `release` or `debug` for the profile
 /// a custom one inherits from, while the directory carries the custom
-/// profile's own name, as `production` does. Falls back to the
-/// conventional relative path if `OUT_DIR` is ever missing or shaped
-/// unexpectedly.
+/// profile's own name, as `production` does. Cargo 1.99 and earlier lay
+/// `OUT_DIR` out as `<profile>/build/<pkg>-<hash>/out` and later ones as
+/// `<profile>/build/<pkg>/<hash>/out`, so the nearest `build` within
+/// three levels is taken. Falls back to the conventional relative path
+/// if `OUT_DIR` is ever missing or shaped unexpectedly.
 fn copy_output_dir(profile: &str) -> std::path::PathBuf {
   if let Some(out_dir) = env::var_os("OUT_DIR") {
-    let path = Path::new(&out_dir);
-    // out -> <pkg>-<hash> -> build -> <profile>
-    if let Some(build_dir) = path.ancestors().nth(2)
-      && build_dir.file_name() == Some(std::ffi::OsStr::new("build"))
-      && let Some(profile_dir) = build_dir.parent()
-    {
+    let build_dir = Path::new(&out_dir)
+      .ancestors()
+      .skip(1)
+      .take(3)
+      .find(|dir| dir.file_name() == Some(std::ffi::OsStr::new("build")));
+
+    if let Some(profile_dir) = build_dir.and_then(Path::parent) {
       return profile_dir.to_path_buf();
     }
   }

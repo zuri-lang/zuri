@@ -121,10 +121,33 @@ sha256_of() {
   fi
 }
 
+# Whether this Linux runs on musl, as Alpine does, rather than the GNU C
+# library. Each needs its own build. musl's `ldd` names itself; without
+# an `ldd`, as in a minimal image, the musl loader's presence decides.
+uses_musl() {
+  if command -v ldd > /dev/null 2>&1; then
+    case "$(ldd --version 2>&1 || true)" in
+      *musl*) return 0 ;;
+      *) return 1 ;;
+    esac
+  fi
+
+  for loader in /lib/ld-musl-*.so.1; do
+    [ -e "$loader" ] && return 0
+  done
+
+  return 1
+}
+
 # The platform a release names its archive after.
 detect_target() {
   case "$(uname -s)" in
-    Linux) system='unknown-linux-gnu' ;;
+    Linux)
+      system='unknown-linux-gnu'
+      if uses_musl; then
+        system='unknown-linux-musl'
+      fi
+      ;;
     Darwin) system='apple-darwin' ;;
     MINGW* | MSYS* | CYGWIN*)
       fail 'on Windows, install from PowerShell: irm https://zuri-lang.github.io/zuri/install.ps1 | iex'
@@ -296,11 +319,21 @@ done
 
 chmod 755 "$unpacked/zuri"
 
-reported="$("$unpacked/zuri" --version 2> /dev/null || true)"
+reported="$("$unpacked/zuri" --version 2> "$staging/stderr" || true)"
+
+# The loader's own complaint says what the machine lacks, such as a
+# newer GNU C library.
+why_not_started() {
+  reason="$(head -n 1 "$staging/stderr" 2> /dev/null || true)"
+
+  if [ -n "$reason" ]; then
+    printf ': %s' "$reason"
+  fi
+}
 
 case "$reported" in
   *"Zuri $version "* | *"Zuri $version") ;;
-  "") fail "the downloaded runtime did not start on this machine; nothing was installed" ;;
+  "") fail "the downloaded runtime did not start on this machine$(why_not_started); nothing was installed" ;;
   *) fail "the downloaded runtime says it is '$(printf '%s' "$reported" | head -n 1)', not zuri $version" ;;
 esac
 
