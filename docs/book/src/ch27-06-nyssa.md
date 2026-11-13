@@ -3,7 +3,8 @@
 Nyssa is the package repository, and every Zuri installation can run
 one: the registry every package command talks to, and a website for
 finding packages, reading their README and the API reference written
-from their doc blocks, and managing an account and its tokens.
+from their doc blocks, reading the standard library's reference, and
+managing an account and its tokens.
 
 ```console
 $ zuri serve

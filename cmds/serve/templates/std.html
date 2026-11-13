@@ -1,0 +1,30 @@
+<extend base="layout.html">
+  <define name="content">
+    <div class="inner std">
+      <div class="api">
+        <nav class="api-modules" aria-label="Modules">
+          <a href="/std" x-attr="{ 'aria-current': page ? nil : 'page' }">The standard library</a>
+          <a x-for="modules" x-value="module" href="{{ module.url }}" class="depth-{{ module.depth }}" x-attr="{ 'aria-current': module.current ? 'page' : nil }">{{ module.name }}</a>
+        </nav>
+        <article class="prose" x-if="page">{{ page }}</article>
+        <article class="prose" x-else>
+          <h1>The standard library</h1>
+          <p>Every module Zuri {{ runtime }} ships with, and every public name in each, written from the library's own doc blocks. Packages here link to it wherever their doc blocks name something in it.</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Module</th><th>What it is for</th></tr>
+              </thead>
+              <tbody>
+                <tr x-for="roots" x-value="module">
+                  <td><a href="{{ module.url }}"><code>{{ module.name }}</code></a></td>
+                  <td>{{ module.summary }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+    </div>
+  </define>
+</extend>

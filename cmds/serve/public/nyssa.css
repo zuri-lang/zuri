@@ -1565,3 +1565,14 @@ th.number {
   margin: 0.3rem 0 0;
   color: var(--muted);
 }
+
+/* A long list of modules scrolls on its own, beside the page. */
+.api-modules {
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.std {
+  padding-top: 2rem;
+  padding-bottom: 3rem;
+}

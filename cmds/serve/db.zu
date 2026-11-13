@@ -545,7 +545,8 @@ class Database {
 
     return self.connection.fetch_all(
       "
-      select s.path, s.kind, s.page, s.anchor, s.summary, p.name as package
+      select s.path, s.path_key, s.name_key, s.kind, s.page, s.anchor, s.summary,
+        p.name as package
       from symbols s
       join versions v on v.id = s.version_id
       join packages p on p.id = v.package_id
@@ -568,6 +569,181 @@ class Database {
         s.path_key
       limit ${limit.floor()}",
       { exact: query, suffix: '%.' + escaped, prefix: escaped + '%' },
+    )
+  }
+
+  /**
+   * The standard library's names that match _query_, as
+   * `search_symbols()` matches a package's.
+   *
+   * @param string runtime: which standard library.
+   * @param string query: lower case, one word.
+   * @param number limit
+   * @returns list[dict]: `{ path, path_key, name_key, kind, page, anchor,
+   *    summary }` each.
+   */
+  search_std_symbols(runtime: string, query: string, limit: number) {
+    var escaped = like_escape(query)
+
+    return self.connection.fetch_all(
+      "
+      select path, path_key, name_key, kind, page, anchor, summary
+      from std_symbols
+      where runtime = :runtime
+        and (
+          name_key = :exact
+          or path_key = :exact
+          or path_key like :suffix escape '!'
+          or name_key like :prefix escape '!'
+        )
+      order by
+        case
+          when name_key = :exact then 0
+          when path_key = :exact then 1
+          when path_key like :suffix escape '!' then 2
+          else 3
+        end,
+        path_key
+      limit ${limit.floor()}",
+      { runtime, exact: query, suffix: '%.' + escaped, prefix: escaped + '%' },
+    )
+  }
+
+  /**
+   * Whether the reference of the standard library _runtime_ names is
+   * stored.
+   *
+   * @param string runtime
+   * @returns bool
+   */
+  std_ready(runtime: string) {
+    return self.connection.fetch_value(
+          'select count(*) from std_pages where runtime = :runtime',
+          { runtime },
+          0,
+        ) >
+        0
+  }
+
+  /**
+   * Stores the reference of the standard library _runtime_ names, and
+   * clears the one of any other.
+   *
+   * @param string runtime
+   * @param list pages: `{ slug, name, summary, markdown }` each.
+   * @param dict index: each path documented to `{ page, anchor }`.
+   * @param list symbols: `{ path, name, kind, page, anchor, summary }`
+   *    each.
+   */
+  save_std(runtime: string, pages: list, index: dict, symbols: list) {
+    for table in ['std_pages', 'std_index', 'std_symbols'] {
+      self.connection.delete(table, {})
+    }
+
+    self.connection.insert_many(
+      'std_pages',
+      pages.map(
+        @(page) => {
+          runtime,
+          slug: page.slug,
+          name: page.name,
+          summary: page.summary,
+          markdown: page.markdown,
+        },
+      ),
+    )
+
+    var entries = []
+
+    for path, entry in index {
+      entries.append({ runtime, path, page: entry.page, anchor: entry.anchor })
+    }
+
+    self.connection.insert_many('std_index', entries)
+    self.connection.insert_many(
+      'std_symbols',
+      symbols.map(
+        @(symbol) => {
+          runtime,
+          path: symbol.path,
+          path_key: symbol.path.lower(),
+          name_key: symbol.name.lower(),
+          kind: symbol.kind,
+          page: symbol.page,
+          anchor: symbol.anchor,
+          summary: symbol.summary,
+        },
+      ),
+    )
+  }
+
+  /**
+   * Every module of the standard library _runtime_ names, by name.
+   *
+   * @param string runtime
+   * @returns list[dict]: `{ slug, name, summary }` each.
+   */
+  std_modules(runtime: string) {
+    return self.connection.fetch_all(
+      'select slug, name, summary from std_pages where runtime = :runtime order by name',
+      { runtime },
+    )
+  }
+
+  /**
+   * One page of the standard library's reference, or `nil`.
+   *
+   * @param string runtime
+   * @param string slug
+   * @returns ?dict: `{ slug, name, summary, markdown }`.
+   */
+  std_page(runtime: string, slug: string) {
+    return self.connection.find_one('std_pages', { runtime, slug })
+  }
+
+  /**
+   * Where the standard library documents _path_, or `nil`.
+   *
+   * @param string runtime
+   * @param string path: as written, `http.Request` or `os`.
+   * @returns ?dict: `{ page, anchor }`.
+   */
+  std_lookup(runtime: string, path: string) {
+    return self.connection.find_one('std_index', { runtime, path })
+  }
+
+  /**
+   * Where the newest version of the package keyed _package_key_
+   * documents _path_: a name in its reference, or one of its modules.
+   *
+   * @param string package_key
+   * @param string path
+   * @returns ?dict: `{ package, page, anchor }`, `anchor` empty for a
+   *    module.
+   */
+  package_lookup(package_key: string, path: string) {
+    var symbol = self.connection.fetch_one(
+      '
+      select p.name as package, s.page, s.anchor
+      from symbols s
+      join versions v on v.id = s.version_id
+      join packages p on p.id = v.package_id
+      where p.name_key = :package_key and v.version = p.latest and s.path = :path',
+      { package_key, path },
+    )
+
+    if symbol != nil {
+      return symbol
+    }
+
+    return self.connection.fetch_one(
+      "
+      select p.name as package, d.slug as page, '' as anchor
+      from doc_pages d
+      join versions v on v.id = d.version_id
+      join packages p on p.id = v.package_id
+      where p.name_key = :package_key and v.version = p.latest and d.name = :path",
+      { package_key, path },
     )
   }
 

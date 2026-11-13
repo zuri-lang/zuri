@@ -63,6 +63,12 @@ Every name in the reference links to the line that declares it, on the
 version's Source tab, which shows every file the version holds with
 its lines numbered and its Zuri coloured.
 
+A name in braces that the package's own pages do not document, as
+`{http.Request}` or `{weather_kit.forecast()}`, links to where it is
+documented: the standard library's reference, which the repository
+serves at [/std](/std) for the Zuri it runs on, or the API of a package
+it depends on from this repository.
+
 ## Yanking a version
 
 ```sh

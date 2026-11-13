@@ -364,9 +364,10 @@ def symbols(roots: list) {
  *    `nil` when each one is imported by its own name.
  * @param ?dict options: as `pages.page()` takes them, for source links
  *    and names documented elsewhere.
- * @returns dict: `{ roots, pages, symbols, coverage, warnings }`,
+ * @returns dict: `{ roots, pages, index, symbols, coverage, warnings }`,
  *    `pages` holding `{ slug, name, summary, markdown }` for each module,
- *    in the order of the contents.
+ *    in the order of the contents, and `index` mapping every path a page
+ *    documents to `{ page, anchor }`.
  */
 def document(
   relatives: list,
@@ -396,6 +397,7 @@ def document(
   return {
     roots,
     pages: written,
+    index,
     symbols: symbols(roots),
     coverage: coverage(roots),
     warnings,

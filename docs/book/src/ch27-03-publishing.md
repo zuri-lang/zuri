@@ -127,7 +127,10 @@ Nothing has to be built or uploaded for it: the registry reads the code
 and never runs it. Each name links to the line that declares it, on the
 Source tab, where every file of the version can be read, and a search
 on the registry's site for a name finds it in the newest version of
-each package.
+each package. A name in braces the package does not document itself,
+such as `{http.Request}`, links to the standard library's reference,
+which the registry serves for the Zuri it runs on, or to the API of a
+package it depends on from the same registry.
 
 ## Yanking
 

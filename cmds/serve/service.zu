@@ -20,6 +20,7 @@ import .._shared.archive
 import .._shared.fsx
 import .._shared.manifest as manifest_module
 import .._shared.names
+import .._shared.paths
 import .._shared.semver
 import ..doc.reference
 import .auth
@@ -1185,7 +1186,7 @@ def files_of(nyssa, version: dict) {
 # Which pages the repository has written: the generator's version, and
 # what it asks of the generator, such as links to the source, so that a
 # change to either has the pages written again.
-var _WRITER = reference.GENERATOR * 100 + 2
+var _WRITER = reference.GENERATOR * 100 + 3
 
 /**
  * The address of a package's source file, at _line_ when one is given:
@@ -1206,6 +1207,12 @@ def source_address(name: string, version: string, path: string, line: ?number) {
 # Writes the API reference of _version_, a row, of the package called
 # _name_, from _files_, the version's archive read into memory.
 def _document(nyssa, name: string, version: dict, files: dict) {
+  # Names in the standard library can only be linked to once its
+  # reference is written, which the repository does in the background
+  # as it starts. A reference written before then is marked, and
+  # written again once it can link to it.
+  var linked = nyssa.db.std_ready(runtime_key())
+  var dependencies = _registry_dependencies(version)
   var result = reference.document(
     files.keys(),
     @(path) => files.get(path).to_string(),
@@ -1217,6 +1224,7 @@ def _document(nyssa, name: string, version: dict, files: dict) {
         module.path,
         line,
       ),
+      resolve: @(path) => _address_elsewhere(nyssa, path, dependencies),
     },
   )
 
@@ -1224,7 +1232,7 @@ def _document(nyssa, name: string, version: dict, files: dict) {
     nyssa.db.save_docs(
       version.id,
       {
-        generator: _WRITER,
+        generator: linked ? _WRITER : -_WRITER,
         names: result.coverage.names,
         documented: result.coverage.documented,
         modules: result.pages.map(
@@ -1279,6 +1287,7 @@ def refresh_documentation(nyssa) {
  */
 def search_symbols(nyssa, query: string, limit: ?number) {
   var word = query.trim().lower()
+  var most = limit == nil ? 10 : limit
 
   if word.ends_with('()') {
     word = word[0, word.length() - 2]
@@ -1288,17 +1297,184 @@ def search_symbols(nyssa, query: string, limit: ?number) {
     return []
   }
 
-  return nyssa.db
-      .search_symbols(word, limit == nil ? 10 : limit)
-      .map(
-        @(row) => {
-          path: row.path,
-          kind: row.kind,
-          summary: row.summary.is_empty() ? nil : markup.inline(row.summary),
-          package: row.package,
-          url: '/packages/${row.package}?tab=api&module=${row.page}#user-content-${row.anchor}',
-        },
-      )
+  # How closely a name matches: by name, by whole path, by the end of
+  # its path, or only by how its name starts.
+  var rank = @(row) {
+    if row.name_key == word {
+      return 0
+    }
+
+    if row.path_key == word {
+      return 1
+    }
+
+    return row.path_key.ends_with('.' + word) ? 2 : 3
+  }
+
+  var found = []
+
+  for row in nyssa.db.search_std_symbols(runtime_key(), word, most) {
+    found.append({
+      rank: rank(row),
+      path: row.path,
+      kind: row.kind,
+      summary: row.summary,
+      package: nil,
+      url: std_address(row.page, row.anchor),
+    })
+  }
+
+  for row in nyssa.db.search_symbols(word, most) {
+    found.append({
+      rank: rank(row),
+      path: row.path,
+      kind: row.kind,
+      summary: row.summary,
+      package: row.package,
+      url: '/packages/${row.package}?tab=api&module=${row.page}#user-content-${row.anchor}',
+    })
+  }
+
+  # The standard library's names come first among those that match as
+  # closely, since they are what every program has to hand.
+  var ordered = []
+
+  iter var level = 0; level < 4; level++ {
+    for entry in found {
+      if entry.rank == level and ordered.length() < most {
+        ordered.append({
+          path: entry.path,
+          kind: entry.kind,
+          summary: entry.summary.is_empty()
+              ? nil
+              : markup.inline(entry.summary),
+          package: entry.package,
+          url: entry.url,
+        })
+      }
+    }
+  }
+
+  return ordered
+}
+
+var _runtime = nil
+
+/**
+ * Which standard library the repository serves: the runtime's version,
+ * and a digest of its library, so a build of the same version with a
+ * changed library is told apart.
+ *
+ * @returns string
+ */
+def runtime_key() {
+  if _runtime == nil {
+    var digest = fsx
+        .tree_digest(paths.stdlib_dir())
+        .replace('sha256:', '', false)
+
+    _runtime = '${os.version}+${digest[0, 16]}'
+  }
+
+  return _runtime
+}
+
+/**
+ * The address of a page of the standard library's reference, at the
+ * heading _anchor_ names when it names one.
+ *
+ * @param string page: the page's slug.
+ * @param ?string anchor
+ * @returns string
+ */
+def std_address(page: string, anchor: ?string) {
+  return anchor == nil or anchor.is_empty()
+      ? '/std/${page}'
+      : '/std/${page}#user-content-${anchor}'
+}
+
+/**
+ * Writes the reference of the standard library the repository runs on,
+ * unless it is there already. It is written once for each runtime, the
+ * first time it is needed, and takes a few seconds.
+ *
+ * @param nyssa
+ */
+def document_stdlib(nyssa) {
+  var runtime = runtime_key()
+
+  if nyssa.db.std_ready(runtime) {
+    return
+  }
+
+  var root = paths.stdlib_dir()
+  var relatives = fsx
+      .walk(root)
+      .filter(@(entry) => entry.kind == 'file')
+      .map(@(entry) => entry.path)
+  var result = reference.document(
+    relatives,
+    @(path) => fsx.read_text(os.join_paths(root, path)),
+    nil,
+    nil,
+  )
+
+  # Two workers asked at once write it twice, and the second write
+  # fails on the first one's rows, which are just as good.
+  catch {
+    nyssa.db.transaction(@{
+      nyssa.db.save_std(runtime, result.pages, result.index, result.symbols)
+    })
+  } as error {
+    if !nyssa.db.std_ready(runtime) {
+      raise error
+    }
+  }
+}
+
+# The names of the packages _version_, a row, depends on from this
+# registry, which its doc blocks may name things in.
+def _registry_dependencies(version: dict) {
+  var listed = version.dependencies
+
+  if is_string(listed) {
+    listed = json.decode(listed)
+  }
+
+  return listed
+      .filter(@(dependency) => dependency.get('registry', nil) == nil)
+      .map(@(dependency) => dependency.name)
+}
+
+# Where a name written in braces is documented, when the package's own
+# pages do not: the standard library first, then each package it
+# depends on from this registry, at its newest version.
+def _address_elsewhere(nyssa, path: string, dependencies: list) {
+  var found = nyssa.db.std_lookup(runtime_key(), path)
+
+  if found != nil {
+    return std_address(found.page, found.anchor)
+  }
+
+  for dependency in dependencies {
+    var prefix = names.import_name(dependency)
+
+    if path != prefix and !path.starts_with(prefix + '.') {
+      continue
+    }
+
+    var entry = nyssa.db.package_lookup(names.normalized(dependency), path)
+
+    if entry != nil {
+      var page = '/packages/${entry.package}?tab=api&module=${entry.page}'
+
+      return entry.anchor.is_empty()
+          ? page
+          : '${page}#user-content-${entry.anchor}'
+    }
+  }
+
+  return nil
 }
 
 /**
@@ -1315,7 +1491,7 @@ def search_symbols(nyssa, query: string, limit: ?number) {
 def docs_for(nyssa, name: string, version: dict) {
   var docs = nyssa.db.docs_of(version.id)
 
-  if docs != nil and docs.generator == _WRITER {
+  if docs != nil and _current(nyssa, docs) {
     return docs
   }
 
@@ -1326,12 +1502,23 @@ def docs_for(nyssa, name: string, version: dict) {
   } as error {
     docs = nyssa.db.docs_of(version.id)
 
-    if docs == nil or docs.generator != _WRITER {
+    if docs == nil or !_current(nyssa, docs) {
       _not_documented(name, version.version, error)
     }
   }
 
   return nyssa.db.docs_of(version.id)
+}
+
+# Whether a stored reference is as the current writer would write it: by
+# this writer, and linked to the standard library unless its reference
+# is still not there.
+def _current(nyssa, docs: dict) {
+  if docs.generator == _WRITER {
+    return true
+  }
+
+  return docs.generator == -_WRITER and !nyssa.db.std_ready(runtime_key())
 }
 
 # Tells whoever runs the repository that a version's reference could not

@@ -21,7 +21,8 @@ var APP = '/**
  */
 
 /**
- * The forecast for _place_, as a {Report}.
+ * The forecast for _place_, as a {Report}. Reads its key with
+ * {os.get_env}.
  *
  * @param string place: where to look.
  * @returns Report
@@ -71,6 +72,11 @@ def page(path: string) {
 
 before_all(@{
   world.start()
+
+  # The standard library's reference is written as the repository
+  # starts; asking for it waits until it is there, so the packages
+  # published below link to it.
+  page('/std')
   world.account('ada', world.dir('signin'))
 
   KIT = world.project('weather-kit')
@@ -268,7 +274,93 @@ describe('searching for a name', @{
     expect(page('/search?q=forecast+report')).not
         .to_contain('id="names-heading"')
   })
+})
 
+describe('the standard library', @{
+  it('has a page listing its modules', @{
+    var shown = page('/std')
+
+    expect(shown).to_contain('<h1>The standard library</h1>')
+    expect(shown).to_contain('<a href="/std/os"><code>os</code></a>')
+    expect(shown).to_contain('>os.env</a>')
+  })
+
+  it("has a page for each module, linking to the others' headings", @{
+    var shown = page('/std/os')
+
+    expect(shown).to_contain('href="/std/os-env#user-content-get_env"')
+    expect(page('/std/os-env')).to_contain('id="user-content-get_env"')
+  })
+
+  it('says so when it has no such module', @{
+    expect(page('/std/nothing'))
+        .to_contain('The standard library has no module called')
+  })
+
+  it('is linked to by a reference written before it was there', @{
+    var db = database()
+
+    db.connection.exec('update version_docs set generator = -generator', [])
+    db.close()
+
+    expect(page('/packages/weather-kit?tab=api&module=weather_kit-app'))
+        .to_contain('<a href="/std/os-env#user-content-get_env">')
+  })
+
+  it("is where a package's name for something in it leads", @{
+    expect(page('/packages/weather-kit?tab=api&module=weather_kit-app'))
+        .to_contain(
+          '<a href="/std/os-env#user-content-get_env"><code>os.get_env</code></a>',
+        )
+  })
+
+  it("is searched for names, before the packages' own", @{
+    var found = page('/search?q=get_env')
+
+    expect(found).to_contain(
+      '<a href="/std/os-env#user-content-get_env"><code>os.get_env</code></a>',
+    )
+    expect(found).to_contain('in <a href="/std">the standard library</a>')
+    expect(found).not.to_contain('Nothing has been published yet.')
+  })
+})
+
+describe('a package depending on another', @{
+  it("links a name written in braces to the other's API", @{
+    var dir = world.project('radar-kit')
+    var added = world.zuri([
+      'install',
+      'weather-kit',
+      '--registry',
+      world.url,
+    ], dir)
+
+    expect(added.status).to_equal(0)
+
+    write(
+      dir,
+      'app/index.zu',
+      '/**\n * @module app\n *\n * Radar, built on {weather_kit.forecast()} and {weather_kit.radar}.\n */\n\n/** Scans. */\ndef scan() {}\n',
+    )
+    commit(dir)
+
+    var published = world.zuri(['publish', '--registry', world.url], dir)
+
+    expect(published.status).to_equal(0)
+
+    var shown = page('/packages/radar-kit?tab=api&module=radar_kit-app')
+
+    expect(shown).to_contain(
+      '<a href="/packages/weather-kit?tab=api&amp;module=weather_kit-app#user-content-forecast"><code>weather_kit.forecast()</code></a>',
+    )
+    expect(shown).to_contain(
+      '<a href="/packages/weather-kit?tab=api&amp;module=weather_kit-radar"><code>weather_kit.radar</code></a>',
+    )
+  })
+})
+
+# Last, since starting the repository again moves it to a new address.
+describe('starting again', @{
   it('finds names whose reference was written before they were kept', @{
     var db = database()
 

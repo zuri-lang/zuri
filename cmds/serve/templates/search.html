@@ -25,7 +25,8 @@
         <li x-for="names" x-value="name">
           <a href="{{ name.url }}"><code>{{ name.path }}</code></a>
           <span class="badge">{{ name.kind }}</span>
-          <span class="meta">in <a href="/packages/{{ name.package }}">{{ name.package }}</a></span>
+          <span class="meta" x-if="name.package">in <a href="/packages/{{ name.package }}">{{ name.package }}</a></span>
+          <span class="meta" x-else>in <a href="/std">the standard library</a></span>
           <p x-if="name.summary">{{ name.summary|raw }}</p>
         </li>
       </ul>
@@ -35,7 +36,7 @@
     </ul>
     <div x-not="results">
       <p class="empty" x-if="query and !names">Nothing matches “{{ query }}”. Try fewer words, or a keyword.</p>
-      <p class="empty" x-else>Nothing has been published yet.</p>
+      <p class="empty" x-elif="!query">Nothing has been published yet.</p>
     </div>
     <nav class="pages" aria-label="Pages" x-if="pages|length > 1">
       <a x-if="previous" href="/search?q={{ query|url_encode(false) }}&amp;sort={{ sort }}&amp;page={{ previous }}">Previous</a>

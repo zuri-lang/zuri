@@ -63,7 +63,7 @@ var DOCS = [
 var LINKS = {
   website: 'https://zurilang.org',
   book: 'https://zurilang.org/book/',
-  reference: 'https://zurilang.org/reference/',
+  reference: '/std',
   source: 'https://github.com/zuri-lang/zuri',
   releases: 'https://github.com/zuri-lang/zuri/releases',
   issues: 'https://github.com/zuri-lang/zuri/issues',
@@ -80,23 +80,32 @@ var TABS = ['readme', 'api', 'source', 'versions', 'dependencies']
 /** The largest file the Source tab shows: 512 KiB. */
 var MAX_SOURCE = 524288
 
-# A link on a page of the API reference, which is written to another
-# module's page as `slug.md`, as the API tab at _base_ reaches it. The
-# sanitizer puts `user-content-` in front of every id, so a heading
-# on another page is reached by that.
-def _api_link(destination: string, base: string) {
+# A link on a page of a reference, which is written to another module's
+# page as `slug.md`, as the site reaches it, _address_ giving a page's
+# address from its slug. The sanitizer puts `user-content-` in front of
+# every id, so a heading on another page is reached by that.
+def _reference_link(destination: string, address: function) {
   var found = destination.match('/^([A-Za-z0-9_.-]+)\\.md(#(.*))?$/')
 
   if found == false {
     return destination
   }
 
-  var page = '${base}?tab=api&module=${found[1]}'
+  var page = address(found[1])
   var anchor = found.get(3, nil)
 
   return anchor == nil or anchor.is_empty()
       ? page
       : '${page}#user-content-${anchor}'
+}
+
+# A link on a page of a package's API reference, as the API tab at
+# _base_ reaches it.
+def _api_link(destination: string, base: string) {
+  return _reference_link(
+    destination,
+    @(slug) => '${base}?tab=api&module=${slug}',
+  )
 }
 
 # What the API tab shows for _version_ of the package called _name_:
@@ -653,6 +662,69 @@ def routes(server, nyssa) {
       }),
     })
   }
+
+  # The reference of the standard library the repository runs on.
+  var show_std = @(request, response, slug) {
+    service.document_stdlib(nyssa)
+
+    var runtime = service.runtime_key()
+    var row = slug == nil ? nil : nyssa.db.std_page(runtime, slug)
+
+    if slug != nil and row == nil {
+      _message(
+        nyssa,
+        request,
+        response,
+        'No such module',
+        "The standard library has no module called '${slug}'.",
+        404,
+      )
+
+      return
+    }
+
+    var modules = nyssa.db
+        .std_modules(runtime)
+        .map(
+          @(module) => {
+            name: module.name,
+            url: service.std_address(module.slug, nil),
+            current: module.slug == slug,
+            depth: module.name.count('.'),
+            summary: module.summary.is_empty()
+                ? nil
+                : wire.safe(markup.inline(module.summary)),
+          },
+        )
+
+    _page(nyssa, request, response, 'std', {
+      page_title: row == nil
+          ? 'Standard library'
+          : '${row.name} · Standard library',
+      runtime: os.version,
+      modules,
+      roots: modules.filter(@(module) => module.depth == 0),
+      page: row == nil
+          ? nil
+          : wire.safe(
+              markup.render(
+                row.markdown,
+                @(destination) => _reference_link(
+                  destination,
+                  @(page) => service.std_address(page, nil),
+                ),
+              ),
+            ),
+    })
+  }
+
+  server.get('/std', @(request, response) {
+    show_std(request, response, nil)
+  })
+
+  server.get('/std/:module', @(request, response) {
+    show_std(request, response, request.param('module'))
+  })
 
   server.get('/packages/:name', @(request, response) {
     show_package(request, response, nil)

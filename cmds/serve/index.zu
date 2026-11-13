@@ -218,10 +218,20 @@ def _serve(settings: dict) {
   http.serve(app.setup, options)
 }
 
-# Brings the API reference of every package's newest version up to date
-# with the current writer, which searching for a name depends on.
+# Writes the standard library's reference when the runtime is new to
+# the repository, and brings the API reference of every package's newest
+# version up to date with the current writer, which links to the
+# standard library and searching for a name both depend on.
 def _refresh(settings: dict) {
   var nyssa = Nyssa(settings)
+
+  catch {
+    service.document_stdlib(nyssa)
+  } as error {
+    io.stderr.write(
+      'the standard library reference could not be written: ${error.message}\n',
+    )
+  }
 
   service.refresh_documentation(nyssa)
   nyssa.db.close()
