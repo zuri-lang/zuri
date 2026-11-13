@@ -44,6 +44,7 @@ directory of the project, or failing that its `docs/reference`.
 | `-o, --out <dir>` | Writes the site here instead of where `doc.toml` says. |
 | `--open` | Opens the site in a browser once it is built. |
 | `--strict` | With `build` or `generate`, fails over a warning, such as a link inside the documentation that leads nowhere. |
+| `--external` | With `build`, also asks for every `http` and `https` address the documentation links to, and warns about each that does not answer. |
 | `-p, --port <port>` | With `serve`, the port to listen on; 3000 by default. |
 | `--host <address>` | With `serve`, the address to listen on; this machine only by default. |
 | `--title <text>` | With `init` or `generate`, the new documentation's title. |

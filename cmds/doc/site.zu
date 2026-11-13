@@ -195,6 +195,22 @@ class Site {
   }
 
   /**
+   * Every link and image leading out of the documentation to an `http`
+   * or `https` address, once the site is built: `{ where, url }` each,
+   * where it is, as a warning names it, and its address.
+   *
+   * @returns list[dict]
+   */
+  externals() {
+    return self._renderer.externals.map(
+      @(link) => {
+        where: '${_shown(self.config, link.from)}:${link.line}',
+        url: link.url,
+      },
+    )
+  }
+
+  /**
    * Writes the whole site into the output directory, replacing what a
    * previous build left there.
    *

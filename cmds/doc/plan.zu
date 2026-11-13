@@ -71,6 +71,12 @@ def parser() {
     nil,
   )
   parser.add_option(
+    'external',
+    'With build, also asks for every http and https address the documentation ' +
+        'links to, and warns about each that does not answer',
+    nil,
+  )
+  parser.add_option(
     'port',
     'With serve, the port to listen on; ${DEFAULT_PORT} by default',
     { short_name: 'p', type: args.INT, metavar: 'port' },
@@ -252,8 +258,8 @@ def default_title(target: string) {
  *
  * @param args.Result parsed
  * @param ?string cwd: Default the working directory.
- * @returns dict: `{ command, dir, out, open, strict, port, host,
- *    title }`, `dir` being the directory named on the command line or
+ * @returns dict: `{ command, dir, out, open, strict, external, port,
+ *    host, title }`, `dir` being the directory named on the command line or
  *    `nil`, and `out` an absolute path or `nil`.
  * @throws UsageError For options that do not go with the command
  */
@@ -266,6 +272,7 @@ def settings(parsed, cwd: ?string) {
 
   var only = {
     strict: ['build', 'generate'],
+    external: ['build'],
     port: ['serve'],
     host: ['serve'],
     open: ['build', 'serve'],
@@ -295,6 +302,7 @@ def settings(parsed, cwd: ?string) {
     out: out == nil ? nil : _absolute(out, base),
     open: options.get('open', false) == true,
     strict: options.get('strict', false) == true,
+    external: options.get('external', false) == true,
     port,
     host: options.get('host', DEFAULT_HOST),
     title: options.get('title'),

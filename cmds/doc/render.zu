@@ -30,6 +30,7 @@ import os
 import url
 
 import .documentation { Documentation, Chapter, normalize, page_path, root_of }
+import .external
 import .highlight
 import .highlight.spans { escape }
 
@@ -316,6 +317,15 @@ class Renderer {
    */
   var links = []
 
+  /**
+   * Every link and image a page made that leads out of the
+   * documentation to an `http` or `https` address: `{ from, line, url }`
+   * each.
+   *
+   * @type list
+   */
+  var externals = []
+
   # The chapter being rendered, and whether it is for the print page.
   var _chapter
   var _print = false
@@ -328,6 +338,7 @@ class Renderer {
   @new(docs: Documentation) {
     self.docs = docs
     self.links = []
+    self.externals = []
 
     var options = DEFAULTS.clone()
 
@@ -403,6 +414,8 @@ class Renderer {
     }
 
     for image in doc.find_all('image') {
+      self._note_external(image.destination, _line_of(image))
+
       var across = self._across_file(image.destination, _line_of(image))
 
       if across == nil {
@@ -422,6 +435,17 @@ class Renderer {
           heading.attributes.set('id', prefix + id)
         }
       }
+    }
+  }
+
+  # Records a link out of the documentation, for `--external` to check.
+  _note_external(destination: string, line: number) {
+    if !self._print and external.is_checked(destination) {
+      self.externals.append({
+        from: self._chapter.source,
+        line,
+        url: destination,
+      })
     }
   }
 
@@ -449,6 +473,8 @@ class Renderer {
   # A link's destination as the site needs it.
   _rewrite(destination: string, line: number) {
     if destination.is_empty() or _is_external(destination) {
+      self._note_external(destination, line)
+
       return destination
     }
 

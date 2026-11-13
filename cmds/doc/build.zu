@@ -22,6 +22,7 @@ import os
 import .config
 import .config { Config }
 import .documentation
+import .external as outside
 import .reference
 import .site { Site, is_absolute }
 
@@ -45,10 +46,19 @@ class Built {
   /** Each link inside it that leads nowhere. @type list[string] */
   var links = []
 
+  /**
+   * Each link out of it whose address is broken, when those were
+   * checked.
+   *
+   * @type list[string]
+   */
+  var external = []
+
   @new(config: Config) {
     self.config = config
     self.warnings = []
     self.links = []
+    self.external = []
   }
 }
 
@@ -217,10 +227,12 @@ def _check_across(sites: list, built: list) {
  * @param Config settings
  * @param ?bool live: whether the pages reload themselves when
  *    `zuri doc serve` rebuilds them.
+ * @param ?bool external: whether every link leading out of them to an
+ *    `http` or `https` address is asked for, to see that it answers.
  * @returns list[Built]: the outer documentation first.
  * @throws UsageError When any of them cannot be read or built
  */
-def build(settings: Config, live: ?bool) {
+def build(settings: Config, live: ?bool, external: ?bool) {
   var configs = [settings] +
       settings.members.map(@(directory) => _member(settings, directory))
 
@@ -249,6 +261,25 @@ def build(settings: Config, live: ?bool) {
   }
 
   _check_across(sites, built)
+
+  if external == true {
+    var links = []
+
+    iter var i = 0; i < sites.length(); i++ {
+      for link in sites[i].externals() {
+        link.set('site', i)
+        links.append(link)
+      }
+    }
+
+    for broken in outside.check(links) {
+      var link = broken.link
+
+      built[link.site].external.append(
+        '${link.where}: ${link.url} ${broken.reason}',
+      )
+    }
+  }
 
   return built
 }

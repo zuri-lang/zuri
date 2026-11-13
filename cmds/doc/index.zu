@@ -71,13 +71,16 @@ def _build(chosen: dict) {
   var settings = _settings(root, chosen.out)
   var generated = []
   var links = []
+  var external = []
 
-  for built in build.build(settings) {
+  for built in build.build(settings, false, chosen.external) {
     _complain(built.warnings)
     _complain(built.links)
+    _complain(built.external)
 
     generated = generated + built.warnings
     links = links + built.links
+    external = external + built.external
 
     echo '${ui.heading(built.config.title)}: ${ui.count(built.pages, "page")} in ${built.seconds.fixed(2)}s'
     echo ui.muted('  ${_shown(built.config.output)}')
@@ -92,6 +95,12 @@ def _build(chosen: dict) {
   if chosen.strict and !generated.is_empty() {
     raise CommandError(
       'generating the reference gave ${ui.count(generated.length(), "warning")}',
+    )
+  }
+
+  if chosen.strict and !external.is_empty() {
+    raise CommandError(
+      '${ui.count(external.length(), "link")} out of the documentation ${external.length() == 1 ? "is" : "are"} broken',
     )
   }
 

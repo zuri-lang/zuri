@@ -257,6 +257,23 @@ it the command fails, which is how a CI job keeps the links whole.
 `--out` writes the site somewhere other than where `doc.toml` says, and
 `--open` opens it in a browser once it is built.
 
+`--external` also asks for every `http` and `https` address the pages
+link to, once each however many pages link to it, and warns about each
+that answers with an error or cannot be reached, after one more try. An
+answer telling it to slow down counts as an answer. The addresses are
+asked for a few at a time, so it takes seconds rather than minutes, but
+it needs the network, so it is left to be asked for rather than done on
+every build:
+
+```console
+$ zuri doc build --external
+warning: docs/src/getting-started.md:6: https://example.com/old-page answered 404
+weather: 5 pages in 0.04s
+  docs/site
+```
+
+With `--strict` as well, a broken address fails the build too.
+
 While you write, `zuri doc serve` builds the site, serves it on this
 machine, and builds it again each time the documentation changes:
 
