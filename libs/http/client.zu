@@ -555,7 +555,12 @@ class HttpClient {
 
     response.certificate = carrier[2].peer_certificate()
 
-    if options.get('decode_content', self.decode_content) {
+    # A response with no body has nothing to decode, whatever its coding
+    # header says: the header describes the body a GET would have had.
+    var bodiless = request.method == 'HEAD' or
+        status.is_bodiless(response.status)
+
+    if !bodiless and options.get('decode_content', self.decode_content) {
       var encoding = response.headers.get('content-encoding', nil)
 
       if encoding != nil and !encoding.trim().is_empty() {

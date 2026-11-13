@@ -367,6 +367,13 @@ assert !large.headers.contains('content-encoding'),
     'and the client removed the coding header once it decoded the body'
 ok('a compressible response is compressed and transparently decoded')
 
+var headed = client.head(base + '/large')
+assert headed.status == 200 and headed.body.length() == 0,
+    'a HEAD request to a compressed route has no body'
+assert headed.headers.contains('content-encoding'),
+    'and keeps the coding header, which describes the body a GET gets'
+ok('a HEAD response is not decoded, since it has no body')
+
 var streamed = client.get(base + '/stream')
 assert streamed.as_text() == 'chunk1\nchunk2\nchunk3\n',
     'a chunked body reassembles'

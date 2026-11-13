@@ -660,7 +660,9 @@ def read_response(connection, request, options: ?dict) {
 
   response.body = reader.read_all(_limit(options, 'max_body_size'))
 
-  if options.get('decode_content', true) {
+  # A response with no body has nothing to decode, whatever its coding
+  # header says: the header describes the body a GET would have had.
+  if !bodiless and options.get('decode_content', true) {
     var encoding = response.headers.get('content-encoding', nil)
 
     if encoding != nil and !encoding.trim().is_empty() {
