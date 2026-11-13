@@ -59,6 +59,10 @@ A module is any `.zu` file but a test, one in `tests`, `docs`,
 `examples`, `benchmarks` or `cmds`, and one whose path has a part
 starting with an underscore, which the compiler keeps private.
 
+Every version's page says how many of its public names have a doc
+block, and `zuri publish` says the same before it sends anything,
+naming the first few that have none.
+
 Every name in the reference links to the line that declares it, on the
 version's Source tab, which shows every file the version holds with
 its lines numbered and its Zuri coloured.

@@ -56,7 +56,10 @@
               <nav class="api-modules" aria-label="Modules">
                 <a x-for="api.modules" x-value="module" href="{{ module.url }}" class="depth-{{ module.depth }}" x-attr="{ 'aria-current': module.current ? 'page' : nil }">{{ module.name }}</a>
               </nav>
-              <article class="prose">{{ api.page }}</article>
+              <div>
+                <p class="coverage" x-if="coverage">{{ coverage.documented }} of {{ coverage.names }} public {{ coverage.names == 1 ? 'name has' : 'names have' }} a doc block.</p>
+                <article class="prose">{{ api.page }}</article>
+              </div>
             </div>
             <p class="empty" x-not="api.modules">{{ package.name }} {{ version.version }} has no public modules to document.</p>
           </template>
@@ -113,6 +116,7 @@
             <dt>License</dt><dd>{{ package.license ?? 'Not stated' }}</dd>
             <dt>Published</dt><dd>{{ version.published|date('j M Y') }}</dd>
             <dt>Size</dt><dd>{{ version.size|filesize }}</dd>
+            <dt x-if="coverage">Documented</dt><dd x-if="coverage"><a href="{{ base }}?tab=api">{{ coverage.percent }}%</a> of {{ coverage.names }} {{ coverage.names == 1 ? 'name' : 'names' }}</dd>
             <dt x-if="version.zuri">Zuri</dt><dd x-if="version.zuri">{{ version.zuri }}</dd>
             <dt>Downloads</dt><dd>{{ version.downloads|number_format }} of this version</dd>
             <dt>Checksum</dt><dd class="checksum">{{ version.checksum }}</dd>

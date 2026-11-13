@@ -276,6 +276,30 @@ describe('searching for a name', @{
   })
 })
 
+describe('how much is documented', @{
+  it("is on every version's page, and the API tab", @{
+    expect(page('/packages/weather-kit')).to_contain(
+      '<dt>Documented</dt><dd><a href="/packages/weather-kit?tab=api">71%</a> of 7 names</dd>',
+    )
+    expect(page('/packages/weather-kit?tab=api'))
+        .to_contain('5 of 7 public names have a doc block.')
+  })
+
+  it('is said by a dry run of publish, with the names that have none', @{
+    var shown = world.zuri([
+      'publish',
+      '--registry',
+      world.url,
+      '--dry-run',
+    ], KIT)
+
+    expect(shown.out).to_contain('Documented: 5 of 7 public names (71%)')
+    expect(shown.out).to_contain(
+      'without a doc block: weather_kit.undocumented, weather_kit.Report()',
+    )
+  })
+})
+
 describe('the standard library', @{
   it('has a page listing its modules', @{
     var shown = page('/std')

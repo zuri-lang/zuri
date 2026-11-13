@@ -13,8 +13,10 @@ import .._shared.cli
 import .._shared.errors { UsageError }
 import .._shared.files
 import .._shared.manifest as manifest_module
+import .._shared.fsx
 import .._shared.names
 import .._shared.semver
+import ..doc.reference
 
 # A license written as an SPDX expression: identifiers joined by AND,
 # OR and WITH, optionally in parentheses. Enough to tell `MIT` and
@@ -246,4 +248,26 @@ def prepare(root: string, options: ?dict) {
   }
 
   return { manifest: found, name, version, files: selected.files, warnings }
+}
+
+/**
+ * How much of the package's public surface has a doc block, counted the
+ * way the registry counts it for each version's page.
+ *
+ * @param string root: the project's root.
+ * @param dict prepared: what `prepare()` gave, for its files and name.
+ * @returns ?dict: `{ names, documented, missing }`, `missing` holding the
+ *    paths of the names with no doc block, or `nil` when the package's
+ *    files cannot be read for it.
+ */
+def coverage(root: string, prepared: dict) {
+  catch {
+    return reference.survey(
+      prepared.files,
+      @(path) => fsx.read_text(os.join_paths(root, path)),
+      names.import_name(prepared.name),
+    )
+  } as error {
+    return nil
+  }
 }

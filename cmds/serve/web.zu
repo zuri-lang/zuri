@@ -606,6 +606,12 @@ def routes(server, nyssa) {
 
     var base = '/packages/${package.name}' +
         (wanted == nil ? '' : '/${shown.version}')
+    # The API tab writes a reference that is missing, so the counts are
+    # read after it.
+    var api = tab == 'api'
+        ? _api(nyssa, request, package.name, shown, base)
+        : nil
+    var docs = nyssa.db.docs_of(shown.id)
 
     _page(nyssa, request, response, 'package', {
       flush: true,
@@ -615,7 +621,14 @@ def routes(server, nyssa) {
           : package.description,
       tab,
       base,
-      api: tab == 'api' ? _api(nyssa, request, package.name, shown, base) : nil,
+      api,
+      coverage: docs == nil or docs.names == 0
+          ? nil
+          : {
+              names: docs.names,
+              documented: docs.documented,
+              percent: docs.documented * 100 // docs.names,
+            },
       source: tab == 'source'
           ? _source(request, service.files_of(nyssa, shown), base)
           : nil,

@@ -403,3 +403,22 @@ def document(
     warnings,
   }
 }
+
+/**
+ * How much of the public surface of the modules among _relatives_ has
+ * a doc block, counted as `document()` counts it, without writing any
+ * pages.
+ *
+ * @param list relatives: every file's path, written with `/`.
+ * @param function text_of: a path to the text of that file.
+ * @param ?string package: the name the modules are imported under.
+ * @returns dict: `{ names, documented, missing }`, as `coverage()`
+ *    gives it.
+ */
+def survey(relatives: list, text_of: function, package: ?string) {
+  var candidates = relatives.filter(
+    @(path) => !_NOT_MODULES.contains(path.split('/')[0]),
+  )
+
+  return coverage(model.read_sources(candidates, text_of, package, []))
+}

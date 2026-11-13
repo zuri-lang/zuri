@@ -1576,3 +1576,9 @@ th.number {
   padding-top: 2rem;
   padding-bottom: 3rem;
 }
+
+.coverage {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}

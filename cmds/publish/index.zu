@@ -40,6 +40,8 @@ def main() {
     ui.complain(ui.warn('warning: ${warning}'))
   }
 
+  var documented = plan.coverage(project.root, prepared)
+
   var staging = os.join_paths(paths.cache_dir(), 'publish')
   var packed_path = os.join_paths(staging, '${fsx.unique()}.tar.gz')
 
@@ -49,7 +51,7 @@ def main() {
     var packed = archive.pack(project.root, prepared.files, packed_path)
 
     if dry_run {
-      _show(prepared, packed, project.root, as_json)
+      _show(prepared, packed, project.root, as_json, documented)
       fsx.remove(packed_path)
 
       return
@@ -58,6 +60,7 @@ def main() {
     var registry = cli.registry_from(parsed)
 
     if !as_json and !quiet {
+      _say_coverage(documented)
       echo 'Publishing ${ui.accent(prepared.name)} ${prepared.version} to ${registry.address}'
     }
 
@@ -111,8 +114,37 @@ def main() {
   }
 }
 
+# How much of the package has a doc block, as the registry counts it for
+# the version's page, and the first few names that have none. Nothing is
+# said for a package with no public names.
+def _say_coverage(found) {
+  if found == nil or found.names == 0 {
+    return
+  }
+
+  var percent = found.documented * 100 // found.names
+
+  echo 'Documented: ${found.documented} of ${ui.count(found.names, "public name")} (${percent}%)'
+
+  if !found.missing.is_empty() {
+    var shown = found.missing[0, found.missing.length().min(5)]
+    var more = found.missing.length() - shown.length()
+
+    echo ui.muted(
+      '  without a doc block: ${", ".join(shown)}' +
+          (more > 0 ? ', and ${more} more' : ''),
+    )
+  }
+}
+
 # The dry run: every file, its size, and what the archive came to.
-def _show(prepared: dict, packed: dict, root: string, as_json: bool) {
+def _show(
+  prepared: dict,
+  packed: dict,
+  root: string,
+  as_json: bool,
+  documented,
+) {
   var rows = []
   var listed = []
 
@@ -131,6 +163,7 @@ def _show(prepared: dict, packed: dict, root: string, as_json: bool) {
       size: packed.size,
       unpacked_size: packed.unpacked_size,
       checksum: packed.checksum,
+      documented,
     })
 
     return
@@ -143,6 +176,7 @@ def _show(prepared: dict, packed: dict, root: string, as_json: bool) {
   echo '${ui.count(prepared.files.length(), "file")}, ${ui.size(packed.unpacked_size)} ' +
       'unpacked, ${ui.size(packed.size)} packed'
   echo ui.muted(packed.checksum)
+  _say_coverage(documented)
 }
 
 run('publish', main)

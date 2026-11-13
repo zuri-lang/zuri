@@ -86,15 +86,21 @@ $ zuri publish --dry-run
 Would publish weather 0.1.0
 
   53 B   .gitattributes
-  217 B  .gitignore
-  461 B  README.md
+  250 B  .gitignore
+  472 B  README.md
   541 B  app/index.zu
-  376 B  index.zu
-  206 B  project.toml
+  387 B  index.zu
+  177 B  project.toml
 
 6 files, 1.8 KiB unpacked, 1.6 KiB packed
-sha256:0a6b340e81682bde7e4364e2209333ba32c1f3852ff10558bf513550e2758b30
+sha256:f617dec6d820dd15409fdfa4954d53d6e2809b969a5ab23c997b7476456b7e19
+Documented: 2 of 2 public names (100%)
 ```
+
+The last line counts the public names in the package's modules that
+have a doc block, the way the registry counts them for the version's
+page, and names the first few that have none. Publishing says the same
+before it sends anything.
 
 The archive is built the same way every time: sorted entries, fixed
 times and owners, normalised permissions. The same files always make

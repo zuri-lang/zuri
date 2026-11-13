@@ -113,3 +113,28 @@ describe('uncommitted changes', @{
     expect(refusal({ allow_dirty: true })).to_be_nil()
   })
 })
+
+describe('coverage', @{
+  it('counts the public names that have a doc block, as the registry does', @{
+    var root = os.join_paths(ROOT, 'covered')
+
+    put(
+      os.join_paths(root, 'project.toml'),
+      '[project]\nname = "weather-kit"\n',
+    )
+    put(
+      os.join_paths(root, 'index.zu'),
+      '/**\n * @module weather_kit\n */\n\n/** Today. */\ndef today() {}\n\ndef tomorrow() {}\n\nclass Sky {\n  /** Looks up. */\n  look() {}\n}\n',
+    )
+    put(os.join_paths(root, 'tests', 'sky.test.zu'), 'def unlisted() {}\n')
+
+    var found = plan.coverage(root, {
+      name: 'weather-kit',
+      files: ['project.toml', 'index.zu', 'tests/sky.test.zu'],
+    })
+
+    expect(found.names).to_be(4)
+    expect(found.documented).to_be(2)
+    expect(found.missing).to_equal(['weather_kit.tomorrow', 'weather_kit.Sky'])
+  })
+})
