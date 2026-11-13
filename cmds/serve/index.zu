@@ -17,6 +17,7 @@
 import crypto
 import http
 import io
+import isolate
 import os
 import os.process { exit, on_signal }
 
@@ -210,7 +211,20 @@ def _serve(settings: dict) {
   }
 
   os.set_env(plan.SETTINGS_VARIABLE, plan.encode(settings), true)
+
+  # In the background, so the repository answers at once.
+  isolate.spawn(_refresh, settings)
+
   http.serve(app.setup, options)
+}
+
+# Brings the API reference of every package's newest version up to date
+# with the current writer, which searching for a name depends on.
+def _refresh(settings: dict) {
+  var nyssa = Nyssa(settings)
+
+  service.refresh_documentation(nyssa)
+  nyssa.db.close()
 }
 
 def main() {

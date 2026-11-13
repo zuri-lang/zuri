@@ -1529,3 +1529,39 @@ th.number {
 .prose :is(h1, h2, h3, h4, h5, h6, li, sup) {
   scroll-margin-top: 6rem;
 }
+
+/* The names a search found, above the packages it found. */
+.names {
+  margin: 0 0 2rem;
+}
+
+.names h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: var(--muted);
+}
+
+.names ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.names li {
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--edge);
+}
+
+.names li > a code {
+  font-size: 0.95rem;
+  color: var(--accent);
+}
+
+.names .badge {
+  margin: 0 0.4rem;
+}
+
+.names p {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+}

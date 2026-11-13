@@ -521,6 +521,7 @@ def routes(server, nyssa) {
       page_title: query.is_empty() ? 'Search' : '${query} · Search',
       query,
       sort,
+      names: page == 1 ? service.search_symbols(nyssa, query) : [],
       total: found.total,
       results: found.packages.map(_card),
       page,

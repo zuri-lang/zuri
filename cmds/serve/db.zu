@@ -488,10 +488,27 @@ class Database {
    * @param dict fields: `{ generator, names, documented, modules,
    *    warnings }`, `modules` and `warnings` being lists.
    * @param list pages: `{ slug, name, markdown }` each.
+   * @param list symbols: `{ path, name, kind, page, anchor, summary }`
+   *    each, every name the pages document, for searching.
    */
-  save_docs(version_id, fields: dict, pages: list) {
+  save_docs(version_id, fields: dict, pages: list, symbols: list) {
+    self.connection.delete('symbols', { version_id })
     self.connection.delete('doc_pages', { version_id })
     self.connection.delete('version_docs', { version_id })
+
+    for symbol in symbols {
+      self.connection.insert('symbols', {
+        version_id,
+        path: symbol.path,
+        path_key: symbol.path.lower(),
+        name_key: symbol.name.lower(),
+        kind: symbol.kind,
+        page: symbol.page,
+        anchor: symbol.anchor,
+        summary: symbol.summary,
+      })
+    }
+
     self.connection.insert('version_docs', {
       version_id,
       generator: fields.generator,
@@ -510,6 +527,68 @@ class Database {
         markdown: page.markdown,
       })
     }
+  }
+
+  /**
+   * The names documented in the newest version of each package that
+   * match _query_: its name, its whole path, or the end of its path, as
+   * `app.forecast` matches `weather_kit.app.forecast`. Exact matches
+   * come first, then the most downloaded packages.
+   *
+   * @param string query: lower case, one word.
+   * @param number limit
+   * @returns list[dict]: `{ path, kind, page, anchor, summary,
+   *    package }` each.
+   */
+  search_symbols(query: string, limit: number) {
+    var escaped = like_escape(query)
+
+    return self.connection.fetch_all(
+      "
+      select s.path, s.kind, s.page, s.anchor, s.summary, p.name as package
+      from symbols s
+      join versions v on v.id = s.version_id
+      join packages p on p.id = v.package_id
+      where v.version = p.latest
+        and v.yanked_at is null
+        and (
+          s.name_key = :exact
+          or s.path_key = :exact
+          or s.path_key like :suffix escape '!'
+          or s.name_key like :prefix escape '!'
+        )
+      order by
+        case
+          when s.name_key = :exact then 0
+          when s.path_key = :exact then 1
+          when s.path_key like :suffix escape '!' then 2
+          else 3
+        end,
+        p.downloads desc,
+        s.path_key
+      limit ${limit.floor()}",
+      { exact: query, suffix: '%.' + escaped, prefix: escaped + '%' },
+    )
+  }
+
+  /**
+   * The newest version of every package whose API reference is missing,
+   * or was written by a writer other than _writer_.
+   *
+   * @param number writer
+   * @returns list[dict]: the versions' rows, each with `package`, the
+   *    package's name.
+   */
+  versions_needing_docs(writer: number) {
+    return self.connection.fetch_all(
+      '
+      select v.*, p.name as package
+      from packages p
+      join versions v on v.package_id = p.id and v.version = p.latest
+      left join version_docs d on d.version_id = v.id
+      where d.version_id is null or d.generator != :writer',
+      { writer },
+    )
   }
 
   set_yanked(version_id, yanked: bool) {

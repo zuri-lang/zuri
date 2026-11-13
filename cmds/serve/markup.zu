@@ -47,6 +47,22 @@ var _OPTIONS = {
 var _renderer = markdown(_OPTIONS)
 
 /**
+ * _text_, one line of Markdown such as a summary, as safe inline markup.
+ * A name in braces, as a doc block writes `{Report}`, reads as code.
+ *
+ * @param string text
+ * @returns string
+ */
+def inline(text: string) {
+  var marked = text.replace(
+    '/\\{([A-Za-z_][A-Za-z0-9_.]*(\\(\\))?)\\}/',
+    '`$1`',
+  )
+
+  return sanitize.clean(_renderer.render_inline(marked))
+}
+
+/**
  * _source_ as safe markup.
  *
  * @param string source: Markdown.

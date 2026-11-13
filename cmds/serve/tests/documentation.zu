@@ -239,3 +239,59 @@ describe('the Source tab', @{
     )
   })
 })
+
+describe('searching for a name', @{
+  it('finds the name and where it is documented', @{
+    var found = page('/search?q=forecast')
+
+    expect(found).to_contain(
+      '<a href="/packages/weather-kit?tab=api&amp;module=weather_kit-app#user-content-forecast"><code>weather_kit.forecast</code></a>',
+    )
+    expect(
+      found,
+    ).to_contain('The forecast for <em>place</em>, as a <code>Report</code>.')
+  })
+
+  it('takes a name in any case, and with its parentheses', @{
+    expect(page('/search?q=REPORT'))
+        .to_contain('<code>weather_kit.Report</code>')
+    expect(page('/search?q=forecast()'))
+        .to_contain('<code>weather_kit.forecast</code>')
+  })
+
+  it('takes the end of a path', @{
+    expect(page('/search?q=radar.sweep'))
+        .to_contain('<code>weather_kit.radar.sweep</code>')
+  })
+
+  it('looks for no name in a query of several words', @{
+    expect(page('/search?q=forecast+report')).not
+        .to_contain('id="names-heading"')
+  })
+
+  it('finds names whose reference was written before they were kept', @{
+    var db = database()
+
+    db.connection.delete('symbols', {})
+    db.connection.update('version_docs', { generator: 0 }, {})
+    db.close()
+
+    expect(page('/search?q=sweep')).not.to_contain('weather_kit.radar.sweep')
+
+    world.stop()
+    world.start()
+
+    var deadline = time() + 30
+    var found = false
+
+    while !found and time() < deadline {
+      found = page('/search?q=sweep').contains('weather_kit.radar.sweep')
+
+      if !found {
+        os.sleep(0.2)
+      }
+    }
+
+    expect(found).to_be_true()
+  })
+})

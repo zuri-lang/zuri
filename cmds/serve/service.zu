@@ -24,6 +24,7 @@ import .._shared.semver
 import ..doc.reference
 import .auth
 import .context { iso, latest_of }
+import .markup
 
 /** The longest README kept with a version: 512 KiB. */
 var MAX_README = 524288
@@ -1184,7 +1185,7 @@ def files_of(nyssa, version: dict) {
 # Which pages the repository has written: the generator's version, and
 # what it asks of the generator, such as links to the source, so that a
 # change to either has the pages written again.
-var _WRITER = reference.GENERATOR * 100 + 1
+var _WRITER = reference.GENERATOR * 100 + 2
 
 /**
  * The address of a package's source file, at _line_ when one is given:
@@ -1220,16 +1221,84 @@ def _document(nyssa, name: string, version: dict, files: dict) {
   )
 
   nyssa.db.transaction(@{
-    nyssa.db.save_docs(version.id, {
-      generator: _WRITER,
-      names: result.coverage.names,
-      documented: result.coverage.documented,
-      modules: result.pages.map(
-        @(page) => { slug: page.slug, name: page.name, summary: page.summary },
-      ),
-      warnings: result.warnings,
-    }, result.pages)
+    nyssa.db.save_docs(
+      version.id,
+      {
+        generator: _WRITER,
+        names: result.coverage.names,
+        documented: result.coverage.documented,
+        modules: result.pages.map(
+          @(page) => {
+            slug: page.slug,
+            name: page.name,
+            summary: page.summary,
+          },
+        ),
+        warnings: result.warnings,
+      },
+      result.pages,
+      result.symbols,
+    )
   })
+}
+
+/**
+ * Writes the API reference of the newest version of every package
+ * that has none, or one an earlier writer wrote, so that searching
+ * finds every package's names without each reference being opened
+ * first. It runs in the background when the repository starts.
+ *
+ * @param nyssa
+ * @returns number: how many references were written.
+ */
+def refresh_documentation(nyssa) {
+  var written = 0
+
+  for version in nyssa.db.versions_needing_docs(_WRITER) {
+    catch {
+      _document(nyssa, version.package, version, files_of(nyssa, version))
+      written++
+    } as error {
+      _not_documented(version.package, version.version, error)
+    }
+  }
+
+  return written
+}
+
+/**
+ * The documented names matching _query_ in the newest version of each
+ * package, each with the address of the place it is documented. A
+ * query of more than one word, or nothing, finds none.
+ *
+ * @param nyssa
+ * @param string query: a name, as `forecast` or `forecast()`, or a path,
+ *    as `weather_kit.forecast` or `app.forecast`.
+ * @param ?number limit: Default 10.
+ * @returns list[dict]: `{ path, kind, summary, package, url }` each.
+ */
+def search_symbols(nyssa, query: string, limit: ?number) {
+  var word = query.trim().lower()
+
+  if word.ends_with('()') {
+    word = word[0, word.length() - 2]
+  }
+
+  if word.is_empty() or word.contains(' ') {
+    return []
+  }
+
+  return nyssa.db
+      .search_symbols(word, limit == nil ? 10 : limit)
+      .map(
+        @(row) => {
+          path: row.path,
+          kind: row.kind,
+          summary: row.summary.is_empty() ? nil : markup.inline(row.summary),
+          package: row.package,
+          url: '/packages/${row.package}?tab=api&module=${row.page}#user-content-${row.anchor}',
+        },
+      )
 }
 
 /**

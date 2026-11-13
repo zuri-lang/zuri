@@ -4,6 +4,7 @@
 
 import test { * }
 
+import ..markup
 import ..markup { render }
 
 describe('render', @{
@@ -99,5 +100,22 @@ describe('render', @{
 
     expect(page).to_contain('click')
     expect(page).not.to_contain('javascript')
+  })
+})
+
+describe('inline', @{
+  it('renders one line, with names in braces as code', @{
+    expect(markup.inline('Reads *a* {Report} from {forecast()}.')).to_be(
+      'Reads <em>a</em> <code>Report</code> from <code>forecast()</code>.',
+    )
+  })
+
+  it('takes out what render takes out', @{
+    var line = markup.inline(
+      'Hi <script>alert(1)</script><img src="x" onerror="steal()">',
+    )
+
+    expect(line).not.to_contain('script')
+    expect(line).not.to_contain('steal')
   })
 })
