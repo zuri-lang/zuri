@@ -131,9 +131,13 @@ jobs:
       # One command does the lot: it writes the reference's pages from
       # the doc blocks in `libs/`, builds the book and the reference with
       # `zuri doc`, and lays the finished website out under `target/site`
-      # with the landing page from `docs/site` over the top.
+      # with the landing page from `docs/site` over the top. What the cache
+      # kept of the last build is cleaned away first, since zuri doc will
+      # not build over a site it cannot recognise as its own.
       - name: Build the site
-        run: ./target/debug/zuri run docs/tools/site.zu build
+        run: |
+          ./target/debug/zuri run docs/tools/site.zu clean
+          ./target/debug/zuri run docs/tools/site.zu build
         env:
           ZURI_ROOT: ${{ github.workspace }}
 

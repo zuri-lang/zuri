@@ -212,9 +212,12 @@ jobs:
       # Building checks every link inside each against the pages it
       # actually wrote, and --strict fails on one that leads nowhere. The
       # reference's pages are generated from `libs/` as it is built, and
-      # --strict also fails on a module none of its groups lists.
+      # --strict also fails on a module none of its groups lists. The
+      # cache keeps what is left of the last build's sites after pruning
+      # `target/`, which zuri doc will not build over, so they go first.
       - name: Build the book and the reference
         run: |
+          rm -rf target/book target/reference
           ./target/debug/zuri doc build docs/book --strict
           ./target/debug/zuri doc build docs/reference --strict
         env:
@@ -256,7 +259,9 @@ jobs:
       # The reference's pages are generated rather than committed, and
       # its examples are run along with the book's.
       - name: Generate the reference
-        run: ./target/debug/zuri doc generate docs/reference
+        run: |
+          rm -rf target/reference
+          ./target/debug/zuri doc generate docs/reference
         env:
           ZURI_ROOT: ${{ github.workspace }}
 
