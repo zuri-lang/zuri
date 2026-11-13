@@ -1,0 +1,55 @@
+/**
+ * Turning Markdown into a page: a package's README, and the site's own
+ * help pages.
+ *
+ * The Markdown is read by the standard library's `markdown` module, the
+ * way GitHub reads it: tables, strikethrough, footnotes, alerts, emoji
+ * shortcodes, addresses made into links, and raw HTML. Zuri code blocks
+ * are coloured by the language's own lexer. A task list item keeps its
+ * `[ ]` or `[x]` as text, since the page has no checkbox to give it.
+ *
+ * Everything it produces is passed through `sanitize.clean()` before
+ * it is returned, so what a README can do to the page it is shown on
+ * does not depend on the renderer getting every corner of Markdown
+ * right.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import markdown
+
+import .highlight
+import .sanitize
+
+# The markup for a code block in _language_, coloured when it is Zuri,
+# or `nil` for the renderer to write it plain. Anything after a comma in
+# the fence, as in `zuri,ignore`, is not part of the language.
+def _colour(code: string, language: string) {
+  var name = language.lower().split(',')[0]
+
+  if name == 'zuri' or name == 'zu' {
+    return highlight.zuri_code(code)
+  }
+
+  return nil
+}
+
+var _renderer = markdown({
+  preset: 'gfm',
+  html: true,
+  # The sanitizer removes these elements outright, where the tag filter
+  # would leave them on the page as text.
+  tag_filter: false,
+  task_lists: false,
+  highlight: _colour,
+})
+
+/**
+ * _source_ as safe markup.
+ *
+ * @param string source: Markdown.
+ * @returns string
+ */
+def render(source: string) {
+  return sanitize.clean(_renderer.render(source))
+}

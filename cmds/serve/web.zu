@@ -24,7 +24,7 @@ import .._shared.manifest { DEFAULT_REGISTRY }
 import .._shared.names
 import .._shared.semver
 import .context { fail, iso }
-import .markdown
+import .markup
 import .service
 
 /** Packages per page of a search or a listing. */
@@ -444,7 +444,7 @@ def routes(server, nyssa) {
 
     var readme = shown.readme == nil
         ? nil
-        : wire.safe(markdown.render(shown.readme))
+        : wire.safe(markup.render(shown.readme))
     var tab = request.query_param('tab', TABS[0])
 
     if !TABS.contains(tab) {
@@ -971,7 +971,7 @@ def routes(server, nyssa) {
 
     _page(nyssa, request, response, 'doc', {
       title: entry.title,
-      body: wire.safe(markdown.render(source)),
+      body: wire.safe(markup.render(source)),
       docs: DOCS.map(@(doc) {
         return { slug: doc.slug, title: doc.title, current: doc.slug == slug }
       }),
