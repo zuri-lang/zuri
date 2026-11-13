@@ -753,16 +753,32 @@ def _merge_paths(base, ref_path) {
  *
  * If strict mode is enabled, space character is encoded with the
  * percent (%) sign in order to conform with RFC 3986. Otherwise,
- * is is encoded with the plus (+) sign in order to align with
+ * it is encoded with the plus (+) sign in order to align with
  * the default encoding used by modern browsers.
+ *
+ * The reserved characters `;/:@&$,#*()`, and `=` and `?` in strict
+ * mode, are kept as they are by default, so an address or a path
+ * passes through readable. With _reserved_ `false` they are encoded
+ * too, and only letters, digits and `-_.~` are kept, which is what
+ * one value in a query needs: an `&` or a `#` there would end it.
+ *
+ * ```zuri
+ * import url
+ *
+ * echo url.encode('rain & sun')                # rain+&+sun
+ * echo url.encode('rain & sun', false, false)  # rain+%26+sun
+ * ```
  *
  * @param string url
  * @param ?bool strict: Default value is `false`
+ * @param ?bool reserved: Default `true`. Whether the reserved
+ *    characters are kept as they are.
  * @returns string
  */
-def encode(url: string, strict: ?bool) {
+def encode(url: string, strict: ?bool, reserved: ?bool) {
   var result = ''
   var bytes = url.ascii()
+  var keep_reserved = reserved != false
 
   for c in bytes {
     # keep alphanumeric and other accepted characters intact.
@@ -770,14 +786,15 @@ def encode(url: string, strict: ?bool) {
     # (to '%25') is what makes encode()/decode() a safe round
     # trip for arbitrary text, even text that itself contains a
     # literal '%'.
-    if ';/:@&$,#ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789*-_.~()'.index_of(
-          c.upper(),
-        ) !=
-        -1 {
+    if 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~'.index_of(c.upper()) != -1 {
+      result += c
+    }
+    # the reserved characters, unless they are to be encoded too
+    else if keep_reserved and ';/:@&$,#*()'.index_of(c) != -1 {
       result += c
     }
     # when in strict mode
-    else if strict and '=?'.index_of(c) != -1 {
+    else if strict and keep_reserved and '=?'.index_of(c) != -1 {
       result += c
     }
     # when not in strict mode

@@ -340,6 +340,16 @@ assert url.encode('hello world!') == 'hello+world%21',
     'encode() must use "+" for spaces and escape reserved punctuation'
 assert url.encode('café') == 'caf%C3%A9',
     'encode() must percent-escape multi-byte UTF-8 sequences'
+assert url.encode('a/b?c=d&e#f') == 'a/b%3Fc%3Dd&e#f',
+    'encode() keeps the reserved characters by default'
+assert url.encode('a/b?c=d&e#f', false, false) == 'a%2Fb%3Fc%3Dd%26e%23f',
+    'encode() with reserved false escapes them too, for one query value'
+assert url.encode('x=1?', true) == 'x=1?',
+    'strict encode() keeps "=" and "?" by default'
+assert url.encode('x=1?', true, false) == 'x%3D1%3F',
+    'and escapes them as well when reserved is false'
+assert url.encode('a-b_c.d~e', false, false) == 'a-b_c.d~e',
+    'the unreserved characters are always kept'
 ok('encode()')
 
 assert url.decode('hello%20world%21') == 'hello world!',
