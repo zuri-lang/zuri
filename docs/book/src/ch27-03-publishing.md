@@ -124,7 +124,8 @@ It is the package's API reference, written from the doc blocks in the
 published files the way `zuri doc generate` writes one, with a page for
 each public module ([Chapter 30](ch30-00-documentation.md#generating-an-api-reference)).
 Nothing has to be built or uploaded for it: the registry reads the code
-and never runs it.
+and never runs it. Each name links to the line that declares it, on the
+Source tab, where every file of the version can be read.
 
 ## Yanking
 

@@ -138,24 +138,29 @@ pre {
   line-height: 1.5;
 }
 
-pre .kw {
+pre .kw,
+.code-view .kw {
   color: var(--code-keyword);
 }
 
-pre .str {
+pre .str,
+.code-view .str {
   color: var(--code-string);
 }
 
-pre .num {
+pre .num,
+.code-view .num {
   color: var(--code-number);
 }
 
-pre .com {
+pre .com,
+.code-view .com {
   color: var(--code-comment);
   font-style: italic;
 }
 
-pre .dec {
+pre .dec,
+.code-view .dec {
   color: var(--code-decorator);
 }
 
@@ -1446,4 +1451,81 @@ th.number {
   .api-modules {
     position: static;
   }
+}
+
+/* The Source tab: every file of a version, or one of them, numbered. */
+.source-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 0.88rem;
+}
+
+.source-files li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--edge);
+}
+
+.source-path {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+}
+
+.code-view {
+  overflow-x: auto;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-md);
+  background: var(--paper-2);
+}
+
+.code-view table {
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.code-view td {
+  padding: 0 1rem 0 0;
+  border: 0;
+  vertical-align: top;
+}
+
+.code-view .line-number {
+  width: 1%;
+  padding: 0 0.75rem;
+  text-align: right;
+  color: var(--faint);
+  user-select: none;
+}
+
+.code-view .line-number a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.code-view .line code {
+  padding: 0;
+  background: none;
+  white-space: pre;
+}
+
+.code-view tr:target {
+  background: var(--warn-paper);
+}
+
+.code-view tr:target .line-number {
+  color: var(--ink);
+}
+
+/* A line or a heading an address points at stops clear of the header. */
+.code-view tr,
+.prose :is(h1, h2, h3, h4, h5, h6, li, sup) {
+  scroll-margin-top: 6rem;
 }

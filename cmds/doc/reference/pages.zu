@@ -398,7 +398,8 @@ def _resolve(name: string, module, context) {
   # A name from somewhere else, the standard library or another
   # package, when the caller knows where those are documented.
   if context.resolve != nil {
-    var address = context.resolve(bare)
+    var resolve = context.resolve
+    var address = resolve(bare)
 
     if address != nil {
       return '[`${name}`](${address})'
@@ -415,7 +416,8 @@ def _source(out: list, module, line: number, context) {
     return
   }
 
-  var address = context.source(module, line)
+  var source = context.source
+  var address = source(module, line)
 
   if address != nil {
     out.append('[Source](${address})')

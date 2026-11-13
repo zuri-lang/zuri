@@ -82,6 +82,7 @@ before_all(@{
   )
   write(KIT, 'app/index.zu', APP)
   write(KIT, 'radar.zu', RADAR)
+  write(KIT, 'notes/rain & sun.txt', 'Mostly sun.\n')
   commit(KIT)
 
   var published = world.zuri(['publish', '--registry', world.url], KIT)
@@ -172,5 +173,69 @@ describe('the API tab', @{
 
     expect(page('/packages/weather-kit?tab=api&module=weather_kit-radar'))
         .to_contain('The latest sweep.')
+  })
+})
+
+# The line of _text_ that holds _wanted_, counting from one.
+def line_of(text: string, wanted: string) {
+  var lines = text.split('\n')
+
+  iter var i = 0; i < lines.length(); i++ {
+    if lines[i].contains(wanted) {
+      return i + 1
+    }
+  }
+
+  return -1
+}
+
+describe('the Source tab', @{
+  it('lists every file of the version', @{
+    var shown = page('/packages/weather-kit?tab=source')
+
+    expect(shown).to_contain('aria-current="page">Source</a>')
+    expect(shown)
+        .to_contain('?tab=source&amp;file=app%2Findex.zu">app/index.zu</a>')
+    expect(shown).to_contain('>project.toml</a>')
+    expect(shown).to_contain('>radar.zu</a>')
+  })
+
+  it('shows a file a line at a time, numbered, with Zuri coloured', @{
+    var shown = page('/packages/weather-kit?tab=source&file=app/index.zu')
+    var line = line_of(APP, 'def forecast(')
+
+    expect(shown).to_contain('<tr id="L${line}">')
+    expect(shown).to_contain('<a href="#L${line}">${line}</a>')
+    expect(
+      shown,
+    ).to_contain('<span class="kw">def</span> <span class="id">forecast</span>')
+  })
+
+  it('shows any other text as it is', @{
+    expect(page('/packages/weather-kit?tab=source&file=project.toml'))
+        .to_contain('name = "weather-kit"')
+  })
+
+  it('reaches a file whose name would end a query value', @{
+    var listed = page('/packages/weather-kit?tab=source')
+
+    expect(listed).to_contain('?tab=source&amp;file=notes%2Frain+%26+sun.txt"')
+    expect(
+      page('/packages/weather-kit?tab=source&file=notes%2Frain+%26+sun.txt'),
+    ).to_contain('Mostly sun.')
+  })
+
+  it('says so when the version has no such file', @{
+    expect(page('/packages/weather-kit?tab=source&file=../../etc/passwd'))
+        .to_contain('This version has no file called ../../etc/passwd.')
+  })
+
+  it("is where a name's Source link on its API page leads", @{
+    var shown = page('/packages/weather-kit?tab=api&module=weather_kit-app')
+    var line = line_of(APP, 'def forecast(')
+
+    expect(shown).to_contain(
+      'href="/packages/weather-kit/0.1.0?tab=source&amp;file=app%2Findex.zu#L${line}">Source</a>',
+    )
   })
 })

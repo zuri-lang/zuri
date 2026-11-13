@@ -16,6 +16,7 @@
         <nav class="tabs" aria-label="Package">
           <a href="{{ base }}" x-attr="{ 'aria-current': tab == 'readme' ? 'page' : nil }">Readme</a>
           <a href="{{ base }}?tab=api" x-attr="{ 'aria-current': tab == 'api' ? 'page' : nil }">API</a>
+          <a href="{{ base }}?tab=source" x-attr="{ 'aria-current': tab == 'source' ? 'page' : nil }">Source</a>
           <a href="{{ base }}?tab=versions" x-attr="{ 'aria-current': tab == 'versions' ? 'page' : nil }">Versions<span class="count">{{ versions|length }}</span></a>
           <a href="{{ base }}?tab=dependencies" x-attr="{ 'aria-current': tab == 'dependencies' ? 'page' : nil }">Dependencies<span class="count">{{ dependencies|length }}</span></a>
         </nav>
@@ -58,6 +59,22 @@
               <article class="prose">{{ api.page }}</article>
             </div>
             <p class="empty" x-not="api.modules">{{ package.name }} {{ version.version }} has no public modules to document.</p>
+          </template>
+          <template x-elif="tab == 'source'">
+            <template x-if="source.file">
+              <p class="source-path"><a href="{{ base }}?tab=source">All files</a> <span aria-hidden="true">/</span> <code>{{ source.file.path }}</code></p>
+              <p class="empty" x-if="source.file.note">{{ source.file.note }}</p>
+              <div class="code-view" x-if="source.file.lines">
+                <table>
+                  <tbody>
+                    <tr x-for="source.file.lines" x-value="line" id="L{{ line.number }}"><td class="line-number"><a href="#L{{ line.number }}">{{ line.number }}</a></td><td class="line"><code>{{ line.html }}</code></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+            <ul class="source-files" x-else>
+              <li x-for="source.files" x-value="entry"><a href="{{ entry.url }}">{{ entry.path }}</a> <span class="meta">{{ entry.size|filesize }}</span></li>
+            </ul>
           </template>
           <template x-elif="tab == 'dependencies'">
             <div class="table-wrap" x-if="dependencies">

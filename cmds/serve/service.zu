@@ -10,9 +10,11 @@
  */
 
 import crypto
+import io
 import json
 import os
 import toml
+import url
 
 import .._shared.archive
 import .._shared.fsx
@@ -373,7 +375,9 @@ def publish(nyssa, token: dict, data: bytes, metadata: dict, address: string) {
     var package = nyssa.db.package_by_name(key)
 
     _document(nyssa, name, nyssa.db.version_of(package.id, version_key), files)
-  } as error {}
+  } as error {
+    _not_documented(name, version, error)
+  }
 
   return published
 }
@@ -1132,16 +1136,29 @@ def index(nyssa, name: string) {
   return { name: package.name, versions }
 }
 
+# How many archives each worker keeps read, for showing their files.
+var _KEPT = 8
+
+# The archives read most recently, by checksum, newest last.
+var _archives = {}
+
 /**
  * The files of a published version, read from its archive: each path,
  * written with `/`, to what it holds. Empty when the archive is not
- * here.
+ * here. The last few read are kept, since a reader looking through a
+ * package's source asks for one file after another.
  *
  * @param nyssa
  * @param dict version: the version's row.
  * @returns dict
  */
 def files_of(nyssa, version: dict) {
+  var kept = _archives.get(version.checksum, nil)
+
+  if kept != nil {
+    return kept
+  }
+
   var path = nyssa.blobs.path_of(version.checksum)
   var files = {}
 
@@ -1155,7 +1172,34 @@ def files_of(nyssa, version: dict) {
     }
   })
 
+  if _archives.length() >= _KEPT {
+    _archives.remove(_archives.keys()[0])
+  }
+
+  _archives.set(version.checksum, files)
+
   return files
+}
+
+# Which pages the repository has written: the generator's version, and
+# what it asks of the generator, such as links to the source, so that a
+# change to either has the pages written again.
+var _WRITER = reference.GENERATOR * 100 + 1
+
+/**
+ * The address of a package's source file, at _line_ when one is given:
+ * the version's page with its Source tab open on the file.
+ *
+ * @param string name: the package's name.
+ * @param string version
+ * @param string path: the file's path in the package, with `/`.
+ * @param ?number line
+ * @returns string
+ */
+def source_address(name: string, version: string, path: string, line: ?number) {
+  var address = '/packages/${name}/${version}?tab=source&file=${url.encode(path, false, false)}'
+
+  return line == nil or line < 1 ? address : '${address}#L${line}'
 }
 
 # Writes the API reference of _version_, a row, of the package called
@@ -1165,12 +1209,19 @@ def _document(nyssa, name: string, version: dict, files: dict) {
     files.keys(),
     @(path) => files.get(path).to_string(),
     names.import_name(name),
-    nil,
+    {
+      source: @(module, line) => source_address(
+        name,
+        version.version,
+        module.path,
+        line,
+      ),
+    },
   )
 
   nyssa.db.transaction(@{
     nyssa.db.save_docs(version.id, {
-      generator: reference.GENERATOR,
+      generator: _WRITER,
       names: result.coverage.names,
       documented: result.coverage.documented,
       modules: result.pages.map(
@@ -1195,7 +1246,7 @@ def _document(nyssa, name: string, version: dict, files: dict) {
 def docs_for(nyssa, name: string, version: dict) {
   var docs = nyssa.db.docs_of(version.id)
 
-  if docs != nil and docs.generator == reference.GENERATOR {
+  if docs != nil and docs.generator == _WRITER {
     return docs
   }
 
@@ -1203,7 +1254,21 @@ def docs_for(nyssa, name: string, version: dict) {
   # fails on the first one's rows, which are just as good.
   catch {
     _document(nyssa, name, version, files_of(nyssa, version))
-  } as error {}
+  } as error {
+    docs = nyssa.db.docs_of(version.id)
+
+    if docs == nil or docs.generator != _WRITER {
+      _not_documented(name, version.version, error)
+    }
+  }
 
   return nyssa.db.docs_of(version.id)
+}
+
+# Tells whoever runs the repository that a version's reference could not
+# be written, and why. Nothing a visitor sees depends on it.
+def _not_documented(name: string, version: string, error) {
+  io.stderr.write(
+    'the API reference of ${name} ${version} could not be written: ${typeof(error)}: ${error.message}\n',
+  )
 }

@@ -14,9 +14,11 @@
 import crypto
 import date
 import hash
+import html
 import http.util { secure_equals }
 import json
 import os
+import url
 import wire
 
 import .._shared.fsx
@@ -24,6 +26,7 @@ import .._shared.manifest { DEFAULT_REGISTRY }
 import .._shared.names
 import .._shared.semver
 import .context { fail, iso }
+import .highlight
 import .markup
 import .service
 
@@ -72,7 +75,10 @@ var LINKS = {
 var TOP_KEYWORDS = 24
 
 /** The tabs a package page has, the first shown when none is asked for. */
-var TABS = ['readme', 'api', 'versions', 'dependencies']
+var TABS = ['readme', 'api', 'source', 'versions', 'dependencies']
+
+/** The largest file the Source tab shows: 512 KiB. */
+var MAX_SOURCE = 524288
 
 # A link on a page of the API reference, which is written to another
 # module's page as `slug.md`, as the API tab at _base_ reaches it. The
@@ -128,6 +134,86 @@ def _api(nyssa, request, name: string, version: dict, base: string) {
               @(destination) => _api_link(destination, base),
             ),
           ),
+  }
+}
+
+# What the Source tab shows for _version_ of the package at _base_: every
+# file the version holds, or the one asked for, a line at a time.
+def _source(request, files: dict, base: string) {
+  var paths = files.keys()
+
+  paths.sort()
+
+  var wanted = request.query_param('file', nil)
+  var listing = paths.map(
+    @(path) => {
+      path,
+      url: '${base}?tab=source&file=${url.encode(path, false, false)}',
+      size: files.get(path).length(),
+    },
+  )
+
+  if wanted == nil {
+    return { files: listing, file: nil }
+  }
+
+  if !files.contains(wanted) {
+    return {
+      files: listing,
+      file: {
+        path: wanted,
+        lines: nil,
+        note: 'This version has no file called ${wanted}.',
+      },
+    }
+  }
+
+  var data = files.get(wanted)
+
+  if data.length() > MAX_SOURCE {
+    return {
+      files: listing,
+      file: {
+        path: wanted,
+        lines: nil,
+        note: 'This file is too large to show here.',
+      },
+    }
+  }
+
+  var text = nil
+
+  catch {
+    text = data.to_string()
+  } as error {}
+
+  if text == nil or text.contains('\0') {
+    return {
+      files: listing,
+      file: { path: wanted, lines: nil, note: 'This file is not text.' },
+    }
+  }
+
+  var lines = wanted.ends_with('.zu') ? highlight.zuri_lines(text) : nil
+
+  if lines == nil {
+    lines = text.split('\n').map(@(line) => html.escape_text(line))
+  }
+
+  # The line break that ends the last line starts no line of its own.
+  if lines.length() > 1 and text.ends_with('\n') {
+    lines.pop()
+  }
+
+  var numbered = []
+
+  iter var i = 0; i < lines.length(); i++ {
+    numbered.append({ number: i + 1, html: wire.safe(lines[i]) })
+  }
+
+  return {
+    files: listing,
+    file: { path: wanted, lines: numbered, note: nil },
   }
 }
 
@@ -520,6 +606,9 @@ def routes(server, nyssa) {
       tab,
       base,
       api: tab == 'api' ? _api(nyssa, request, package.name, shown, base) : nil,
+      source: tab == 'source'
+          ? _source(request, service.files_of(nyssa, shown), base)
+          : nil,
       latest: package.latest,
       manifest_line: _manifest_line(nyssa, package.name, shown.version),
       package: {
