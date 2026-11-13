@@ -230,11 +230,6 @@ jobs:
         env:
           ZURI_ROOT: ${{ github.workspace }}
 
-      - name: Check every link and anchor
-        run: ./target/debug/zuri run docs/tools/links.zu
-        env:
-          ZURI_ROOT: ${{ github.workspace }}
-
   examples:
     name: examples
     runs-on: ubuntu-latest

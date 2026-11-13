@@ -237,7 +237,6 @@ tag ends. These programs serve both:
 | [`audit.zu`](tools/audit.zu) | checks every doc block in `libs/` and `cmds/` |
 | [`verify.zu`](tools/verify.zu) | runs every example and compares its output |
 | [`blocks.zu`](tools/blocks.zu) | pulls each runnable example, and the output it claims, out of a page for `verify.zu` |
-| [`links.zu`](tools/links.zu) | checks that every internal link and anchor resolves |
 | [`site.zu`](tools/site.zu) | builds the book and the reference with `zuri doc` and lays out the website, for the `cargo` aliases |
 
 [`tools/book`](tools/book) generates the book's appendices. It writes its
@@ -275,11 +274,12 @@ renderers are defensive enough to produce a usable page and a stale one
 helps nobody, but the problem is reported so it is not missed: the
 appendix generator exits non-zero, and `site.zu` prints a warning.
 
-Links are checked separately, across the book and the reference at once:
+Links are checked by `zuri doc` itself as it builds, against the pages
+and heading ids it actually wrote. A strict build fails over one that
+leads nowhere, which is how CI keeps them whole:
 
 ```console
-$ zuri run docs/tools/links.zu
-... pages checked, every link resolves
+$ zuri doc build docs/book --strict
 ```
 
 The images in the Imagine chapter are produced by
