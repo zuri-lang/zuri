@@ -12,7 +12,7 @@ describe('render', @{
       '# Weather\n\nSome *rain* and ~~sun~~.\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n',
     )
 
-    expect(page).to_contain('<h1>Weather</h1>')
+    expect(page).to_contain('<h1 id="user-content-weather">Weather</h1>')
     expect(page).to_contain('<em>rain</em>')
     expect(page).to_contain('<del>sun</del>')
     expect(page).to_contain('<td>1</td>')
@@ -30,8 +30,44 @@ describe('render', @{
     expect(render('```sh\necho <hi>\n```\n')).to_contain('echo &lt;hi&gt;')
   })
 
-  it('keeps a task list item as written', @{
-    expect(render('- [x] done\n')).to_contain('<li>[x] done</li>')
+  it('shows a task list as checkboxes nobody can tick', @{
+    var page = render('- [x] done\n- [ ] not\n')
+
+    expect(page)
+        .to_contain('<li><input type="checkbox" checked disabled> done</li>')
+    expect(page).to_contain('<li><input type="checkbox" disabled> not</li>')
+  })
+
+  it('keeps no input but a checkbox, and nothing a checkbox carries', @{
+    var page = render(
+      '<input type="text" value="secret"> <input type="checkbox" onclick="steal()" name="x">\n',
+    )
+
+    expect(page).not.to_contain('text')
+    expect(page).not.to_contain('steal')
+    expect(page).to_contain('<input type="checkbox" disabled>')
+  })
+
+  it("links a footnote to the note under the README's own ids", @{
+    var page = render('Rain[^1].\n\n[^1]: Mostly.\n')
+
+    expect(
+      page,
+    ).to_contain('<a href="#user-content-fn-1" id="user-content-fnref-1">1</a>')
+    expect(page).to_contain('<li id="user-content-fn-1">')
+  })
+
+  it('takes a contents link to its heading', @{
+    var page = render('## Install\n\nSee [Install](#install).\n')
+
+    expect(page).to_contain('<h2 id="user-content-install">Install</h2>')
+    expect(page).to_contain('<a href="#user-content-install">Install</a>')
+  })
+
+  it('never gives the page an id of its own choosing', @{
+    expect(render('<p id="header">Hi</p>\n<a name="top"></a>\n'))
+        .to_contain('<p id="user-content-header">Hi</p>')
+    expect(render('<a name="top"></a>\n')).to_contain('name="user-content-top"')
   })
 
   it('makes addresses into links that lend the site nothing', @{

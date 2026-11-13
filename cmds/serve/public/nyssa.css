@@ -1173,6 +1173,16 @@ th.number {
   border-top: 1px solid var(--edge);
 }
 
+/* A task list's item shows its checkbox in place of a bullet. */
+.prose li:has(> input[type="checkbox"]) {
+  list-style: none;
+}
+
+.prose li > input[type="checkbox"] {
+  margin: 0 0.4rem 0 -1.3rem;
+  vertical-align: middle;
+}
+
 .docs {
   display: grid;
   grid-template-columns: 15rem minmax(0, 1fr);

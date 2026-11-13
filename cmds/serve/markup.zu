@@ -3,10 +3,10 @@
  * help pages.
  *
  * The Markdown is read by the standard library's `markdown` module, the
- * way GitHub reads it: tables, strikethrough, footnotes, alerts, emoji
- * shortcodes, addresses made into links, and raw HTML. Zuri code blocks
- * are coloured by the language's own lexer. A task list item keeps its
- * `[ ]` or `[x]` as text, since the page has no checkbox to give it.
+ * way GitHub reads it: tables, task lists, strikethrough, footnotes,
+ * alerts, emoji shortcodes, addresses made into links, and raw HTML.
+ * Headings get GitHub's ids, so a README's own contents links reach
+ * them. Zuri code blocks are coloured by the language's own lexer.
  *
  * Everything it produces is passed through `sanitize.clean()` before
  * it is returned, so what a README can do to the page it is shown on
@@ -40,7 +40,7 @@ var _renderer = markdown({
   # The sanitizer removes these elements outright, where the tag filter
   # would leave them on the page as text.
   tag_filter: false,
-  task_lists: false,
+  heading_ids: 'github',
   highlight: _colour,
 })
 
