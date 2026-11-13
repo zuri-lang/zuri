@@ -678,9 +678,20 @@ def routes(server, nyssa) {
 
   # The reference of the standard library the repository runs on.
   var show_std = @(request, response, slug) {
-    service.document_stdlib(nyssa)
-
     var runtime = service.runtime_key()
+
+    if !nyssa.db.std_ready(runtime) {
+      _message(
+        nyssa,
+        request,
+        response,
+        'Not ready yet',
+        "The standard library's reference is being written. Try again in a moment.",
+        503,
+      )
+
+      return
+    }
     var row = slug == nil ? nil : nyssa.db.std_page(runtime, slug)
 
     if slug != nil and row == nil {

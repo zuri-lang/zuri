@@ -629,6 +629,11 @@ class Database {
    * Stores the reference of the standard library _runtime_ names, and
    * clears the one of any other.
    *
+   * It is thousands of rows, so they go in a few at a time rather than
+   * in one transaction, which would keep every other writer waiting for
+   * as long as it took. The pages go last: `std_ready()` asks whether
+   * they are there, so it answers yes only once the rest is too.
+   *
    * @param string runtime
    * @param list pages: `{ slug, name, summary, markdown }` each.
    * @param dict index: each path documented to `{ page, anchor }`.
@@ -639,19 +644,6 @@ class Database {
     for table in ['std_pages', 'std_index', 'std_symbols'] {
       self.connection.delete(table, {})
     }
-
-    self.connection.insert_many(
-      'std_pages',
-      pages.map(
-        @(page) => {
-          runtime,
-          slug: page.slug,
-          name: page.name,
-          summary: page.summary,
-          markdown: page.markdown,
-        },
-      ),
-    )
 
     var entries = []
 
@@ -672,6 +664,18 @@ class Database {
           page: symbol.page,
           anchor: symbol.anchor,
           summary: symbol.summary,
+        },
+      ),
+    )
+    self.connection.insert_many(
+      'std_pages',
+      pages.map(
+        @(page) => {
+          runtime,
+          slug: page.slug,
+          name: page.name,
+          summary: page.summary,
+          markdown: page.markdown,
         },
       ),
     )

@@ -74,9 +74,16 @@ before_all(@{
   world.start()
 
   # The standard library's reference is written as the repository
-  # starts; asking for it waits until it is there, so the packages
-  # published below link to it.
-  page('/std')
+  # starts. The packages published below link to it once it is there.
+  var deadline = time() + 120
+
+  while !page('/std').contains('<h1>The standard library</h1>') {
+    if time() > deadline {
+      raise Error("the standard library's reference was not written")
+    }
+
+    os.sleep(0.2)
+  }
   world.account('ada', world.dir('signin'))
 
   KIT = world.project('weather-kit')
