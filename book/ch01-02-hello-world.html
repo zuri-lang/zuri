@@ -1,0 +1,476 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hello, World! · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch01-02-hello-world.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="gold" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item open"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="true" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html" aria-current="page"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>1.2 · Getting Started</p>
+        <div class="content"><h1 id="hello-world">Hello, World!</h1>
+<p>Make a directory, put one file in it, and run it.</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">mkdir</span> hello
+<span class="prompt">$ </span><span class="fn">cd</span> hello
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>Create a file called <code>main.zu</code>. The <code>.zu</code> extension is what the runtime
+looks for when resolving imports, so get in the habit early.</p>
+<figure class="code has-caption"><figcaption>main.zu</figcaption><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'Hello, world!'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Run it:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> run main.zu
+<span class="out">Hello, world!</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>That is the whole program. No <code>main</code> function, no imports, no boilerplate.
+A Zuri file is a script, and its top level is code that runs.</p>
+<h2 id="anatomy-of-one-line"><a class="anchor" href="#anatomy-of-one-line" aria-hidden="true" tabindex="-1"></a>Anatomy of One Line</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'Hello, world!'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>echo</code> is a <strong>keyword</strong>, not a function. You do not write <code>echo(...)</code>, you
+write <code>echo</code> followed by an expression. It prints the value and adds a
+newline.</p>
+<p>Strings are written between single or double quotes, and the two are
+identical in meaning. Most Zuri code uses single quotes and saves double
+quotes for strings that contain an apostrophe.</p>
+<p>There is no semicolon. Zuri ends a statement at the end of the line. You
+<em>can</em> write a semicolon if you want two statements on one line, but almost
+nobody does.</p>
+<h2 id="echo-and-print"><a class="anchor" href="#echo-and-print" aria-hidden="true" tabindex="-1"></a><code>echo</code> and <code>print</code></h2>
+<p>There is also a <code>print()</code> function, and the difference is worth learning
+now because it bites people later.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'first'</span>
+<span class="kw">echo</span> <span class="str">'second'</span>
+
+<span class="bi">print</span>(<span class="str">'third'</span>)
+<span class="bi">print</span>(<span class="str">'fourth\n'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">first
+second
+thirdfourth
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>echo</code> appends a newline; <code>print()</code> does not, and it takes any number of
+arguments. Use <code>echo</code> for output meant for a human reading a terminal, and
+<code>print()</code> when you are assembling output character by character.</p>
+<h2 id="running-a-directory"><a class="anchor" href="#running-a-directory" aria-hidden="true" tabindex="-1"></a>Running a Directory</h2>
+<p><code>run</code> takes a directory as readily as a file. Point it at one and it
+looks for <code>index.zu</code> inside and runs that:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> run hello
+<span class="out">Hello, world!</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>If there is no <code>index.zu</code>, you get told so plainly:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> run hello
+<span class="out">(Zuri):</span>
+<span class="out">  Launch aborted for hello</span>
+<span class="out">  Reason: No entrypoint found in the directory</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>This is the same rule the module system uses for packages, which we will
+get to in <a href="ch08-00-modules.html">Chapter 8</a>. A directory with an <code>index.zu</code>
+is a unit you can run <em>or</em> import.</p>
+<p>Leave the path off and <code>run</code> launches the directory you are standing in,
+which is how a project is usually started:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">cd</span> hello
+<span class="prompt">$ </span><span class="fn">zuri</span> run
+<span class="out">Hello, world!</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>Everything after the path belongs to the program rather than to <code>zuri</code>,
+so a script reads its own flags exactly as it would anywhere else:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> run main.zu <span class="attr">--name</span> Ada <span class="attr">--verbose</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p><a href="ch20-00-args.html">Chapter 20</a> covers reading them.</p>
+<h2 id="running-it-again-on-every-change"><a class="anchor" href="#running-it-again-on-every-change" aria-hidden="true" tabindex="-1"></a>Running It Again on Every Change</h2>
+<p>While you work on a program, <code>--watch</code>, or <code>-w</code> for short, keeps it
+running and starts it again from the top each time a file it uses
+changes:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> run <span class="attr">-w</span>
+<span class="out">watching index.zu and the files it uses, Ctrl+C to stop</span>
+<span class="out">Hello, world!</span>
+<span class="out">index.zu finished, waiting for a change</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>The files it uses are the entry file and every module imported from it,
+the <a href="ch14-00-wire.html">Wire</a> templates it renders, and the project's
+<code>project.toml</code> and <code>.env</code> files. Zuri learns the first two from the
+program as it runs, so a module imported only halfway through is watched
+from the moment it loads. Files the program writes itself, such as logs,
+databases and uploads, never restart it.</p>
+<p>The lines watch mode adds go to standard error, so the program's own
+output can still be piped on its own. A program that exits waits there
+for the next change, and one that fails to start because of a mistake is
+started again as soon as the mistake is fixed. Ctrl+C stops both the
+program and watch mode.</p>
+<p>The flag goes straight after <code>run</code>. After the path it belongs to the
+program like every other argument, so <code>zuri run . -w</code> hands <code>-w</code> to the
+program.</p>
+<h2 id="starting-a-project"><a class="anchor" href="#starting-a-project" aria-hidden="true" tabindex="-1"></a>Starting a Project</h2>
+<p>One file is where everybody starts, and it stops being enough about as
+soon as there are two of them. <code>zuri init</code> writes the layout a project
+grows into:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> init myproject
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>Run in a terminal, it asks what the project is called, what version it
+starts at and who wrote it, offering an answer to each. Press enter to
+take what it offers. Run anywhere there is nobody to ask — a script, a
+CI job — it takes those answers itself, which <code>--yes</code> also says
+outright.</p>
+<p>What it leaves behind:</p>
+<figure class="code"><pre><code class="language-text">myproject/
+  project.toml          what the project is
+  index.zu              the entry point
+  app/
+    index.zu            the application
+  tests/
+    app.test.zu         its tests
+  README.md
+  .gitignore
+  .gitattributes
+</code></pre></figure>
+<p>It runs, and its tests pass, before you have written anything:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">cd</span> myproject
+<span class="prompt">$ </span><span class="fn">zuri</span> run
+<span class="out">Hello, world!</span>
+<span class="prompt">$ </span><span class="fn">zuri</span> test
+
+<span class="out">  zuri test  1 file in tests</span>
+
+<span class="out">   PASS   app.test.zu  36ms  2 tests</span>
+
+<span class="out">  1 file</span>
+<span class="out">  2 passed  •  2 total</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>The root <code>index.zu</code> is two things at once:</p>
+<figure class="code has-caption"><figcaption>index.zu</figcaption><pre><code class="language-zuri"><span class="kw">import</span> <span class="meta">@</span>.<span class="prop">app</span> { <span class="op">*</span> }
+
+<span class="kw">if</span> __root__ <span class="op">==</span> __file__ {
+  <span class="fn">main</span>()
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The import re-exports everything <code>app</code> declares, so another project can
+<code>import myproject</code> and reach all of it. The <code>if</code> starts the application,
+but only when this file is the one that was run: <code>__root__</code> is the file
+<code>zuri</code> was pointed at, and <code>__file__</code> is the file the line is written
+in. Importing the project leaves <code>main()</code> alone. That is the Zuri
+spelling of a main guard, and it is worth knowing early because every
+runnable package uses it.</p>
+<p><code>app/index.zu</code> is the application itself. Whatever it exports, the
+project exports:</p>
+<figure class="code has-caption"><figcaption>app/index.zu</figcaption><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">greet</span>(name<span class="op">:</span> <span class="op">?</span>string) {
+  <span class="kw">return</span> <span class="str">'Hello, </span><span class="subst">${</span>name <span class="kw">or</span> <span class="str">"world"</span><span class="subst">}</span><span class="str">!'</span>
+}
+
+<span class="kw">def</span> <span class="def">main</span>() {
+  <span class="kw">echo</span> <span class="fn">greet</span>()
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>project.toml</code> is what the project is, for anything that reads it:</p>
+<figure class="code"><pre><code class="language-toml"><span class="sect">[project]</span>
+<span class="key">name</span> <span class="op">=</span> <span class="str">"myproject"</span>
+<span class="key">version</span> <span class="op">=</span> <span class="str">"0.1.0"</span>
+<span class="key">description</span> <span class="op">=</span> <span class="str">""</span>
+<span class="key">authors</span> <span class="op">=</span> [<span class="str">"Ada Lovelace &lt;ada@example.com&gt;"</span>]
+<span class="key">license</span> <span class="op">=</span> <span class="str">"MIT"</span>
+
+<span class="sect">[dependencies]</span>
+</code></pre><span class="code-label">TOML</span></figure>
+<p>The name comes from the directory, the author from <code>git config</code>, and a
+git repository is created unless there is already one above. <code>zuri init --help</code> has the rest, and every question it asks has a flag that answers
+it:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> init myproject <span class="attr">--name</span> web-server <span class="attr">--license</span> Apache-2.0 <span class="attr">--yes</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>Run inside a directory that already has files, <code>init</code> adds what is
+missing and writes over nothing. Run where a project already is, it
+refuses rather than overwrite one.</p>
+<p><a href="ch08-00-modules.html">Chapter 8</a> is where packages and re-exports are
+covered properly, and <a href="ch25-00-task-board.html">Chapter 25</a> grows this
+layout into a full application.</p>
+<h2 id="formatting"><a class="anchor" href="#formatting" aria-hidden="true" tabindex="-1"></a>Formatting</h2>
+<p><code>zuri fmt</code> lays out Zuri source in one house style: two spaces to a
+level, one statement to a line, an explicit block wherever one belongs,
+spacing the way a reader expects it, and lines past eighty columns broken
+where the expression holds together least. Where a line breaks follows
+the rules of the Dart formatter: a list of arguments or items stays on
+one line when it fits and otherwise takes one item to a line, a list or
+dictionary holding another one always opens out, as <code>rooms</code> does below,
+and a single function or collection among a call's arguments opens out
+on its own, as in <code>each(items, @{</code>. The layout comes from the code alone, so
+where you broke a line inside an expression makes no difference, though
+the blank lines you left between statements stay.</p>
+<p>Here is a file written in a hurry:</p>
+<figure class="code has-caption"><figcaption>rooms.zu</figcaption><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">area</span>(width, height) {
+  <span class="kw">return</span> width <span class="op">*</span> height
+}
+
+<span class="kw">var</span> rooms <span class="op">=</span> [
+  [<span class="num">3</span>, <span class="num">4</span>],
+  [<span class="num">5</span>, <span class="num">6</span>],
+]
+<span class="kw">for</span> room <span class="kw">in</span> rooms {
+  <span class="kw">echo</span> <span class="fn">area</span>(room[<span class="num">0</span>], room[<span class="num">1</span>])
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> fmt rooms.zu
+<span class="out">formatted rooms.zu</span>
+<span class="out">Formatted 1 file.</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<figure class="code has-caption"><figcaption>rooms.zu</figcaption><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">area</span>(width, height) {
+  <span class="kw">return</span> width <span class="op">*</span> height
+}
+
+<span class="kw">var</span> rooms <span class="op">=</span> [
+  [<span class="num">3</span>, <span class="num">4</span>],
+  [<span class="num">5</span>, <span class="num">6</span>],
+]
+<span class="kw">for</span> room <span class="kw">in</span> rooms {
+  <span class="kw">echo</span> <span class="fn">area</span>(room[<span class="num">0</span>], room[<span class="num">1</span>])
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Given a directory, <code>zuri fmt</code> formats every <code>.zu</code> file beneath it apart
+from the packages a project has installed, and with no path at all it
+formats the current directory. It never changes what a program does:
+before it writes a file, it parses its own result and checks that the
+program and every comment in it are exactly what it started with, and a
+file it cannot format that way is left as it was.</p>
+<p><code>--dry-run</code> writes nothing. It names each file that would change, and
+exits with status 1 when any would, which is the check a commit hook or
+a CI job wants:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> fmt <span class="attr">--dry-run</span>
+<span class="out">would format /home/ada/myproject/app/extra.zu</span>
+<span class="out">1 file would change. 3 files were already formatted.</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>Your editor runs the same formatter through the language server, on a
+whole file or a selection; <a href="ch29-00-editors.html">Chapter 29</a> sets that
+up.</p>
+<h2 id="commands"><a class="anchor" href="#commands" aria-hidden="true" tabindex="-1"></a>Commands</h2>
+<p>A first word that is not <code>run</code> names a command instead of a path:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> greet Ada
+<span class="out">Hello, Ada!</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>A command is a <code>.zu</code> file, or a directory with an <code>index.zu</code>, sitting in
+a <code>cmds</code> directory. A project keeps its own in <code>.zuri/cmds</code>, so either of
+these answers to <code>zuri greet</code>:</p>
+<figure class="code"><pre><code class="language-text">.zuri/cmds/greet.zu           # a command in one file
+.zuri/cmds/greet/index.zu     # a command with room to grow
+</code></pre></figure>
+<p>The directory wins if both are there, so a command that has outgrown one
+file takes over the name as soon as its <code>index.zu</code> lands. Until then the
+directory is not a command, and the file goes on answering.</p>
+<p>The commands the runtime itself ships live in the <code>cmds</code> directory beside
+the executable, and those win over a project's. Everything after the name
+is forwarded to the command untouched, flags included.</p>
+<p>A name that matches nothing is refused rather than guessed at:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> gret Ada
+<span class="out">(Zuri):</span>
+<span class="out">  Launch aborted for gret</span>
+<span class="out">  Reason: Unknown command</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>A command says what it is in its own doc block, with two tags. <code>zuri --help</code> lists every command it can reach by exactly those:</p>
+<figure class="code has-caption"><figcaption>.zuri/cmds/greet.zu</figcaption><pre><code class="language-zuri"><span class="com">/**
+ * </span><span class="doctag">@command</span><span class="com"> greet
+ * </span><span class="doctag">@description</span><span class="com"> Say hello to somebody by name.
+ */</span>
+
+<span class="kw">import</span> os
+
+<span class="kw">echo</span> <span class="str">'Hello, </span><span class="subst">${</span>os.<span class="prop">args</span>[<span class="num">2</span>]<span class="subst">}</span><span class="str">!'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> <span class="attr">--help</span>
+<span class="out">Zuri 0.1.0 (running on ZuriVM 0.1.0)</span>
+<span class="out">Build No. =&gt; 2026-09-10 23:19:10 UTC</span>
+
+<span class="out">Usage: zuri                    start the interactive REPL</span>
+<span class="out">       zuri run [PATH]         run a script, a package, or this directory</span>
+<span class="out">       zuri run -w [PATH]      run it again whenever a file it uses changes</span>
+<span class="out">       zuri &lt;command&gt; [ARGS]   run a command</span>
+
+<span class="out">OPTIONS:</span>
+<span class="out">  -h, --help     Show this help message and exit</span>
+<span class="out">  -v, --version  Show version information and exit</span>
+
+<span class="out">COMMANDS:</span>
+<span class="out">  format  Lay out Zuri source in the project style.</span>
+<span class="out">  init    Scaffold a new Zuri project.</span>
+<span class="out">  test    Run a project's test files, each in its own process.</span>
+
+<span class="out">PROJECT COMMANDS:</span>
+<span class="out">  greet   Say hello to somebody by name.</span>
+
+<span class="out">Run "zuri &lt;command&gt; --help" for help on a specific command.</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>A description too long for one line carries on below it, indented:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="com">/**
+ * </span><span class="doctag">@command</span><span class="com"> deploy
+ * </span><span class="doctag">@description</span><span class="com"> Ship the current build to staging, then wait for
+ *    the health check to come back green.
+ */</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Two flags sit outside all of this and run nothing. <code>zuri --help</code> is the
+listing above, and <code>zuri --version</code> reports just the build:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> <span class="attr">--version</span>
+<span class="out">Zuri 0.1.0 (running on ZuriVM 0.1.0)</span>
+<span class="out">Build No. =&gt; 2026-09-10 23:19:10 UTC</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>Both take the short spelling too, <code>-h</code> and <code>-v</code>.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch01-02-hello-world.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch01-01-installation.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">1.1</span>Installation</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch01-03-the-repl.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">1.3</span>The REPL</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#anatomy-of-one-line">Anatomy of One Line</a>
+        </li><li class="level-2">
+          <a href="#echo-and-print"><code>echo</code> and <code>print</code></a>
+        </li><li class="level-2">
+          <a href="#running-a-directory">Running a Directory</a>
+        </li><li class="level-2">
+          <a href="#running-it-again-on-every-change">Running It Again on Every Change</a>
+        </li><li class="level-2">
+          <a href="#starting-a-project">Starting a Project</a>
+        </li><li class="level-2">
+          <a href="#formatting">Formatting</a>
+        </li><li class="level-2">
+          <a href="#commands">Commands</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

@@ -1,0 +1,1020 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Testing · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch23-00-testing.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="gold" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html" aria-current="page"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Chapter 23 · Going Deeper</p>
+        <div class="content"><h1 id="testing">Testing</h1>
+<p>A test is a program that runs your program and says whether it did the
+right thing. The <code>test</code> module gives you the pieces: a way to name and
+group tests, a way to state what you expected, and a report that tells
+you which expectation failed and where.</p>
+<p>Nothing needs installing. <code>import test</code> and you have it.</p>
+<h2 id="your-first-test"><a class="anchor" href="#your-first-test" aria-hidden="true" tabindex="-1"></a>Your First Test</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> test { <span class="op">*</span> }
+
+<span class="kw">def</span> <span class="def">subtotal</span>(items) {
+  <span class="kw">return</span> items.<span class="fn">reduce</span>(<span class="meta">@</span>(total, item) {
+    <span class="kw">return</span> total <span class="op">+</span> item.<span class="prop">price</span> <span class="op">*</span> item.<span class="prop">quantity</span>
+  }, <span class="num">0</span>)
+}
+
+<span class="fn">describe</span>(<span class="str">'subtotal'</span>, <span class="meta">@</span>{
+
+  <span class="fn">it</span>(<span class="str">'is zero for an empty cart'</span>, <span class="meta">@</span>{
+    <span class="fn">expect</span>(<span class="fn">subtotal</span>([])).<span class="fn">to_be</span>(<span class="num">0</span>)
+  })
+
+  <span class="fn">it</span>(<span class="str">'multiplies price by quantity'</span>, <span class="meta">@</span>{
+    <span class="fn">expect</span>(
+      <span class="fn">subtotal</span>([
+        { price<span class="op">:</span> <span class="num">250</span>, quantity<span class="op">:</span> <span class="num">3</span> },
+      ]),
+    ).<span class="fn">to_be</span>(<span class="num">750</span>)
+  })
+
+  <span class="fn">it</span>(<span class="str">'adds every line together'</span>, <span class="meta">@</span>{
+    <span class="fn">expect</span>(
+      <span class="fn">subtotal</span>([
+        { price<span class="op">:</span> <span class="num">250</span>, quantity<span class="op">:</span> <span class="num">3</span> },
+        { price<span class="op">:</span> <span class="num">100</span>, quantity<span class="op">:</span> <span class="num">1</span> },
+      ]),
+    ).<span class="fn">to_be</span>(<span class="num">850</span>)
+  })
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Run it the way you run anything else:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> run cart.zu
+
+<span class="out">  subtotal</span>
+<span class="out">    ✓ is zero for an empty cart</span>
+<span class="out">    ✓ multiplies price by quantity</span>
+<span class="out">    ✓ adds every line together</span>
+
+<span class="out">   PASS</span>
+
+<span class="out">  3 passed  •  3 total</span>
+<span class="out">  suites 1   time 1ms</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>Three things are worth noticing straight away.</p>
+<p><strong><code>import test { * }</code>.</strong> A test file wants <code>describe</code>, <code>it</code>, <code>expect</code>
+and the rest in scope, not behind a module name. <code>import test</code> on its
+own works too, and gives you <code>test.describe</code>, <code>test.expect</code> and so on;
+use that from code that is not itself a test file.</p>
+<p><strong>Nothing says &quot;now run&quot;.</strong> <code>describe</code> and <code>it</code> do not run anything;
+they build a tree, and the tree is run once the file has finished
+declaring it, through <code>os.at_exit()</code>. That separation is what lets the
+framework count the tests before the first one starts, focus on one of
+them, filter by name, and run them in a random order. <code>run()</code> exists
+for when you want to pass options or read the result, and
+<a href="#controlling-a-run">Controlling a Run</a> comes back to it.</p>
+<p><strong><code>@{ ... }</code> is a function.</strong> <code>it('name', @{ ... })</code> hands the
+framework a body to call later, which is why it can decide not to.</p>
+<h2 id="when-it-fails"><a class="anchor" href="#when-it-fails" aria-hidden="true" tabindex="-1"></a>When It Fails</h2>
+<p>Change <code>850</code> to <code>900</code> and run it again:</p>
+<figure class="code output"><pre><code class="language-console">  subtotal
+    ✓ is zero for an empty cart
+    ✓ multiplies price by quantity
+    ✗ adds every line together
+
+  Failures
+
+  1) subtotal › adds every line together
+
+     Expected 850 to be 900
+
+     + expected  900
+     - received  850
+
+<span class="com">     at cart.zu:23 in @anon3</span>
+
+<span class="com">       21 |       { price: 250, quantity: 3 },</span>
+<span class="com">       22 |       { price: 100, quantity: 1 },</span>
+<span class="com">     &gt; 23 |     ])).to_be(900)</span>
+<span class="com">       24 |   })</span>
+<span class="com">       25 |</span>
+
+   FAIL
+
+  1 failed  •  2 passed  •  3 total
+  suites 1   time 4ms
+</code></pre><span class="code-label">Output</span></figure>
+<p>The message, the two values, the line, and the code around it. The
+process exits with status <code>1</code>, which is what a CI system reads.</p>
+<h2 id="grouping"><a class="anchor" href="#grouping" aria-hidden="true" tabindex="-1"></a>Grouping</h2>
+<p><code>describe</code> nests as deeply as the thing you are describing:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">describe</span>(<span class="str">'Cart'</span>, <span class="meta">@</span>{
+
+  <span class="fn">describe</span>(<span class="str">'subtotal()'</span>, <span class="meta">@</span>{
+    <span class="fn">it</span>(<span class="str">'is zero when empty'</span>, <span class="meta">@</span>{ ... })
+  })
+
+  <span class="fn">describe</span>(<span class="str">'add()'</span>, <span class="meta">@</span>{
+    <span class="fn">it</span>(<span class="str">'appends a line'</span>, <span class="meta">@</span>{ ... })
+    <span class="fn">it</span>(<span class="str">'merges a duplicate SKU'</span>, <span class="meta">@</span>{ ... })
+  })
+
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The nesting shows up in the report and in the name a failure is filed
+under: <code>Cart &gt; add() &gt; merges a duplicate SKU</code>. Choose names that read
+as a sentence when joined like that, because that is how you will read
+them.</p>
+<h2 id="expectations"><a class="anchor" href="#expectations" aria-hidden="true" tabindex="-1"></a>Expectations</h2>
+<p><code>expect(value)</code> gives you an object with every matcher on it.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">expect</span>(total).<span class="fn">to_be</span>(<span class="num">850</span>)
+<span class="fn">expect</span>(cart).<span class="fn">to_have_length</span>(<span class="num">2</span>)
+<span class="fn">expect</span>(user).<span class="fn">to_match_object</span>({ name<span class="op">:</span> <span class="str">'Ada'</span> })
+<span class="fn">expect</span>(items).<span class="prop">not</span>.<span class="fn">to_be_empty</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong><code>.not</code> negates any matcher.</strong> There is one implementation behind both
+directions, so <code>to_contain</code> and <code>not.to_contain</code> can never disagree
+about what containing means.</p>
+<p><strong>Matchers chain</strong>, because each returns the object it was called on:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">expect</span>(port).<span class="fn">to_be_int</span>().<span class="fn">to_be_between</span>(<span class="num">1024</span>, <span class="num">65535</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>A second argument names the value</strong>, which earns its keep the moment
+the number alone would not say which number it was:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="fn">expect</span>(response.<span class="prop">status</span>, <span class="str">'status'</span>).<span class="fn">to_be</span>(<span class="num">200</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Expected status (404) to be 200
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="choosing-between-to_be-and-to_equal"><a class="anchor" href="#choosing-between-to_be-and-to_equal" aria-hidden="true" tabindex="-1"></a>Choosing Between <code>to_be</code> and <code>to_equal</code></h3>
+<p><code>to_be</code> is Zuri's <code>==</code>. That already compares lists, dictionaries and
+bytes by their contents, so it is the right matcher for most things:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">expect</span>([<span class="num">1</span>, <span class="num">2</span>]).<span class="fn">to_be</span>([<span class="num">1</span>, <span class="num">2</span>]) <span class="com"># passes</span>
+<span class="fn">expect</span>({ a<span class="op">:</span> <span class="num">1</span> }).<span class="fn">to_be</span>({ a<span class="op">:</span> <span class="num">1</span> }) <span class="com"># passes</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>It compares two <strong>instances</strong> by identity, though, unless their class
+defines <code>@eq</code>, because that is what <code>==</code> does:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">expect</span>(<span class="type">Point</span>(<span class="num">1</span>, <span class="num">2</span>)).<span class="fn">to_be</span>(<span class="type">Point</span>(<span class="num">1</span>, <span class="num">2</span>)) <span class="com"># fails without @eq: two objects</span>
+<span class="fn">expect</span>(<span class="type">Point</span>(<span class="num">1</span>, <span class="num">2</span>)).<span class="fn">to_equal</span>(<span class="type">Point</span>(<span class="num">1</span>, <span class="num">2</span>)) <span class="com"># passes: same contents</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>to_equal</code> is the structural one. It walks an instance field by field,
+treats <code>NaN</code> as equal to itself, and survives a value that contains
+itself. Reach for it whenever the objects are built fresh on both sides
+of the comparison.</p>
+<h3 id="the-matchers"><a class="anchor" href="#the-matchers" aria-hidden="true" tabindex="-1"></a>The Matchers</h3>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Matchers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Equality</td>
+<td><code>to_be</code>, <code>to_equal</code>, <code>to_be_same_as</code>, <code>to_be_close_to</code>, <code>to_be_within</code>, <code>to_match_object</code></td>
+</tr>
+<tr>
+<td>Truthiness</td>
+<td><code>to_be_true</code>, <code>to_be_false</code>, <code>to_be_truthy</code>, <code>to_be_falsy</code>, <code>to_be_nil</code>, <code>to_be_defined</code></td>
+</tr>
+<tr>
+<td>Types</td>
+<td><code>to_be_a</code>, <code>to_be_string</code>, <code>to_be_number</code>, <code>to_be_int</code>, <code>to_be_float</code>, <code>to_be_bigint</code>, <code>to_be_bool</code>, <code>to_be_list</code>, <code>to_be_dict</code>, <code>to_be_bytes</code>, <code>to_be_function</code>, <code>to_be_callable</code>, <code>to_be_iterable</code>, <code>to_be_class</code>, <code>to_be_instance</code>, <code>to_be_instance_of</code></td>
+</tr>
+<tr>
+<td>Numbers</td>
+<td><code>to_be_greater_than</code>, <code>to_be_greater_than_or_equal</code>, <code>to_be_less_than</code>, <code>to_be_less_than_or_equal</code>, <code>to_be_between</code>, <code>to_be_positive</code>, <code>to_be_negative</code>, <code>to_be_zero</code>, <code>to_be_divisible_by</code>, <code>to_be_even</code>, <code>to_be_odd</code>, <code>to_be_nan</code>, <code>to_be_finite</code>, <code>to_be_infinite</code></td>
+</tr>
+<tr>
+<td>Text</td>
+<td><code>to_contain</code>, <code>to_contain_ignoring_case</code>, <code>to_equal_ignoring_case</code>, <code>to_start_with</code>, <code>to_end_with</code>, <code>to_match</code>, <code>to_be_blank</code></td>
+</tr>
+<tr>
+<td>Collections</td>
+<td><code>to_have_length</code>, <code>to_be_empty</code>, <code>to_contain_equal</code>, <code>to_contain_all</code>, <code>to_contain_any</code>, <code>to_contain_none</code>, <code>to_contain_exactly</code>, <code>to_have_key</code>, <code>to_have_keys</code>, <code>to_have_value</code>, <code>to_have_property</code>, <code>to_be_sorted</code>, <code>to_have_unique_items</code></td>
+</tr>
+<tr>
+<td>Errors</td>
+<td><code>to_raise</code>, <code>to_raise_instance_of</code>, <code>to_raise_with_message</code>, <code>to_not_raise</code></td>
+</tr>
+<tr>
+<td>Mocks</td>
+<td><code>to_have_been_called</code>, <code>to_have_been_called_times</code>, <code>to_have_been_called_with</code>, <code>to_have_been_last_called_with</code>, <code>to_have_been_nth_called_with</code>, <code>to_have_returned</code>, <code>to_have_returned_with</code>, <code>to_have_raised</code></td>
+</tr>
+<tr>
+<td>Output</td>
+<td><code>to_print</code>, <code>to_print_exactly</code>, <code>to_print_nothing</code></td>
+</tr>
+<tr>
+<td>Snapshots</td>
+<td><code>to_match_snapshot</code></td>
+</tr>
+<tr>
+<td>Anything else</td>
+<td><code>to_satisfy</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Each one's exact behaviour, and what it refuses, is in its doc block.</p>
+<p>A few are worth calling out.</p>
+<p><strong><code>to_be_close_to</code></strong> is how you compare anything that has been through
+floating-point arithmetic. <code>expect(0.1 + 0.2).to_be(0.3)</code> fails; the
+sum is <code>0.30000000000000004</code>.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">expect</span>(<span class="num">0.1</span> <span class="op">+</span> <span class="num">0.2</span>).<span class="fn">to_be_close_to</span>(<span class="num">0.3</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong><code>to_raise*</code></strong> takes a function, not a value, because the framework has
+to be the one to call it:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">expect</span>(<span class="meta">@</span>{
+  <span class="fn">parse</span>(<span class="str">''</span>)
+}).<span class="fn">to_raise_instance_of</span>(<span class="type">ValueError</span>)
+<span class="fn">expect</span>(<span class="meta">@</span>{
+  <span class="fn">parse</span>(<span class="str">'{}'</span>)
+}).<span class="fn">to_not_raise</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong><code>to_have_property</code></strong> walks a dotted path through dictionaries,
+instances and list indices alike, which is what a decoded response
+usually is all the way down:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">expect</span>(payload).<span class="fn">to_have_property</span>(<span class="str">'data.items.0.id'</span>, <span class="num">7</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong><code>to_satisfy</code></strong> is the escape hatch when nothing else fits:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">expect</span>(port).<span class="fn">to_satisfy</span>(<span class="meta">@</span>(n) {
+  <span class="kw">return</span> n <span class="op">%</span> <span class="num">2</span> <span class="op">==</span> <span class="num">0</span>
+}, <span class="str">'to be an even port'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<h3 id="failing-on-purpose"><a class="anchor" href="#failing-on-purpose" aria-hidden="true" tabindex="-1"></a>Failing on Purpose</h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">using</span> response.<span class="prop">status</span> {
+  <span class="kw">when</span> <span class="num">200</span> <span class="fn">handle_ok</span>()
+  <span class="kw">when</span> <span class="num">404</span> <span class="fn">handle_missing</span>()
+  <span class="kw">default</span> <span class="fn">fail</span>(<span class="str">'unexpected status </span><span class="subst">${</span>response.<span class="prop">status</span><span class="subst">}</span><span class="str">'</span>)
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>And when the assertions live inside a callback that might never run,
+say how many you expect:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">it</span>(<span class="str">'reports every error'</span>, <span class="meta">@</span>{
+  <span class="fn">assertions</span>(<span class="num">2</span>)
+
+  <span class="fn">validate</span>(bad_input, <span class="meta">@</span>(error) {
+    <span class="fn">expect</span>(error.<span class="prop">field</span>).<span class="fn">to_be_string</span>()
+  })
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>If the callback ran once instead of twice, the test fails with
+<code>Expected 2 assertions but 1 ran</code> rather than passing on a technicality.
+<code>has_assertions()</code> is the looser form: at least one.</p>
+<h2 id="setup-and-teardown"><a class="anchor" href="#setup-and-teardown" aria-hidden="true" tabindex="-1"></a>Setup and Teardown</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> test { <span class="op">*</span> }
+
+<span class="fn">describe</span>(<span class="str">'Session'</span>, <span class="meta">@</span>{
+
+  <span class="kw">var</span> store <span class="op">=</span> <span class="lit">nil</span>
+
+  <span class="fn">before_all</span>(<span class="meta">@</span>{
+    <span class="kw">echo</span> <span class="str">'connecting'</span>
+  })
+
+  <span class="fn">after_all</span>(<span class="meta">@</span>{
+    <span class="kw">echo</span> <span class="str">'disconnecting'</span>
+  })
+
+  <span class="fn">before_each</span>(<span class="meta">@</span>{
+    store <span class="op">=</span> { rows<span class="op">:</span> [] }
+  })
+
+  <span class="fn">it</span>(<span class="str">'starts empty'</span>, <span class="meta">@</span>{
+    <span class="fn">expect</span>(store.<span class="prop">rows</span>).<span class="fn">to_be_empty</span>()
+  })
+
+  <span class="fn">it</span>(<span class="str">'is a fresh store every time'</span>, <span class="meta">@</span>{
+    store.<span class="prop">rows</span>.<span class="fn">append</span>(<span class="str">'a'</span>)
+    <span class="fn">expect</span>(store.<span class="prop">rows</span>).<span class="fn">to_have_length</span>(<span class="num">1</span>)
+  })
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> run session.zu
+<span class="out">connecting</span>
+<span class="out">  Session</span>
+<span class="out">    ✓ starts empty</span>
+<span class="out">    ✓ is a fresh store every time</span>
+<span class="out">disconnecting</span>
+
+<span class="out">   PASS</span>
+
+<span class="out">  2 passed  •  2 total</span>
+<span class="out">  suites 1   time 2ms</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>The rules:</p>
+<ul>
+<li><code>before_all</code> runs once, immediately before the first test in its suite
+that is actually going to run. A suite everything was filtered out of
+never connects to anything.</li>
+<li><code>after_all</code> runs after the last one, and only if <code>before_all</code> ran. It
+runs when <code>before_all</code> raised as well, since a setup that failed part
+way may already hold a connection or a server, so write it to cope
+with whatever the setup got as far as.</li>
+<li><code>before_each</code> runs outermost suite first, <code>after_each</code> innermost
+first, so teardown undoes setup in the order it was done.</li>
+<li><code>after_each</code> runs even when the test failed, which is exactly when you
+need it to.</li>
+</ul>
+<p>A hook that raises is reported as a hook failure against the test it was
+preparing, rather than taking the run down. A <code>before_all</code> that raises
+fails every test in its suite, because none of them got the setup they
+were written against.</p>
+<h2 id="focusing-skipping-and-todo"><a class="anchor" href="#focusing-skipping-and-todo" aria-hidden="true" tabindex="-1"></a>Focusing, Skipping and Todo</h2>
+<p>While you are working on one thing:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">it_only</span>(<span class="str">'the one I am fixing'</span>, <span class="meta">@</span>{ ... })
+<span class="fn">describe_only</span>(<span class="str">'the area I am in'</span>, <span class="meta">@</span>{ ... })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>As soon as anything is marked <code>only</code>, everything else is skipped and
+still listed, so you cannot forget it is on.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">it_skip</span>(<span class="str">'known broken, see #412'</span>, <span class="meta">@</span>{ ... })
+<span class="fn">describe_skip</span>(<span class="str">'the old API'</span>, <span class="meta">@</span>{ ... })
+
+<span class="fn">it_todo</span>(<span class="str">'handle an empty payload'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A todo is a test with no body. <code>it('name')</code> with nothing after it means
+the same thing. It counts towards nothing and shows up in the report as
+a reminder that survives being committed.</p>
+<p>Two options change what a failure means:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">it</span>(<span class="str">'reproduces issue 412'</span>, <span class="meta">@</span>{ ... }, { failing<span class="op">:</span> <span class="lit">true</span> })
+<span class="fn">it</span>(<span class="str">'talks to a flaky endpoint'</span>, <span class="meta">@</span>{ ... }, { retries<span class="op">:</span> <span class="num">2</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>failing: true</code> passes when the body fails, and fails when the body
+passes, so the day someone fixes the bug the test tells you. <code>retries</code>
+runs the body again on failure, and a test that passes on a later
+attempt is reported as flaky rather than quietly green.</p>
+<h2 id="one-test-many-inputs"><a class="anchor" href="#one-test-many-inputs" aria-hidden="true" tabindex="-1"></a>One Test, Many Inputs</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> test { <span class="op">*</span> }
+
+<span class="kw">def</span> <span class="def">slug</span>(title) {
+  <span class="kw">return</span> title.<span class="fn">lower</span>().<span class="fn">replace</span>(<span class="str">'/[^a-z0-9]+/'</span>, <span class="str">'-'</span>).<span class="fn">trim</span>(<span class="str">'-'</span>)
+}
+
+<span class="fn">it_each</span>(
+  [
+    [<span class="str">'Hello World'</span>, <span class="str">'hello-world'</span>],
+    [<span class="str">'  Spaced  Out  '</span>, <span class="str">'spaced-out'</span>],
+    [<span class="str">'Zuri 1.0!'</span>, <span class="str">'zuri-1-0'</span>],
+  ],
+  <span class="str">'turns $0 into $1'</span>,
+  <span class="meta">@</span>(title, expected) {
+    <span class="fn">expect</span>(<span class="fn">slug</span>(title)).<span class="fn">to_be</span>(expected)
+  },
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> run slug.zu
+<span class="out">  ✓ turns 'Hello World' into 'hello-world'</span>
+<span class="out">  ✓ turns '  Spaced  Out  ' into 'spaced-out'</span>
+<span class="out">  ✓ turns 'Zuri 1.0!' into 'zuri-1-0'</span>
+
+<span class="out">   PASS</span>
+
+<span class="out">  3 passed  •  3 total</span>
+<span class="out">  suites 0   time 3ms</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>Each row becomes a separate test with its own name and its own place in
+the report, so one bad row does not hide the others. <code>$0</code>, <code>$1</code> and so
+on stand for the row's values and <code>$#</code> for the row number.
+<code>describe_each</code> does the same for whole suites, which is how you run one
+set of tests against several implementations of the same interface.</p>
+<h2 id="test-doubles"><a class="anchor" href="#test-doubles" aria-hidden="true" tabindex="-1"></a>Test Doubles</h2>
+<p><code>mock()</code> gives you a function that records how it was called and does
+whatever you tell it to.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> test { <span class="op">*</span> }
+
+<span class="kw">def</span> <span class="def">retry</span>(operation, attempts) {
+  <span class="kw">iter</span> <span class="kw">var</span> attempt <span class="op">=</span> <span class="num">1</span>; attempt <span class="op">&lt;=</span> attempts; attempt<span class="op">++</span> {
+    <span class="kw">catch</span> {
+      <span class="kw">return</span> <span class="fn">operation</span>()
+    } <span class="kw">as</span> error {
+      <span class="kw">if</span> attempt <span class="op">==</span> attempts {
+        <span class="kw">raise</span> error
+      }
+    }
+  }
+}
+
+<span class="fn">describe</span>(<span class="str">'retry'</span>, <span class="meta">@</span>{
+
+  <span class="fn">it</span>(<span class="str">'returns the first success'</span>, <span class="meta">@</span>{
+    <span class="kw">var</span> operation <span class="op">=</span> <span class="fn">mock</span>()
+    operation.<span class="fn">returns</span>(<span class="str">'ok'</span>)
+
+    <span class="fn">expect</span>(<span class="fn">retry</span>(operation.<span class="prop">fn</span>, <span class="num">3</span>)).<span class="fn">to_be</span>(<span class="str">'ok'</span>)
+    <span class="fn">expect</span>(operation).<span class="fn">to_have_been_called_times</span>(<span class="num">1</span>)
+  })
+
+  <span class="fn">it</span>(<span class="str">'tries again after a failure'</span>, <span class="meta">@</span>{
+    <span class="kw">var</span> operation <span class="op">=</span> <span class="fn">mock</span>()
+    operation.<span class="fn">raises_once</span>(<span class="type">Error</span>(<span class="str">'connection reset'</span>))
+    operation.<span class="fn">returns</span>(<span class="str">'ok'</span>)
+
+    <span class="fn">expect</span>(<span class="fn">retry</span>(operation.<span class="prop">fn</span>, <span class="num">3</span>)).<span class="fn">to_be</span>(<span class="str">'ok'</span>)
+    <span class="fn">expect</span>(operation).<span class="fn">to_have_been_called_times</span>(<span class="num">2</span>)
+  })
+
+  <span class="fn">it</span>(<span class="str">'gives up eventually'</span>, <span class="meta">@</span>{
+    <span class="kw">var</span> operation <span class="op">=</span> <span class="fn">mock</span>()
+    operation.<span class="fn">raises</span>(<span class="type">Error</span>(<span class="str">'connection reset'</span>))
+
+    <span class="fn">expect</span>(<span class="meta">@</span>{
+      <span class="fn">retry</span>(operation.<span class="prop">fn</span>, <span class="num">3</span>)
+    }).<span class="fn">to_raise_with_message</span>(<span class="str">'connection reset'</span>)
+    <span class="fn">expect</span>(operation).<span class="fn">to_have_been_called_times</span>(<span class="num">3</span>)
+  })
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>mock()</code> returns a <code>Mock</code>, and <code>mock.fn</code> is the plain function you hand
+to the code under test. The matchers accept either, so
+<code>expect(operation)</code> and <code>expect(operation.fn)</code> mean the same thing.</p>
+<p>The behaviour is scripted in front-to-back order: everything queued with
+a <code>_once</code> suffix runs first, one call each, and then the standing
+behaviour takes over.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>returns(v)</code> / <code>returns_once(v)</code></td>
+<td>return <code>v</code></td>
+</tr>
+<tr>
+<td><code>raises(e)</code> / <code>raises_once(e)</code></td>
+<td>raise <code>e</code></td>
+</tr>
+<tr>
+<td><code>implements(fn)</code> / <code>implements_once(fn)</code></td>
+<td>run <code>fn</code> with the real arguments</td>
+</tr>
+<tr>
+<td><code>reset()</code></td>
+<td>forget the calls</td>
+</tr>
+<tr>
+<td><code>clear_behaviour()</code></td>
+<td>forget the behaviour</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3 id="spying-on-something-that-already-exists"><a class="anchor" href="#spying-on-something-that-already-exists" aria-hidden="true" tabindex="-1"></a>Spying on Something That Already Exists</h3>
+<p><code>spy_on</code> swaps a function out in place and gives you a <code>Mock</code> that both
+records and stands in for it:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> test { <span class="op">*</span> }
+
+<span class="kw">def</span> <span class="def">checkout</span>(cart, gateway) {
+  <span class="kw">var</span> total <span class="op">=</span> cart.<span class="fn">reduce</span>(<span class="meta">@</span>(<span class="bi">sum</span>, line) {
+    <span class="kw">return</span> <span class="bi">sum</span> <span class="op">+</span> line
+  }, <span class="num">0</span>)
+  <span class="kw">return</span> gateway[<span class="str">'charge'</span>](total)
+}
+
+<span class="fn">it</span>(<span class="str">'charges the cart total once'</span>, <span class="meta">@</span>{
+  <span class="kw">var</span> gateway <span class="op">=</span> {
+    charge<span class="op">:</span> <span class="meta">@</span>(amount) {
+      <span class="kw">return</span> <span class="str">'live-charge'</span>
+    },
+  }
+  <span class="kw">var</span> charge <span class="op">=</span> <span class="fn">spy_on</span>(gateway, <span class="str">'charge'</span>)
+  charge.<span class="fn">returns</span>(<span class="str">'receipt-1'</span>)
+
+  <span class="fn">expect</span>(<span class="fn">checkout</span>([<span class="num">250</span>, <span class="num">100</span>], gateway)).<span class="fn">to_be</span>(<span class="str">'receipt-1'</span>)
+  <span class="fn">expect</span>(charge).<span class="fn">to_have_been_called_times</span>(<span class="num">1</span>)
+  <span class="fn">expect</span>(charge).<span class="fn">to_have_been_called_with</span>(<span class="num">350</span>)
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A spy calls through to the original unless you tell it otherwise, and is
+restored automatically after the test that installed it, even one that
+failed halfway through. Nothing has to be undone by hand.</p>
+<p>It works on a dictionary entry and on an instance property that holds a
+function. It does not work on a class method or a module function: Zuri
+classes are immutable once declared, and a module's members cannot be
+assigned from outside it. Code you want to substitute takes its
+collaborators as arguments or holds them in properties, which is the
+shape worth designing for anyway.</p>
+<h2 id="snapshots"><a class="anchor" href="#snapshots" aria-hidden="true" tabindex="-1"></a>Snapshots</h2>
+<p>For a value too big to write out by hand, record it once and compare
+against the recording from then on:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">invoice</span>(customer, lines) {
+  <span class="kw">return</span> {
+    customer,
+    lines,
+    total<span class="op">:</span> lines.<span class="fn">reduce</span>(<span class="meta">@</span>(<span class="bi">sum</span>, line) {
+      <span class="kw">return</span> <span class="bi">sum</span> <span class="op">+</span> line.<span class="prop">amount</span>
+    }, <span class="num">0</span>),
+  }
+}
+
+<span class="fn">it</span>(<span class="str">'builds the document'</span>, <span class="meta">@</span>{
+  <span class="fn">expect</span>(
+    <span class="fn">invoice</span>(<span class="str">'Ada'</span>, [
+      { label<span class="op">:</span> <span class="str">'Design'</span>, amount<span class="op">:</span> <span class="num">4200</span> },
+    ]),
+  ).<span class="fn">to_match_snapshot</span>()
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The first run writes the file and passes:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> run invoice.zu
+
+<span class="out">  invoice</span>
+<span class="out">    ✓ builds the document</span>
+
+<span class="out">   PASS</span>
+
+<span class="out">  1 passed  •  1 total</span>
+<span class="out">  suites 1   time 2ms</span>
+<span class="out">  snapshots 1 written</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>It lands beside the test file, in <code>__snapshots__</code>:</p>
+<figure class="code"><pre><code class="language-text"># Zuri snapshot file v1
+
+=== invoice &gt; builds the document 1 ===
+  {
+    customer: 'Ada',
+    lines: [
+      {
+        amount: 4200,
+        label: 'Design'
+      }
+    ],
+    total: 4200
+  }
+</code></pre></figure>
+<p>Commit it. Reviewing the change to that file in a pull request is the
+entire value of the technique: an unexplained diff there is exactly the
+thing worth noticing.</p>
+<p>When the value changes, you get the diff:</p>
+<figure class="code output"><pre><code class="language-console">  1) invoice › builds the document
+
+     Snapshot 'invoice &gt; builds the document 1' no longer matches
+
+       + expected  - received
+
+       {
+         customer: 'Ada',
+         lines: [
+           {
+     -       amount: 5200,
+     +       amount: 4200,
+             label: 'Design'
+           }
+         ],
+     -   total: 5200
+     +   total: 4200
+       }
+</code></pre><span class="code-label">Output</span></figure>
+<p>If the new value is right, rewrite the snapshots:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="var">ZURI_UPDATE_SNAPSHOTS</span><span class="op">=</span>1 <span class="fn">zuri</span> run invoice.zu
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>That also deletes entries nothing asks for any more. And on CI, where
+<code>CI</code> is set in the environment, writing a <em>brand new</em> snapshot is a
+failure rather than a silent pass, because a snapshot nobody has looked
+at asserts nothing.</p>
+<h2 id="testing-what-something-prints"><a class="anchor" href="#testing-what-something-prints" aria-hidden="true" tabindex="-1"></a>Testing What Something Prints</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">expect</span>(<span class="meta">@</span>{
+  <span class="fn">greet</span>(<span class="str">'Ada'</span>)
+}).<span class="fn">to_print</span>(<span class="str">'Hello, Ada'</span>)
+<span class="fn">expect</span>(<span class="meta">@</span>{
+  <span class="fn">quiet_mode</span>()
+}).<span class="fn">to_print_nothing</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Or take the output and assert on it yourself:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> printed <span class="op">=</span> <span class="fn">capture_output</span>(<span class="meta">@</span>{
+  <span class="fn">report</span>(rows)
+})
+<span class="fn">expect</span>(printed.<span class="fn">lines</span>()).<span class="fn">to_have_length</span>(<span class="num">4</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>This works because the runtime can redirect everything Zuri writes to
+standard output. The same mechanism is why a passing test's output does
+not clutter the report: it is captured and shown only when the test
+fails. <code>run({ verbose: true })</code> shows it either way, and
+<code>run({ capture: false })</code> turns it off entirely.</p>
+<h2 id="more-than-one-file"><a class="anchor" href="#more-than-one-file" aria-hidden="true" tabindex="-1"></a>More Than One File</h2>
+<p>A real project has a directory of them:</p>
+<figure class="code"><pre><code class="language-text">project/
+  tests/
+    cart.zu
+    pricing.zu
+</code></pre></figure>
+<p><code>zuri test</code> runs the lot:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> test
+
+<span class="out">  zuri test  2 files in tests</span>
+
+<span class="out">   PASS   cart.zu  188ms  2 tests</span>
+
+<span class="out">   FAIL   pricing.zu  281ms  1 test</span>
+<span class="out">        ✗ pricing &gt; applies the discount</span>
+<span class="out">          Expected 90 to be 100</span>
+<span class="com">          at tests/pricing.zu:4</span>
+
+<span class="out">  2 files  •  1 with failures</span>
+<span class="out">  1 failed  •  2 passed  •  3 total</span>
+<span class="out">  time 476ms</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>There is nothing to write for this. The command finds the <code>tests</code>
+directory you ran it from, and ends the process with <code>1</code> when anything
+failed, so a CI job needs nothing added to it either.</p>
+<p>Each file runs in a process of its own. That is not an implementation
+detail you can ignore, because it is what you are buying:</p>
+<ul>
+<li>A file that loops forever is killed, and the rest still run.
+<code>--timeout 30s</code> says how long is too long.</li>
+<li>A file that crashes, or calls <code>os.exit()</code> halfway through, is reported
+as a file that never reported rather than taking the run with it.</li>
+<li>Global state, a module loaded for its side effect, a changed working
+directory: none of it leaks from one file into the next.</li>
+</ul>
+<p>Files are reported in the order they were discovered whatever order they
+finish in, so <code>--jobs 4</code> makes a big suite faster without making the
+report move around.</p>
+<p>A test file needs nothing special to be conducted. It declares its
+tests, and is equally runnable on its own.</p>
+<h3 id="running-one-file"><a class="anchor" href="#running-one-file" aria-hidden="true" tabindex="-1"></a>Running One File</h3>
+<p>Name it, with or without its <code>.zu</code>:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> test pricing
+<span class="prompt">$ </span><span class="fn">zuri</span> test pricing.zu
+<span class="prompt">$ </span><span class="fn">zuri</span> test tests/pricing.zu
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>All three run <code>tests/pricing.zu</code>. A name is looked for under <code>tests</code>
+first, so a test keeps its own name even when something else in the
+project shares it, and a name that is nowhere to be found under that
+directory is looked for once more by filename alone anywhere beneath it,
+so a file in a subdirectory answers to its own name.</p>
+<p>A directory works too, wherever it sits:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> test tests/api
+<span class="prompt">$ </span><span class="fn">zuri</span> test packages/store/tests
+</code></pre><span class="code-label">Terminal</span></figure>
+<h3 id="the-flags"><a class="anchor" href="#the-flags" aria-hidden="true" tabindex="-1"></a>The Flags</h3>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-j, --jobs &lt;count&gt;</code></td>
+<td>How many files to run at once. <code>auto</code> is one per CPU. Default <code>1</code>.</td>
+</tr>
+<tr>
+<td><code>-t, --timeout &lt;duration&gt;</code></td>
+<td>How long to give a single file before killing it. <code>500ms</code>, <code>30s</code>, <code>2m</code>, <code>1h</code>, or a bare number of milliseconds. Default: no limit.</td>
+</tr>
+<tr>
+<td><code>-b, --bail [count]</code></td>
+<td>Stop after this many failing files. On its own, stop at the first.</td>
+</tr>
+<tr>
+<td><code>-m, --match &lt;pattern...&gt;</code></td>
+<td>Filename patterns to run, instead of <code>*.zu</code>.</td>
+</tr>
+<tr>
+<td><code>-i, --ignore &lt;pattern...&gt;</code></td>
+<td>Filename patterns to skip, instead of <code>_*</code>, <code>.*</code> and <code>index.zu</code>.</td>
+</tr>
+<tr>
+<td><code>--no-recursive</code></td>
+<td>Only the files directly in the directory.</td>
+</tr>
+<tr>
+<td><code>-e, --env &lt;assignment...&gt;</code></td>
+<td>Extra environment for every test process, as <code>KEY=VALUE</code>.</td>
+</tr>
+<tr>
+<td><code>-l, --list</code></td>
+<td>Print the files that would run, one to a line, and stop.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> test <span class="attr">--jobs</span> auto <span class="attr">--timeout</span> 30s
+<span class="prompt">$ </span><span class="fn">zuri</span> test <span class="attr">--bail</span>
+<span class="prompt">$ </span><span class="fn">zuri</span> test <span class="attr">--match</span> <span class="str">'*_test.zu'</span> <span class="str">'*_spec.zu'</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p><code>--bail</code> and the two pattern flags take as many words as follow them, so
+put the file you are naming ahead of them, or close them with <code>--</code>:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> test pricing <span class="attr">--bail</span>
+<span class="prompt">$ </span><span class="fn">zuri</span> test <span class="attr">--match</span> <span class="str">'*_test.zu'</span> <span class="attr">--</span> pricing
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>A count for <code>--bail</code> has to be attached, <code>--bail=3</code>, for the same
+reason: a count written as a separate word is indistinguishable from the
+file.</p>
+<h3 id="conducting-a-suite-yourself"><a class="anchor" href="#conducting-a-suite-yourself" aria-hidden="true" tabindex="-1"></a>Conducting a Suite Yourself</h3>
+<p><code>conduct()</code> is the function <code>zuri test</code> is built on, and a project that
+wants the run under its own control can call it directly. A directory
+handed to <code>zuri run</code> runs its <code>index.zu</code>, so one file makes the suite
+<code>zuri run tests</code>:</p>
+<figure class="code has-caption"><figcaption>tests/index.zu</figcaption><pre><code class="language-zuri"><span class="kw">import</span> os
+<span class="kw">import</span> test
+
+test.<span class="fn">conduct</span>(os.<span class="fn">dir_name</span>(__file__), { jobs<span class="op">:</span> <span class="num">4</span>, timeout<span class="op">:</span> <span class="num">30000</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>It takes the same choices the flags do, as a dictionary, and returns the
+run rather than only reporting it. <code>conduct</code> leaves <code>index.zu</code> out of
+discovery, and never runs the script that called it either, so the index
+cannot end up running itself.</p>
+<h2 id="controlling-a-run"><a class="anchor" href="#controlling-a-run" aria-hidden="true" tabindex="-1"></a>Controlling a Run</h2>
+<p>Call <code>run()</code> yourself when you want to change how the run behaves, or
+to read the result. It takes an options dictionary, and calling it
+takes over from the automatic run, so nothing happens twice.</p>
+<p>The options you will reach for:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>filter</code></td>
+<td>run only tests whose full name contains this, or matches it as a regular expression</td>
+</tr>
+<tr>
+<td><code>bail</code></td>
+<td>stop after this many failures</td>
+</tr>
+<tr>
+<td><code>shuffle</code> / <code>seed</code></td>
+<td>run in a random order, and reproduce that order later</td>
+</tr>
+<tr>
+<td><code>reporter</code></td>
+<td><code>spec</code>, <code>dot</code>, <code>tap</code>, <code>junit</code>, <code>json</code>, <code>ndjson</code>, <code>silent</code></td>
+</tr>
+<tr>
+<td><code>exit</code></td>
+<td>exit the process with the run's status when it finishes</td>
+</tr>
+</tbody>
+</table>
+</div>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">run</span>({ filter<span class="op">:</span> <span class="str">'subtotal'</span>, bail<span class="op">:</span> <span class="num">1</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>filter</code> and <code>reporter</code> can also come from <code>ZURI_TEST_FILTER</code> and
+<code>ZURI_TEST_REPORTER</code>, which is what lets one command be pointed at one
+test without editing the file.</p>
+<p>Shuffling is the one worth turning on deliberately. Tests that only pass
+because an earlier test left something behind are a real and common
+problem, and running them in a different order every time is how you
+find out:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">run</span>({ shuffle<span class="op">:</span> <span class="lit">true</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The seed is printed with the summary, and passing it back reproduces
+that exact order.</p>
+<h3 id="on-ci"><a class="anchor" href="#on-ci" aria-hidden="true" tabindex="-1"></a>On CI</h3>
+<p>Nothing to add. A test file exits <code>0</code> when everything passed and <code>1</code>
+when it did not, whether or not it called <code>run()</code>.</p>
+<p>For a CI system that wants a machine-readable report,
+<code>{ reporter: 'junit' }</code> writes JUnit XML to standard output and
+<code>{ reporter: 'tap' }</code> writes TAP version 14.</p>
+<h2 id="writing-your-own-reporter"><a class="anchor" href="#writing-your-own-reporter" aria-hidden="true" tabindex="-1"></a>Writing Your Own Reporter</h2>
+<p>The runner knows nothing about output. It walks the tree and calls
+methods on a reporter, and every method has a do-nothing default:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> test { <span class="op">*</span> }
+<span class="kw">import</span> test.<span class="prop">reporter</span> { <span class="type">Reporter</span> }
+
+<span class="kw">class</span> <span class="type">Quiet</span> <span class="op">&lt;</span> <span class="type">Reporter</span> {
+  <span class="fn">test_finished</span>(one) {
+    <span class="kw">if</span> one.<span class="prop">status</span> <span class="op">==</span> <span class="str">'failed'</span> {
+      <span class="kw">echo</span> one.<span class="fn">full_name</span>()
+    }
+  }
+}
+
+<span class="fn">describe</span>(<span class="str">'a suite'</span>, <span class="meta">@</span>{
+  <span class="fn">it</span>(<span class="str">'passes quietly'</span>, <span class="meta">@</span>{
+    <span class="fn">expect</span>(<span class="num">1</span>).<span class="fn">to_be</span>(<span class="num">1</span>)
+  })
+  <span class="fn">it</span>(<span class="str">'fails loudly'</span>, <span class="meta">@</span>{
+    <span class="fn">expect</span>(<span class="num">1</span>).<span class="fn">to_be</span>(<span class="num">2</span>)
+  })
+})
+
+<span class="fn">run</span>({ reporter<span class="op">:</span> <span class="type">Quiet</span>(), exit<span class="op">:</span> <span class="lit">false</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The objects handed to it are the same ones the built-in reporters see:
+<code>Case</code>, <code>Suite</code>, <code>Failure</code> and <code>Summary</code>, documented in
+<code>test.result</code>.</p>
+<h2 id="two-things-to-know"><a class="anchor" href="#two-things-to-know" aria-hidden="true" tabindex="-1"></a>Two Things to Know</h2>
+<p><strong>A <code>timeout</code> on a test is measured after the body returns.</strong> Zuri runs
+synchronously, so a test runs to completion and is then timed. That
+catches one that got too slow; it does not rescue one that hangs. A hang
+needs a process boundary, which is exactly what <code>conduct</code> puts around
+each file, and why its <code>timeout</code> is the enforcing one.</p>
+<p><strong>Everything in one file shares one interpreter.</strong> Reset what you change
+in <code>before_each</code>, and reach for <code>shuffle</code> to find out whether you missed
+anything.</p>
+<h2 id="where-to-go-next"><a class="anchor" href="#where-to-go-next" aria-hidden="true" tabindex="-1"></a>Where to Go Next</h2>
+<p>The module's own documentation carries the full matcher list with each
+one's edge cases, every option <code>run()</code> and <code>conduct()</code> accept, and the
+snapshot file format. <a href="appendix-06-stdlib-index.html">Appendix F</a> lists
+the submodules. <a href="ch24-00-debugging.html">Chapter 24</a> is what to do once a
+test has told you something is wrong.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch23-00-testing.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch22-00-performance.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">22</span>Performance and the JIT</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch24-00-debugging.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">24</span>Debugging</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#your-first-test">Your First Test</a>
+        </li><li class="level-2">
+          <a href="#when-it-fails">When It Fails</a>
+        </li><li class="level-2">
+          <a href="#grouping">Grouping</a>
+        </li><li class="level-2">
+          <a href="#expectations">Expectations</a>
+        </li><li class="level-3">
+          <a href="#choosing-between-to_be-and-to_equal">Choosing Between <code>to_be</code> and <code>to_equal</code></a>
+        </li><li class="level-3">
+          <a href="#the-matchers">The Matchers</a>
+        </li><li class="level-3">
+          <a href="#failing-on-purpose">Failing on Purpose</a>
+        </li><li class="level-2">
+          <a href="#setup-and-teardown">Setup and Teardown</a>
+        </li><li class="level-2">
+          <a href="#focusing-skipping-and-todo">Focusing, Skipping and Todo</a>
+        </li><li class="level-2">
+          <a href="#one-test-many-inputs">One Test, Many Inputs</a>
+        </li><li class="level-2">
+          <a href="#test-doubles">Test Doubles</a>
+        </li><li class="level-3">
+          <a href="#spying-on-something-that-already-exists">Spying on Something That Already Exists</a>
+        </li><li class="level-2">
+          <a href="#snapshots">Snapshots</a>
+        </li><li class="level-2">
+          <a href="#testing-what-something-prints">Testing What Something Prints</a>
+        </li><li class="level-2">
+          <a href="#more-than-one-file">More Than One File</a>
+        </li><li class="level-3">
+          <a href="#running-one-file">Running One File</a>
+        </li><li class="level-3">
+          <a href="#the-flags">The Flags</a>
+        </li><li class="level-3">
+          <a href="#conducting-a-suite-yourself">Conducting a Suite Yourself</a>
+        </li><li class="level-2">
+          <a href="#controlling-a-run">Controlling a Run</a>
+        </li><li class="level-3">
+          <a href="#on-ci">On CI</a>
+        </li><li class="level-2">
+          <a href="#writing-your-own-reporter">Writing Your Own Reporter</a>
+        </li><li class="level-2">
+          <a href="#two-things-to-know">Two Things to Know</a>
+        </li><li class="level-2">
+          <a href="#where-to-go-next">Where to Go Next</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

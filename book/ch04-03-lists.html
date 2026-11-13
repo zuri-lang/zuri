@@ -1,0 +1,850 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lists · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch04-03-lists.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="red" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item open"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="true" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html" aria-current="page"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>4.3 · Learning the Language</p>
+        <div class="content"><h1 id="lists">Lists</h1>
+<p>A list is an ordered, growable sequence. It holds values of any type,
+including other lists, and it grows and shrinks as you work with it.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> items <span class="op">=</span> [<span class="num">3</span>, <span class="num">1</span>, <span class="num">4</span>, <span class="num">1</span>, <span class="num">5</span>]
+<span class="kw">var</span> mixed <span class="op">=</span> [
+  <span class="num">1</span>,
+  <span class="str">'two'</span>,
+  [<span class="num">3</span>],
+  { four<span class="op">:</span> <span class="num">4</span> },
+]
+<span class="kw">var</span> empty <span class="op">=</span> []
+
+<span class="kw">echo</span> items.<span class="fn">length</span>()
+<span class="kw">echo</span> mixed[<span class="num">3</span>].<span class="prop">four</span>
+<span class="kw">echo</span> empty.<span class="fn">is_empty</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">5
+4
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p>Lists carry 40 methods, and they fall into six groups: reading, searching,
+adding and removing, ordering, transforming, and walking. This section
+takes them in that order. The one distinction to keep in mind throughout
+is whether a method <strong>mutates</strong> the list you called it on or returns a new
+one, because Zuri's lists do both and the method names do not tell you
+which.</p>
+<h2 id="reading"><a class="anchor" href="#reading" aria-hidden="true" tabindex="-1"></a>Reading</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> l <span class="op">=</span> [<span class="num">3</span>, <span class="num">1</span>, <span class="num">4</span>, <span class="num">1</span>, <span class="num">5</span>]
+
+<span class="kw">echo</span> l.<span class="fn">length</span>()
+<span class="kw">echo</span> l.<span class="fn">is_empty</span>()
+<span class="kw">echo</span> l[<span class="num">0</span>]
+<span class="kw">echo</span> l[<span class="op">-</span><span class="num">1</span>]
+<span class="kw">echo</span> l.<span class="fn">first</span>()
+<span class="kw">echo</span> l.<span class="fn">last</span>()
+<span class="kw">echo</span> l[<span class="num">1</span>, <span class="num">3</span>]
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">5
+false
+3
+5
+3
+5
+[1, 4]
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="indexing"><a class="anchor" href="#indexing" aria-hidden="true" tabindex="-1"></a>Indexing</h3>
+<p>An index counts from zero, and a negative index counts back from the end:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> l <span class="op">=</span> [<span class="str">'a'</span>, <span class="str">'b'</span>, <span class="str">'c'</span>, <span class="str">'d'</span>]
+
+<span class="kw">echo</span> l[<span class="num">0</span>]
+<span class="kw">echo</span> l[<span class="num">3</span>]
+<span class="kw">echo</span> l[<span class="op">-</span><span class="num">1</span>]
+<span class="kw">echo</span> l[<span class="op">-</span><span class="num">4</span>]
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">a
+d
+d
+a
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>l[-1]</code> is the last element, which saves writing <code>l[l.length() - 1]</code>
+everywhere.</p>
+<p>Indexing out of range raises rather than returning <code>nil</code>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> l <span class="op">=</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+
+<span class="kw">catch</span> {
+  <span class="kw">echo</span> l[<span class="num">99</span>]
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">message</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">index 99 out of bounds (length 3)
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>get()</code> is the form that can fall back, but <strong>only when you give it
+something to fall back to</strong>. <code>get(i)</code> with one argument raises exactly like
+<code>l[i]</code> does:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> l <span class="op">=</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+
+<span class="kw">echo</span> l.<span class="fn">get</span>(<span class="num">1</span>)
+<span class="kw">echo</span> l.<span class="fn">get</span>(<span class="num">99</span>, <span class="str">'missing'</span>)
+
+<span class="kw">catch</span> {
+  <span class="kw">echo</span> l.<span class="fn">get</span>(<span class="num">99</span>)
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">message</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">2
+missing
+list index 99 out of range at get()
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="slicing"><a class="anchor" href="#slicing" aria-hidden="true" tabindex="-1"></a>Slicing</h3>
+<p><code>l[a, b]</code> takes the elements from <code>a</code> up to but <strong>not including</strong> <code>b</code>, and
+gives you a new list:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> l <span class="op">=</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>]
+
+<span class="kw">echo</span> l[<span class="num">1</span>, <span class="num">3</span>]
+<span class="kw">echo</span> l[,<span class="num">3</span>]
+<span class="kw">echo</span> l[<span class="num">3</span>,]
+<span class="kw">echo</span> l[<span class="op">-</span><span class="num">2</span>,]
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[2, 3]
+[1, 2, 3]
+[4, 5]
+[4, 5]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Either bound may be left out: <code>l[, b]</code> starts at the beginning and <code>l[a, ]</code>
+runs to the end. Negative bounds count from the end, just as an index does.</p>
+<p>A slice checks its bounds, exactly as an index does. Running past the end
+raises rather than returning what it can:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">catch</span> {
+  <span class="kw">echo</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>][<span class="num">1</span>, <span class="num">99</span>]
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">message</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">slice bounds 1..99 out of range (length 3)
+</code></pre><span class="code-label">Output</span></figure>
+<p>The one bound that is always legal is <code>length()</code> itself, since a slice's
+upper bound is exclusive. <code>l[0, l.length()]</code> is the whole list, and
+<code>l[3, 3]</code> on a three-element list is empty rather than an error.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> l <span class="op">=</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+
+<span class="kw">echo</span> l[<span class="num">0</span>, l.<span class="fn">length</span>()]
+<span class="kw">echo</span> l[<span class="num">3</span>, <span class="num">3</span>]
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[1, 2, 3]
+[]
+</code></pre><span class="code-label">Output</span></figure>
+<p>This same rule governs string slicing, which is why
+<a href="ch04-01-strings.html">Strings</a> uses <code>s[split_at + 1, s.length()]</code> rather
+than a large number to mean &quot;the rest&quot;.</p>
+<p>A slice is a copy. Changing one does not touch the other:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> original <span class="op">=</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+<span class="kw">var</span> part <span class="op">=</span> original[<span class="num">0</span>, <span class="num">2</span>]
+
+part[<span class="num">0</span>] <span class="op">=</span> <span class="num">99</span>
+
+<span class="kw">echo</span> original
+<span class="kw">echo</span> part
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[1, 2, 3]
+[99, 2]
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="nested-lists"><a class="anchor" href="#nested-lists" aria-hidden="true" tabindex="-1"></a>Nested Lists</h3>
+<p>A list holds lists, and indexes chain:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> grid <span class="op">=</span> [
+  [<span class="num">1</span>, <span class="num">2</span>],
+  [<span class="num">3</span>, <span class="num">4</span>],
+  [<span class="num">5</span>, <span class="num">6</span>],
+]
+
+<span class="kw">echo</span> grid[<span class="num">1</span>]
+<span class="kw">echo</span> grid[<span class="num">1</span>][<span class="num">0</span>]
+<span class="kw">echo</span> grid.<span class="fn">length</span>()
+<span class="kw">echo</span> grid[<span class="num">1</span>].<span class="fn">length</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[3, 4]
+3
+3
+2
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>grid.length()</code> counts rows, not elements. There is no two-dimensional
+index; <code>grid[1, 0]</code> is a <em>slice</em> from row one to row zero, which is empty.</p>
+<h2 id="combining-lists"><a class="anchor" href="#combining-lists" aria-hidden="true" tabindex="-1"></a>Combining Lists</h2>
+<h3 id="concatenation-with-"><a class="anchor" href="#concatenation-with-" aria-hidden="true" tabindex="-1"></a>Concatenation with <code>+</code></h3>
+<p><code>+</code> joins two lists into a new one, leaving both operands alone:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> a <span class="op">=</span> [<span class="num">1</span>, <span class="num">2</span>]
+<span class="kw">var</span> b <span class="op">=</span> [<span class="num">3</span>]
+
+<span class="kw">echo</span> a <span class="op">+</span> b
+<span class="kw">echo</span> a
+<span class="kw">echo</span> b
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[1, 2, 3]
+[1, 2]
+[3]
+</code></pre><span class="code-label">Output</span></figure>
+<p>That is the difference between <code>+</code> and <code>extend()</code>: <code>a + b</code> builds a third
+list, while <code>a.extend(b)</code> modifies <code>a</code> in place and returns it. Use <code>+</code>
+when you want to keep the originals, and <code>extend()</code> when you are
+accumulating.</p>
+<h3 id="repetition-with-"><a class="anchor" href="#repetition-with-" aria-hidden="true" tabindex="-1"></a>Repetition with <code>*</code></h3>
+<p><code>*</code> repeats a list a whole number of times:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> [<span class="num">1</span>, <span class="num">2</span>] <span class="op">*</span> <span class="num">3</span>
+<span class="kw">echo</span> [<span class="num">0</span>] <span class="op">*</span> <span class="num">5</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[1, 2, 1, 2, 1, 2]
+[0, 0, 0, 0, 0]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>[0] * 5</code> is the idiom for a fixed-size list of a starting value, and it is
+worth knowing before you write the loop.</p>
+<p>The count behaves exactly as it does for strings: zero and any negative
+number both produce an empty list, and a fractional count is truncated.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> [<span class="num">1</span>] <span class="op">*</span> <span class="num">0</span>
+<span class="kw">echo</span> [<span class="num">1</span>] <span class="op">*</span> <span class="op">-</span><span class="num">3</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[]
+[]
+</code></pre><span class="code-label">Output</span></figure>
+<p>There is one trap. Repetition copies the <em>elements</em>, and when an element is
+itself a list, all the copies are the same list:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> grid <span class="op">=</span> [
+      [<span class="num">0</span>, <span class="num">0</span>],
+    ] <span class="op">*</span>
+    <span class="num">3</span>
+
+grid[<span class="num">0</span>][<span class="num">0</span>] <span class="op">=</span> <span class="num">9</span>
+
+<span class="kw">echo</span> grid
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[[9, 0], [9, 0], [9, 0]]
+</code></pre><span class="code-label">Output</span></figure>
+<p>One assignment changed every row, because there is only one row. Build
+nested structure with a loop, or with <code>map()</code>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> grid <span class="op">=</span> <span class="num">0</span>..<span class="num">3</span>.<span class="fn">to_list</span>().<span class="fn">map</span>(<span class="meta">@</span>(i) <span class="op">=&gt;</span> [<span class="num">0</span>, <span class="num">0</span>])
+
+grid[<span class="num">0</span>][<span class="num">0</span>] <span class="op">=</span> <span class="num">9</span>
+
+<span class="kw">echo</span> grid
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[[9, 0], [0, 0], [0, 0]]
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="comparing-lists"><a class="anchor" href="#comparing-lists" aria-hidden="true" tabindex="-1"></a>Comparing Lists</h2>
+<p><code>==</code> compares lists by value, element by element, however deeply they
+nest:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> [<span class="num">1</span>, <span class="num">2</span>] <span class="op">==</span> [<span class="num">1</span>, <span class="num">2</span>]
+<span class="kw">echo</span> [
+      <span class="num">1</span>,
+      [<span class="num">2</span>, <span class="num">3</span>],
+    ] <span class="op">==</span>
+    [
+      <span class="num">1</span>,
+      [<span class="num">2</span>, <span class="num">3</span>],
+    ]
+<span class="kw">echo</span> [<span class="num">1</span>, <span class="num">2</span>] <span class="op">==</span> [<span class="num">2</span>, <span class="num">1</span>]
+<span class="kw">echo</span> [<span class="num">1</span>, <span class="num">2</span>] <span class="op">==</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+true
+false
+false
+</code></pre><span class="code-label">Output</span></figure>
+<p>Order matters and length matters. To compare two lists as <em>sets</em>, sort
+copies of them first, or use the <code>set</code> module from
+<a href="ch13-00-stdlib-tour.html">Chapter 13</a>.</p>
+<h2 id="searching"><a class="anchor" href="#searching" aria-hidden="true" tabindex="-1"></a>Searching</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> l <span class="op">=</span> [<span class="num">3</span>, <span class="num">1</span>, <span class="num">4</span>, <span class="num">1</span>, <span class="num">5</span>]
+
+<span class="kw">echo</span> l.<span class="fn">contains</span>(<span class="num">4</span>)
+<span class="kw">echo</span> l.<span class="fn">index_of</span>(<span class="num">1</span>)
+<span class="kw">echo</span> l.<span class="fn">count</span>(<span class="num">1</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+1
+2
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>index_of()</code> gives <code>-1</code> when the value is absent. <code>last_index_of()</code>
+searches from the other end:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> l <span class="op">=</span> [<span class="num">3</span>, <span class="num">1</span>, <span class="num">4</span>, <span class="num">1</span>, <span class="num">5</span>]
+
+<span class="kw">echo</span> l.<span class="fn">index_of</span>(<span class="num">1</span>)
+<span class="kw">echo</span> l.<span class="fn">last_index_of</span>(<span class="num">1</span>)
+<span class="kw">echo</span> l.<span class="fn">last_index_of</span>(<span class="num">1</span>, <span class="num">2</span>)
+<span class="kw">echo</span> l.<span class="fn">last_index_of</span>(<span class="num">9</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1
+3
+1
+-1
+</code></pre><span class="code-label">Output</span></figure>
+<p>Both take a second argument bounding <em>where a match may sit</em>, so the
+pair splits the list at one index: <code>index_of(x, n)</code> finds the first
+match at or after <code>n</code>, <code>last_index_of(x, n)</code> the last one at or before
+it. Both compare by value, so a list of dictionaries can be searched
+with a dictionary literal.</p>
+<h2 id="adding-and-removing"><a class="anchor" href="#adding-and-removing" aria-hidden="true" tabindex="-1"></a>Adding and Removing</h2>
+<p>These mutate the list in place:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>append(v)</code></td>
+<td>add to the end</td>
+</tr>
+<tr>
+<td><code>insert(v, at)</code></td>
+<td>insert at a position</td>
+</tr>
+<tr>
+<td><code>extend(other)</code></td>
+<td>append every element of another list</td>
+</tr>
+<tr>
+<td><code>pop()</code></td>
+<td>remove and return the last element</td>
+</tr>
+<tr>
+<td><code>shift()</code></td>
+<td>remove and return the first element</td>
+</tr>
+<tr>
+<td><code>remove(v)</code></td>
+<td>remove the first element equal to <code>v</code></td>
+</tr>
+<tr>
+<td><code>remove_at(i)</code></td>
+<td>remove by position</td>
+</tr>
+<tr>
+<td><code>delete(from, to)</code></td>
+<td>remove an inclusive range, return how many went</td>
+</tr>
+<tr>
+<td><code>clear()</code></td>
+<td>empty it</td>
+</tr>
+</tbody>
+</table>
+</div>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> l <span class="op">=</span> [<span class="num">3</span>, <span class="num">1</span>, <span class="num">4</span>]
+
+l.<span class="fn">insert</span>(<span class="num">9</span>, <span class="num">1</span>)
+<span class="kw">echo</span> l
+<span class="kw">echo</span> l.<span class="fn">shift</span>()
+<span class="kw">echo</span> l
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[3, 9, 1, 4]
+3
+[9, 1, 4]
+</code></pre><span class="code-label">Output</span></figure>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> l <span class="op">=</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>]
+<span class="kw">echo</span> l.<span class="fn">delete</span>(<span class="num">1</span>, <span class="num">3</span>)
+<span class="kw">echo</span> l
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">3
+[1, 5]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Note that <code>delete()</code> takes a <strong>from</strong> and a <strong>to</strong>, both inclusive, and
+returns the number of elements removed rather than the list.</p>
+<h2 id="ordering"><a class="anchor" href="#ordering" aria-hidden="true" tabindex="-1"></a>Ordering</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> l <span class="op">=</span> [<span class="num">3</span>, <span class="num">1</span>, <span class="num">2</span>]
+
+<span class="kw">echo</span> l.<span class="fn">sort</span>()
+<span class="kw">echo</span> l
+<span class="kw">echo</span> l.<span class="fn">reverse</span>()
+<span class="kw">echo</span> l
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[1, 2, 3]
+[1, 2, 3]
+[3, 2, 1]
+[1, 2, 3]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Look closely at those two. <strong><code>sort()</code> mutates and returns the list.
+<code>reverse()</code> returns a new list and leaves the original alone.</strong> That
+asymmetry is the single most common source of list bugs in Zuri code.</p>
+<p>To sort by anything else, pass a comparator. It is given two items and
+returns a negative number to put the first one first, a positive number to
+put the second one first, and zero to leave them as they are:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> people <span class="op">=</span> [
+  { name<span class="op">:</span> <span class="str">'Ada'</span>, age<span class="op">:</span> <span class="num">36</span> },
+  { name<span class="op">:</span> <span class="str">'Bob'</span>, age<span class="op">:</span> <span class="num">24</span> },
+]
+
+<span class="kw">var</span> by_age <span class="op">=</span> people.<span class="fn">sort</span>(<span class="meta">@</span>(a, b) <span class="op">=&gt;</span> a.<span class="prop">age</span> <span class="op">-</span> b.<span class="prop">age</span>).<span class="fn">map</span>(<span class="meta">@</span>(p) <span class="op">=&gt;</span> p.<span class="prop">name</span>)
+
+<span class="kw">echo</span> by_age
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[Bob, Ada]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Strings cannot be ordered with the <code>-</code> operator, so a comparator over text uses
+<code>compare()</code>, which returns exactly what a comparator needs:
+<code>people.sort(@(a, b) =&gt; a.name.compare(b.name))</code>.</p>
+<h2 id="transforming"><a class="anchor" href="#transforming" aria-hidden="true" tabindex="-1"></a>Transforming</h2>
+<p>Every one of these returns a new list and leaves the receiver untouched:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> l <span class="op">=</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>]
+
+<span class="kw">echo</span> l.<span class="fn">map</span>(<span class="meta">@</span>(x) <span class="op">=&gt;</span> x <span class="op">*</span> <span class="num">2</span>)
+<span class="kw">echo</span> l.<span class="fn">filter</span>(<span class="meta">@</span>(x) <span class="op">=&gt;</span> x <span class="op">&gt;</span> <span class="num">2</span>)
+<span class="kw">echo</span> l.<span class="fn">unique</span>()
+<span class="kw">echo</span> l.<span class="fn">compact</span>()
+<span class="kw">echo</span> l.<span class="fn">take</span>(<span class="num">2</span>)
+<span class="kw">echo</span> l.<span class="fn">clone</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[2, 4, 6, 8]
+[3, 4]
+[1, 2, 3, 4]
+[1, 2, 3, 4]
+[1, 2]
+[1, 2, 3, 4]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>compact()</code> drops <code>nil</code> entries:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> [<span class="num">1</span>, <span class="lit">nil</span>, <span class="num">2</span>, <span class="lit">nil</span>].<span class="fn">compact</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[1, 2]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>reduce()</code> folds the list down to one value. With no initial value it
+starts from the first element:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>].<span class="fn">reduce</span>(<span class="meta">@</span>(acc, x) <span class="op">=&gt;</span> acc <span class="op">+</span> x)
+<span class="kw">echo</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>].<span class="fn">reduce</span>(<span class="meta">@</span>(acc, x) <span class="op">=&gt;</span> acc <span class="op">+</span> x, <span class="num">100</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">6
+106
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>partition()</code> splits in one pass, matches first:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>].<span class="fn">partition</span>(<span class="meta">@</span>(x) <span class="op">=&gt;</span> x <span class="op">%</span> <span class="num">2</span> <span class="op">==</span> <span class="num">0</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[[2, 4], [1, 3]]
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="finding"><a class="anchor" href="#finding" aria-hidden="true" tabindex="-1"></a>Finding</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> l <span class="op">=</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+
+<span class="kw">echo</span> l.<span class="fn">find</span>(<span class="meta">@</span>(x) <span class="op">=&gt;</span> x <span class="op">&gt;</span> <span class="num">1</span>)
+<span class="kw">echo</span> l.<span class="fn">find_index</span>(<span class="meta">@</span>(x) <span class="op">=&gt;</span> x <span class="op">&gt;</span> <span class="num">1</span>)
+<span class="kw">echo</span> l.<span class="fn">find_last</span>(<span class="meta">@</span>(x) <span class="op">=&gt;</span> x <span class="op">&gt;</span> <span class="num">1</span>)
+<span class="kw">echo</span> l.<span class="fn">find_last_index</span>(<span class="meta">@</span>(x) <span class="op">=&gt;</span> x <span class="op">&gt;</span> <span class="num">1</span>)
+<span class="kw">echo</span> l.<span class="fn">find_all</span>(<span class="meta">@</span>(x) <span class="op">=&gt;</span> x <span class="op">&gt;</span> <span class="num">1</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">2
+1
+3
+2
+[2, 3]
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="asking-about-every-element"><a class="anchor" href="#asking-about-every-element" aria-hidden="true" tabindex="-1"></a>Asking About Every Element</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>].<span class="fn">every</span>(<span class="meta">@</span>(x) <span class="op">=&gt;</span> x <span class="op">&gt;</span> <span class="num">0</span>)
+<span class="kw">echo</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>].<span class="fn">some</span>(<span class="meta">@</span>(x) <span class="op">=&gt;</span> x <span class="op">&gt;</span> <span class="num">2</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>some()</code> stops at the first match; <code>every()</code> stops at the first failure.</p>
+<h2 id="walking"><a class="anchor" href="#walking" aria-hidden="true" tabindex="-1"></a>Walking</h2>
+<p>There are four ways to visit every element, and they are not
+interchangeable. Pick by what you need in the body.</p>
+<h3 id="for-when-you-want-the-values"><a class="anchor" href="#for-when-you-want-the-values" aria-hidden="true" tabindex="-1"></a><code>for</code>, When You Want the Values</h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">for</span> value <span class="kw">in</span> [<span class="str">'a'</span>, <span class="str">'b'</span>, <span class="str">'c'</span>] {
+  <span class="kw">echo</span> value
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">a
+b
+c
+</code></pre><span class="code-label">Output</span></figure>
+<p>This is the default. Reach for it whenever the position does not matter.</p>
+<h3 id="for-with-two-variables-when-you-want-the-index-too"><a class="anchor" href="#for-with-two-variables-when-you-want-the-index-too" aria-hidden="true" tabindex="-1"></a><code>for</code> With Two Variables, When You Want the Index Too</h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">for</span> index, value <span class="kw">in</span> [<span class="str">'a'</span>, <span class="str">'b'</span>, <span class="str">'c'</span>] {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>index<span class="subst">}</span><span class="str">: </span><span class="subst">${</span>value<span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">0: a
+1: b
+2: c
+</code></pre><span class="code-label">Output</span></figure>
+<p>With two variables you get the <strong>key first and the value second</strong>, and for
+a list the key is the index. No call to <code>length()</code>, no manual counter.</p>
+<h3 id="iter-when-you-need-control-of-the-position"><a class="anchor" href="#iter-when-you-need-control-of-the-position" aria-hidden="true" tabindex="-1"></a><code>iter</code>, When You Need Control of the Position</h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> items <span class="op">=</span> [<span class="str">'a'</span>, <span class="str">'b'</span>, <span class="str">'c'</span>]
+
+<span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">0</span>; i <span class="op">&lt;</span> items.<span class="fn">length</span>(); i<span class="op">++</span> {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>i<span class="subst">}</span><span class="str">: </span><span class="subst">${</span>items[i]<span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">0: a
+1: b
+2: c
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>iter</code> costs more typing and earns it only when the traversal is not one
+step forward per pass: walking backwards, walking in twos, comparing an
+element with its neighbour, or advancing the index from inside the body.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> items <span class="op">=</span> [<span class="str">'a'</span>, <span class="str">'b'</span>, <span class="str">'c'</span>, <span class="str">'d'</span>]
+
+<span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> items.<span class="fn">length</span>() <span class="op">-</span> <span class="num">1</span>; i <span class="op">&gt;=</span> <span class="num">0</span>; i<span class="op">--</span> {
+  <span class="kw">echo</span> items[i]
+}
+
+<span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">0</span>; i <span class="op">&lt;</span> items.<span class="fn">length</span>(); i <span class="op">+=</span> <span class="num">2</span> {
+  <span class="kw">echo</span> items[i]
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">d
+c
+b
+a
+a
+c
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="each-when-you-have-a-function-already"><a class="anchor" href="#each-when-you-have-a-function-already" aria-hidden="true" tabindex="-1"></a><code>each()</code>, When You Have a Function Already</h3>
+<figure class="code has-output"><pre><code class="language-zuri">[<span class="num">10</span>, <span class="num">20</span>].<span class="fn">each</span>(<span class="meta">@</span>(value, index) {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>index<span class="subst">}</span><span class="str">: </span><span class="subst">${</span>value<span class="subst">}</span><span class="str">'</span>
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">0: 10
+1: 20
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>each()</code> takes a function, which makes it the one that composes: it chains
+onto a <code>map()</code> or a <code>filter()</code> without a temporary variable, and it accepts
+a function you already have by name.</p>
+<p>Watch the argument order. <strong><code>each()</code> hands the callback the value first and
+the index second</strong>, which is the opposite of <code>for</code>. Every list callback in
+this chapter follows the same rule — <code>map</code>, <code>filter</code>, <code>find</code>, <code>some</code>,
+<code>every</code> all take <code>(value, index)</code> — so it is one thing to remember rather
+than several. <code>for</code> is a loop over key-value pairs; <code>each</code> is a callback
+over values that happens to tell you where it is.</p>
+<p><code>break</code> and <code>continue</code> work inside <code>for</code> and <code>iter</code>. They do not exist
+inside an <code>each()</code> callback; <code>return</code> there ends that one call, not the
+walk. When you need to stop early, use a loop, or <code>find()</code> / <code>some()</code>,
+which stop on their own.</p>
+<h2 id="combining"><a class="anchor" href="#combining" aria-hidden="true" tabindex="-1"></a>Combining</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> [<span class="str">'a'</span>, <span class="str">'b'</span>].<span class="fn">zip</span>([<span class="num">1</span>, <span class="num">2</span>])
+<span class="kw">echo</span> [
+  <span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>,
+].<span class="fn">zip_from</span>([
+  [<span class="num">4</span>, <span class="num">5</span>, <span class="num">6</span>],
+])
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[[a, 1], [b, 2]]
+[[1, 4], [2, 5], [3, 6]]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>zip()</code> pairs with one other list. <code>zip_from()</code> takes a list of lists and
+zips across all of them at once.</p>
+<h2 id="lists-are-references"><a class="anchor" href="#lists-are-references" aria-hidden="true" tabindex="-1"></a>Lists Are References</h2>
+<p>Assigning a list does not copy it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> a <span class="op">=</span> [<span class="num">1</span>, <span class="num">2</span>]
+<span class="kw">var</span> b <span class="op">=</span> a
+b.<span class="fn">append</span>(<span class="num">3</span>)
+<span class="kw">echo</span> a
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[1, 2, 3]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Use <code>clone()</code> when you need an independent copy. The clone is shallow:
+nested lists inside it are still shared.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> original <span class="op">=</span> [
+  [<span class="num">1</span>, <span class="num">2</span>],
+  <span class="num">3</span>,
+]
+<span class="kw">var</span> copy <span class="op">=</span> original.<span class="fn">clone</span>()
+
+copy[<span class="num">1</span>] <span class="op">=</span> <span class="num">99</span>
+copy[<span class="num">0</span>].<span class="fn">append</span>(<span class="num">4</span>)
+
+<span class="kw">echo</span> original
+<span class="kw">echo</span> copy
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[[1, 2, 4], 3]
+[[1, 2, 4], 99]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Replacing the top-level <code>3</code> affected only the copy. Appending to the
+<em>nested</em> list affected both, because both lists point at the same inner
+list. When you need a deep copy, copy the levels you care about yourself.</p>
+<h2 id="mutating-or-not-the-summary"><a class="anchor" href="#mutating-or-not-the-summary" aria-hidden="true" tabindex="-1"></a>Mutating or Not: The Summary</h2>
+<p>This is the table to come back to.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Mutates the receiver</th>
+<th>Returns a new list</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>append</code>, <code>insert</code>, <code>extend</code></td>
+<td><code>map</code>, <code>filter</code>, <code>find_all</code></td>
+</tr>
+<tr>
+<td><code>pop</code>, <code>shift</code>, <code>remove</code>, <code>remove_at</code></td>
+<td><code>unique</code>, <code>compact</code>, <code>take</code></td>
+</tr>
+<tr>
+<td><code>delete</code>, <code>clear</code></td>
+<td><code>reverse</code>, <code>clone</code>, <code>zip</code>, <code>zip_from</code></td>
+</tr>
+<tr>
+<td><code>sort</code></td>
+<td><code>partition</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><code>sort()</code> is the one that catches people out: it is in the left column, and
+it also returns the list, so <code>var sorted = items.sort()</code> leaves <code>items</code>
+sorted too. If you need both orders, clone first:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> items <span class="op">=</span> [<span class="num">3</span>, <span class="num">1</span>, <span class="num">2</span>]
+<span class="kw">var</span> sorted <span class="op">=</span> items.<span class="fn">clone</span>().<span class="fn">sort</span>()
+
+<span class="kw">echo</span> items
+<span class="kw">echo</span> sorted
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[3, 1, 2]
+[1, 2, 3]
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="a-worked-example"><a class="anchor" href="#a-worked-example" aria-hidden="true" tabindex="-1"></a>A Worked Example</h2>
+<p>A tiny report generator: take a list of records, drop the incomplete ones,
+group what is left, and print a summary. It uses <code>filter</code>, <code>map</code>,
+<code>reduce</code>, <code>sort</code> and <code>each</code> together, which is how they usually show up.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> sales <span class="op">=</span> [
+  { region<span class="op">:</span> <span class="str">'north'</span>, amount<span class="op">:</span> <span class="num">120</span> },
+  { region<span class="op">:</span> <span class="str">'south'</span>, amount<span class="op">:</span> <span class="num">80</span> },
+  { region<span class="op">:</span> <span class="str">'north'</span>, amount<span class="op">:</span> <span class="num">45</span> },
+  { region<span class="op">:</span> <span class="str">'east'</span>, amount<span class="op">:</span> <span class="lit">nil</span> },
+  { region<span class="op">:</span> <span class="str">'south'</span>, amount<span class="op">:</span> <span class="num">200</span> },
+]
+
+<span class="kw">def</span> <span class="def">totals_by_region</span>(records) {
+  <span class="kw">var</span> totals <span class="op">=</span> {}
+
+  records.<span class="fn">filter</span>(<span class="meta">@</span>(r) <span class="op">=&gt;</span> r.<span class="prop">amount</span> <span class="op">!=</span> <span class="lit">nil</span>).<span class="fn">each</span>(<span class="meta">@</span>(r) {
+    totals[r.<span class="prop">region</span>] <span class="op">=</span> totals.<span class="fn">get</span>(r.<span class="prop">region</span>, <span class="num">0</span>) <span class="op">+</span> r.<span class="prop">amount</span>
+  })
+
+  <span class="kw">return</span> totals
+}
+
+<span class="kw">var</span> totals <span class="op">=</span> <span class="fn">totals_by_region</span>(sales)
+<span class="kw">var</span> grand <span class="op">=</span> totals.<span class="fn">values</span>().<span class="fn">reduce</span>(<span class="meta">@</span>(acc, n) <span class="op">=&gt;</span> acc <span class="op">+</span> n, <span class="num">0</span>)
+
+totals.<span class="fn">to_list</span>()[<span class="num">0</span>].<span class="fn">sort</span>().<span class="fn">each</span>(<span class="meta">@</span>(region) {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>region.<span class="fn">rpad</span>(<span class="num">6</span>)<span class="subst">}</span><span class="str"> </span><span class="subst">${</span>totals[region]<span class="subst">}</span><span class="str">'</span>
+})
+
+<span class="kw">echo</span> <span class="str">'total  </span><span class="subst">${</span>grand<span class="subst">}</span><span class="str">'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">north  165
+south  280
+total  445
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>east</code> is absent from the report, not present with a zero, because its one
+record was filtered out before any accumulating happened and nothing ever
+created the key. That is usually what you want from a report; when it is
+not, seed the dictionary with every region first.</p>
+<p>Two other details are worth pulling out. <code>totals.get(r.region, 0)</code> supplies
+a starting value for a key that does not exist yet, which is what turns a
+dictionary into an accumulator. And <code>totals.to_list()[0]</code> takes the keys —
+<code>to_list()</code> returns keys and values as two parallel lists — which are then
+sorted so the report comes out in a stable order rather than in whatever
+order the records happened to arrive.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch04-03-lists.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch04-02-numbers.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">4.2</span>Numbers</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch04-04-dictionaries.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">4.4</span>Dictionaries</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#reading">Reading</a>
+        </li><li class="level-3">
+          <a href="#indexing">Indexing</a>
+        </li><li class="level-3">
+          <a href="#slicing">Slicing</a>
+        </li><li class="level-3">
+          <a href="#nested-lists">Nested Lists</a>
+        </li><li class="level-2">
+          <a href="#combining-lists">Combining Lists</a>
+        </li><li class="level-3">
+          <a href="#concatenation-with-">Concatenation with <code>+</code></a>
+        </li><li class="level-3">
+          <a href="#repetition-with-">Repetition with <code>*</code></a>
+        </li><li class="level-2">
+          <a href="#comparing-lists">Comparing Lists</a>
+        </li><li class="level-2">
+          <a href="#searching">Searching</a>
+        </li><li class="level-2">
+          <a href="#adding-and-removing">Adding and Removing</a>
+        </li><li class="level-2">
+          <a href="#ordering">Ordering</a>
+        </li><li class="level-2">
+          <a href="#transforming">Transforming</a>
+        </li><li class="level-2">
+          <a href="#finding">Finding</a>
+        </li><li class="level-2">
+          <a href="#asking-about-every-element">Asking About Every Element</a>
+        </li><li class="level-2">
+          <a href="#walking">Walking</a>
+        </li><li class="level-3">
+          <a href="#for-when-you-want-the-values"><code>for</code>, When You Want the Values</a>
+        </li><li class="level-3">
+          <a href="#for-with-two-variables-when-you-want-the-index-too"><code>for</code> With Two Variables, When You Want the Index Too</a>
+        </li><li class="level-3">
+          <a href="#iter-when-you-need-control-of-the-position"><code>iter</code>, When You Need Control of the Position</a>
+        </li><li class="level-3">
+          <a href="#each-when-you-have-a-function-already"><code>each()</code>, When You Have a Function Already</a>
+        </li><li class="level-2">
+          <a href="#combining">Combining</a>
+        </li><li class="level-2">
+          <a href="#lists-are-references">Lists Are References</a>
+        </li><li class="level-2">
+          <a href="#mutating-or-not-the-summary">Mutating or Not: The Summary</a>
+        </li><li class="level-2">
+          <a href="#a-worked-example">A Worked Example</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

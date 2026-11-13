@@ -1,0 +1,558 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Control Flow · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch03-05-control-flow.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="red" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item open"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="true" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html" aria-current="page"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>3.5 · Learning the Language</p>
+        <div class="content"><h1 id="control-flow">Control Flow</h1>
+<p>Control flow is how a program decides what to run next: run this only when
+that is true, run this until that stops being true, run this once for every
+item in a collection. Zuri has seven statements for it, and this section
+covers all of them.</p>
+<h2 id="blocks-and-single-statements"><a class="anchor" href="#blocks-and-single-statements" aria-hidden="true" tabindex="-1"></a>Blocks and Single Statements</h2>
+<p>Every control-flow statement takes a <strong>body</strong>. A body is either a block in
+braces, or a single statement:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> ready <span class="op">=</span> <span class="lit">true</span>
+
+<span class="kw">if</span> ready {
+  <span class="kw">echo</span> <span class="str">'launching'</span>
+}
+
+<span class="kw">if</span> ready {
+  <span class="kw">echo</span> <span class="str">'launching again'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">launching
+launching again
+</code></pre><span class="code-label">Output</span></figure>
+<p>Both forms are the language. <code>if</code>, <code>else</code>, <code>while</code>, <code>do</code>, <code>for</code>, and a
+<code>when</code> branch inside <code>using</code> all accept either one.</p>
+<p><code>iter</code> is the exception. Its body must be a block, because the semicolons
+in its header would otherwise be ambiguous with the statement that follows:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">0</span>; i <span class="op">&lt;</span> <span class="num">3</span>; i<span class="op">++</span> <span class="kw">echo</span> i
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">SyntaxError: Expected '{' at the start of iter body.
+</code></pre><span class="code-label">Output</span></figure>
+<blockquote>
+<p>The standard library and the examples in this book brace every body
+except a short <code>when</code> branch. Braces make a one-line body easy to extend
+into a three-line one later, and they keep the shape of a nested
+statement obvious at a glance. It is a convention, not a rule — write
+whichever form reads better in the code you are writing.</p>
+</blockquote>
+<h2 id="if--else"><a class="anchor" href="#if--else" aria-hidden="true" tabindex="-1"></a><code>if</code> / <code>else</code></h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> score <span class="op">=</span> <span class="num">73</span>
+
+<span class="kw">if</span> score <span class="op">&gt;=</span> <span class="num">90</span> {
+  <span class="kw">echo</span> <span class="str">'A'</span>
+} <span class="kw">else</span> <span class="kw">if</span> score <span class="op">&gt;=</span> <span class="num">70</span> {
+  <span class="kw">echo</span> <span class="str">'B'</span>
+} <span class="kw">else</span> {
+  <span class="kw">echo</span> <span class="str">'C'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">B
+</code></pre><span class="code-label">Output</span></figure>
+<p>There is no <code>elif</code>; <code>else if</code> is two keywords, and it works because the
+body of an <code>else</code> can itself be an <code>if</code> statement.</p>
+<p>The condition is any expression at all, and it is judged by <strong>truthiness</strong>
+rather than by being a <code>bool</code>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> name <span class="op">=</span> <span class="str">''</span>
+
+<span class="kw">if</span> name {
+  <span class="kw">echo</span> <span class="str">'have a name'</span>
+} <span class="kw">else</span> {
+  <span class="kw">echo</span> <span class="str">'no name'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">no name
+</code></pre><span class="code-label">Output</span></figure>
+<p>That is convenient and it is also where most bugs in new Zuri code come
+from, because a legitimate <code>0</code> is falsy. Re-read the table in
+<a href="ch03-02-data-types.html">Data Types</a> before you write <code>if count</code> or
+<code>if position</code>.</p>
+<h2 id="the-conditional-expression"><a class="anchor" href="#the-conditional-expression" aria-hidden="true" tabindex="-1"></a>The Conditional Expression</h2>
+<p><code>? :</code> is the expression form of <code>if</code>. It chooses between two values rather
+than between two statements:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> age <span class="op">=</span> <span class="num">20</span>
+<span class="kw">var</span> status <span class="op">=</span> age <span class="op">&gt;=</span> <span class="num">18</span> <span class="op">?</span> <span class="str">'adult'</span> <span class="op">:</span> <span class="str">'minor'</span>
+
+<span class="kw">echo</span> status
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">adult
+</code></pre><span class="code-label">Output</span></figure>
+<p>It nests, and it can span several lines. When breaking one across lines,
+<code>?</code> and <code>:</code> may either end a line or begin the next, whichever reads
+better; leading each branch with its operator keeps the shape of the
+choice visible:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> n <span class="op">=</span> <span class="num">7</span>
+
+<span class="kw">var</span> size <span class="op">=</span> n <span class="op">&gt;</span> <span class="num">100</span> <span class="op">?</span> <span class="str">'large'</span> <span class="op">:</span> n <span class="op">&gt;</span> <span class="num">5</span> <span class="op">?</span> <span class="str">'medium'</span> <span class="op">:</span> <span class="str">'small'</span>
+
+<span class="kw">echo</span> size
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">medium
+</code></pre><span class="code-label">Output</span></figure>
+<p>Use <code>? :</code> when you are producing a value and <code>if</code> when you are performing
+an action. A conditional expression whose branches are both side effects is
+harder to read than the <code>if</code> it replaced.</p>
+<h2 id="while"><a class="anchor" href="#while" aria-hidden="true" tabindex="-1"></a><code>while</code></h2>
+<p><code>while</code> tests before each pass, so a body may run zero times:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> n <span class="op">=</span> <span class="num">0</span>
+
+<span class="kw">while</span> n <span class="op">&lt;</span> <span class="num">3</span> {
+  <span class="kw">echo</span> <span class="str">'while </span><span class="subst">${</span>n<span class="subst">}</span><span class="str">'</span>
+  n<span class="op">++</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">while 0
+while 1
+while 2
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="do--while"><a class="anchor" href="#do--while" aria-hidden="true" tabindex="-1"></a><code>do</code> / <code>while</code></h2>
+<p><code>do</code> runs the body once and <em>then</em> tests, so the body always runs at least
+once. Reach for it when the test depends on something the body produces:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> m <span class="op">=</span> <span class="num">10</span>
+
+<span class="kw">do</span> {
+  <span class="kw">echo</span> <span class="str">'do </span><span class="subst">${</span>m<span class="subst">}</span><span class="str">'</span>
+  m<span class="op">++</span>
+} <span class="kw">while</span> m <span class="op">&lt;</span> <span class="num">3</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">do 10
+</code></pre><span class="code-label">Output</span></figure>
+<p>The condition was false from the very start, and the body still ran.</p>
+<h2 id="iter"><a class="anchor" href="#iter" aria-hidden="true" tabindex="-1"></a><code>iter</code></h2>
+<p><code>iter</code> is the counting loop. Its header has three clauses separated by
+semicolons: an initialiser, a condition, and an update.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">0</span>; i <span class="op">&lt;</span> <span class="num">3</span>; i<span class="op">++</span> {
+  <span class="kw">echo</span> <span class="str">'iter </span><span class="subst">${</span>i<span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">iter 0
+iter 1
+iter 2
+</code></pre><span class="code-label">Output</span></figure>
+<p>The initialiser runs once. The condition is tested before every pass. The
+update runs after every pass. A variable declared in the initialiser
+belongs to the loop and does not exist after it.</p>
+<p>The initialiser may declare several variables and the update may hold
+several expressions, each list separated by commas. The updates run in the
+order they are written:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">0</span>, j <span class="op">=</span> <span class="num">10</span>; i <span class="op">&lt;</span> <span class="num">3</span>; i<span class="op">++</span>, j<span class="op">--</span> {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>i<span class="subst">}</span><span class="str"> </span><span class="subst">${</span>j<span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">0 10
+1 9
+2 8
+</code></pre><span class="code-label">Output</span></figure>
+<p>Every clause is optional:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> k <span class="op">=</span> <span class="num">0</span>
+
+<span class="kw">iter</span> ; k <span class="op">&lt;</span> <span class="num">2</span>; {
+  <span class="kw">echo</span> <span class="str">'bare </span><span class="subst">${</span>k<span class="subst">}</span><span class="str">'</span>
+  k<span class="op">++</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">bare 0
+bare 1
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>iter ; ; { ... }</code> loops forever, though <code>while true</code> says it more plainly.</p>
+<p>The header may be spread over several lines, which is worth doing when the
+condition is long:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">1</span>; i <span class="op">&lt;=</span> <span class="num">3</span>; i<span class="op">++</span> {
+  <span class="kw">echo</span> i
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1
+2
+3
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="for--in"><a class="anchor" href="#for--in" aria-hidden="true" tabindex="-1"></a><code>for</code> / <code>in</code></h2>
+<p><code>for</code> walks an iterable: a list, a dictionary, a string, a range, a byte
+stream, or any class that implements the iterator protocol.</p>
+<p>With one variable you get the <strong>value</strong>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">for</span> ch <span class="kw">in</span> <span class="str">'hey'</span> {
+  <span class="kw">echo</span> ch
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">h
+e
+y
+</code></pre><span class="code-label">Output</span></figure>
+<p>With two, you get the <strong>key first and the value second</strong>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">for</span> index, value <span class="kw">in</span> [<span class="str">'a'</span>, <span class="str">'b'</span>] {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>index<span class="subst">}</span><span class="str"> </span><span class="subst">${</span>value<span class="subst">}</span><span class="str">'</span>
+}
+
+<span class="kw">for</span> key, value <span class="kw">in</span> { x<span class="op">:</span> <span class="num">1</span>, y<span class="op">:</span> <span class="num">2</span> } {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>key<span class="subst">}</span><span class="str">=</span><span class="subst">${</span>value<span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">0 a
+1 b
+x=1
+y=2
+</code></pre><span class="code-label">Output</span></figure>
+<p>For a list the key is the index, for a dictionary it is the key, and for a
+string it is the character position. Dictionaries iterate in insertion
+order, and so does everything else with an order to preserve.</p>
+<p>Ranges are exclusive at the top:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">for</span> i <span class="kw">in</span> <span class="num">0</span>..<span class="num">3</span> {
+  <span class="kw">echo</span> i
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">0
+1
+2
+</code></pre><span class="code-label">Output</span></figure>
+<p>The iterable expression is evaluated exactly <strong>once</strong>, before the first
+pass. Calling a function in that position calls it once, not once per
+element:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">source</span>() {
+  <span class="kw">echo</span> <span class="str">'source() called'</span>
+  <span class="kw">return</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+}
+
+<span class="kw">for</span> n <span class="kw">in</span> <span class="fn">source</span>() {
+  <span class="kw">echo</span> n
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">source() called
+1
+2
+3
+</code></pre><span class="code-label">Output</span></figure>
+<p><a href="ch06-03-decorated-methods.html">Chapter 6</a> shows how to make your own class
+work with <code>for</code> by defining <code>@key()</code> and <code>@value()</code>.</p>
+<h2 id="break-and-continue"><a class="anchor" href="#break-and-continue" aria-hidden="true" tabindex="-1"></a><code>break</code> and <code>continue</code></h2>
+<p><code>continue</code> skips to the next pass, and <code>break</code> leaves the loop entirely:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">0</span>; i <span class="op">&lt;</span> <span class="num">5</span>; i<span class="op">++</span> {
+  <span class="kw">if</span> i <span class="op">==</span> <span class="num">1</span> {
+    <span class="kw">continue</span>
+  }
+
+  <span class="kw">if</span> i <span class="op">==</span> <span class="num">3</span> {
+    <span class="kw">break</span>
+  }
+
+  <span class="kw">echo</span> i
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">0
+2
+</code></pre><span class="code-label">Output</span></figure>
+<p>Both apply to the innermost enclosing loop, and there are no loop labels.
+To leave a nested loop you either carry a flag:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> found <span class="op">=</span> <span class="lit">false</span>
+
+<span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">1</span>; i <span class="op">&lt;</span> <span class="num">4</span>; i<span class="op">++</span> {
+  <span class="kw">iter</span> <span class="kw">var</span> j <span class="op">=</span> <span class="num">1</span>; j <span class="op">&lt;</span> <span class="num">4</span>; j<span class="op">++</span> {
+    <span class="kw">if</span> i <span class="op">*</span> j <span class="op">==</span> <span class="num">4</span> {
+      <span class="kw">echo</span> <span class="str">'found </span><span class="subst">${</span>i<span class="subst">}</span><span class="str"> x </span><span class="subst">${</span>j<span class="subst">}</span><span class="str">'</span>
+      found <span class="op">=</span> <span class="lit">true</span>
+      <span class="kw">break</span>
+    }
+  }
+
+  <span class="kw">if</span> found {
+    <span class="kw">break</span>
+  }
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">found 2 x 2
+</code></pre><span class="code-label">Output</span></figure>
+<p>or, more often, put the nested loop in a function and <code>return</code> out of it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">first_product</span>(target) {
+  <span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">1</span>; i <span class="op">&lt;</span> <span class="num">4</span>; i<span class="op">++</span> {
+    <span class="kw">iter</span> <span class="kw">var</span> j <span class="op">=</span> <span class="num">1</span>; j <span class="op">&lt;</span> <span class="num">4</span>; j<span class="op">++</span> {
+      <span class="kw">if</span> i <span class="op">*</span> j <span class="op">==</span> target {
+        <span class="kw">return</span> [i, j]
+      }
+    }
+  }
+
+  <span class="kw">return</span> <span class="lit">nil</span>
+}
+
+<span class="kw">echo</span> <span class="fn">first_product</span>(<span class="num">4</span>)
+<span class="kw">echo</span> <span class="fn">first_product</span>(<span class="num">99</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[2, 2]
+nil
+</code></pre><span class="code-label">Output</span></figure>
+<p>The second version says what it is looking for in its name, and it has no
+flag to keep in sync. Prefer it.</p>
+<h2 id="using--when"><a class="anchor" href="#using--when" aria-hidden="true" tabindex="-1"></a><code>using</code> / <code>when</code></h2>
+<p><code>using</code> compares one subject against several candidate values:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> grade <span class="op">=</span> <span class="str">'B'</span>
+
+<span class="kw">using</span> grade {
+  <span class="kw">when</span> <span class="str">'A'</span> <span class="kw">echo</span> <span class="str">'excellent'</span>
+  <span class="kw">when</span> <span class="str">'B'</span>, <span class="str">'C'</span> <span class="kw">echo</span> <span class="str">'good'</span>
+  <span class="kw">default</span> <span class="kw">echo</span> <span class="str">'try again'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">good
+</code></pre><span class="code-label">Output</span></figure>
+<p>Several values on one <code>when</code> are alternatives, not a sequence: this <code>when</code>
+matches <code>'B'</code> <strong>or</strong> <code>'C'</code>. The first branch that matches runs, and then the
+statement is over — there is no fall-through, and no <code>break</code> to remember.</p>
+<p>Matching uses the same equality as <code>==</code>, which means <code>using</code> works on
+numbers, strings and booleans, and compares instances by identity, or
+through <code>@eq</code> when their class defines one.</p>
+<p><code>default</code> is optional. When nothing matches and there is no <code>default</code>,
+nothing happens:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">using</span> <span class="num">99</span> {
+  <span class="kw">when</span> <span class="num">1</span> <span class="kw">echo</span> <span class="str">'one'</span>
+}
+
+<span class="kw">echo</span> <span class="str">'nothing ran, and that is not an error'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">nothing ran, and that is not an error
+</code></pre><span class="code-label">Output</span></figure>
+<p>A <code>when</code> branch takes a block when it needs one:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> command <span class="op">=</span> <span class="str">'q'</span>
+
+<span class="kw">using</span> command {
+  <span class="kw">when</span> <span class="str">'a'</span> <span class="kw">echo</span> <span class="str">'adding'</span>
+  <span class="kw">when</span> <span class="str">'q'</span> {
+    <span class="kw">echo</span> <span class="str">'saving'</span>
+    <span class="kw">echo</span> <span class="str">'goodbye'</span>
+  }
+  <span class="kw">default</span> <span class="kw">echo</span> <span class="str">'unknown command'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">saving
+goodbye
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>using</code> is the right shape whenever you are dispatching on one value to
+many outcomes. A chain of <code>else if</code> comparing the same variable over and
+over is the same thing written longer.</p>
+<h2 id="assert"><a class="anchor" href="#assert" aria-hidden="true" tabindex="-1"></a><code>assert</code></h2>
+<p><code>assert</code> checks a condition and raises an <code>AssertError</code> when it is false:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> items <span class="op">=</span> [<span class="num">1</span>]
+
+<span class="kw">assert</span> <span class="num">1</span> <span class="op">+</span> <span class="num">1</span> <span class="op">==</span> <span class="num">2</span>
+<span class="kw">assert</span> items.<span class="fn">length</span>() <span class="op">==</span> <span class="num">1</span>, <span class="str">'list should have one item'</span>
+
+<span class="kw">echo</span> <span class="str">'both assertions held'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">both assertions held
+</code></pre><span class="code-label">Output</span></figure>
+<p>The optional second argument is the message the error carries:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">assert</span> <span class="num">1</span> <span class="op">==</span> <span class="num">2</span>, <span class="str">'arithmetic is broken'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console"><span class="err">Unhandled AssertError: arithmetic is broken</span>
+</code></pre><span class="code-label">Output</span></figure>
+<p>Assertions state what you believe is already true. They are for conditions
+that should be impossible, not for checking input that might legitimately
+be wrong — raise a <code>ValueError</code> for that.
+<a href="ch07-00-error-handling.html">Chapter 7</a> draws the line in detail.</p>
+<h2 id="return"><a class="anchor" href="#return" aria-hidden="true" tabindex="-1"></a><code>return</code></h2>
+<p><code>return</code> leaves the current function, with a value if you give it one and
+<code>nil</code> if you do not:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">classify</span>(n) {
+  <span class="kw">if</span> n <span class="op">&lt;</span> <span class="num">0</span> {
+    <span class="kw">return</span> <span class="str">'negative'</span>
+  }
+
+  <span class="kw">if</span> n <span class="op">==</span> <span class="num">0</span> {
+    <span class="kw">return</span> <span class="str">'zero'</span>
+  }
+
+  <span class="kw">return</span> <span class="str">'positive'</span>
+}
+
+<span class="kw">echo</span> <span class="fn">classify</span>(<span class="op">-</span><span class="num">5</span>)
+<span class="kw">echo</span> <span class="fn">classify</span>(<span class="num">0</span>)
+<span class="kw">echo</span> <span class="fn">classify</span>(<span class="num">3</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">negative
+zero
+positive
+</code></pre><span class="code-label">Output</span></figure>
+<p>A function that reaches its closing brace without a <code>return</code> yields <code>nil</code>.
+There are no implicit returns; the last expression in a body is not its
+value.</p>
+<p><code>return</code> is only legal inside a function. At the top level of a script it
+is a syntax error, because there is nothing to return from.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch03-05-control-flow.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch03-04-comments.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">3.4</span>Comments and Doc Blocks</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch04-00-collections.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">4</span>Text, Numbers and Collections</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#blocks-and-single-statements">Blocks and Single Statements</a>
+        </li><li class="level-2">
+          <a href="#if--else"><code>if</code> / <code>else</code></a>
+        </li><li class="level-2">
+          <a href="#the-conditional-expression">The Conditional Expression</a>
+        </li><li class="level-2">
+          <a href="#while"><code>while</code></a>
+        </li><li class="level-2">
+          <a href="#do--while"><code>do</code> / <code>while</code></a>
+        </li><li class="level-2">
+          <a href="#iter"><code>iter</code></a>
+        </li><li class="level-2">
+          <a href="#for--in"><code>for</code> / <code>in</code></a>
+        </li><li class="level-2">
+          <a href="#break-and-continue"><code>break</code> and <code>continue</code></a>
+        </li><li class="level-2">
+          <a href="#using--when"><code>using</code> / <code>when</code></a>
+        </li><li class="level-2">
+          <a href="#assert"><code>assert</code></a>
+        </li><li class="level-2">
+          <a href="#return"><code>return</code></a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

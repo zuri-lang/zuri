@@ -1,0 +1,546 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Editor Support · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch29-00-editors.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="red" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html" aria-current="page"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Chapter 29 · Tooling</p>
+        <div class="content"><h1 id="editor-support">Editor Support</h1>
+<p>Zuri ships a language server. <code>zuri lsp</code> speaks the Language Server
+Protocol, so any editor that speaks it too gets completion, navigation,
+diagnostics as you type, refactoring, formatting and test running for
+Zuri, from the same server that ships with the runtime. The server is
+written in Zuri, on the <code>zuri</code> module's own parser and compiler, so what
+it reports is what the runtime would do with the same code.</p>
+<p>Visual Studio Code has an extension that sets everything up. Neovim,
+Helix, Sublime Text and Emacs each need a few lines of configuration,
+shown at the end of this chapter.</p>
+<ul>
+<li><a href="#what-the-server-does">What the Server Does</a>
+<ul>
+<li><a href="#writing-code">Writing Code</a></li>
+<li><a href="#finding-your-way">Finding Your Way</a></li>
+<li><a href="#diagnostics">Diagnostics</a></li>
+<li><a href="#changing-code">Changing Code</a></li>
+<li><a href="#running-tests">Running Tests</a></li>
+<li><a href="#highlighting">Highlighting</a></li>
+</ul>
+</li>
+<li><a href="#how-the-server-reads-a-project">How the Server Reads a Project</a></li>
+<li><a href="#settings">Settings</a></li>
+<li><a href="#starting-the-server">Starting the Server</a></li>
+<li><a href="#visual-studio-code">Visual Studio Code</a></li>
+<li><a href="#neovim">Neovim</a></li>
+<li><a href="#helix">Helix</a></li>
+<li><a href="#sublime-text">Sublime Text</a></li>
+<li><a href="#emacs">Emacs</a></li>
+<li><a href="#when-something-goes-wrong">When Something Goes Wrong</a></li>
+</ul>
+<h2 id="what-the-server-does"><a class="anchor" href="#what-the-server-does" aria-hidden="true" tabindex="-1"></a>What the Server Does</h2>
+<h3 id="writing-code"><a class="anchor" href="#writing-code" aria-hidden="true" tabindex="-1"></a>Writing Code</h3>
+<p><strong>Completion</strong> offers what can be written at the cursor:</p>
+<ul>
+<li>after a <code>.</code>, the members of the receiver's type: an instance's fields and
+methods, inherited ones and the ones extensions add, a class's statics, a
+module's exports, a built-in type's methods, and the keys of a dictionary
+written out where its variable was declared;</li>
+<li>elsewhere, the names in scope, the built-in globals, and the keywords that
+can start what is being written;</li>
+<li>after <code>import</code>, module paths, and between an import's braces, what the
+module exports;</li>
+<li>at the start of a class member, <code>@new</code> and the operator decorators the
+class does not have yet, as method skeletons;</li>
+<li>after the <code>:</code> of a type hint, the type names;</li>
+<li>inside a doc block, its tags after <code>@</code>, and after <code>@param</code> the names of
+the parameters it documents.</li>
+</ul>
+<p>A name another module exports is offered with the import it needs: a module
+of the standard library or a package as <code>import json</code> and <code>json.encode</code>, and
+a module of the project as <code>import .shapes { Point }</code>.</p>
+<p><strong>Signature help</strong> follows a call while its arguments are written. It marks
+the parameter the cursor is on and shows its documentation, follows a
+constructor to its <code>@new</code>, and stays on a variadic parameter for every
+argument it takes.</p>
+<p><strong>Hover</strong> shows a declaration as a line of Zuri, its documentation laid out
+the way the standard library reference lays it out, the type a variable is
+inferred to hold, the value of a constant, and a module's overview.</p>
+<p><strong>Inlay hints</strong> name the parameter each literal argument goes to, and, when
+turned on, the type a variable is inferred to hold.</p>
+<h3 id="finding-your-way"><a class="anchor" href="#finding-your-way" aria-hidden="true" tabindex="-1"></a>Finding Your Way</h3>
+<p>Go to definition follows an imported name back to the module that declares
+it, and a built-in to the stub that documents it. Go to declaration stops at
+the import that brings a name into the file, and go to type definition goes
+to the class of the value a name holds. Go to implementation lists the
+methods of subclasses that override a method, or the subclasses of a class.</p>
+<p>Find references and the highlights of the current name go by what each name
+resolves to, never by its spelling, so a <code>distance</code> method of one class is
+never confused with another class's.</p>
+<p>The call hierarchy shows what calls a function and what it calls; the type
+hierarchy, the classes above and below a class. Each file has an outline,
+and the workspace symbol search finds a declaration by the letters of its
+name in order, so <code>hrq</code> finds <code>HttpRequest</code>. Each import links to the file
+it loads, and each class, function and method shows how often it is used.</p>
+<h3 id="diagnostics"><a class="anchor" href="#diagnostics" aria-hidden="true" tabindex="-1"></a>Diagnostics</h3>
+<p>Every error the server reports is either an error the compiler reports or a
+failure the runtime is certain to raise when the code runs:</p>
+<ul>
+<li>a syntax error, with the recovered rest of the file still checked;</li>
+<li>an error from the compiler, such as <code>break</code> outside a loop;</li>
+<li>an import of a module that does not exist, or of a name its module does
+not have;</li>
+<li><code>module.name</code> for a name the module does not have;</li>
+<li>a name nothing declares;</li>
+<li><code>self.name = value</code> outside <code>@new</code>, for a field no class in the chain
+declares;</li>
+<li>a literal argument of the wrong type, or a missing one, for a typed
+parameter, with the runtime's own message.</li>
+</ul>
+<p>A member that an instance of a fully known class does not have is a
+warning, since an extension the server has not read could add it. Unused
+imports and declarations, and code after a <code>return</code>, <code>raise</code>, <code>break</code> or
+<code>continue</code>, are shown faded. A use of anything documented <code>@deprecated</code> is
+struck through.</p>
+<p>The server never guesses. A value whose type cannot be told, a module whose
+wildcard imports lead somewhere unread, and a class whose superclass cannot
+be found are never diagnosed. Arity is not checked either, because Zuri does
+not enforce it.</p>
+<p>Quick fixes add the import a missing name needs, correct a misspelt name or
+member, remove an unused import, and declare a field set outside <code>@new</code>.</p>
+<h3 id="changing-code"><a class="anchor" href="#changing-code" aria-hidden="true" tabindex="-1"></a>Changing Code</h3>
+<p><strong>Rename</strong> changes a declaration and every use of it across the workspace.
+A <code>{ name }</code> dictionary entry keeps its key and becomes <code>{ name: renamed }</code>.
+A rename is refused, with the reason, when the new name is a keyword, when
+it is already declared where the declaration or a use of it would see it,
+when it would make private something used from outside, and for what the
+standard library or a package declares. A member used through a receiver
+whose type cannot be told is left alone, and the editor is told where.</p>
+<p><strong>Extract and inline</strong> refactorings are offered only where they keep what
+the program does:</p>
+<ul>
+<li><em>Extract variable</em> moves an expression into a <code>var</code> just before its
+statement, never out of a loop's condition, the right of <code>and</code> or <code>or</code>, a
+branch of <code>?:</code>, a <code>when</code> label or an <code>else if</code> condition, and never past
+something with a side effect that runs first. Every identical copy in the
+block can share the variable when the expression has no side effect.</li>
+<li><em>Extract function</em> turns whole statements of one block into a function.
+The outer locals they use become its parameters, and what they set and is
+read afterwards comes back: one value directly, several in a dictionary.
+Statements that use <code>self</code> or <code>parent</code> become a private method.</li>
+<li><em>Inline variable</em> replaces each use of a <code>var</code> set once and never again
+with its value.</li>
+<li><em>Inline function</em> replaces a call of a function whose body is a single
+<code>return</code> with that expression, and removes the function once every call is
+inlined.</li>
+</ul>
+<p><strong>Formatting</strong> runs <code>zuri fmt</code> on a file or a selection and sends back only
+the lines that differ. A file with a syntax error is left as it is.</p>
+<p>Renaming or moving a file updates the relative imports that reach it, in
+the files that import it and in the moved file itself.</p>
+<h3 id="running-tests"><a class="anchor" href="#running-tests" aria-hidden="true" tabindex="-1"></a>Running Tests</h3>
+<p>The server finds the tests every file of the workspace declares with the
+<code>test</code> module: each <code>describe</code> and <code>it</code>, and their <code>_only</code>, <code>_skip</code>, <code>_todo</code>
+and <code>_each</code> forms, whose name is written as a string. A lens above each one
+runs it, and one above the first runs the whole file.</p>
+<p>A test runs as <code>zuri test</code> would run it: <code>zuri run</code> on its file, in a process
+of its own, from the root of the project. Each result reaches the editor as
+it happens, and each failed assertion is shown on the line it failed at
+until the file changes or its tests run again.</p>
+<h3 id="highlighting"><a class="anchor" href="#highlighting" aria-hidden="true" tabindex="-1"></a>Highlighting</h3>
+<p>Semantic highlighting colours each name by what it resolves to: a class, a
+function, a method, a parameter, a variable, a field, a module or a
+decorator, with whatever the standard library defines marked as such. It
+works with any editor theme that colours semantic tokens.</p>
+<h2 id="how-the-server-reads-a-project"><a class="anchor" href="#how-the-server-reads-a-project" aria-hidden="true" tabindex="-1"></a>How the Server Reads a Project</h2>
+<p>The server reads every <code>.zu</code> file of the workspace folders the editor opens,
+in the background, on isolates of its own, so it answers while it reads.
+Inside a git work tree it reads what git tracks and what git would track,
+so <code>.gitignore</code> is honoured; anything under <code>.git</code>, <code>.zuri</code> or
+<code>node_modules</code> is left out, and so is whatever <code>zuri.exclude</code> names.</p>
+<p>Imports resolve exactly as the runtime resolves them: a relative import
+against the importing file, then the project's <code>.zuri/libs</code>, then the
+standard library, then the native modules, then the packages installed for
+the user in <code>ZURI_HOME/libs</code>. The standard library is read from the Zuri
+installation the server belongs to, or from <code>zuri.root</code>, or from
+<code>ZURI_ROOT</code>. A module the workspace imports is read the first time it is
+needed.</p>
+<h2 id="settings"><a class="anchor" href="#settings" aria-hidden="true" tabindex="-1"></a>Settings</h2>
+<p>The server reads its settings from the <code>zuri</code> section of the editor's
+configuration, as nested objects or dotted names, and follows changes as
+they are made.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>root</code></td>
+<td><code>''</code></td>
+<td>The installation whose standard library is read; empty uses <code>ZURI_ROOT</code>, or the installation beside <code>zuri</code></td>
+</tr>
+<tr>
+<td><code>exclude</code></td>
+<td><code>[]</code></td>
+<td>Globs, relative to a workspace folder, of files never read</td>
+</tr>
+<tr>
+<td><code>index.workers</code></td>
+<td><code>2</code></td>
+<td>Isolates that read the workspace in the background</td>
+</tr>
+<tr>
+<td><code>diagnostics.enable</code></td>
+<td><code>true</code></td>
+<td>Whether problems are reported at all</td>
+</tr>
+<tr>
+<td><code>diagnostics.scope</code></td>
+<td><code>'openFiles'</code></td>
+<td><code>'openFiles'</code>, or <code>'workspace'</code> for every file of the workspace</td>
+</tr>
+<tr>
+<td><code>diagnostics.delay</code></td>
+<td><code>300</code></td>
+<td>Milliseconds after a change before a file is checked</td>
+</tr>
+<tr>
+<td><code>diagnostics.unusedHints</code></td>
+<td><code>true</code></td>
+<td>Whether unused declarations are shown faded</td>
+</tr>
+<tr>
+<td><code>inlayHints.parameterNames</code></td>
+<td><code>'literals'</code></td>
+<td>Which arguments are named: <code>'none'</code>, <code>'literals'</code> or <code>'all'</code></td>
+</tr>
+<tr>
+<td><code>inlayHints.variableTypes</code></td>
+<td><code>false</code></td>
+<td>Whether inferred variable types are shown</td>
+</tr>
+<tr>
+<td><code>codeLens.references</code></td>
+<td><code>true</code></td>
+<td>Whether declarations show how often they are used</td>
+</tr>
+<tr>
+<td><code>completion.autoImport</code></td>
+<td><code>true</code></td>
+<td>Whether names from modules not imported yet are offered</td>
+</tr>
+<tr>
+<td><code>completion.callParentheses</code></td>
+<td><code>false</code></td>
+<td>Whether completing a function writes its parentheses</td>
+</tr>
+<tr>
+<td><code>testing.codeLens</code></td>
+<td><code>true</code></td>
+<td>Whether suites and tests show lenses that run them</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2 id="starting-the-server"><a class="anchor" href="#starting-the-server" aria-hidden="true" tabindex="-1"></a>Starting the Server</h2>
+<p>Editors start the server themselves, over its standard input and output:</p>
+<figure class="code"><pre><code class="language-sh"><span class="fn">zuri</span> lsp [--stdio] [--log <span class="op">&lt;</span>path<span class="op">&gt;</span>] [--log-level <span class="op">&lt;</span>level<span class="op">&gt;</span>]
+</code></pre><span class="code-label">Shell</span></figure>
+<p><code>--stdio</code> names the only way the server talks, and is accepted because
+editors pass it. <code>--log</code> appends the server's log to a file as well as
+sending it to the editor. <code>--log-level</code> sets how much is logged: <code>error</code>,
+<code>warn</code>, <code>info</code> (the default), <code>debug</code>, or <code>trace</code>, which also writes every
+message the editor and the server exchange to the log file.</p>
+<p>The server exits with <code>0</code> when the editor shuts it down in order, and with
+<code>1</code> when the connection ends without that, or when the editor that started
+it has exited.</p>
+<h2 id="visual-studio-code"><a class="anchor" href="#visual-studio-code" aria-hidden="true" tabindex="-1"></a>Visual Studio Code</h2>
+<p>Install the <strong>Zuri</strong> extension from the marketplace, or from a downloaded
+package:</p>
+<figure class="code"><pre><code class="language-sh"><span class="fn">code</span> <span class="attr">--install-extension</span> zuri-vscode-0.2.0.vsix
+</code></pre><span class="code-label">Shell</span></figure>
+<p>The extension starts the server for every workspace with a <code>.zu</code> file. Its
+settings are the server's, under <code>zuri.</code>, plus two of its own: <code>zuri.path</code>,
+the <code>zuri</code> executable to run, and <code>zuri.trace.server</code>, which records the
+messages between the editor and the server in the <strong>Zuri Language Server</strong>
+output. Tests appear in the Test Explorer, and the commands <strong>Zuri: Restart
+Language Server</strong>, <strong>Zuri: Show Language Server Output</strong> and <strong>Zuri: Check
+Zuri Installation</strong> are in the command palette.</p>
+<h2 id="neovim"><a class="anchor" href="#neovim" aria-hidden="true" tabindex="-1"></a>Neovim</h2>
+<p>Neovim 0.11 configures language servers itself:</p>
+<figure class="code"><pre><code class="language-lua">vim.filetype.add({ extension = { zu = 'zuri' } })
+
+vim.lsp.config('zuri', {
+  cmd = { 'zuri', 'lsp' },
+  filetypes = { 'zuri' },
+  root_markers = { 'project.toml', '.git' },
+  settings = {
+    zuri = {
+      inlayHints = { variableTypes = true },
+    },
+  },
+})
+
+vim.lsp.enable('zuri')
+</code></pre><span class="code-label">lua</span></figure>
+<p>Inlay hints are shown with <code>vim.lsp.inlay_hint.enable()</code>, and a code lens
+runs with <code>vim.lsp.codelens.run()</code>.</p>
+<h2 id="helix"><a class="anchor" href="#helix" aria-hidden="true" tabindex="-1"></a>Helix</h2>
+<p>Add the language and its server to <code>languages.toml</code>:</p>
+<figure class="code"><pre><code class="language-toml"><span class="sect">[[language]]</span>
+<span class="key">name</span> <span class="op">=</span> <span class="str">"zuri"</span>
+<span class="key">scope</span> <span class="op">=</span> <span class="str">"source.zuri"</span>
+<span class="key">file-types</span> <span class="op">=</span> [<span class="str">"zu"</span>]
+<span class="key">roots</span> <span class="op">=</span> [<span class="str">"project.toml"</span>]
+<span class="key">comment-token</span> <span class="op">=</span> <span class="str">"#"</span>
+<span class="key">block-comment-tokens</span> <span class="op">=</span> { <span class="key">start</span> <span class="op">=</span> <span class="str">"/*"</span>, <span class="key">end</span> <span class="op">=</span> <span class="str">"*/"</span> }
+<span class="key">indent</span> <span class="op">=</span> { <span class="key">tab-width</span> <span class="op">=</span> <span class="num">2</span>, <span class="key">unit</span> <span class="op">=</span> <span class="str">"  "</span> }
+<span class="key">language-servers</span> <span class="op">=</span> [<span class="str">"zuri-lsp"</span>]
+
+<span class="sect">[language-server.zuri-lsp]</span>
+<span class="key">command</span> <span class="op">=</span> <span class="str">"zuri"</span>
+<span class="key">args</span> <span class="op">=</span> [<span class="str">"lsp"</span>]
+
+<span class="sect">[language-server.zuri-lsp.config.zuri]</span>
+<span class="key">inlayHints</span> <span class="op">=</span> { <span class="key">parameterNames</span> <span class="op">=</span> <span class="str">"literals"</span> }
+</code></pre><span class="code-label">TOML</span></figure>
+<h2 id="sublime-text"><a class="anchor" href="#sublime-text" aria-hidden="true" tabindex="-1"></a>Sublime Text</h2>
+<p>With the LSP package installed, add a client to its settings:</p>
+<figure class="code"><pre><code class="language-json"><span class="punct">{</span>
+  <span class="key">"clients"</span><span class="punct">:</span> <span class="punct">{</span>
+    <span class="key">"zuri"</span><span class="punct">:</span> <span class="punct">{</span>
+      <span class="key">"enabled"</span><span class="punct">:</span> <span class="lit">true</span><span class="punct">,</span>
+      <span class="key">"command"</span><span class="punct">:</span> <span class="punct">[</span><span class="str">"zuri"</span><span class="punct">,</span> <span class="str">"lsp"</span><span class="punct">]</span><span class="punct">,</span>
+      <span class="key">"selector"</span><span class="punct">:</span> <span class="str">"source.zuri"</span><span class="punct">,</span>
+      <span class="key">"settings"</span><span class="punct">:</span> <span class="punct">{</span>
+        <span class="key">"zuri.diagnostics.scope"</span><span class="punct">:</span> <span class="str">"openFiles"</span>
+      <span class="punct">}</span>
+    <span class="punct">}</span>
+  <span class="punct">}</span>
+<span class="punct">}</span>
+</code></pre><span class="code-label">JSON</span></figure>
+<p>The selector names the syntax Zuri files open with. The Visual Studio Code
+extension's grammar, <code>zuri.tmLanguage.json</code>, is a TextMate grammar whose
+scope is <code>source.zuri</code>; PackageDev's Convert command turns it into a
+<code>.tmLanguage</code> file for Sublime Text.</p>
+<h2 id="emacs"><a class="anchor" href="#emacs" aria-hidden="true" tabindex="-1"></a>Emacs</h2>
+<p>Eglot, built into Emacs 29, needs a mode for Zuri files and the command
+that starts the server:</p>
+<figure class="code"><pre><code class="language-elisp">(define-derived-mode zuri-mode prog-mode "Zuri"
+  "A major mode for Zuri source."
+  (setq-local comment-start "# "))
+
+(add-to-list 'auto-mode-alist '("\\.zu\\'" . zuri-mode))
+
+(with-eval-after-load 'eglot
+  (add-to-list 'eglot-server-programs '(zuri-mode "zuri" "lsp")))
+
+(add-hook 'zuri-mode-hook #'eglot-ensure)
+</code></pre><span class="code-label">elisp</span></figure>
+<p>Settings go in <code>eglot-workspace-configuration</code>:</p>
+<figure class="code"><pre><code class="language-elisp">(setq-default eglot-workspace-configuration
+              '(:zuri (:inlayHints (:variableTypes t))))
+</code></pre><span class="code-label">elisp</span></figure>
+<h2 id="when-something-goes-wrong"><a class="anchor" href="#when-something-goes-wrong" aria-hidden="true" tabindex="-1"></a>When Something Goes Wrong</h2>
+<p>The server sends what it logs at its <code>--log-level</code> and above, <code>info</code> by
+default, to the editor's log for language servers, and while the editor asks
+for a trace, everything down to <code>debug</code> as well. Starting it with <code>--log</code> and
+<code>--log-level debug</code> writes all of it to a file; <code>--log-level trace</code> adds
+every message exchanged.</p>
+<p>When nothing works at all, the editor cannot start <code>zuri</code>: running
+<code>zuri --version</code> in a terminal shows whether it is on <code>PATH</code>, and an editor
+that takes a path, as <code>zuri.path</code> does in Visual Studio Code, can be given
+the executable directly.</p>
+<p>When the standard library cannot be found, the server says so in its log.
+Setting <code>zuri.root</code>, or <code>ZURI_ROOT</code> for the editor, to the Zuri installation
+fixes it.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch29-00-editors.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch28-00-rpc.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">28</span>JSON-RPC</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch30-00-documentation.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">30</span>Documenting a Project</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#what-the-server-does">What the Server Does</a>
+        </li><li class="level-3">
+          <a href="#writing-code">Writing Code</a>
+        </li><li class="level-3">
+          <a href="#finding-your-way">Finding Your Way</a>
+        </li><li class="level-3">
+          <a href="#diagnostics">Diagnostics</a>
+        </li><li class="level-3">
+          <a href="#changing-code">Changing Code</a>
+        </li><li class="level-3">
+          <a href="#running-tests">Running Tests</a>
+        </li><li class="level-3">
+          <a href="#highlighting">Highlighting</a>
+        </li><li class="level-2">
+          <a href="#how-the-server-reads-a-project">How the Server Reads a Project</a>
+        </li><li class="level-2">
+          <a href="#settings">Settings</a>
+        </li><li class="level-2">
+          <a href="#starting-the-server">Starting the Server</a>
+        </li><li class="level-2">
+          <a href="#visual-studio-code">Visual Studio Code</a>
+        </li><li class="level-2">
+          <a href="#neovim">Neovim</a>
+        </li><li class="level-2">
+          <a href="#helix">Helix</a>
+        </li><li class="level-2">
+          <a href="#sublime-text">Sublime Text</a>
+        </li><li class="level-2">
+          <a href="#emacs">Emacs</a>
+        </li><li class="level-2">
+          <a href="#when-something-goes-wrong">When Something Goes Wrong</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

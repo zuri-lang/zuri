@@ -1,0 +1,326 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The JSON API · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch25-04-api.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="red" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item open"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="true" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html" aria-current="page"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>25.4 · The Capstone</p>
+        <div class="content"><h1 id="the-json-api">The JSON API</h1>
+<p>Six routes. Every one of them reads or writes through the board and returns
+JSON, and not one of them handles an error.</p>
+<h2 id="the-routes-one-at-a-time"><a class="anchor" href="#the-routes-one-at-a-time" aria-hidden="true" tabindex="-1"></a>The Routes, One at a Time</h2>
+<h3 id="the-shape-of-the-file"><a class="anchor" href="#the-shape-of-the-file" aria-hidden="true" tabindex="-1"></a>The Shape of the File</h3>
+<figure class="code has-caption"><figcaption>routes/api.zu</figcaption><pre><code class="language-zuri"><span class="kw">import</span> ..models { <span class="type">TaskError</span> }
+<span class="kw">import</span> ..storage { <span class="type">NotFoundError</span> }
+
+<span class="com">/**
+ * Registers every `/api` route on `server`, reading and writing
+ * through `board`.
+ *
+ * </span><span class="doctag">@param</span><span class="com"> HttpServer server
+ * </span><span class="doctag">@param</span><span class="com"> Board board
+ */</span>
+<span class="kw">def</span> <span class="def">register</span>(server, board) {
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>register(server, board)</code> takes the server and the board rather than
+importing them. That is what lets the same routes run against a different
+board — a temporary one in a test, a seeded one in a demo — and it keeps
+this file free of any decision about where the data lives.</p>
+<h3 id="listing-with-an-optional-filter"><a class="anchor" href="#listing-with-an-optional-filter" aria-hidden="true" tabindex="-1"></a>Listing, With an Optional Filter</h3>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">get</span>(<span class="str">'/api/tasks'</span>, <span class="meta">@</span>(request, response) {
+  <span class="kw">var</span> column <span class="op">=</span> request.<span class="fn">query_param</span>(<span class="str">'column'</span>, <span class="lit">nil</span>)
+  <span class="kw">var</span> tasks <span class="op">=</span> column <span class="op">==</span> <span class="lit">nil</span> <span class="op">?</span> board.<span class="fn">all</span>() <span class="op">:</span> board.<span class="fn">in_column</span>(column)
+
+  response.<span class="fn">json</span>({
+    tasks<span class="op">:</span> tasks.<span class="fn">map</span>(<span class="meta">@</span>(task) <span class="op">=&gt;</span> task.<span class="fn">to_view</span>()),
+    summary<span class="op">:</span> board.<span class="fn">summary</span>(),
+  })
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>One route serving two questions: every task, or every task in one column.</p>
+<p><code>query_param('column', nil)</code> supplies the fallback, and the test is
+<code>column == nil</code> rather than <code>if column</code>. That distinction matters: a query
+string of <code>?column=</code> produces an empty string, which is falsy but <em>present</em>
+— and an empty column name should be rejected by <code>in_column()</code>, not
+silently treated as &quot;no filter&quot;.</p>
+<p>The response carries <code>summary</code> alongside <code>tasks</code> because a client
+rendering a board wants both, and making it ask twice would be two requests
+for one screen.</p>
+<h3 id="fetching-one"><a class="anchor" href="#fetching-one" aria-hidden="true" tabindex="-1"></a>Fetching One</h3>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">get</span>(<span class="str">'/api/tasks/:id'</span>, <span class="meta">@</span>(request, response) {
+  response.<span class="fn">json</span>(board.<span class="fn">get</span>(request.<span class="fn">param</span>(<span class="str">'id'</span>)).<span class="fn">to_view</span>())
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>One line, and it can fail. <code>board.get()</code> raises <code>NotFoundError</code> for an
+unknown id, and this handler does nothing about it — which is the subject
+of the section below.</p>
+<h3 id="creating"><a class="anchor" href="#creating" aria-hidden="true" tabindex="-1"></a>Creating</h3>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">post</span>(<span class="str">'/api/tasks'</span>, <span class="meta">@</span>(request, response) {
+  <span class="kw">var</span> body <span class="op">=</span> request.<span class="fn">json_body</span>() <span class="kw">or</span> {}
+
+  <span class="kw">var</span> task <span class="op">=</span> board.<span class="fn">add</span>(body.<span class="fn">get</span>(<span class="str">'title'</span>, <span class="lit">nil</span>), {
+    notes<span class="op">:</span> body.<span class="fn">get</span>(<span class="str">'notes'</span>, <span class="lit">nil</span>),
+    column<span class="op">:</span> body.<span class="fn">get</span>(<span class="str">'column'</span>, <span class="lit">nil</span>),
+  })
+
+  response.<span class="fn">json</span>(task.<span class="fn">to_view</span>(), <span class="num">201</span>)
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>request.json_body()</code> returns <code>nil</code> for a request with no body, or a body
+that is not JSON at all. <code>or {}</code> turns that into an empty dictionary, so
+<code>body.get('title', nil)</code> works either way and a missing title becomes the
+<em>model's</em> problem — which is where the message about it already lives.</p>
+<p>The <code>201</code> is the second argument to <code>response.json()</code>. A created resource
+is not a <code>200</code>, and saying so is one character of effort.</p>
+<p><code>task.to_view()</code> rather than <code>task</code>, for the reason below.</p>
+<h3 id="updating-and-deleting"><a class="anchor" href="#updating-and-deleting" aria-hidden="true" tabindex="-1"></a>Updating and Deleting</h3>
+<figure class="code"><pre><code class="language-zuri">  server.<span class="fn">patch</span>(<span class="str">'/api/tasks/:id'</span>, <span class="meta">@</span>(request, response) {
+    <span class="kw">var</span> body <span class="op">=</span> request.<span class="fn">json_body</span>() <span class="kw">or</span> {}
+
+    response.<span class="fn">json</span>(board.<span class="fn">update</span>(request.<span class="fn">param</span>(<span class="str">'id'</span>), body).<span class="fn">to_view</span>())
+  })
+
+  server.<span class="fn">delete</span>(<span class="str">'/api/tasks/:id'</span>, <span class="meta">@</span>(request, response) {
+    board.<span class="fn">remove</span>(request.<span class="fn">param</span>(<span class="str">'id'</span>))
+    response.<span class="fn">json</span>({ deleted<span class="op">:</span> <span class="lit">true</span> })
+  })
+
+  server.<span class="fn">get</span>(<span class="str">'/api/summary'</span>, <span class="meta">@</span>(request, response) {
+    response.<span class="fn">json</span>(board.<span class="fn">summary</span>())
+  })
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The <code>PATCH</code> handler passes the decoded body straight to <code>board.update()</code>
+with no filtering. That is safe because <code>update()</code> only looks at the three
+keys it knows — <code>title</code>, <code>notes</code>, <code>column</code> — using <code>contains()</code>, so a body
+containing <code>{&quot;id&quot;: &quot;hacked&quot;}</code> changes nothing. The whitelist lives in the
+model, once, rather than in every route that accepts a body.</p>
+<p><code>DELETE</code> returns a body rather than a bare <code>204</code>, because a client that
+parses every response as JSON should not have to special-case one route.</p>
+<h2 id="handlers-do-not-handle-errors"><a class="anchor" href="#handlers-do-not-handle-errors" aria-hidden="true" tabindex="-1"></a>Handlers Do Not Handle Errors</h2>
+<p>This is the chapter's real point, and it is easiest to see by counting: six
+handlers, zero <code>catch</code> blocks.</p>
+<p><code>board.get()</code> raises <code>NotFoundError</code> for an unknown id. <code>board.add()</code> and
+<code>board.update()</code> raise <code>TaskError</code> for a bad title or an unknown column.
+Not one handler catches either, and every one of them is one to five lines
+as a direct result.</p>
+<p>The middleware in <a href="ch25-06-middleware.html">the next section</a> catches both
+and turns them into a 404 and a 422. <strong>There is exactly one place in this
+application that knows which domain error means which status code</strong>, and it
+is not in a route.</p>
+<p>Consider the alternative for a moment. Six handlers each wrapping their
+board call in a <code>catch</code>, each deciding on a status, each formatting an
+error body — thirty-odd lines of duplication, and a seventh route added
+next month that gets one of them subtly wrong.</p>
+<p>Note also the two imports at the top of the file. <code>TaskError</code> and
+<code>NotFoundError</code> are imported and never mentioned again in this file; they
+are there because the module that catches them needs them re-exported
+through <code>routes</code>. That is the module system doing its job, and
+<a href="ch08-00-modules.html">Chapter 8</a> covers why the <code>@</code> matters there.</p>
+<h2 id="to_view-at-the-boundary"><a class="anchor" href="#to_view-at-the-boundary" aria-hidden="true" tabindex="-1"></a><code>to_view()</code> at the Boundary</h2>
+<p>Every response sends <code>to_view()</code>, never the <code>Task</code> itself.</p>
+<p>That single habit means the API's shape is a decision <code>Task</code> makes in one
+method, rather than something that leaks out of however the object happens
+to be laid out. Add a private field to <code>Task</code> tomorrow and the API returns
+exactly what it returned yesterday.</p>
+<p>It is also why the responses carry <code>created_on</code> and <code>is_done</code>, which are
+not stored anywhere — <code>to_view()</code> computes them, so every client gets a
+formatted date and a boolean without doing the work itself.</p>
+<h2 id="the-routes-in-practice"><a class="anchor" href="#the-routes-in-practice" aria-hidden="true" tabindex="-1"></a>The Routes in Practice</h2>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">curl</span> <span class="attr">-s</span> localhost:8000/api/tasks <span class="attr">-H</span> <span class="str">'content-type: application/json'</span> \
+    <span class="fn">-d</span> <span class="str">'{"title":"write the capstone","notes":"chapter 17"}'</span>
+<span class="out">{"id":"01a08e15-e758-741d-b368-d5a988cb90cd","title":"write the capstone",</span>
+<span class="out"> "notes":"chapter 17","column":"todo","created_at":1789090195.9,</span>
+<span class="out"> "created_on":"Sep 11, 2026","is_done":false}</span>
+
+<span class="prompt">$ </span><span class="fn">curl</span> <span class="attr">-s</span> localhost:8000/api/tasks
+<span class="out">{"tasks":[...],"summary":{"todo":1,"doing":0,"done":0}}</span>
+
+<span class="prompt">$ </span><span class="fn">curl</span> <span class="attr">-s</span> <span class="attr">-X</span> PATCH localhost:8000/api/tasks/01a08e15-... \
+    <span class="fn">-H</span> <span class="str">'content-type: application/json'</span> <span class="attr">-d</span> <span class="str">'{"column":"doing"}'</span>
+<span class="out">{"id":"01a08e15-...","column":"doing",...}</span>
+
+<span class="prompt">$ </span><span class="fn">curl</span> <span class="attr">-s</span> localhost:8000/api/tasks?column=doing
+<span class="out">{"tasks":[...],"summary":{"todo":0,"doing":1,"done":0}}</span>
+
+<span class="prompt">$ </span><span class="fn">curl</span> <span class="attr">-s</span> localhost:8000/api/tasks <span class="attr">-H</span> <span class="str">'content-type: application/json'</span> <span class="attr">-d</span> <span class="str">'{"title":""}'</span>
+<span class="out">{"error":"a task needs a title","field":"title"}</span>
+
+<span class="prompt">$ </span><span class="fn">curl</span> <span class="attr">-s</span> localhost:8000/api/tasks/does-not-exist
+<span class="out">{"error":"no task with id does-not-exist"}</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>The last two are the interesting ones. A 422 with a <code>field</code>, and a 404 with
+a message, from handlers that said nothing at all about status codes.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch25-04-api.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch25-03-domain.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">25.3</span>Validation and the Domain Model</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch25-05-pages.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">25.5</span>Server-Rendered Pages with Wire</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#the-routes-one-at-a-time">The Routes, One at a Time</a>
+        </li><li class="level-3">
+          <a href="#the-shape-of-the-file">The Shape of the File</a>
+        </li><li class="level-3">
+          <a href="#listing-with-an-optional-filter">Listing, With an Optional Filter</a>
+        </li><li class="level-3">
+          <a href="#fetching-one">Fetching One</a>
+        </li><li class="level-3">
+          <a href="#creating">Creating</a>
+        </li><li class="level-3">
+          <a href="#updating-and-deleting">Updating and Deleting</a>
+        </li><li class="level-2">
+          <a href="#handlers-do-not-handle-errors">Handlers Do Not Handle Errors</a>
+        </li><li class="level-2">
+          <a href="#to_view-at-the-boundary"><code>to_view()</code> at the Boundary</a>
+        </li><li class="level-2">
+          <a href="#the-routes-in-practice">The Routes in Practice</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

@@ -1,0 +1,834 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>A Tour of the Standard Library · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch13-00-stdlib-tour.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="teal" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html" aria-current="page"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Chapter 13 · Working with the World</p>
+        <div class="content"><h1 id="a-tour-of-the-standard-library">A Tour of the Standard Library</h1>
+<p>The standard library is part of the installation. There is nothing to add
+to a manifest, no package manager to run, and no dependency to resolve;
+<code>import json</code> works in a file you created ten seconds ago.</p>
+<p>This chapter walks through what is there, grouped by the job you would
+reach for it to do, with a working example of each. It is a tour rather
+than a reference: <a href="appendix-06-stdlib-index.html">Appendix F</a> is the index,
+every module carries doc blocks in <code>libs/</code>, and the three largest modules
+have chapters of their own — <a href="ch14-00-wire.html">Wire</a>,
+<a href="ch15-00-http.html">HTTP</a> and <a href="ch16-00-imagine.html">Imagine</a>.</p>
+<p>Read it once to learn what exists. The value of a tour like this is not
+remembering the details; it is recognising, six months from now, that the
+thing you are about to write by hand is already here.</p>
+<h2 id="data-formats"><a class="anchor" href="#data-formats" aria-hidden="true" tabindex="-1"></a>Data Formats</h2>
+<h3 id="json"><a class="anchor" href="#json" aria-hidden="true" tabindex="-1"></a><code>json</code></h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> json
+
+<span class="kw">var</span> data <span class="op">=</span> {
+  name<span class="op">:</span> <span class="str">'Ada'</span>,
+  langs<span class="op">:</span> [<span class="str">'zuri'</span>, <span class="str">'rust'</span>],
+  active<span class="op">:</span> <span class="lit">true</span>,
+}
+
+<span class="kw">echo</span> json.<span class="fn">encode</span>(data)
+<span class="kw">echo</span> json.<span class="fn">decode</span>(<span class="str">'{"a":1}'</span>).<span class="prop">a</span>
+<span class="kw">echo</span> json.<span class="fn">encode</span>({ name<span class="op">:</span> <span class="str">'Ada'</span> }, <span class="lit">false</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{"name":"Ada","langs":["zuri","rust"],"active":true}
+1
+{
+  "name": "Ada"
+}
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>encode(value, compact, max_depth)</code> defaults to compact. <code>parse(path)</code>
+reads and decodes a file; <code>dump(value, file)</code> writes one. A class that
+defines <code>@to_json()</code> controls its own encoding.</p>
+<h3 id="yaml"><a class="anchor" href="#yaml" aria-hidden="true" tabindex="-1"></a><code>yaml</code></h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> yaml
+
+<span class="kw">echo</span> yaml.<span class="fn">parse</span>(<span class="str">'name: zuri\ntags:\n  - fast\n  - small'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{name: zuri, tags: [fast, small]}
+</code></pre><span class="code-label">Output</span></figure>
+<p>Anchors, aliases, tags, multi-document streams and block scalars are all
+supported.</p>
+<h3 id="toml"><a class="anchor" href="#toml" aria-hidden="true" tabindex="-1"></a><code>toml</code></h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> toml
+
+<span class="kw">echo</span> toml.<span class="fn">parse</span>(<span class="str">'[package]\nname = "zuri"\nversion = "1.0"\n'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{package: {name: zuri, version: 1.0}}
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>parse()</code> and <code>dump()</code> treat a document as data. <code>edit()</code> treats it as a
+file somebody wrote: the <code>Document</code> it returns renders back byte for byte
+until it is changed, and a change disturbs only the line it lands on.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> toml
+
+<span class="kw">var</span> doc <span class="op">=</span> toml.<span class="fn">edit</span>(<span class="str">'# what we ship\n[package]\nversion = "0.9.0"  # bump me\n'</span>)
+doc.<span class="fn">set</span>(<span class="str">'package.version'</span>, <span class="str">'1.0.0'</span>)
+
+<span class="kw">echo</span> doc.<span class="fn">to_string</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console"># what we ship
+[package]
+version = "1.0.0"  # bump me
+
+</code></pre><span class="code-label">Output</span></figure>
+<p>That is what a program editing somebody else's configuration file needs:
+the comment stayed, and so did the spacing on the line that changed.</p>
+<h3 id="csv"><a class="anchor" href="#csv" aria-hidden="true" tabindex="-1"></a><code>csv</code></h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> csv
+
+<span class="kw">echo</span> csv.<span class="fn">parse</span>(<span class="str">'a,b\n1,2'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[[a, b], [1, 2]]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>Reader</code> and <code>Writer</code> stream large files, <code>Dialect</code> configures separators
+and quoting, and <code>sniff_dialect()</code> guesses from a sample.</p>
+<h3 id="struct"><a class="anchor" href="#struct" aria-hidden="true" tabindex="-1"></a><code>struct</code></h3>
+<p>Binary layouts. Covered in <a href="ch10-00-binary-data.html">Chapter 10</a>.</p>
+<h3 id="base64-convert"><a class="anchor" href="#base64-convert" aria-hidden="true" tabindex="-1"></a><code>base64</code>, <code>convert</code></h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> convert
+
+<span class="kw">echo</span> convert.<span class="fn">bytes_to_hex</span>(<span class="bi">bytes</span>([<span class="num">255</span>, <span class="num">0</span>]))
+<span class="kw">echo</span> convert.<span class="fn">to_base</span>(<span class="num">255</span>, <span class="num">16</span>)
+<span class="kw">echo</span> convert.<span class="fn">from_base</span>(<span class="str">'ff'</span>, <span class="num">16</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">ff00
+ff
+255
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>convert</code> handles every base-to-base conversion you would otherwise write
+by hand, plus hex, binary, octal and unicode helpers.</p>
+<h2 id="text-and-markup"><a class="anchor" href="#text-and-markup" aria-hidden="true" tabindex="-1"></a>Text and Markup</h2>
+<h3 id="html"><a class="anchor" href="#html" aria-hidden="true" tabindex="-1"></a><code>html</code></h3>
+<p>A WHATWG-conformant parser, a real DOM, and CSS selectors:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> html
+
+<span class="kw">var</span> doc <span class="op">=</span> html.<span class="fn">parse</span>(<span class="str">'&lt;ul&gt;&lt;li class="a"&gt;one&lt;/li&gt;&lt;li&gt;two&lt;/li&gt;&lt;/ul&gt;'</span>)
+
+<span class="kw">echo</span> doc.<span class="fn">query_selector</span>(<span class="str">'li.a'</span>).<span class="fn">text_content</span>()
+<span class="kw">echo</span> doc.<span class="fn">query_selector_all</span>(<span class="str">'li'</span>).<span class="fn">length</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">one
+2
+</code></pre><span class="code-label">Output</span></figure>
+<p>The DOM supports traversal, mutation and serialisation, which makes it a
+scraper, a templating backend and a sanitiser in one module.</p>
+<h3 id="wire"><a class="anchor" href="#wire" aria-hidden="true" tabindex="-1"></a><code>wire</code></h3>
+<p>Templating, with directives expressed as HTML attributes rather than a
+second syntax layered over your markup:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> wire
+
+<span class="kw">echo</span> wire.<span class="fn">render_string</span>(<span class="str">'&lt;p x-text="msg"&gt;&lt;/p&gt;'</span>, { msg<span class="op">:</span> <span class="str">'hi'</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">&lt;p&gt;hi&lt;/p&gt;
+</code></pre><span class="code-label">Output</span></figure>
+<p>Everything is escaped by default, and escaped correctly for where it sits:
+a value in an attribute, in a URL and in a <code>&lt;script&gt;</code> block are three
+different escapes, and Wire knows which is which because it parses your
+template as structure rather than text.</p>
+<p><a href="ch14-00-wire.html">Chapter 14</a> is the full treatment.</p>
+<h3 id="url"><a class="anchor" href="#url" aria-hidden="true" tabindex="-1"></a><code>url</code></h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> url
+
+<span class="kw">var</span> parsed <span class="op">=</span> url.<span class="fn">parse</span>(<span class="str">'https://user@example.com:8443/a/b?q=1#top'</span>)
+
+<span class="kw">echo</span> parsed.<span class="prop">host</span>
+<span class="kw">echo</span> parsed.<span class="prop">port</span>
+<span class="kw">echo</span> parsed.<span class="fn">get_param</span>(<span class="str">'q'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">example.com
+8443
+1
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>encode()</code>, <code>decode()</code> and <code>parse_query()</code> handle percent-encoding.</p>
+<h3 id="mime"><a class="anchor" href="#mime" aria-hidden="true" tabindex="-1"></a><code>mime</code></h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> mime
+
+<span class="kw">echo</span> mime.<span class="fn">detect_from_name</span>(<span class="str">'a.png'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">image/png
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>detect(file)</code> sniffs content rather than trusting the extension, which is
+the check you want on an upload.</p>
+<h3 id="colors"><a class="anchor" href="#colors" aria-hidden="true" tabindex="-1"></a><code>colors</code></h3>
+<p>ANSI colour for terminal output, and conversion between every colour space
+you are likely to have a value in:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> colors
+
+<span class="kw">echo</span> colors.<span class="fn">hex_to_rgb</span>(<span class="str">'#ff8800'</span>)
+<span class="kw">echo</span> colors.<span class="fn">rgb_to_hex</span>(<span class="num">255</span>, <span class="num">136</span>, <span class="num">0</span>)
+<span class="kw">echo</span> colors.<span class="fn">rgb_to_ansi256</span>(<span class="num">255</span>, <span class="num">136</span>, <span class="num">0</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[255, 136, 0, 1]
+ff8800
+214
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>colors.text(value, color, background)</code> wraps a string in the escape codes:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> colors
+
+<span class="kw">echo</span> colors.<span class="fn">text</span>(<span class="str">'warning'</span>, colors.<span class="prop">text_color</span>.<span class="prop">yellow</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The conversions are what make the same code work on a terminal that cannot
+do what you asked: a true-colour value becomes the nearest of 256, and 256
+becomes the nearest of 16. <code>hex()</code>, <code>rgb()</code>, <code>hsl()</code>, <code>hsv()</code>, <code>hwb()</code>,
+<code>cmyk()</code> and <code>xyz()</code> each take a colour in that space and produce the
+escape sequence for it.</p>
+<h2 id="time"><a class="anchor" href="#time" aria-hidden="true" tabindex="-1"></a>Time</h2>
+<h3 id="date"><a class="anchor" href="#date" aria-hidden="true" tabindex="-1"></a><code>date</code></h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> date
+
+<span class="kw">var</span> d <span class="op">=</span> <span class="fn">date</span>(<span class="num">2026</span>, <span class="num">9</span>, <span class="num">11</span>, <span class="num">8</span>, <span class="num">30</span>, <span class="num">0</span>)
+
+<span class="kw">echo</span> d.<span class="fn">format</span>(<span class="str">'Y-m-d H:i:s'</span>)
+<span class="kw">echo</span> d.<span class="fn">format</span>(<span class="str">'l, jS F Y'</span>)
+<span class="kw">echo</span> date.<span class="fn">parse</span>(<span class="str">'2026-09-11'</span>).<span class="fn">format</span>(<span class="str">'Y-m-d'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">2026-09-11 08:30:00
+Friday, 11th September 2026
+2026-09-11
+</code></pre><span class="code-label">Output</span></figure>
+<p>The format codes are single letters: <code>Y</code> four-digit year, <code>m</code> zero-padded
+month, <code>d</code> zero-padded day, <code>H</code> 24-hour, <code>i</code> minutes, <code>s</code> seconds, <code>l</code>
+weekday name, <code>F</code> month name, <code>jS</code> day with an ordinal suffix.</p>
+<p><code>localtime()</code> and <code>gmtime()</code> give the current time, <code>from_time(seconds)</code>
+converts a Unix timestamp, and the module carries a real IANA time zone
+database, so <code>from_timezone('Europe/London', ...)</code> does the right thing
+across a daylight-saving boundary.</p>
+<h2 id="cryptography-and-identity"><a class="anchor" href="#cryptography-and-identity" aria-hidden="true" tabindex="-1"></a>Cryptography and Identity</h2>
+<h3 id="hash"><a class="anchor" href="#hash" aria-hidden="true" tabindex="-1"></a><code>hash</code></h3>
+<p>Digests and HMACs. Covered in <a href="ch10-00-binary-data.html">Chapter 10</a>.</p>
+<h3 id="bcrypt"><a class="anchor" href="#bcrypt" aria-hidden="true" tabindex="-1"></a><code>bcrypt</code></h3>
+<p>Password hashing, which is a different problem from digesting:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> bcrypt
+
+<span class="kw">var</span> stored <span class="op">=</span> bcrypt.<span class="fn">hash</span>(<span class="str">'secret'</span>)
+
+<span class="kw">echo</span> bcrypt.<span class="fn">compare</span>(<span class="str">'secret'</span>, stored)
+<span class="kw">echo</span> bcrypt.<span class="fn">get_rounds</span>(stored)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+10
+</code></pre><span class="code-label">Output</span></figure>
+<p>Use this for passwords and <code>hash</code> for everything else. <code>needs_rehash()</code>
+tells you when a stored hash was made with a lower cost than you now
+require.</p>
+<h3 id="crypto"><a class="anchor" href="#crypto" aria-hidden="true" tabindex="-1"></a><code>crypto</code></h3>
+<p>RSA signing and HKDF key derivation.</p>
+<h3 id="uuid"><a class="anchor" href="#uuid" aria-hidden="true" tabindex="-1"></a><code>uuid</code></h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> uuid
+
+<span class="kw">echo</span> uuid.<span class="fn">v4</span>().<span class="fn">length</span>()
+<span class="kw">echo</span> uuid.<span class="fn">is_valid</span>(uuid.<span class="fn">v7</span>())
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">36
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p>Versions 1, 3, 4, 5, 6, 7 and 8 are all there. <code>v4</code> is the random one you
+usually want; <code>v7</code> is time-ordered, which makes it a better database key.</p>
+<h3 id="jwt"><a class="anchor" href="#jwt" aria-hidden="true" tabindex="-1"></a><code>jwt</code></h3>
+<p>Signing, verifying and decoding JSON Web Tokens, with a JWKS client for
+rotating keys.</p>
+<h2 id="validation-and-structure"><a class="anchor" href="#validation-and-structure" aria-hidden="true" tabindex="-1"></a>Validation and Structure</h2>
+<h3 id="validate"><a class="anchor" href="#validate" aria-hidden="true" tabindex="-1"></a><code>validate</code></h3>
+<p>A fluent schema builder:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> validate
+
+<span class="kw">var</span> schema <span class="op">=</span> validate.<span class="fn">schema</span>({
+  name<span class="op">:</span> validate.<span class="fn">required</span>().<span class="fn">string</span>().<span class="fn">max_length</span>(<span class="num">10</span>),
+  age<span class="op">:</span> validate.<span class="fn">required</span>().<span class="fn">integer</span>().<span class="fn">min</span>(<span class="num">0</span>),
+})
+
+<span class="kw">echo</span> schema.<span class="fn">check</span>({ name<span class="op">:</span> <span class="str">'Ada'</span>, age<span class="op">:</span> <span class="num">36</span> })
+<span class="kw">echo</span> schema.<span class="fn">check</span>({ name<span class="op">:</span> <span class="str">'a name that is far too long'</span>, age<span class="op">:</span> <span class="num">200.5</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{valid: true, errors: []}
+{valid: false, errors: [{field: name, message: The name field must not exceed 10 characters.}, {field: age, message: The age field must be an integer.}]}
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>check_or_raise()</code> raises instead of returning. <code>extend()</code>, <code>only()</code> and
+<code>except()</code> build one schema from another, which is how a create schema and
+an update schema stay in sync.</p>
+<h3 id="types"><a class="anchor" href="#types" aria-hidden="true" tabindex="-1"></a><code>types</code></h3>
+<p>Type predicates, one per type, as an alternative to the <code>is_*</code> built-ins:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> types
+
+<span class="kw">echo</span> types.<span class="fn">of</span>(<span class="num">42</span>)
+<span class="kw">echo</span> types.<span class="fn">int</span>(<span class="num">42</span>)
+<span class="kw">echo</span> types.<span class="fn">int</span>(<span class="num">4.2</span>)
+<span class="kw">echo</span> types.<span class="fn">digit</span>(<span class="str">'7'</span>)
+<span class="kw">echo</span> types.<span class="fn">alpha</span>(<span class="str">'a'</span>)
+<span class="kw">echo</span> types.<span class="fn">iterable</span>([<span class="num">1</span>])
+<span class="kw">echo</span> types.<span class="fn">instance</span>(<span class="type">ValueError</span>(<span class="str">'x'</span>), <span class="type">Error</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">number
+true
+false
+true
+true
+true
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p>Each one <strong>answers a question</strong> and returns a boolean; none of them
+converts anything. <code>types.int(4.2)</code> is <code>false</code> because <code>4.2</code> is not an
+integer, not because it failed to become one.</p>
+<p><code>types.of()</code> is <code>typeof()</code>. <code>digit()</code>, <code>alpha()</code> and <code>char()</code> are the
+string-shape tests the built-ins do not cover, and <code>instance(value, Class)</code>
+walks the inheritance chain.</p>
+<p>When you want conversion rather than a question, the methods on the value
+do it: <code>to_number()</code>, <code>to_string()</code>, <code>to_bigint()</code>, <code>to_list()</code>,
+<code>to_bytes()</code>.</p>
+<h3 id="set"><a class="anchor" href="#set" aria-hidden="true" tabindex="-1"></a><code>set</code></h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> set
+
+<span class="kw">var</span> s <span class="op">=</span> <span class="fn">set</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">2</span>, <span class="num">3</span>])
+<span class="kw">echo</span> s.<span class="fn">length</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">3
+</code></pre><span class="code-label">Output</span></figure>
+<p>Union, intersection, difference and subset tests, with insertion order
+preserved.</p>
+<h3 id="enum"><a class="anchor" href="#enum" aria-hidden="true" tabindex="-1"></a><code>enum</code></h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> enum
+
+<span class="kw">var</span> <span class="type">Color</span> <span class="op">=</span> <span class="fn">enum</span>([<span class="str">'RED'</span>, <span class="str">'GREEN'</span>])
+<span class="kw">echo</span> <span class="type">Color</span>.<span class="prop">RED</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">0
+</code></pre><span class="code-label">Output</span></figure>
+<p>Pass a dictionary instead of a list to choose the values yourself.</p>
+<h3 id="array"><a class="anchor" href="#array" aria-hidden="true" tabindex="-1"></a><code>array</code></h3>
+<p>Typed, fixed-width numeric arrays: <code>Int8Array</code> through <code>Uint64Array</code>, plus
+<code>FloatArray</code> and <code>DoubleArray</code>. They store values in their declared width
+rather than as doubles, which matters for memory and for talking to binary
+formats.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> array
+
+<span class="kw">var</span> ints <span class="op">=</span> array.<span class="fn">Int32Array</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>])
+<span class="kw">echo</span> ints.<span class="fn">length</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">3
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="the-system"><a class="anchor" href="#the-system" aria-hidden="true" tabindex="-1"></a>The System</h2>
+<h3 id="os"><a class="anchor" href="#os" aria-hidden="true" tabindex="-1"></a><code>os</code></h3>
+<p>Processes, the filesystem, paths and the environment. Covered in
+<a href="ch09-00-files.html">Chapter 9</a>.</p>
+<p><code>os.exec(command)</code> runs a shell command and gives you its output.
+<code>os.spawn(command, args, options)</code> starts a process you can talk to.
+<code>os.on_signal(name, handler)</code> installs a signal handler.
+<code>os.at_exit(handler)</code> registers cleanup that runs however the program
+ends, and <code>os.set_exit_code(code)</code> decides the status it ends with
+without ending it there and then.</p>
+<h3 id="env"><a class="anchor" href="#env" aria-hidden="true" tabindex="-1"></a><code>env</code></h3>
+<p>Configuration: a <code>.env</code> file read into the process environment, and
+values read back out already converted. Covered in
+<a href="ch19-00-env.html">Chapter 19</a>.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> env
+
+env.<span class="fn">load</span>()
+
+<span class="kw">var</span> port <span class="op">=</span> env.<span class="fn">int</span>(<span class="str">'PORT'</span>, <span class="num">8080</span>)
+<span class="kw">var</span> debug <span class="op">=</span> env.<span class="fn">bool</span>(<span class="str">'DEBUG'</span>, <span class="lit">false</span>)
+<span class="kw">var</span> secret <span class="op">=</span> env.<span class="fn">require</span>(<span class="str">'SESSION_SECRET'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Names already set in the environment are left alone, so the file is a
+set of defaults and the deployment is what overrides them.</p>
+<h3 id="io"><a class="anchor" href="#io" aria-hidden="true" tabindex="-1"></a><code>io</code></h3>
+<p>Standard streams, terminal control and in-memory files:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> io
+
+<span class="kw">var</span> name <span class="op">=</span> io.<span class="fn">readline</span>(<span class="str">'Your name: '</span>)
+<span class="kw">var</span> secret <span class="op">=</span> io.<span class="fn">readline</span>(<span class="str">'Password: '</span>, <span class="lit">true</span>)
+
+<span class="kw">echo</span> io.<span class="prop">stdout</span>.<span class="fn">is_tty</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>io.TTY</code> puts the terminal into raw mode, reads single keypresses and moves
+the cursor, which is what an interactive program needs. <code>io.BytesIO</code> is the
+in-memory file from <a href="ch10-00-binary-data.html">Chapter 10</a>.</p>
+<p><code>io.capture(body)</code> collects everything <code>body</code> writes to standard output
+instead of printing it, <code>echo</code>, <code>print()</code> and <code>io.stdout</code> alike:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> io
+
+<span class="kw">def</span> <span class="def">greet</span>(name) {
+  <span class="kw">echo</span> <span class="str">'Hello, </span><span class="subst">${</span>name<span class="subst">}</span><span class="str">!'</span>
+}
+
+<span class="kw">var</span> out <span class="op">=</span> io.<span class="fn">capture</span>(<span class="meta">@</span>{
+  <span class="fn">greet</span>(<span class="str">'Ada'</span>)
+})
+
+<span class="kw">echo</span> <span class="str">'captured </span><span class="subst">${</span>out.<span class="fn">length</span>()<span class="subst">}</span><span class="str"> characters'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">captured 12 characters
+</code></pre><span class="code-label">Output</span></figure>
+<p>Captures nest, and <code>capture_begin()</code>/<code>capture_end()</code> are the manual pair
+for when the body might raise and you want its output anyway. This is
+what lets <a href="ch23-00-testing.html">Chapter 23</a> assert on what a function
+prints, and keep a passing test's output out of the report.</p>
+<h3 id="test"><a class="anchor" href="#test" aria-hidden="true" tabindex="-1"></a><code>test</code></h3>
+<p>Suites, matchers, mocks, snapshots and reports. Covered in
+<a href="ch23-00-testing.html">Chapter 23</a>.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> test { <span class="op">*</span> }
+
+<span class="fn">describe</span>(<span class="str">'slug'</span>, <span class="meta">@</span>{
+  <span class="fn">it</span>(<span class="str">'lowercases and joins'</span>, <span class="meta">@</span>{
+    <span class="fn">expect</span>(<span class="fn">slug</span>(<span class="str">'Hello World'</span>)).<span class="fn">to_be</span>(<span class="str">'hello-world'</span>)
+  })
+})
+
+<span class="fn">run</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<h3 id="stat"><a class="anchor" href="#stat" aria-hidden="true" tabindex="-1"></a><code>stat</code></h3>
+<p>The <code>S_IS*</code> predicates over the <code>mode</code> word from <code>file().stats()</code>, plus a
+renderer for it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> stat
+
+<span class="bi">file</span>(<span class="str">'notes.txt'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'x'</span>)
+<span class="bi">file</span>(<span class="str">'notes.txt'</span>).<span class="fn">chmod</span>(0c644)
+
+<span class="kw">var</span> info <span class="op">=</span> <span class="bi">file</span>(<span class="str">'notes.txt'</span>).<span class="fn">stats</span>()
+
+<span class="kw">echo</span> stat.<span class="fn">S_ISREG</span>(info.<span class="prop">mode</span>)
+<span class="kw">echo</span> stat.<span class="fn">S_ISDIR</span>(info.<span class="prop">mode</span>)
+<span class="kw">echo</span> stat.<span class="fn">file_mode</span>(info.<span class="prop">mode</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+false
+-rw-r--r--
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>S_ISREG</code>, <code>S_ISDIR</code>, <code>S_ISLNK</code>, <code>S_ISCHR</code>, <code>S_ISBLK</code>, <code>S_ISFIFO</code> and
+<code>S_ISSOCK</code> each answer one question about the kind of entry.
+<code>S_IMODE(mode)</code> strips the type bits and leaves the permissions;
+<code>file_mode(mode)</code> renders the whole thing the way <code>ls -l</code> does.</p>
+<h3 id="args"><a class="anchor" href="#args" aria-hidden="true" tabindex="-1"></a><code>args</code></h3>
+<p>A command-line parser with subcommands, typed options, automatic
+<code>--help</code> and wrapped terminal output. Covered in
+<a href="ch20-00-args.html">Chapter 20</a>.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> args
+
+<span class="kw">var</span> parser <span class="op">=</span> args.<span class="fn">Parser</span>(<span class="str">'greet'</span>)
+parser.<span class="fn">add_option</span>(<span class="str">'name'</span>, <span class="str">'Who to greet'</span>, {
+  short_name<span class="op">:</span> <span class="str">'n'</span>,
+  type<span class="op">:</span> args.<span class="prop">STRING</span>,
+})
+parser.<span class="fn">add_command</span>(<span class="str">'history'</span>, <span class="str">'Show past greetings'</span>)
+
+<span class="kw">var</span> parsed <span class="op">=</span> parser.<span class="fn">parse</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The help text is written from the same declarations that read the
+arguments, so the two cannot drift apart.</p>
+<h3 id="log"><a class="anchor" href="#log" aria-hidden="true" tabindex="-1"></a><code>log</code></h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> log
+
+log.<span class="fn">info</span>(<span class="str">'server started'</span>)
+log.<span class="fn">error</span>(<span class="str">'connection refused'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A <code>Logger</code> binds structured fields, a <code>child()</code> logger inherits them, and
+transports send records to the console, a file or somewhere you write
+yourself.</p>
+<h3 id="isolate"><a class="anchor" href="#isolate" aria-hidden="true" tabindex="-1"></a><code>isolate</code></h3>
+<p>Concurrency. Covered in <a href="ch11-00-isolates.html">Chapter 11</a>.</p>
+<h3 id="ffi"><a class="anchor" href="#ffi" aria-hidden="true" tabindex="-1"></a><code>ffi</code></h3>
+<p>Calling C and Rust. <code>ffi</code> loads shared libraries, reads their C headers
+or Rust sources as declarations, calls their functions with checked
+conversions, and turns Zuri functions into callbacks; it links static
+libraries into loadable ones too.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> c <span class="op">=</span> ffi.<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>).<span class="fn">declare</span>(<span class="str">'size_t strlen(const char *s);'</span>)
+
+<span class="kw">echo</span> c.<span class="fn">strlen</span>(<span class="str">'interop'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">7
+</code></pre><span class="code-label">Output</span></figure>
+<p>Covered in <a href="ch26-00-ffi.html">Chapter 26</a>.</p>
+<h2 id="the-network"><a class="anchor" href="#the-network" aria-hidden="true" tabindex="-1"></a>The Network</h2>
+<h3 id="net"><a class="anchor" href="#net" aria-hidden="true" tabindex="-1"></a><code>net</code></h3>
+<p>TCP, UDP, unix domain sockets, TLS, DTLS, addresses and polling. Covered
+in <a href="ch12-00-networking.html">Chapter 12</a>.</p>
+<h3 id="http"><a class="anchor" href="#http" aria-hidden="true" tabindex="-1"></a><code>http</code></h3>
+<p>Client and server, HTTP/1.1 and HTTP/2, with routing, middleware,
+WebSockets, server-sent events, multipart uploads, static files and a
+reverse proxy. Introduced in <a href="ch12-00-networking.html">Chapter 12</a>, covered
+fully in <a href="ch15-00-http.html">Chapter 15</a>, and used throughout
+<a href="ch25-00-task-board.html">Chapter 25</a>.</p>
+<h3 id="rpc"><a class="anchor" href="#rpc" aria-hidden="true" tabindex="-1"></a><code>rpc</code></h3>
+<p>JSON-RPC 2.0, the protocol for calling methods in another program, on
+both ends. A service answers calls with handlers, behind an <code>http</code>
+route or on a connection; a client calls a service over HTTP; and an
+endpoint on a WebSocket, a socket, a child process's standard streams
+or a pipe between isolates both answers and calls, so either side can
+call the other at any time. <code>rpc.serve()</code> gives every connection to a
+listening socket an endpoint of its own, over TCP, TLS or a Unix
+domain socket.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+<span class="kw">import</span> isolate
+
+<span class="kw">var</span> ends <span class="op">=</span> rpc.<span class="fn">pipe</span>()
+
+isolate.<span class="fn">spawn</span>(<span class="meta">@</span>(transport) {
+  <span class="kw">import</span> rpc
+
+  rpc
+      .<span class="fn">endpoint</span>(transport)
+      .<span class="fn">on_request</span>(<span class="str">'add'</span>, <span class="meta">@</span>(params) <span class="op">=&gt;</span> params[<span class="num">0</span>] <span class="op">+</span> params[<span class="num">1</span>])
+      .<span class="fn">serve</span>()
+}, ends[<span class="num">1</span>])
+
+<span class="kw">var</span> client <span class="op">=</span> rpc.<span class="fn">endpoint</span>(ends[<span class="num">0</span>])
+
+<span class="kw">echo</span> client.<span class="fn">request</span>(<span class="str">'add'</span>, [<span class="num">2</span>, <span class="num">3</span>])
+client.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">5
+</code></pre><span class="code-label">Output</span></figure>
+<p>Covered in <a href="ch28-00-rpc.html">Chapter 28</a>.</p>
+<h2 id="databases"><a class="anchor" href="#databases" aria-hidden="true" tabindex="-1"></a>Databases</h2>
+<h3 id="sql"><a class="anchor" href="#sql" aria-hidden="true" tabindex="-1"></a><code>sql</code></h3>
+<p>One way to talk to a relational database, whichever one it is. <code>sql</code>
+defines what an adapter has to provide and supplies everything that is
+the same across engines: parameters, transactions and savepoints,
+cursors, pooling, introspection, and one error hierarchy. SQLite,
+PostgreSQL and MySQL adapters ship with it, and changing between them
+means changing the connection string. On top of it, <code>db.schema</code> changes
+tables described once for every engine, <code>sql.migrate</code> applies versioned
+migrations, and <code>sql.model</code> gives each table a class.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://./app.db'</span>)
+<span class="kw">var</span> <span class="bi">id</span> <span class="op">=</span> db.<span class="fn">insert</span>(<span class="str">'posts'</span>, { title<span class="op">:</span> <span class="str">'Hello'</span> })
+
+<span class="kw">for</span> post <span class="kw">in</span> db.<span class="fn">query</span>(<span class="str">'select * from posts where id = ?'</span>, [<span class="bi">id</span>]) {
+  <span class="kw">echo</span> post.<span class="prop">title</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Covered in <a href="ch17-00-sql.html">Chapter 17</a>.</p>
+<h2 id="mail"><a class="anchor" href="#mail" aria-hidden="true" tabindex="-1"></a>Mail</h2>
+<h3 id="mail-1"><a class="anchor" href="#mail-1" aria-hidden="true" tabindex="-1"></a><code>mail</code></h3>
+<p>Messages and the three protocols that move them, written in Zuri from
+the socket up. <code>mail.message()</code> builds a message out of text, HTML and
+files and works out the MIME tree from what went in; <code>mail.parse()</code>
+reads one back. <code>mail.smtp</code> sends, <code>mail.imap</code> reads mail where it is
+kept, and <code>mail.pop3</code> takes it away. Both server ends are here too: an
+SMTP server that decides what to accept through handlers of your own,
+and an IMAP server that answers out of a mail store, of which one keeps
+mail on disk in Maildir format and one keeps it in the process.
+<code>mail.dkim</code> signs outgoing mail and checks incoming mail.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> mail
+
+mail.<span class="fn">send</span>(
+  <span class="str">'smtp://mail.example.com'</span>,
+  mail.<span class="fn">message</span>({
+    from<span class="op">:</span> <span class="str">'reports@example.com'</span>,
+    to<span class="op">:</span> <span class="str">'ann@example.com'</span>,
+    subject<span class="op">:</span> <span class="str">'Quarterly report'</span>,
+    text<span class="op">:</span> <span class="str">'The numbers are in.'</span>,
+  }),
+  { username<span class="op">:</span> <span class="str">'reports'</span>, password<span class="op">:</span> secret },
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Covered in <a href="ch18-00-mail.html">Chapter 18</a>.</p>
+<h2 id="compression"><a class="anchor" href="#compression" aria-hidden="true" tabindex="-1"></a>Compression</h2>
+<h3 id="compress"><a class="anchor" href="#compress" aria-hidden="true" tabindex="-1"></a><code>compress</code></h3>
+<p><code>deflate</code>, <code>zlib</code>, <code>gzip</code>, <code>zstd</code>, <code>lz4</code>, <code>bzip2</code> and <code>brotli</code>, plus <code>tar</code>
+and <code>zip</code> archives and <code>checksum</code> for CRC32 and Adler-32. Covered in
+<a href="ch10-00-binary-data.html">Chapter 10</a>.</p>
+<h2 id="graphics"><a class="anchor" href="#graphics" aria-hidden="true" tabindex="-1"></a>Graphics</h2>
+<h3 id="imagine"><a class="anchor" href="#imagine" aria-hidden="true" tabindex="-1"></a><code>imagine</code></h3>
+<p>Image creation and manipulation on an RGBA buffer: drawing primitives,
+text with a built-in stroke font, filters, colour-space conversion, and
+reading and writing the common formats.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> imagine { <span class="type">Image</span> }
+
+<span class="type">Image</span>(<span class="num">400</span>, <span class="num">200</span>, <span class="str">'#0f172a'</span>)
+    .<span class="fn">fill_circle</span>(<span class="num">200</span>, <span class="num">100</span>, <span class="num">70</span>, <span class="str">'#38bdf8'</span>)
+    .<span class="fn">circle</span>(<span class="num">200</span>, <span class="num">100</span>, <span class="num">70</span>, <span class="str">'white'</span>, { thickness<span class="op">:</span> <span class="num">3</span> })
+    .<span class="fn">save</span>(<span class="str">'badge.png'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Almost every method returns an image, so operations chain.
+<code>Image.open(path)</code> decodes an existing file, with the format taken from the
+contents rather than the extension:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="type">Image</span>.<span class="fn">open</span>(<span class="str">'photo.jpg'</span>).<span class="fn">thumbnail</span>(<span class="num">400</span>, <span class="num">400</span>).<span class="fn">save</span>(<span class="str">'thumb.webp'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Decoding and encoding are native; everything between them — filters,
+drawing, colour conversion — is ordinary Zuri you can read in <code>libs/imagine</code>
+and extend. <a href="ch16-00-imagine.html">Chapter 16</a> is the full treatment.</p>
+<h2 id="the-language-itself"><a class="anchor" href="#the-language-itself" aria-hidden="true" tabindex="-1"></a>The Language Itself</h2>
+<h3 id="zuri"><a class="anchor" href="#zuri" aria-hidden="true" tabindex="-1"></a><code>zuri</code></h3>
+<p>Lexing, parsing, compiling and reflection, all reachable from Zuri code:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">echo</span> zuri.<span class="fn">tokenize</span>(<span class="str">'var x = 1'</span>).<span class="fn">length</span>() <span class="op">&gt;</span> <span class="num">0</span>
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">kind</span>([<span class="num">1</span>])
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+list
+</code></pre><span class="code-label">Output</span></figure>
+<p><a href="ch21-00-metaprogramming.html">Chapter 21</a> is the full treatment.</p>
+<h3 id="math"><a class="anchor" href="#math" aria-hidden="true" tabindex="-1"></a><code>math</code></h3>
+<p>The constants. Everything else is a method on <code>number</code>; see
+<a href="ch04-02-numbers.html">Chapter 4</a>.</p>
+<h2 id="finding-the-rest"><a class="anchor" href="#finding-the-rest" aria-hidden="true" tabindex="-1"></a>Finding the Rest</h2>
+<p>Every module's source is in <code>libs/</code>, and every public function in it
+carries a doc block with its parameters, its defaults and its edge cases.
+Reading <code>libs/set.zu</code> is a faster way to learn <code>set</code> than any summary, and
+the standard library is written to be read.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch13-00-stdlib-tour.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch12-00-networking.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">12</span>Networking</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch14-00-wire.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">14</span>Wire: Templating</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#data-formats">Data Formats</a>
+        </li><li class="level-3">
+          <a href="#json"><code>json</code></a>
+        </li><li class="level-3">
+          <a href="#yaml"><code>yaml</code></a>
+        </li><li class="level-3">
+          <a href="#toml"><code>toml</code></a>
+        </li><li class="level-3">
+          <a href="#csv"><code>csv</code></a>
+        </li><li class="level-3">
+          <a href="#struct"><code>struct</code></a>
+        </li><li class="level-3">
+          <a href="#base64-convert"><code>base64</code>, <code>convert</code></a>
+        </li><li class="level-2">
+          <a href="#text-and-markup">Text and Markup</a>
+        </li><li class="level-3">
+          <a href="#html"><code>html</code></a>
+        </li><li class="level-3">
+          <a href="#wire"><code>wire</code></a>
+        </li><li class="level-3">
+          <a href="#url"><code>url</code></a>
+        </li><li class="level-3">
+          <a href="#mime"><code>mime</code></a>
+        </li><li class="level-3">
+          <a href="#colors"><code>colors</code></a>
+        </li><li class="level-2">
+          <a href="#time">Time</a>
+        </li><li class="level-3">
+          <a href="#date"><code>date</code></a>
+        </li><li class="level-2">
+          <a href="#cryptography-and-identity">Cryptography and Identity</a>
+        </li><li class="level-3">
+          <a href="#hash"><code>hash</code></a>
+        </li><li class="level-3">
+          <a href="#bcrypt"><code>bcrypt</code></a>
+        </li><li class="level-3">
+          <a href="#crypto"><code>crypto</code></a>
+        </li><li class="level-3">
+          <a href="#uuid"><code>uuid</code></a>
+        </li><li class="level-3">
+          <a href="#jwt"><code>jwt</code></a>
+        </li><li class="level-2">
+          <a href="#validation-and-structure">Validation and Structure</a>
+        </li><li class="level-3">
+          <a href="#validate"><code>validate</code></a>
+        </li><li class="level-3">
+          <a href="#types"><code>types</code></a>
+        </li><li class="level-3">
+          <a href="#set"><code>set</code></a>
+        </li><li class="level-3">
+          <a href="#enum"><code>enum</code></a>
+        </li><li class="level-3">
+          <a href="#array"><code>array</code></a>
+        </li><li class="level-2">
+          <a href="#the-system">The System</a>
+        </li><li class="level-3">
+          <a href="#os"><code>os</code></a>
+        </li><li class="level-3">
+          <a href="#env"><code>env</code></a>
+        </li><li class="level-3">
+          <a href="#io"><code>io</code></a>
+        </li><li class="level-3">
+          <a href="#test"><code>test</code></a>
+        </li><li class="level-3">
+          <a href="#stat"><code>stat</code></a>
+        </li><li class="level-3">
+          <a href="#args"><code>args</code></a>
+        </li><li class="level-3">
+          <a href="#log"><code>log</code></a>
+        </li><li class="level-3">
+          <a href="#isolate"><code>isolate</code></a>
+        </li><li class="level-3">
+          <a href="#ffi"><code>ffi</code></a>
+        </li><li class="level-2">
+          <a href="#the-network">The Network</a>
+        </li><li class="level-3">
+          <a href="#net"><code>net</code></a>
+        </li><li class="level-3">
+          <a href="#http"><code>http</code></a>
+        </li><li class="level-3">
+          <a href="#rpc"><code>rpc</code></a>
+        </li><li class="level-2">
+          <a href="#databases">Databases</a>
+        </li><li class="level-3">
+          <a href="#sql"><code>sql</code></a>
+        </li><li class="level-2">
+          <a href="#mail">Mail</a>
+        </li><li class="level-3">
+          <a href="#mail-1"><code>mail</code></a>
+        </li><li class="level-2">
+          <a href="#compression">Compression</a>
+        </li><li class="level-3">
+          <a href="#compress"><code>compress</code></a>
+        </li><li class="level-2">
+          <a href="#graphics">Graphics</a>
+        </li><li class="level-3">
+          <a href="#imagine"><code>imagine</code></a>
+        </li><li class="level-2">
+          <a href="#the-language-itself">The Language Itself</a>
+        </li><li class="level-3">
+          <a href="#zuri"><code>zuri</code></a>
+        </li><li class="level-3">
+          <a href="#math"><code>math</code></a>
+        </li><li class="level-2">
+          <a href="#finding-the-rest">Finding the Rest</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

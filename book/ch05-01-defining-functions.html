@@ -1,0 +1,737 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Defining Functions · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch05-01-defining-functions.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="red" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item open"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="true" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html" aria-current="page"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>5.1 · Learning the Language</p>
+        <div class="content"><h1 id="defining-functions">Defining Functions</h1>
+<h2 id="declaration"><a class="anchor" href="#declaration" aria-hidden="true" tabindex="-1"></a>Declaration</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">greet</span>(name) {
+  <span class="kw">return</span> <span class="str">'Hello, '</span> <span class="op">+</span> name
+}
+
+<span class="kw">echo</span> <span class="fn">greet</span>(<span class="str">'Zuri'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Hello, Zuri
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>def</code>, a name, a parameter list in parentheses, a block. There is no return
+type to declare, no forward declaration, and no separate signature.</p>
+<p>A function with no <code>return</code> yields <code>nil</code>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">silent</span>() {
+  <span class="kw">echo</span> <span class="str">'working'</span>
+}
+
+<span class="kw">echo</span> <span class="fn">silent</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">working
+nil
+</code></pre><span class="code-label">Output</span></figure>
+<p>There are no implicit returns. The last expression in a body is not its
+value; if you want something back, say <code>return</code>.</p>
+<h2 id="arity-is-not-enforced"><a class="anchor" href="#arity-is-not-enforced" aria-hidden="true" tabindex="-1"></a>Arity Is Not Enforced</h2>
+<p>Call a function with fewer arguments than it declares and the missing ones
+arrive as <code>nil</code>. Call it with more and the extras are dropped:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">greet</span>(name) {
+  <span class="kw">return</span> <span class="str">'Hello, '</span> <span class="op">+</span> name
+}
+
+<span class="kw">echo</span> <span class="fn">greet</span>()
+<span class="kw">echo</span> <span class="fn">greet</span>(<span class="str">'Zuri'</span>, <span class="str">'ignored'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Hello, nil
+Hello, Zuri
+</code></pre><span class="code-label">Output</span></figure>
+<p>This is not an oversight. It is the mechanism optional parameters are built
+on, since there is no default-value syntax in a parameter list. You write
+the default in the body instead:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">greet</span>(name, greeting) {
+  greeting <span class="op">=</span> greeting <span class="kw">or</span> <span class="str">'Hello'</span>
+
+  <span class="kw">return</span> <span class="str">'</span><span class="subst">${</span>greeting<span class="subst">}</span><span class="str">, </span><span class="subst">${</span>name<span class="subst">}</span><span class="str">!'</span>
+}
+
+<span class="kw">echo</span> <span class="fn">greet</span>(<span class="str">'Ada'</span>)
+<span class="kw">echo</span> <span class="fn">greet</span>(<span class="str">'Ada'</span>, <span class="str">'Hi'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Hello, Ada!
+Hi, Ada!
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="the-or-trap-in-defaults"><a class="anchor" href="#the-or-trap-in-defaults" aria-hidden="true" tabindex="-1"></a>The <code>or</code> Trap in Defaults</h3>
+<p>Because <code>or</code> does the work, a legitimately falsy argument is replaced by
+the default. In Zuri that set includes <code>0</code>, <code>NaN</code>, <code>''</code> and <code>false</code>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">indent</span>(text, width) {
+  width <span class="op">=</span> width <span class="kw">or</span> <span class="num">2</span>
+
+  <span class="kw">return</span> <span class="str">' '</span> <span class="op">*</span> width <span class="op">+</span> text
+}
+
+<span class="kw">echo</span> <span class="str">'['</span> <span class="op">+</span> <span class="fn">indent</span>(<span class="str">'a'</span>) <span class="op">+</span> <span class="str">']'</span>
+<span class="kw">echo</span> <span class="str">'['</span> <span class="op">+</span> <span class="fn">indent</span>(<span class="str">'a'</span>, <span class="num">0</span>) <span class="op">+</span> <span class="str">']'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[  a]
+[  a]
+</code></pre><span class="code-label">Output</span></figure>
+<p>The caller asked for zero indentation and got two. When a falsy value is a
+legitimate input, test for <code>nil</code> explicitly:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">indent</span>(text, width) {
+  <span class="kw">if</span> width <span class="op">==</span> <span class="lit">nil</span> {
+    width <span class="op">=</span> <span class="num">2</span>
+  }
+
+  <span class="kw">return</span> <span class="str">' '</span> <span class="op">*</span> width <span class="op">+</span> text
+}
+
+<span class="kw">echo</span> <span class="str">'['</span> <span class="op">+</span> <span class="fn">indent</span>(<span class="str">'a'</span>) <span class="op">+</span> <span class="str">']'</span>
+<span class="kw">echo</span> <span class="str">'['</span> <span class="op">+</span> <span class="fn">indent</span>(<span class="str">'a'</span>, <span class="num">0</span>) <span class="op">+</span> <span class="str">']'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[  a]
+[a]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Use <code>or</code> for a default when every falsy value is genuinely absent — a name,
+a path, a list. Use <code>== nil</code> for numbers and booleans.</p>
+<p>If you want the runtime to <strong>reject</strong> a missing argument rather than
+default it, annotate the parameter.
+<a href="ch05-03-type-annotations.html">Type Annotations</a> covers that.</p>
+<h2 id="variadic-functions"><a class="anchor" href="#variadic-functions" aria-hidden="true" tabindex="-1"></a>Variadic Functions</h2>
+<p>A final parameter prefixed with <code>...</code> collects every remaining argument
+into a list:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">count</span>(...items) {
+  <span class="kw">return</span> items
+}
+
+<span class="kw">echo</span> <span class="fn">count</span>()
+<span class="kw">echo</span> <span class="fn">count</span>(<span class="num">1</span>)
+<span class="kw">echo</span> <span class="fn">count</span>(<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[]
+[1]
+[1, 2, 3]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Three facts about what it captures are worth being precise about.</p>
+<p><strong>It is always a list</strong>, including when nothing was passed. <code>count()</code> gives
+<code>[]</code>, not <code>nil</code>, so <code>items.length()</code> is safe without a check.</p>
+<p><strong>It captures arguments, not contents.</strong> Passing a list passes <em>one</em>
+argument, which arrives as a list nested inside the variadic list:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">count</span>(...items) {
+  <span class="kw">return</span> items
+}
+
+<span class="kw">echo</span> <span class="fn">count</span>([<span class="num">1</span>, <span class="num">2</span>])
+<span class="kw">echo</span> <span class="fn">count</span>([<span class="num">1</span>, <span class="num">2</span>], <span class="num">3</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[[1, 2]]
+[[1, 2], 3]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>...</code> marks a parameter, not an argument: <code>count(...list)</code> does not parse.
+To call a function with a list of arguments, use
+<a href="appendix-05-10-function.html#apply"><code>apply()</code></a>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">count</span>(...args) {
+  <span class="kw">return</span> args.<span class="fn">length</span>()
+}
+
+<span class="kw">echo</span> count.<span class="fn">apply</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>])
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">3
+</code></pre><span class="code-label">Output</span></figure>
+<p>When a function should accept a collection, though, take the list as an
+ordinary parameter and skip both.</p>
+<p><strong>Named parameters bind first.</strong> A variadic can follow named ones, and it
+takes whatever is left over:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">named</span>(a, ...rest) {
+  <span class="kw">return</span> [a, rest]
+}
+
+<span class="kw">echo</span> <span class="fn">named</span>()
+<span class="kw">echo</span> <span class="fn">named</span>(<span class="num">1</span>)
+<span class="kw">echo</span> <span class="fn">named</span>(<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[nil, []]
+[1, []]
+[1, [2, 3]]
+</code></pre><span class="code-label">Output</span></figure>
+<p>The variadic must be <strong>last</strong>. <code>def mid(a, ...rest, b)</code> is a syntax error,
+because there is no rule that could decide how many arguments <code>rest</code>
+should keep.</p>
+<p>A practical use is a function that formats an arbitrary number of pieces:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">log_line</span>(level, ...parts) {
+  <span class="kw">return</span> <span class="str">'[</span><span class="subst">${</span>level<span class="subst">}</span><span class="str">] '</span> <span class="op">+</span> <span class="str">' '</span>.<span class="fn">join</span>(parts)
+}
+
+<span class="kw">echo</span> <span class="fn">log_line</span>(<span class="str">'warn'</span>, <span class="str">'disk'</span>, <span class="str">'almost'</span>, <span class="str">'full'</span>)
+<span class="kw">echo</span> <span class="fn">log_line</span>(<span class="str">'info'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[warn] disk almost full
+[info] 
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="where-a-def-binds"><a class="anchor" href="#where-a-def-binds" aria-hidden="true" tabindex="-1"></a>Where a <code>def</code> Binds</h2>
+<p>A <code>def</code> scopes exactly like a <code>var</code>. Written at the top level of a file it
+binds a module-level name. Written anywhere else it binds a local of the
+block it appears in, and it goes away with that block:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">outer</span>() {
+  <span class="kw">def</span> <span class="def">helper</span>() {
+    <span class="kw">return</span> <span class="str">'from helper'</span>
+  }
+
+  <span class="kw">return</span> <span class="fn">helper</span>()
+}
+
+<span class="kw">echo</span> <span class="fn">outer</span>()
+
+<span class="kw">catch</span> {
+  <span class="fn">helper</span>()
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">message</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">from helper
+undefined global 'helper'
+</code></pre><span class="code-label">Output</span></figure>
+<p>A helper defined inside a function belongs to that function. Nothing
+outside can reach it, and nothing outside can be broken by it.</p>
+<p>That extends to any block, not just a function body:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">choose</span>(verbose) {
+  <span class="kw">if</span> verbose {
+    <span class="kw">def</span> <span class="def">describe</span>(n) {
+      <span class="kw">return</span> <span class="str">'the number </span><span class="subst">${</span>n<span class="subst">}</span><span class="str">'</span>
+    }
+
+    <span class="kw">return</span> <span class="fn">describe</span>(<span class="num">7</span>)
+  }
+
+  <span class="kw">return</span> <span class="str">'7'</span>
+}
+
+<span class="kw">echo</span> <span class="fn">choose</span>(<span class="lit">true</span>)
+<span class="kw">echo</span> <span class="fn">choose</span>(<span class="lit">false</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">the number 7
+7
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="calling-one-helper-from-another"><a class="anchor" href="#calling-one-helper-from-another" aria-hidden="true" tabindex="-1"></a>Calling One Helper From Another</h3>
+<p>Helpers declared next to each other can call each other, in either
+direction:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">parity</span>(n) {
+  <span class="kw">def</span> <span class="def">even</span>(k) {
+    <span class="kw">if</span> k <span class="op">==</span> <span class="num">0</span> {
+      <span class="kw">return</span> <span class="lit">true</span>
+    }
+
+    <span class="kw">return</span> <span class="fn">odd</span>(k <span class="op">-</span> <span class="num">1</span>)
+  }
+
+  <span class="kw">def</span> <span class="def">odd</span>(k) {
+    <span class="kw">if</span> k <span class="op">==</span> <span class="num">0</span> {
+      <span class="kw">return</span> <span class="lit">false</span>
+    }
+
+    <span class="kw">return</span> <span class="fn">even</span>(k <span class="op">-</span> <span class="num">1</span>)
+  }
+
+  <span class="kw">return</span> <span class="fn">even</span>(n)
+}
+
+<span class="kw">echo</span> <span class="fn">parity</span>(<span class="num">10</span>)
+<span class="kw">echo</span> <span class="fn">parity</span>(<span class="num">7</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+false
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>even</code> mentions <code>odd</code> before <code>odd</code> is written, and that works because the
+compiler reserves a slot for every <code>def</code> in a block before it compiles any
+of them. What it does not do is move the declaration: until the <code>def</code> line
+itself runs, the slot holds nil, so calling a helper from <em>above</em> its
+declaration raises.</p>
+<p>A helper can also call itself:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">factorial_of</span>(n) {
+  <span class="kw">def</span> <span class="def">factorial</span>(k) {
+    <span class="kw">if</span> k <span class="op">&lt;=</span> <span class="num">1</span> {
+      <span class="kw">return</span> <span class="num">1</span>
+    }
+
+    <span class="kw">return</span> k <span class="op">*</span> <span class="fn">factorial</span>(k <span class="op">-</span> <span class="num">1</span>)
+  }
+
+  <span class="kw">return</span> <span class="fn">factorial</span>(n)
+}
+
+<span class="kw">echo</span> <span class="fn">factorial_of</span>(<span class="num">6</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">720
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="a-helper-captures-what-surrounds-it"><a class="anchor" href="#a-helper-captures-what-surrounds-it" aria-hidden="true" tabindex="-1"></a>A Helper Captures What Surrounds It</h3>
+<p>A nested <code>def</code> is a closure over the locals around it, and it outlives the
+call that created it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">make_counter</span>(start) {
+  <span class="kw">var</span> count <span class="op">=</span> start
+
+  <span class="kw">def</span> <span class="def">bump</span>() {
+    count<span class="op">++</span>
+    <span class="kw">return</span> count
+  }
+
+  <span class="kw">return</span> bump
+}
+
+<span class="kw">var</span> bump <span class="op">=</span> <span class="fn">make_counter</span>(<span class="num">10</span>)
+
+<span class="kw">echo</span> <span class="fn">bump</span>()
+<span class="kw">echo</span> <span class="fn">bump</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">11
+12
+</code></pre><span class="code-label">Output</span></figure>
+<p>An anonymous function bound to a <code>var</code> does the same job, and is the better
+choice when the helper is a one-liner or is being passed straight into
+something else:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">outer</span>() {
+  <span class="kw">var</span> helper <span class="op">=</span> <span class="meta">@</span>() <span class="op">=&gt;</span> <span class="str">'private'</span>
+
+  <span class="kw">return</span> <span class="fn">helper</span>()
+}
+
+<span class="kw">echo</span> <span class="fn">outer</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">private
+</code></pre><span class="code-label">Output</span></figure>
+<p>Pick whichever reads better. A <code>def</code> gives the function a real name in
+stack traces and can recurse without the extra <code>var</code>; a lambda is shorter.</p>
+<h2 id="one-declaration-per-name"><a class="anchor" href="#one-declaration-per-name" aria-hidden="true" tabindex="-1"></a>One Declaration Per Name</h2>
+<p>Declaring the same function name twice in one scope is a compile error:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">pick</span>() {
+  <span class="kw">return</span> <span class="str">'first'</span>
+}
+
+<span class="kw">def</span> <span class="def">pick</span>() {
+  <span class="kw">return</span> <span class="str">'second'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">SyntaxError: multiple declaration for function 'pick' found
+<span class="com">  --&gt; /path/to/main.zu:5:5</span>
+  |
+<span class="com">5 | def pick() {</span>
+  |     ^
+</code></pre><span class="code-label">Output</span></figure>
+<p>A different parameter list does not make it a different function. <strong>Zuri
+has no overloading</strong>: one name, one function.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">render</span>(value) {}
+<span class="kw">def</span> <span class="def">render</span>(value, width) {}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">SyntaxError: multiple declaration for function 'render' found
+</code></pre><span class="code-label">Output</span></figure>
+<p>When you want one name to handle several shapes of input, take the extra
+arguments as optional and branch in the body — which is what the
+<code>greeting</code> parameter above is doing.</p>
+<p>The check is per <strong>scope</strong>, exactly like <code>var</code>'s. A function declared
+inside another is a separate declaration in a separate scope, so the
+compiler allows it, and it shadows the outer one for as long as its own
+scope lasts:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">render</span>() {
+  <span class="kw">return</span> <span class="str">'top level'</span>
+}
+
+<span class="kw">def</span> <span class="def">wrapper</span>() {
+  <span class="kw">def</span> <span class="def">render</span>() {
+    <span class="kw">return</span> <span class="str">'inner'</span>
+  }
+
+  <span class="kw">return</span> <span class="fn">render</span>()
+}
+
+<span class="kw">echo</span> <span class="fn">wrapper</span>()
+<span class="kw">echo</span> <span class="fn">render</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">inner
+top level
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>wrapper</code>'s own <code>render</code> is a local of <code>wrapper</code>. It answers every call
+made inside that function and disappears when the call ends, leaving the
+module-level <code>render</code> untouched.</p>
+<p>Classes follow the same rule for their methods:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">Duplicate</span> {
+  <span class="fn">m</span>() {}
+  <span class="fn">m</span>() {}
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">SyntaxError: multiple declaration for method 'm' found in class 'Duplicate'
+</code></pre><span class="code-label">Output</span></figure>
+<p>The REPL is the one exception. Retyping a <code>def</code> there replaces the previous
+one, because correcting something you just typed is what the prompt is for.</p>
+<h2 id="declaration-order"><a class="anchor" href="#declaration-order" aria-hidden="true" tabindex="-1"></a>Declaration Order</h2>
+<p>A function must be declared before the <strong>top-level</strong> line that calls it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="fn">later</span>()
+
+<span class="kw">def</span> <span class="def">later</span>() {
+  <span class="kw">return</span> <span class="str">'nope'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console"><span class="err">Unhandled UndefinedError: undefined global 'later'</span>
+</code></pre><span class="code-label">Output</span></figure>
+<p>There is no hoisting. Declarations execute in order, like everything else.</p>
+<p>Inside a function body the rule does not apply, because a name is resolved
+when the call runs rather than when it is compiled. That is what makes
+mutual recursion work with no forward declaration:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">is_even</span>(n) {
+  <span class="kw">if</span> n <span class="op">==</span> <span class="num">0</span> {
+    <span class="kw">return</span> <span class="lit">true</span>
+  }
+
+  <span class="kw">return</span> <span class="fn">is_odd</span>(n <span class="op">-</span> <span class="num">1</span>)
+}
+
+<span class="kw">def</span> <span class="def">is_odd</span>(n) {
+  <span class="kw">if</span> n <span class="op">==</span> <span class="num">0</span> {
+    <span class="kw">return</span> <span class="lit">false</span>
+  }
+
+  <span class="kw">return</span> <span class="fn">is_even</span>(n <span class="op">-</span> <span class="num">1</span>)
+}
+
+<span class="kw">echo</span> <span class="fn">is_even</span>(<span class="num">10</span>)
+<span class="kw">echo</span> <span class="fn">is_odd</span>(<span class="num">7</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>is_even</code> refers to <code>is_odd</code> before it exists. That is fine, because the
+reference is resolved when <code>is_even(10)</code> runs, by which time both
+declarations have executed.</p>
+<p>Helpers nested inside a function get the same freedom by a different
+route: their slots are reserved together, before any of their bodies
+compile. Either way, what matters is that every declaration has run by the
+time the first call is made.</p>
+<h2 id="functions-as-values"><a class="anchor" href="#functions-as-values" aria-hidden="true" tabindex="-1"></a>Functions as Values</h2>
+<p>A function is a value, so it can be passed, stored and returned:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">apply_twice</span>(f, x) {
+  <span class="kw">return</span> <span class="fn">f</span>(<span class="fn">f</span>(x))
+}
+
+<span class="kw">def</span> <span class="def">increment</span>(n) {
+  <span class="kw">return</span> n <span class="op">+</span> <span class="num">1</span>
+}
+
+<span class="kw">echo</span> <span class="fn">apply_twice</span>(increment, <span class="num">5</span>)
+<span class="kw">echo</span> <span class="fn">apply_twice</span>(<span class="meta">@</span>(s) <span class="op">=&gt;</span> s <span class="op">+</span> <span class="str">'!'</span>, <span class="str">'hi'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">7
+hi!!
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="what-a-function-knows-about-itself"><a class="anchor" href="#what-a-function-knows-about-itself" aria-hidden="true" tabindex="-1"></a>What a Function Knows About Itself</h3>
+<p>Every callable carries four methods:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">named</span>(a, b, ...c) {
+  <span class="kw">return</span> [a, b, c]
+}
+
+<span class="kw">echo</span> named.<span class="fn">name</span>()
+<span class="kw">echo</span> named.<span class="fn">arity</span>()
+<span class="kw">echo</span> named.<span class="fn">is_variadic</span>()
+<span class="kw">echo</span> named.<span class="fn">to_string</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">named
+3
+true
+&lt;function named(3)&gt;
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>arity()</code> counts <strong>declared parameters</strong>, the variadic one included, so a
+variadic function's arity is a minimum rather than a requirement.</p>
+<p>An anonymous function is named after the order the compiler met it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> f <span class="op">=</span> <span class="meta">@</span>(x) <span class="op">=&gt;</span> x
+
+<span class="kw">echo</span> f.<span class="fn">name</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">@anon0
+</code></pre><span class="code-label">Output</span></figure>
+<p>A method read off an instance keeps its receiver, and counts it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">Greeter</span> {
+
+  <span class="fn">hello</span>() {
+    <span class="kw">return</span> <span class="str">'hi'</span>
+  }
+}
+
+<span class="kw">var</span> bound <span class="op">=</span> <span class="type">Greeter</span>().<span class="prop">hello</span>
+
+<span class="kw">echo</span> <span class="fn">bound</span>()
+<span class="kw">echo</span> bound.<span class="fn">name</span>()
+<span class="kw">echo</span> bound.<span class="fn">arity</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">hi
+hello
+1
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>hello()</code> declares no parameters, and <code>arity()</code> reports <code>1</code>, because the
+instance is the first one.</p>
+<h3 id="call"><a class="anchor" href="#call" aria-hidden="true" tabindex="-1"></a><code>call()</code></h3>
+<p><code>call()</code> invokes a function with the arguments you give it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">add</span>(a, b) {
+  <span class="kw">return</span> a <span class="op">+</span> b
+}
+
+<span class="kw">echo</span> add.<span class="fn">call</span>(<span class="num">2</span>, <span class="num">3</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">5
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>call()</code> takes the arguments <strong>individually</strong>, exactly as a normal call
+does. It is not a spread: <code>add.call([2, 3])</code> passes one argument, a list.
+Its use is calling something whose identity you only have as a value —
+a handler out of a dictionary, a method from <code>zuri.reflect</code> — in a place
+where the ordinary call syntax reads badly.</p>
+<h3 id="testing-callability"><a class="anchor" href="#testing-callability" aria-hidden="true" tabindex="-1"></a>Testing Callability</h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">f</span>() {}
+
+<span class="kw">echo</span> <span class="bi">is_callable</span>(f)
+<span class="kw">echo</span> <span class="bi">is_callable</span>(<span class="bi">print</span>)
+<span class="kw">echo</span> <span class="bi">is_callable</span>(<span class="type">Error</span>)
+<span class="kw">echo</span> <span class="bi">is_callable</span>(<span class="num">42</span>)
+
+<span class="kw">echo</span> <span class="bi">is_function</span>(f)
+<span class="kw">echo</span> <span class="bi">is_function</span>(<span class="type">Error</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+true
+true
+false
+true
+false
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>is_callable()</code> is true for anything you can put parentheses after,
+<strong>classes included</strong> — calling a class constructs an instance.
+<code>is_function()</code> is narrower: true for a <code>def</code>, an anonymous function and a
+built-in, false for a class.</p>
+<h2 id="a-worked-example"><a class="anchor" href="#a-worked-example" aria-hidden="true" tabindex="-1"></a>A Worked Example</h2>
+<p>A small pipeline builder, using most of this section: functions as values,
+a variadic parameter, a default, and a returned closure.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">pipeline</span>(...stages) {
+  <span class="kw">return</span> <span class="meta">@</span>(input) {
+    <span class="kw">var</span> value <span class="op">=</span> input
+
+    <span class="kw">for</span> stage <span class="kw">in</span> stages {
+      value <span class="op">=</span> <span class="fn">stage</span>(value)
+    }
+
+    <span class="kw">return</span> value
+  }
+}
+
+<span class="kw">def</span> <span class="def">strip</span>(text) {
+  <span class="kw">return</span> text.<span class="fn">trim</span>()
+}
+
+<span class="kw">def</span> <span class="def">collapse_spaces</span>(text) {
+  <span class="kw">return</span> text.<span class="fn">replace</span>(<span class="str">'/\s+/'</span>, <span class="str">' '</span>)
+}
+
+<span class="kw">def</span> <span class="def">truncate</span>(text, limit) {
+  limit <span class="op">=</span> limit <span class="kw">or</span> <span class="num">20</span>
+
+  <span class="kw">if</span> text.<span class="fn">length</span>() <span class="op">&lt;=</span> limit {
+    <span class="kw">return</span> text
+  }
+
+  <span class="kw">return</span> text[<span class="num">0</span>, limit <span class="op">-</span> <span class="num">1</span>] <span class="op">+</span> <span class="str">'…'</span>
+}
+
+<span class="kw">var</span> tidy <span class="op">=</span> <span class="fn">pipeline</span>(strip, collapse_spaces, <span class="meta">@</span>(t) <span class="op">=&gt;</span> <span class="fn">truncate</span>(t, <span class="num">12</span>))
+
+<span class="kw">echo</span> <span class="str">'['</span> <span class="op">+</span> <span class="fn">tidy</span>(<span class="str">'   too    many   spaces here   '</span>) <span class="op">+</span> <span class="str">']'</span>
+<span class="kw">echo</span> <span class="str">'['</span> <span class="op">+</span> <span class="fn">tidy</span>(<span class="str">'  short  '</span>) <span class="op">+</span> <span class="str">']'</span>
+<span class="kw">echo</span> <span class="str">'['</span> <span class="op">+</span> <span class="fn">pipeline</span>()(<span class="str">'untouched'</span>) <span class="op">+</span> <span class="str">']'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[too many sp…]
+[short]
+[untouched]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Four things to take from it.</p>
+<p><code>pipeline()</code> takes its stages variadically and returns a closure over them,
+so the returned function is a new function specialised to those stages.</p>
+<p><code>pipeline()</code> with no arguments still works, because a variadic parameter is
+an empty list rather than <code>nil</code>, and a <code>for</code> over an empty list runs zero
+times.</p>
+<p>The third stage is wrapped in <code>@(t) =&gt; truncate(t, 12)</code> because
+<code>truncate</code> takes two parameters and a stage takes one. That wrapper is the
+thing a spread operator would otherwise be for.</p>
+<p>And <code>limit = limit or 20</code> is safe here precisely because <code>0</code> is not a
+sensible limit. Had it been, this would need the <code>== nil</code> form.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch05-01-defining-functions.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch05-00-functions.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">5</span>Functions</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch05-02-closures.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">5.2</span>Anonymous Functions and Closures</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#declaration">Declaration</a>
+        </li><li class="level-2">
+          <a href="#arity-is-not-enforced">Arity Is Not Enforced</a>
+        </li><li class="level-3">
+          <a href="#the-or-trap-in-defaults">The <code>or</code> Trap in Defaults</a>
+        </li><li class="level-2">
+          <a href="#variadic-functions">Variadic Functions</a>
+        </li><li class="level-2">
+          <a href="#where-a-def-binds">Where a <code>def</code> Binds</a>
+        </li><li class="level-3">
+          <a href="#calling-one-helper-from-another">Calling One Helper From Another</a>
+        </li><li class="level-3">
+          <a href="#a-helper-captures-what-surrounds-it">A Helper Captures What Surrounds It</a>
+        </li><li class="level-2">
+          <a href="#one-declaration-per-name">One Declaration Per Name</a>
+        </li><li class="level-2">
+          <a href="#declaration-order">Declaration Order</a>
+        </li><li class="level-2">
+          <a href="#functions-as-values">Functions as Values</a>
+        </li><li class="level-3">
+          <a href="#what-a-function-knows-about-itself">What a Function Knows About Itself</a>
+        </li><li class="level-3">
+          <a href="#call"><code>call()</code></a>
+        </li><li class="level-3">
+          <a href="#testing-callability">Testing Callability</a>
+        </li><li class="level-2">
+          <a href="#a-worked-example">A Worked Example</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

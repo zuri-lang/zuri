@@ -1,0 +1,666 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>http.session · The Zuri Standard Library</title>
+  <meta name="description" content="Every module Zuri ships with, generated from the library's own doc blocks.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/reference/http-session.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="teal" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Standard Library</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../book/">The Book</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="index.html"><span class="toc-title">The Zuri Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Text and Markup</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html.html"><span class="toc-title">html</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of html"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html-elements.html"><span class="toc-title">html.elements</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html-entities.html"><span class="toc-title">html.entities</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html-namespaces.html"><span class="toc-title">html.namespaces</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html-node.html"><span class="toc-title">html.node</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html-parser.html"><span class="toc-title">html.parser</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html-selector.html"><span class="toc-title">html.selector</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html-serialize.html"><span class="toc-title">html.serialize</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html-tokenizer.html"><span class="toc-title">html.tokenizer</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="markdown.html"><span class="toc-title">markdown</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of markdown"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="markdown-errors.html"><span class="toc-title">markdown.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="markdown-node.html"><span class="toc-title">markdown.node</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="markdown-renderer.html"><span class="toc-title">markdown.renderer</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire.html"><span class="toc-title">wire</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of wire"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-compile.html"><span class="toc-title">wire.compile</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-constants.html"><span class="toc-title">wire.constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-errors.html"><span class="toc-title">wire.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-escape.html"><span class="toc-title">wire.escape</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-expression.html"><span class="toc-title">wire.expression</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-filters.html"><span class="toc-title">wire.filters</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-loader.html"><span class="toc-title">wire.loader</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-normalize.html"><span class="toc-title">wire.normalize</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-render.html"><span class="toc-title">wire.render</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-values.html"><span class="toc-title">wire.values</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="url.html"><span class="toc-title">url</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mime.html"><span class="toc-title">mime</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="colors.html"><span class="toc-title">colors</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Data Formats</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="json.html"><span class="toc-title">json</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="yaml.html"><span class="toc-title">yaml</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="toml.html"><span class="toc-title">toml</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of toml"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="toml-document.html"><span class="toc-title">toml.document</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="toml-encoder.html"><span class="toc-title">toml.encoder</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="toml-errors.html"><span class="toc-title">toml.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="toml-parser.html"><span class="toc-title">toml.parser</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="toml-values.html"><span class="toc-title">toml.values</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="csv.html"><span class="toc-title">csv</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="base64.html"><span class="toc-title">base64</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="struct.html"><span class="toc-title">struct</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Numbers and Collections</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="math.html"><span class="toc-title">math</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array.html"><span class="toc-title">array</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of array"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-double.html"><span class="toc-title">array.double</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-float.html"><span class="toc-title">array.float</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-int16.html"><span class="toc-title">array.int16</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-int32.html"><span class="toc-title">array.int32</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-int64.html"><span class="toc-title">array.int64</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-int8.html"><span class="toc-title">array.int8</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-uint16.html"><span class="toc-title">array.uint16</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-uint32.html"><span class="toc-title">array.uint32</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-uint64.html"><span class="toc-title">array.uint64</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-uint8.html"><span class="toc-title">array.uint8</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="set.html"><span class="toc-title">set</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Dates and Times</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="date.html"><span class="toc-title">date</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">The Machine</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="os.html"><span class="toc-title">os</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of os"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="os-env.html"><span class="toc-title">os.env</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="os-fs.html"><span class="toc-title">os.fs</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="os-path.html"><span class="toc-title">os.path</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="os-process.html"><span class="toc-title">os.process</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="os-system.html"><span class="toc-title">os.system</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="os-tempfile.html"><span class="toc-title">os.tempfile</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="os-watch.html"><span class="toc-title">os.watch</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="env.html"><span class="toc-title">env</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of env"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="env-errors.html"><span class="toc-title">env.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="env-expand.html"><span class="toc-title">env.expand</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="env-loading.html"><span class="toc-title">env.loading</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="env-parser.html"><span class="toc-title">env.parser</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="env-values.html"><span class="toc-title">env.values</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="io.html"><span class="toc-title">io</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of io"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="io-bytesio.html"><span class="toc-title">io.bytesio</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="io-tty.html"><span class="toc-title">io.tty</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="args.html"><span class="toc-title">args</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="log.html"><span class="toc-title">log</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of log"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="log-console.html"><span class="toc-title">log.console</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="log-dispatch.html"><span class="toc-title">log.dispatch</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="log-file.html"><span class="toc-title">log.file</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="log-level.html"><span class="toc-title">log.level</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="log-logger.html"><span class="toc-title">log.logger</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="log-transport.html"><span class="toc-title">log.transport</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="stat.html"><span class="toc-title">stat</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Testing</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test.html"><span class="toc-title">test</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of test"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-conduct.html"><span class="toc-title">test.conduct</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-context.html"><span class="toc-title">test.context</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-diff.html"><span class="toc-title">test.diff</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-error.html"><span class="toc-title">test.error</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-expect.html"><span class="toc-title">test.expect</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-format.html"><span class="toc-title">test.format</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-mock.html"><span class="toc-title">test.mock</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-reporter.html"><span class="toc-title">test.reporter</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-result.html"><span class="toc-title">test.result</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-runner.html"><span class="toc-title">test.runner</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-snapshot.html"><span class="toc-title">test.snapshot</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-source.html"><span class="toc-title">test.source</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-style.html"><span class="toc-title">test.style</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Networking</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net.html"><span class="toc-title">net</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of net"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-addr.html"><span class="toc-title">net.addr</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-dtls.html"><span class="toc-title">net.dtls</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-ip.html"><span class="toc-title">net.ip</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-poll.html"><span class="toc-title">net.poll</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-resolver.html"><span class="toc-title">net.resolver</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-tcp.html"><span class="toc-title">net.tcp</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-tls.html"><span class="toc-title">net.tls</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-udp.html"><span class="toc-title">net.udp</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-unix.html"><span class="toc-title">net.unix</span></a></div></li></ol></li><li class="toc-item open"><div class="toc-row"><a class="toc-link" href="http.html"><span class="toc-title">http</span></a><button class="toc-fold" type="button" aria-expanded="true" aria-label="Sections of http"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-body.html"><span class="toc-title">http.body</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-client.html"><span class="toc-title">http.client</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-cookies.html"><span class="toc-title">http.cookies</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-errors.html"><span class="toc-title">http.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-files.html"><span class="toc-title">http.files</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-h1.html"><span class="toc-title">http.h1</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-h2.html"><span class="toc-title">http.h2</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of http.h2"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-h2-connection.html"><span class="toc-title">http.h2.connection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-h2-frames.html"><span class="toc-title">http.h2.frames</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-h2-hpack.html"><span class="toc-title">http.h2.hpack</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-h2-huffman.html"><span class="toc-title">http.h2.huffman</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-headers.html"><span class="toc-title">http.headers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-loop.html"><span class="toc-title">http.loop</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-middleware.html"><span class="toc-title">http.middleware</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-multipart.html"><span class="toc-title">http.multipart</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-negotiate.html"><span class="toc-title">http.negotiate</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-proxy.html"><span class="toc-title">http.proxy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-request.html"><span class="toc-title">http.request</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-response.html"><span class="toc-title">http.response</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-router.html"><span class="toc-title">http.router</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-server.html"><span class="toc-title">http.server</span></a></div></li><li class="toc-item open"><div class="toc-row"><a class="toc-link" href="http-session.html" aria-current="page"><span class="toc-title">http.session</span></a><button class="toc-fold" type="button" aria-expanded="true" aria-label="Sections of http.session"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-session-file.html"><span class="toc-title">http.session.file</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-session-memory.html"><span class="toc-title">http.session.memory</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-session-sql.html"><span class="toc-title">http.session.sql</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-session-store.html"><span class="toc-title">http.session.store</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-sse.html"><span class="toc-title">http.sse</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-status.html"><span class="toc-title">http.status</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-stream.html"><span class="toc-title">http.stream</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-util.html"><span class="toc-title">http.util</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-websocket.html"><span class="toc-title">http.websocket</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-worker.html"><span class="toc-title">http.worker</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc.html"><span class="toc-title">rpc</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of rpc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc-endpoint.html"><span class="toc-title">rpc.endpoint</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc-error.html"><span class="toc-title">rpc.error</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc-framing.html"><span class="toc-title">rpc.framing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc-http.html"><span class="toc-title">rpc.http</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc-message.html"><span class="toc-title">rpc.message</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc-server.html"><span class="toc-title">rpc.server</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc-service.html"><span class="toc-title">rpc.service</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc-transport.html"><span class="toc-title">rpc.transport</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Security and Identity</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="crypto.html"><span class="toc-title">crypto</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="hash.html"><span class="toc-title">hash</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="bcrypt.html"><span class="toc-title">bcrypt</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="jwt.html"><span class="toc-title">jwt</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of jwt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="jwt-codec.html"><span class="toc-title">jwt.codec</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="jwt-core.html"><span class="toc-title">jwt.core</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="jwt-errors.html"><span class="toc-title">jwt.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="jwt-jwks.html"><span class="toc-title">jwt.jwks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="jwt-signer.html"><span class="toc-title">jwt.signer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="jwt-token.html"><span class="toc-title">jwt.token</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="jwt-verifier.html"><span class="toc-title">jwt.verifier</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="uuid.html"><span class="toc-title">uuid</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="validate.html"><span class="toc-title">validate</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of validate"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="validate-rule.html"><span class="toc-title">validate.rule</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="validate-rules.html"><span class="toc-title">validate.rules</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="validate-schema.html"><span class="toc-title">validate.schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="validate-validator.html"><span class="toc-title">validate.validator</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="validate-validators.html"><span class="toc-title">validate.validators</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Compression and Archives</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress.html"><span class="toc-title">compress</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of compress"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-brotli.html"><span class="toc-title">compress.brotli</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-bzip2.html"><span class="toc-title">compress.bzip2</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-checksum.html"><span class="toc-title">compress.checksum</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-deflate.html"><span class="toc-title">compress.deflate</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-gzip.html"><span class="toc-title">compress.gzip</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-lz4.html"><span class="toc-title">compress.lz4</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-tar.html"><span class="toc-title">compress.tar</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-zip.html"><span class="toc-title">compress.zip</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-zlib.html"><span class="toc-title">compress.zlib</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-zstd.html"><span class="toc-title">compress.zstd</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Concurrency</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="isolate.html"><span class="toc-title">isolate</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of isolate"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="isolate-broadcast.html"><span class="toc-title">isolate.broadcast</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="isolate-channel.html"><span class="toc-title">isolate.channel</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="isolate-error.html"><span class="toc-title">isolate.error</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Images</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine.html"><span class="toc-title">imagine</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of imagine"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-animation.html"><span class="toc-title">imagine.animation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-canvas.html"><span class="toc-title">imagine.canvas</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-color.html"><span class="toc-title">imagine.color</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-constants.html"><span class="toc-title">imagine.constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-errors.html"><span class="toc-title">imagine.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-filters.html"><span class="toc-title">imagine.filters</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-font.html"><span class="toc-title">imagine.font</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-formats.html"><span class="toc-title">imagine.formats</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-image.html"><span class="toc-title">imagine.image</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-strokefont.html"><span class="toc-title">imagine.strokefont</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Databases</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql.html"><span class="toc-title">sql</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of sql"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-blueprint.html"><span class="toc-title">sql.blueprint</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-connection.html"><span class="toc-title">sql.connection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-crud.html"><span class="toc-title">sql.crud</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-cursor.html"><span class="toc-title">sql.cursor</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-ddl.html"><span class="toc-title">sql.ddl</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-decimal.html"><span class="toc-title">sql.decimal</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-driver.html"><span class="toc-title">sql.driver</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-errors.html"><span class="toc-title">sql.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-ieee.html"><span class="toc-title">sql.ieee</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-migrate.html"><span class="toc-title">sql.migrate</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-model.html"><span class="toc-title">sql.model</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of sql.model"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-model-casts.html"><span class="toc-title">sql.model.casts</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-model-definition.html"><span class="toc-title">sql.model.definition</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-model-errors.html"><span class="toc-title">sql.model.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-model-naming.html"><span class="toc-title">sql.model.naming</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-model-query.html"><span class="toc-title">sql.model.query</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-model-record.html"><span class="toc-title">sql.model.record</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql.html"><span class="toc-title">sql.mysql</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of sql.mysql"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-auth.html"><span class="toc-title">sql.mysql.auth</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-connection.html"><span class="toc-title">sql.mysql.connection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-cursor.html"><span class="toc-title">sql.mysql.cursor</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-ddl.html"><span class="toc-title">sql.mysql.ddl</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-driver.html"><span class="toc-title">sql.mysql.driver</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-ed25519.html"><span class="toc-title">sql.mysql.ed25519</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-errors.html"><span class="toc-title">sql.mysql.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-packets.html"><span class="toc-title">sql.mysql.packets</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-protocol.html"><span class="toc-title">sql.mysql.protocol</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-results.html"><span class="toc-title">sql.mysql.results</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-schema.html"><span class="toc-title">sql.mysql.schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-statement.html"><span class="toc-title">sql.mysql.statement</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-types.html"><span class="toc-title">sql.mysql.types</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-params.html"><span class="toc-title">sql.params</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-pool.html"><span class="toc-title">sql.pool</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres.html"><span class="toc-title">sql.postgres</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of sql.postgres"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-auth.html"><span class="toc-title">sql.postgres.auth</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-connection.html"><span class="toc-title">sql.postgres.connection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-cursor.html"><span class="toc-title">sql.postgres.cursor</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-ddl.html"><span class="toc-title">sql.postgres.ddl</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-driver.html"><span class="toc-title">sql.postgres.driver</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-errors.html"><span class="toc-title">sql.postgres.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-messages.html"><span class="toc-title">sql.postgres.messages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-notify.html"><span class="toc-title">sql.postgres.notify</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-protocol.html"><span class="toc-title">sql.postgres.protocol</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-results.html"><span class="toc-title">sql.postgres.results</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-schema.html"><span class="toc-title">sql.postgres.schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-statement.html"><span class="toc-title">sql.postgres.statement</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-types.html"><span class="toc-title">sql.postgres.types</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-result.html"><span class="toc-title">sql.result</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-schema.html"><span class="toc-title">sql.schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite.html"><span class="toc-title">sql.sqlite</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of sql.sqlite"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-backup.html"><span class="toc-title">sql.sqlite.backup</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-blob.html"><span class="toc-title">sql.sqlite.blob</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-connection.html"><span class="toc-title">sql.sqlite.connection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-cursor.html"><span class="toc-title">sql.sqlite.cursor</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-ddl.html"><span class="toc-title">sql.sqlite.ddl</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-driver.html"><span class="toc-title">sql.sqlite.driver</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-errors.html"><span class="toc-title">sql.sqlite.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-schema.html"><span class="toc-title">sql.sqlite.schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-statement.html"><span class="toc-title">sql.sqlite.statement</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-types.html"><span class="toc-title">sql.sqlite.types</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-statement.html"><span class="toc-title">sql.statement</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-transaction.html"><span class="toc-title">sql.transaction</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-types.html"><span class="toc-title">sql.types</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Mail</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail.html"><span class="toc-title">mail</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of mail"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-address.html"><span class="toc-title">mail.address</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-content.html"><span class="toc-title">mail.content</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-dkim.html"><span class="toc-title">mail.dkim</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-encoding.html"><span class="toc-title">mail.encoding</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-errors.html"><span class="toc-title">mail.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-headers.html"><span class="toc-title">mail.headers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-imap.html"><span class="toc-title">mail.imap</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of mail.imap"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-imap-client.html"><span class="toc-title">mail.imap.client</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-imap-parser.html"><span class="toc-title">mail.imap.parser</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-imap-server.html"><span class="toc-title">mail.imap.server</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-imap-store.html"><span class="toc-title">mail.imap.store</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-message.html"><span class="toc-title">mail.message</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-pool.html"><span class="toc-title">mail.pool</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-pop3.html"><span class="toc-title">mail.pop3</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of mail.pop3"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-pop3-client.html"><span class="toc-title">mail.pop3.client</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-sasl.html"><span class="toc-title">mail.sasl</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-smtp.html"><span class="toc-title">mail.smtp</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of mail.smtp"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-smtp-client.html"><span class="toc-title">mail.smtp.client</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-smtp-server.html"><span class="toc-title">mail.smtp.server</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-stream.html"><span class="toc-title">mail.stream</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ffi.html"><span class="toc-title">ffi</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of ffi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ffi-callback.html"><span class="toc-title">ffi.callback</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ffi-declare.html"><span class="toc-title">ffi.declare</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ffi-errors.html"><span class="toc-title">ffi.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ffi-library.html"><span class="toc-title">ffi.library</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ffi-pointer.html"><span class="toc-title">ffi.pointer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ffi-types.html"><span class="toc-title">ffi.types</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Types and Conversion</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="types.html"><span class="toc-title">types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="enum.html"><span class="toc-title">enum</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="convert.html"><span class="toc-title">convert</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Metaprogramming</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="zuri.html"><span class="toc-title">zuri</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of zuri"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="zuri-ast.html"><span class="toc-title">zuri.ast</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="zuri-compile.html"><span class="toc-title">zuri.compile</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="zuri-diagnostic.html"><span class="toc-title">zuri.diagnostic</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="zuri-doc.html"><span class="toc-title">zuri.doc</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="zuri-reflect.html"><span class="toc-title">zuri.reflect</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="zuri-token.html"><span class="toc-title">zuri.token</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="zuri-watch.html"><span class="toc-title">zuri.watch</span></a></div></li></ol></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Networking</p>
+        <div class="content"><h1 id="httpsession"><code>http.session</code></h1>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http
+</code></pre><span class="code-label">Zuri</span></figure>
+<blockquote>
+<p><code>http</code> exposes this as <code>http.session</code>, so <code>import http</code> is enough and
+the names are called as <code>http.session.*</code>. <code>import http.session</code> reaches
+the same definitions directly.</p>
+</blockquote>
+<p>Server-side sessions: a small amount of state that belongs to one
+visitor, kept on the server and found again by a cookie the browser
+sends back.</p>
+<p>Only the identifier travels. Whatever the session holds stays in a store
+the server controls, so a visitor can neither read it nor change it, and
+the cookie is worth nothing to anyone who cannot present the exact value
+that was issued.</p>
+<h2 id="using-it"><a class="anchor" href="#using-it" aria-hidden="true" tabindex="-1"></a>Using it</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http
+<span class="kw">import</span> http.<span class="prop">session</span>
+
+<span class="kw">var</span> server <span class="op">=</span> http.<span class="fn">server</span>(<span class="num">3000</span>)
+
+server.<span class="fn">use</span>(<span class="fn">session</span>())
+
+server.<span class="fn">post</span>(<span class="str">'/login'</span>, <span class="meta">@</span>(request, response) {
+  <span class="kw">var</span> account <span class="op">=</span> <span class="fn">authenticate</span>(request.<span class="fn">form</span>())
+
+  <span class="com"># A new identifier, so a session identifier planted beforehand is</span>
+  <span class="com"># not the one that ends up logged in.</span>
+  request.<span class="fn">session</span>().<span class="fn">regenerate</span>()
+  request.<span class="fn">session</span>().<span class="fn">set</span>(<span class="str">'account'</span>, account.<span class="prop">id</span>)
+
+  response.<span class="fn">redirect</span>(<span class="str">'/'</span>)
+})
+
+server.<span class="fn">get</span>(<span class="str">'/'</span>, <span class="meta">@</span>(request, response) {
+  <span class="kw">var</span> <span class="bi">id</span> <span class="op">=</span> request.<span class="fn">session</span>().<span class="fn">get</span>(<span class="str">'account'</span>, <span class="lit">nil</span>)
+
+  response.<span class="fn">html</span>(<span class="bi">id</span> <span class="op">==</span> <span class="lit">nil</span> <span class="op">?</span> <span class="fn">render_guest</span>() <span class="op">:</span> <span class="fn">render_account</span>(<span class="bi">id</span>))
+})
+
+server.<span class="fn">listen</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>session()</code> is middleware, so it is registered once and every handler
+below it can reach <code>request.session()</code>.</p>
+<h2 id="nothing-happens-until-something-uses-it"><a class="anchor" href="#nothing-happens-until-something-uses-it" aria-hidden="true" tabindex="-1"></a>Nothing happens until something uses it</h2>
+<p>A request that never touches its session costs nothing: no store read,
+no store write, and no <code>Set-Cookie</code>. A store record is created the first
+time something is written, which is what keeps a crawler working through
+a public site from filling the store with empty sessions.</p>
+<p>A request that only reads an existing session writes nothing back
+either, beyond moving the idle expiry along at most once every
+<code>touch_interval</code> seconds.</p>
+<h2 id="where-it-is-kept"><a class="anchor" href="#where-it-is-kept" aria-hidden="true" tabindex="-1"></a>Where it is kept</h2>
+<p><code>FileStore</code> is the default, in a private directory under the platform's
+temporary directory. It needs no setup and it is shared between the
+workers <code>http.serve()</code> starts, which a store held in memory is not.</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(<span class="fn">session</span>({
+  store<span class="op">:</span> session.<span class="fn">FileStore</span>(<span class="str">'/var/lib/app/sessions'</span>),
+}))
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A relational database works as well, from <code>http.session.sql</code>, which is a
+separate import so that a program using the default store never loads
+the <code>sql</code> module:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http.<span class="prop">session</span>.<span class="prop">sql</span> { <span class="type">SqlStore</span> }
+<span class="kw">import</span> sql
+
+<span class="kw">var</span> store <span class="op">=</span> <span class="type">SqlStore</span>(sql.<span class="fn">pool</span>(<span class="str">'postgres://localhost/app'</span>))
+store.<span class="fn">migrate</span>()
+
+server.<span class="fn">use</span>(<span class="fn">session</span>({ store }))
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Anything else - Redis, a key-value service, a table of your own shape -
+is a subclass of <code>SessionStore</code>.</p>
+<h2 id="options"><a class="anchor" href="#options" aria-hidden="true" tabindex="-1"></a>Options</h2>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>store</code></td>
+<td>a <code>FileStore</code> in the default directory</td>
+<td>where sessions are kept</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td><code>'zuri_session'</code></td>
+<td>the cookie's name</td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td><code>'/'</code></td>
+<td>the cookie's path</td>
+</tr>
+<tr>
+<td><code>domain</code></td>
+<td><code>nil</code></td>
+<td>the cookie's domain; <code>nil</code> scopes it to the exact host</td>
+</tr>
+<tr>
+<td><code>secure</code></td>
+<td><code>nil</code></td>
+<td><code>nil</code> follows the request's own scheme</td>
+</tr>
+<tr>
+<td><code>http_only</code></td>
+<td><code>true</code></td>
+<td>hides the cookie from scripts</td>
+</tr>
+<tr>
+<td><code>same_site</code></td>
+<td><code>'Lax'</code></td>
+<td><code>'Strict'</code>, <code>'Lax'</code> or <code>'None'</code></td>
+</tr>
+<tr>
+<td><code>persistent</code></td>
+<td><code>false</code></td>
+<td>whether the cookie outlives the browser</td>
+</tr>
+<tr>
+<td><code>idle_timeout</code></td>
+<td><code>7200</code></td>
+<td>seconds of inactivity before a session ends</td>
+</tr>
+<tr>
+<td><code>lifetime</code></td>
+<td><code>86400</code></td>
+<td>seconds a session may live however active</td>
+</tr>
+<tr>
+<td><code>touch_interval</code></td>
+<td><code>60</code>, or half <code>idle_timeout</code> when that is less</td>
+<td>how often a read-only request moves the idle expiry</td>
+</tr>
+<tr>
+<td><code>max_size</code></td>
+<td><code>65536</code></td>
+<td>the largest payload a session may serialise to</td>
+</tr>
+<tr>
+<td><code>secret</code></td>
+<td><code>nil</code></td>
+<td>signs the cookie, so a forged one is refused without a store read</td>
+</tr>
+<tr>
+<td><code>gc_probability</code></td>
+<td><code>0.01</code></td>
+<td>passed to a default <code>FileStore</code>; ignored when <code>store</code> is given</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2 id="two-clocks"><a class="anchor" href="#two-clocks" aria-hidden="true" tabindex="-1"></a>Two clocks</h2>
+<p><code>idle_timeout</code> rolls forward while the visitor is active; <code>lifetime</code>
+does not. A session ends at whichever comes first, so a tab left open
+overnight is still asked to sign in again. Either may be <code>nil</code> to remove
+that limit, but not both.</p>
+<h2 id="signing-the-cookie"><a class="anchor" href="#signing-the-cookie" aria-hidden="true" tabindex="-1"></a>Signing the cookie</h2>
+<p>An identifier is 32 bytes from the platform's cryptographic generator,
+which is far beyond guessing. Signing adds nothing against that, and
+everything against volume: with <code>secret</code> set, a cookie that was not
+issued by this server is thrown out after one HMAC, rather than after a
+read from disk or a query to the database. Set it on anything exposed to
+the open internet.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> env
+
+server.<span class="fn">use</span>(<span class="fn">session</span>({ secret<span class="op">:</span> env.<span class="fn">require</span>(<span class="str">'SESSION_SECRET'</span>) }))
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Every worker must be given the same secret, or a cookie issued by one is
+refused by the next.</p>
+<h2 id="what-a-session-may-hold"><a class="anchor" href="#what-a-session-may-hold" aria-hidden="true" tabindex="-1"></a>What a session may hold</h2>
+<p>Whatever JSON holds: strings, numbers, booleans, <code>nil</code>, lists and
+dictionaries of those. A class instance is not JSON, and storing one
+raises when the session is written rather than coming back as something
+else.</p>
+<p>Sessions are for identity and small state - who is signed in, which
+steps of a form are done, what to say on the next page. A payload over
+<code>max_size</code> raises <code>SessionError</code>; the answer is a row in a database with
+the session holding its key.</p>
+<h2 id="submodules"><a class="anchor" href="#submodules" aria-hidden="true" tabindex="-1"></a>Submodules</h2>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Reached as</th>
+<th>Summary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="http-session-file.html"><code>http.session.file</code></a></td>
+<td><code>http.session.file.*</code></td>
+<td>The session store that keeps one file per session.</td>
+</tr>
+<tr>
+<td><a href="http-session-memory.html"><code>http.session.memory</code></a></td>
+<td><code>http.session.memory.*</code></td>
+<td>The session store that keeps everything in the isolate's own heap.</td>
+</tr>
+<tr>
+<td><a href="http-session-sql.html"><code>http.session.sql</code></a></td>
+<td><code>import http.session.sql</code></td>
+<td>The session store that keeps sessions in a relational database.</td>
+</tr>
+<tr>
+<td><a href="http-session-store.html"><code>http.session.store</code></a></td>
+<td><code>http.session.store.*</code></td>
+<td>What a session store is, and the error every one of them raises.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2 id="constants"><a class="anchor" href="#constants" aria-hidden="true" tabindex="-1"></a>Constants</h2>
+<h3 id="format"><a class="anchor" href="#format" aria-hidden="true" tabindex="-1"></a><code>FORMAT</code></h3>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">FORMAT</span> <span class="op">=</span> <span class="num">1</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The payload format this module writes and reads.</p>
+<p>A session written by a different version is ignored rather than guessed
+at, so an upgrade signs people out instead of handing a handler fields
+that are not what it expects.</p>
+<h3 id="id_length"><a class="anchor" href="#id_length" aria-hidden="true" tabindex="-1"></a><code>ID_LENGTH</code></h3>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">ID_LENGTH</span> <span class="op">=</span> <span class="num">43</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>How many characters a session identifier has.</p>
+<p>Thirty-two bytes from the platform's cryptographic generator, in
+base64url without padding.</p>
+<h2 id="functions"><a class="anchor" href="#functions" aria-hidden="true" tabindex="-1"></a>Functions</h2>
+<h3 id="session"><a class="anchor" href="#session" aria-hidden="true" tabindex="-1"></a><code>session()</code></h3>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="fn">session</span>(options<span class="op">:</span> <span class="op">?</span>dict) <span class="op">-&gt;</span> <span class="fn">function</span>(<span class="num">3</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Middleware that finds each request's session and writes it back when the
+response goes out.</p>
+<p>Register it once, above anything that reads a session:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(<span class="fn">session</span>({ secret<span class="op">:</span> env.<span class="fn">require</span>(<span class="str">'SESSION_SECRET'</span>) }))
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The session lands on <code>request.context['session']</code>, which
+<code>request.session()</code> reads.</p>
+<p>A handler that raises still has its session written, and the failure
+carries on to the error handler afterwards. That is what lets an error
+page show a flash the handler set before it failed.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>options</code> (<code>?dict</code>) — see the table at the top of this module</li>
+</ul>
+<p><strong>Returns</strong> <code>function(3)</code></p>
+<p><strong>Raises</strong> <code>SessionError</code> if an option is not one this module has, or
+holds a value it cannot mean</p>
+<h2 id="classes"><a class="anchor" href="#classes" aria-hidden="true" tabindex="-1"></a>Classes</h2>
+<h3 id="session-1"><a class="anchor" href="#session-1" aria-hidden="true" tabindex="-1"></a><code>Session</code></h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">http</span>.<span class="prop">session</span>.<span class="prop">Session</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>One visitor's session.</p>
+<p>A handler reaches its own through <code>request.session()</code> rather than
+building one. The middleware makes it, hands it to the request, and
+writes it back afterwards.</p>
+<p>Nothing is read from the store until the first method that needs the
+contents is called, and nothing is written back unless something
+changed.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>@to_string()</code>, so <code>echo</code> and <code>print()</code> show
+something useful</li>
+</ul>
+<h4 id="constructor"><a class="anchor" href="#constructor" aria-hidden="true" tabindex="-1"></a>Constructor</h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="fn">Session</span>(store, config<span class="op">:</span> dict, presented<span class="op">:</span> <span class="op">?</span>string, secure<span class="op">:</span> <span class="op">?</span>bool)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>store</code> (<code>SessionStore</code>)</li>
+<li><code>config</code> (<code>dict</code>) — as <code>session()</code> resolved it</li>
+<li><code>presented</code> (<code>?string</code>) — the cookie value the client sent, if any</li>
+<li><code>secure</code> (<code>?bool</code>) — whether the request arrived over TLS</li>
+</ul>
+<h4 id="sessionid"><a class="anchor" href="#sessionid" aria-hidden="true" tabindex="-1"></a><code>Session.id()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">id</span>() <span class="op">-&gt;</span> <span class="op">?</span>string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The session's identifier, or <code>nil</code> when it has none yet.</p>
+<p>A session that has never been written to has no identifier, because
+nothing has been stored for one to name.</p>
+<p><strong>Returns</strong> <code>?string</code></p>
+<h4 id="sessionis_new"><a class="anchor" href="#sessionis_new" aria-hidden="true" tabindex="-1"></a><code>Session.is_new()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">is_new</span>() <span class="op">-&gt;</span> bool
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Whether this request arrived without a session the store recognised - no
+cookie, a cookie that did not verify, or one naming a session that has
+expired or been destroyed.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="sessionget"><a class="anchor" href="#sessionget" aria-hidden="true" tabindex="-1"></a><code>Session.get()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">get</span>(name<span class="op">:</span> string, fallback) <span class="op">-&gt;</span> any
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The value stored under <code>name</code>, or <code>fallback</code> when there is none.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>fallback</code> (<code>?any</code>) — defaults to <code>nil</code></li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h4 id="sessionset"><a class="anchor" href="#sessionset" aria-hidden="true" tabindex="-1"></a><code>Session.set()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">set</span>(name<span class="op">:</span> string, value)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Stores <code>value</code> under <code>name</code>.</p>
+<p>This is what brings a session into existence: the first <code>set()</code> on a new
+session assigns an identifier, and the middleware writes the record and
+sends the cookie when the response goes out.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>value</code> (<code>any</code>) — anything JSON can carry</li>
+</ul>
+<p><strong>Returns</strong> — Session: this same instance, for chaining</p>
+<h4 id="sessionhas"><a class="anchor" href="#sessionhas" aria-hidden="true" tabindex="-1"></a><code>Session.has()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">has</span>(name<span class="op">:</span> string) <span class="op">-&gt;</span> bool
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Whether anything is stored under <code>name</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="sessionremove"><a class="anchor" href="#sessionremove" aria-hidden="true" tabindex="-1"></a><code>Session.remove()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">remove</span>(name<span class="op">:</span> string)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Removes whatever is stored under <code>name</code>. Removing something that is not
+there changes nothing.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Session: this same instance, for chaining</p>
+<h4 id="sessionall"><a class="anchor" href="#sessionall" aria-hidden="true" tabindex="-1"></a><code>Session.all()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">all</span>() <span class="op">-&gt;</span> dict
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Everything the session holds, as a dictionary.</p>
+<p>The dictionary is a copy: writing to it does not change the session.</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="sessionclear"><a class="anchor" href="#sessionclear" aria-hidden="true" tabindex="-1"></a><code>Session.clear()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">clear</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Empties the session without ending it. The identifier, the cookie and
+the record all survive; only the contents go.</p>
+<p>Use <code>destroy()</code> to end the session itself, which is what signing out
+wants.</p>
+<p><strong>Returns</strong> — Session: this same instance, for chaining</p>
+<h4 id="sessionregenerate"><a class="anchor" href="#sessionregenerate" aria-hidden="true" tabindex="-1"></a><code>Session.regenerate()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">regenerate</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Gives the session a new identifier, keeping everything it holds, and
+removes the record the old identifier named.</p>
+<p>Call this the moment an account signs in. Without it, an attacker who
+can set a cookie in the victim's browser beforehand - through a stray
+subdomain, an open redirect, a shared machine - knows the identifier the
+victim will be signed in under, and can simply use it. That is session
+fixation, and a new identifier is the whole of the defence.</p>
+<p>It is also worth doing whenever what the session means changes: an
+elevation to administrator, a step-up authentication.</p>
+<p>The absolute <code>lifetime</code> restarts here, since a new identifier begins a
+new session; the contents carry across.</p>
+<p><strong>Returns</strong> — Session: this same instance, for chaining</p>
+<h4 id="sessiondestroy"><a class="anchor" href="#sessiondestroy" aria-hidden="true" tabindex="-1"></a><code>Session.destroy()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">destroy</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Ends the session: removes the record, empties the contents, and has the
+response expire the cookie.</p>
+<p>This is what signing out does. A handler may keep using the session
+object afterwards, and doing so starts a fresh session with a new
+identifier.</p>
+<p><strong>Returns</strong> — Session: this same instance, for chaining</p>
+<h4 id="sessionflash"><a class="anchor" href="#sessionflash" aria-hidden="true" tabindex="-1"></a><code>Session.flash()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">flash</span>(name<span class="op">:</span> string, value)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Stores <code>value</code> under <code>name</code> for exactly the next request.</p>
+<p>This is the message a redirect needs to carry: the handler that did the
+work knows what happened, and the page the visitor is sent to is the one
+that has to say so.</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">post</span>(<span class="str">'/posts'</span>, <span class="meta">@</span>(request, response) {
+  <span class="fn">create_post</span>(request.<span class="fn">form</span>())
+
+  request.<span class="fn">session</span>().<span class="fn">flash</span>(<span class="str">'notice'</span>, <span class="str">'Your post is up.'</span>)
+  response.<span class="fn">redirect</span>(<span class="str">'/posts'</span>)
+})
+
+server.<span class="fn">get</span>(<span class="str">'/posts'</span>, <span class="meta">@</span>(request, response) {
+  response.<span class="fn">html</span>(<span class="fn">render</span>(request.<span class="fn">session</span>().<span class="fn">take_flash</span>(<span class="str">'notice'</span>)))
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A flash is spent by the next request that touches the session at all,
+whether or not that request asks for this one. A page that looked at the
+session and did not read the message does not leave it for the page
+after. A request that never touched its session - a static file, an
+image - leaves it waiting, which is what keeps the message for the page
+it was meant for.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Session: this same instance, for chaining</p>
+<h4 id="sessiontake_flash"><a class="anchor" href="#sessiontake_flash" aria-hidden="true" tabindex="-1"></a><code>Session.take_flash()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">take_flash</span>(name<span class="op">:</span> string, fallback) <span class="op">-&gt;</span> any
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Reads the flash stored under <code>name</code> by the previous request and removes
+it, so a second call in the same request does not get it again.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>fallback</code> (<code>?any</code>) — defaults to <code>nil</code></li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h4 id="sessionflashes"><a class="anchor" href="#sessionflashes" aria-hidden="true" tabindex="-1"></a><code>Session.flashes()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">flashes</span>() <span class="op">-&gt;</span> dict
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Every flash the previous request left, as a dictionary, without taking
+any of them.</p>
+<p>The dictionary is a copy.</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="sessionstarted_at"><a class="anchor" href="#sessionstarted_at" aria-hidden="true" tabindex="-1"></a><code>Session.started_at()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">started_at</span>() <span class="op">-&gt;</span> <span class="op">?</span>number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>When the session was created, as epoch seconds, or <code>nil</code> when it has not
+been created yet.</p>
+<p><code>regenerate()</code> restarts this.</p>
+<p><strong>Returns</strong> <code>?number</code></p>
+<h4 id="sessiontouched_at"><a class="anchor" href="#sessiontouched_at" aria-hidden="true" tabindex="-1"></a><code>Session.touched_at()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">touched_at</span>() <span class="op">-&gt;</span> <span class="op">?</span>number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>When the session was last written or touched, as epoch seconds, or <code>nil</code>
+when it does not exist yet.</p>
+<p>A read-only request moves this at most once every <code>touch_interval</code>
+seconds, so it is a coarse measure of activity rather than the time of
+the last request.</p>
+<p><strong>Returns</strong> <code>?number</code></p>
+<h4 id="sessionexpires_at"><a class="anchor" href="#sessionexpires_at" aria-hidden="true" tabindex="-1"></a><code>Session.expires_at()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">expires_at</span>() <span class="op">-&gt;</span> <span class="op">?</span>number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>When the session stops being valid, as epoch seconds, or <code>nil</code> when it
+does not exist yet.</p>
+<p><strong>Returns</strong> <code>?number</code></p>
+<h4 id="sessionsave"><a class="anchor" href="#sessionsave" aria-hidden="true" tabindex="-1"></a><code>Session.save()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">save</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Writes the session to the store now, if anything changed.</p>
+<p>The middleware does this as the response goes out, so a handler rarely
+calls it. It is here for one that is about to do something long - stream
+a large body, wait on a slow service - and would rather not hold the
+change until afterwards.</p>
+<p><strong>Returns</strong> — bool: whether anything was written</p>
+<p><strong>Raises</strong> <code>SessionError</code> if the session serialises to more than
+<code>max_size</code> bytes</p>
+<h4 id="sessioncommit"><a class="anchor" href="#sessioncommit" aria-hidden="true" tabindex="-1"></a><code>Session.commit()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">commit</span>(response)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Writes the session and puts whatever the client needs on the response:
+the cookie for a session that is new or has a new identifier, an expired
+cookie for one that was destroyed.</p>
+<p>The middleware calls this once, after the rest of the chain has run.
+Calling it again does no harm and writes nothing more.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>response</code> (<code>HttpResponse</code>)</li>
+</ul>
+<blockquote>
+<p><strong>Note:</strong> A response that has already started going out cannot carry a
+<code>Set-Cookie</code>. A session whose identifier has just changed is then not
+written at all, since nothing could present it; an existing session is
+still written, and only its cookie is skipped. Start a session before
+streaming begins.</p>
+</blockquote>
+<h4 id="sessionto_string"><a class="anchor" href="#sessionto_string" aria-hidden="true" tabindex="-1"></a><code>Session.to_string()</code></h4>
+<figure class="code"><pre><code class="language-zuri">http.<span class="prop">session</span>.<span class="prop">Session</span>.<span class="fn">to_string</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<hr />
+<p><small>2026, Richard Ore and Zuri contributors</small></p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="http-server.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title">http.server</span>
+          </a>
+          <a class="turn-next" rel="next" href="http-session-file.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title">http.session.file</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#using-it">Using it</a>
+        </li><li class="level-2">
+          <a href="#nothing-happens-until-something-uses-it">Nothing happens until something uses it</a>
+        </li><li class="level-2">
+          <a href="#where-it-is-kept">Where it is kept</a>
+        </li><li class="level-2">
+          <a href="#options">Options</a>
+        </li><li class="level-2">
+          <a href="#two-clocks">Two clocks</a>
+        </li><li class="level-2">
+          <a href="#signing-the-cookie">Signing the cookie</a>
+        </li><li class="level-2">
+          <a href="#what-a-session-may-hold">What a session may hold</a>
+        </li><li class="level-2">
+          <a href="#submodules">Submodules</a>
+        </li><li class="level-2">
+          <a href="#constants">Constants</a>
+        </li><li class="level-3">
+          <a href="#format"><code>FORMAT</code></a>
+        </li><li class="level-3">
+          <a href="#id_length"><code>ID_LENGTH</code></a>
+        </li><li class="level-2">
+          <a href="#functions">Functions</a>
+        </li><li class="level-3">
+          <a href="#session"><code>session()</code></a>
+        </li><li class="level-2">
+          <a href="#classes">Classes</a>
+        </li><li class="level-3">
+          <a href="#session-1"><code>Session</code></a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Standard Library" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

@@ -1,0 +1,471 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Numbers · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch04-02-numbers.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="red" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item open"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="true" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html" aria-current="page"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>4.2 · Learning the Language</p>
+        <div class="content"><h1 id="numbers">Numbers</h1>
+<p>There is one numeric type, <code>number</code>, and it is a 64-bit IEEE-754 double.
+Integers and fractions are the same type, and the distinction you care
+about is whether a particular value happens to be integral.</p>
+<h2 id="writing-a-number"><a class="anchor" href="#writing-a-number" aria-hidden="true" tabindex="-1"></a>Writing a Number</h2>
+<p>There are five ways to write a numeric literal, and they all produce the
+same type:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="num">42</span>
+<span class="kw">echo</span> <span class="num">3.5</span>
+<span class="kw">echo</span> 0b1011
+<span class="kw">echo</span> 0c17
+<span class="kw">echo</span> 0xff
+<span class="kw">echo</span> <span class="num">6.02e23</span>
+<span class="kw">echo</span> <span class="num">1.5e-3</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">42
+3.5
+11
+15
+255
+602000000000000000000000
+0.0015
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>0b</code> is binary, <code>0c</code> is octal, and <code>0x</code> is hexadecimal. The letters in a
+hexadecimal literal may be either case, so <code>0xff</code> and <code>0xFF</code> are the same
+number. Note that octal is <code>0c</code>, not the <code>0o</code> some other languages use.</p>
+<p>The exponent form takes <code>e</code> or <code>E</code>, and the exponent may be negative.
+<code>1e3</code> is <code>1000</code>; the mantissa needs no decimal point. Note that the
+exponent is a way of <em>writing</em> the literal, not a property the value keeps:
+<code>6.02e23</code> prints as its full decimal expansion, because that is the number
+it is.</p>
+<h3 id="digit-separators"><a class="anchor" href="#digit-separators" aria-hidden="true" tabindex="-1"></a>Digit Separators</h3>
+<p>An underscore between digits is ignored, which makes long numbers
+readable:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="num">1_000_000</span>
+<span class="kw">echo</span> <span class="num">1_0.5_5</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1000000
+10.55
+</code></pre><span class="code-label">Output</span></figure>
+<p><strong>Separators work in decimal literals only.</strong> <code>0xdead_beef</code> and
+<code>0b1010_1010</code> are syntax errors, not clever formatting.</p>
+<h3 id="two-forms-that-do-not-exist"><a class="anchor" href="#two-forms-that-do-not-exist" aria-hidden="true" tabindex="-1"></a>Two Forms That Do Not Exist</h3>
+<p>A literal needs a digit on both sides of its decimal point. Neither of
+these parses:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">echo</span> .<span class="num">5</span>
+<span class="kw">echo</span> <span class="num">5</span>.
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Write <code>0.5</code> and <code>5.0</code>. The second case matters more than it looks, because
+<code>5.</code> is also how a method call on a literal starts — which is the subject
+of the next-but-one section.</p>
+<h2 id="methods-not-functions"><a class="anchor" href="#methods-not-functions" aria-hidden="true" tabindex="-1"></a>Methods, Not Functions</h2>
+<p>Everything you would reach into a math library for is a method on the
+number:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="num">2</span>.<span class="fn">sqrt</span>()
+<span class="kw">echo</span> <span class="num">8</span>.<span class="fn">log2</span>()
+<span class="kw">echo</span> <span class="num">100</span>.<span class="fn">log10</span>()
+<span class="kw">echo</span> <span class="num">100</span>.<span class="fn">log</span>()
+<span class="kw">echo</span> <span class="num">1</span>.<span class="fn">exp</span>()
+<span class="kw">echo</span> <span class="num">2</span>.<span class="fn">cbrt</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1.4142135623730951
+3
+2
+4.605170185988092
+2.718281828459045
+1.2599210498948732
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>log()</code> is the natural logarithm. There is also <code>log1p()</code> and <code>expm1()</code>
+for the precision-sensitive forms near zero.</p>
+<p>The full trigonometric set is there: <code>sin</code>, <code>cos</code>, <code>tan</code>, <code>asin</code>, <code>acos</code>,
+<code>atan</code>, <code>atan2</code>, and the hyperbolic <code>sinh</code>, <code>cosh</code>, <code>tanh</code>, <code>asinh</code>,
+<code>acosh</code>, <code>atanh</code>.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="num">1</span>.<span class="fn">atan2</span>(<span class="num">1</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">0.7853981633974483
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="calling-a-method-on-a-literal"><a class="anchor" href="#calling-a-method-on-a-literal" aria-hidden="true" tabindex="-1"></a>Calling a Method on a Literal</h2>
+<p>A numeric literal takes a method directly. No parentheses, no temporary
+variable, in every base and with a decimal point or without:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="num">2</span>.<span class="fn">sqrt</span>()
+<span class="kw">echo</span> <span class="num">3.7</span>.<span class="fn">round</span>()
+<span class="kw">echo</span> <span class="num">255</span>.<span class="fn">hex</span>()
+<span class="kw">echo</span> 0xff.<span class="fn">bin</span>()
+<span class="kw">echo</span> <span class="num">1e3</span>.<span class="fn">int</span>()
+<span class="kw">echo</span> <span class="num">2n</span>.<span class="fn">bits</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1.4142135623730951
+4
+ff
+11111111
+1000
+2
+</code></pre><span class="code-label">Output</span></figure>
+<p>There is exactly one case where you need parentheses, and it is a
+<strong>negative</strong> literal. A method call binds tighter than unary minus, so the
+minus applies to the result rather than to the number:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="op">-</span><span class="num">3</span>.<span class="fn">abs</span>()
+<span class="kw">echo</span> (<span class="op">-</span><span class="num">3</span>).<span class="fn">abs</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">-3
+3
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>-3.abs()</code> is <code>-(3.abs())</code>, which is <code>-3</code>. When the receiver is negative,
+parenthesise it — or put it in a variable, where the question disappears:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> n <span class="op">=</span> <span class="op">-</span><span class="num">3</span>
+
+<span class="kw">echo</span> n.<span class="fn">abs</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">3
+</code></pre><span class="code-label">Output</span></figure>
+<p>The same rule covers any expression you want to call a method on: wrap it,
+because the call would otherwise bind to the last term alone.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> (<span class="num">1</span> <span class="op">/</span> <span class="num">0</span>).<span class="fn">is_inf</span>()
+<span class="kw">echo</span> (<span class="num">2</span> <span class="op">**</span> <span class="num">10</span>).<span class="fn">hex</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+400
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="rounding"><a class="anchor" href="#rounding" aria-hidden="true" tabindex="-1"></a>Rounding</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="num">2.5</span>.<span class="fn">ceil</span>()
+<span class="kw">echo</span> <span class="num">2.5</span>.<span class="fn">floor</span>()
+<span class="kw">echo</span> <span class="num">2.5</span>.<span class="fn">trunc</span>()
+<span class="kw">echo</span> <span class="num">2.5</span>.<span class="fn">int</span>()
+<span class="kw">echo</span> (<span class="op">-</span><span class="num">2.5</span>).<span class="fn">int</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">3
+2
+2
+2
+-2
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>trunc()</code> and <code>int()</code> both drop the fractional part, rounding towards zero.</p>
+<p><code>round()</code> rounds half away from zero:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="num">2.5</span>.<span class="fn">round</span>()
+<span class="kw">echo</span> <span class="num">3.5</span>.<span class="fn">round</span>()
+<span class="kw">echo</span> (<span class="op">-</span><span class="num">2.5</span>).<span class="fn">round</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">3
+4
+-3
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>fixed()</code> rounds to a number of decimal places and gives you a number back:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="num">2.567</span>.<span class="fn">fixed</span>(<span class="num">2</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">2.57
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>fraction()</code> gives the digits after the decimal point as a whole number:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="num">2.567</span>.<span class="fn">fraction</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">567
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="sign-magnitude-and-comparison"><a class="anchor" href="#sign-magnitude-and-comparison" aria-hidden="true" tabindex="-1"></a>Sign, Magnitude and Comparison</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> (<span class="op">-</span><span class="num">5</span>).<span class="fn">sign</span>()
+<span class="kw">echo</span> (<span class="op">-</span><span class="num">3</span>).<span class="fn">abs</span>()
+<span class="kw">echo</span> <span class="num">5</span>.<span class="fn">max</span>(<span class="num">9</span>)
+<span class="kw">echo</span> <span class="num">5</span>.<span class="fn">min</span>(<span class="num">9</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">-1
+3
+9
+5
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>sign()</code> is <code>-1</code>, <code>0</code> or <code>1</code>.</p>
+<h2 id="bases-and-characters"><a class="anchor" href="#bases-and-characters" aria-hidden="true" tabindex="-1"></a>Bases and Characters</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="num">255</span>.<span class="fn">bin</span>()
+<span class="kw">echo</span> <span class="num">255</span>.<span class="fn">oct</span>()
+<span class="kw">echo</span> <span class="num">255</span>.<span class="fn">hex</span>()
+<span class="kw">echo</span> <span class="num">65</span>.<span class="fn">chr</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">11111111
+377
+ff
+A
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>chr()</code> turns a code point into a one-character string; <code>'A'.ord()</code> goes
+back the other way.</p>
+<h2 id="the-special-values"><a class="anchor" href="#the-special-values" aria-hidden="true" tabindex="-1"></a>The Special Values</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> (<span class="num">0</span> <span class="op">/</span> <span class="num">0</span>).<span class="fn">is_nan</span>()
+<span class="kw">echo</span> (<span class="num">1</span> <span class="op">/</span> <span class="num">0</span>).<span class="fn">is_inf</span>()
+<span class="kw">echo</span> <span class="num">1</span>.<span class="fn">is_finite</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+true
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>NaN</code> is <strong>falsy</strong>, like zero, so <code>var x = a / b or fallback</code> replaces the
+<code>NaN</code> from a <code>0 / 0</code> with the fallback. Test with <code>is_nan()</code> when you need
+to tell the two apart.</p>
+<p><code>NaN</code> is also not equal to itself, as the standard requires, so
+<code>x == x</code> is a valid way to spot one.</p>
+<h2 id="other-methods"><a class="anchor" href="#other-methods" aria-hidden="true" tabindex="-1"></a>Other Methods</h2>
+<p><code>factorial()</code> for small integers, <code>to_string()</code>, <code>to_bool()</code> and
+<code>to_bigint()</code> for conversion.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="num">5</span>.<span class="fn">factorial</span>()
+<span class="kw">echo</span> <span class="num">17</span>.<span class="fn">to_bigint</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">120
+17n
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="the-math-module"><a class="anchor" href="#the-math-module" aria-hidden="true" tabindex="-1"></a>The <code>math</code> Module</h2>
+<p>Constants live in <code>math</code>, because a constant is not a method on anything:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> math
+
+<span class="kw">echo</span> math.<span class="prop">PI</span>
+<span class="kw">echo</span> math.<span class="prop">E</span>
+<span class="kw">echo</span> math.<span class="prop">Infinity</span>
+<span class="kw">echo</span> math.<span class="prop">NaN</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">3.141592653589793
+2.718281828459045
+inf
+NaN
+</code></pre><span class="code-label">Output</span></figure>
+<p>It also carries <code>LOG_2</code>, <code>LOG_10</code>, <code>LOG_2_E</code>, <code>LOG_10_E</code>, <code>ROOT_2</code>,
+<code>ROOT_3</code> and <code>ROOT_HALF</code>.</p>
+<h2 id="bigints"><a class="anchor" href="#bigints" aria-hidden="true" tabindex="-1"></a>Bigints</h2>
+<p>When 2^53 is not enough, use a bigint. Write one with an <code>n</code> suffix:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> a <span class="op">=</span> <span class="num">2n</span> <span class="op">**</span> <span class="num">100n</span>
+<span class="kw">echo</span> a
+<span class="kw">echo</span> a.<span class="fn">bits</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1267650600228229401496703205376n
+101
+</code></pre><span class="code-label">Output</span></figure>
+<p>Bigints are arbitrary precision. They never overflow and never lose a
+digit.</p>
+<p>They also never mix with numbers implicitly:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">catch</span> {
+  <span class="kw">echo</span> <span class="num">5n</span> <span class="op">+</span> <span class="num">3</span>
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">message</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">operator '+' not defined for call signature (bigint, number)
+</code></pre><span class="code-label">Output</span></figure>
+<p>Convert explicitly, in whichever direction you need:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="num">5</span>.<span class="fn">to_bigint</span>() <span class="op">*</span> <span class="num">2n</span>
+<span class="kw">echo</span> (<span class="num">2n</span> <span class="op">**</span> <span class="num">100n</span>).<span class="fn">to_number</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">10n
+1267650600228229400000000000000
+</code></pre><span class="code-label">Output</span></figure>
+<p>Going to <code>number</code> is lossy once you are past 2^53, which is the whole
+reason bigints exist. Going the other way is exact.</p>
+<p>The same separation holds in type annotations. <code>bigint</code> is a type name
+alongside <code>number</code> and <code>int</code>, and it accepts nothing else:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">scale</span>(n<span class="op">:</span> bigint, factor<span class="op">:</span> number) {
+  <span class="kw">return</span> n <span class="op">*</span> factor.<span class="fn">to_bigint</span>()
+}
+
+<span class="kw">echo</span> <span class="fn">scale</span>(<span class="num">2n</span>, <span class="num">50</span>)
+
+<span class="kw">catch</span> {
+  <span class="fn">scale</span>(<span class="num">2</span>, <span class="num">50</span>)
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">message</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">100n
+scale() expects parameter 'n' (argument 1) to be a bigint, got number
+</code></pre><span class="code-label">Output</span></figure>
+<p>The number-theory methods are the reason bigints are worth having:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="num">100n</span>.<span class="fn">gcd</span>(<span class="num">75n</span>)
+<span class="kw">echo</span> <span class="num">100n</span>.<span class="fn">lcm</span>(<span class="num">75n</span>)
+<span class="kw">echo</span> <span class="num">2n</span>.<span class="fn">modpow</span>(<span class="num">10n</span>, <span class="num">1000n</span>)
+<span class="kw">echo</span> <span class="num">3n</span>.<span class="fn">modinv</span>(<span class="num">11n</span>)
+<span class="kw">echo</span> <span class="num">144n</span>.<span class="fn">sqrt</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">25n
+300n
+24n
+4n
+12n
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>modpow(exponent, modulus)</code> is the operation every public-key algorithm is
+built on, and it is computed without ever materialising the full power.
+<code>modinv</code> gives the modular multiplicative inverse.</p>
+<p>There is also <code>nth_root()</code>, <code>cbrt()</code>, <code>bit()</code>, <code>set_bit()</code>,
+<code>trailing_zeros()</code>, <code>is_zero()</code>, <code>is_even()</code>, <code>is_odd()</code>, <code>abs()</code>,
+<code>sign()</code>, <code>max()</code>, <code>min()</code>, <code>pow()</code>, and <code>bin()</code>/<code>oct()</code>/<code>hex()</code>.</p>
+<p>A bigint is the right choice when exactness past 2^53 is the point:
+cryptography, currency in minor units, factorials, identifiers that must
+survive a round trip. For everything else — measurements, coordinates,
+counters, ratios — a <code>number</code> is the type you want.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch04-02-numbers.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch04-01-strings.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">4.1</span>Strings</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch04-03-lists.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">4.3</span>Lists</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#writing-a-number">Writing a Number</a>
+        </li><li class="level-3">
+          <a href="#digit-separators">Digit Separators</a>
+        </li><li class="level-3">
+          <a href="#two-forms-that-do-not-exist">Two Forms That Do Not Exist</a>
+        </li><li class="level-2">
+          <a href="#methods-not-functions">Methods, Not Functions</a>
+        </li><li class="level-2">
+          <a href="#calling-a-method-on-a-literal">Calling a Method on a Literal</a>
+        </li><li class="level-2">
+          <a href="#rounding">Rounding</a>
+        </li><li class="level-2">
+          <a href="#sign-magnitude-and-comparison">Sign, Magnitude and Comparison</a>
+        </li><li class="level-2">
+          <a href="#bases-and-characters">Bases and Characters</a>
+        </li><li class="level-2">
+          <a href="#the-special-values">The Special Values</a>
+        </li><li class="level-2">
+          <a href="#other-methods">Other Methods</a>
+        </li><li class="level-2">
+          <a href="#the-math-module">The <code>math</code> Module</a>
+        </li><li class="level-2">
+          <a href="#bigints">Bigints</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

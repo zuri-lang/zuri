@@ -1,0 +1,2154 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JSON-RPC · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch28-00-rpc.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="gold" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html" aria-current="page"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Chapter 28 · Talking to Other Programs</p>
+        <div class="content"><h1 id="json-rpc">JSON-RPC</h1>
+<p>The <code>rpc</code> module is JSON-RPC 2.0, on both ends and over everything it
+travels on: as the body of an HTTP request, over a WebSocket, a TCP or
+TLS socket, a Unix domain socket, a pipe to a child process, or any
+other stream of bytes. It is written in Zuri on top of <code>json</code>, <code>http</code>,
+<code>isolate</code> and <code>net</code>, and it holds to the specification exactly.</p>
+<p>JSON-RPC is a remote procedure call protocol, and a small one. One
+program sends the name of a method and its parameters; the other runs
+it and sends back the result or an error. That is very nearly all of
+it, and the smallness is the point. The protocol says nothing about
+what the methods are, how the two programs are connected, or which of
+them is in charge, so it fits wherever two programs need to call each
+other. Services call each other with it over HTTP. Blockchain nodes
+publish their whole API through it, over HTTP for calls and over
+WebSockets for what they push to subscribers. Mining pools, wallets,
+trading systems, editors and their tools, and plugin hosts speak it
+over sockets and pipes.</p>
+<p>The module is built in the same spirit. A service answers messages and
+nothing else, so the same service answers whatever carried the message
+there; an HTTP route, a WebSocket and a socket server are each a few
+lines around it.</p>
+<ul>
+<li><a href="#following-along">Following Along</a></li>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#messages">Messages</a>
+<ul>
+<li><a href="#requests-and-notifications">Requests and Notifications</a></li>
+<li><a href="#responses">Responses</a></li>
+<li><a href="#errors-and-their-codes">Errors and Their Codes</a></li>
+<li><a href="#reading-and-writing-json">Reading and Writing JSON</a></li>
+<li><a href="#batches">Batches</a></li>
+</ul>
+</li>
+<li><a href="#services">Services</a>
+<ul>
+<li><a href="#answering-requests">Answering Requests</a></li>
+<li><a href="#failing-properly">Failing Properly</a></li>
+<li><a href="#notifications">Notifications</a></li>
+<li><a href="#methods-without-a-handler">Methods Without a Handler</a></li>
+<li><a href="#batches-and-their-limit">Batches and Their Limit</a></li>
+</ul>
+</li>
+<li><a href="#json-rpc-over-http">JSON-RPC Over HTTP</a>
+<ul>
+<li><a href="#serving-a-service">Serving a Service</a></li>
+<li><a href="#calling-a-service">Calling a Service</a></li>
+<li><a href="#statuses">Statuses</a></li>
+<li><a href="#who-is-calling">Who Is Calling</a></li>
+</ul>
+</li>
+<li><a href="#framing">Framing</a>
+<ul>
+<li><a href="#content-length-headers">Content-Length Headers</a></li>
+<li><a href="#one-message-to-a-line">One Message to a Line</a></li>
+<li><a href="#one-message-to-each-read">One Message to Each Read</a></li>
+<li><a href="#choosing-a-framing">Choosing a Framing</a></li>
+<li><a href="#limits">Limits</a></li>
+</ul>
+</li>
+<li><a href="#transports">Transports</a>
+<ul>
+<li><a href="#standard-streams">Standard Streams</a></li>
+<li><a href="#sockets">Sockets</a></li>
+<li><a href="#child-processes">Child Processes</a></li>
+<li><a href="#websockets">WebSockets</a></li>
+<li><a href="#between-isolates">Between Isolates</a></li>
+<li><a href="#a-transport-of-your-own">A Transport of Your Own</a></li>
+</ul>
+</li>
+<li><a href="#endpoints">Endpoints</a>
+<ul>
+<li><a href="#calling-the-other-side">Calling the Other Side</a></li>
+<li><a href="#sending-a-batch">Sending a Batch</a></li>
+<li><a href="#answering-later">Answering Later</a></li>
+<li><a href="#calls-in-both-directions">Calls in Both Directions</a></li>
+</ul>
+</li>
+<li><a href="#reading-the-connection">Reading the Connection</a>
+<ul>
+<li><a href="#serving">Serving</a></li>
+<li><a href="#listening-while-doing-other-work">Listening While Doing Other Work</a></li>
+<li><a href="#reading-it-yourself">Reading It Yourself</a></li>
+<li><a href="#timeouts">Timeouts</a></li>
+<li><a href="#stopping-and-closing">Stopping and Closing</a></li>
+</ul>
+</li>
+<li><a href="#serving-many-connections">Serving Many Connections</a></li>
+<li><a href="#watching-the-conversation">Watching the Conversation</a></li>
+<li><a href="#errors">Errors</a></li>
+<li><a href="#what-the-module-refuses">What the Module Refuses</a></li>
+<li><a href="#module-reference">Module Reference</a></li>
+</ul>
+<h2 id="following-along"><a class="anchor" href="#following-along" aria-hidden="true" tabindex="-1"></a>Following Along</h2>
+<p>A service says which methods it answers, and answers one message at a
+time:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> calculator <span class="op">=</span> rpc.<span class="fn">Service</span>().<span class="fn">on_request</span>(
+  <span class="str">'add'</span>,
+  <span class="meta">@</span>(params) <span class="op">=&gt;</span> params[<span class="num">0</span>] <span class="op">+</span> params[<span class="num">1</span>],
+)
+
+<span class="kw">echo</span> calculator.<span class="fn">answer</span>(
+  <span class="str">'{"jsonrpc": "2.0", "id": 1, "method": "add", "params": [2, 3]}'</span>,
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{"jsonrpc":"2.0","id":1,"result":5}
+</code></pre><span class="code-label">Output</span></figure>
+<p>The message went in as JSON text and the answer came out the same way.
+Nothing touched a network. Everything else in this chapter is about
+how the message gets to a service and how its answer gets back: as the
+body of an HTTP request, over a WebSocket or a socket, or between two
+isolates of one program.</p>
+<h2 id="introduction"><a class="anchor" href="#introduction" aria-hidden="true" tabindex="-1"></a>Introduction</h2>
+<p>JSON-RPC has three kinds of message, each a small JSON object whose
+<code>jsonrpc</code> member is <code>&quot;2.0&quot;</code>.</p>
+<p>A <strong>request</strong> names a <code>method</code>, carries its <code>params</code>, and carries an
+<code>id</code>. The other side must answer it, and the answer carries the same
+<code>id</code>.</p>
+<p>A <strong>notification</strong> is a request without an <code>id</code>. Nothing answers it,
+not even when it fails. It is for things the sender wants done but has
+no need to hear back about: a log line, a progress report, a change
+the other side should know of.</p>
+<p>A <strong>response</strong> carries the <code>id</code> of the request it answers, and exactly
+one of <code>result</code> and <code>error</code>.</p>
+<p>Parameters are either a list, matched to the method's parameters by
+position, or a dictionary, matched by name. Nothing else is allowed: a
+call to <code>square(4)</code> sends <code>[4]</code>, never <code>4</code>.</p>
+<p>Messages can also travel together as a <strong>batch</strong>, a JSON array of
+them. The requests in a batch are answered together, as an array of
+responses, each matched to its request by <code>id</code>.</p>
+<p>The protocol has no transport of its own, and two kinds carry it. In
+an <strong>exchange</strong>, such as an HTTP request and its response, one message
+or batch goes each way and that is the end of it. On a <strong>connection</strong>,
+such as a WebSocket or a socket, messages flow both ways for as long as
+it stays open, and neither side is the client: either may send
+requests and notifications at any time, including while it is in the
+middle of answering one. On a stream of bytes, both ends must also
+agree on where one message stops and the next begins. That agreement
+is the framing.</p>
+<p>The module has a layer for each of these:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>What it holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>messages</td>
+<td><code>Request</code>, <code>Notification</code>, <code>Response</code>, <code>RpcError</code>, and <code>encode()</code>, <code>decode()</code> and <code>read()</code></td>
+</tr>
+<tr>
+<td>services</td>
+<td><code>Service</code>, and the <code>Context</code> its handlers are given</td>
+</tr>
+<tr>
+<td>HTTP</td>
+<td><code>http_handler()</code> to serve a service, and <code>HttpClient</code> to call one</td>
+</tr>
+<tr>
+<td>framing</td>
+<td><code>HeaderFraming</code>, <code>LineFraming</code> and <code>MessageFraming</code></td>
+</tr>
+<tr>
+<td>transports</td>
+<td><code>StdioTransport</code>, <code>SocketTransport</code>, <code>ProcessTransport</code>, <code>WebSocketTransport</code>, <code>ChannelTransport</code> and <code>pipe()</code></td>
+</tr>
+<tr>
+<td>endpoints</td>
+<td><code>Endpoint</code>, a service on a connection</td>
+</tr>
+<tr>
+<td>servers</td>
+<td><code>serve()</code>, an endpoint for every connection to a listening socket</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><code>import rpc</code> reaches all of it.</p>
+<h2 id="messages"><a class="anchor" href="#messages" aria-hidden="true" tabindex="-1"></a>Messages</h2>
+<h3 id="requests-and-notifications"><a class="anchor" href="#requests-and-notifications" aria-hidden="true" tabindex="-1"></a>Requests and Notifications</h3>
+<p>A message is built from what it says, and <code>rpc.encode()</code> writes it as
+JSON-RPC sends it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> call <span class="op">=</span> rpc.<span class="fn">Request</span>(<span class="str">'add'</span>, [<span class="num">2</span>, <span class="num">3</span>], <span class="num">1</span>)
+<span class="kw">var</span> note <span class="op">=</span> rpc.<span class="fn">Notification</span>(<span class="str">'log'</span>, { level<span class="op">:</span> <span class="str">'info'</span>, text<span class="op">:</span> <span class="str">'started'</span> })
+
+<span class="kw">echo</span> call
+<span class="kw">echo</span> rpc.<span class="fn">encode</span>(call)
+<span class="kw">echo</span> rpc.<span class="fn">encode</span>(note)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Request(add #1)
+{"jsonrpc":"2.0","id":1,"method":"add","params":[2,3]}
+{"jsonrpc":"2.0","method":"log","params":{"level":"info","text":"started"}}
+</code></pre><span class="code-label">Output</span></figure>
+<p>An <code>id</code> is a string or a number, and is whatever the sender chooses to
+match the answer by. An endpoint numbers its own requests from <code>1</code>.</p>
+<p><code>params</code> of <code>nil</code> leaves the member out of the message, which the
+specification allows for a method that takes nothing. Anything other
+than a list, a dictionary or <code>nil</code> is refused when the message is
+built, before it can be sent:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">catch</span> {
+  rpc.<span class="fn">Request</span>(<span class="str">'square'</span>, <span class="num">4</span>, <span class="num">1</span>)
+} <span class="kw">as</span> error {
+  <span class="kw">echo</span> error.<span class="prop">message</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">params must be a list, a dictionary or nil, not number
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="responses"><a class="anchor" href="#responses" aria-hidden="true" tabindex="-1"></a>Responses</h3>
+<p><code>Response.success()</code> answers a request with its result, and
+<code>Response.failure()</code> with an error:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> done <span class="op">=</span> rpc.<span class="prop">Response</span>.<span class="fn">success</span>(<span class="num">1</span>, <span class="num">5</span>)
+<span class="kw">var</span> missing <span class="op">=</span> rpc.<span class="fn">RpcError</span>(rpc.<span class="prop">METHOD_NOT_FOUND</span>, <span class="str">'Method not found: mul'</span>)
+<span class="kw">var</span> failed <span class="op">=</span> rpc.<span class="prop">Response</span>.<span class="fn">failure</span>(<span class="num">2</span>, missing)
+
+<span class="kw">echo</span> rpc.<span class="fn">encode</span>(done)
+<span class="kw">echo</span> rpc.<span class="fn">encode</span>(failed)
+<span class="kw">echo</span> failed.<span class="fn">is_error</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{"jsonrpc":"2.0","id":1,"result":5}
+{"jsonrpc":"2.0","id":2,"error":{"code":-32601,"message":"Method not found: mul"}}
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p>A response's <code>id</code> is <code>nil</code> only when it answers a message whose <code>id</code>
+could not be read, such as one that was not JSON at all. A result of
+<code>nil</code> is a result like any other, and is sent as <code>null</code>.</p>
+<h3 id="errors-and-their-codes"><a class="anchor" href="#errors-and-their-codes" aria-hidden="true" tabindex="-1"></a>Errors and Their Codes</h3>
+<p>An error is an <code>RpcError</code>: a <code>code</code>, a short <code>message</code>, and optional
+<code>data</code> carrying whatever else the other side needs to know.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> error <span class="op">=</span> rpc.<span class="fn">RpcError</span>(rpc.<span class="prop">INVALID_PARAMS</span>, <span class="str">'a name is required'</span>, {
+  field<span class="op">:</span> <span class="str">'name'</span>,
+})
+
+<span class="kw">echo</span> error.<span class="prop">code</span>
+<span class="kw">echo</span> error.<span class="prop">message</span>
+<span class="kw">echo</span> error.<span class="fn">to_dict</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">-32602
+a name is required
+{code: -32602, message: a name is required, data: {field: name}}
+</code></pre><span class="code-label">Output</span></figure>
+<p>The specification reserves the codes from <code>-32768</code> to <code>-32000</code>, and
+defines these:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Constant</th>
+<th>Code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PARSE_ERROR</code></td>
+<td><code>-32700</code></td>
+<td>the message is not valid JSON</td>
+</tr>
+<tr>
+<td><code>INVALID_REQUEST</code></td>
+<td><code>-32600</code></td>
+<td>the JSON is not a valid message</td>
+</tr>
+<tr>
+<td><code>METHOD_NOT_FOUND</code></td>
+<td><code>-32601</code></td>
+<td>the method does not exist</td>
+</tr>
+<tr>
+<td><code>INVALID_PARAMS</code></td>
+<td><code>-32602</code></td>
+<td>the method cannot take these parameters</td>
+</tr>
+<tr>
+<td><code>INTERNAL_ERROR</code></td>
+<td><code>-32603</code></td>
+<td>the method failed while it ran</td>
+</tr>
+<tr>
+<td><code>SERVER_ERROR_MIN</code> to <code>SERVER_ERROR_MAX</code></td>
+<td><code>-32099</code> to <code>-32000</code></td>
+<td>errors an implementation defines for itself</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>An application's own errors take any code outside the reserved range.
+Pick them once, write them down, and keep them stable: the code is
+what the other side's program matches on, and the message is for the
+person reading the log.</p>
+<p><code>RpcError</code> is an <code>Error</code>, so it is raised and caught like any other.
+Raised from a request handler, it is the answer.</p>
+<h3 id="reading-and-writing-json"><a class="anchor" href="#reading-and-writing-json" aria-hidden="true" tabindex="-1"></a>Reading and Writing JSON</h3>
+<p><code>rpc.decode()</code> reads the JSON text of a message, and checks it against
+every rule of the specification:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> text <span class="op">=</span> <span class="str">'{"jsonrpc": "2.0", "id": "a7", "method": "subtract", '</span> <span class="op">+</span>
+    <span class="str">'"params": {"minuend": 42, "subtrahend": 23}}'</span>
+<span class="kw">var</span> call <span class="op">=</span> rpc.<span class="fn">decode</span>(text)
+
+<span class="kw">echo</span> call
+<span class="kw">echo</span> call.<span class="prop">params</span>.<span class="prop">minuend</span> <span class="op">-</span> call.<span class="prop">params</span>.<span class="prop">subtrahend</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Request(subtract #a7)
+19
+</code></pre><span class="code-label">Output</span></figure>
+<p>What it reads is a <code>Request</code>, a <code>Notification</code> or a <code>Response</code>, told
+apart the way the specification tells them apart: a message with a
+<code>method</code> and an <code>id</code> is a request, one with a <code>method</code> and no <code>id</code> is a
+notification, and one with a <code>result</code> or an <code>error</code> is a response.</p>
+<p>Anything that breaks a rule is refused with an <code>RpcError</code> carrying the
+code it would be answered with:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> attempts <span class="op">=</span> [
+  <span class="str">'{"jsonrpc": "2.0", "method": 1}'</span>,
+  <span class="str">'{"jsonrpc": "1.0", "id": 1, "method": "ping"}'</span>,
+  <span class="str">'{"jsonrpc": "2.0", "id": 1, "method": "ping", "params": 1}'</span>,
+  <span class="str">'{"jsonrpc": "2.0", "id": 1, "result": 1, "error": null}'</span>,
+  <span class="str">'{"jsonrpc": "2.0", "id": 1'</span>,
+]
+
+<span class="kw">for</span> text <span class="kw">in</span> attempts {
+  <span class="kw">catch</span> {
+    rpc.<span class="fn">decode</span>(text)
+  } <span class="kw">as</span> error {
+    <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>error.<span class="prop">code</span><span class="subst">}</span><span class="str"> </span><span class="subst">${</span>error.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+  }
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">-32600 Invalid Request: method must be a string
+-32600 Invalid Request: the jsonrpc member must be '2.0'
+-32600 Invalid Request: params must be an array or an object
+-32600 Invalid Request: a response needs exactly one of result and error
+-32700 Parse error: json.decode(): expected ',' or '}' in object
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>rpc.read()</code> does the same for a value already decoded from JSON, for
+a program that got the JSON from somewhere that decodes it already.
+<code>rpc.encode()</code> is the other direction, for any message or list of
+them.</p>
+<h3 id="batches"><a class="anchor" href="#batches" aria-hidden="true" tabindex="-1"></a>Batches</h3>
+<p>A list of messages is encoded as a batch:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">echo</span> rpc.<span class="fn">encode</span>([
+  rpc.<span class="fn">Request</span>(<span class="str">'add'</span>, [<span class="num">1</span>, <span class="num">2</span>], <span class="num">1</span>),
+  rpc.<span class="fn">Notification</span>(<span class="str">'log'</span>, [<span class="str">'adding'</span>]),
+])
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[{"jsonrpc":"2.0","id":1,"method":"add","params":[1,2]},{"jsonrpc":"2.0","method":"log","params":["adding"]}]
+</code></pre><span class="code-label">Output</span></figure>
+<p>A batch decodes to a list. Each entry in it is read on its own, so one
+bad entry does not spoil the rest: in its place is the <code>RpcError</code>
+saying what is wrong with it, ready to be answered.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> batch <span class="op">=</span> rpc.<span class="fn">decode</span>(
+  <span class="str">'['</span> <span class="op">+</span>
+      <span class="str">'{"jsonrpc": "2.0", "id": 1, "method": "sum", "params": [1, 2]},'</span> <span class="op">+</span>
+      <span class="str">'{"jsonrpc": "2.0", "method": "notify_hello"},'</span> <span class="op">+</span>
+      <span class="str">'{"foo": "boo"}'</span> <span class="op">+</span>
+      <span class="str">']'</span>,
+)
+
+<span class="kw">for</span> entry <span class="kw">in</span> batch {
+  <span class="kw">if</span> <span class="bi">instance_of</span>(entry, rpc.<span class="prop">RpcError</span>) {
+    <span class="kw">echo</span> <span class="str">'refused: </span><span class="subst">${</span>entry.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+  } <span class="kw">else</span> {
+    <span class="kw">echo</span> entry
+  }
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Request(sum #1)
+Notification(notify_hello)
+refused: Invalid Request: the jsonrpc member must be '2.0'
+</code></pre><span class="code-label">Output</span></figure>
+<p>An empty batch, <code>[]</code>, is not a message at all, and decoding one raises
+<code>INVALID_REQUEST</code>.</p>
+<h2 id="services"><a class="anchor" href="#services" aria-hidden="true" tabindex="-1"></a>Services</h2>
+<p>A <code>Service</code> holds the handler for every method a program answers.
+<code>answer()</code> takes one message, or a batch, as JSON text or as its
+bytes, and returns the JSON text of the answer, or <code>nil</code> when there is
+nothing to answer.</p>
+<h3 id="answering-requests"><a class="anchor" href="#answering-requests" aria-hidden="true" tabindex="-1"></a>Answering Requests</h3>
+<p><code>on_request()</code> gives a method its handler. The handler is called with
+the request's <code>params</code> and a <code>Context</code>, and what it returns is the
+result sent back:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> service <span class="op">=</span> rpc.<span class="fn">Service</span>()
+    .<span class="fn">on_request</span>(<span class="str">'add'</span>, <span class="meta">@</span>(params) <span class="op">=&gt;</span> params[<span class="num">0</span>] <span class="op">+</span> params[<span class="num">1</span>])
+    .<span class="fn">on_request</span>(
+      <span class="str">'whoami'</span>,
+      <span class="meta">@</span>(params, context) <span class="op">=&gt;</span> <span class="str">'</span><span class="subst">${</span>context.<span class="prop">method</span><span class="subst">}</span><span class="str"> #</span><span class="subst">${</span>context.<span class="prop">id</span><span class="subst">}</span><span class="str">'</span>,
+    )
+
+<span class="kw">echo</span> service.<span class="fn">answer</span>(
+  <span class="str">'{"jsonrpc": "2.0", "id": 1, "method": "add", "params": [2, 3]}'</span>,
+)
+<span class="kw">echo</span> service.<span class="fn">answer</span>(<span class="str">'{"jsonrpc": "2.0", "id": 2, "method": "whoami"}'</span>)
+<span class="kw">echo</span> service.<span class="fn">answer</span>(
+  <span class="str">'{"jsonrpc": "2.0", "id": 3, "method": "mul", "params": [2, 3]}'</span>,
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{"jsonrpc":"2.0","id":1,"result":5}
+{"jsonrpc":"2.0","id":2,"result":"whoami #2"}
+{"jsonrpc":"2.0","id":3,"error":{"code":-32601,"message":"Method not found: mul"}}
+</code></pre><span class="code-label">Output</span></figure>
+<p>The <code>Context</code> names the request's <code>id</code> and <code>method</code>, the <code>endpoint</code>
+handling it, and the <code>request</code> it arrived in, which for a message from
+HTTP is the HTTP request. A handler that has no use for the context
+leaves it out, as <code>add</code> does. A request for a method with no handler is
+answered with <code>METHOD_NOT_FOUND</code>, as <code>mul</code> is.</p>
+<p>A handler is replaced by calling <code>on_request()</code> again with the same
+method. Method names that start with <code>rpc.</code> are reserved by the
+specification, and <code>on_request()</code> refuses them.</p>
+<p>A message that is not valid UTF-8, or not valid JSON, is answered with
+<code>PARSE_ERROR</code> and an <code>id</code> of <code>nil</code>, since its <code>id</code> cannot be read.</p>
+<h3 id="failing-properly"><a class="anchor" href="#failing-properly" aria-hidden="true" tabindex="-1"></a>Failing Properly</h3>
+<p>A handler fails a request by raising. An <code>RpcError</code> is sent back as it
+is, code, message, data and all. Any other error is sent back as an
+<code>INTERNAL_ERROR</code> carrying the error's message:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> service <span class="op">=</span> rpc.<span class="fn">Service</span>()
+    .<span class="fn">on_request</span>(<span class="str">'divide'</span>, <span class="meta">@</span>(params) {
+      <span class="kw">if</span> params.<span class="fn">length</span>() <span class="op">!=</span> <span class="num">2</span> <span class="kw">or</span> params[<span class="num">1</span>] <span class="op">==</span> <span class="num">0</span> {
+        <span class="kw">raise</span> rpc.<span class="fn">RpcError</span>(
+          rpc.<span class="prop">INVALID_PARAMS</span>,
+          <span class="str">'divide takes a number and a non-zero divisor'</span>,
+        )
+      }
+
+      <span class="kw">return</span> params[<span class="num">0</span>] <span class="op">/</span> params[<span class="num">1</span>]
+    })
+    .<span class="fn">on_request</span>(<span class="str">'save'</span>, <span class="meta">@</span>(params) {
+      <span class="kw">raise</span> <span class="type">Error</span>(<span class="str">'the disk is full'</span>)
+    })
+
+<span class="kw">echo</span> service.<span class="fn">answer</span>(
+  <span class="str">'{"jsonrpc": "2.0", "id": 1, "method": "divide", "params": [1, 0]}'</span>,
+)
+<span class="kw">echo</span> service.<span class="fn">answer</span>(
+  <span class="str">'{"jsonrpc": "2.0", "id": 2, "method": "save", "params": ["notes"]}'</span>,
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"divide takes a number and a non-zero divisor"}}
+{"jsonrpc":"2.0","id":2,"error":{"code":-32603,"message":"the disk is full"}}
+</code></pre><span class="code-label">Output</span></figure>
+<p>An error that is not an <code>RpcError</code> also goes to the service's
+<a href="#watching-the-conversation"><code>on_error()</code></a> handler, since it is a
+failure in the program rather than a refusal the program meant to
+make. A handler that must not let its failures' messages reach the
+other side catches them and raises an <code>RpcError</code> of its own instead.</p>
+<p>On the calling side, an error answer raises from <code>request()</code> as the
+<code>RpcError</code> the other side sent.</p>
+<h3 id="notifications"><a class="anchor" href="#notifications" aria-hidden="true" tabindex="-1"></a>Notifications</h3>
+<p><code>on_notification()</code> gives a notification its handler. It is called
+the same way, with the <code>params</code> and a <code>Context</code>, and whatever it
+returns is ignored, since nothing is sent back:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> seen <span class="op">=</span> []
+<span class="kw">var</span> service <span class="op">=</span> rpc.<span class="fn">Service</span>().<span class="fn">on_notification</span>(<span class="str">'log'</span>, <span class="meta">@</span>(params) {
+  seen.<span class="fn">append</span>(params.<span class="prop">text</span>)
+})
+
+<span class="kw">echo</span> service.<span class="fn">answer</span>(
+  <span class="str">'{"jsonrpc": "2.0", "method": "log", "params": {"text": "started"}}'</span>,
+)
+<span class="kw">echo</span> seen
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">nil
+[started]
+</code></pre><span class="code-label">Output</span></figure>
+<p>A notification for a method with no handler is dropped, and a
+notification handler that raises sends nothing back either: the error
+goes to <code>on_error()</code>. That is the specification's rule, and it is
+deliberate. The sender asked not to be answered.</p>
+<h3 id="methods-without-a-handler"><a class="anchor" href="#methods-without-a-handler" aria-hidden="true" tabindex="-1"></a>Methods Without a Handler</h3>
+<p><code>on_unhandled()</code> sets a fallback for every request and notification
+whose method has no handler of its own. It is called like any other
+handler, and <code>context.method</code> says which method it is standing in for:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> service <span class="op">=</span> rpc.<span class="fn">Service</span>().<span class="fn">on_unhandled</span>(<span class="meta">@</span>(params, context) {
+  <span class="kw">if</span> context.<span class="prop">method</span>.<span class="fn">starts_with</span>(<span class="str">'legacy.'</span>) {
+    <span class="kw">return</span> <span class="str">'retired: </span><span class="subst">${</span>context.<span class="prop">method</span><span class="subst">}</span><span class="str">'</span>
+  }
+
+  <span class="kw">raise</span> rpc.<span class="fn">RpcError</span>(
+    rpc.<span class="prop">METHOD_NOT_FOUND</span>,
+    <span class="str">'Method not found: </span><span class="subst">${</span>context.<span class="prop">method</span><span class="subst">}</span><span class="str">'</span>,
+  )
+})
+
+<span class="kw">echo</span> service.<span class="fn">answer</span>(<span class="str">'{"jsonrpc": "2.0", "id": 1, "method": "legacy.export"}'</span>)
+<span class="kw">echo</span> service.<span class="fn">answer</span>(<span class="str">'{"jsonrpc": "2.0", "id": 2, "method": "export"}'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{"jsonrpc":"2.0","id":1,"result":"retired: legacy.export"}
+{"jsonrpc":"2.0","id":2,"error":{"code":-32601,"message":"Method not found: export"}}
+</code></pre><span class="code-label">Output</span></figure>
+<p>It is the place for a family of methods answered the same way, for a
+proxy that passes calls on, and for logging what a client asks for
+that nothing answers. Raising <code>METHOD_NOT_FOUND</code> from it refuses a
+method exactly as a service without a fallback would. Methods whose
+names start with <code>rpc.</code> never reach it.</p>
+<h3 id="batches-and-their-limit"><a class="anchor" href="#batches-and-their-limit" aria-hidden="true" tabindex="-1"></a>Batches and Their Limit</h3>
+<p>A batch is answered as a batch. Each request in it gets its answer,
+in place, and each notification gets none; a batch of nothing but
+notifications has no answer at all:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> service <span class="op">=</span> rpc.<span class="fn">Service</span>().<span class="fn">on_request</span>(
+  <span class="str">'add'</span>,
+  <span class="meta">@</span>(params) <span class="op">=&gt;</span> params[<span class="num">0</span>] <span class="op">+</span> params[<span class="num">1</span>],
+)
+
+<span class="kw">echo</span> service.<span class="fn">answer</span>(
+  <span class="str">'['</span> <span class="op">+</span>
+      <span class="str">'{"jsonrpc": "2.0", "id": 1, "method": "add", "params": [1, 2]},'</span> <span class="op">+</span>
+      <span class="str">'{"jsonrpc": "2.0", "method": "add", "params": [3, 4]},'</span> <span class="op">+</span>
+      <span class="str">'{"jsonrpc": "2.0", "id": 3, "method": "sub"}'</span> <span class="op">+</span>
+      <span class="str">']'</span>,
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[{"jsonrpc":"2.0","id":1,"result":3},{"jsonrpc":"2.0","id":3,"error":{"code":-32601,"message":"Method not found: sub"}}]
+</code></pre><span class="code-label">Output</span></figure>
+<p>One message holding a million requests is one message, and a service
+that took it whole would do a million calls' work for it. A batch of
+more than <code>batch_limit()</code> messages, <code>1000</code> unless set otherwise, is
+refused whole, before any of it runs:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> service <span class="op">=</span> rpc.<span class="fn">Service</span>().<span class="fn">set_batch_limit</span>(<span class="num">2</span>).<span class="fn">on_request</span>(<span class="str">'ping'</span>, <span class="meta">@</span>() <span class="op">=&gt;</span> <span class="str">'pong'</span>)
+
+<span class="kw">var</span> call <span class="op">=</span> <span class="str">'{"jsonrpc": "2.0", "id": 1, "method": "ping"}'</span>
+
+<span class="kw">echo</span> service.<span class="fn">answer</span>(<span class="str">'[</span><span class="subst">${</span>call<span class="subst">}</span><span class="str">, </span><span class="subst">${</span>call<span class="subst">}</span><span class="str">, </span><span class="subst">${</span>call<span class="subst">}</span><span class="str">]'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"Invalid Request: a batch of 3 messages is over the limit of 2"}}
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>set_batch_limit(nil)</code> takes a batch of any size, for a service that
+only ever hears from programs it trusts.</p>
+<h2 id="json-rpc-over-http"><a class="anchor" href="#json-rpc-over-http" aria-hidden="true" tabindex="-1"></a>JSON-RPC Over HTTP</h2>
+<p>Over HTTP, each message, or batch, is the body of a <code>POST</code>, and its
+answer is the body of the response. Every exchange stands on its own:
+nothing is framed, and no connection is kept between calls beyond what
+HTTP keeps for itself. It is how services call each other, and how
+most of the JSON-RPC in the world is spoken.</p>
+<h3 id="serving-a-service"><a class="anchor" href="#serving-a-service" aria-hidden="true" tabindex="-1"></a>Serving a Service</h3>
+<p><code>rpc.http_handler()</code> turns a service into a route handler for an
+<code>http</code> server. Here the server runs on an isolate of its own and the
+client calls it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+<span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">serve_calculator</span>(ready) {
+  <span class="kw">import</span> http
+  <span class="kw">import</span> rpc
+
+  <span class="kw">var</span> calculator <span class="op">=</span> rpc.<span class="fn">Service</span>().<span class="fn">on_request</span>(
+    <span class="str">'add'</span>,
+    <span class="meta">@</span>(params) <span class="op">=&gt;</span> params[<span class="num">0</span>] <span class="op">+</span> params[<span class="num">1</span>],
+  )
+
+  <span class="kw">var</span> server <span class="op">=</span> http.<span class="fn">server</span>(<span class="num">0</span>, <span class="str">'127.0.0.1'</span>)
+
+  server.<span class="fn">post</span>(<span class="str">'/rpc'</span>, rpc.<span class="fn">http_handler</span>(calculator))
+  server.<span class="fn">bind</span>()
+  ready.<span class="fn">send</span>(server.<span class="prop">socket</span>.<span class="fn">local_address</span>().<span class="fn">port</span>())
+  server.<span class="fn">listen</span>()
+}
+
+<span class="kw">var</span> ready <span class="op">=</span> isolate.<span class="fn">channel</span>(<span class="num">1</span>)
+<span class="kw">var</span> server <span class="op">=</span> isolate.<span class="fn">spawn</span>(serve_calculator, ready)
+<span class="kw">var</span> calculator <span class="op">=</span> rpc.<span class="fn">HttpClient</span>(<span class="str">'http://127.0.0.1:</span><span class="subst">${</span>ready.<span class="fn">recv</span>()<span class="subst">}</span><span class="str">/rpc'</span>)
+
+<span class="kw">echo</span> calculator.<span class="fn">request</span>(<span class="str">'add'</span>, [<span class="num">2</span>, <span class="num">3</span>])
+<span class="kw">echo</span> calculator.<span class="fn">request_batch</span>([
+  [
+    <span class="str">'add'</span>,
+    [<span class="num">1</span>, <span class="num">2</span>],
+  ],
+  [
+    <span class="str">'add'</span>,
+    [<span class="num">3</span>, <span class="num">4</span>],
+  ],
+])
+
+server.<span class="fn">cancel</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">5
+[3, 7]
+</code></pre><span class="code-label">Output</span></figure>
+<p>In production the service is built in the setup each <code>http</code> worker
+runs, and the server spreads its requests across a pool of isolates:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http
+<span class="kw">import</span> rpc
+
+<span class="kw">def</span> <span class="def">setup</span>(server) {
+  <span class="kw">var</span> api <span class="op">=</span> rpc.<span class="fn">Service</span>().<span class="fn">on_request</span>(<span class="str">'add'</span>, <span class="meta">@</span>(params) <span class="op">=&gt;</span> params[<span class="num">0</span>] <span class="op">+</span> params[<span class="num">1</span>])
+
+  server.<span class="fn">post</span>(<span class="str">'/rpc'</span>, rpc.<span class="fn">http_handler</span>(api))
+}
+
+http.<span class="fn">serve</span>(setup, { host<span class="op">:</span> <span class="str">'0.0.0.0'</span>, port<span class="op">:</span> <span class="num">8545</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Everything <code>http</code> offers a route applies to this one: middleware,
+TLS, HTTP/2, compression, body limits, and the rest of
+<a href="ch15-00-http.html">Chapter 15</a>.</p>
+<p>A request that arrives over HTTP is answered in the response to that
+HTTP request, so its handler answers by returning: <code>context.defer()</code>
+raises there, since there is no connection to send a later answer on.</p>
+<h3 id="calling-a-service"><a class="anchor" href="#calling-a-service" aria-hidden="true" tabindex="-1"></a>Calling a Service</h3>
+<p><code>rpc.HttpClient</code> calls a service at a URL. Each call is one <code>POST</code>:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> node <span class="op">=</span> rpc.<span class="fn">HttpClient</span>(<span class="str">'https://node.example.com'</span>, {
+  headers<span class="op">:</span> { <span class="type">Authorization</span><span class="op">:</span> <span class="str">'Bearer </span><span class="subst">${</span>token<span class="subst">}</span><span class="str">'</span> },
+  timeout<span class="op">:</span> <span class="num">10</span>,
+})
+
+<span class="kw">echo</span> node.<span class="fn">request</span>(<span class="str">'eth_blockNumber'</span>, [])
+node.<span class="fn">notify</span>(<span class="str">'log'</span>, [<span class="str">'checked the block number'</span>])
+
+<span class="kw">var</span> answers <span class="op">=</span> node.<span class="fn">request_batch</span>([
+  [<span class="str">'eth_blockNumber'</span>, []],
+  [<span class="str">'eth_gasPrice'</span>, []],
+])
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>request()</code> returns the result or raises the <code>RpcError</code> the service
+answered with. <code>notify()</code> expects nothing back. <code>request_batch()</code>
+sends every call in one <code>POST</code> and returns the answers in the order of
+the calls, whatever order the server sent them in, with each failed
+call's <code>RpcError</code> in its place.</p>
+<p>The options are <code>headers</code>, sent with every call, <code>timeout</code>, the most
+seconds to wait for an answer, and <code>client</code>, the <code>http.HttpClient</code> to
+send through, for its proxy, TLS and connection settings. Each call
+can also take a timeout of its own.</p>
+<h3 id="statuses"><a class="anchor" href="#statuses" aria-hidden="true" tabindex="-1"></a>Statuses</h3>
+<p>The statuses on the wire follow common practice:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>an answer, whether it is a result or a JSON-RPC error</td>
+</tr>
+<tr>
+<td><code>204</code></td>
+<td>nothing to answer: a notification, or a batch of them</td>
+</tr>
+<tr>
+<td><code>405</code></td>
+<td>a method other than <code>POST</code>, with an <code>Allow: POST</code> header</td>
+</tr>
+<tr>
+<td><code>415</code></td>
+<td>a body that is not <code>application/json</code> in UTF-8</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>A JSON-RPC error never changes the status: <code>METHOD_NOT_FOUND</code> is a
+<code>200</code> whose body says so. The <code>http</code> server's own limits apply before
+the service sees anything, so a body over its <code>max_body_size</code> is a
+<code>413</code>. Register the handler with <code>server.any()</code> and every method other
+than <code>POST</code> gets its <code>405</code>; with <code>server.post()</code>, they get the server's
+<code>404</code>.</p>
+<p>On the calling side, any other status raises an <code>RpcHttpError</code>
+carrying the <code>status</code> and the <code>body</code>. Some servers send a JSON-RPC
+error with a status other than <code>200</code>, as older JSON-RPC over HTTP
+drafts asked for; when the body of such a response is a JSON-RPC
+answer, <code>HttpClient</code> reads it as one, and the error raises as the
+<code>RpcError</code> it is.</p>
+<h3 id="who-is-calling"><a class="anchor" href="#who-is-calling" aria-hidden="true" tabindex="-1"></a>Who Is Calling</h3>
+<p>Every handler gets the HTTP request it came in as <code>context.request</code>,
+so it can read headers, the client's address, or whatever a middleware
+left in the request's <code>context</code>. Authentication belongs in a
+middleware, which refuses a request before the service sees it:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">setup</span>(server) {
+  <span class="kw">var</span> api <span class="op">=</span> rpc.<span class="fn">Service</span>().<span class="fn">on_request</span>(<span class="str">'balance'</span>, <span class="meta">@</span>(params, context) {
+    <span class="kw">return</span> accounts.<span class="fn">balance</span>(context.<span class="prop">request</span>.<span class="prop">context</span>.<span class="prop">user</span>)
+  })
+
+  server.<span class="fn">use</span>(<span class="meta">@</span>(request, response, next) {
+    <span class="kw">var</span> user <span class="op">=</span> tokens.<span class="fn">user_for</span>(request.<span class="fn">bearer_token</span>())
+
+    <span class="kw">if</span> user <span class="op">==</span> <span class="lit">nil</span> {
+      response.<span class="fn">text</span>(<span class="str">'who are you?\n'</span>, <span class="num">401</span>)
+      <span class="kw">return</span>
+    }
+
+    request.<span class="prop">context</span>.<span class="prop">user</span> <span class="op">=</span> user
+    <span class="fn">next</span>()
+  })
+
+  server.<span class="fn">post</span>(<span class="str">'/rpc'</span>, rpc.<span class="fn">http_handler</span>(api))
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<h2 id="framing"><a class="anchor" href="#framing" aria-hidden="true" tabindex="-1"></a>Framing</h2>
+<p>A stream of bytes has no edges. A program reading a socket gets bytes
+in whatever pieces the network delivers them, and two messages may
+arrive in one piece, or one message in ten. A framing says where each
+message ends, so the reader can put them back together.</p>
+<p>Both framings work the same way. <code>feed()</code> takes the next bytes, in
+whatever pieces they come, and returns every message they complete.
+<code>frame()</code> goes the other way, turning a message's text into the bytes
+to send.</p>
+<h3 id="content-length-headers"><a class="anchor" href="#content-length-headers" aria-hidden="true" tabindex="-1"></a>Content-Length Headers</h3>
+<p><code>HeaderFraming</code> puts a short header block in front of each message,
+giving its length in bytes:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> framed <span class="op">=</span> rpc.<span class="fn">HeaderFraming</span>().<span class="fn">frame</span>(<span class="str">'{"jsonrpc":"2.0","method":"ping"}'</span>)
+
+<span class="kw">echo</span> framed.<span class="fn">to_string</span>().<span class="fn">split</span>(<span class="str">'\r\n'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[Content-Length: 33, , {"jsonrpc":"2.0","method":"ping"}]
+</code></pre><span class="code-label">Output</span></figure>
+<p>The header block is ASCII: lines of <code>Name: value</code>, each ended by
+<code>\r\n</code>, then a blank line, then exactly as many bytes as
+<code>Content-Length</code> says. The length counts bytes rather than characters,
+so a message in any language frames correctly.</p>
+<p>Reading it back, the pieces can be split anywhere at all:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> framing <span class="op">=</span> rpc.<span class="fn">HeaderFraming</span>()
+<span class="kw">var</span> stream <span class="op">=</span> framing.<span class="fn">frame</span>(<span class="str">'{"a":1}'</span>) <span class="op">+</span> framing.<span class="fn">frame</span>(<span class="str">'{"b":2}'</span>)
+
+<span class="kw">var</span> first <span class="op">=</span> framing.<span class="fn">feed</span>(stream[<span class="num">0</span>, <span class="num">30</span>])
+<span class="kw">var</span> second <span class="op">=</span> framing.<span class="fn">feed</span>(stream[<span class="num">30</span>, stream.<span class="fn">length</span>()])
+
+<span class="kw">echo</span> first.<span class="fn">map</span>(<span class="meta">@</span>(m) <span class="op">=&gt;</span> m.<span class="fn">to_string</span>())
+<span class="kw">echo</span> second.<span class="fn">map</span>(<span class="meta">@</span>(m) <span class="op">=&gt;</span> m.<span class="fn">to_string</span>())
+<span class="kw">echo</span> framing.<span class="fn">pending</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[{"a":1}]
+[{"b":2}]
+0
+</code></pre><span class="code-label">Output</span></figure>
+<p>The first piece held all of one message and the start of the next.
+<code>feed()</code> handed back the whole one and kept the rest, and <code>pending()</code>
+says how many bytes it is keeping. The second piece finished the
+second message.</p>
+<p>Header names are read without regard to case. <code>Content-Length</code> is
+required. <code>Content-Type</code> may be given, and if it names a charset, the
+charset must be UTF-8. Any other header is read past and ignored.</p>
+<h3 id="one-message-to-a-line"><a class="anchor" href="#one-message-to-a-line" aria-hidden="true" tabindex="-1"></a>One Message to a Line</h3>
+<p><code>LineFraming</code> ends each message with a line break instead, the framing
+known as newline-delimited JSON:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> framing <span class="op">=</span> rpc.<span class="fn">LineFraming</span>()
+<span class="kw">var</span> lines <span class="op">=</span> framing.<span class="fn">feed</span>(<span class="str">'{"a":1}\n{"b":'</span>.<span class="fn">to_bytes</span>())
+
+<span class="kw">echo</span> lines.<span class="fn">length</span>()
+<span class="kw">echo</span> framing.<span class="fn">feed</span>(<span class="str">'2}\r\n'</span>.<span class="fn">to_bytes</span>())[<span class="num">0</span>].<span class="fn">to_string</span>()
+<span class="kw">echo</span> framing.<span class="fn">frame</span>(<span class="str">'{"c":3}'</span>).<span class="fn">to_string</span>().<span class="fn">trim</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1
+{"b":2}
+{"c":3}
+</code></pre><span class="code-label">Output</span></figure>
+<p>A line may end in <code>\n</code> or <code>\r\n</code>, and an empty line is skipped.
+<code>json.encode()</code> never writes a raw line break, since a line break
+inside a string is escaped, so a line is always exactly one message.
+A peer that pretty-prints its JSON over several lines cannot use this
+framing.</p>
+<h3 id="one-message-to-each-read"><a class="anchor" href="#one-message-to-each-read" aria-hidden="true" tabindex="-1"></a>One Message to Each Read</h3>
+<p><code>MessageFraming</code> frames nothing. It is for a transport that keeps
+messages apart itself, a WebSocket above all, whose every read returns
+exactly one message: <code>feed()</code> takes each piece as one whole message,
+and <code>frame()</code> hands the text back as it is.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> framing <span class="op">=</span> rpc.<span class="fn">MessageFraming</span>()
+
+<span class="kw">echo</span> framing.<span class="fn">feed</span>(<span class="str">'{"a":1}'</span>.<span class="fn">to_bytes</span>())[<span class="num">0</span>].<span class="fn">to_string</span>()
+<span class="kw">echo</span> framing.<span class="fn">frame</span>(<span class="str">'{"b":2}'</span>).<span class="fn">to_string</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{"a":1}
+{"b":2}
+</code></pre><span class="code-label">Output</span></figure>
+<p>A transport that wants it says so with a <code>framing()</code> method of its
+own, and an endpoint over it uses that framing unless told otherwise.
+<code>rpc.websocket()</code> does exactly that.</p>
+<h3 id="choosing-a-framing"><a class="anchor" href="#choosing-a-framing" aria-hidden="true" tabindex="-1"></a>Choosing a Framing</h3>
+<p>Both ends must use the same framing, so the choice is usually made by
+whatever is on the other end. An endpoint uses its transport's own
+framing when it has one, and <code>HeaderFraming</code> otherwise, unless told
+something else:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> endpoint <span class="op">=</span> rpc.<span class="fn">endpoint</span>(transport).<span class="fn">set_framing</span>(rpc.<span class="fn">LineFraming</span>())
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Where the choice is yours, <code>HeaderFraming</code> is the sturdier of the two:
+a reader knows how much is coming before it arrives, and refuses a
+message that is too large without reading it.</p>
+<h3 id="limits"><a class="anchor" href="#limits" aria-hidden="true" tabindex="-1"></a>Limits</h3>
+<p>Every framing refuses a message larger than <code>max_size()</code>, 64 MiB by
+default, and <code>HeaderFraming</code> refuses a header block longer than 8 KiB.
+Without them, a peer could make a reader hold any amount of memory by
+never finishing a message.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> framing <span class="op">=</span> rpc.<span class="fn">HeaderFraming</span>().<span class="fn">set_max_size</span>(<span class="num">1024</span>)
+
+<span class="kw">catch</span> {
+  framing.<span class="fn">feed</span>(<span class="str">'Content-Length: 4096\r\n\r\n'</span>.<span class="fn">to_bytes</span>())
+} <span class="kw">as</span> error {
+  <span class="kw">echo</span> error.<span class="prop">message</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">a message of 4096 bytes is over the 1024-byte limit
+</code></pre><span class="code-label">Output</span></figure>
+<p>The message is refused as soon as its header arrives, before any of it
+is read.</p>
+<p>A framing that cannot read its stream raises <code>RpcFramingError</code>. Every
+reason is the same in one respect: nothing after it in the stream can
+be found, because the reader no longer knows where the next message
+starts. The connection is over at that point.</p>
+<h2 id="transports"><a class="anchor" href="#transports" aria-hidden="true" tabindex="-1"></a>Transports</h2>
+<p>A transport carries the bytes. It is any object with three methods:</p>
+<ul>
+<li><code>read(max)</code> returns the next bytes that arrive, at most <code>max</code> of
+them, waiting until at least one does. Once the stream has ended, it
+returns empty bytes.</li>
+<li><code>write(data)</code> sends all of <code>data</code>.</li>
+<li><code>close()</code> ends the stream in the direction it writes.</li>
+</ul>
+<p>A transport may also have <code>can_listen()</code>, true when another isolate
+can read it while the one that made it writes to it. That is what
+<a href="#listening-while-doing-other-work"><code>listen()</code></a> needs; without the
+method, the answer is false.</p>
+<h3 id="standard-streams"><a class="anchor" href="#standard-streams" aria-hidden="true" tabindex="-1"></a>Standard Streams</h3>
+<p><code>rpc.stdio()</code> talks over the program's own standard input and output.
+It is the transport of a program that another program starts and
+talks to: the parent writes to the child's stdin and reads its stdout.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="com"># calculator.zu</span>
+<span class="kw">import</span> io
+<span class="kw">import</span> rpc
+
+rpc
+    .<span class="fn">endpoint</span>(rpc.<span class="fn">stdio</span>())
+    .<span class="fn">on_request</span>(<span class="str">'add'</span>, <span class="meta">@</span>(params) <span class="op">=&gt;</span> params[<span class="num">0</span>] <span class="op">+</span> params[<span class="num">1</span>])
+    .<span class="fn">on_notification</span>(<span class="str">'log'</span>, <span class="meta">@</span>(params) {
+      io.<span class="prop">stderr</span>.<span class="fn">write</span>(<span class="str">'</span><span class="subst">${</span>params[<span class="num">0</span>]<span class="subst">}</span><span class="str">\n'</span>)
+    })
+    .<span class="fn">serve</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Stdout belongs to the protocol. Anything else the program prints there
+lands in the middle of the stream and breaks it for the other side, so
+a program serving over stdio sends everything else to stderr, as this
+one does with its log. Every write the transport makes is flushed at
+once.</p>
+<h3 id="sockets"><a class="anchor" href="#sockets" aria-hidden="true" tabindex="-1"></a>Sockets</h3>
+<p><code>rpc.socket()</code> talks over a connected <code>TcpStream</code>, <code>UnixStream</code> or
+<code>TlsStream</code> from <code>net</code>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> net
+<span class="kw">import</span> rpc
+<span class="kw">import</span> isolate
+
+<span class="kw">var</span> ready <span class="op">=</span> isolate.<span class="fn">channel</span>()
+
+<span class="kw">var</span> server <span class="op">=</span> isolate.<span class="fn">spawn</span>(<span class="meta">@</span>(ready) {
+  <span class="kw">import</span> net
+  <span class="kw">import</span> rpc
+
+  <span class="kw">var</span> listener <span class="op">=</span> net.<span class="fn">TcpStream</span>()
+  listener.<span class="fn">bind</span>(<span class="str">'127.0.0.1:0'</span>)
+  ready.<span class="fn">send</span>(listener.<span class="fn">local_address</span>().<span class="fn">to_string</span>())
+
+  <span class="kw">var</span> connection <span class="op">=</span> listener.<span class="fn">accept</span>()
+
+  rpc
+      .<span class="fn">endpoint</span>(rpc.<span class="fn">socket</span>(connection))
+      .<span class="fn">on_request</span>(<span class="str">'add'</span>, <span class="meta">@</span>(params) <span class="op">=&gt;</span> params[<span class="num">0</span>] <span class="op">+</span> params[<span class="num">1</span>])
+      .<span class="fn">serve</span>()
+
+  connection.<span class="fn">close</span>()
+  listener.<span class="fn">close</span>()
+}, ready)
+
+<span class="kw">var</span> stream <span class="op">=</span> net.<span class="fn">TcpStream</span>()
+stream.<span class="fn">connect</span>(ready.<span class="fn">recv</span>())
+
+<span class="kw">var</span> client <span class="op">=</span> rpc.<span class="fn">endpoint</span>(rpc.<span class="fn">socket</span>(stream))
+
+<span class="kw">echo</span> client.<span class="fn">request</span>(<span class="str">'add'</span>, [<span class="num">20</span>, <span class="num">22</span>])
+client.<span class="fn">close</span>()
+server.<span class="fn">join</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">42
+</code></pre><span class="code-label">Output</span></figure>
+<p>The server binds to port <code>0</code>, so the system picks a free one, and
+sends the address back over a channel for the client to connect to. It
+serves the one connection it accepts, and its <code>serve()</code> returns when
+the client closes its end.</p>
+<p>A socket is held by one isolate at a time, so a socket endpoint reads
+with <code>serve()</code> and <code>request()</code> rather than <code>listen()</code>.</p>
+<p>This server serves one connection and ends. A server for many clients
+at once is <a href="#serving-many-connections"><code>rpc.serve()</code></a>, which gives
+every connection an endpoint of its own.</p>
+<h3 id="child-processes"><a class="anchor" href="#child-processes" aria-hidden="true" tabindex="-1"></a>Child Processes</h3>
+<p><code>rpc.process()</code> talks to a child process over its standard streams.
+Spawn it with <code>stdin</code> and <code>stdout</code> both <code>'pipe'</code>:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> os
+<span class="kw">import</span> rpc
+
+<span class="kw">var</span> child <span class="op">=</span> os.<span class="fn">spawn</span>(
+  <span class="str">'zuri'</span>,
+  [<span class="str">'run'</span>, <span class="str">'calculator.zu'</span>],
+  { stdin<span class="op">:</span> <span class="str">'pipe'</span>, stdout<span class="op">:</span> <span class="str">'pipe'</span> },
+)
+<span class="kw">var</span> calculator <span class="op">=</span> rpc.<span class="fn">endpoint</span>(rpc.<span class="fn">process</span>(child))
+
+<span class="kw">echo</span> calculator.<span class="fn">request</span>(<span class="str">'add'</span>, [<span class="num">2</span>, <span class="num">3</span>]) <span class="com"># 5</span>
+calculator.<span class="fn">notify</span>(<span class="str">'log'</span>, [<span class="str">'added two numbers'</span>])
+
+calculator.<span class="fn">close</span>()
+child.<span class="fn">wait</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Closing the endpoint closes the child's stdin. The calculator above
+reads that as the end of the connection, its <code>serve()</code> returns, and
+the program ends, which is what <code>wait()</code> waits for. A child's streams
+are held by the isolate that spawned it, so this endpoint reads with
+<code>serve()</code> and <code>request()</code> too.</p>
+<h3 id="websockets"><a class="anchor" href="#websockets" aria-hidden="true" tabindex="-1"></a>WebSockets</h3>
+<p><code>rpc.websocket()</code> talks over a WebSocket from <code>http.websocket</code>, either
+one a route accepted or one <code>websocket.connect()</code> opened. Each
+JSON-RPC message is one WebSocket message, so an endpoint over it uses
+a <code>MessageFraming</code> without being told to.</p>
+<p>A WebSocket is a connection in both directions, so either side calls
+the other whenever it likes. That is what makes it the transport of
+choice for a server that pushes to its clients, such as a node
+streaming new blocks to whoever subscribed:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> http.<span class="prop">websocket</span>
+<span class="kw">import</span> rpc
+<span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">serve_shop</span>(ready) {
+  <span class="kw">import</span> http
+  <span class="kw">import</span> http.<span class="prop">websocket</span>
+  <span class="kw">import</span> rpc
+
+  <span class="kw">var</span> server <span class="op">=</span> http.<span class="fn">server</span>(<span class="num">0</span>, <span class="str">'127.0.0.1'</span>)
+
+  server.<span class="fn">get</span>(<span class="str">'/ws'</span>, <span class="meta">@</span>(request, response) {
+    <span class="kw">var</span> socket <span class="op">=</span> websocket.<span class="fn">accept</span>(request, response)
+
+    rpc.<span class="fn">endpoint</span>(rpc.<span class="fn">websocket</span>(socket)).<span class="fn">on_request</span>(<span class="str">'total'</span>, <span class="meta">@</span>(params, context) {
+      <span class="kw">var</span> price <span class="op">=</span> context.<span class="prop">endpoint</span>.<span class="fn">request</span>(<span class="str">'price_of'</span>, [params.<span class="prop">item</span>])
+
+      <span class="kw">return</span> price <span class="op">*</span> params.<span class="prop">count</span>
+    }).<span class="fn">serve</span>()
+  })
+
+  server.<span class="fn">bind</span>()
+  ready.<span class="fn">send</span>(server.<span class="prop">socket</span>.<span class="fn">local_address</span>().<span class="fn">port</span>())
+  server.<span class="fn">listen</span>()
+}
+
+<span class="kw">var</span> ready <span class="op">=</span> isolate.<span class="fn">channel</span>(<span class="num">1</span>)
+<span class="kw">var</span> shop <span class="op">=</span> isolate.<span class="fn">spawn</span>(serve_shop, ready)
+<span class="kw">var</span> socket <span class="op">=</span> websocket.<span class="fn">connect</span>(<span class="str">'ws://127.0.0.1:</span><span class="subst">${</span>ready.<span class="fn">recv</span>()<span class="subst">}</span><span class="str">/ws'</span>)
+
+<span class="kw">var</span> client <span class="op">=</span> rpc
+    .<span class="fn">endpoint</span>(rpc.<span class="fn">websocket</span>(socket))
+    .<span class="fn">on_request</span>(<span class="str">'price_of'</span>, <span class="meta">@</span>(params) <span class="op">=&gt;</span> params[<span class="num">0</span>] <span class="op">==</span> <span class="str">'tea'</span> <span class="op">?</span> <span class="num">3</span> <span class="op">:</span> <span class="num">5</span>)
+
+<span class="kw">echo</span> client.<span class="fn">request</span>(<span class="str">'total'</span>, { item<span class="op">:</span> <span class="str">'tea'</span>, count<span class="op">:</span> <span class="num">4</span> })
+
+client.<span class="fn">close</span>()
+shop.<span class="fn">cancel</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">12
+</code></pre><span class="code-label">Output</span></figure>
+<p>The route accepts the WebSocket and serves an endpoint on it for as
+long as the client stays connected. Asked for a total, the server asks
+the client for a price before it answers. A WebSocket is held by one
+isolate at a time, so an endpoint over one reads with <code>serve()</code> and
+<code>request()</code>.</p>
+<h3 id="between-isolates"><a class="anchor" href="#between-isolates" aria-hidden="true" tabindex="-1"></a>Between Isolates</h3>
+<p><code>rpc.pipe()</code> returns two transports joined to each other: what one
+writes, the other reads. Each end is a <code>ChannelTransport</code> over a pair
+of isolate channels, and channels cross isolates, so either end can be
+handed to another isolate and used from there.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> ends <span class="op">=</span> rpc.<span class="fn">pipe</span>()
+
+ends[<span class="num">0</span>].<span class="fn">write</span>(<span class="str">'ping'</span>.<span class="fn">to_bytes</span>())
+<span class="kw">echo</span> ends[<span class="num">1</span>].<span class="fn">read</span>(<span class="num">4096</span>).<span class="fn">to_string</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">ping
+</code></pre><span class="code-label">Output</span></figure>
+<p>A pipe is the natural way to give one part of a program a JSON-RPC
+interface to another, and the easiest way to test an endpoint: the
+server and its test talk exactly as they would over a socket, with
+nothing listening on the network.</p>
+<h3 id="a-transport-of-your-own"><a class="anchor" href="#a-transport-of-your-own" aria-hidden="true" tabindex="-1"></a>A Transport of Your Own</h3>
+<p>Anything with the three methods is a transport. This one wraps
+another and counts what it sends:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+<span class="kw">import</span> isolate
+
+<span class="kw">class</span> <span class="type">Counted</span> {
+
+  <span class="meta">@new</span>(inner) {
+    <span class="self">self</span>.<span class="prop">inner</span> <span class="op">=</span> inner
+    <span class="self">self</span>.<span class="prop">sent</span> <span class="op">=</span> <span class="num">0</span>
+  }
+
+  <span class="fn">read</span>(max) {
+    <span class="kw">return</span> <span class="self">self</span>.<span class="prop">inner</span>.<span class="fn">read</span>(max)
+  }
+
+  <span class="fn">write</span>(data) {
+    <span class="self">self</span>.<span class="prop">sent</span> <span class="op">+=</span> data.<span class="fn">length</span>()
+    <span class="self">self</span>.<span class="prop">inner</span>.<span class="fn">write</span>(data)
+  }
+
+  <span class="fn">close</span>() {
+    <span class="self">self</span>.<span class="prop">inner</span>.<span class="fn">close</span>()
+  }
+}
+
+<span class="kw">var</span> ends <span class="op">=</span> rpc.<span class="fn">pipe</span>()
+
+isolate.<span class="fn">spawn</span>(<span class="meta">@</span>(transport) {
+  <span class="kw">import</span> rpc
+
+  rpc
+      .<span class="fn">endpoint</span>(transport)
+      .<span class="fn">on_request</span>(<span class="str">'add'</span>, <span class="meta">@</span>(params) <span class="op">=&gt;</span> params[<span class="num">0</span>] <span class="op">+</span> params[<span class="num">1</span>])
+      .<span class="fn">serve</span>()
+}, ends[<span class="num">1</span>])
+
+<span class="kw">var</span> counted <span class="op">=</span> <span class="type">Counted</span>(ends[<span class="num">0</span>])
+<span class="kw">var</span> client <span class="op">=</span> rpc.<span class="fn">endpoint</span>(counted)
+
+client.<span class="fn">request</span>(<span class="str">'add'</span>, [<span class="num">1</span>, <span class="num">2</span>])
+client.<span class="fn">close</span>()
+
+<span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>counted.<span class="prop">sent</span><span class="subst">}</span><span class="str"> bytes sent'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">76 bytes sent
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="endpoints"><a class="anchor" href="#endpoints" aria-hidden="true" tabindex="-1"></a>Endpoints</h2>
+<p>An endpoint is a service on a connection. <code>rpc.endpoint(transport)</code>
+makes one, and everything in <a href="#services">Services</a> holds for it: its
+handlers, its fallback, its batch limit and its errors. The connection
+adds the other direction. An endpoint calls the other side, and a
+handler on one can answer later than it returns.</p>
+<h3 id="calling-the-other-side"><a class="anchor" href="#calling-the-other-side" aria-hidden="true" tabindex="-1"></a>Calling the Other Side</h3>
+<p><code>request()</code> sends a request and waits for its answer:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> <span class="bi">sum</span> <span class="op">=</span> client.<span class="fn">request</span>(<span class="str">'add'</span>, [<span class="num">2</span>, <span class="num">3</span>])
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>It returns the result, raises the <code>RpcError</code> the other side answered
+with, and raises <code>RpcClosedError</code> if the connection ends first. While
+it waits, it handles everything else that arrives, exactly as
+<code>serve()</code> would: other answers, notifications, and requests from the
+other side.</p>
+<p><code>notify()</code> sends a notification, and returns as soon as it is sent:</p>
+<figure class="code"><pre><code class="language-zuri">client.<span class="fn">notify</span>(<span class="str">'log'</span>, { level<span class="op">:</span> <span class="str">'info'</span>, text<span class="op">:</span> <span class="str">'started'</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>send_request()</code> sends a request and returns at once, with the
+request's <code>id</code>. The answer goes to a callback when it arrives:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+<span class="kw">import</span> isolate
+
+<span class="kw">var</span> ends <span class="op">=</span> rpc.<span class="fn">pipe</span>()
+
+isolate.<span class="fn">spawn</span>(<span class="meta">@</span>(transport) {
+  <span class="kw">import</span> rpc
+
+  rpc
+      .<span class="fn">endpoint</span>(transport)
+      .<span class="fn">on_request</span>(<span class="str">'add'</span>, <span class="meta">@</span>(params) <span class="op">=&gt;</span> params[<span class="num">0</span>] <span class="op">+</span> params[<span class="num">1</span>])
+      .<span class="fn">on_request</span>(<span class="str">'fail'</span>, <span class="meta">@</span>(params) {
+        <span class="kw">raise</span> rpc.<span class="fn">RpcError</span>(<span class="op">-</span><span class="num">32001</span>, <span class="str">'no'</span>)
+      })
+      .<span class="fn">serve</span>()
+}, ends[<span class="num">1</span>])
+
+<span class="kw">var</span> client <span class="op">=</span> rpc.<span class="fn">endpoint</span>(ends[<span class="num">0</span>])
+
+client.<span class="fn">send_request</span>(<span class="str">'add'</span>, [<span class="num">1</span>, <span class="num">2</span>], <span class="meta">@</span>(result, error) {
+  <span class="kw">echo</span> <span class="str">'add: </span><span class="subst">${</span>result<span class="subst">}</span><span class="str">'</span>
+})
+client.<span class="fn">send_request</span>(<span class="str">'fail'</span>, <span class="lit">nil</span>, <span class="meta">@</span>(result, error) {
+  <span class="kw">echo</span> <span class="str">'fail: </span><span class="subst">${</span>error.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+})
+
+<span class="kw">echo</span> <span class="str">'waiting'</span>
+<span class="kw">echo</span> client.<span class="fn">request</span>(<span class="str">'add'</span>, [<span class="num">3</span>, <span class="num">4</span>])
+client.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">waiting
+add: 3
+fail: no
+7
+</code></pre><span class="code-label">Output</span></figure>
+<p>A callback is called with the result and <code>nil</code>, or with <code>nil</code> and the
+error. Callbacks run on the isolate that owns the endpoint, while it
+is reading: here, while <code>request()</code> waited for its own answer, the two
+earlier answers arrived first and their callbacks ran. When the
+connection ends with a callback still waiting, it is called with an
+<code>RpcClosedError</code>.</p>
+<h3 id="sending-a-batch"><a class="anchor" href="#sending-a-batch" aria-hidden="true" tabindex="-1"></a>Sending a Batch</h3>
+<p><code>request_batch()</code> sends several requests as one batch and waits for
+every answer. Each call is a pair of a method and its params, and the
+answers come back in the order of the calls, whatever order the other
+side sent them in:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+<span class="kw">import</span> isolate
+
+<span class="kw">var</span> ends <span class="op">=</span> rpc.<span class="fn">pipe</span>()
+
+isolate.<span class="fn">spawn</span>(<span class="meta">@</span>(transport) {
+  <span class="kw">import</span> rpc
+
+  rpc
+      .<span class="fn">endpoint</span>(transport)
+      .<span class="fn">on_request</span>(<span class="str">'add'</span>, <span class="meta">@</span>(params) <span class="op">=&gt;</span> params[<span class="num">0</span>] <span class="op">+</span> params[<span class="num">1</span>])
+      .<span class="fn">serve</span>()
+}, ends[<span class="num">1</span>])
+
+<span class="kw">var</span> client <span class="op">=</span> rpc.<span class="fn">endpoint</span>(ends[<span class="num">0</span>])
+
+<span class="kw">var</span> answers <span class="op">=</span> client.<span class="fn">request_batch</span>([
+  [
+    <span class="str">'add'</span>,
+    [<span class="num">1</span>, <span class="num">2</span>],
+  ],
+  [
+    <span class="str">'multiply'</span>,
+    [<span class="num">3</span>, <span class="num">4</span>],
+  ],
+  [
+    <span class="str">'add'</span>,
+    [<span class="num">5</span>, <span class="num">6</span>],
+  ],
+])
+
+<span class="kw">for</span> answer <span class="kw">in</span> answers {
+  <span class="kw">if</span> <span class="bi">instance_of</span>(answer, rpc.<span class="prop">RpcError</span>) {
+    <span class="kw">echo</span> <span class="str">'failed: </span><span class="subst">${</span>answer.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+  } <span class="kw">else</span> {
+    <span class="kw">echo</span> answer
+  }
+}
+
+client.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">3
+failed: Method not found: multiply
+11
+</code></pre><span class="code-label">Output</span></figure>
+<p>A batch can partly succeed, so a failed call does not raise: its
+place in the list holds the <code>RpcError</code> it was answered with. Only an
+ending connection or a timeout raises, since then no answer can be
+trusted to come.</p>
+<h3 id="answering-later"><a class="anchor" href="#answering-later" aria-hidden="true" tabindex="-1"></a>Answering Later</h3>
+<p>A handler normally answers by returning. Sometimes the answer comes
+from work still to be done: a job on another isolate, a reply from a
+third program, an event that has not happened yet. The handler then
+calls <code>context.defer()</code>, keeps the context, and answers through it
+with <code>reply()</code> or <code>fail()</code> when the answer is ready:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+
+<span class="kw">var</span> ends <span class="op">=</span> rpc.<span class="fn">pipe</span>()
+<span class="kw">var</span> waiting <span class="op">=</span> []
+
+<span class="kw">var</span> server <span class="op">=</span> rpc
+    .<span class="fn">endpoint</span>(ends[<span class="num">0</span>])
+    .<span class="fn">set_framing</span>(rpc.<span class="fn">LineFraming</span>())
+    .<span class="fn">on_request</span>(<span class="str">'next_job'</span>, <span class="meta">@</span>(params, context) {
+      waiting.<span class="fn">append</span>(context.<span class="fn">defer</span>())
+    })
+    .<span class="fn">on_notification</span>(<span class="str">'add_job'</span>, <span class="meta">@</span>(params) {
+      <span class="kw">for</span> context <span class="kw">in</span> waiting {
+        context.<span class="fn">reply</span>(params)
+      }
+
+      waiting <span class="op">=</span> []
+    })
+
+server.<span class="fn">handle</span>({ jsonrpc<span class="op">:</span> <span class="str">'2.0'</span>, <span class="bi">id</span><span class="op">:</span> <span class="num">1</span>, method<span class="op">:</span> <span class="str">'next_job'</span> })
+server.<span class="fn">handle</span>({ jsonrpc<span class="op">:</span> <span class="str">'2.0'</span>, <span class="bi">id</span><span class="op">:</span> <span class="num">2</span>, method<span class="op">:</span> <span class="str">'next_job'</span> })
+server.<span class="fn">handle</span>({
+  jsonrpc<span class="op">:</span> <span class="str">'2.0'</span>,
+  method<span class="op">:</span> <span class="str">'add_job'</span>,
+  params<span class="op">:</span> { <span class="bi">file</span><span class="op">:</span> <span class="str">'cat.png'</span> },
+})
+
+<span class="kw">echo</span> ends[<span class="num">1</span>].<span class="fn">read</span>(<span class="num">4096</span>).<span class="fn">to_string</span>().<span class="fn">trim</span>()
+<span class="kw">echo</span> ends[<span class="num">1</span>].<span class="fn">read</span>(<span class="num">4096</span>).<span class="fn">to_string</span>().<span class="fn">trim</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{"jsonrpc":"2.0","id":1,"result":{"file":"cat.png"}}
+{"jsonrpc":"2.0","id":2,"result":{"file":"cat.png"}}
+</code></pre><span class="code-label">Output</span></figure>
+<p>Once a request is deferred, what its handler returns is ignored. It is
+answered exactly once: answering it a second time, or answering a
+request that was never deferred, raises <code>ValueError</code>. A handler that
+raises after deferring fails the request with that error, unless it
+was already answered. A request deferred from inside a batch is
+answered on its own, after the batch's other answers.</p>
+<h3 id="calls-in-both-directions"><a class="anchor" href="#calls-in-both-directions" aria-hidden="true" tabindex="-1"></a>Calls in Both Directions</h3>
+<p>Either side can call the other at any time, including from inside a
+handler. Here the server, asked for an order's total, asks the client
+for a price first:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+<span class="kw">import</span> isolate
+
+<span class="kw">var</span> ends <span class="op">=</span> rpc.<span class="fn">pipe</span>()
+
+isolate.<span class="fn">spawn</span>(<span class="meta">@</span>(transport) {
+  <span class="kw">import</span> rpc
+
+  rpc.<span class="fn">endpoint</span>(transport).<span class="fn">on_request</span>(<span class="str">'total'</span>, <span class="meta">@</span>(params, context) {
+    <span class="kw">var</span> price <span class="op">=</span> context.<span class="prop">endpoint</span>.<span class="fn">request</span>(<span class="str">'price_of'</span>, [params.<span class="prop">item</span>])
+
+    <span class="kw">return</span> price <span class="op">*</span> params.<span class="prop">count</span>
+  }).<span class="fn">serve</span>()
+}, ends[<span class="num">1</span>])
+
+<span class="kw">var</span> prices <span class="op">=</span> { tea<span class="op">:</span> <span class="num">3</span>, cake<span class="op">:</span> <span class="num">5</span> }
+<span class="kw">var</span> client <span class="op">=</span> rpc
+    .<span class="fn">endpoint</span>(ends[<span class="num">0</span>])
+    .<span class="fn">on_request</span>(<span class="str">'price_of'</span>, <span class="meta">@</span>(params) <span class="op">=&gt;</span> prices[params[<span class="num">0</span>]])
+
+<span class="kw">echo</span> client.<span class="fn">request</span>(<span class="str">'total'</span>, { item<span class="op">:</span> <span class="str">'tea'</span>, count<span class="op">:</span> <span class="num">4</span> })
+client.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">12
+</code></pre><span class="code-label">Output</span></figure>
+<p>The client's <code>request('total')</code> is waiting when the server's request
+for <code>price_of</code> arrives, and it answers that while it waits, then goes
+on waiting for its own answer. Nothing has to be arranged for this:
+every wait handles what arrives.</p>
+<h2 id="reading-the-connection"><a class="anchor" href="#reading-the-connection" aria-hidden="true" tabindex="-1"></a>Reading the Connection</h2>
+<p>An endpoint reads its transport in one of two ways, and every handler
+runs on the isolate that owns the endpoint either way.</p>
+<h3 id="serving"><a class="anchor" href="#serving" aria-hidden="true" tabindex="-1"></a>Serving</h3>
+<p><code>serve()</code> reads and answers messages until the connection ends,
+<code>stop()</code> is called, or the endpoint is closed. It is the whole program
+for a server that does nothing but answer, as every server so far in
+this chapter has been.</p>
+<p>A message that is not valid UTF-8, or not valid JSON, is answered with
+<code>PARSE_ERROR</code> and an <code>id</code> of <code>nil</code>, since its <code>id</code> cannot be read. A
+stream whose framing cannot be read raises <code>RpcFramingError</code> out of
+<code>serve()</code>.</p>
+<h3 id="listening-while-doing-other-work"><a class="anchor" href="#listening-while-doing-other-work" aria-hidden="true" tabindex="-1"></a>Listening While Doing Other Work</h3>
+<p>A program that waits on other things as well cannot sit inside
+<code>serve()</code>. <code>listen()</code> reads the transport on an isolate of its own,
+decodes each message there, and returns a <code>Channel</code> of what arrives.
+The program takes items from it when it is ready, alongside its other
+channels, and passes each to <code>dispatch()</code>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+<span class="kw">import</span> isolate
+
+<span class="kw">var</span> ends <span class="op">=</span> rpc.<span class="fn">pipe</span>()
+
+<span class="kw">var</span> caller <span class="op">=</span> isolate.<span class="fn">spawn</span>(<span class="meta">@</span>(transport) {
+  <span class="kw">import</span> rpc
+
+  <span class="kw">var</span> client <span class="op">=</span> rpc.<span class="fn">endpoint</span>(transport)
+  <span class="kw">var</span> squares <span class="op">=</span> [<span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>].<span class="fn">map</span>(<span class="meta">@</span>(n) <span class="op">=&gt;</span> client.<span class="fn">request</span>(<span class="str">'square'</span>, [n]))
+
+  client.<span class="fn">close</span>()
+
+  <span class="kw">return</span> squares
+}, ends[<span class="num">0</span>])
+
+<span class="com"># The work runs on a worker of its own, and its results come back on</span>
+<span class="com"># `done` whenever they are ready.</span>
+<span class="kw">var</span> jobs <span class="op">=</span> isolate.<span class="fn">channel</span>()
+<span class="kw">var</span> done <span class="op">=</span> isolate.<span class="fn">channel</span>()
+
+isolate.<span class="fn">spawn</span>(
+  <span class="meta">@</span>(jobs, done) {
+    <span class="kw">var</span> job <span class="op">=</span> jobs.<span class="fn">recv</span>()
+
+    <span class="kw">while</span> job <span class="op">!=</span> <span class="lit">nil</span> {
+      done.<span class="fn">send</span>({ <span class="bi">id</span><span class="op">:</span> job.<span class="prop">id</span>, result<span class="op">:</span> job.<span class="prop">value</span> <span class="op">*</span> job.<span class="prop">value</span> })
+      job <span class="op">=</span> jobs.<span class="fn">recv</span>()
+    }
+  },
+  jobs,
+  done,
+)
+
+<span class="kw">var</span> waiting <span class="op">=</span> {}
+<span class="kw">var</span> server <span class="op">=</span> rpc.<span class="fn">endpoint</span>(ends[<span class="num">1</span>]).<span class="fn">on_request</span>(<span class="str">'square'</span>, <span class="meta">@</span>(params, context) {
+  waiting[context.<span class="prop">id</span>] <span class="op">=</span> context.<span class="fn">defer</span>()
+  jobs.<span class="fn">send</span>({ <span class="bi">id</span><span class="op">:</span> context.<span class="prop">id</span>, value<span class="op">:</span> params[<span class="num">0</span>] })
+})
+
+<span class="kw">var</span> inbox <span class="op">=</span> server.<span class="fn">listen</span>()
+
+<span class="kw">while</span> <span class="op">!</span>server.<span class="fn">is_closed</span>() {
+  <span class="kw">var</span> ready <span class="op">=</span> isolate.<span class="fn">select</span>([inbox, done])
+
+  <span class="kw">if</span> ready[<span class="num">0</span>] <span class="op">==</span> inbox {
+    server.<span class="fn">dispatch</span>(ready[<span class="num">1</span>])
+  } <span class="kw">else</span> {
+    waiting[ready[<span class="num">1</span>].<span class="prop">id</span>].<span class="fn">reply</span>(ready[<span class="num">1</span>].<span class="prop">result</span>)
+    waiting.<span class="fn">remove</span>(ready[<span class="num">1</span>].<span class="prop">id</span>)
+  }
+}
+
+jobs.<span class="fn">close</span>()
+<span class="kw">echo</span> caller.<span class="fn">join</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[9, 16, 25]
+</code></pre><span class="code-label">Output</span></figure>
+<p>The server defers each request and hands the work to a worker. Its
+loop waits on both the connection and the worker's results, and
+whichever is ready first is dealt with first, so the endpoint never
+stops answering while work is under way.</p>
+<p>The reader isolate does the framing and the JSON decoding, so a large
+message costs the owning isolate nothing until it is dispatched.
+Everything is still sent from the owning isolate, and every handler
+still runs there.</p>
+<p>Only a transport another isolate can read can be listened to. That is
+stdio and a pipe; a socket, a WebSocket and a child process are held
+by one isolate at a time, and <code>listen()</code> on one raises <code>ValueError</code>. Set the
+framing before calling <code>listen()</code>, since the reader isolate takes the
+framing with it.</p>
+<p><code>serve()</code> and <code>request()</code> work on a listening endpoint too, taking
+what arrives from the same channel.</p>
+<h3 id="reading-it-yourself"><a class="anchor" href="#reading-it-yourself" aria-hidden="true" tabindex="-1"></a>Reading It Yourself</h3>
+<p>A program that reads the transport itself, such as one polling many
+connections at once, hands each read to <code>feed()</code>. It handles every
+message the bytes complete, exactly as <code>serve()</code> would have, and empty
+bytes end the connection. <code>rpc.serve()</code> drives every connection it
+holds this way.</p>
+<h3 id="timeouts"><a class="anchor" href="#timeouts" aria-hidden="true" tabindex="-1"></a>Timeouts</h3>
+<p><code>request()</code> and <code>request_batch()</code> take a timeout in seconds:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">catch</span> {
+  <span class="kw">var</span> report <span class="op">=</span> client.<span class="fn">request</span>(<span class="str">'build_report'</span>, <span class="lit">nil</span>, <span class="num">30</span>)
+} <span class="kw">as</span> error {
+  <span class="kw">if</span> <span class="bi">instance_of</span>(error, rpc.<span class="prop">RpcTimeoutError</span>) {
+    <span class="kw">echo</span> <span class="str">'gave up on the report'</span>
+  }
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A timeout needs the endpoint to be listening. An endpoint reading its
+transport itself is inside that transport's read while it waits, and
+waits as long as the read does. Over a socket, the socket's own
+<code>set_read_timeout()</code> is the limit, and a read that runs out raises the
+socket's error.</p>
+<p>An answer that arrives after its request timed out has nothing waiting
+for it, and goes to <code>on_error()</code>.</p>
+<h3 id="stopping-and-closing"><a class="anchor" href="#stopping-and-closing" aria-hidden="true" tabindex="-1"></a>Stopping and Closing</h3>
+<p><code>stop()</code> makes <code>serve()</code> return once the message it is handling is
+done, which lets a handler end the conversation:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">on_request</span>(<span class="str">'shutdown'</span>, <span class="meta">@</span>(params, context) {
+  context.<span class="prop">endpoint</span>.<span class="fn">stop</span>()
+  <span class="kw">return</span> <span class="str">'bye'</span>
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>close()</code> closes the transport. Nothing more can be sent, and sending
+raises <code>RpcClosedError</code>; every <code>send_request()</code> callback still waiting
+is called with an <code>RpcClosedError</code>. <code>is_closed()</code> is true once the
+endpoint is closed or the connection has ended from the other side.</p>
+<h2 id="serving-many-connections"><a class="anchor" href="#serving-many-connections" aria-hidden="true" tabindex="-1"></a>Serving Many Connections</h2>
+<p><code>rpc.serve()</code> binds a listening socket and gives every connection
+accepted on it an endpoint of its own, spread across a pool of worker
+isolates. Each worker polls the connections it holds rather than
+blocking on one, so a quiet client costs a descriptor and not a
+thread, and one worker serves hundreds of long-lived connections side
+by side.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+<span class="kw">import</span> net
+<span class="kw">import</span> rpc
+
+isolate.<span class="fn">configure</span>(<span class="num">6</span>)
+
+<span class="kw">def</span> <span class="def">setup</span>(endpoint, peer) {
+  endpoint.<span class="fn">on_request</span>(<span class="str">'add'</span>, <span class="meta">@</span>(params) <span class="op">=&gt;</span> params[<span class="num">0</span>] <span class="op">+</span> params[<span class="num">1</span>])
+}
+
+<span class="kw">def</span> <span class="def">run</span>(ready) {
+  <span class="kw">import</span> rpc
+
+  rpc.<span class="fn">serve</span>(setup, {
+    port<span class="op">:</span> <span class="num">0</span>,
+    workers<span class="op">:</span> <span class="num">2</span>,
+    framing<span class="op">:</span> <span class="str">'line'</span>,
+    max_connections<span class="op">:</span> <span class="num">1</span>,
+    on_ready<span class="op">:</span> <span class="meta">@</span>(address, stop) {
+      ready.<span class="fn">send</span>(address.<span class="fn">to_string</span>())
+    },
+  })
+}
+
+<span class="kw">var</span> ready <span class="op">=</span> isolate.<span class="fn">channel</span>(<span class="num">1</span>)
+<span class="kw">var</span> server <span class="op">=</span> isolate.<span class="fn">spawn</span>(run, ready)
+
+<span class="kw">var</span> stream <span class="op">=</span> net.<span class="fn">TcpStream</span>()
+stream.<span class="fn">connect</span>(ready.<span class="fn">recv</span>())
+
+<span class="kw">var</span> client <span class="op">=</span> rpc.<span class="fn">endpoint</span>(rpc.<span class="fn">socket</span>(stream)).<span class="fn">set_framing</span>(rpc.<span class="fn">LineFraming</span>())
+
+<span class="kw">echo</span> client.<span class="fn">request</span>(<span class="str">'add'</span>, [<span class="num">20</span>, <span class="num">22</span>])
+client.<span class="fn">close</span>()
+server.<span class="fn">join</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">42
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>setup</code> runs inside a worker for every connection, with the
+connection's endpoint and the client's address, and gives the endpoint
+its handlers. A worker shares nothing with the others, so <code>setup</code> is a
+function of a module, or one that uses nothing but its own imports,
+and builds whatever a connection needs. Each endpoint is a full peer:
+its handlers can call the client back, and it can notify the client
+whenever it has something to say.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Meaning</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>host</code></td>
+<td>the address to listen on</td>
+<td><code>'127.0.0.1'</code></td>
+</tr>
+<tr>
+<td><code>port</code></td>
+<td>the port to listen on; <code>0</code> picks a free one</td>
+<td><code>8000</code></td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td>a Unix domain socket to listen on, in place of <code>host</code> and <code>port</code></td>
+<td><code>nil</code></td>
+</tr>
+<tr>
+<td><code>workers</code></td>
+<td>how many worker isolates serve connections</td>
+<td>the number of CPUs</td>
+</tr>
+<tr>
+<td><code>backlog</code></td>
+<td>how many accepted connections may wait for a worker</td>
+<td><code>workers * 4</code></td>
+</tr>
+<tr>
+<td><code>framing</code></td>
+<td><code>'header'</code> for <code>Content-Length</code> headers, <code>'line'</code> for one message to a line</td>
+<td><code>'header'</code></td>
+</tr>
+<tr>
+<td><code>max_message_size</code></td>
+<td>the largest message accepted, in bytes</td>
+<td>64 MiB</td>
+</tr>
+<tr>
+<td><code>max_connections_per_worker</code></td>
+<td>the most connections one worker holds</td>
+<td><code>256</code></td>
+</tr>
+<tr>
+<td><code>idle_timeout</code></td>
+<td>seconds a connection may stay silent before it is closed</td>
+<td><code>nil</code>, never</td>
+</tr>
+<tr>
+<td><code>read_timeout</code></td>
+<td>seconds a read may wait once a message has begun</td>
+<td><code>30</code></td>
+</tr>
+<tr>
+<td><code>write_timeout</code></td>
+<td>seconds a write may wait</td>
+<td><code>30</code></td>
+</tr>
+<tr>
+<td><code>cert_chain</code>, <code>private_key</code></td>
+<td>PEM strings that put every connection behind TLS</td>
+<td><code>nil</code></td>
+</tr>
+<tr>
+<td><code>on_ready</code></td>
+<td>called once bound, with the address and a <code>stop</code> function</td>
+<td><code>nil</code></td>
+</tr>
+<tr>
+<td><code>max_connections</code></td>
+<td>stop accepting after this many</td>
+<td><code>nil</code>, never</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><code>on_ready</code> is called on the isolate that called <code>serve()</code>, once the
+socket is bound. The <code>stop</code> it is given stops accepting connections;
+every worker then finishes the message it is handling, closes its
+connections and ends, and <code>serve()</code> returns. That is what a signal
+handler calls to shut a server down cleanly. Reaching
+<code>max_connections</code> also stops accepting, but serves the connections
+already accepted until each closes, which is what the example above
+relies on.</p>
+<p>Each worker holds a thread of the isolate pool for as long as the
+server runs. When <code>serve()</code> is the first thing in a program to use an
+isolate it sizes the pool itself; otherwise, call <code>isolate.configure()</code>
+first thing, as the example does, with room for the workers and
+whatever else the program runs.</p>
+<p>With <code>cert_chain</code> and <code>private_key</code>, every connection is TLS, and a
+client that fails the handshake is closed without reaching a worker's
+handlers. With <code>path</code>, the server listens on a Unix domain socket,
+the way local daemons offer an API to the programs on their machine;
+the socket file is removed when the server stops, and Unix domain
+sockets need a platform that has them, which <code>net.unix.is_supported()</code>
+answers.</p>
+<p>A handler that calls its client with <code>request()</code> holds its worker
+until the answer arrives, and every other connection on that worker
+waits with it. For a call that can take a while, <code>send_request()</code> with
+a callback keeps the worker free.</p>
+<h2 id="watching-the-conversation"><a class="anchor" href="#watching-the-conversation" aria-hidden="true" tabindex="-1"></a>Watching the Conversation</h2>
+<p><code>on_trace()</code> sees the text of every message, as it is sent and as it
+arrives:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> rpc
+<span class="kw">import</span> isolate
+
+<span class="kw">var</span> ends <span class="op">=</span> rpc.<span class="fn">pipe</span>()
+
+isolate.<span class="fn">spawn</span>(<span class="meta">@</span>(transport) {
+  <span class="kw">import</span> rpc
+
+  rpc
+      .<span class="fn">endpoint</span>(transport)
+      .<span class="fn">on_request</span>(<span class="str">'add'</span>, <span class="meta">@</span>(params) <span class="op">=&gt;</span> params[<span class="num">0</span>] <span class="op">+</span> params[<span class="num">1</span>])
+      .<span class="fn">serve</span>()
+}, ends[<span class="num">1</span>])
+
+<span class="kw">var</span> client <span class="op">=</span> rpc.<span class="fn">endpoint</span>(ends[<span class="num">0</span>]).<span class="fn">on_trace</span>(<span class="meta">@</span>(direction, text) {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>direction<span class="subst">}</span><span class="str">: </span><span class="subst">${</span>text<span class="subst">}</span><span class="str">'</span>
+})
+
+client.<span class="fn">request</span>(<span class="str">'add'</span>, [<span class="num">1</span>, <span class="num">2</span>])
+client.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">out: {"jsonrpc":"2.0","id":1,"method":"add","params":[1,2]}
+in: {"jsonrpc":"2.0","id":1,"result":3}
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>on_error()</code> sees every problem the other side is not told about: an
+error a notification handler raised, an error other than an <code>RpcError</code>
+a request handler raised, an error a callback raised, a response
+nothing was waiting for, and a connection that failed. It is called
+with the error and the message it concerns, as a dictionary, or <code>nil</code>
+when no one message is to blame:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">on_error</span>(<span class="meta">@</span>(error, message) {
+  io.<span class="prop">stderr</span>.<span class="fn">write</span>(<span class="str">'</span><span class="subst">${</span>error.<span class="prop">type</span><span class="subst">}</span><span class="str">: </span><span class="subst">${</span>error.<span class="prop">message</span><span class="subst">}</span><span class="str">\n'</span>)
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Without an <code>on_error()</code> handler, these are dropped. A server that
+leaves it unset has no way to learn its own handlers are failing, so
+set it.</p>
+<h2 id="errors"><a class="anchor" href="#errors" aria-hidden="true" tabindex="-1"></a>Errors</h2>
+<p>Every error the module raises is one of these:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RpcError</code></td>
+<td>a JSON-RPC error, with a <code>code</code>: the other side's answer, or a message that broke the rules</td>
+</tr>
+<tr>
+<td><code>RpcHttpError</code></td>
+<td>an HTTP status with no JSON-RPC answer, with the <code>status</code> and the <code>body</code></td>
+</tr>
+<tr>
+<td><code>RpcFramingError</code></td>
+<td>the stream's framing cannot be read, and nothing after it can be either</td>
+</tr>
+<tr>
+<td><code>RpcClosedError</code></td>
+<td>the connection ended before an answer, or the endpoint has been closed</td>
+</tr>
+<tr>
+<td><code>RpcTimeoutError</code></td>
+<td>a request's timeout ran out before its answer</td>
+</tr>
+<tr>
+<td><code>ValueError</code></td>
+<td>a mistake in the calling program: params that are not structured, a reserved method name, a request answered twice</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The first is the one a program handles as part of its work. The next
+four are about the transport, and the last is a bug to fix.</p>
+<h2 id="what-the-module-refuses"><a class="anchor" href="#what-the-module-refuses" aria-hidden="true" tabindex="-1"></a>What the Module Refuses</h2>
+<p><strong>It will not send params that are not a list or a dictionary.</strong> The
+specification allows nothing else, and a message that breaks it is
+refused when it is built, not when the other side receives it.</p>
+<p><strong>It will not accept a message that breaks the specification.</strong> A
+missing or wrong <code>jsonrpc</code> member, a method that is not a string, an
+<code>id</code> that is not a string, a number or <code>null</code>, a response with both a
+result and an error: each is refused with the code the specification
+gives it, never guessed at.</p>
+<p><strong>It will not read text that is not UTF-8.</strong> JSON is UTF-8, and a
+message that is not is answered with <code>PARSE_ERROR</code> rather than read
+with its bad bytes replaced. A header block must be ASCII, and an HTTP
+body that declares another charset is refused with <code>415</code>.</p>
+<p><strong>It will not answer a response.</strong> A malformed response goes to
+<code>on_error()</code>, never back to the peer, so two endpoints can never fall
+into answering each other's errors forever.</p>
+<p><strong>It will not let a handler claim a reserved name.</strong> Method names that
+start with <code>rpc.</code> belong to the specification, and neither
+<code>on_request()</code>, <code>on_notification()</code> nor <code>on_unhandled()</code> will answer
+them.</p>
+<p><strong>It will not do unbounded work for one message.</strong> A batch over the
+service's limit is refused whole, and a framing refuses an oversized
+message from its header, before reading a byte of it.</p>
+<p><strong>It will not defer what has nowhere to be answered.</strong> A request that
+arrived over HTTP is answered in its HTTP response, and <code>defer()</code> on
+it raises rather than leaving the client waiting for an answer that
+cannot come.</p>
+<p><strong>It will not listen to a transport only one isolate can hold.</strong> A
+socket, a WebSocket or a child process is read where it is held, and
+<code>listen()</code> on one raises rather than reading it from somewhere it
+cannot be.</p>
+<h2 id="module-reference"><a class="anchor" href="#module-reference" aria-hidden="true" tabindex="-1"></a>Module Reference</h2>
+<p>The standard library reference documents every class and method. The
+shape of the module:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>rpc.Service()</code></td>
+<td>a service: handlers, and <code>answer()</code></td>
+</tr>
+<tr>
+<td><code>rpc.http_handler(service)</code></td>
+<td>an <code>http</code> route handler answering with a service</td>
+</tr>
+<tr>
+<td><code>rpc.HttpClient(url, options)</code></td>
+<td>a client calling a service over HTTP</td>
+</tr>
+<tr>
+<td><code>rpc.endpoint(transport)</code></td>
+<td>an <code>Endpoint</code> over a transport</td>
+</tr>
+<tr>
+<td><code>rpc.serve(setup, options)</code></td>
+<td>an endpoint for every connection to a listening socket</td>
+</tr>
+<tr>
+<td><code>rpc.stdio()</code></td>
+<td>the program's own standard streams</td>
+</tr>
+<tr>
+<td><code>rpc.socket(stream)</code></td>
+<td>a connected <code>net</code> stream</td>
+</tr>
+<tr>
+<td><code>rpc.process(child)</code></td>
+<td>a child process's standard streams</td>
+</tr>
+<tr>
+<td><code>rpc.websocket(socket)</code></td>
+<td>a WebSocket from <code>http.websocket</code></td>
+</tr>
+<tr>
+<td><code>rpc.pipe()</code></td>
+<td>two transports joined to each other</td>
+</tr>
+<tr>
+<td><code>rpc.encode(message)</code></td>
+<td>a message, or a list of them, as JSON text</td>
+</tr>
+<tr>
+<td><code>rpc.decode(text)</code></td>
+<td>JSON text as a message, or a batch of them</td>
+</tr>
+<tr>
+<td><code>rpc.read(value)</code></td>
+<td>a decoded value as a message, or a batch of them</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The messages:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Request(method, params, id)</code></td>
+<td>a call that expects an answer</td>
+</tr>
+<tr>
+<td><code>Notification(method, params)</code></td>
+<td>a call that expects none</td>
+</tr>
+<tr>
+<td><code>Response(id, result, error)</code></td>
+<td>an answer, also made by <code>Response.success()</code> and <code>Response.failure()</code></td>
+</tr>
+<tr>
+<td><code>RpcError(code, message, data)</code></td>
+<td>an error, with <code>to_dict()</code></td>
+</tr>
+<tr>
+<td><code>PARSE_ERROR</code>, <code>INVALID_REQUEST</code>, <code>METHOD_NOT_FOUND</code></td>
+<td>the codes the specification defines</td>
+</tr>
+<tr>
+<td><code>INVALID_PARAMS</code>, <code>INTERNAL_ERROR</code></td>
+<td>the rest of them</td>
+</tr>
+<tr>
+<td><code>SERVER_ERROR_MIN</code>, <code>SERVER_ERROR_MAX</code></td>
+<td>the range set aside for implementations</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>On a <code>Service</code>, and so on an <code>Endpoint</code>:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>on_request</code>, <code>on_notification</code>, <code>on_unhandled</code></td>
+<td>what it answers</td>
+</tr>
+<tr>
+<td><code>on_error</code>, <code>on_trace</code></td>
+<td>what it reports</td>
+</tr>
+<tr>
+<td><code>set_batch_limit</code>, <code>batch_limit</code></td>
+<td>the most messages a batch may hold, <code>DEFAULT_BATCH_LIMIT</code> by default</td>
+</tr>
+<tr>
+<td><code>answer</code></td>
+<td>one message or batch in, its answer out</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>On an <code>Endpoint</code> as well:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>set_framing</code></td>
+<td>how its messages are told apart</td>
+</tr>
+<tr>
+<td><code>request</code>, <code>request_batch</code>, <code>send_request</code>, <code>notify</code></td>
+<td>calling the other side</td>
+</tr>
+<tr>
+<td><code>send</code>, <code>handle</code></td>
+<td>sending and handling messages as they are</td>
+</tr>
+<tr>
+<td><code>serve</code>, <code>stop</code></td>
+<td>reading on the isolate that calls it</td>
+</tr>
+<tr>
+<td><code>listen</code>, <code>dispatch</code></td>
+<td>reading on an isolate of its own</td>
+</tr>
+<tr>
+<td><code>feed</code></td>
+<td>handling what the program read itself</td>
+</tr>
+<tr>
+<td><code>close</code>, <code>is_closed</code></td>
+<td>ending the connection</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>On an <code>HttpClient</code>: <code>request</code>, <code>request_batch</code>, <code>notify</code> and <code>send</code>.</p>
+<p>On a <code>Context</code>:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>endpoint</code>, <code>id</code>, <code>method</code>, <code>request</code></td>
+<td>what is being handled, where, and what it arrived in</td>
+</tr>
+<tr>
+<td><code>is_notification</code></td>
+<td>whether anything is answered</td>
+</tr>
+<tr>
+<td><code>defer</code>, <code>is_deferred</code></td>
+<td>taking over answering</td>
+</tr>
+<tr>
+<td><code>reply</code>, <code>fail</code>, <code>is_answered</code></td>
+<td>answering a deferred request</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The framings, <code>HeaderFraming</code>, <code>LineFraming</code> and <code>MessageFraming</code>:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>feed(data)</code></td>
+<td>the messages the next bytes complete</td>
+</tr>
+<tr>
+<td><code>frame(message)</code></td>
+<td>the bytes that send a message</td>
+</tr>
+<tr>
+<td><code>set_max_size(size)</code>, <code>max_size()</code></td>
+<td>the largest message accepted</td>
+</tr>
+<tr>
+<td><code>pending()</code></td>
+<td>how many bytes are held for an unfinished message</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The transports, <code>StdioTransport</code>, <code>SocketTransport</code>, <code>ProcessTransport</code>,
+<code>WebSocketTransport</code> and <code>ChannelTransport</code>, each have <code>read(max)</code>,
+<code>write(data)</code>, <code>close()</code> and <code>can_listen()</code>, and <code>WebSocketTransport</code>
+has <code>framing()</code>.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch28-00-rpc.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch27-06-nyssa.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">27.6</span>Running Nyssa</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch29-00-editors.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">29</span>Editor Support</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#following-along">Following Along</a>
+        </li><li class="level-2">
+          <a href="#introduction">Introduction</a>
+        </li><li class="level-2">
+          <a href="#messages">Messages</a>
+        </li><li class="level-3">
+          <a href="#requests-and-notifications">Requests and Notifications</a>
+        </li><li class="level-3">
+          <a href="#responses">Responses</a>
+        </li><li class="level-3">
+          <a href="#errors-and-their-codes">Errors and Their Codes</a>
+        </li><li class="level-3">
+          <a href="#reading-and-writing-json">Reading and Writing JSON</a>
+        </li><li class="level-3">
+          <a href="#batches">Batches</a>
+        </li><li class="level-2">
+          <a href="#services">Services</a>
+        </li><li class="level-3">
+          <a href="#answering-requests">Answering Requests</a>
+        </li><li class="level-3">
+          <a href="#failing-properly">Failing Properly</a>
+        </li><li class="level-3">
+          <a href="#notifications">Notifications</a>
+        </li><li class="level-3">
+          <a href="#methods-without-a-handler">Methods Without a Handler</a>
+        </li><li class="level-3">
+          <a href="#batches-and-their-limit">Batches and Their Limit</a>
+        </li><li class="level-2">
+          <a href="#json-rpc-over-http">JSON-RPC Over HTTP</a>
+        </li><li class="level-3">
+          <a href="#serving-a-service">Serving a Service</a>
+        </li><li class="level-3">
+          <a href="#calling-a-service">Calling a Service</a>
+        </li><li class="level-3">
+          <a href="#statuses">Statuses</a>
+        </li><li class="level-3">
+          <a href="#who-is-calling">Who Is Calling</a>
+        </li><li class="level-2">
+          <a href="#framing">Framing</a>
+        </li><li class="level-3">
+          <a href="#content-length-headers">Content-Length Headers</a>
+        </li><li class="level-3">
+          <a href="#one-message-to-a-line">One Message to a Line</a>
+        </li><li class="level-3">
+          <a href="#one-message-to-each-read">One Message to Each Read</a>
+        </li><li class="level-3">
+          <a href="#choosing-a-framing">Choosing a Framing</a>
+        </li><li class="level-3">
+          <a href="#limits">Limits</a>
+        </li><li class="level-2">
+          <a href="#transports">Transports</a>
+        </li><li class="level-3">
+          <a href="#standard-streams">Standard Streams</a>
+        </li><li class="level-3">
+          <a href="#sockets">Sockets</a>
+        </li><li class="level-3">
+          <a href="#child-processes">Child Processes</a>
+        </li><li class="level-3">
+          <a href="#websockets">WebSockets</a>
+        </li><li class="level-3">
+          <a href="#between-isolates">Between Isolates</a>
+        </li><li class="level-3">
+          <a href="#a-transport-of-your-own">A Transport of Your Own</a>
+        </li><li class="level-2">
+          <a href="#endpoints">Endpoints</a>
+        </li><li class="level-3">
+          <a href="#calling-the-other-side">Calling the Other Side</a>
+        </li><li class="level-3">
+          <a href="#sending-a-batch">Sending a Batch</a>
+        </li><li class="level-3">
+          <a href="#answering-later">Answering Later</a>
+        </li><li class="level-3">
+          <a href="#calls-in-both-directions">Calls in Both Directions</a>
+        </li><li class="level-2">
+          <a href="#reading-the-connection">Reading the Connection</a>
+        </li><li class="level-3">
+          <a href="#serving">Serving</a>
+        </li><li class="level-3">
+          <a href="#listening-while-doing-other-work">Listening While Doing Other Work</a>
+        </li><li class="level-3">
+          <a href="#reading-it-yourself">Reading It Yourself</a>
+        </li><li class="level-3">
+          <a href="#timeouts">Timeouts</a>
+        </li><li class="level-3">
+          <a href="#stopping-and-closing">Stopping and Closing</a>
+        </li><li class="level-2">
+          <a href="#serving-many-connections">Serving Many Connections</a>
+        </li><li class="level-2">
+          <a href="#watching-the-conversation">Watching the Conversation</a>
+        </li><li class="level-2">
+          <a href="#errors">Errors</a>
+        </li><li class="level-2">
+          <a href="#what-the-module-refuses">What the Module Refuses</a>
+        </li><li class="level-2">
+          <a href="#module-reference">Module Reference</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

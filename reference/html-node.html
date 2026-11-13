@@ -1,0 +1,1310 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>html.node · The Zuri Standard Library</title>
+  <meta name="description" content="Every module Zuri ships with, generated from the library's own doc blocks.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/reference/html-node.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="gold" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Standard Library</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../book/">The Book</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="index.html"><span class="toc-title">The Zuri Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Text and Markup</p><ol><li class="toc-item open"><div class="toc-row"><a class="toc-link" href="html.html"><span class="toc-title">html</span></a><button class="toc-fold" type="button" aria-expanded="true" aria-label="Sections of html"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html-elements.html"><span class="toc-title">html.elements</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html-entities.html"><span class="toc-title">html.entities</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html-namespaces.html"><span class="toc-title">html.namespaces</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html-node.html" aria-current="page"><span class="toc-title">html.node</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html-parser.html"><span class="toc-title">html.parser</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html-selector.html"><span class="toc-title">html.selector</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html-serialize.html"><span class="toc-title">html.serialize</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="html-tokenizer.html"><span class="toc-title">html.tokenizer</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="markdown.html"><span class="toc-title">markdown</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of markdown"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="markdown-errors.html"><span class="toc-title">markdown.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="markdown-node.html"><span class="toc-title">markdown.node</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="markdown-renderer.html"><span class="toc-title">markdown.renderer</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire.html"><span class="toc-title">wire</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of wire"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-compile.html"><span class="toc-title">wire.compile</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-constants.html"><span class="toc-title">wire.constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-errors.html"><span class="toc-title">wire.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-escape.html"><span class="toc-title">wire.escape</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-expression.html"><span class="toc-title">wire.expression</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-filters.html"><span class="toc-title">wire.filters</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-loader.html"><span class="toc-title">wire.loader</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-normalize.html"><span class="toc-title">wire.normalize</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-render.html"><span class="toc-title">wire.render</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="wire-values.html"><span class="toc-title">wire.values</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="url.html"><span class="toc-title">url</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mime.html"><span class="toc-title">mime</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="colors.html"><span class="toc-title">colors</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Data Formats</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="json.html"><span class="toc-title">json</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="yaml.html"><span class="toc-title">yaml</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="toml.html"><span class="toc-title">toml</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of toml"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="toml-document.html"><span class="toc-title">toml.document</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="toml-encoder.html"><span class="toc-title">toml.encoder</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="toml-errors.html"><span class="toc-title">toml.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="toml-parser.html"><span class="toc-title">toml.parser</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="toml-values.html"><span class="toc-title">toml.values</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="csv.html"><span class="toc-title">csv</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="base64.html"><span class="toc-title">base64</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="struct.html"><span class="toc-title">struct</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Numbers and Collections</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="math.html"><span class="toc-title">math</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array.html"><span class="toc-title">array</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of array"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-double.html"><span class="toc-title">array.double</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-float.html"><span class="toc-title">array.float</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-int16.html"><span class="toc-title">array.int16</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-int32.html"><span class="toc-title">array.int32</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-int64.html"><span class="toc-title">array.int64</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-int8.html"><span class="toc-title">array.int8</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-uint16.html"><span class="toc-title">array.uint16</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-uint32.html"><span class="toc-title">array.uint32</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-uint64.html"><span class="toc-title">array.uint64</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="array-uint8.html"><span class="toc-title">array.uint8</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="set.html"><span class="toc-title">set</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Dates and Times</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="date.html"><span class="toc-title">date</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">The Machine</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="os.html"><span class="toc-title">os</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of os"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="os-env.html"><span class="toc-title">os.env</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="os-fs.html"><span class="toc-title">os.fs</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="os-path.html"><span class="toc-title">os.path</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="os-process.html"><span class="toc-title">os.process</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="os-system.html"><span class="toc-title">os.system</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="os-tempfile.html"><span class="toc-title">os.tempfile</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="os-watch.html"><span class="toc-title">os.watch</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="env.html"><span class="toc-title">env</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of env"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="env-errors.html"><span class="toc-title">env.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="env-expand.html"><span class="toc-title">env.expand</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="env-loading.html"><span class="toc-title">env.loading</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="env-parser.html"><span class="toc-title">env.parser</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="env-values.html"><span class="toc-title">env.values</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="io.html"><span class="toc-title">io</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of io"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="io-bytesio.html"><span class="toc-title">io.bytesio</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="io-tty.html"><span class="toc-title">io.tty</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="args.html"><span class="toc-title">args</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="log.html"><span class="toc-title">log</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of log"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="log-console.html"><span class="toc-title">log.console</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="log-dispatch.html"><span class="toc-title">log.dispatch</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="log-file.html"><span class="toc-title">log.file</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="log-level.html"><span class="toc-title">log.level</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="log-logger.html"><span class="toc-title">log.logger</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="log-transport.html"><span class="toc-title">log.transport</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="stat.html"><span class="toc-title">stat</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Testing</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test.html"><span class="toc-title">test</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of test"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-conduct.html"><span class="toc-title">test.conduct</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-context.html"><span class="toc-title">test.context</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-diff.html"><span class="toc-title">test.diff</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-error.html"><span class="toc-title">test.error</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-expect.html"><span class="toc-title">test.expect</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-format.html"><span class="toc-title">test.format</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-mock.html"><span class="toc-title">test.mock</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-reporter.html"><span class="toc-title">test.reporter</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-result.html"><span class="toc-title">test.result</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-runner.html"><span class="toc-title">test.runner</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-snapshot.html"><span class="toc-title">test.snapshot</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-source.html"><span class="toc-title">test.source</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="test-style.html"><span class="toc-title">test.style</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Networking</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net.html"><span class="toc-title">net</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of net"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-addr.html"><span class="toc-title">net.addr</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-dtls.html"><span class="toc-title">net.dtls</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-ip.html"><span class="toc-title">net.ip</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-poll.html"><span class="toc-title">net.poll</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-resolver.html"><span class="toc-title">net.resolver</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-tcp.html"><span class="toc-title">net.tcp</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-tls.html"><span class="toc-title">net.tls</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-udp.html"><span class="toc-title">net.udp</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="net-unix.html"><span class="toc-title">net.unix</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http.html"><span class="toc-title">http</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of http"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-body.html"><span class="toc-title">http.body</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-client.html"><span class="toc-title">http.client</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-cookies.html"><span class="toc-title">http.cookies</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-errors.html"><span class="toc-title">http.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-files.html"><span class="toc-title">http.files</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-h1.html"><span class="toc-title">http.h1</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-h2.html"><span class="toc-title">http.h2</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of http.h2"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-h2-connection.html"><span class="toc-title">http.h2.connection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-h2-frames.html"><span class="toc-title">http.h2.frames</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-h2-hpack.html"><span class="toc-title">http.h2.hpack</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-h2-huffman.html"><span class="toc-title">http.h2.huffman</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-headers.html"><span class="toc-title">http.headers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-loop.html"><span class="toc-title">http.loop</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-middleware.html"><span class="toc-title">http.middleware</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-multipart.html"><span class="toc-title">http.multipart</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-negotiate.html"><span class="toc-title">http.negotiate</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-proxy.html"><span class="toc-title">http.proxy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-request.html"><span class="toc-title">http.request</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-response.html"><span class="toc-title">http.response</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-router.html"><span class="toc-title">http.router</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-server.html"><span class="toc-title">http.server</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-session.html"><span class="toc-title">http.session</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of http.session"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-session-file.html"><span class="toc-title">http.session.file</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-session-memory.html"><span class="toc-title">http.session.memory</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-session-sql.html"><span class="toc-title">http.session.sql</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-session-store.html"><span class="toc-title">http.session.store</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-sse.html"><span class="toc-title">http.sse</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-status.html"><span class="toc-title">http.status</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-stream.html"><span class="toc-title">http.stream</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-util.html"><span class="toc-title">http.util</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-websocket.html"><span class="toc-title">http.websocket</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="http-worker.html"><span class="toc-title">http.worker</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc.html"><span class="toc-title">rpc</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of rpc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc-endpoint.html"><span class="toc-title">rpc.endpoint</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc-error.html"><span class="toc-title">rpc.error</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc-framing.html"><span class="toc-title">rpc.framing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc-http.html"><span class="toc-title">rpc.http</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc-message.html"><span class="toc-title">rpc.message</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc-server.html"><span class="toc-title">rpc.server</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc-service.html"><span class="toc-title">rpc.service</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="rpc-transport.html"><span class="toc-title">rpc.transport</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Security and Identity</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="crypto.html"><span class="toc-title">crypto</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="hash.html"><span class="toc-title">hash</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="bcrypt.html"><span class="toc-title">bcrypt</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="jwt.html"><span class="toc-title">jwt</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of jwt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="jwt-codec.html"><span class="toc-title">jwt.codec</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="jwt-core.html"><span class="toc-title">jwt.core</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="jwt-errors.html"><span class="toc-title">jwt.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="jwt-jwks.html"><span class="toc-title">jwt.jwks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="jwt-signer.html"><span class="toc-title">jwt.signer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="jwt-token.html"><span class="toc-title">jwt.token</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="jwt-verifier.html"><span class="toc-title">jwt.verifier</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="uuid.html"><span class="toc-title">uuid</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="validate.html"><span class="toc-title">validate</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of validate"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="validate-rule.html"><span class="toc-title">validate.rule</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="validate-rules.html"><span class="toc-title">validate.rules</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="validate-schema.html"><span class="toc-title">validate.schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="validate-validator.html"><span class="toc-title">validate.validator</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="validate-validators.html"><span class="toc-title">validate.validators</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Compression and Archives</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress.html"><span class="toc-title">compress</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of compress"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-brotli.html"><span class="toc-title">compress.brotli</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-bzip2.html"><span class="toc-title">compress.bzip2</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-checksum.html"><span class="toc-title">compress.checksum</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-deflate.html"><span class="toc-title">compress.deflate</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-gzip.html"><span class="toc-title">compress.gzip</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-lz4.html"><span class="toc-title">compress.lz4</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-tar.html"><span class="toc-title">compress.tar</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-zip.html"><span class="toc-title">compress.zip</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-zlib.html"><span class="toc-title">compress.zlib</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="compress-zstd.html"><span class="toc-title">compress.zstd</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Concurrency</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="isolate.html"><span class="toc-title">isolate</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of isolate"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="isolate-broadcast.html"><span class="toc-title">isolate.broadcast</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="isolate-channel.html"><span class="toc-title">isolate.channel</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="isolate-error.html"><span class="toc-title">isolate.error</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Images</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine.html"><span class="toc-title">imagine</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of imagine"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-animation.html"><span class="toc-title">imagine.animation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-canvas.html"><span class="toc-title">imagine.canvas</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-color.html"><span class="toc-title">imagine.color</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-constants.html"><span class="toc-title">imagine.constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-errors.html"><span class="toc-title">imagine.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-filters.html"><span class="toc-title">imagine.filters</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-font.html"><span class="toc-title">imagine.font</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-formats.html"><span class="toc-title">imagine.formats</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-image.html"><span class="toc-title">imagine.image</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="imagine-strokefont.html"><span class="toc-title">imagine.strokefont</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Databases</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql.html"><span class="toc-title">sql</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of sql"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-blueprint.html"><span class="toc-title">sql.blueprint</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-connection.html"><span class="toc-title">sql.connection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-crud.html"><span class="toc-title">sql.crud</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-cursor.html"><span class="toc-title">sql.cursor</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-ddl.html"><span class="toc-title">sql.ddl</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-decimal.html"><span class="toc-title">sql.decimal</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-driver.html"><span class="toc-title">sql.driver</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-errors.html"><span class="toc-title">sql.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-ieee.html"><span class="toc-title">sql.ieee</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-migrate.html"><span class="toc-title">sql.migrate</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-model.html"><span class="toc-title">sql.model</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of sql.model"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-model-casts.html"><span class="toc-title">sql.model.casts</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-model-definition.html"><span class="toc-title">sql.model.definition</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-model-errors.html"><span class="toc-title">sql.model.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-model-naming.html"><span class="toc-title">sql.model.naming</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-model-query.html"><span class="toc-title">sql.model.query</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-model-record.html"><span class="toc-title">sql.model.record</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql.html"><span class="toc-title">sql.mysql</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of sql.mysql"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-auth.html"><span class="toc-title">sql.mysql.auth</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-connection.html"><span class="toc-title">sql.mysql.connection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-cursor.html"><span class="toc-title">sql.mysql.cursor</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-ddl.html"><span class="toc-title">sql.mysql.ddl</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-driver.html"><span class="toc-title">sql.mysql.driver</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-ed25519.html"><span class="toc-title">sql.mysql.ed25519</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-errors.html"><span class="toc-title">sql.mysql.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-packets.html"><span class="toc-title">sql.mysql.packets</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-protocol.html"><span class="toc-title">sql.mysql.protocol</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-results.html"><span class="toc-title">sql.mysql.results</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-schema.html"><span class="toc-title">sql.mysql.schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-statement.html"><span class="toc-title">sql.mysql.statement</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-mysql-types.html"><span class="toc-title">sql.mysql.types</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-params.html"><span class="toc-title">sql.params</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-pool.html"><span class="toc-title">sql.pool</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres.html"><span class="toc-title">sql.postgres</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of sql.postgres"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-auth.html"><span class="toc-title">sql.postgres.auth</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-connection.html"><span class="toc-title">sql.postgres.connection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-cursor.html"><span class="toc-title">sql.postgres.cursor</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-ddl.html"><span class="toc-title">sql.postgres.ddl</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-driver.html"><span class="toc-title">sql.postgres.driver</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-errors.html"><span class="toc-title">sql.postgres.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-messages.html"><span class="toc-title">sql.postgres.messages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-notify.html"><span class="toc-title">sql.postgres.notify</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-protocol.html"><span class="toc-title">sql.postgres.protocol</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-results.html"><span class="toc-title">sql.postgres.results</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-schema.html"><span class="toc-title">sql.postgres.schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-statement.html"><span class="toc-title">sql.postgres.statement</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-postgres-types.html"><span class="toc-title">sql.postgres.types</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-result.html"><span class="toc-title">sql.result</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-schema.html"><span class="toc-title">sql.schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite.html"><span class="toc-title">sql.sqlite</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of sql.sqlite"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-backup.html"><span class="toc-title">sql.sqlite.backup</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-blob.html"><span class="toc-title">sql.sqlite.blob</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-connection.html"><span class="toc-title">sql.sqlite.connection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-cursor.html"><span class="toc-title">sql.sqlite.cursor</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-ddl.html"><span class="toc-title">sql.sqlite.ddl</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-driver.html"><span class="toc-title">sql.sqlite.driver</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-errors.html"><span class="toc-title">sql.sqlite.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-schema.html"><span class="toc-title">sql.sqlite.schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-statement.html"><span class="toc-title">sql.sqlite.statement</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-sqlite-types.html"><span class="toc-title">sql.sqlite.types</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-statement.html"><span class="toc-title">sql.statement</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-transaction.html"><span class="toc-title">sql.transaction</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="sql-types.html"><span class="toc-title">sql.types</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Mail</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail.html"><span class="toc-title">mail</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of mail"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-address.html"><span class="toc-title">mail.address</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-content.html"><span class="toc-title">mail.content</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-dkim.html"><span class="toc-title">mail.dkim</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-encoding.html"><span class="toc-title">mail.encoding</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-errors.html"><span class="toc-title">mail.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-headers.html"><span class="toc-title">mail.headers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-imap.html"><span class="toc-title">mail.imap</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of mail.imap"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-imap-client.html"><span class="toc-title">mail.imap.client</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-imap-parser.html"><span class="toc-title">mail.imap.parser</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-imap-server.html"><span class="toc-title">mail.imap.server</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-imap-store.html"><span class="toc-title">mail.imap.store</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-message.html"><span class="toc-title">mail.message</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-pool.html"><span class="toc-title">mail.pool</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-pop3.html"><span class="toc-title">mail.pop3</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of mail.pop3"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-pop3-client.html"><span class="toc-title">mail.pop3.client</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-sasl.html"><span class="toc-title">mail.sasl</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-smtp.html"><span class="toc-title">mail.smtp</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of mail.smtp"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-smtp-client.html"><span class="toc-title">mail.smtp.client</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-smtp-server.html"><span class="toc-title">mail.smtp.server</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="mail-stream.html"><span class="toc-title">mail.stream</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ffi.html"><span class="toc-title">ffi</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of ffi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ffi-callback.html"><span class="toc-title">ffi.callback</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ffi-declare.html"><span class="toc-title">ffi.declare</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ffi-errors.html"><span class="toc-title">ffi.errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ffi-library.html"><span class="toc-title">ffi.library</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ffi-pointer.html"><span class="toc-title">ffi.pointer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ffi-types.html"><span class="toc-title">ffi.types</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Types and Conversion</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="types.html"><span class="toc-title">types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="enum.html"><span class="toc-title">enum</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="convert.html"><span class="toc-title">convert</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Metaprogramming</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="zuri.html"><span class="toc-title">zuri</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of zuri"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="zuri-ast.html"><span class="toc-title">zuri.ast</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="zuri-compile.html"><span class="toc-title">zuri.compile</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="zuri-diagnostic.html"><span class="toc-title">zuri.diagnostic</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="zuri-doc.html"><span class="toc-title">zuri.doc</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="zuri-reflect.html"><span class="toc-title">zuri.reflect</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="zuri-token.html"><span class="toc-title">zuri.token</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="zuri-watch.html"><span class="toc-title">zuri.watch</span></a></div></li></ol></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Text and Markup</p>
+        <div class="content"><h1 id="htmlnode"><code>html.node</code></h1>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> html
+</code></pre><span class="code-label">Zuri</span></figure>
+<blockquote>
+<p>Everything here is re-exported by <code>html</code>, so <code>import html</code> is enough and
+the names are called as <code>html.*</code>. Importing <code>html.node</code> on its own works
+too and reaches the same definitions.</p>
+</blockquote>
+<p>The document tree that <code>html.parse()</code> produces, and everything you can
+do with it: walking it, querying it, reading and changing attributes and
+content, and serializing any part of it back to markup.</p>
+<p>The shape follows the DOM closely enough that the names are familiar,
+without pretending to be a browser. Where this module departs from the
+DOM it does so deliberately and says why in the relevant doc block; the
+two differences worth knowing up front are:</p>
+<ul>
+<li><code>children</code> holds <strong>every</strong> child node (elements, text and
+comments alike), which is what the DOM calls <code>childNodes</code>. Use
+<code>child_elements()</code> when you only want elements.</li>
+<li>There are no property setters in Zuri, so every DOM property that
+can be written is a pair of methods: <code>text_content()</code> reads and
+<code>set_text_content()</code> writes.</li>
+</ul>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> html
+
+<span class="kw">var</span> doc <span class="op">=</span> html.<span class="fn">parse</span>(<span class="str">'&lt;ul&gt;&lt;li class="a"&gt;One&lt;li class="a"&gt;Two&lt;/ul&gt;'</span>)
+
+<span class="kw">for</span> item <span class="kw">in</span> doc.<span class="fn">query_selector_all</span>(<span class="str">'li.a'</span>) {
+  <span class="kw">echo</span> item.<span class="fn">text_content</span>()
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<h2 id="constants"><a class="anchor" href="#constants" aria-hidden="true" tabindex="-1"></a>Constants</h2>
+<h3 id="node_element"><a class="anchor" href="#node_element" aria-hidden="true" tabindex="-1"></a><code>NODE_ELEMENT</code></h3>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">NODE_ELEMENT</span> <span class="op">=</span> <span class="num">1</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Node type of an <code>Element</code>.</p>
+<h3 id="node_text"><a class="anchor" href="#node_text" aria-hidden="true" tabindex="-1"></a><code>NODE_TEXT</code></h3>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">NODE_TEXT</span> <span class="op">=</span> <span class="num">3</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Node type of a <code>Text</code> node.</p>
+<h3 id="node_comment"><a class="anchor" href="#node_comment" aria-hidden="true" tabindex="-1"></a><code>NODE_COMMENT</code></h3>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">NODE_COMMENT</span> <span class="op">=</span> <span class="num">8</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Node type of a <code>Comment</code>.</p>
+<h3 id="node_document"><a class="anchor" href="#node_document" aria-hidden="true" tabindex="-1"></a><code>NODE_DOCUMENT</code></h3>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">NODE_DOCUMENT</span> <span class="op">=</span> <span class="num">9</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Node type of a <code>Document</code>.</p>
+<h3 id="node_document_type"><a class="anchor" href="#node_document_type" aria-hidden="true" tabindex="-1"></a><code>NODE_DOCUMENT_TYPE</code></h3>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">NODE_DOCUMENT_TYPE</span> <span class="op">=</span> <span class="num">10</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Node type of a <code>DocumentType</code> (the <code>&lt;!DOCTYPE ...&gt;</code> node).</p>
+<h3 id="node_document_fragment"><a class="anchor" href="#node_document_fragment" aria-hidden="true" tabindex="-1"></a><code>NODE_DOCUMENT_FRAGMENT</code></h3>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">NODE_DOCUMENT_FRAGMENT</span> <span class="op">=</span> <span class="num">11</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Node type of a <code>DocumentFragment</code>, including the fragment that holds a
+<code>&lt;template&gt;</code> element's content.</p>
+<h3 id="void_elements"><a class="anchor" href="#void_elements" aria-hidden="true" tabindex="-1"></a><code>VOID_ELEMENTS</code></h3>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">VOID_ELEMENTS</span> <span class="op">=</span> [...]
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The HTML elements that are written without a closing tag and can hold no
+content. Serializing one of these emits <code>&lt;br&gt;</code> and nothing else, and any
+child it somehow acquired is not written out, because markup that cannot
+be read back is worse than markup that loses it.</p>
+<p>This is the list the fragment serialization algorithm uses, which is
+wider than the standard's modern &quot;void elements&quot; list: it also covers
+<code>basefont</code>, <code>bgsound</code>, <code>frame</code>, <code>keygen</code> and <code>param</code>, five legacy
+elements that were dropped from the authoring list but still take no end
+tag and still turn up in real documents.</p>
+<h3 id="raw_text_elements"><a class="anchor" href="#raw_text_elements" aria-hidden="true" tabindex="-1"></a><code>RAW_TEXT_ELEMENTS</code></h3>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">RAW_TEXT_ELEMENTS</span> <span class="op">=</span> [...]
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Elements whose text children are markup, not content: their text is
+written out byte for byte and never escaped, because escaping it would
+change what a stylesheet or a script means.</p>
+<p>The serialization algorithm also lists <code>noscript</code> here, but only when
+the scripting flag is enabled. This module parses with scripting
+disabled by default, and in that mode a <code>&lt;noscript&gt;</code> holds real elements
+rather than text, so leaving it out is right for the default and safe
+for the other case: the worst that happens to a document parsed with
+<code>scripting: true</code> is that its <code>&lt;noscript&gt;</code> text comes back escaped,
+whereas including it would let hand-built text inside a <code>&lt;noscript&gt;</code>
+serialize into live markup.</p>
+<h2 id="classes"><a class="anchor" href="#classes" aria-hidden="true" tabindex="-1"></a>Classes</h2>
+<h3 id="hierarchyerror"><a class="anchor" href="#hierarchyerror" aria-hidden="true" tabindex="-1"></a><code>HierarchyError</code></h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">html</span>.<span class="prop">HierarchyError</span> <span class="op">&lt;</span> <span class="type">Error</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Raised when a tree mutation would produce a structure that cannot exist,
+such as inserting a node before something that is not a child of the
+target, or making a node its own ancestor.</p>
+<h4 id="constructor"><a class="anchor" href="#constructor" aria-hidden="true" tabindex="-1"></a>Constructor</h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="fn">HierarchyError</span>(message)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>message</code> (<code>string</code>)</li>
+</ul>
+<h3 id="node"><a class="anchor" href="#node" aria-hidden="true" tabindex="-1"></a><code>Node</code></h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">html</span>.<span class="prop">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The base class every node in a parsed document inherits from.</p>
+<p>You never construct a <code>Node</code> directly; parsing produces <code>Document</code>,
+<code>Element</code>, <code>Text</code>, <code>Comment</code> and <code>DocumentType</code> instances, and this
+class is where the behaviour they share lives.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>@to_string()</code>, so <code>echo</code> and <code>print()</code> show
+something useful</li>
+</ul>
+<h4 id="fields"><a class="anchor" href="#fields" aria-hidden="true" tabindex="-1"></a>Fields</h4>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>node_type</code></td>
+<td></td>
+<td>One of the <code>NODE_*</code> constants in this module, identifying which subclass this node actually is.</td>
+</tr>
+<tr>
+<td><code>parent_node</code></td>
+<td></td>
+<td>The node this one hangs off, or <code>nil</code> for a <code>Document</code> and for any node that has been detached.</td>
+</tr>
+<tr>
+<td><code>children</code></td>
+<td></td>
+<td>Every child of this node in document order: elements, text nodes and comments together.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-1"><a class="anchor" href="#constructor-1" aria-hidden="true" tabindex="-1"></a>Constructor</h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="fn">Node</span>(node_type<span class="op">:</span> number)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>node_type</code> (<code>number</code>)</li>
+</ul>
+<h4 id="nodeis_element"><a class="anchor" href="#nodeis_element" aria-hidden="true" tabindex="-1"></a><code>Node.is_element()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">is_element</span>() <span class="op">-&gt;</span> bool
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>True when this node is an <code>Element</code>.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="nodeis_text"><a class="anchor" href="#nodeis_text" aria-hidden="true" tabindex="-1"></a><code>Node.is_text()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">is_text</span>() <span class="op">-&gt;</span> bool
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>True when this node is a <code>Text</code> node.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="nodeis_comment"><a class="anchor" href="#nodeis_comment" aria-hidden="true" tabindex="-1"></a><code>Node.is_comment()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">is_comment</span>() <span class="op">-&gt;</span> bool
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>True when this node is a <code>Comment</code>.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="nodeis_document"><a class="anchor" href="#nodeis_document" aria-hidden="true" tabindex="-1"></a><code>Node.is_document()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">is_document</span>() <span class="op">-&gt;</span> bool
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>True when this node is a <code>Document</code>.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="nodeis_doctype"><a class="anchor" href="#nodeis_doctype" aria-hidden="true" tabindex="-1"></a><code>Node.is_doctype()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">is_doctype</span>() <span class="op">-&gt;</span> bool
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>True when this node is a <code>DocumentType</code>.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="nodeis_fragment"><a class="anchor" href="#nodeis_fragment" aria-hidden="true" tabindex="-1"></a><code>Node.is_fragment()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">is_fragment</span>() <span class="op">-&gt;</span> bool
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>True when this node is a <code>DocumentFragment</code>.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="nodefirst_child"><a class="anchor" href="#nodefirst_child" aria-hidden="true" tabindex="-1"></a><code>Node.first_child()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">first_child</span>() <span class="op">-&gt;</span> <span class="op">?</span><span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The first child of this node, or <code>nil</code> when it has none.</p>
+<p><strong>Returns</strong> <code>?Node</code></p>
+<h4 id="nodelast_child"><a class="anchor" href="#nodelast_child" aria-hidden="true" tabindex="-1"></a><code>Node.last_child()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">last_child</span>() <span class="op">-&gt;</span> <span class="op">?</span><span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The last child of this node, or <code>nil</code> when it has none.</p>
+<p><strong>Returns</strong> <code>?Node</code></p>
+<h4 id="nodeindex_in_parent"><a class="anchor" href="#nodeindex_in_parent" aria-hidden="true" tabindex="-1"></a><code>Node.index_in_parent()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">index_in_parent</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Position of this node among its parent's children, or <code>-1</code> when it has
+no parent.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="nodenext_sibling"><a class="anchor" href="#nodenext_sibling" aria-hidden="true" tabindex="-1"></a><code>Node.next_sibling()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">next_sibling</span>() <span class="op">-&gt;</span> <span class="op">?</span><span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The node immediately after this one under the same parent, or <code>nil</code> when
+this is the last child or has no parent.</p>
+<p><strong>Returns</strong> <code>?Node</code></p>
+<h4 id="nodeprevious_sibling"><a class="anchor" href="#nodeprevious_sibling" aria-hidden="true" tabindex="-1"></a><code>Node.previous_sibling()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">previous_sibling</span>() <span class="op">-&gt;</span> <span class="op">?</span><span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The node immediately before this one under the same parent, or <code>nil</code>
+when this is the first child or has no parent.</p>
+<p><strong>Returns</strong> <code>?Node</code></p>
+<h4 id="nodenext_element_sibling"><a class="anchor" href="#nodenext_element_sibling" aria-hidden="true" tabindex="-1"></a><code>Node.next_element_sibling()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">next_element_sibling</span>() <span class="op">-&gt;</span> <span class="op">?</span><span class="type">Element</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The next sibling that is an element, skipping over text and comments, or
+<code>nil</code> when there is none.</p>
+<p><strong>Returns</strong> <code>?Element</code></p>
+<h4 id="nodeprevious_element_sibling"><a class="anchor" href="#nodeprevious_element_sibling" aria-hidden="true" tabindex="-1"></a><code>Node.previous_element_sibling()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">previous_element_sibling</span>() <span class="op">-&gt;</span> <span class="op">?</span><span class="type">Element</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The previous sibling that is an element, skipping over text and
+comments, or <code>nil</code> when there is none.</p>
+<p><strong>Returns</strong> <code>?Element</code></p>
+<h4 id="nodechild_elements"><a class="anchor" href="#nodechild_elements" aria-hidden="true" tabindex="-1"></a><code>Node.child_elements()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">child_elements</span>() <span class="op">-&gt;</span> list
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>This node's children that are elements, in document order.</p>
+<p>A fresh list is returned on every call, so changing it does not change
+the tree.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="nodefirst_element_child"><a class="anchor" href="#nodefirst_element_child" aria-hidden="true" tabindex="-1"></a><code>Node.first_element_child()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">first_element_child</span>() <span class="op">-&gt;</span> <span class="op">?</span><span class="type">Element</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The first child that is an element, or <code>nil</code>.</p>
+<p><strong>Returns</strong> <code>?Element</code></p>
+<h4 id="nodelast_element_child"><a class="anchor" href="#nodelast_element_child" aria-hidden="true" tabindex="-1"></a><code>Node.last_element_child()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">last_element_child</span>() <span class="op">-&gt;</span> <span class="op">?</span><span class="type">Element</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The last child that is an element, or <code>nil</code>.</p>
+<p><strong>Returns</strong> <code>?Element</code></p>
+<h4 id="noderoot"><a class="anchor" href="#noderoot" aria-hidden="true" tabindex="-1"></a><code>Node.root()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">root</span>() <span class="op">-&gt;</span> <span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The topmost node reachable by following <code>parent_node</code>, which for a
+parsed document is the <code>Document</code> itself and for a detached subtree is
+that subtree's own root.</p>
+<p><strong>Returns</strong> <code>Node</code></p>
+<h4 id="nodehas_ancestor"><a class="anchor" href="#nodehas_ancestor" aria-hidden="true" tabindex="-1"></a><code>Node.has_ancestor()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">has_ancestor</span>(other<span class="op">:</span> instance) <span class="op">-&gt;</span> bool
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>True when <em>other</em> is this node or one of its ancestors.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>other</code> (<code>Node</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="nodedescendants"><a class="anchor" href="#nodedescendants" aria-hidden="true" tabindex="-1"></a><code>Node.descendants()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">descendants</span>() <span class="op">-&gt;</span> list
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Every node beneath this one, in document order, not including this node
+itself.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="nodewalk"><a class="anchor" href="#nodewalk" aria-hidden="true" tabindex="-1"></a><code>Node.walk()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">walk</span>(callback<span class="op">:</span> function)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Calls <em>callback</em> once for every node beneath this one, in document
+order. The node is passed as the only argument.</p>
+<p>Returning <code>false</code> from the callback prunes that node's subtree; any
+other return value (including <code>nil</code>) keeps walking. The walk reads
+<code>children</code> as it goes, so do not restructure the tree from inside the
+callback.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>callback</code> (<code>function</code>)</li>
+</ul>
+<h4 id="nodeappend_child"><a class="anchor" href="#nodeappend_child" aria-hidden="true" tabindex="-1"></a><code>Node.append_child()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">append_child</span>(node<span class="op">:</span> instance) <span class="op">-&gt;</span> <span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Adds <em>node</em> as this node's last child, detaching it from wherever it
+currently lives first. Returns <em>node</em>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>node</code> (<code>Node</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Node</code></p>
+<p><strong>Raises</strong> <code>HierarchyError</code> when <em>node</em> is this node or one of its
+ancestors, which would make the tree cyclic.</p>
+<h4 id="nodeinsert_before"><a class="anchor" href="#nodeinsert_before" aria-hidden="true" tabindex="-1"></a><code>Node.insert_before()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">insert_before</span>(node<span class="op">:</span> instance, reference<span class="op">:</span> <span class="op">?</span>instance) <span class="op">-&gt;</span> <span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Inserts <em>node</em> immediately before <em>reference</em>, which must be a child of
+this node. Passing <code>nil</code> for <em>reference</em> appends. Returns <em>node</em>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>node</code> (<code>Node</code>)</li>
+<li><code>reference</code> (<code>?Node</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Node</code></p>
+<p><strong>Raises</strong> <code>HierarchyError</code> when <em>reference</em> is not a child of this
+node, or when the insertion would make the tree cyclic.</p>
+<h4 id="noderemove_child"><a class="anchor" href="#noderemove_child" aria-hidden="true" tabindex="-1"></a><code>Node.remove_child()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">remove_child</span>(node<span class="op">:</span> instance) <span class="op">-&gt;</span> <span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Removes <em>node</em> from this node's children and returns it. The removed
+node keeps its own children; only its link to this parent is broken.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>node</code> (<code>Node</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Node</code></p>
+<p><strong>Raises</strong> <code>HierarchyError</code> when <em>node</em> is not a child of this node.</p>
+<h4 id="nodereplace_child"><a class="anchor" href="#nodereplace_child" aria-hidden="true" tabindex="-1"></a><code>Node.replace_child()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">replace_child</span>(replacement<span class="op">:</span> instance, existing<span class="op">:</span> instance) <span class="op">-&gt;</span> <span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Puts <em>replacement</em> where <em>existing</em> currently sits and returns
+<em>existing</em>, now detached.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>replacement</code> (<code>Node</code>)</li>
+<li><code>existing</code> (<code>Node</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Node</code></p>
+<p><strong>Raises</strong> <code>HierarchyError</code> when <em>existing</em> is not a child of this node,
+or when the replacement would make the tree cyclic.</p>
+<h4 id="nodedetach"><a class="anchor" href="#nodedetach" aria-hidden="true" tabindex="-1"></a><code>Node.detach()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">detach</span>() <span class="op">-&gt;</span> <span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Removes this node from its parent, if it has one. Returns this node so
+calls can be chained.</p>
+<p><strong>Returns</strong> <code>Node</code></p>
+<h4 id="nodeclear_children"><a class="anchor" href="#nodeclear_children" aria-hidden="true" tabindex="-1"></a><code>Node.clear_children()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">clear_children</span>() <span class="op">-&gt;</span> <span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Removes every child of this node. The children are detached but
+otherwise untouched.</p>
+<p><strong>Returns</strong> <code>Node</code></p>
+<h4 id="nodetext_content"><a class="anchor" href="#nodetext_content" aria-hidden="true" tabindex="-1"></a><code>Node.text_content()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">text_content</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The concatenated text of every <code>Text</code> node beneath this one, in document
+order. Comments and doctypes contribute nothing.</p>
+<p><code>Text</code> and <code>Comment</code> override this to return their own data.</p>
+<p>Unlike the browser DOM, a <code>Document</code> answers this the same way an
+element does rather than returning nothing; being told the text of a
+document you just parsed is far more useful than being told <code>nil</code>.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="nodeset_text_content"><a class="anchor" href="#nodeset_text_content" aria-hidden="true" tabindex="-1"></a><code>Node.set_text_content()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">set_text_content</span>(value<span class="op">:</span> string) <span class="op">-&gt;</span> <span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Replaces every child of this node with a single <code>Text</code> node holding
+<em>value</em>. Passing an empty string just empties the node, matching the
+DOM.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Node</code></p>
+<h4 id="nodeinner_html"><a class="anchor" href="#nodeinner_html" aria-hidden="true" tabindex="-1"></a><code>Node.inner_html()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">inner_html</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The markup of this node's children, serialized the way the HTML fragment
+serialization algorithm specifies.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="nodeset_inner_html"><a class="anchor" href="#nodeset_inner_html" aria-hidden="true" tabindex="-1"></a><code>Node.set_inner_html()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">set_inner_html</span>(source<span class="op">:</span> string) <span class="op">-&gt;</span> <span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Parses <em>source</em> as HTML in the context of this node and replaces all of
+its children with the result.</p>
+<p>The parse runs the fragment parsing algorithm with this node as the
+context element, so <code>source</code> is interpreted exactly as it would be had
+it appeared inside this element in the original document. That matters:
+<code>'&lt;td&gt;x'</code> keeps its cell inside a <code>&lt;tr&gt;</code> and loses it anywhere else,
+which is what a browser does too.</p>
+<p>Nothing is executed and nothing is fetched; <code>&lt;script&gt;</code> content becomes
+an inert text node.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>source</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Node</code></p>
+<h4 id="nodeouter_html"><a class="anchor" href="#nodeouter_html" aria-hidden="true" tabindex="-1"></a><code>Node.outer_html()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">outer_html</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The markup of this node including its own tags.</p>
+<p>For a <code>Document</code> this is the whole document; for a <code>Text</code> node it is the
+escaped text; for a <code>Comment</code> it is <code>&lt;!--...--&gt;</code>.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="nodeset_outer_html"><a class="anchor" href="#nodeset_outer_html" aria-hidden="true" tabindex="-1"></a><code>Node.set_outer_html()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">set_outer_html</span>(source<span class="op">:</span> string) <span class="op">-&gt;</span> list
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Parses <em>source</em> as HTML in the context of this node's parent and puts
+the result where this node currently sits.</p>
+<p>Returns the list of nodes that replaced this one, which may be empty
+when <em>source</em> produces nothing. This node is detached either way.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>source</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<p><strong>Raises</strong> <code>HierarchyError</code> when this node has no parent, since there
+would be nowhere to put the result.</p>
+<h4 id="nodeserialize_into"><a class="anchor" href="#nodeserialize_into" aria-hidden="true" tabindex="-1"></a><code>Node.serialize_into()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">serialize_into</span>(out<span class="op">:</span> list)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Appends this node's markup to <em>out</em>, a list of string pieces the caller
+is expected to <code>join()</code>.</p>
+<p><code>outer_html()</code> is the friendly form of this and is what you normally
+want. Reach for this one when you are writing a large document out in
+pieces and would rather not build the whole string in memory first.</p>
+<p>Every node class overrides it; the base implementation writes nothing.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>out</code> (<code>list</code>)</li>
+</ul>
+<h4 id="nodeclone_node"><a class="anchor" href="#nodeclone_node" aria-hidden="true" tabindex="-1"></a><code>Node.clone_node()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">clone_node</span>(deep<span class="op">:</span> <span class="op">?</span>bool) <span class="op">-&gt;</span> <span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A deep or shallow copy of this node, detached from any parent.</p>
+<p>The copy is shallow by default, matching the DOM: you get the node
+itself with its attributes but with no children. Pass <code>true</code> for <em>deep</em>
+to copy the whole subtree.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>deep</code> (<code>?bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Node</code></p>
+<h4 id="nodeget_element_by_id"><a class="anchor" href="#nodeget_element_by_id" aria-hidden="true" tabindex="-1"></a><code>Node.get_element_by_id()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">get_element_by_id</span>(value<span class="op">:</span> string) <span class="op">-&gt;</span> <span class="op">?</span><span class="type">Element</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The first element beneath this node whose <code>id</code> attribute is <em>value</em>, or
+<code>nil</code> when there is none.</p>
+<p>Ids are compared exactly, including case: HTML does not fold the case of
+id values even though it folds tag names.</p>
+<p>A document with duplicate ids is malformed but perfectly parseable, and
+this returns the first one in document order, which is what browsers
+settled on.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>?Element</code></p>
+<h4 id="nodeget_elements_by_class_name"><a class="anchor" href="#nodeget_elements_by_class_name" aria-hidden="true" tabindex="-1"></a><code>Node.get_elements_by_class_name()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">get_elements_by_class_name</span>(names) <span class="op">-&gt;</span> list
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Every element beneath this node carrying all of the classes in <em>names</em>,
+in document order.</p>
+<p><em>names</em> may be a single class name, several separated by whitespace, or
+a list of names; in every form an element must carry <em>all</em> of them to
+match. Class names are compared exactly, including case. An empty
+<em>names</em> matches nothing.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span>doc.<span class="fn">get_elements_by_class_name</span>(<span class="str">'warning'</span>)
+<span class="prompt">%&gt; </span>doc.<span class="fn">get_elements_by_class_name</span>(<span class="str">'warning sticky'</span>)
+<span class="prompt">%&gt; </span>doc.<span class="fn">get_elements_by_class_name</span>([<span class="str">'warning'</span>, <span class="str">'sticky'</span>])
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>names</code> (<code>string|list</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="nodeget_elements_by_tag_name"><a class="anchor" href="#nodeget_elements_by_tag_name" aria-hidden="true" tabindex="-1"></a><code>Node.get_elements_by_tag_name()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">get_elements_by_tag_name</span>(name<span class="op">:</span> string) <span class="op">-&gt;</span> list
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Every element beneath this node whose tag name is <em>name</em>, in document
+order.</p>
+<p>The comparison folds ASCII case, so <code>'DIV'</code> and <code>'div'</code> find the same
+elements. Passing <code>'*'</code> returns every element.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="nodequery_selector"><a class="anchor" href="#nodequery_selector" aria-hidden="true" tabindex="-1"></a><code>Node.query_selector()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">query_selector</span>(query<span class="op">:</span> string) <span class="op">-&gt;</span> <span class="op">?</span><span class="type">Element</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The first element beneath this node matching the CSS selector <em>query</em>,
+in document order, or <code>nil</code> when nothing matches.</p>
+<p>The supported selector syntax is described in <code>html.selector</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>query</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>?Element</code></p>
+<p><strong>Raises</strong> <code>SelectorError</code> when <em>query</em> is not valid.</p>
+<h4 id="nodequery_selector_all"><a class="anchor" href="#nodequery_selector_all" aria-hidden="true" tabindex="-1"></a><code>Node.query_selector_all()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">query_selector_all</span>(query<span class="op">:</span> string) <span class="op">-&gt;</span> list
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Every element beneath this node matching the CSS selector <em>query</em>, in
+document order.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>query</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<p><strong>Raises</strong> <code>SelectorError</code> when <em>query</em> is not valid.</p>
+<h4 id="nodeto_string"><a class="anchor" href="#nodeto_string" aria-hidden="true" tabindex="-1"></a><code>Node.to_string()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Node</span>.<span class="fn">to_string</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Renders this node as markup, the same as <code>outer_html()</code>.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="text"><a class="anchor" href="#text" aria-hidden="true" tabindex="-1"></a><code>Text</code></h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">html</span>.<span class="prop">Text</span> <span class="op">&lt;</span> <span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A run of character data in the tree.</p>
+<p>The parser merges adjacent characters into as few <code>Text</code> nodes as the
+tree construction algorithm allows, so a paragraph of prose is normally
+one node rather than one per character.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>@to_string()</code>, so <code>echo</code> and <code>print()</code> show
+something useful</li>
+</ul>
+<h4 id="fields-1"><a class="anchor" href="#fields-1" aria-hidden="true" tabindex="-1"></a>Fields</h4>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>data</code></td>
+<td></td>
+<td>The characters this node holds, already decoded: character references were resolved during parsing, so <code>data</code>...</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-2"><a class="anchor" href="#constructor-2" aria-hidden="true" tabindex="-1"></a>Constructor</h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="fn">Text</span>(data<span class="op">:</span> string)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>string</code>)</li>
+</ul>
+<h4 id="texttext_content"><a class="anchor" href="#texttext_content" aria-hidden="true" tabindex="-1"></a><code>Text.text_content()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Text</span>.<span class="fn">text_content</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The characters this node holds.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="textset_text_content"><a class="anchor" href="#textset_text_content" aria-hidden="true" tabindex="-1"></a><code>Text.set_text_content()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Text</span>.<span class="fn">set_text_content</span>(value<span class="op">:</span> string) <span class="op">-&gt;</span> <span class="type">Text</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Replaces this node's characters with <em>value</em>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Text</code></p>
+<h4 id="textappend_data"><a class="anchor" href="#textappend_data" aria-hidden="true" tabindex="-1"></a><code>Text.append_data()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Text</span>.<span class="fn">append_data</span>(value<span class="op">:</span> string) <span class="op">-&gt;</span> <span class="type">Text</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Appends <em>value</em> to this node's characters.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Text</code></p>
+<h4 id="textserialize_into"><a class="anchor" href="#textserialize_into" aria-hidden="true" tabindex="-1"></a><code>Text.serialize_into()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Text</span>.<span class="fn">serialize_into</span>(out<span class="op">:</span> list)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>out</code> (<code>list</code>)</li>
+</ul>
+<h3 id="comment"><a class="anchor" href="#comment" aria-hidden="true" tabindex="-1"></a><code>Comment</code></h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">html</span>.<span class="prop">Comment</span> <span class="op">&lt;</span> <span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>An HTML comment.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>@to_string()</code>, so <code>echo</code> and <code>print()</code> show
+something useful</li>
+</ul>
+<h4 id="fields-2"><a class="anchor" href="#fields-2" aria-hidden="true" tabindex="-1"></a>Fields</h4>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>data</code></td>
+<td></td>
+<td>The text between <code>&lt;!--</code> and <code>--&gt;</code>, exactly as it appeared.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-3"><a class="anchor" href="#constructor-3" aria-hidden="true" tabindex="-1"></a>Constructor</h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="fn">Comment</span>(data<span class="op">:</span> string)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>string</code>)</li>
+</ul>
+<h4 id="commenttext_content"><a class="anchor" href="#commenttext_content" aria-hidden="true" tabindex="-1"></a><code>Comment.text_content()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Comment</span>.<span class="fn">text_content</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The comment's text.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="commentset_text_content"><a class="anchor" href="#commentset_text_content" aria-hidden="true" tabindex="-1"></a><code>Comment.set_text_content()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Comment</span>.<span class="fn">set_text_content</span>(value<span class="op">:</span> string) <span class="op">-&gt;</span> <span class="type">Comment</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Replaces the comment's text with <em>value</em>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Comment</code></p>
+<h4 id="commentserialize_into"><a class="anchor" href="#commentserialize_into" aria-hidden="true" tabindex="-1"></a><code>Comment.serialize_into()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Comment</span>.<span class="fn">serialize_into</span>(out<span class="op">:</span> list)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>out</code> (<code>list</code>)</li>
+</ul>
+<h3 id="documenttype"><a class="anchor" href="#documenttype" aria-hidden="true" tabindex="-1"></a><code>DocumentType</code></h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">html</span>.<span class="prop">DocumentType</span> <span class="op">&lt;</span> <span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The <code>&lt;!DOCTYPE ...&gt;</code> node at the top of a document.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>@to_string()</code>, so <code>echo</code> and <code>print()</code> show
+something useful</li>
+</ul>
+<h4 id="fields-3"><a class="anchor" href="#fields-3" aria-hidden="true" tabindex="-1"></a>Fields</h4>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td></td>
+<td>The doctype's name, lowercased by the tokenizer.</td>
+</tr>
+<tr>
+<td><code>public_id</code></td>
+<td></td>
+<td>The public identifier, or an empty string when the doctype has none.</td>
+</tr>
+<tr>
+<td><code>system_id</code></td>
+<td></td>
+<td>The system identifier, or an empty string when the doctype has none.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-4"><a class="anchor" href="#constructor-4" aria-hidden="true" tabindex="-1"></a>Constructor</h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="fn">DocumentType</span>(name<span class="op">:</span> string, public_id<span class="op">:</span> <span class="op">?</span>string, system_id<span class="op">:</span> <span class="op">?</span>string)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>public_id</code> (<code>?string</code>)</li>
+<li><code>system_id</code> (<code>?string</code>)</li>
+</ul>
+<h4 id="documenttypetext_content"><a class="anchor" href="#documenttypetext_content" aria-hidden="true" tabindex="-1"></a><code>DocumentType.text_content()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">DocumentType</span>.<span class="fn">text_content</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A doctype contains no text, so this is always an empty string.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="documenttypeserialize_into"><a class="anchor" href="#documenttypeserialize_into" aria-hidden="true" tabindex="-1"></a><code>DocumentType.serialize_into()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">DocumentType</span>.<span class="fn">serialize_into</span>(out<span class="op">:</span> list)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>out</code> (<code>list</code>)</li>
+</ul>
+<h3 id="documentfragment"><a class="anchor" href="#documentfragment" aria-hidden="true" tabindex="-1"></a><code>DocumentFragment</code></h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">html</span>.<span class="prop">DocumentFragment</span> <span class="op">&lt;</span> <span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A parentless container for a run of nodes.</p>
+<p>Fragment parsing produces one of these, and every <code>&lt;template&gt;</code> element
+owns one holding its content.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>@to_string()</code>, so <code>echo</code> and <code>print()</code> show
+something useful</li>
+</ul>
+<h4 id="constructor-5"><a class="anchor" href="#constructor-5" aria-hidden="true" tabindex="-1"></a>Constructor</h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="fn">DocumentFragment</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<h4 id="documentfragmentserialize_into"><a class="anchor" href="#documentfragmentserialize_into" aria-hidden="true" tabindex="-1"></a><code>DocumentFragment.serialize_into()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">DocumentFragment</span>.<span class="fn">serialize_into</span>(out<span class="op">:</span> list)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>out</code> (<code>list</code>)</li>
+</ul>
+<h3 id="document"><a class="anchor" href="#document" aria-hidden="true" tabindex="-1"></a><code>Document</code></h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">html</span>.<span class="prop">Document</span> <span class="op">&lt;</span> <span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A whole parsed document.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>@to_string()</code>, so <code>echo</code> and <code>print()</code> show
+something useful</li>
+</ul>
+<h4 id="fields-4"><a class="anchor" href="#fields-4" aria-hidden="true" tabindex="-1"></a>Fields</h4>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mode</code></td>
+<td></td>
+<td>Which quirks mode the doctype (or the lack of one) put this document in: <code>'no-quirks'</code>, <code>'limited-quirks'</code> or...</td>
+</tr>
+<tr>
+<td><code>errors</code></td>
+<td></td>
+<td>Every parse error the tokenizer and tree builder raised, in the order they happened.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-6"><a class="anchor" href="#constructor-6" aria-hidden="true" tabindex="-1"></a>Constructor</h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="fn">Document</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<h4 id="documentdocument_element"><a class="anchor" href="#documentdocument_element" aria-hidden="true" tabindex="-1"></a><code>Document.document_element()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Document</span>.<span class="fn">document_element</span>() <span class="op">-&gt;</span> <span class="op">?</span><span class="type">Element</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The document's root element, normally <code>&lt;html&gt;</code>, or <code>nil</code> for an empty
+document.</p>
+<p><strong>Returns</strong> <code>?Element</code></p>
+<h4 id="documentdoctype"><a class="anchor" href="#documentdoctype" aria-hidden="true" tabindex="-1"></a><code>Document.doctype()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Document</span>.<span class="fn">doctype</span>() <span class="op">-&gt;</span> <span class="op">?</span><span class="type">DocumentType</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The document's <code>&lt;!DOCTYPE&gt;</code> node, or <code>nil</code> when it has none.</p>
+<p><strong>Returns</strong> <code>?DocumentType</code></p>
+<h4 id="documenthead"><a class="anchor" href="#documenthead" aria-hidden="true" tabindex="-1"></a><code>Document.head()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Document</span>.<span class="fn">head</span>() <span class="op">-&gt;</span> <span class="op">?</span><span class="type">Element</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The document's <code>&lt;head&gt;</code> element, or <code>nil</code>.</p>
+<p>The tree construction algorithm always creates one when parsing a whole
+document, even for input with no <code>&lt;head&gt;</code> tag in it, so this only
+returns <code>nil</code> for a document that was built by hand.</p>
+<p><strong>Returns</strong> <code>?Element</code></p>
+<h4 id="documentbody"><a class="anchor" href="#documentbody" aria-hidden="true" tabindex="-1"></a><code>Document.body()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Document</span>.<span class="fn">body</span>() <span class="op">-&gt;</span> <span class="op">?</span><span class="type">Element</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The document's <code>&lt;body&gt;</code> element, or the <code>&lt;frameset&gt;</code> that stands in for
+it in a frameset document, or <code>nil</code> when there is neither.</p>
+<p><strong>Returns</strong> <code>?Element</code></p>
+<h4 id="documenttitle"><a class="anchor" href="#documenttitle" aria-hidden="true" tabindex="-1"></a><code>Document.title()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Document</span>.<span class="fn">title</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The text of the document's <code>&lt;title&gt;</code> element, with leading and trailing
+whitespace removed, or an empty string when there is no title.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="documentserialize_into"><a class="anchor" href="#documentserialize_into" aria-hidden="true" tabindex="-1"></a><code>Document.serialize_into()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Document</span>.<span class="fn">serialize_into</span>(out<span class="op">:</span> list)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>out</code> (<code>list</code>)</li>
+</ul>
+<h3 id="classlist"><a class="anchor" href="#classlist" aria-hidden="true" tabindex="-1"></a><code>ClassList</code></h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">html</span>.<span class="prop">ClassList</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A live view of one element's <code>class</code> attribute.</p>
+<p>Every method reads and writes the attribute itself, so a <code>class_list</code>
+never goes stale and two of them taken from the same element always
+agree.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="kw">var</span> el <span class="op">=</span> doc.<span class="fn">query_selector</span>(<span class="str">'div'</span>)
+<span class="prompt">%&gt; </span>el.<span class="fn">class_list</span>().<span class="fn">add</span>(<span class="str">'active'</span>)
+<span class="prompt">%&gt; </span>el.<span class="fn">class_list</span>().<span class="fn">contains</span>(<span class="str">'active'</span>)
+<span class="out">true</span>
+<span class="prompt">%&gt; </span>el.<span class="fn">get_attribute</span>(<span class="str">'class'</span>)
+<span class="out">'active'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<ul>
+<li><strong>printable</strong> — has a <code>@to_string()</code>, so <code>echo</code> and <code>print()</code> show
+something useful</li>
+</ul>
+<h4 id="fields-5"><a class="anchor" href="#fields-5" aria-hidden="true" tabindex="-1"></a>Fields</h4>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>element</code></td>
+<td></td>
+<td>The element this list reads from and writes to.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-7"><a class="anchor" href="#constructor-7" aria-hidden="true" tabindex="-1"></a>Constructor</h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="fn">ClassList</span>(element)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>element</code> (<code>Element</code>)</li>
+</ul>
+<h4 id="classlistto_list"><a class="anchor" href="#classlistto_list" aria-hidden="true" tabindex="-1"></a><code>ClassList.to_list()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">ClassList</span>.<span class="fn">to_list</span>() <span class="op">-&gt;</span> list
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The class names currently on the element, in source order, with
+duplicates removed.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="classlistlength"><a class="anchor" href="#classlistlength" aria-hidden="true" tabindex="-1"></a><code>ClassList.length()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">ClassList</span>.<span class="fn">length</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>How many distinct classes the element carries.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="classlistcontains"><a class="anchor" href="#classlistcontains" aria-hidden="true" tabindex="-1"></a><code>ClassList.contains()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">ClassList</span>.<span class="fn">contains</span>(name<span class="op">:</span> string) <span class="op">-&gt;</span> bool
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>True when the element carries <em>name</em>. The comparison is exact: HTML
+class names are case-sensitive in standards mode.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="classlistadd"><a class="anchor" href="#classlistadd" aria-hidden="true" tabindex="-1"></a><code>ClassList.add()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">ClassList</span>.<span class="fn">add</span>(...names<span class="op">:</span> list) <span class="op">-&gt;</span> <span class="type">ClassList</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Adds every name given to the element's class attribute, ignoring any it
+already has. Returns the list so calls can be chained.</p>
+<p>An empty name, or one containing whitespace, is rejected: those cannot
+be written to a class attribute without changing what it means.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>names</code> (<code>...string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>ClassList</code></p>
+<p><strong>Raises</strong> <code>ArgumentError</code></p>
+<h4 id="classlistremove"><a class="anchor" href="#classlistremove" aria-hidden="true" tabindex="-1"></a><code>ClassList.remove()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">ClassList</span>.<span class="fn">remove</span>(...names<span class="op">:</span> list) <span class="op">-&gt;</span> <span class="type">ClassList</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Removes every name given from the element's class attribute, ignoring
+any it does not have. Returns the list.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>names</code> (<code>...string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>ClassList</code></p>
+<p><strong>Raises</strong> <code>ArgumentError</code></p>
+<h4 id="classlisttoggle"><a class="anchor" href="#classlisttoggle" aria-hidden="true" tabindex="-1"></a><code>ClassList.toggle()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">ClassList</span>.<span class="fn">toggle</span>(name<span class="op">:</span> string, force<span class="op">:</span> <span class="op">?</span>bool) <span class="op">-&gt;</span> bool
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Adds <em>name</em> when the element does not have it and removes it when it
+does, then returns <code>true</code> when the class is present afterwards.</p>
+<p>Passing <em>force</em> turns this into an unconditional add (<code>true</code>) or remove
+(<code>false</code>), which is handy when the desired state is already in a
+variable.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>force</code> (<code>?bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<p><strong>Raises</strong> <code>ArgumentError</code></p>
+<h4 id="classlistto_string"><a class="anchor" href="#classlistto_string" aria-hidden="true" tabindex="-1"></a><code>ClassList.to_string()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">ClassList</span>.<span class="fn">to_string</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The class attribute's value as it would be written out.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="element"><a class="anchor" href="#element" aria-hidden="true" tabindex="-1"></a><code>Element</code></h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">html</span>.<span class="prop">Element</span> <span class="op">&lt;</span> <span class="type">Node</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>An element in the tree.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>@to_string()</code>, so <code>echo</code> and <code>print()</code> show
+something useful</li>
+</ul>
+<h4 id="fields-6"><a class="anchor" href="#fields-6" aria-hidden="true" tabindex="-1"></a>Fields</h4>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tag_name</code></td>
+<td></td>
+<td>The element's tag name.</td>
+</tr>
+<tr>
+<td><code>namespace</code></td>
+<td></td>
+<td>The namespace this element lives in: one of <code>HTML_NAMESPACE</code>, <code>SVG_NAMESPACE</code> or <code>MATHML_NAMESPACE</code>.</td>
+</tr>
+<tr>
+<td><code>attributes</code></td>
+<td></td>
+<td>The element's attributes, in source order, as a dictionary of name to value.</td>
+</tr>
+<tr>
+<td><code>attribute_namespaces</code></td>
+<td></td>
+<td>Namespace URIs for the few attributes that have one, keyed by the same qualified name used in <code>attributes</code>.</td>
+</tr>
+<tr>
+<td><code>source_line</code></td>
+<td></td>
+<td>The line in the source where this element's start tag began, counting from 1, or <code>0</code> for an element that was...</td>
+</tr>
+<tr>
+<td><code>source_column</code></td>
+<td></td>
+<td>The column in the source where this element's start tag began, counting from 1, or <code>0</code> for an element that...</td>
+</tr>
+<tr>
+<td><code>content</code></td>
+<td></td>
+<td>For a <code>&lt;template&gt;</code> element, the <code>DocumentFragment</code> holding its content.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-8"><a class="anchor" href="#constructor-8" aria-hidden="true" tabindex="-1"></a>Constructor</h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="fn">Element</span>(tag_name<span class="op">:</span> string, namespace<span class="op">:</span> <span class="op">?</span>string, attributes<span class="op">:</span> <span class="op">?</span>dict)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>tag_name</code> (<code>string</code>)</li>
+<li><code>namespace</code> (<code>?string</code>)</li>
+<li><code>attributes</code> (<code>?dict</code>)</li>
+</ul>
+<h4 id="elementis_html"><a class="anchor" href="#elementis_html" aria-hidden="true" tabindex="-1"></a><code>Element.is_html()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">is_html</span>() <span class="op">-&gt;</span> bool
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>True when this is an HTML element, as opposed to one inside an <code>&lt;svg&gt;</code>
+or <code>&lt;math&gt;</code> subtree.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="elementis_void"><a class="anchor" href="#elementis_void" aria-hidden="true" tabindex="-1"></a><code>Element.is_void()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">is_void</span>() <span class="op">-&gt;</span> bool
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>True when this element is one of the HTML void elements, which have no
+closing tag and can hold no content.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="elementget_attribute"><a class="anchor" href="#elementget_attribute" aria-hidden="true" tabindex="-1"></a><code>Element.get_attribute()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">get_attribute</span>(name<span class="op">:</span> string) <span class="op">-&gt;</span> <span class="op">?</span>string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The value of the attribute <em>name</em>, or <code>nil</code> when the element does not
+carry it.</p>
+<p>The lookup folds ASCII case for HTML elements, so
+<code>get_attribute('HREF')</code> and <code>get_attribute('href')</code> are the same
+question. For foreign elements the name is matched exactly, because SVG
+really does distinguish <code>viewBox</code> from <code>viewbox</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>?string</code></p>
+<h4 id="elementhas_attribute"><a class="anchor" href="#elementhas_attribute" aria-hidden="true" tabindex="-1"></a><code>Element.has_attribute()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">has_attribute</span>(name<span class="op">:</span> string) <span class="op">-&gt;</span> bool
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>True when the element carries the attribute <em>name</em>, whatever its value.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="elementset_attribute"><a class="anchor" href="#elementset_attribute" aria-hidden="true" tabindex="-1"></a><code>Element.set_attribute()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">set_attribute</span>(name<span class="op">:</span> string, value<span class="op">:</span> string) <span class="op">-&gt;</span> <span class="type">Element</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Sets the attribute <em>name</em> to <em>value</em>, replacing any existing value and
+leaving the attribute's position among the others unchanged. A new
+attribute is appended after the existing ones.</p>
+<p>Pass an empty string for a valueless attribute such as <code>disabled</code>; there
+is no separate &quot;no value&quot; state.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>value</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Element</code></p>
+<p><strong>Raises</strong> <code>ArgumentError</code> when <em>name</em> is empty or contains a character
+that cannot appear in an attribute name.</p>
+<h4 id="elementremove_attribute"><a class="anchor" href="#elementremove_attribute" aria-hidden="true" tabindex="-1"></a><code>Element.remove_attribute()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">remove_attribute</span>(name<span class="op">:</span> string) <span class="op">-&gt;</span> bool
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Removes the attribute <em>name</em> and returns <code>true</code> when it was actually
+there.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="elementattribute_names"><a class="anchor" href="#elementattribute_names" aria-hidden="true" tabindex="-1"></a><code>Element.attribute_names()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">attribute_names</span>() <span class="op">-&gt;</span> list
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The attribute names this element carries, in source order.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="elementattribute_namespace"><a class="anchor" href="#elementattribute_namespace" aria-hidden="true" tabindex="-1"></a><code>Element.attribute_namespace()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">attribute_namespace</span>(name<span class="op">:</span> string) <span class="op">-&gt;</span> <span class="op">?</span>string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The namespace URI of the attribute <em>name</em>, or <code>nil</code> when it has none.
+Only foreign content produces namespaced attributes.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>?string</code></p>
+<h4 id="elementset_attribute_namespace"><a class="anchor" href="#elementset_attribute_namespace" aria-hidden="true" tabindex="-1"></a><code>Element.set_attribute_namespace()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">set_attribute_namespace</span>(name<span class="op">:</span> string, uri<span class="op">:</span> string) <span class="op">-&gt;</span> <span class="type">Element</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Records that the attribute <em>name</em> belongs to <em>uri</em>. Called by the parser
+while adjusting foreign attributes; there is no reason to call it by
+hand.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>uri</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Element</code></p>
+<h4 id="elementid"><a class="anchor" href="#elementid" aria-hidden="true" tabindex="-1"></a><code>Element.id()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">id</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The element's <code>id</code>, or an empty string when it has none.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="elementclass_name"><a class="anchor" href="#elementclass_name" aria-hidden="true" tabindex="-1"></a><code>Element.class_name()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">class_name</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The element's <code>class</code> attribute verbatim, or an empty string.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="elementclass_names"><a class="anchor" href="#elementclass_names" aria-hidden="true" tabindex="-1"></a><code>Element.class_names()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">class_names</span>() <span class="op">-&gt;</span> list
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The element's classes as a list, in source order and without duplicates.
+An element with no <code>class</code> attribute gives an empty list.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="elementclass_list"><a class="anchor" href="#elementclass_list" aria-hidden="true" tabindex="-1"></a><code>Element.class_list()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">class_list</span>() <span class="op">-&gt;</span> <span class="type">ClassList</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A <code>ClassList</code> view of this element's <code>class</code> attribute, for adding,
+removing and toggling classes.</p>
+<p>A fresh view is returned on every call; because it reads and writes the
+attribute directly there is no state to keep, and two views of the same
+element behave identically.</p>
+<p><strong>Returns</strong> <code>ClassList</code></p>
+<h4 id="elementmatches"><a class="anchor" href="#elementmatches" aria-hidden="true" tabindex="-1"></a><code>Element.matches()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">matches</span>(query<span class="op">:</span> string) <span class="op">-&gt;</span> bool
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>True when this element matches the CSS selector <em>query</em>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>query</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<p><strong>Raises</strong> <code>SelectorError</code> when <em>query</em> is not valid.</p>
+<h4 id="elementclosest"><a class="anchor" href="#elementclosest" aria-hidden="true" tabindex="-1"></a><code>Element.closest()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">closest</span>(query<span class="op">:</span> string) <span class="op">-&gt;</span> <span class="op">?</span><span class="type">Element</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>This element, or its nearest ancestor, matching the CSS selector
+<em>query</em>: or <code>nil</code> when neither this element nor any ancestor does.</p>
+<p>The search starts at the element itself, which is what makes
+<code>el.closest('div')</code> return <code>el</code> when <code>el</code> is a <code>div</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>query</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>?Element</code></p>
+<p><strong>Raises</strong> <code>SelectorError</code> when <em>query</em> is not valid.</p>
+<h4 id="elementserialize_into"><a class="anchor" href="#elementserialize_into" aria-hidden="true" tabindex="-1"></a><code>Element.serialize_into()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">serialize_into</span>(out<span class="op">:</span> list)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>out</code> (<code>list</code>)</li>
+</ul>
+<h4 id="elementinner_html"><a class="anchor" href="#elementinner_html" aria-hidden="true" tabindex="-1"></a><code>Element.inner_html()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">inner_html</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The markup of this element's children.</p>
+<p>A <code>&lt;template&gt;</code> answers with its content fragment rather than with its
+own children, which are always empty. That matches the DOM, and it is
+the only way the question has a useful answer for a template.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="elementset_inner_html"><a class="anchor" href="#elementset_inner_html" aria-hidden="true" tabindex="-1"></a><code>Element.set_inner_html()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">set_inner_html</span>(source<span class="op">:</span> string) <span class="op">-&gt;</span> <span class="type">Element</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Parses <em>source</em> and replaces this element's children with the result.</p>
+<p>For a <code>&lt;template&gt;</code> the result goes into the content fragment, matching
+where <code>inner_html()</code> reads from.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>source</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Element</code></p>
+<h4 id="elementclone_node"><a class="anchor" href="#elementclone_node" aria-hidden="true" tabindex="-1"></a><code>Element.clone_node()</code></h4>
+<figure class="code"><pre><code class="language-zuri">html.<span class="prop">Element</span>.<span class="fn">clone_node</span>(deep<span class="op">:</span> <span class="op">?</span>bool) <span class="op">-&gt;</span> <span class="type">Element</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A deep or shallow copy of this element. Deep-cloning a <code>&lt;template&gt;</code> also
+copies its content fragment, which is otherwise not part of the
+element's children.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>deep</code> (<code>?bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Element</code></p>
+<hr />
+<p><small>2026, Richard Ore and The Zuri Contributors</small></p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="html-namespaces.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title">html.namespaces</span>
+          </a>
+          <a class="turn-next" rel="next" href="html-parser.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title">html.parser</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#constants">Constants</a>
+        </li><li class="level-3">
+          <a href="#node_element"><code>NODE_ELEMENT</code></a>
+        </li><li class="level-3">
+          <a href="#node_text"><code>NODE_TEXT</code></a>
+        </li><li class="level-3">
+          <a href="#node_comment"><code>NODE_COMMENT</code></a>
+        </li><li class="level-3">
+          <a href="#node_document"><code>NODE_DOCUMENT</code></a>
+        </li><li class="level-3">
+          <a href="#node_document_type"><code>NODE_DOCUMENT_TYPE</code></a>
+        </li><li class="level-3">
+          <a href="#node_document_fragment"><code>NODE_DOCUMENT_FRAGMENT</code></a>
+        </li><li class="level-3">
+          <a href="#void_elements"><code>VOID_ELEMENTS</code></a>
+        </li><li class="level-3">
+          <a href="#raw_text_elements"><code>RAW_TEXT_ELEMENTS</code></a>
+        </li><li class="level-2">
+          <a href="#classes">Classes</a>
+        </li><li class="level-3">
+          <a href="#hierarchyerror"><code>HierarchyError</code></a>
+        </li><li class="level-3">
+          <a href="#node"><code>Node</code></a>
+        </li><li class="level-3">
+          <a href="#text"><code>Text</code></a>
+        </li><li class="level-3">
+          <a href="#comment"><code>Comment</code></a>
+        </li><li class="level-3">
+          <a href="#documenttype"><code>DocumentType</code></a>
+        </li><li class="level-3">
+          <a href="#documentfragment"><code>DocumentFragment</code></a>
+        </li><li class="level-3">
+          <a href="#document"><code>Document</code></a>
+        </li><li class="level-3">
+          <a href="#classlist"><code>ClassList</code></a>
+        </li><li class="level-3">
+          <a href="#element"><code>Element</code></a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Standard Library" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

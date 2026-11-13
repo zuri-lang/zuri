@@ -1,0 +1,1431 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Strings · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch04-01-strings.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="red" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item open"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="true" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html" aria-current="page"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>4.1 · Learning the Language</p>
+        <div class="content"><h1 id="strings">Strings</h1>
+<p>A Zuri string is UTF-8 text. Indexing, slicing and <code>length()</code> work in
+characters, not bytes, so a string of emoji behaves the way a reader
+expects.</p>
+<p>Text is the type you will write most, so this section starts with how you
+write one down — quoting, escapes and interpolation — before moving on to
+what you can do with it.</p>
+<h2 id="writing-a-string"><a class="anchor" href="#writing-a-string" aria-hidden="true" tabindex="-1"></a>Writing a String</h2>
+<p>A string literal is written between single or double quotes:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'single quotes'</span>
+<span class="kw">echo</span> <span class="str">"double quotes"</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">single quotes
+double quotes
+</code></pre><span class="code-label">Output</span></figure>
+<p><strong>The two styles are identical.</strong> They are not the two different things
+they are in some other languages. Both process escape sequences, both
+interpolate expressions, and both may span several lines. Nothing at all
+changes except which quote character ends the string:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> name <span class="op">=</span> <span class="str">'Zuri'</span>
+
+<span class="kw">echo</span> <span class="str">'escape \t and interpolate </span><span class="subst">${</span>name<span class="subst">}</span><span class="str">'</span>
+<span class="kw">echo</span> <span class="str">"escape \t and interpolate </span><span class="subst">${</span>name<span class="subst">}</span><span class="str">"</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">escape 	 and interpolate Zuri
+escape 	 and interpolate Zuri
+</code></pre><span class="code-label">Output</span></figure>
+<p>Pick whichever avoids escaping. A string containing an apostrophe is
+easiest in double quotes; a string containing a quotation mark is easiest
+in single quotes:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">"it's clearer this way"</span>
+<span class="kw">echo</span> <span class="str">'she said "hello"'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">it's clearer this way
+she said "hello"
+</code></pre><span class="code-label">Output</span></figure>
+<p>Most Zuri code, and all of the standard library, uses single quotes by
+default and switches to double quotes when the content calls for it.</p>
+<h3 id="multi-line-strings"><a class="anchor" href="#multi-line-strings" aria-hidden="true" tabindex="-1"></a>Multi-line Strings</h3>
+<p>A literal may simply contain newlines. There is no separate triple-quoted
+form and no continuation character:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> message <span class="op">=</span> <span class="str">'Dear reader,
+
+Thank you for the strings.'</span>
+
+<span class="kw">echo</span> message
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Dear reader,
+
+Thank you for the strings.
+</code></pre><span class="code-label">Output</span></figure>
+<p>Everything between the quotes is part of the string, indentation included.
+When a long string is indented inside a function, the leading spaces on
+each line are in the string too, which is why it is advisable that code
+that builds indented text should assemble it with <code>join()</code> rather than
+writing one long literal.</p>
+<h2 id="escape-sequences"><a class="anchor" href="#escape-sequences" aria-hidden="true" tabindex="-1"></a>Escape Sequences</h2>
+<p>A backslash starts an escape. The full set is:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Escape</th>
+<th>Produces</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>\0</code></td>
+<td>the null character, U+0000</td>
+</tr>
+<tr>
+<td><code>\a</code></td>
+<td>the alert (bell) character, U+0007</td>
+</tr>
+<tr>
+<td><code>\b</code></td>
+<td>backspace, U+0008</td>
+</tr>
+<tr>
+<td><code>\t</code></td>
+<td>horizontal tab, U+0009</td>
+</tr>
+<tr>
+<td><code>\n</code></td>
+<td>line feed, U+000A</td>
+</tr>
+<tr>
+<td><code>\v</code></td>
+<td>vertical tab, U+000B</td>
+</tr>
+<tr>
+<td><code>\f</code></td>
+<td>form feed, U+000C</td>
+</tr>
+<tr>
+<td><code>\r</code></td>
+<td>carriage return, U+000D</td>
+</tr>
+<tr>
+<td><code>\\</code></td>
+<td>a single backslash</td>
+</tr>
+<tr>
+<td><code>\'</code></td>
+<td>a single quote</td>
+</tr>
+<tr>
+<td><code>\&quot;</code></td>
+<td>a double quote</td>
+</tr>
+<tr>
+<td><code>\${</code></td>
+<td><code>${</code> itself, with no interpolation</td>
+</tr>
+<tr>
+<td><code>\xNN</code></td>
+<td>the byte with hexadecimal value <code>NN</code></td>
+</tr>
+<tr>
+<td><code>\uNNNN</code></td>
+<td>the code point <code>U+NNNN</code></td>
+</tr>
+<tr>
+<td><code>\UNNNNNNNN</code></td>
+<td>the code point <code>U+NNNNNNNN</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The three numeric forms take exactly the number of hex digits shown — two,
+four and eight — and the digits may be upper or lower case:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'hex byte: \x41'</span>
+<span class="kw">echo</span> <span class="str">'code point: \u00e9'</span>
+<span class="kw">echo</span> <span class="str">'astral: \U0001F600'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">hex byte: A
+code point: é
+astral: 😀
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>\u</code> covers everything up to U+FFFF. Anything above that — emoji, most
+historic scripts, mathematical alphanumerics — needs <code>\U</code> and its eight
+digits. Zero-pad to fill them.</p>
+<h3 id="unknown-escapes-are-left-alone"><a class="anchor" href="#unknown-escapes-are-left-alone" aria-hidden="true" tabindex="-1"></a>Unknown Escapes Are Left Alone</h3>
+<p>A backslash followed by anything not in the table above is <strong>not</strong> an
+error, and it is not silently dropped either. The backslash and the
+character both survive:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'a regex: \d+ and \w+'</span>
+<span class="kw">echo</span> <span class="str">'a path: C:\temp\notes'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">a regex: \d+ and \w+
+a path: C:	emp
+otes
+</code></pre><span class="code-label">Output</span></figure>
+<p>The first line came through untouched: <code>\d</code> and <code>\w</code> are not escapes, so
+both backslashes survived, which is exactly why regular expressions can be
+written as plain strings.</p>
+<p>The second line did not. <code>\t</code> <em>is</em> an escape, so <code>C:\temp</code> became <code>C:</code>
+followed by a tab and then <code>emp</code>; <code>\n</code> is an escape too, so <code>\notes</code> became
+a newline followed by <code>otes</code>. One path, two silent substitutions. The rule
+is easy to state and easy to forget: unknown escapes pass through, known
+ones do not, and nothing in the way you write them tells you which is
+which.</p>
+<p>For Windows paths and regular expressions — the two places this bites —
+double the backslashes:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'a path: C:\\temp\\notes'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">a path: C:\temp\notes
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="escaping-the-quote-you-chose"><a class="anchor" href="#escaping-the-quote-you-chose" aria-hidden="true" tabindex="-1"></a>Escaping the Quote You Chose</h3>
+<p>You only need to escape the quote character that would end the string:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'it\'s escaped'</span>
+<span class="kw">echo</span> <span class="str">"she said \"hi\""</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">it's escaped
+she said "hi"
+</code></pre><span class="code-label">Output</span></figure>
+<p>Escaping the <em>other</em> quote is harmless but pointless, and because an
+unnecessary escape is an unknown escape, the backslash stays in the result:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'this \" keeps its backslash'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">this \" keeps its backslash
+</code></pre><span class="code-label">Output</span></figure>
+<p>That is a good reason to choose the quote style that lets you write the
+text plainly and escape nothing at all.</p>
+<h2 id="interpolation"><a class="anchor" href="#interpolation" aria-hidden="true" tabindex="-1"></a>Interpolation</h2>
+<p><code>${...}</code> inside a string evaluates the expression between the braces and
+splices its text into the result:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> name <span class="op">=</span> <span class="str">'Ada'</span>
+<span class="kw">var</span> year <span class="op">=</span> <span class="num">1843</span>
+
+<span class="kw">echo</span> <span class="str">'In </span><span class="subst">${</span>year<span class="subst">}</span><span class="str">, </span><span class="subst">${</span>name<span class="subst">}</span><span class="str"> wrote the first program.'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">In 1843, Ada wrote the first program.
+</code></pre><span class="code-label">Output</span></figure>
+<p>This works in both quote styles, and it is the way most Zuri code builds a
+string. The section after next covers <code>+</code>, which does the same job with
+more punctuation.</p>
+<h3 id="any-expression-fits"><a class="anchor" href="#any-expression-fits" aria-hidden="true" tabindex="-1"></a>Any Expression Fits</h3>
+<p>The braces take a whole expression, not just a variable name. Arithmetic,
+method calls, indexing, comparisons and conditionals all work:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> items <span class="op">=</span> [<span class="str">'a'</span>, <span class="str">'b'</span>, <span class="str">'c'</span>]
+<span class="kw">var</span> user <span class="op">=</span> { name<span class="op">:</span> <span class="str">'ada'</span>, admin<span class="op">:</span> <span class="lit">true</span> }
+
+<span class="kw">echo</span> <span class="str">'count: </span><span class="subst">${</span>items.<span class="fn">length</span>()<span class="subst">}</span><span class="str">'</span>
+<span class="kw">echo</span> <span class="str">'first: </span><span class="subst">${</span>items[<span class="num">0</span>].<span class="fn">upper</span>()<span class="subst">}</span><span class="str">'</span>
+<span class="kw">echo</span> <span class="str">'math: </span><span class="subst">${</span>(<span class="num">2</span> <span class="op">**</span> <span class="num">10</span>) <span class="op">-</span> <span class="num">24</span><span class="subst">}</span><span class="str">'</span>
+<span class="kw">echo</span> <span class="str">'role: </span><span class="subst">${</span>user.<span class="prop">admin</span> <span class="op">?</span> <span class="str">'admin'</span> <span class="op">:</span> <span class="str">'user'</span><span class="subst">}</span><span class="str">'</span>
+<span class="kw">echo</span> <span class="str">'name: </span><span class="subst">${</span>user.<span class="prop">name</span>.<span class="fn">capitalize</span>()<span class="subst">}</span><span class="str">'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">count: 3
+first: A
+math: 1000
+role: admin
+name: Ada
+</code></pre><span class="code-label">Output</span></figure>
+<p>Notice the third line. The quotes inside <code>${...}</code> are the <strong>same</strong> quote
+character that opened the string, and it still parses correctly, because
+the expression inside the braces is lexed as its own piece of code rather
+than as text. You do not need to switch quote styles or escape anything to
+put a string literal inside an interpolation.</p>
+<h3 id="interpolations-nest"><a class="anchor" href="#interpolations-nest" aria-hidden="true" tabindex="-1"></a>Interpolations Nest</h3>
+<p>A string literal inside <code>${...}</code> is a string literal like any other, which
+means it may contain interpolations of its own, to any depth:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> n <span class="op">=</span> <span class="num">1</span>
+
+<span class="kw">echo</span> <span class="str">'outer </span><span class="subst">${</span> <span class="str">'inner </span><span class="subst">${</span>n <span class="op">+</span> <span class="num">1</span><span class="subst">}</span><span class="str">'</span> <span class="subst">}</span><span class="str">'</span>
+<span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span> <span class="str">'</span><span class="subst">${</span> <span class="str">'</span><span class="subst">${</span><span class="num">2</span> <span class="op">**</span> <span class="num">3</span><span class="subst">}</span><span class="str">'</span> <span class="subst">}</span><span class="str">'</span> <span class="subst">}</span><span class="str">'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">outer inner 2
+8
+</code></pre><span class="code-label">Output</span></figure>
+<p>This is not a curiosity. It is what makes a conditional inside a string
+able to produce formatted text rather than a bare word, which comes up
+constantly in messages meant for a person to read:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> user <span class="op">=</span> { name<span class="op">:</span> <span class="str">'ada'</span>, unread<span class="op">:</span> <span class="num">3</span> }
+
+<span class="kw">echo</span> <span class="str">'Hi </span><span class="subst">${</span>user.<span class="prop">name</span>.<span class="fn">capitalize</span>()<span class="subst">}</span><span class="str">, you have </span><span class="subst">${</span>user.<span class="prop">unread</span> <span class="op">&gt;</span> <span class="num">0</span> <span class="op">?</span> <span class="str">'</span><span class="subst">${</span>user.<span class="prop">unread</span><span class="subst">}</span><span class="str"> new </span><span class="subst">${</span>user.<span class="prop">unread</span> <span class="op">==</span> <span class="num">1</span> <span class="op">?</span> <span class="str">'message'</span> <span class="op">:</span> <span class="str">'messages'</span><span class="subst">}</span><span class="str">'</span> <span class="op">:</span> <span class="str">'nothing new'</span><span class="subst">}</span><span class="str">.'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Hi Ada, you have 3 new messages.
+</code></pre><span class="code-label">Output</span></figure>
+<p>Three levels of interpolation are at work there: the outer message, the
+branch that chooses between a count and &quot;nothing new&quot;, and the branch that
+picks the singular or the plural. Each one is an ordinary string literal in
+an ordinary expression, and each one uses single quotes, because the
+expression inside <code>${...}</code> is lexed as code and its quotes never collide
+with the ones around it.</p>
+<p>Nesting is equally useful inside a callback, where the inner string is
+building one element of a larger result:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> items <span class="op">=</span> [<span class="str">'a'</span>, <span class="str">'b'</span>]
+
+<span class="kw">echo</span> <span class="str">'list: </span><span class="subst">${</span><span class="str">', '</span>.<span class="fn">join</span>(items.<span class="fn">map</span>(<span class="meta">@</span>(i) <span class="op">=&gt;</span> <span class="str">'&lt;</span><span class="subst">${</span>i<span class="subst">}</span><span class="str">&gt;'</span>))<span class="subst">}</span><span class="str">'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">list: &lt;a&gt;, &lt;b&gt;
+</code></pre><span class="code-label">Output</span></figure>
+<p>Depth costs readability quickly. When a line like the message above stops
+being scannable, lift the inner pieces into local variables on the lines
+before it; the language is happy either way.</p>
+<h3 id="what-each-type-looks-like"><a class="anchor" href="#what-each-type-looks-like" aria-hidden="true" tabindex="-1"></a>What Each Type Looks Like</h3>
+<p>Interpolation renders a value the same way <code>echo</code> does:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> settings <span class="op">=</span> { a<span class="op">:</span> <span class="num">1</span> }
+
+<span class="kw">echo</span> <span class="str">'number: </span><span class="subst">${</span><span class="num">1</span> <span class="op">/</span> <span class="num">3</span><span class="subst">}</span><span class="str">'</span>
+<span class="kw">echo</span> <span class="str">'list: </span><span class="subst">${</span>[<span class="num">1</span>, <span class="num">2</span>]<span class="subst">}</span><span class="str">'</span>
+<span class="kw">echo</span> <span class="str">'dict: </span><span class="subst">${</span>settings<span class="subst">}</span><span class="str">'</span>
+<span class="kw">echo</span> <span class="str">'nil: </span><span class="subst">${</span><span class="lit">nil</span><span class="subst">}</span><span class="str">'</span>
+<span class="kw">echo</span> <span class="str">'bool: </span><span class="subst">${</span><span class="lit">true</span><span class="subst">}</span><span class="str">'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">number: 0.3333333333333333
+list: [1, 2]
+dict: {a: 1}
+nil: nil
+bool: true
+</code></pre><span class="code-label">Output</span></figure>
+<p>A dictionary <strong>literal</strong> written directly inside <code>${...}</code> does not parse,
+because its closing brace runs into the interpolation's closing brace:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'dict: </span><span class="subst">${</span>{ a<span class="op">:</span> <span class="num">1</span> <span class="subst">}</span><span class="str">}'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">SyntaxError: Expected '}' after dictionary
+</code></pre><span class="code-label">Output</span></figure>
+<p>Put it in a variable first, as above. A list literal has no such problem,
+since <code>]</code> and <code>}</code> are different characters.</p>
+<p>There is one important exception, and it catches everyone once.
+<strong>Interpolating a class instance does not call its <code>to_string()</code> method:</strong></p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">Point</span> {
+
+  <span class="meta">@new</span>(x, y) {
+    <span class="self">self</span>.<span class="prop">x</span> <span class="op">=</span> x
+    <span class="self">self</span>.<span class="prop">y</span> <span class="op">=</span> y
+  }
+
+  <span class="fn">to_string</span>() {
+    <span class="kw">return</span> <span class="str">'(</span><span class="subst">${</span><span class="self">self</span>.<span class="prop">x</span><span class="subst">}</span><span class="str">, </span><span class="subst">${</span><span class="self">self</span>.<span class="prop">y</span><span class="subst">}</span><span class="str">)'</span>
+  }
+}
+
+<span class="kw">var</span> p <span class="op">=</span> <span class="type">Point</span>(<span class="num">3</span>, <span class="num">4</span>)
+
+<span class="kw">echo</span> <span class="str">'implicit: </span><span class="subst">${</span>p<span class="subst">}</span><span class="str">'</span>
+<span class="kw">echo</span> <span class="str">'explicit: </span><span class="subst">${</span>p.<span class="fn">to_string</span>()<span class="subst">}</span><span class="str">'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">implicit: &lt;instance of Point&gt;
+explicit: (3, 4)
+</code></pre><span class="code-label">Output</span></figure>
+<p>Call the method yourself. This applies to <code>'text ' + p</code> too. Interpolation
+and <code>+</code> never call a method on your behalf to produce text; if you want
+<code>to_string()</code> to run, write it. <code>echo</code> is the exception, through
+<code>@to_string()</code>, which <a href="ch06-03-decorated-methods.html">Decorated Methods</a>
+covers.</p>
+<h3 id="writing-a-literal-"><a class="anchor" href="#writing-a-literal-" aria-hidden="true" tabindex="-1"></a>Writing a Literal <code>${</code></h3>
+<p>A backslash before <code>${</code> stops the interpolation, and the backslash itself is
+dropped:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> x <span class="op">=</span> <span class="num">7</span>
+<span class="kw">echo</span> <span class="str">'literal: \${x}'</span>
+<span class="kw">echo</span> <span class="str">'value: </span><span class="subst">${</span>x<span class="subst">}</span><span class="str">'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">literal: ${x}
+value: 7
+</code></pre><span class="code-label">Output</span></figure>
+<p>The escape is a backslash and a dollar sign followed by <code>{</code>. <code>\\</code> is an
+escape of its own, so <code>\\${x}</code> is a backslash followed by the value.
+Anywhere else <code>\$</code> is an unknown escape and keeps its backslash, which is
+what lets a regular expression match a literal dollar sign:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> x <span class="op">=</span> <span class="num">7</span>
+<span class="kw">echo</span> <span class="str">'\\</span><span class="subst">${</span>x<span class="subst">}</span><span class="str">'</span>
+<span class="kw">echo</span> <span class="str">'price: $100'</span>.<span class="fn">match</span>(<span class="str">'/(?&lt;=\$)\d+/'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">\7
+{0: 100}
+</code></pre><span class="code-label">Output</span></figure>
+<p>A lone <code>$</code> is not special, so only the exact sequence <code>${</code> needs this
+treatment:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'price: $5.00'</span>
+<span class="kw">echo</span> <span class="str">'total: $</span><span class="subst">${</span><span class="num">12</span> <span class="op">+</span> <span class="num">8</span><span class="subst">}</span><span class="str">'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">price: $5.00
+total: $20
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="joining-strings-together"><a class="anchor" href="#joining-strings-together" aria-hidden="true" tabindex="-1"></a>Joining Strings Together</h2>
+<h3 id="concatenation-with-"><a class="anchor" href="#concatenation-with-" aria-hidden="true" tabindex="-1"></a>Concatenation with <code>+</code></h3>
+<p><code>+</code> joins two strings end to end:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'Hello, '</span> <span class="op">+</span> <span class="str">'world'</span>
+<span class="kw">echo</span> <span class="str">'a'</span> <span class="op">+</span> <span class="str">'b'</span> <span class="op">+</span> <span class="str">'c'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Hello, world
+abc
+</code></pre><span class="code-label">Output</span></figure>
+<p>When one side is a string, the other side is converted to its text form
+first. This works in both directions, and for every built-in type:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'n='</span> <span class="op">+</span> <span class="num">5</span>
+<span class="kw">echo</span> <span class="num">5</span> <span class="op">+</span> <span class="str">'n'</span>
+<span class="kw">echo</span> <span class="str">'pi is about '</span> <span class="op">+</span> <span class="num">3.14</span>
+<span class="kw">echo</span> <span class="str">'flag: '</span> <span class="op">+</span> <span class="lit">true</span>
+<span class="kw">echo</span> <span class="str">'missing: '</span> <span class="op">+</span> <span class="lit">nil</span>
+<span class="kw">echo</span> <span class="str">'items: '</span> <span class="op">+</span> [<span class="num">1</span>, <span class="num">2</span>]
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">n=5
+5n
+pi is about 3.14
+flag: true
+missing: nil
+items: [1, 2]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Read the second line again: <code>5 + 'n'</code> gives <code>'5n'</code>, not an error and not
+arithmetic. A string on <em>either</em> side turns the whole expression into
+concatenation. That is worth knowing when a value arrives from somewhere
+you do not control:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> quantity <span class="op">=</span> <span class="str">'2'</span>
+
+<span class="kw">echo</span> quantity <span class="op">+</span> <span class="num">3</span>
+<span class="kw">echo</span> quantity.<span class="fn">to_number</span>() <span class="op">+</span> <span class="num">3</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">23
+5
+</code></pre><span class="code-label">Output</span></figure>
+<p>The first line is text, the second is arithmetic, and nothing in the
+expression tells you which you are getting. When a number must be a number,
+convert it at the point it enters your program rather than hoping.</p>
+<p>The one type that does <strong>not</strong> convert usefully is a class instance:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">Point</span> {
+
+  <span class="meta">@new</span>(x, y) {
+    <span class="self">self</span>.<span class="prop">x</span> <span class="op">=</span> x
+    <span class="self">self</span>.<span class="prop">y</span> <span class="op">=</span> y
+  }
+
+  <span class="fn">to_string</span>() {
+    <span class="kw">return</span> <span class="str">'(</span><span class="subst">${</span><span class="self">self</span>.<span class="prop">x</span><span class="subst">}</span><span class="str">, </span><span class="subst">${</span><span class="self">self</span>.<span class="prop">y</span><span class="subst">}</span><span class="str">)'</span>
+  }
+}
+
+<span class="kw">echo</span> <span class="str">'at '</span> <span class="op">+</span> <span class="type">Point</span>(<span class="num">1</span>, <span class="num">2</span>).<span class="fn">to_string</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console"><span class="com">at (1, 2)</span>
+</code></pre><span class="code-label">Output</span></figure>
+<p>Concatenating the instance directly would produce <code>&lt;instance of Point&gt;</code>,
+for the same reason interpolation does: Zuri does not call <code>to_string()</code>
+for you.</p>
+<h3 id="concatenation-versus-interpolation"><a class="anchor" href="#concatenation-versus-interpolation" aria-hidden="true" tabindex="-1"></a>Concatenation Versus Interpolation</h3>
+<p>Both produce the same string, so choose on readability:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> host <span class="op">=</span> <span class="str">'localhost'</span>
+<span class="kw">var</span> port <span class="op">=</span> <span class="num">8080</span>
+
+<span class="kw">echo</span> <span class="str">'connecting to '</span> <span class="op">+</span> host <span class="op">+</span> <span class="str">':'</span> <span class="op">+</span> port <span class="op">+</span> <span class="str">'/health'</span>
+<span class="kw">echo</span> <span class="str">'connecting to </span><span class="subst">${</span>host<span class="subst">}</span><span class="str">:</span><span class="subst">${</span>port<span class="subst">}</span><span class="str">/health'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">connecting to localhost:8080/health
+connecting to localhost:8080/health
+</code></pre><span class="code-label">Output</span></figure>
+<p>Interpolation wins whenever there is more than one hole to fill: the
+literal text stays in one piece, the quotes do not multiply, and there is
+no chance of losing a separator between two <code>+</code> signs. Reach for <code>+</code> when
+you are gluing exactly two pieces together, or when one of them is already
+a variable holding a complete string.</p>
+<h3 id="repetition-with-"><a class="anchor" href="#repetition-with-" aria-hidden="true" tabindex="-1"></a>Repetition with <code>*</code></h3>
+<p><code>*</code> repeats a string a whole number of times:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'ab'</span> <span class="op">*</span> <span class="num">3</span>
+<span class="kw">echo</span> <span class="str">'-'</span> <span class="op">*</span> <span class="num">20</span>
+<span class="kw">echo</span> <span class="str">'  '</span> <span class="op">*</span> <span class="num">2</span> <span class="op">+</span> <span class="str">'indented'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">ababab
+--------------------
+    indented
+</code></pre><span class="code-label">Output</span></figure>
+<p>That second line is the reason this operator earns its place. Separators,
+rules, indentation and padding are all one short expression instead of a
+loop.</p>
+<p>The rules for the count are worth stating exactly:</p>
+<ul>
+<li>A count of <code>1</code> returns the string unchanged.</li>
+<li>A count of <code>0</code> returns the empty string.</li>
+<li>A <strong>negative</strong> count also returns the empty string, rather than raising.</li>
+<li>A <strong>fractional</strong> count is truncated toward zero, so <code>* 2.7</code> repeats
+twice.</li>
+</ul>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'['</span> <span class="op">+</span> <span class="str">'ab'</span> <span class="op">*</span> <span class="num">1</span> <span class="op">+</span> <span class="str">']'</span>
+<span class="kw">echo</span> <span class="str">'['</span> <span class="op">+</span> <span class="str">'ab'</span> <span class="op">*</span> <span class="num">0</span> <span class="op">+</span> <span class="str">']'</span>
+<span class="kw">echo</span> <span class="str">'['</span> <span class="op">+</span> <span class="str">'ab'</span> <span class="op">*</span> <span class="op">-</span><span class="num">1</span> <span class="op">+</span> <span class="str">']'</span>
+<span class="kw">echo</span> <span class="str">'['</span> <span class="op">+</span> <span class="str">'ab'</span> <span class="op">*</span> <span class="num">2.7</span> <span class="op">+</span> <span class="str">']'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[ab]
+[]
+[]
+[abab]
+</code></pre><span class="code-label">Output</span></figure>
+<p>The negative case is the one to watch. <code>'-' * (width - label.length())</code>
+silently produces nothing when the label is longer than the width, and no
+error tells you so. When the count is computed, clamp it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">rule</span>(width, label) {
+  <span class="kw">var</span> padding <span class="op">=</span> (width <span class="op">-</span> label.<span class="fn">length</span>()).<span class="fn">max</span>(<span class="num">0</span>)
+
+  <span class="kw">return</span> label <span class="op">+</span> <span class="str">'-'</span> <span class="op">*</span> padding
+}
+
+<span class="kw">echo</span> <span class="fn">rule</span>(<span class="num">10</span>, <span class="str">'ab'</span>)
+<span class="kw">echo</span> <span class="fn">rule</span>(<span class="num">10</span>, <span class="str">'a much longer label'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">ab--------
+a much longer label
+</code></pre><span class="code-label">Output</span></figure>
+<p>Unlike <code>+</code>, repetition does not commute. The string has to be on the left:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="num">3</span> <span class="op">*</span> <span class="str">'ab'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console"><span class="err">Unhandled TypeError: operator '*' not defined for call signature (number, string)</span>
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="building-a-string-from-many-pieces"><a class="anchor" href="#building-a-string-from-many-pieces" aria-hidden="true" tabindex="-1"></a>Building a String from Many Pieces</h3>
+<p>For more than a handful of pieces, neither operator is the right tool.
+Collect them in a list and <code>join()</code>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> names <span class="op">=</span> [<span class="str">'ada'</span>, <span class="str">'grace'</span>, <span class="str">'alan'</span>]
+
+<span class="kw">echo</span> <span class="str">', '</span>.<span class="fn">join</span>(names)
+<span class="kw">echo</span> <span class="str">'\n'</span>.<span class="fn">join</span>(names.<span class="fn">map</span>(<span class="meta">@</span>(n) <span class="op">=&gt;</span> <span class="str">'- '</span> <span class="op">+</span> n.<span class="fn">capitalize</span>()))
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">ada, grace, alan
+- Ada
+- Grace
+- Alan
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>join()</code> lives on the <strong>separator</strong>, not on the list, and it converts each
+element to text on the way — so a list of numbers joins as readily as a
+list of strings:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'-'</span>.<span class="fn">join</span>([<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>])
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1-2-3
+</code></pre><span class="code-label">Output</span></figure>
+<p>Note also that <code>join()</code> puts the separator <em>between</em> elements, never at
+either end, which is exactly the behaviour a hand-written loop usually gets
+wrong on the last item.</p>
+<h2 id="inspecting"><a class="anchor" href="#inspecting" aria-hidden="true" tabindex="-1"></a>Inspecting</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> s <span class="op">=</span> <span class="str">'Hello, Zuri'</span>
+
+<span class="kw">echo</span> s.<span class="fn">length</span>()
+<span class="kw">echo</span> s.<span class="fn">is_empty</span>()
+<span class="kw">echo</span> s.<span class="fn">index_of</span>(<span class="str">'Zuri'</span>)
+<span class="kw">echo</span> s.<span class="fn">count</span>(<span class="str">'l'</span>)
+<span class="kw">echo</span> s.<span class="fn">starts_with</span>(<span class="str">'Hello'</span>)
+<span class="kw">echo</span> s.<span class="fn">ends_with</span>(<span class="str">'Zuri'</span>)
+<span class="kw">echo</span> s.<span class="fn">contains</span>(<span class="str">'Zuri'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">11
+false
+7
+2
+true
+true
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>index_of()</code> returns <code>-1</code> when there is no match, and takes an optional
+second argument to start the search from.</p>
+<p><code>last_index_of()</code> searches from the other end, which is what you want
+whenever the interesting separator is the final one:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> path <span class="op">=</span> <span class="str">'src/vm/value.rs'</span>
+
+<span class="kw">echo</span> path.<span class="fn">index_of</span>(<span class="str">'/'</span>)
+<span class="kw">echo</span> path.<span class="fn">last_index_of</span>(<span class="str">'/'</span>)
+<span class="kw">echo</span> path[path.<span class="fn">last_index_of</span>(<span class="str">'/'</span>) <span class="op">+</span> <span class="num">1</span>, path.<span class="fn">length</span>()]
+<span class="kw">echo</span> path.<span class="fn">last_index_of</span>(<span class="str">'\\'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">3
+6
+value.rs
+-1
+</code></pre><span class="code-label">Output</span></figure>
+<p>Both take a second argument, and in both it bounds where a <em>match may
+begin</em>. That makes the pair split a string at one index: for any <code>n</code>,
+<code>index_of(str, n)</code> finds the first match at or after <code>n</code> and
+<code>last_index_of(str, n)</code> the last match at or before it.</p>
+<p>There is a family of character-class predicates, each true when <strong>every</strong>
+character in the string qualifies:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'abc'</span>.<span class="fn">is_alpha</span>()
+<span class="kw">echo</span> <span class="str">'123'</span>.<span class="fn">is_number</span>()
+<span class="kw">echo</span> <span class="str">'ABC'</span>.<span class="fn">is_upper</span>()
+<span class="kw">echo</span> <span class="str">'  '</span>.<span class="fn">is_space</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+true
+true
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p>The full set is <code>is_alpha</code>, <code>is_alnum</code>, <code>is_number</code>, <code>is_lower</code>,
+<code>is_upper</code>, <code>is_space</code>, plus <code>is_empty</code>.</p>
+<h2 id="changing-case"><a class="anchor" href="#changing-case" aria-hidden="true" tabindex="-1"></a>Changing Case</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> s <span class="op">=</span> <span class="str">'Hello, Zuri'</span>
+
+<span class="kw">echo</span> s.<span class="fn">upper</span>()
+<span class="kw">echo</span> s.<span class="fn">lower</span>()
+<span class="kw">echo</span> s.<span class="fn">capitalize</span>()
+<span class="kw">echo</span> s.<span class="fn">title</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">HELLO, ZURI
+hello, zuri
+Hello, zuri
+Hello, Zuri
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>capitalize()</code> uppercases the first character and lowercases the rest.
+<code>title()</code> does that to every word.</p>
+<p>For comparing text from users, reach for <code>case_fold()</code> rather than
+<code>lower()</code>. Case folding is the Unicode operation defined for
+case-insensitive matching, and it handles cases simple lowercasing gets
+wrong:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'Straße'</span>.<span class="fn">case_fold</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">strasse
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="trimming-and-padding"><a class="anchor" href="#trimming-and-padding" aria-hidden="true" tabindex="-1"></a>Trimming and Padding</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'['</span> <span class="op">+</span> <span class="str">'  pad  '</span>.<span class="fn">trim</span>() <span class="op">+</span> <span class="str">']'</span>
+<span class="kw">echo</span> <span class="str">'['</span> <span class="op">+</span> <span class="str">'  pad  '</span>.<span class="fn">ltrim</span>() <span class="op">+</span> <span class="str">']'</span>
+<span class="kw">echo</span> <span class="str">'['</span> <span class="op">+</span> <span class="str">'  pad  '</span>.<span class="fn">rtrim</span>() <span class="op">+</span> <span class="str">']'</span>
+<span class="kw">echo</span> <span class="str">'xxhixx'</span>.<span class="fn">trim</span>(<span class="str">'x'</span>)
+<span class="kw">echo</span> <span class="str">'-=hi=-'</span>.<span class="fn">trim</span>(<span class="str">'-='</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[pad]
+[pad  ]
+[  pad]
+hi
+hi
+</code></pre><span class="code-label">Output</span></figure>
+<p>With no argument, all three strip whitespace: spaces, tabs, newlines,
+carriage returns, vertical tabs and form feeds. Given a string, they strip
+every character in it, in any order, so <code>'-=hi=-'.trim('-=')</code> is <code>hi</code>.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'x'</span>.<span class="fn">lpad</span>(<span class="num">5</span>, <span class="str">'.'</span>)
+<span class="kw">echo</span> <span class="str">'x'</span>.<span class="fn">rpad</span>(<span class="num">5</span>, <span class="str">'.'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">....x
+x....
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>lpad</code> and <code>rpad</code> take a target width and an optional fill character that
+defaults to a space. A string already at or over the width comes back
+unchanged.</p>
+<h2 id="splitting-and-joining"><a class="anchor" href="#splitting-and-joining" aria-hidden="true" tabindex="-1"></a>Splitting and Joining</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'Hello, Zuri'</span>.<span class="fn">split</span>(<span class="str">', '</span>)
+<span class="kw">echo</span> <span class="str">', '</span>.<span class="fn">join</span>([<span class="str">'a'</span>, <span class="str">'b'</span>, <span class="str">'c'</span>])
+<span class="kw">echo</span> <span class="str">'abc'</span>.<span class="fn">to_list</span>()
+<span class="kw">echo</span> <span class="str">'line1\nline2'</span>.<span class="fn">lines</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[Hello, Zuri]
+a, b, c
+[a, b, c]
+[line1, line2]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>join</code> lives on the <strong>separator</strong>, not on the list. <code>to_list()</code> splits into
+single characters. <code>lines()</code> splits on newlines and handles both <code>\n</code> and
+<code>\r\n</code>.</p>
+<h2 id="replacing"><a class="anchor" href="#replacing" aria-hidden="true" tabindex="-1"></a>Replacing</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'Hello, Zuri'</span>.<span class="fn">replace</span>(<span class="str">'Zuri'</span>, <span class="str">'World'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Hello, World
+</code></pre><span class="code-label">Output</span></figure>
+<p>Every occurrence is replaced. The pattern may be a regular expression, and
+the replacement can refer back to capture groups with <code>$1</code>, <code>$2</code> and so on:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'John Smith'</span>.<span class="fn">replace</span>(<span class="str">'/(\w+) (\w+)/'</span>, <span class="str">'$2, $1'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Smith, John
+</code></pre><span class="code-label">Output</span></figure>
+<p>The optional third argument turns regex handling off, so a pattern that
+would otherwise be read as a regex is matched literally, delimiters
+included:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'a/b/c'</span>.<span class="fn">replace</span>(<span class="str">'/b/'</span>, <span class="str">'X'</span>)
+<span class="kw">echo</span> <span class="str">'a/b/c'</span>.<span class="fn">replace</span>(<span class="str">'/b/'</span>, <span class="str">'X'</span>, <span class="lit">false</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">a/X/c
+aXc
+</code></pre><span class="code-label">Output</span></figure>
+<p>When the replacement depends on what was matched, use <code>replace_with()</code>,
+which calls a function for each match:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'a1b2'</span>.<span class="fn">replace_with</span>(<span class="str">'/[0-9]/'</span>, <span class="meta">@</span>(m) <span class="op">=&gt;</span> <span class="str">'&lt;'</span> <span class="op">+</span> m <span class="op">+</span> <span class="str">'&gt;'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">a&lt;1&gt;b&lt;2&gt;
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="regular-expressions"><a class="anchor" href="#regular-expressions" aria-hidden="true" tabindex="-1"></a>Regular Expressions</h2>
+<p>Zuri's regular expressions are <strong>PCRE2</strong>, the same engine that powers
+regular expressions in PHP, R and a long list of other tools. It is the
+real library rather than a subset of it, so named groups, backreferences,
+lookahead, lookbehind, atomic groups, possessive quantifiers, conditionals
+and recursion all work exactly as PCRE2 documents them.</p>
+<p>This section covers how a pattern is written in Zuri, which methods accept
+one, what each modifier does, and the handful of places where Zuri's
+surface differs from what you may expect. It does not teach regular
+expression syntax itself; any PCRE or Perl reference applies unchanged.</p>
+<h3 id="writing-a-pattern"><a class="anchor" href="#writing-a-pattern" aria-hidden="true" tabindex="-1"></a>Writing a Pattern</h3>
+<p>A pattern is an ordinary string whose <strong>first character is a non-word
+character, repeated to close the pattern</strong>, with any modifier letters
+after the closing delimiter:</p>
+<figure class="code"><pre><code class="language-text">'/[a-z]+/'
+'/[a-z]+/i'
+'#\d{3}#'
+'!https?://\S+!i'
+</code></pre></figure>
+<p>A &quot;non-word character&quot; is anything that is not a letter, a digit or an
+underscore. Forward slash is the conventional choice, and every example in
+this book uses it, but the delimiter is yours to pick — which is worth
+doing when the pattern itself is full of slashes:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'see https://example.com/docs now'</span>.<span class="fn">match</span>(<span class="str">'!https?://\S+!'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{0: https://example.com/docs}
+</code></pre><span class="code-label">Output</span></figure>
+<p>Because the pattern is a string, the backslashes in it are subject to
+Zuri's own escape rules first. This is almost never a problem, because
+<code>\d</code>, <code>\w</code>, <code>\s</code>, <code>\b</code> and <code>\S</code> are not escape sequences and therefore pass
+through untouched. The exceptions are the letters that <em>are</em> escapes —
+<code>\t</code>, <code>\n</code>, <code>\r</code>, <code>\f</code>, <code>\v</code>, <code>\a</code>, <code>\b</code>, <code>\0</code>, <code>\x</code> and <code>\u</code>. Of those,
+<code>\t</code> and <code>\n</code> mean the same thing to both, so they are harmless; <code>\b</code>
+(word boundary in a pattern, backspace in a string) is the one that will
+catch you:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'one two'</span>.<span class="fn">match</span>(<span class="str">'/\btwo\b/'</span>)
+<span class="kw">echo</span> <span class="str">'one two'</span>.<span class="fn">match</span>(<span class="str">'/\\btwo\\b/'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">false
+{0: two}
+</code></pre><span class="code-label">Output</span></figure>
+<p>Double the backslash whenever the pattern needs <code>\b</code>.</p>
+<h3 id="a-plain-string-is-a-literal"><a class="anchor" href="#a-plain-string-is-a-literal" aria-hidden="true" tabindex="-1"></a>A Plain String Is a Literal</h3>
+<p>Every method in this section also accepts a plain string, and treats it as
+a <strong>literal substring</strong> rather than a pattern:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'a.b'</span>.<span class="fn">replace</span>(<span class="str">'.'</span>, <span class="str">'X'</span>)
+<span class="kw">echo</span> <span class="str">'a.b'</span>.<span class="fn">replace</span>(<span class="str">'/./'</span>, <span class="str">'X'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">aXb
+XXX
+</code></pre><span class="code-label">Output</span></figure>
+<p>The first call replaced the single full stop. The second compiled <code>.</code> as a
+pattern, where it means &quot;any character&quot;, and replaced all three.</p>
+<p>That distinction is decided purely by whether the string looks like a
+delimited pattern. When you have text from elsewhere that might
+accidentally look like one, <code>replace()</code> takes a third argument that turns
+pattern handling off:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'a/b/c'</span>.<span class="fn">replace</span>(<span class="str">'/b/'</span>, <span class="str">'X'</span>)
+<span class="kw">echo</span> <span class="str">'a/b/c'</span>.<span class="fn">replace</span>(<span class="str">'/b/'</span>, <span class="str">'X'</span>, <span class="lit">false</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">a/X/c
+aXc
+</code></pre><span class="code-label">Output</span></figure>
+<p>With <code>false</code>, the delimiters are matched as characters like anything else.</p>
+<h3 id="which-methods-take-a-pattern"><a class="anchor" href="#which-methods-take-a-pattern" aria-hidden="true" tabindex="-1"></a>Which Methods Take a Pattern</h3>
+<p>Five, and only five:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>What it does with the pattern</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>match(pattern)</code></td>
+<td>the first match and its groups, or <code>false</code></td>
+</tr>
+<tr>
+<td><code>matches(pattern)</code></td>
+<td>every match, grouped by capture group</td>
+</tr>
+<tr>
+<td><code>replace(pattern, with, use_regex)</code></td>
+<td>replaces every match</td>
+</tr>
+<tr>
+<td><code>replace_with(pattern, callback)</code></td>
+<td>replaces every match with a call</td>
+</tr>
+<tr>
+<td><code>split(pattern)</code></td>
+<td>splits on every match</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Everything else — <code>contains()</code>, <code>index_of()</code>, <code>count()</code>, <code>starts_with()</code>,
+<code>ends_with()</code>, <code>trim()</code> — takes a <strong>literal</strong> string only. A
+regex-looking argument passed to one of those is matched as the literal
+characters it contains:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'a1b'</span>.<span class="fn">contains</span>(<span class="str">'/[0-9]/'</span>)
+<span class="kw">echo</span> <span class="str">'a1b'</span>.<span class="fn">index_of</span>(<span class="str">'/[0-9]/'</span>)
+<span class="kw">echo</span> <span class="str">'a1b'</span>.<span class="fn">count</span>(<span class="str">'/[0-9]/'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">false
+-1
+0
+</code></pre><span class="code-label">Output</span></figure>
+<p>All three answered about the six-character string <code>/[0-9]/</code>, which is not
+in <code>a1b</code>. When you need a pattern there, reach for <code>match()</code> instead.</p>
+<h3 id="match-and-matches"><a class="anchor" href="#match-and-matches" aria-hidden="true" tabindex="-1"></a><code>match()</code> and <code>matches()</code></h3>
+<p><code>match()</code> finds the <strong>first</strong> match and returns it as a dictionary under
+key <code>0</code>. It returns <code>false</code> — not <code>nil</code> — when nothing matches:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'one two'</span>.<span class="fn">match</span>(<span class="str">'/\w+/'</span>)
+<span class="kw">echo</span> <span class="str">'nope'</span>.<span class="fn">match</span>(<span class="str">'/zzz/'</span>)
+<span class="kw">echo</span> <span class="bi">typeof</span>(<span class="str">'nope'</span>.<span class="fn">match</span>(<span class="str">'/zzz/'</span>))
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{0: one}
+false
+bool
+</code></pre><span class="code-label">Output</span></figure>
+<p>Both are falsy, so <code>if s.match(p) { ... }</code> reads correctly. An equality
+test against <code>nil</code> does not, and this is the single most common regex
+mistake in Zuri code.</p>
+<p>The dictionary holds the pattern's capture groups as well, each under its
+number, and a named group under its name too. A group that takes no part in
+the match is <code>nil</code>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'2024-01'</span>.<span class="fn">match</span>(<span class="str">'/(?&lt;year&gt;\d+)-(\d+)/'</span>)
+<span class="kw">echo</span> <span class="str">'ab'</span>.<span class="fn">match</span>(<span class="str">'/([a-z]+)(\d+)?/'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{0: 2024-01, 1: 2024, 2: 01, year: 2024}
+{0: ab, 1: ab, 2: nil}
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>matches()</code> finds <strong>every</strong> match and groups the results by capture group.
+Key <code>0</code> holds the whole matches, key <code>1</code> the first group's, and so on —
+each as a list, parallel across the keys:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'a1b2c3'</span>.<span class="fn">matches</span>(<span class="str">'/[0-9]/'</span>)
+<span class="kw">echo</span> <span class="str">'a1b2'</span>.<span class="fn">matches</span>(<span class="str">'/([a-z])([0-9])/'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{0: [1, 2, 3]}
+{0: [a1, b2], 1: [a, b], 2: [1, 2]}
+</code></pre><span class="code-label">Output</span></figure>
+<p>In the second result, match zero is <code>a1</code> with groups <code>a</code> and <code>1</code>, and
+match one is <code>b2</code> with groups <code>b</code> and <code>2</code>. Read down the lists, not
+across.</p>
+<p>When nothing matches, <code>matches()</code> returns <code>{0: []}</code> rather than <code>false</code>.
+The two methods differ here, so test <code>matches()</code> with <code>is_empty()</code> on key
+zero:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> found <span class="op">=</span> <span class="str">'nope'</span>.<span class="fn">matches</span>(<span class="str">'/zzz/'</span>)
+
+<span class="kw">echo</span> found
+<span class="kw">echo</span> found[<span class="num">0</span>].<span class="fn">is_empty</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{0: []}
+true
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="capture-groups-in-a-replacement"><a class="anchor" href="#capture-groups-in-a-replacement" aria-hidden="true" tabindex="-1"></a>Capture Groups in a Replacement</h3>
+<p><code>replace()</code> refers to a capture group with <code>$1</code>, <code>$2</code> and so on:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'John Smith'</span>.<span class="fn">replace</span>(<span class="str">'/(\w+) (\w+)/'</span>, <span class="str">'$2, $1'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Smith, John
+</code></pre><span class="code-label">Output</span></figure>
+<p><strong>Do not write <code>${1}</code>.</strong> The braced form is Zuri's own string
+interpolation, and it is consumed before <code>replace()</code> ever sees it. The
+expression <code>2</code> evaluates to the number two, so the replacement string is
+already <code>'2, 1'</code> by the time it arrives:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'John Smith'</span>.<span class="fn">replace</span>(<span class="str">'/(\w+) (\w+)/'</span>, <span class="str">'</span><span class="subst">${</span><span class="num">2</span><span class="subst">}</span><span class="str">, </span><span class="subst">${</span><span class="num">1</span><span class="subst">}</span><span class="str">'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">2, 1
+</code></pre><span class="code-label">Output</span></figure>
+<p>Use the bare <code>$1</code> form throughout. This is one of the few places where
+Zuri's interpolation and another language's syntax collide, and it fails
+quietly rather than loudly.</p>
+<h3 id="named-groups"><a class="anchor" href="#named-groups" aria-hidden="true" tabindex="-1"></a>Named Groups</h3>
+<p>Named groups are supported in the <strong>pattern</strong>, because PCRE2 supports
+them:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'John Smith'</span>.<span class="fn">matches</span>(<span class="str">'/(?&lt;first&gt;\w+) (?&lt;last&gt;\w+)/'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{0: [John Smith], 1: [John], 2: [Smith]}
+</code></pre><span class="code-label">Output</span></figure>
+<p>The results are keyed by <strong>position</strong>, not by name. A name in a pattern
+documents the group and lets a backreference such as <code>\k&lt;first&gt;</code> refer to
+it; it does not change how the result is keyed. Count the groups to find
+the one you want.</p>
+<h3 id="computing-the-replacement"><a class="anchor" href="#computing-the-replacement" aria-hidden="true" tabindex="-1"></a>Computing the Replacement</h3>
+<p>When the replacement depends on what matched, <code>replace_with()</code> calls a
+function for each match:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'a1b2'</span>.<span class="fn">replace_with</span>(<span class="str">'/[0-9]/'</span>, <span class="meta">@</span>(m) <span class="op">=&gt;</span> <span class="str">'&lt;'</span> <span class="op">+</span> m <span class="op">+</span> <span class="str">'&gt;'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">a&lt;1&gt;b&lt;2&gt;
+</code></pre><span class="code-label">Output</span></figure>
+<p>The callback receives the whole match first, then one argument per capture
+group, then the offset of the match, then the whole subject string. Take
+only the arguments you need, since extra arguments are dropped:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'aXbXc'</span>.<span class="fn">replace_with</span>(<span class="str">'/X/'</span>, <span class="meta">@</span>(match, offset) <span class="op">=&gt;</span> <span class="str">'[</span><span class="subst">${</span>offset<span class="subst">}</span><span class="str">]'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">a[1]b[3]c
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="splitting-on-a-pattern"><a class="anchor" href="#splitting-on-a-pattern" aria-hidden="true" tabindex="-1"></a>Splitting on a Pattern</h3>
+<p><code>split()</code> accepts a pattern, which is how you split on &quot;one or more of
+something&quot; rather than on an exact separator:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'a1b22c'</span>.<span class="fn">split</span>(<span class="str">'/[0-9]+/'</span>)
+<span class="kw">echo</span> <span class="str">'a, b,c ,  d'</span>.<span class="fn">split</span>(<span class="str">'/\s*,\s*/'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[a, b, c]
+[a, b, c, d]
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="the-modifiers"><a class="anchor" href="#the-modifiers" aria-hidden="true" tabindex="-1"></a>The Modifiers</h3>
+<p>Modifier letters go after the closing delimiter, in any order and any
+combination. <code>/[a-z]+/mi</code> is both multi-line and case-insensitive.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Modifier</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>i</code></td>
+<td>Case-insensitive matching.</td>
+</tr>
+<tr>
+<td><code>m</code></td>
+<td>Multi-line: <code>^</code> and <code>$</code> match at every line boundary, not only at the start and end of the subject.</td>
+</tr>
+<tr>
+<td><code>s</code></td>
+<td>Dot-all: <code>.</code> matches a newline as well as everything else.</td>
+</tr>
+<tr>
+<td><code>x</code></td>
+<td>Extended: unescaped whitespace in the pattern is ignored, and <code>#</code> starts a comment to end of line.</td>
+</tr>
+<tr>
+<td><code>u</code></td>
+<td>Unicode properties: <code>\d</code>, <code>\w</code>, <code>\s</code> and friends become Unicode-aware instead of ASCII-only.</td>
+</tr>
+<tr>
+<td><code>U</code></td>
+<td>Ungreedy: quantifiers become lazy by default, and <code>?</code> after one makes it greedy.</td>
+</tr>
+<tr>
+<td><code>A</code></td>
+<td>Anchored: a match is only accepted if it begins exactly where the search started.</td>
+</tr>
+<tr>
+<td><code>J</code></td>
+<td>Allow two capture groups in one pattern to share a name.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Each one in use:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'HELLO'</span>.<span class="fn">match</span>(<span class="str">'/hello/i'</span>)
+<span class="kw">echo</span> <span class="str">'a\nb'</span>.<span class="fn">matches</span>(<span class="str">'/^./m'</span>)
+<span class="kw">echo</span> <span class="str">'a\nb'</span>.<span class="fn">match</span>(<span class="str">'/a.b/s'</span>)
+<span class="kw">echo</span> <span class="str">'abc'</span>.<span class="fn">match</span>(<span class="str">'/ a b c /x'</span>)
+<span class="kw">echo</span> <span class="str">'héllo'</span>.<span class="fn">matches</span>(<span class="str">'/\w/u'</span>)
+<span class="kw">echo</span> <span class="str">'aaa'</span>.<span class="fn">match</span>(<span class="str">'/a+?/U'</span>)
+<span class="kw">echo</span> <span class="str">'abc'</span>.<span class="fn">match</span>(<span class="str">'/abc/A'</span>)
+<span class="kw">echo</span> <span class="str">'xabc'</span>.<span class="fn">match</span>(<span class="str">'/abc/A'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{0: HELLO}
+{0: [a, b]}
+{0: a
+b}
+{0: abc}
+{0: [h, é, l, l, o]}
+{0: aaa}
+{0: abc}
+false
+</code></pre><span class="code-label">Output</span></figure>
+<p>Read the last two together: the pattern matched when it was at the start of
+the subject and failed when it was not, which is what <code>A</code> is for. Without
+it, the second would have matched at offset one.</p>
+<p><code>u</code> is worth a second look as well. Without it, <code>\w</code> is ASCII-only and
+<code>é</code> is not a word character; with it, the Unicode properties apply and it
+is. Matching itself is always per-character rather than per-byte, so
+indexes and offsets are correct on multi-byte text regardless of <code>u</code>.</p>
+<h3 id="the-one-exception-to-pcre2-compatibility"><a class="anchor" href="#the-one-exception-to-pcre2-compatibility" aria-hidden="true" tabindex="-1"></a>The One Exception to PCRE2 Compatibility</h3>
+<p><strong>PCRE2's <code>D</code> (dollar-endonly) modifier has no effect in Zuri.</strong> <code>$</code>
+always matches before a trailing newline as well as at the absolute end of
+the subject, and there is no way to change that. The letter is accepted
+rather than rejected, so a pattern carrying it compiles and runs; it simply
+does not do anything.</p>
+<p>The same is true of any other unrecognised modifier letter: it is accepted
+and ignored rather than raising. A typo in a modifier is therefore silent,
+which is worth remembering when a pattern behaves as though a flag you
+wrote is not set.</p>
+<p>Everything else in the table above is supported and behaves exactly as
+PCRE2 documents it.</p>
+<h3 id="invalid-patterns"><a class="anchor" href="#invalid-patterns" aria-hidden="true" tabindex="-1"></a>Invalid Patterns</h3>
+<p>A pattern that PCRE2 cannot compile raises, naming the pattern and the
+engine's own explanation:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">catch</span> {
+  <span class="kw">echo</span> <span class="str">'text'</span>.<span class="fn">match</span>(<span class="str">'/(unclosed/'</span>)
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">message</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">invalid regular expression '(unclosed': PCRE2: error compiling pattern at offset 9: missing closing parenthesis
+</code></pre><span class="code-label">Output</span></figure>
+<p>Patterns are compiled once and reused, so repeating the same pattern in a
+loop costs nothing after the first time through.</p>
+<h2 id="conversion"><a class="anchor" href="#conversion" aria-hidden="true" tabindex="-1"></a>Conversion</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'5'</span>.<span class="fn">to_number</span>() <span class="op">+</span> <span class="num">1</span>
+<span class="kw">echo</span> <span class="str">'ff'</span>.<span class="fn">to_number</span>(<span class="num">16</span>)
+<span class="kw">echo</span> <span class="str">'H'</span>.<span class="fn">ord</span>()
+<span class="kw">echo</span> <span class="num">72</span>.<span class="fn">chr</span>()
+<span class="kw">echo</span> <span class="str">'Hi'</span>.<span class="fn">to_bytes</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">6
+255
+72
+H
+(48 69)
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>to_number()</code> takes an optional base. <code>ord()</code> requires a single-character
+string and gives its code point; <code>chr()</code> on a number goes the other way.</p>
+<h3 id="to_number-never-fails"><a class="anchor" href="#to_number-never-fails" aria-hidden="true" tabindex="-1"></a><code>to_number()</code> Never Fails</h3>
+<p>This is the one conversion behaviour worth memorising. <code>to_number()</code> does
+not raise, and it does not produce <code>NaN</code>. It reads the first number
+written in the string, and text with no number in it at all becomes
+<strong>zero</strong>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'42'</span>.<span class="fn">to_number</span>()
+<span class="kw">echo</span> <span class="str">'3.5'</span>.<span class="fn">to_number</span>()
+<span class="kw">echo</span> <span class="str">'-5'</span>.<span class="fn">to_number</span>()
+<span class="kw">echo</span> <span class="str">'eighty'</span>.<span class="fn">to_number</span>()
+<span class="kw">echo</span> <span class="str">''</span>.<span class="fn">to_number</span>()
+<span class="kw">echo</span> <span class="str">'12abc'</span>.<span class="fn">to_number</span>()
+<span class="kw">echo</span> <span class="str">'  7  '</span>.<span class="fn">to_number</span>()
+<span class="kw">echo</span> <span class="str">'96.3 of 31'</span>.<span class="fn">to_number</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">42
+3.5
+-5
+0
+0
+12
+7
+96.3
+</code></pre><span class="code-label">Output</span></figure>
+<p>Look at the last three. What surrounds the number is ignored, so <code>'12abc'</code>
+is <code>12</code>, the spaces around <code>'  7  '</code> are simply not part of it, and only
+the first number is read however many follow.</p>
+<p>That cuts both ways. <code>'3 apples'</code> giving <code>3</code> is usually what was meant;
+<code>'2026-09-16'</code> giving <code>2026</code> usually is not. A number is taken to start at
+a digit, or at a sign or decimal point directly in front of one, so <code>'-5'</code>
+is negative five and <code>'a - 42'</code>, where the sign stands apart, is <code>42</code>.</p>
+<p>There is no error to catch and no sentinel to test, so a form field a user
+left blank and a form field they filled with <code>'0'</code> produce the same number,
+and so do <code>'eighty'</code> and <code>'0'</code>. When the difference matters, check the text
+before converting it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">to_count</span>(text) {
+  <span class="kw">var</span> trimmed <span class="op">=</span> text.<span class="fn">trim</span>()
+
+  <span class="kw">if</span> <span class="op">!</span>trimmed.<span class="fn">match</span>(<span class="str">'/^\d+$/'</span>) {
+    <span class="kw">raise</span> <span class="type">ValueError</span>(<span class="str">'not a whole number: </span><span class="subst">${</span>text<span class="subst">}</span><span class="str">'</span>)
+  }
+
+  <span class="kw">return</span> trimmed.<span class="fn">to_number</span>()
+}
+
+<span class="kw">echo</span> <span class="fn">to_count</span>(<span class="str">'  12  '</span>)
+
+<span class="kw">catch</span> {
+  <span class="fn">to_count</span>(<span class="str">'twelve'</span>)
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">message</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">12
+not a whole number: twelve
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>is_number()</code> is a narrower test than it looks — it is true only for a
+string of digits, so <code>'3.5'</code> and <code>'-5'</code> both fail it. A regular expression
+is the reliable check for anything beyond unsigned integers.</p>
+<h2 id="walking-a-string"><a class="anchor" href="#walking-a-string" aria-hidden="true" tabindex="-1"></a>Walking a String</h2>
+<p>A string is iterable, one character at a time, and the same four forms
+available for a list work here.</p>
+<h3 id="for-one-character-at-a-time"><a class="anchor" href="#for-one-character-at-a-time" aria-hidden="true" tabindex="-1"></a><code>for</code>, One Character at a Time</h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">for</span> ch <span class="kw">in</span> <span class="str">'hey'</span> {
+  <span class="kw">echo</span> ch
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">h
+e
+y
+</code></pre><span class="code-label">Output</span></figure>
+<p>This is the form to reach for by default. Each <code>ch</code> is a one-character
+string, not a code point number — use <code>ord()</code> when you want the number.</p>
+<h3 id="for-with-two-variables-for-the-position"><a class="anchor" href="#for-with-two-variables-for-the-position" aria-hidden="true" tabindex="-1"></a><code>for</code> With Two Variables, for the Position</h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">for</span> index, ch <span class="kw">in</span> <span class="str">'hey'</span> {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>index<span class="subst">}</span><span class="str">: </span><span class="subst">${</span>ch<span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">0: h
+1: e
+2: y
+</code></pre><span class="code-label">Output</span></figure>
+<p>The key comes first and the value second, and for a string the key is the
+character position.</p>
+<h3 id="iter-when-the-position-drives-the-walk"><a class="anchor" href="#iter-when-the-position-drives-the-walk" aria-hidden="true" tabindex="-1"></a><code>iter</code>, When the Position Drives the Walk</h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> s <span class="op">=</span> <span class="str">'hey'</span>
+
+<span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> s.<span class="fn">length</span>() <span class="op">-</span> <span class="num">1</span>; i <span class="op">&gt;=</span> <span class="num">0</span>; i<span class="op">--</span> {
+  <span class="kw">echo</span> s[i]
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">y
+e
+h
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>s[i]</code> indexes by character, not by byte, so this is correct on text that
+is not ASCII. Use <code>iter</code> when you need to skip, step backwards, or look at
+<code>s[i + 1]</code> from inside the body.</p>
+<h3 id="each-with-a-function"><a class="anchor" href="#each-with-a-function" aria-hidden="true" tabindex="-1"></a><code>each()</code>, With a Function</h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="str">'Hi'</span>.<span class="fn">each</span>(<span class="meta">@</span>(ch, index) {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>index<span class="subst">}</span><span class="str">:</span><span class="subst">${</span>ch<span class="subst">}</span><span class="str">'</span>
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">0:H
+1:i
+</code></pre><span class="code-label">Output</span></figure>
+<p>As everywhere else, the callback receives the <strong>value first and the index
+second</strong> — the opposite order to <code>for</code>.</p>
+<h3 id="each_line-and-lines-for-text-in-lines"><a class="anchor" href="#each_line-and-lines-for-text-in-lines" aria-hidden="true" tabindex="-1"></a><code>each_line()</code> and <code>lines()</code>, for Text in Lines</h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> doc <span class="op">=</span> <span class="str">'first\nsecond\nthird'</span>
+
+doc.<span class="fn">each_line</span>(<span class="meta">@</span>(line, index) {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>index<span class="subst">}</span><span class="str">: </span><span class="subst">${</span>line<span class="subst">}</span><span class="str">'</span>
+})
+
+<span class="kw">echo</span> doc.<span class="fn">lines</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">0: first
+1: second
+2: third
+[first, second, third]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>each_line()</code> calls the function once per line; <code>lines()</code> hands you the
+whole list so you can <code>for</code> over it, filter it, or count it. Both split on
+<code>\n</code> and <code>\r\n</code>, so both read a file written on any platform.</p>
+<h2 id="ordering-and-comparison"><a class="anchor" href="#ordering-and-comparison" aria-hidden="true" tabindex="-1"></a>Ordering and Comparison</h2>
+<p><code>==</code> compares two strings by value, which is almost always what you want:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'abc'</span> <span class="op">==</span> <span class="str">'abc'</span>
+<span class="kw">echo</span> <span class="str">'abc'</span> <span class="op">==</span> <span class="str">'ABC'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+false
+</code></pre><span class="code-label">Output</span></figure>
+<p>The ordering operators are a different story. <code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code> and <code>&gt;=</code> are
+defined for numbers only, and comparing two strings with one raises a
+<code>TypeError</code>. Use <code>compare()</code>, which returns <code>-1</code>, <code>0</code> or <code>1</code>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'abc'</span>.<span class="fn">compare</span>(<span class="str">'abd'</span>)
+<span class="kw">echo</span> <span class="str">'abc'</span>.<span class="fn">compare</span>(<span class="str">'abc'</span>)
+<span class="kw">echo</span> <span class="str">'abd'</span>.<span class="fn">compare</span>(<span class="str">'abc'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">-1
+0
+1
+</code></pre><span class="code-label">Output</span></figure>
+<p>That three-way result is exactly the shape a sort comparison wants, and it
+compares by code point, so it is stable and locale-independent.</p>
+<h2 id="strings-are-immutable"><a class="anchor" href="#strings-are-immutable" aria-hidden="true" tabindex="-1"></a>Strings Are Immutable</h2>
+<p>Every method in this section returns a new string. Nothing mutates in
+place:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> original <span class="op">=</span> <span class="str">'hello'</span>
+<span class="kw">var</span> shouted <span class="op">=</span> original.<span class="fn">upper</span>()
+
+<span class="kw">echo</span> original
+<span class="kw">echo</span> shouted
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">hello
+HELLO
+</code></pre><span class="code-label">Output</span></figure>
+<p>This is worth internalising, because it is the source of the single most
+common string mistake:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> name <span class="op">=</span> <span class="str">'  ada  '</span>
+
+name.<span class="fn">trim</span>()
+<span class="kw">echo</span> <span class="str">'[</span><span class="subst">${</span>name<span class="subst">}</span><span class="str">]'</span>
+
+name <span class="op">=</span> name.<span class="fn">trim</span>()
+<span class="kw">echo</span> <span class="str">'[</span><span class="subst">${</span>name<span class="subst">}</span><span class="str">]'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[  ada  ]
+[ada]
+</code></pre><span class="code-label">Output</span></figure>
+<p>The first <code>trim()</code> produced a trimmed string and threw it away. Assign the
+result, or chain onto it.</p>
+<p>Immutability also means you can pass a string anywhere without copying it
+defensively. Nothing you hand a string to can change the one you still
+hold.</p>
+<h2 id="a-worked-example"><a class="anchor" href="#a-worked-example" aria-hidden="true" tabindex="-1"></a>A Worked Example</h2>
+<p>Here is a small parser that puts most of this section together. It takes a
+block of <code>key = value</code> configuration text and produces a dictionary,
+skipping blank lines and comments, and tolerating whatever spacing the
+author used.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">parse_config</span>(text) {
+  <span class="kw">var</span> config <span class="op">=</span> {}
+
+  <span class="kw">for</span> line <span class="kw">in</span> text.<span class="fn">lines</span>() {
+    <span class="kw">var</span> trimmed <span class="op">=</span> line.<span class="fn">trim</span>()
+
+    <span class="kw">if</span> trimmed.<span class="fn">is_empty</span>() <span class="kw">or</span> trimmed.<span class="fn">starts_with</span>(<span class="str">'#'</span>) {
+      <span class="kw">continue</span>
+    }
+
+    <span class="kw">var</span> split_at <span class="op">=</span> trimmed.<span class="fn">index_of</span>(<span class="str">'='</span>)
+
+    <span class="kw">if</span> split_at <span class="op">==</span> <span class="op">-</span><span class="num">1</span> {
+      <span class="kw">continue</span>
+    }
+
+    <span class="kw">var</span> key <span class="op">=</span> trimmed[<span class="num">0</span>, split_at].<span class="fn">trim</span>()
+    <span class="kw">var</span> value <span class="op">=</span> trimmed[split_at <span class="op">+</span> <span class="num">1</span>, trimmed.<span class="fn">length</span>()].<span class="fn">trim</span>()
+
+    config[key] <span class="op">=</span> value
+  }
+
+  <span class="kw">return</span> config
+}
+
+<span class="kw">var</span> source <span class="op">=</span> <span class="str">'# server settings
+host = localhost
+port   =   8080
+
+# empty lines and comments are skipped
+name = zuri app
+'</span>
+
+<span class="kw">var</span> config <span class="op">=</span> <span class="fn">parse_config</span>(source)
+
+<span class="kw">echo</span> config.<span class="prop">host</span>
+<span class="kw">echo</span> config.<span class="prop">port</span>.<span class="fn">to_number</span>() <span class="op">+</span> <span class="num">1</span>
+<span class="kw">echo</span> config.<span class="prop">name</span>
+<span class="kw">echo</span> config.<span class="fn">length</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">localhost
+8081
+zuri app
+3
+</code></pre><span class="code-label">Output</span></figure>
+<p>Three things in there are worth naming. <code>lines()</code> handles both <code>\n</code> and
+<code>\r\n</code>, so the same code reads a file written on Windows. <code>index_of()</code>
+returning <code>-1</code> is checked explicitly rather than relied on for truthiness,
+because <code>-1</code> is falsy and so is <code>0</code> — and <code>0</code> is a legitimate position.
+And every value arrives as a string, because that is what text is;
+<code>to_number()</code> is how you leave.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch04-01-strings.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch04-00-collections.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">4</span>Text, Numbers and Collections</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch04-02-numbers.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">4.2</span>Numbers</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#writing-a-string">Writing a String</a>
+        </li><li class="level-3">
+          <a href="#multi-line-strings">Multi-line Strings</a>
+        </li><li class="level-2">
+          <a href="#escape-sequences">Escape Sequences</a>
+        </li><li class="level-3">
+          <a href="#unknown-escapes-are-left-alone">Unknown Escapes Are Left Alone</a>
+        </li><li class="level-3">
+          <a href="#escaping-the-quote-you-chose">Escaping the Quote You Chose</a>
+        </li><li class="level-2">
+          <a href="#interpolation">Interpolation</a>
+        </li><li class="level-3">
+          <a href="#any-expression-fits">Any Expression Fits</a>
+        </li><li class="level-3">
+          <a href="#interpolations-nest">Interpolations Nest</a>
+        </li><li class="level-3">
+          <a href="#what-each-type-looks-like">What Each Type Looks Like</a>
+        </li><li class="level-3">
+          <a href="#writing-a-literal-">Writing a Literal <code>${</code></a>
+        </li><li class="level-2">
+          <a href="#joining-strings-together">Joining Strings Together</a>
+        </li><li class="level-3">
+          <a href="#concatenation-with-">Concatenation with <code>+</code></a>
+        </li><li class="level-3">
+          <a href="#concatenation-versus-interpolation">Concatenation Versus Interpolation</a>
+        </li><li class="level-3">
+          <a href="#repetition-with-">Repetition with <code>*</code></a>
+        </li><li class="level-3">
+          <a href="#building-a-string-from-many-pieces">Building a String from Many Pieces</a>
+        </li><li class="level-2">
+          <a href="#inspecting">Inspecting</a>
+        </li><li class="level-2">
+          <a href="#changing-case">Changing Case</a>
+        </li><li class="level-2">
+          <a href="#trimming-and-padding">Trimming and Padding</a>
+        </li><li class="level-2">
+          <a href="#splitting-and-joining">Splitting and Joining</a>
+        </li><li class="level-2">
+          <a href="#replacing">Replacing</a>
+        </li><li class="level-2">
+          <a href="#regular-expressions">Regular Expressions</a>
+        </li><li class="level-3">
+          <a href="#writing-a-pattern">Writing a Pattern</a>
+        </li><li class="level-3">
+          <a href="#a-plain-string-is-a-literal">A Plain String Is a Literal</a>
+        </li><li class="level-3">
+          <a href="#which-methods-take-a-pattern">Which Methods Take a Pattern</a>
+        </li><li class="level-3">
+          <a href="#match-and-matches"><code>match()</code> and <code>matches()</code></a>
+        </li><li class="level-3">
+          <a href="#capture-groups-in-a-replacement">Capture Groups in a Replacement</a>
+        </li><li class="level-3">
+          <a href="#named-groups">Named Groups</a>
+        </li><li class="level-3">
+          <a href="#computing-the-replacement">Computing the Replacement</a>
+        </li><li class="level-3">
+          <a href="#splitting-on-a-pattern">Splitting on a Pattern</a>
+        </li><li class="level-3">
+          <a href="#the-modifiers">The Modifiers</a>
+        </li><li class="level-3">
+          <a href="#the-one-exception-to-pcre2-compatibility">The One Exception to PCRE2 Compatibility</a>
+        </li><li class="level-3">
+          <a href="#invalid-patterns">Invalid Patterns</a>
+        </li><li class="level-2">
+          <a href="#conversion">Conversion</a>
+        </li><li class="level-3">
+          <a href="#to_number-never-fails"><code>to_number()</code> Never Fails</a>
+        </li><li class="level-2">
+          <a href="#walking-a-string">Walking a String</a>
+        </li><li class="level-3">
+          <a href="#for-one-character-at-a-time"><code>for</code>, One Character at a Time</a>
+        </li><li class="level-3">
+          <a href="#for-with-two-variables-for-the-position"><code>for</code> With Two Variables, for the Position</a>
+        </li><li class="level-3">
+          <a href="#iter-when-the-position-drives-the-walk"><code>iter</code>, When the Position Drives the Walk</a>
+        </li><li class="level-3">
+          <a href="#each-with-a-function"><code>each()</code>, With a Function</a>
+        </li><li class="level-3">
+          <a href="#each_line-and-lines-for-text-in-lines"><code>each_line()</code> and <code>lines()</code>, for Text in Lines</a>
+        </li><li class="level-2">
+          <a href="#ordering-and-comparison">Ordering and Comparison</a>
+        </li><li class="level-2">
+          <a href="#strings-are-immutable">Strings Are Immutable</a>
+        </li><li class="level-2">
+          <a href="#a-worked-example">A Worked Example</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

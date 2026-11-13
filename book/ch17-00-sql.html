@@ -1,0 +1,2045 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Databases · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch17-00-sql.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="purple" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item open"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html" aria-current="page"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="true" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Chapter 17 · The Big Modules</p>
+        <div class="content"><h1 id="databases">Databases</h1>
+<p>The <code>sql</code> module is how a Zuri program talks to a relational database.
+It is one module rather than one per engine, and that is the whole
+design: <code>sql</code> defines what a database adapter has to provide, supplies
+everything that is the same whichever engine answers, and picks the
+adapter from the connection string.</p>
+<p>Three adapters ship with it to support four major database engines
+— SQLite, PostgreSQL, MySQL and MariaDB. SQLite is a file-based
+database with no server to run and nothing to configure, which makes it
+the right choice for an application that ships with its data and for a
+test suite that wants a real database per run. PostgreSQL, MySQL, and
+MariaDB are servers, for everything that outgrows a file, and the MySQL
+adapter is the same adapter that drives MariaDB as well.</p>
+<p>Changing from one to another means changing the connection string, and
+whatever SQL they genuinely spell differently.</p>
+<ul>
+<li><a href="#following-along">Following Along</a></li>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#connecting">Connecting</a></li>
+<li><a href="#querying-and-fetching">Querying and Fetching</a></li>
+<li><a href="#parameters">Parameters</a></li>
+<li><a href="#rows-columns-and-types">Rows, Columns and Types</a></li>
+<li><a href="#the-crud-helpers">The CRUD Helpers</a></li>
+<li><a href="#transactions">Transactions</a></li>
+<li><a href="#streaming-large-results">Streaming Large Results</a></li>
+<li><a href="#prepared-statements">Prepared Statements</a></li>
+<li><a href="#connection-pools">Connection Pools</a></li>
+<li><a href="#errors">Errors</a></li>
+<li><a href="#schema-introspection">Schema Introspection</a></li>
+<li><a href="#switching-databases">Switching Databases</a></li>
+<li><a href="#sqlite-specifics">SQLite Specifics</a></li>
+<li><a href="#postgresql-specifics">PostgreSQL Specifics</a></li>
+<li><a href="#mysql-specifics">MySQL Specifics</a></li>
+<li><a href="#writing-your-own-adapter">Writing Your Own Adapter</a></li>
+<li><a href="#what-the-module-refuses">What the Module Refuses</a></li>
+<li><a href="#module-reference">Module Reference</a></li>
+</ul>
+<blockquote>
+<p>Blocks on this page that list several calls together are <strong>reference
+listings</strong>, not programs: they show the shape of each call rather
+than a sequence to run. Anything presented as a complete program runs
+as written. The PostgreSQL and MySQL examples need a server, so they
+are shown rather than run.</p>
+</blockquote>
+<h2 id="following-along"><a class="anchor" href="#following-along" aria-hidden="true" tabindex="-1"></a>Following Along</h2>
+<p>Most examples below use a small database of posts and their authors.
+This builds it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+db.<span class="fn">exec_script</span>(
+  <span class="str">"
+  drop table if exists posts;
+  drop table if exists authors;
+
+  create table authors (
+    id integer primary key,
+    name text not null unique
+  );
+
+  create table posts (
+    id integer primary key,
+    author_id integer not null references authors(id),
+    title text not null,
+    views integer not null default 0,
+    published boolean not null default 0
+  );
+"</span>,
+)
+
+<span class="kw">var</span> ada <span class="op">=</span> db.<span class="fn">insert</span>(<span class="str">'authors'</span>, { name<span class="op">:</span> <span class="str">'Ada Lovelace'</span> })
+<span class="kw">var</span> grace <span class="op">=</span> db.<span class="fn">insert</span>(<span class="str">'authors'</span>, { name<span class="op">:</span> <span class="str">'Grace Hopper'</span> })
+
+db.<span class="fn">insert_many</span>(<span class="str">'posts'</span>, [
+  { author_id<span class="op">:</span> ada, title<span class="op">:</span> <span class="str">'On Engines'</span>, views<span class="op">:</span> <span class="num">412</span>, published<span class="op">:</span> <span class="lit">true</span> },
+  { author_id<span class="op">:</span> ada, title<span class="op">:</span> <span class="str">'On Looms'</span>, views<span class="op">:</span> <span class="num">87</span>, published<span class="op">:</span> <span class="lit">false</span> },
+  { author_id<span class="op">:</span> grace, title<span class="op">:</span> <span class="str">'On Bugs'</span>, views<span class="op">:</span> <span class="num">1290</span>, published<span class="op">:</span> <span class="lit">true</span> },
+  { author_id<span class="op">:</span> grace, title<span class="op">:</span> <span class="str">'On Compilers'</span>, views<span class="op">:</span> <span class="num">640</span>, published<span class="op">:</span> <span class="lit">true</span> },
+])
+
+<span class="kw">echo</span> db.<span class="fn">count</span>(<span class="str">'posts'</span>)
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">4
+</code></pre><span class="code-label">Output</span></figure>
+<p>Everything from here on assumes that file exists in the working
+directory.</p>
+<h2 id="introduction"><a class="anchor" href="#introduction" aria-hidden="true" tabindex="-1"></a>Introduction</h2>
+<p>A database library usually ties a program to one engine. The calls are
+named after that engine, the placeholders are spelled its way, and the
+errors are its own numbers, so moving to another means rewriting every
+call site.</p>
+<p><code>sql</code> puts the parts that are the same in one place. A statement is
+written once:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+<span class="kw">for</span> post <span class="kw">in</span> db.<span class="fn">query</span>(<span class="str">'select title, views from posts where published = ?'</span>, [
+  <span class="lit">true</span>,
+]) {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>post.<span class="prop">title</span><span class="subst">}</span><span class="str">: </span><span class="subst">${</span>post.<span class="prop">views</span><span class="subst">}</span><span class="str">'</span>
+}
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">On Engines: 412
+On Bugs: 1290
+On Compilers: 640
+</code></pre><span class="code-label">Output</span></figure>
+<p>Point the first line at <code>postgres://localhost/app</code> or
+<code>mysql://localhost/app</code> and the rest runs unchanged. The <code>?</code> becomes
+<code>$1</code> on PostgreSQL because that is what PostgreSQL wants, and stays <code>?</code>
+on MySQL because that is what MySQL wants. An insert asking for its new
+id gets a <code>RETURNING</code> clause on PostgreSQL, because PostgreSQL has no
+last insert id and the other two do. A duplicate key arrives as
+<code>UniqueViolation</code> from all three.</p>
+<p>What it does not do is pretend the engines are the same. They disagree
+about auto-incrementing keys, about which functions exist, about a
+great deal of SQL. <code>sql</code> translates what can be translated and is
+explicit about the rest.</p>
+<h2 id="connecting"><a class="anchor" href="#connecting" aria-hidden="true" tabindex="-1"></a>Connecting</h2>
+<p><code>open()</code> takes a connection string and returns a <code>Connection</code>.</p>
+<figure class="code"><pre><code class="language-zuri">sql.<span class="fn">open</span>(<span class="str">'sqlite://./app.db'</span>) <span class="com"># a file</span>
+sql.<span class="fn">open</span>(<span class="str">':memory:'</span>) <span class="com"># a private database in memory</span>
+sql.<span class="fn">open</span>(<span class="str">'./app.db'</span>) <span class="com"># a bare path is SQLite</span>
+sql.<span class="fn">open</span>(<span class="str">'postgres://localhost/app'</span>)
+sql.<span class="fn">open</span>(<span class="str">'postgres://alice:secret@db.internal:5432/shop?sslmode=require'</span>)
+sql.<span class="fn">open</span>(<span class="str">'host=localhost dbname=app user=alice'</span>)
+sql.<span class="fn">open</span>(<span class="str">'mysql://localhost/app'</span>)
+sql.<span class="fn">open</span>(<span class="str">'mysql://alice:secret@db.internal:3306/shop?sslmode=verify'</span>)
+sql.<span class="fn">open</span>(<span class="str">'mariadb://localhost/app'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The scheme picks the adapter. A string with no scheme at all is taken
+as a SQLite path, since nothing else it could be. MySQL and MariaDB
+speak one protocol, so either scheme reaches either server, and the
+connection is described by the adapter for the server it found.</p>
+<p>Options can also be given as a dictionary, which is how anything an
+adapter accepts beyond the connection string is passed:</p>
+<figure class="code"><pre><code class="language-zuri">sql.<span class="fn">open</span>({
+  driver<span class="op">:</span> <span class="str">'sqlite'</span>,
+  path<span class="op">:</span> <span class="str">'./app.db'</span>,
+  journal_mode<span class="op">:</span> <span class="str">'wal'</span>,
+  busy_timeout<span class="op">:</span> <span class="num">10000</span>,
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>or alongside a string, where they are merged over whatever it carried:</p>
+<figure class="code"><pre><code class="language-zuri">sql.<span class="fn">open</span>(<span class="str">'sqlite://./app.db'</span>, { journal_mode<span class="op">:</span> <span class="str">'wal'</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A connection should be closed when it is finished with, and a <code>catch</code>
+block makes that certain even when the work between raises:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+
+<span class="kw">catch</span> {
+  db.<span class="fn">exec</span>(<span class="str">'create table t (n integer)'</span>)
+  db.<span class="fn">exec</span>(<span class="str">'insert into t values (?)'</span>, [<span class="num">1</span>])
+
+  <span class="kw">echo</span> db.<span class="fn">fetch_value</span>(<span class="str">'select n from t'</span>)
+} <span class="kw">as</span> error {
+  <span class="kw">echo</span> <span class="str">'failed: </span><span class="subst">${</span>error.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+}
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1
+</code></pre><span class="code-label">Output</span></figure>
+<p>A connection belongs to the isolate that opened it and cannot be handed
+to another. An isolate that needs the database opens its own connection
+or its own pool.</p>
+<h2 id="querying-and-fetching"><a class="anchor" href="#querying-and-fetching" aria-hidden="true" tabindex="-1"></a>Querying and Fetching</h2>
+<p><code>query()</code> runs a statement and reads its whole result:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+<span class="kw">var</span> result <span class="op">=</span> db.<span class="fn">query</span>(<span class="str">'select title, views from posts order by views desc'</span>)
+
+<span class="kw">echo</span> result.<span class="fn">length</span>()
+<span class="kw">echo</span> result.<span class="fn">first</span>().<span class="prop">title</span>
+<span class="kw">echo</span> result.<span class="fn">column</span>(<span class="str">'title'</span>)
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">4
+On Bugs
+[On Bugs, On Compilers, On Engines, On Looms]
+</code></pre><span class="code-label">Output</span></figure>
+<p>A result is iterable, so the common case needs nothing else:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">for</span> post <span class="kw">in</span> db.<span class="fn">query</span>(<span class="str">'select * from posts'</span>) {
+  <span class="kw">echo</span> post.<span class="prop">title</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>For the shapes that come up constantly there are shorter forms:</p>
+<figure class="code"><pre><code class="language-zuri">db.<span class="fn">fetch_one</span>(sql, params) <span class="com"># the first row, or nil</span>
+db.<span class="fn">fetch_all</span>(sql, params) <span class="com"># every row, as dictionaries</span>
+db.<span class="fn">fetch_value</span>(sql, params, fallback) <span class="com"># the first column of the first row</span>
+db.<span class="fn">fetch_column</span>(sql, params, column) <span class="com"># one column's values, as a list</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+<span class="kw">echo</span> db.<span class="fn">fetch_value</span>(<span class="str">'select count(*) from posts'</span>)
+<span class="kw">echo</span> db.<span class="fn">fetch_one</span>(<span class="str">'select title from posts where views &gt; ?'</span>, [<span class="num">1000</span>]).<span class="prop">title</span>
+<span class="kw">echo</span> db.<span class="fn">fetch_column</span>(<span class="str">'select title from posts order by title limit 2'</span>)
+<span class="kw">echo</span> db.<span class="fn">fetch_value</span>(<span class="str">'select title from posts where views &gt; ?'</span>, [<span class="num">99999</span>], <span class="str">'none'</span>)
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">4
+On Bugs
+[On Bugs, On Compilers]
+none
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>exec()</code> is for a statement run for its effect rather than its rows:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+
+db.<span class="fn">exec</span>(<span class="str">'create table t (id integer primary key, n integer)'</span>)
+<span class="kw">var</span> result <span class="op">=</span> db.<span class="fn">exec</span>(<span class="str">'insert into t (n) values (?)'</span>, [<span class="num">7</span>])
+
+<span class="kw">echo</span> result.<span class="prop">rows_affected</span>
+<span class="kw">echo</span> result.<span class="prop">last_insert_id</span>
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1
+1
+</code></pre><span class="code-label">Output</span></figure>
+<p>And <code>exec_script()</code> runs several statements at once, which is what a
+schema file is:</p>
+<figure class="code"><pre><code class="language-zuri">db.<span class="fn">exec_script</span>(<span class="bi">file</span>(<span class="str">'schema.sql'</span>).<span class="fn">read</span>())
+</code></pre><span class="code-label">Zuri</span></figure>
+<h2 id="parameters"><a class="anchor" href="#parameters" aria-hidden="true" tabindex="-1"></a>Parameters</h2>
+<p>Values are bound by the engine, never pasted into the statement. That
+is what makes a value a value rather than a piece of SQL, and it is the
+whole of the defence against injection.</p>
+<p>Write <code>?</code> for positional parameters:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+<span class="kw">echo</span> db.<span class="fn">fetch_column</span>(
+  <span class="str">'select title from posts where author_id = ? and published = ?'</span>,
+  [<span class="num">1</span>, <span class="lit">true</span>],
+)
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[On Engines]
+</code></pre><span class="code-label">Output</span></figure>
+<p>or <code>:name</code> for named ones, where order stops mattering and a name may
+be used more than once:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+<span class="kw">echo</span> db.<span class="fn">fetch_column</span>(
+  <span class="str">'select title from posts where views &gt; :floor and views &lt; :ceiling'</span>,
+  { floor<span class="op">:</span> <span class="num">100</span>, ceiling<span class="op">:</span> <span class="num">1000</span> },
+)
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[On Engines, On Compilers]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>sql</code> rewrites these into whatever the adapter wants: <code>$1</code> and <code>$2</code> for
+PostgreSQL, <code>?1</code> and <code>?2</code> for SQLite, and <code>?</code> unchanged for MySQL, which
+already spells them that way. The scanner knows when a <code>?</code> or a <code>:</code> is
+not a placeholder, so none of these are touched:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="str">"a ? inside a string"</span>      <span class="op">--</span> a string
+<span class="str">"a ? in an identifier"</span>     <span class="op">--</span> a quoted identifier
+<span class="op">--</span> a <span class="op">?</span> <span class="kw">in</span> a line comment
+<span class="com">/* a ? in a block comment */</span>
+$tag$ a <span class="op">?</span> <span class="kw">in</span> a dollar<span class="op">-</span>quoted body $tag$
+value<span class="op">::</span>text                <span class="op">--</span> a <span class="type">PostgreSQL</span> cast
+arr[<span class="num">1</span><span class="op">:</span><span class="num">3</span>]                   <span class="op">--</span> an array slice
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>PostgreSQL uses <code>?</code> as a JSON operator, so a literal one is written
+<code>??</code>:</p>
+<figure class="code"><pre><code class="language-zuri">db.<span class="fn">query</span>(<span class="str">'select * from docs where data ?? ?'</span>, [<span class="str">'key'</span>])
+</code></pre><span class="code-label">Zuri</span></figure>
+<blockquote>
+<p>Never build a statement by joining strings around a value, even when
+the value looks safe. The two forms above cover every case where a
+<strong>value</strong> varies. Where an <strong>identifier</strong> varies, quote it through
+the driver rather than interpolating it:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> column <span class="op">=</span> db.<span class="fn">driver</span>().<span class="fn">quote_identifier</span>(name)
+db.<span class="fn">query</span>(<span class="str">'select </span><span class="subst">${</span>column<span class="subst">}</span><span class="str"> from posts'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+</blockquote>
+<h2 id="rows-columns-and-types"><a class="anchor" href="#rows-columns-and-types" aria-hidden="true" tabindex="-1"></a>Rows, Columns and Types</h2>
+<p>A row is a dictionary keyed by column name, which is what lets
+<code>post.title</code> read the way it does.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+<span class="kw">var</span> result <span class="op">=</span> db.<span class="fn">query</span>(<span class="str">'select id, title, views from posts order by id limit 1'</span>)
+
+<span class="kw">echo</span> result.<span class="fn">first</span>()
+<span class="kw">echo</span> result.<span class="prop">columns</span>
+<span class="kw">echo</span> result.<span class="fn">tuples</span>()
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{id: 1, title: On Engines, views: 412}
+[{name: id, type: integer}, {name: title, type: text}, {name: views, type: integer}]
+[[1, On Engines, 412]]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Two columns of the same name collapse in a dictionary, which is worth
+knowing before selecting <code>id</code> from both sides of a join. Aliasing one
+of them is the fix; <code>tuples()</code> is the escape hatch when it cannot be.</p>
+<p>Values correspond like this:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Zuri</th>
+<th>Database</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nil</code></td>
+<td>NULL</td>
+</tr>
+<tr>
+<td><code>bool</code></td>
+<td>a boolean where the engine has one, otherwise 0 and 1</td>
+</tr>
+<tr>
+<td><code>number</code></td>
+<td>an integer where the value is whole, otherwise a float</td>
+</tr>
+<tr>
+<td><code>bigint</code></td>
+<td>a 64 bit integer, for values past what a double holds</td>
+</tr>
+<tr>
+<td><code>string</code></td>
+<td>text</td>
+</tr>
+<tr>
+<td><code>bytes</code></td>
+<td>a blob</td>
+</tr>
+<tr>
+<td><code>date.Date</code></td>
+<td>a timestamp</td>
+</tr>
+<tr>
+<td><code>sql.Time</code></td>
+<td>a <code>TIME</code> interval, on an engine that has one</td>
+</tr>
+<tr>
+<td><code>sql.Decimal</code></td>
+<td>an exact decimal</td>
+</tr>
+<tr>
+<td><code>list</code>, <code>dict</code></td>
+<td>JSON</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Not every engine has every one of those. PostgreSQL has a real boolean
+and MySQL does not, so a <code>true</code> written to MySQL comes back as <code>1</code>.
+<code>db.supports()</code> answers that sort of question without guessing, and
+each engine's own section below says where it differs.</p>
+<p>An integer too large for a double comes back as a <code>bigint</code> rather than
+silently rounded:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+db.<span class="fn">exec</span>(<span class="str">'create table t (n integer)'</span>)
+db.<span class="fn">exec</span>(<span class="str">'insert into t values (9223372036854775807)'</span>)
+
+<span class="kw">var</span> n <span class="op">=</span> db.<span class="fn">fetch_value</span>(<span class="str">'select n from t'</span>)
+<span class="kw">echo</span> <span class="bi">typeof</span>(n)
+<span class="kw">echo</span> n
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">bigint
+9223372036854775807n
+</code></pre><span class="code-label">Output</span></figure>
+<p>SQLite stores five things and remembers nothing about intent, so a
+boolean goes in as 1 and would come back as the number 1. What it does
+keep is the type each column was <em>declared</em> with, and that is what the
+adapter reads it back by:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+db.<span class="fn">exec</span>(<span class="str">'create table t (ok boolean, at datetime, doc json)'</span>)
+db.<span class="fn">exec</span>(<span class="str">'insert into t values (?, ?, ?)'</span>, [
+  <span class="lit">true</span>,
+  <span class="str">'2026-09-16T14:30:00.000000+00:00'</span>,
+  <span class="str">'{"a":1}'</span>,
+])
+
+<span class="kw">var</span> row <span class="op">=</span> db.<span class="fn">fetch_one</span>(<span class="str">'select * from t'</span>)
+
+<span class="kw">echo</span> <span class="bi">typeof</span>(row.<span class="prop">ok</span>)
+<span class="kw">echo</span> <span class="bi">typeof</span>(row.<span class="prop">at</span>)
+<span class="kw">echo</span> row.<span class="prop">doc</span>
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">bool
+Date
+{a: 1}
+</code></pre><span class="code-label">Output</span></figure>
+<p>A column with no declared type is an expression, and comes back exactly
+as it was stored.</p>
+<h3 id="exact-decimals"><a class="anchor" href="#exact-decimals" aria-hidden="true" tabindex="-1"></a>Exact decimals</h3>
+<p>A <code>number</code> is a double, which holds <code>0.1</code> only approximately. For money
+that is not good enough, so <code>sql.Decimal</code> holds a value exactly:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql { <span class="type">Decimal</span> }
+
+<span class="kw">var</span> price <span class="op">=</span> <span class="type">Decimal</span>(<span class="str">'19.99'</span>)
+<span class="kw">var</span> tax <span class="op">=</span> price.<span class="fn">multiply</span>(<span class="type">Decimal</span>(<span class="str">'0.20'</span>))
+
+<span class="kw">echo</span> price.<span class="fn">to_string</span>()
+<span class="kw">echo</span> tax.<span class="fn">to_string</span>()
+<span class="kw">echo</span> price.<span class="fn">add</span>(tax).<span class="fn">to_string</span>()
+<span class="kw">echo</span> <span class="type">Decimal</span>(<span class="str">'0.1'</span>).<span class="fn">add</span>(<span class="type">Decimal</span>(<span class="str">'0.2'</span>)).<span class="fn">to_string</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">19.99
+3.9980
+23.9880
+0.3
+</code></pre><span class="code-label">Output</span></figure>
+<p>PostgreSQL's <code>numeric</code>, MySQL's <code>DECIMAL</code>, and SQLite's <code>DECIMAL</code> and
+<code>NUMERIC</code> columns read and write as <code>Decimal</code>. SQLite keeps a decimal as
+a double, which holds fifteen significant digits exactly, so a decimal
+column there holds at most fifteen, and <code>table.decimal()</code> refuses a
+larger precision on SQLite. An aggregate such as <code>sum()</code> has no declared
+type, and comes back as a number.</p>
+<h2 id="the-crud-helpers"><a class="anchor" href="#the-crud-helpers" aria-hidden="true" tabindex="-1"></a>The CRUD Helpers</h2>
+<p>Four calls on a connection write no SQL at all. <code>insert()</code>, <code>update()</code>,
+<code>delete()</code> and <code>find()</code> take a table name and dictionaries, build the
+statement for whichever engine is on the other end, and bind every
+value as a parameter.</p>
+<p>They are here because the statements they replace are the ones least
+worth writing by hand. They are mechanical, they differ between
+dialects in small ways that only show up in production, and a string
+built by concatenation is where an injection gets in. Anything harder
+than a flat list of conditions is still written as SQL, and the two
+mix freely on the same connection.</p>
+<h3 id="inserting-and-ids"><a class="anchor" href="#inserting-and-ids" aria-hidden="true" tabindex="-1"></a>Inserting and ids</h3>
+<p><code>insert()</code> takes a table and a dictionary, and returns the new row's
+id:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+db.<span class="fn">exec</span>(<span class="str">'create table posts (id integer primary key, title text)'</span>)
+
+<span class="kw">echo</span> db.<span class="fn">insert</span>(<span class="str">'posts'</span>, { title<span class="op">:</span> <span class="str">'Hello'</span> })
+<span class="kw">echo</span> db.<span class="fn">insert</span>(<span class="str">'posts'</span>, { title<span class="op">:</span> <span class="str">'World'</span> })
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1
+2
+</code></pre><span class="code-label">Output</span></figure>
+<p>This is the call that hides the largest difference between the engines.
+SQLite and MySQL report the id of the row just inserted; PostgreSQL does
+not, and an insert that wants one has to ask with a <code>RETURNING</code> clause
+naming the primary key. MariaDB has both and uses <code>RETURNING</code>.
+<code>insert()</code> does whichever applies, and finds the key by asking the
+schema rather than assuming it is called <code>id</code>.</p>
+<p>Where the key is not the column to return, name it:</p>
+<figure class="code"><pre><code class="language-zuri">db.<span class="fn">insert</span>(<span class="str">'events'</span>, { name<span class="op">:</span> <span class="str">'started'</span> }, { returning<span class="op">:</span> <span class="str">'uuid'</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<h3 id="several-rows-at-once"><a class="anchor" href="#several-rows-at-once" aria-hidden="true" tabindex="-1"></a>Several rows at once</h3>
+<p>Several rows go in one statement, split so that no single statement
+binds more parameters than the engine allows:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+db.<span class="fn">exec</span>(<span class="str">'create table points (x integer, y integer)'</span>)
+
+<span class="kw">echo</span> db.<span class="fn">insert_many</span>(<span class="str">'points'</span>, [
+  { x<span class="op">:</span> <span class="num">1</span>, y<span class="op">:</span> <span class="num">2</span> },
+  { x<span class="op">:</span> <span class="num">3</span>, y<span class="op">:</span> <span class="num">4</span> },
+])
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">2
+</code></pre><span class="code-label">Output</span></figure>
+<p>Every row has to name the same columns. A row naming a different set
+raises rather than being padded with nulls, because a missing column
+and a null column mean different things.</p>
+<h3 id="finding-rows"><a class="anchor" href="#finding-rows" aria-hidden="true" tabindex="-1"></a>Finding rows</h3>
+<p><code>find()</code> answers with a <code>ResultSet</code>, <code>count()</code> with a number, and
+<code>find_one()</code> with the first row as a dictionary:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+<span class="kw">echo</span> db.<span class="fn">count</span>(<span class="str">'posts'</span>)
+<span class="kw">echo</span> db.<span class="fn">count</span>(<span class="str">'posts'</span>, { published<span class="op">:</span> <span class="lit">true</span> })
+<span class="kw">echo</span> db.<span class="fn">count</span>(<span class="str">'posts'</span>, {
+  author_id<span class="op">:</span> [<span class="num">1</span>, <span class="num">2</span>],
+})
+<span class="kw">echo</span> db.<span class="fn">count</span>(<span class="str">'posts'</span>, { author_id<span class="op">:</span> [] })
+
+<span class="kw">echo</span> db
+    .<span class="fn">find</span>(
+      <span class="str">'posts'</span>,
+      { published<span class="op">:</span> <span class="lit">true</span> },
+      {
+        columns<span class="op">:</span> [<span class="str">'title'</span>],
+        order<span class="op">:</span> [<span class="str">'views desc'</span>],
+        limit<span class="op">:</span> <span class="num">2</span>,
+      },
+    )
+    .<span class="fn">column</span>(<span class="str">'title'</span>)
+
+<span class="kw">echo</span> db.<span class="fn">find_one</span>(<span class="str">'posts'</span>, { title<span class="op">:</span> <span class="str">'On Bugs'</span> }).<span class="prop">views</span>
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">4
+3
+4
+0
+[On Bugs, On Compilers]
+1290
+</code></pre><span class="code-label">Output</span></figure>
+<p>A <code>find_one()</code> that matches nothing answers <code>nil</code>. That is the answer,
+not a failure, so nothing is raised for it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+<span class="kw">echo</span> db.<span class="fn">find_one</span>(<span class="str">'posts'</span>, { title<span class="op">:</span> <span class="str">'On Bugs'</span> }).<span class="prop">views</span>
+<span class="kw">echo</span> db.<span class="fn">find_one</span>(<span class="str">'posts'</span>, { title<span class="op">:</span> <span class="str">'Never Written'</span> })
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1290
+nil
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="what-a-filter-can-say"><a class="anchor" href="#what-a-filter-can-say" aria-hidden="true" tabindex="-1"></a>What a filter can say</h3>
+<p>A condition's value decides what it means. A plain value is equality, a
+list is <code>IN</code>, an empty list matches nothing, and <code>nil</code> is <code>IS NULL</code>
+rather than <code>= NULL</code>, which no row ever satisfies.</p>
+<p>Several conditions in one dictionary are joined with <code>AND</code>. There is no
+<code>OR</code>, which is the first thing to write as SQL:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+<span class="kw">echo</span> db.<span class="fn">count</span>(<span class="str">'posts'</span>, { published<span class="op">:</span> <span class="lit">true</span>, author_id<span class="op">:</span> <span class="num">1</span> })
+<span class="kw">echo</span> db.<span class="fn">count</span>(<span class="str">'posts'</span>, {
+  published<span class="op">:</span> <span class="lit">true</span>,
+  views<span class="op">:</span> [<span class="num">87</span>, <span class="num">1290</span>],
+})
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1
+1
+</code></pre><span class="code-label">Output</span></figure>
+<p>Passing <code>nil</code> as the whole filter matches every row. That has to be
+asked for rather than happening because a dictionary came out empty,
+which is what stands between a filter built from user input and an
+<code>UPDATE</code> with no <code>WHERE</code>.</p>
+<h3 id="ordering-limits-and-pages"><a class="anchor" href="#ordering-limits-and-pages" aria-hidden="true" tabindex="-1"></a>Ordering, limits and pages</h3>
+<p><code>order</code> is a list of column names, each optionally followed by <code> asc</code>
+or <code> desc</code>, applied in the order given:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+<span class="kw">echo</span> db
+    .<span class="fn">find</span>(<span class="str">'posts'</span>, <span class="lit">nil</span>, {
+      order<span class="op">:</span> [<span class="str">'views desc'</span>],
+    })
+    .<span class="fn">column</span>(<span class="str">'title'</span>)
+<span class="kw">echo</span> db
+    .<span class="fn">find</span>(<span class="str">'posts'</span>, <span class="lit">nil</span>, {
+      order<span class="op">:</span> [<span class="str">'author_id asc'</span>, <span class="str">'views desc'</span>],
+    })
+    .<span class="fn">column</span>(<span class="str">'title'</span>)
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[On Bugs, On Compilers, On Engines, On Looms]
+[On Engines, On Looms, On Bugs, On Compilers]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>limit</code> and <code>offset</code> are whole numbers of rows, and together they are a
+page. A page past the end is empty rather than an error:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+<span class="kw">def</span> <span class="def">page</span>(number, size) {
+  <span class="kw">return</span> db
+      .<span class="fn">find</span>(<span class="str">'posts'</span>, <span class="lit">nil</span>, {
+        columns<span class="op">:</span> [<span class="str">'title'</span>],
+        order<span class="op">:</span> [<span class="str">'views desc'</span>],
+        limit<span class="op">:</span> size,
+        offset<span class="op">:</span> (number <span class="op">-</span> <span class="num">1</span>) <span class="op">*</span> size,
+      })
+      .<span class="fn">column</span>(<span class="str">'title'</span>)
+}
+
+<span class="kw">echo</span> <span class="fn">page</span>(<span class="num">1</span>, <span class="num">2</span>)
+<span class="kw">echo</span> <span class="fn">page</span>(<span class="num">2</span>, <span class="num">2</span>)
+<span class="kw">echo</span> <span class="fn">page</span>(<span class="num">3</span>, <span class="num">2</span>)
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[On Bugs, On Compilers]
+[On Engines, On Looms]
+[]
+</code></pre><span class="code-label">Output</span></figure>
+<p>A limit and an offset go into the statement text rather than being
+bound, because not every engine allows a parameter in either place.
+That leaves them as the one part of a built statement that is not a
+parameter, so each is checked before it goes in:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+<span class="kw">catch</span> {
+  db.<span class="fn">find</span>(<span class="str">'posts'</span>, <span class="lit">nil</span>, { limit<span class="op">:</span> <span class="num">2.5</span> })
+} <span class="kw">as</span> error {
+  <span class="kw">echo</span> error.<span class="prop">message</span>
+}
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">a limit is a whole number of rows, not 2.5
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="updating-and-deleting"><a class="anchor" href="#updating-and-deleting" aria-hidden="true" tabindex="-1"></a>Updating and deleting</h3>
+<p><code>update()</code> and <code>delete()</code> return how many rows changed:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+db.<span class="fn">exec</span>(<span class="str">'create table t (id integer primary key, n integer)'</span>)
+db.<span class="fn">insert_many</span>(<span class="str">'t'</span>, [
+  { n<span class="op">:</span> <span class="num">1</span> },
+  { n<span class="op">:</span> <span class="num">2</span> },
+  { n<span class="op">:</span> <span class="num">3</span> },
+])
+
+<span class="kw">echo</span> db.<span class="fn">update</span>(
+  <span class="str">'t'</span>,
+  { n<span class="op">:</span> <span class="num">0</span> },
+  {
+    n<span class="op">:</span> [<span class="num">1</span>, <span class="num">2</span>],
+  },
+)
+<span class="kw">echo</span> db.<span class="fn">delete</span>(<span class="str">'t'</span>, { n<span class="op">:</span> <span class="num">0</span> })
+<span class="kw">echo</span> db.<span class="fn">count</span>(<span class="str">'t'</span>)
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">2
+2
+1
+</code></pre><span class="code-label">Output</span></figure>
+<p>They read a filter exactly as <code>find()</code> does, <code>nil</code> included: passing it
+changes or deletes every row.</p>
+<h3 id="values-that-are-not-values"><a class="anchor" href="#values-that-are-not-values" aria-hidden="true" tabindex="-1"></a>Values that are not values</h3>
+<p>Where a value is not a value, <code>sql.raw()</code> marks a fragment to be used
+as written:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+db.<span class="fn">exec</span>(<span class="str">'create table t (id integer primary key, views integer)'</span>)
+db.<span class="fn">insert</span>(<span class="str">'t'</span>, { views<span class="op">:</span> <span class="num">10</span> })
+
+db.<span class="fn">update</span>(<span class="str">'t'</span>, { views<span class="op">:</span> sql.<span class="fn">raw</span>(<span class="str">'views + 1'</span>) }, { <span class="bi">id</span><span class="op">:</span> <span class="num">1</span> })
+<span class="kw">echo</span> db.<span class="fn">fetch_value</span>(<span class="str">'select views from t'</span>)
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">11
+</code></pre><span class="code-label">Output</span></figure>
+<p>A <code>Raw</code> is accepted everywhere a column or a value is, which is what
+makes an aggregate or a subquery reachable without leaving the
+helpers:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+<span class="kw">echo</span> db.<span class="fn">find</span>(<span class="str">'posts'</span>, <span class="lit">nil</span>, {
+  columns<span class="op">:</span> [sql.<span class="fn">raw</span>(<span class="str">'count(*) as n'</span>), sql.<span class="fn">raw</span>(<span class="str">'sum(views) as total'</span>)],
+}).<span class="fn">first</span>()
+
+<span class="kw">echo</span> db.<span class="fn">count</span>(<span class="str">'posts'</span>, {
+  author_id<span class="op">:</span> sql.<span class="fn">raw</span>(<span class="str">"(select id from authors where name = 'Ada Lovelace')"</span>),
+})
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{n: 4, total: 2429}
+2
+</code></pre><span class="code-label">Output</span></figure>
+<blockquote>
+<p><code>raw()</code> is exactly as dangerous as it sounds. A fragment built from
+anything a user supplied is a SQL injection. Build them from
+literals, and keep values in the parameters where they belong.</p>
+</blockquote>
+<h3 id="inside-a-transaction"><a class="anchor" href="#inside-a-transaction" aria-hidden="true" tabindex="-1"></a>Inside a transaction</h3>
+<p>A <code>Transaction</code> carries all of them, and they mean the same thing
+there. A read inside one sees what that transaction has written and
+nobody else has committed yet:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+db.<span class="fn">exec</span>(<span class="str">'create table t (id integer primary key, n integer)'</span>)
+
+db.<span class="fn">transaction</span>(<span class="meta">@</span>(tx) {
+  tx.<span class="fn">insert_many</span>(<span class="str">'t'</span>, [
+    { n<span class="op">:</span> <span class="num">1</span> },
+    { n<span class="op">:</span> <span class="num">2</span> },
+    { n<span class="op">:</span> <span class="num">3</span> },
+  ])
+
+  <span class="kw">echo</span> tx.<span class="fn">count</span>(<span class="str">'t'</span>)
+  <span class="kw">echo</span> tx
+      .<span class="fn">find</span>(<span class="str">'t'</span>, <span class="lit">nil</span>, {
+        order<span class="op">:</span> [<span class="str">'n desc'</span>],
+      })
+      .<span class="fn">column</span>(<span class="str">'n'</span>)
+
+  tx.<span class="fn">update</span>(<span class="str">'t'</span>, { n<span class="op">:</span> <span class="num">9</span> }, { n<span class="op">:</span> <span class="num">1</span> })
+  tx.<span class="fn">delete</span>(<span class="str">'t'</span>, { n<span class="op">:</span> <span class="num">3</span> })
+})
+
+<span class="kw">echo</span> db
+    .<span class="fn">find</span>(<span class="str">'t'</span>, <span class="lit">nil</span>, {
+      order<span class="op">:</span> [<span class="str">'n asc'</span>],
+    })
+    .<span class="fn">column</span>(<span class="str">'n'</span>)
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">3
+[3, 2, 1]
+[2, 9]
+</code></pre><span class="code-label">Output</span></figure>
+<p>A rollback takes those rows with it, the reads included, and a
+transaction that has already committed refuses them the way it refuses
+everything else.</p>
+<h3 id="where-they-stop"><a class="anchor" href="#where-they-stop" aria-hidden="true" tabindex="-1"></a>Where they stop</h3>
+<p>These calls cover a flat list of equality conditions and stop there.
+There is no join, no <code>OR</code> and no expression tree, because SQL is a
+better language for those than any chain of method calls. A query that
+wants one is a <code>query()</code> or a <code>fetch_all()</code> on the same connection,
+next to the helpers rather than instead of them.</p>
+<h2 id="transactions"><a class="anchor" href="#transactions" aria-hidden="true" tabindex="-1"></a>Transactions</h2>
+<p>The closure form commits when the body returns and rolls back when it
+raises, and there is no path through it that leaves a transaction open:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+db.<span class="fn">exec</span>(<span class="str">'create table accounts (id integer primary key, balance integer)'</span>)
+db.<span class="fn">insert_many</span>(<span class="str">'accounts'</span>, [
+  { balance<span class="op">:</span> <span class="num">500</span> },
+  { balance<span class="op">:</span> <span class="num">0</span> },
+])
+
+db.<span class="fn">transaction</span>(<span class="meta">@</span>(tx) {
+  tx.<span class="fn">update</span>(<span class="str">'accounts'</span>, { balance<span class="op">:</span> sql.<span class="fn">raw</span>(<span class="str">'balance - 100'</span>) }, { <span class="bi">id</span><span class="op">:</span> <span class="num">1</span> })
+  tx.<span class="fn">update</span>(<span class="str">'accounts'</span>, { balance<span class="op">:</span> sql.<span class="fn">raw</span>(<span class="str">'balance + 100'</span>) }, { <span class="bi">id</span><span class="op">:</span> <span class="num">2</span> })
+})
+
+<span class="kw">echo</span> db.<span class="fn">fetch_column</span>(<span class="str">'select balance from accounts order by id'</span>)
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[400, 100]
+</code></pre><span class="code-label">Output</span></figure>
+<p>A failure undoes the whole thing:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+db.<span class="fn">exec</span>(<span class="str">'create table t (n integer)'</span>)
+
+<span class="kw">catch</span> {
+  db.<span class="fn">transaction</span>(<span class="meta">@</span>(tx) {
+    tx.<span class="fn">exec</span>(<span class="str">'insert into t values (1)'</span>)
+    <span class="kw">raise</span> <span class="type">Error</span>(<span class="str">'something went wrong'</span>)
+  })
+} <span class="kw">as</span> error {
+  <span class="kw">echo</span> <span class="str">'rolled back: </span><span class="subst">${</span>error.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+}
+
+<span class="kw">echo</span> db.<span class="fn">count</span>(<span class="str">'t'</span>)
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">rolled back: something went wrong
+0
+</code></pre><span class="code-label">Output</span></figure>
+<p>A <code>transaction()</code> called inside another becomes a savepoint, so a
+helper that opens one works the same whether it was called on its own
+or from inside a larger piece of work. Only the outermost commits, and
+a failure inside undoes just that inner piece:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+db.<span class="fn">exec</span>(<span class="str">'create table t (name text)'</span>)
+
+db.<span class="fn">transaction</span>(<span class="meta">@</span>(outer) {
+  outer.<span class="fn">insert</span>(<span class="str">'t'</span>, { name<span class="op">:</span> <span class="str">'outer'</span> })
+
+  <span class="kw">catch</span> {
+    db.<span class="fn">transaction</span>(<span class="meta">@</span>(inner) {
+      inner.<span class="fn">insert</span>(<span class="str">'t'</span>, { name<span class="op">:</span> <span class="str">'inner'</span> })
+      <span class="kw">raise</span> <span class="type">Error</span>(<span class="str">'inner failed'</span>)
+    })
+  } <span class="kw">as</span> _error {
+    <span class="kw">echo</span> <span class="str">'inner undone'</span>
+  }
+})
+
+<span class="kw">echo</span> db.<span class="fn">fetch_column</span>(<span class="str">'select name from t'</span>)
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">inner undone
+[outer]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Schema changes are part of the transaction on SQLite and PostgreSQL,
+so a set of <code>create table</code> statements that fails half way leaves
+nothing behind. MySQL and MariaDB commit the open transaction at every
+<code>create</code>, <code>alter</code> and <code>drop</code>, and a <code>transaction()</code> whose body changes
+the schema there raises <code>TransactionError</code> when it comes to commit.
+<code>db.supports('transactional_ddl')</code> tells the two apart, so a program
+that migrates its own schema can run each change inside a transaction
+where that holds and on its own where it does not.</p>
+<p>An isolation level can be asked for. Where an engine cannot provide one
+it says so rather than quietly giving something weaker:</p>
+<figure class="code"><pre><code class="language-zuri">db.<span class="fn">transaction</span>(<span class="meta">@</span>(tx) { ... }, sql.<span class="prop">SERIALIZABLE</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sql.READ_UNCOMMITTED</code></td>
+<td>MySQL honours it; PostgreSQL accepts it and gives read committed</td>
+</tr>
+<tr>
+<td><code>sql.READ_COMMITTED</code></td>
+<td>everywhere</td>
+</tr>
+<tr>
+<td><code>sql.REPEATABLE_READ</code></td>
+<td>everywhere, and MySQL's default</td>
+</tr>
+<tr>
+<td><code>sql.SERIALIZABLE</code></td>
+<td>everywhere</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><code>begin()</code> opens one to be committed or rolled back by hand, for a
+transaction whose lifetime is not a block. The closure form is safer
+and should be preferred.</p>
+<h2 id="streaming-large-results"><a class="anchor" href="#streaming-large-results" aria-hidden="true" tabindex="-1"></a>Streaming Large Results</h2>
+<p><code>query()</code> builds the whole result in memory, which is right for the
+hundreds of rows most queries return and wrong for the millions some
+do. <code>stream()</code> reads the same result a row at a time:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+<span class="kw">var</span> cursor <span class="op">=</span> db.<span class="fn">stream</span>(<span class="str">'select title from posts order by title'</span>)
+
+<span class="kw">for</span> post <span class="kw">in</span> cursor {
+  <span class="kw">echo</span> post.<span class="prop">title</span>
+}
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">On Bugs
+On Compilers
+On Engines
+On Looms
+</code></pre><span class="code-label">Output</span></figure>
+<p>Running to the end closes the cursor. A loop that stops early does not,
+so anything that might <code>break</code> has to close it:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> cursor <span class="op">=</span> db.<span class="fn">stream</span>(<span class="str">'select * from events'</span>)
+
+<span class="kw">for</span> event <span class="kw">in</span> cursor {
+  <span class="kw">if</span> <span class="fn">done</span>(event) {
+    <span class="kw">break</span>
+  }
+}
+
+cursor.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>take(n)</code> reads a batch at a time, for work that batches naturally:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+<span class="kw">var</span> cursor <span class="op">=</span> db.<span class="fn">stream</span>(<span class="str">'select title from posts order by title'</span>)
+
+<span class="kw">echo</span> cursor.<span class="fn">take</span>(<span class="num">2</span>).<span class="fn">map</span>(<span class="meta">@</span>(post) <span class="op">=&gt;</span> post.<span class="prop">title</span>)
+<span class="kw">echo</span> cursor.<span class="fn">take</span>(<span class="num">2</span>).<span class="fn">map</span>(<span class="meta">@</span>(post) <span class="op">=&gt;</span> post.<span class="prop">title</span>)
+<span class="kw">echo</span> cursor.<span class="fn">take</span>(<span class="num">2</span>)
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[On Bugs, On Compilers]
+[On Engines, On Looms]
+[]
+</code></pre><span class="code-label">Output</span></figure>
+<p>On PostgreSQL this is a server-side portal and on MySQL a server-side
+cursor, both fetched in batches that <code>{ batch: n }</code> sizes. On SQLite it
+is the engine's own behaviour: rows are computed as they are asked for,
+so nothing is held but the current one.</p>
+<p>A server-side cursor holds its connection while it is open, since the
+server is part way through answering. Running another statement on that
+connection before the cursor is read to the end or closed raises rather
+than letting the exchange fall out of step.</p>
+<h2 id="prepared-statements"><a class="anchor" href="#prepared-statements" aria-hidden="true" tabindex="-1"></a>Prepared Statements</h2>
+<p>Compiling a statement is the expensive half of running one, and a
+statement run in a loop should pay for it once:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+db.<span class="fn">exec</span>(<span class="str">'create table points (x integer, y integer)'</span>)
+
+<span class="kw">var</span> insert <span class="op">=</span> db.<span class="fn">prepare</span>(<span class="str">'insert into points (x, y) values (?, ?)'</span>)
+
+<span class="kw">for</span> i <span class="kw">in</span> <span class="num">0</span>..(<span class="num">1000</span>) {
+  insert.<span class="fn">exec</span>([i, i <span class="op">*</span> <span class="num">2</span>])
+}
+
+insert.<span class="fn">close</span>()
+
+<span class="kw">echo</span> db.<span class="fn">count</span>(<span class="str">'points'</span>)
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1000
+</code></pre><span class="code-label">Output</span></figure>
+<p>The placeholders are translated once, when the statement is prepared,
+so the loop does no string work at all. A prepared statement carries
+the same query and fetch methods a connection does.</p>
+<p>A prepared statement belongs to the connection that prepared it.
+Closing the connection closes the statement too, along with any cursor
+still open on it, and using either afterwards raises <code>ClosedError</code>.</p>
+<h2 id="connection-pools"><a class="anchor" href="#connection-pools" aria-hidden="true" tabindex="-1"></a>Connection Pools</h2>
+<p>Opening a connection is expensive: for PostgreSQL and MySQL it is a TCP
+connection, a TLS handshake and an authentication exchange before the
+first statement runs. A server that opened one per request would spend
+most of its time connecting.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">pool</span>(<span class="str">'sqlite://guide.db'</span>, { max<span class="op">:</span> <span class="num">4</span> })
+
+<span class="kw">echo</span> db.<span class="fn">fetch_value</span>(<span class="str">'select count(*) from posts'</span>)
+<span class="kw">echo</span> db.<span class="fn">stats</span>()
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">4
+{size: 1, idle: 1, in_use: 0, max: 4}
+</code></pre><span class="code-label">Output</span></figure>
+<p>Used that way the pool takes a connection, runs the statement and gives
+it back. Where several statements have to run on the same connection,
+which a transaction requires, <code>with_connection()</code> holds one and
+releases it whatever happens:</p>
+<figure class="code"><pre><code class="language-zuri">db.<span class="fn">with_connection</span>(<span class="meta">@</span>(connection) {
+  connection.<span class="fn">transaction</span>(<span class="meta">@</span>(tx) {
+    tx.<span class="fn">exec</span>(<span class="str">'...'</span>)
+  })
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>transaction()</code> on the pool does the same in one call.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>max</code></td>
+<td>most connections to open. Ten by default</td>
+</tr>
+<tr>
+<td><code>min</code></td>
+<td>how many to open up front. None by default</td>
+</tr>
+<tr>
+<td><code>idle_timeout</code></td>
+<td>how long an idle connection is kept</td>
+</tr>
+<tr>
+<td><code>max_lifetime</code></td>
+<td>how long any connection is kept before being replaced</td>
+</tr>
+<tr>
+<td><code>validate_on_acquire</code></td>
+<td>check a connection is alive before lending it</td>
+</tr>
+<tr>
+<td><code>on_connect</code></td>
+<td>run something on each new connection</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>A pool wants to be as small as the work allows. Connections are not
+free at the other end either, and a pool larger than the database can
+usefully serve turns a queue in the application into a queue in the
+database, where it is harder to see.</p>
+<p>A pool belongs to the isolate that made it, which has two consequences.
+An isolate that needs database access makes its own. And there is no
+waiting when a pool is empty: nothing else can release a connection
+while the call is running, so running out is reported rather than
+waited on.</p>
+<h2 id="errors"><a class="anchor" href="#errors" aria-hidden="true" tabindex="-1"></a>Errors</h2>
+<p>Every error is a <code>sql.SqlError</code>. Catch that to catch anything a
+database can do; the subclasses separate what is worth handling
+differently.</p>
+<figure class="code"><pre><code class="language-text">Error
+└── SqlError
+    ├── ConnectionError
+    │   ├── AuthenticationError
+    │   ├── TimeoutError
+    │   └── ProtocolError
+    ├── QueryError
+    ├── IntegrityError
+    │   ├── UniqueViolation
+    │   ├── ForeignKeyViolation
+    │   ├── NotNullViolation
+    │   └── CheckViolation
+    ├── TransactionError
+    │   ├── SerializationError
+    │   └── DeadlockError
+    ├── PoolError
+    │   └── PoolExhaustedError
+    ├── NotSupportedError
+    └── ClosedError
+</code></pre></figure>
+<p>The classes are the same on every engine, which is the point. A unique
+constraint is SQLSTATE <code>23505</code> on PostgreSQL, error number <code>1062</code> on
+MySQL, and extended result code <code>2067</code> on SQLite; no one of those means
+anything to the others, and code matching on any of them would stop
+working the moment the adapter changed.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+db.<span class="fn">exec</span>(<span class="str">'create table users (id integer primary key, email text unique)'</span>)
+db.<span class="fn">insert</span>(<span class="str">'users'</span>, { email<span class="op">:</span> <span class="str">'ada@example.com'</span> })
+
+<span class="kw">catch</span> {
+  db.<span class="fn">insert</span>(<span class="str">'users'</span>, { email<span class="op">:</span> <span class="str">'ada@example.com'</span> })
+} <span class="kw">as</span> error {
+  <span class="kw">echo</span> <span class="bi">instance_of</span>(error, sql.<span class="prop">UniqueViolation</span>)
+  <span class="kw">echo</span> <span class="bi">instance_of</span>(error, sql.<span class="prop">IntegrityError</span>)
+  <span class="kw">echo</span> <span class="bi">instance_of</span>(error, sql.<span class="prop">SqlError</span>)
+  <span class="kw">echo</span> error.<span class="prop">driver</span>
+}
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+true
+true
+sqlite
+</code></pre><span class="code-label">Output</span></figure>
+<p>The engine's own account is kept rather than thrown away. <code>code</code> holds
+what the engine said, <code>sqlstate</code> the five character code where there is
+one, and <code>query</code> the statement that failed:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+db.<span class="fn">exec</span>(<span class="str">'create table users (id integer primary key, email text unique)'</span>)
+db.<span class="fn">insert</span>(<span class="str">'users'</span>, { email<span class="op">:</span> <span class="str">'ada@example.com'</span> })
+
+<span class="kw">catch</span> {
+  db.<span class="fn">insert</span>(<span class="str">'users'</span>, { email<span class="op">:</span> <span class="str">'ada@example.com'</span> })
+} <span class="kw">as</span> error {
+  <span class="kw">echo</span> error.<span class="prop">code</span>
+  <span class="kw">echo</span> error.<span class="prop">sqlstate</span>
+  <span class="kw">echo</span> error.<span class="prop">type</span>
+}
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">2067
+nil
+UniqueViolation
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>SerializationError</code> and <code>DeadlockError</code> are the two worth retrying:
+both mean the engine gave up on a transaction to keep its promises, and
+running the whole transaction again usually succeeds.</p>
+<h2 id="schema-introspection"><a class="anchor" href="#schema-introspection" aria-hidden="true" tabindex="-1"></a>Schema Introspection</h2>
+<p><code>db.schema</code> answers questions about what is in the database. The
+queries underneath are entirely different per engine, and the answers
+are the same shape.</p>
+<p>Every method takes an optional schema to look in. PostgreSQL has
+schemas inside a database and resolves the default through
+<code>search_path</code>; MySQL calls a database a schema and has no layer above
+it, so naming one there names a database; SQLite has neither and
+ignores the argument.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+<span class="kw">echo</span> db.<span class="prop">schema</span>.<span class="fn">tables</span>()
+<span class="kw">echo</span> db.<span class="prop">schema</span>.<span class="fn">column_names</span>(<span class="str">'posts'</span>)
+<span class="kw">echo</span> db.<span class="prop">schema</span>.<span class="fn">primary_key</span>(<span class="str">'posts'</span>)
+<span class="kw">echo</span> db.<span class="prop">schema</span>.<span class="fn">has_column</span>(<span class="str">'posts'</span>, <span class="str">'views'</span>)
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[authors, posts]
+[id, author_id, title, views, published]
+id
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p>Each column is described the same way whichever engine answered:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+<span class="kw">for</span> column <span class="kw">in</span> db.<span class="prop">schema</span>.<span class="fn">columns</span>(<span class="str">'posts'</span>) {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>column.<span class="prop">name</span><span class="subst">}</span><span class="str"> </span><span class="subst">${</span>column.<span class="prop">type</span><span class="subst">}</span><span class="str"> </span><span class="subst">${</span>column.<span class="prop">nullable</span> <span class="op">?</span> <span class="str">"null"</span> <span class="op">:</span> <span class="str">"not null"</span><span class="subst">}</span><span class="str">'</span>
+}
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">id integer null
+author_id integer not null
+title text not null
+views integer not null
+published boolean not null
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>indexes()</code> and <code>foreign_keys()</code> describe the rest:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+<span class="kw">echo</span> db.<span class="prop">schema</span>.<span class="fn">foreign_keys</span>(<span class="str">'posts'</span>)
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[{columns: [author_id], references_table: authors, references_columns: [id], on_update: NO ACTION, on_delete: NO ACTION}]
+</code></pre><span class="code-label">Output</span></figure>
+<p>This is also what makes <code>insert()</code> portable: on an engine with no last
+insert id the insert needs a <code>RETURNING</code> clause, and the column to
+return is the table's primary key, which is asked for here.</p>
+<p>One caution when moving a schema between engines: MySQL parses a
+column level <code>references</code> clause and then ignores it, so a foreign key
+declared that way exists on the other two and not there. Declared at
+table level it exists on all three.</p>
+<p>Changing what is there, creating, altering and dropping tables
+described once for every engine, is
+<a href="ch17-01-schema-changes.html">Changing the Schema</a>.</p>
+<h2 id="switching-databases"><a class="anchor" href="#switching-databases" aria-hidden="true" tabindex="-1"></a>Switching Databases</h2>
+<p>The claim this module makes is that a program moves between engines by
+changing its connection string. Here is that claim, as a program:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">def</span> <span class="def">report</span>(db) {
+  db.<span class="fn">exec_script</span>(<span class="str">'drop table if exists tally'</span>)
+  db.<span class="fn">exec_script</span>(
+    <span class="str">'create table tally (id '</span> <span class="op">+</span>
+        <span class="fn">key_type</span>(db) <span class="op">+</span>
+        <span class="str">' primary key, word text not null)'</span>,
+  )
+
+  db.<span class="fn">insert_many</span>(<span class="str">'tally'</span>, [
+    { word<span class="op">:</span> <span class="str">'alpha'</span> },
+    { word<span class="op">:</span> <span class="str">'beta'</span> },
+  ])
+
+  <span class="kw">var</span> <span class="bi">id</span> <span class="op">=</span> db.<span class="fn">insert</span>(<span class="str">'tally'</span>, { word<span class="op">:</span> <span class="str">'gamma'</span> })
+  <span class="kw">var</span> found <span class="op">=</span> db.<span class="fn">fetch_column</span>(<span class="str">'select word from tally order by word'</span>)
+
+  db.<span class="fn">exec_script</span>(<span class="str">'drop table tally'</span>)
+
+  <span class="kw">return</span> <span class="str">'</span><span class="subst">${</span>db.<span class="fn">driver_name</span>()<span class="subst">}</span><span class="str">: </span><span class="subst">${</span>found<span class="subst">}</span><span class="str"> (last id </span><span class="subst">${</span><span class="bi">id</span><span class="subst">}</span><span class="str">)'</span>
+}
+
+<span class="kw">def</span> <span class="def">key_type</span>(db) {
+  <span class="kw">using</span> db.<span class="fn">driver_name</span>() {
+    <span class="kw">when</span> <span class="str">'postgres'</span> <span class="kw">return</span> <span class="str">'serial'</span>
+    <span class="kw">when</span> <span class="str">'mysql'</span> <span class="kw">return</span> <span class="str">'integer auto_increment'</span>
+    <span class="kw">when</span> <span class="str">'mariadb'</span> <span class="kw">return</span> <span class="str">'integer auto_increment'</span>
+  }
+
+  <span class="kw">return</span> <span class="str">'integer'</span>
+}
+
+<span class="kw">var</span> sqlite <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+
+<span class="kw">echo</span> <span class="fn">report</span>(sqlite)
+sqlite.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">sqlite: [alpha, beta, gamma] (last id 3)
+</code></pre><span class="code-label">Output</span></figure>
+<p>The same <code>report()</code> runs against PostgreSQL or MySQL by opening a
+different connection, and prints the same list.</p>
+<p>Three things did have to be written twice, and they are the three that
+are genuinely different:</p>
+<ul>
+<li><strong>The connection string</strong>, which is the point.</li>
+<li><strong>An auto-incrementing key</strong>, which is not standard SQL. PostgreSQL
+spells it <code>serial</code>, MySQL <code>auto_increment</code>, SQLite <code>integer primary key</code>.</li>
+<li><strong>Any SQL only one of them has.</strong> <code>sql</code> does not parse or rewrite
+statements beyond their placeholders, so a PostgreSQL array operator,
+a MySQL <code>on duplicate key update</code> or a SQLite <code>json_extract</code> stays
+what it is.</li>
+</ul>
+<p><code>db.supports()</code> is how a program asks rather than assumes:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">':memory:'</span>)
+
+<span class="kw">echo</span> db.<span class="fn">driver_name</span>()
+<span class="kw">echo</span> db.<span class="fn">supports</span>(<span class="str">'returning'</span>)
+<span class="kw">echo</span> db.<span class="fn">supports</span>(<span class="str">'arrays'</span>)
+<span class="kw">echo</span> db.<span class="fn">supports</span>(<span class="str">'concurrent_writers'</span>)
+<span class="kw">echo</span> db.<span class="fn">capabilities</span>().<span class="prop">placeholder_style</span>
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">sqlite
+true
+false
+false
+indexed
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="sqlite-specifics"><a class="anchor" href="#sqlite-specifics" aria-hidden="true" tabindex="-1"></a>SQLite Specifics</h2>
+<p><code>db.native()</code> reaches the adapter underneath, where the engine's own
+features live.</p>
+<p>A SQLite database is a file, and <code>:memory:</code> is one that is not. An
+in-memory database belongs to the connection that opened it, so a
+second connection to <code>:memory:</code> is a second, empty database rather than
+another handle on the same data.</p>
+<p>Foreign keys are enforced. SQLite leaves them unenforced by default,
+per connection, for compatibility with databases written before it had
+them; a database that declares them almost certainly means them, so the
+adapter turns them on. Pass <code>foreign_keys: false</code> to turn them back
+off.</p>
+<p>SQLite has no timestamp type, so a <code>date.Date</code> is kept as ISO 8601
+text, written in UTC whatever offset it carried. Text in that one form
+sorts and compares in time order, which is what makes <code>order by</code> and
+<code>&lt;</code> on such a column agree with the clock. A date reads back as the
+same moment, in UTC.</p>
+<h3 id="functions-written-in-zuri"><a class="anchor" href="#functions-written-in-zuri" aria-hidden="true" tabindex="-1"></a>Functions written in Zuri</h3>
+<p>A function registered on a connection runs inside the engine, once per
+row, and can be used anywhere an expression can:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+db.<span class="fn">native</span>().<span class="fn">create_function</span>(<span class="str">'initials'</span>, <span class="num">1</span>, <span class="meta">@</span>(name) {
+  <span class="kw">return</span> <span class="str">''</span>.<span class="fn">join</span>(name.<span class="fn">split</span>(<span class="str">' '</span>).<span class="fn">map</span>(<span class="meta">@</span>(part) <span class="op">=&gt;</span> part[<span class="num">0</span>, <span class="num">1</span>]))
+})
+
+<span class="kw">echo</span> db.<span class="fn">fetch_column</span>(<span class="str">'select initials(name) from authors order by name'</span>)
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[AL, GH]
+</code></pre><span class="code-label">Output</span></figure>
+<p>An aggregate is written as a fold: <code>step</code> is called once per row with
+the accumulator and the row's arguments and returns the next
+accumulator, and <code>finish</code> turns the last accumulator into the group's
+value.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+db.<span class="fn">native</span>().<span class="fn">create_aggregate</span>(<span class="str">'longest'</span>, <span class="num">1</span>, <span class="meta">@</span>(longest, title) {
+  <span class="kw">if</span> longest <span class="op">==</span> <span class="lit">nil</span> <span class="kw">or</span> title.<span class="fn">length</span>() <span class="op">&gt;</span> longest.<span class="fn">length</span>() {
+    <span class="kw">return</span> title
+  }
+
+  <span class="kw">return</span> longest
+}, <span class="meta">@</span>(longest) <span class="op">=&gt;</span> longest)
+
+<span class="kw">echo</span> db.<span class="fn">fetch_value</span>(<span class="str">'select longest(title) from posts'</span>)
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">On Compilers
+</code></pre><span class="code-label">Output</span></figure>
+<p>A collation is an ordering for text, reached with <code>collate</code>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'sqlite://guide.db'</span>)
+
+db.<span class="fn">native</span>().<span class="fn">create_collation</span>(<span class="str">'bylength'</span>, <span class="meta">@</span>(a, b) <span class="op">=&gt;</span> a.<span class="fn">length</span>() <span class="op">-</span> b.<span class="fn">length</span>())
+
+<span class="kw">echo</span> db.<span class="fn">fetch_column</span>(<span class="str">'select title from posts order by title collate bylength'</span>)
+
+db.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[On Bugs, On Looms, On Engines, On Compilers]
+</code></pre><span class="code-label">Output</span></figure>
+<blockquote>
+<p>A function must not touch the connection it was registered on.
+SQLite is in the middle of a statement when it calls, and reentering
+would deadlock. An error raised inside one is carried out and
+re-raised with its own class intact once the statement has finished.</p>
+</blockquote>
+<h3 id="blobs-backups-and-hooks"><a class="anchor" href="#blobs-backups-and-hooks" aria-hidden="true" tabindex="-1"></a>Blobs, backups and hooks</h3>
+<p>A large value read with a <code>select</code> arrives all at once. A blob handle
+opens one cell and reads windows of it:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> blob <span class="op">=</span> db.<span class="fn">native</span>().<span class="fn">blob</span>(<span class="str">'main'</span>, <span class="str">'files'</span>, <span class="str">'content'</span>, <span class="bi">id</span>, <span class="lit">false</span>)
+
+<span class="kw">var</span> at <span class="op">=</span> <span class="num">0</span>
+<span class="kw">while</span> at <span class="op">&lt;</span> blob.<span class="fn">length</span>() {
+  out.<span class="fn">write</span>(blob.<span class="fn">read</span>(at, <span class="num">65536</span>.<span class="fn">min</span>(blob.<span class="fn">length</span>() <span class="op">-</span> at)))
+  at <span class="op">+=</span> <span class="num">65536</span>
+}
+
+blob.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The cell has to exist and already be the right size: SQLite cannot grow
+a blob this way, which is what inserting <code>zeroblob(n)</code> is for.</p>
+<p>Copying the file with the filesystem is only safe when nothing is
+writing. SQLite's own backup copies page by page and notices when the
+source changes underneath:</p>
+<figure class="code"><pre><code class="language-zuri">db.<span class="fn">native</span>().<span class="fn">backup_to</span>(<span class="str">'./snapshot.db'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>And the hooks report what the engine is doing:</p>
+<figure class="code"><pre><code class="language-zuri">db.<span class="fn">native</span>().<span class="fn">on_change</span>(<span class="meta">@</span>(operation, database, table, rowid) { ... })
+db.<span class="fn">native</span>().<span class="fn">on_commit</span>(<span class="meta">@</span>() <span class="op">=&gt;</span> <span class="lit">true</span>)
+db.<span class="fn">native</span>().<span class="fn">on_rollback</span>(<span class="meta">@</span>() { ... })
+db.<span class="fn">native</span>().<span class="fn">set_authorizer</span>(<span class="meta">@</span>(action, first, second, database, trigger) { ... })
+db.<span class="fn">native</span>().<span class="fn">on_progress</span>(<span class="num">1000</span>, <span class="meta">@</span>() <span class="op">=&gt;</span> <span class="fn">keep_going</span>())
+</code></pre><span class="code-label">Zuri</span></figure>
+<h2 id="postgresql-specifics"><a class="anchor" href="#postgresql-specifics" aria-hidden="true" tabindex="-1"></a>PostgreSQL Specifics</h2>
+<p>The adapter speaks version 3 of the wire protocol, over TCP or over a
+unix domain socket, optionally under TLS.</p>
+<p>A <code>host</code> beginning with a slash is a socket directory, which is how
+libpq spells it, and the socket inside is named after the port:
+<code>/var/run/postgresql</code> with port 5432 means
+<code>/var/run/postgresql/.s.PGSQL.5432</code>. A path that already names the
+socket is taken as given. TLS is neither offered nor wanted over a
+socket, since nothing sits in between, so <code>sslmode</code> is ignored there.</p>
+<figure class="code"><pre><code class="language-zuri">sql.<span class="fn">open</span>(<span class="str">'postgres:///app?host=/var/run/postgresql'</span>)
+sql.<span class="fn">open</span>({ driver<span class="op">:</span> <span class="str">'postgres'</span>, host<span class="op">:</span> <span class="str">'/var/run/postgresql'</span>, database<span class="op">:</span> <span class="str">'app'</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>sslmode</code> chooses how TLS is used: <code>disable</code> never, <code>prefer</code> when the
+server offers it, and <code>require</code> always, failing when the server
+refuses. Only <code>require</code> verifies who is on the other end.</p>
+<p>Statements go through the extended protocol, which compiles them on the
+server and binds values rather than substituting them. Values travel in
+the server's own binary form wherever the adapter has a codec for the
+type, and as text otherwise, so a type it has never heard of still
+arrives readable rather than as bytes.</p>
+<p><code>numeric</code> columns arrive as <code>sql.Decimal</code>, arrays as lists, <code>jsonb</code> as
+dictionaries, and timestamps as <code>date.Date</code>.</p>
+<h3 id="listening-for-notifications"><a class="anchor" href="#listening-for-notifications" aria-hidden="true" tabindex="-1"></a>Listening for notifications</h3>
+<p><code>LISTEN</code> and <code>NOTIFY</code> are PostgreSQL's own publish and subscribe. A
+connection that has run <code>LISTEN channel</code> receives a message whenever
+anything anywhere runs <code>NOTIFY channel</code>.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> listener <span class="op">=</span> db.<span class="fn">native</span>().<span class="fn">listener</span>()
+
+listener.<span class="fn">listen</span>(<span class="str">'jobs'</span>)
+
+<span class="kw">while</span> <span class="lit">true</span> {
+  <span class="kw">for</span> message <span class="kw">in</span> listener.<span class="fn">wait</span>(<span class="lit">nil</span>) {
+    <span class="fn">handle</span>(message.<span class="prop">channel</span>, message.<span class="prop">payload</span>)
+  }
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Notifications arrive between other messages, so a connection busy
+running statements collects them as it goes and <code>poll()</code> hands over
+whatever has accumulated.</p>
+<h3 id="teaching-it-a-type"><a class="anchor" href="#teaching-it-a-type" aria-hidden="true" tabindex="-1"></a>Teaching it a type</h3>
+<p>A database that defines its own types can teach the adapter about them:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> sql.<span class="prop">postgres</span> { <span class="const">DEFAULT_REGISTRY</span> }
+
+<span class="const">DEFAULT_REGISTRY</span>.<span class="fn">register</span>(oid, decoder, encoder)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Until it is taught, such a column arrives as text, which is correct if
+unexciting.</p>
+<h2 id="mysql-specifics"><a class="anchor" href="#mysql-specifics" aria-hidden="true" tabindex="-1"></a>MySQL Specifics</h2>
+<p>The adapter speaks the client/server protocol directly, over TCP or
+over a unix domain socket, optionally under TLS, with no client library
+underneath it. MariaDB speaks the same protocol and the same adapter
+drives it.</p>
+<p>A <code>socket</code> option names a socket, and so does a <code>host</code> beginning with a
+slash. Unlike PostgreSQL the path names the socket itself rather than
+the directory holding it:</p>
+<figure class="code"><pre><code class="language-zuri">sql.<span class="fn">open</span>({
+  driver<span class="op">:</span> <span class="str">'mysql'</span>,
+  socket<span class="op">:</span> <span class="str">'/var/run/mysqld/mysqld.sock'</span>,
+  user<span class="op">:</span> <span class="str">'app'</span>,
+})
+sql.<span class="fn">open</span>(<span class="str">'socket=/var/run/mysqld/mysqld.sock user=app database=shop'</span>)
+sql.<span class="fn">open</span>(<span class="str">'mysql://app@localhost/shop?socket=/var/run/mysqld/mysqld.sock'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>TLS is neither offered nor wanted there, since nothing sits in between.
+The connection does count as private, which is what lets
+<code>caching_sha2_password</code> and <code>sha256_password</code> send the password itself
+rather than encrypting it to the server's public key.</p>
+<p>A statement with no values is sent as text, which is one round trip. A
+statement with values is prepared, so the values travel in the server's
+binary encoding instead of being written into the SQL, and the question
+of quoting never arises. Compiled statements are kept and reused, so a
+query run in a loop is compiled once.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> mysql <span class="op">=</span> sql.<span class="fn">driver</span>(<span class="str">'mysql'</span>)
+
+<span class="kw">echo</span> mysql.<span class="fn">capabilities</span>().<span class="prop">placeholder_style</span>
+<span class="kw">echo</span> mysql.<span class="fn">capabilities</span>().<span class="prop">last_insert_id</span>
+<span class="kw">echo</span> mysql.<span class="fn">capabilities</span>().<span class="prop">returning</span>
+<span class="kw">echo</span> mysql.<span class="fn">quote_identifier</span>(<span class="str">'order by'</span>)
+<span class="kw">echo</span> sql.<span class="fn">driver</span>(<span class="str">'mariadb'</span>).<span class="fn">capabilities</span>().<span class="prop">returning</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">question
+true
+false
+`order by`
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p>MySQL keeps <code>?</code> as it is written, and reports the id of an inserted row
+rather than returning it, so <code>insert()</code> reads the reported id instead of
+adding a <code>RETURNING</code> clause. MariaDB differs in two ways that change
+what the layer above generates: it has <code>RETURNING</code>, and it has no JSON
+type. The server decides which applies, whatever the scheme: a MariaDB
+server reached through <code>mysql://</code> reports <code>db.driver_name()</code> as
+<code>'mariadb'</code> and <code>db.supports('json')</code> as false.</p>
+<h3 id="what-arrives-from-where"><a class="anchor" href="#what-arrives-from-where" aria-hidden="true" tabindex="-1"></a>What arrives from where</h3>
+<p><code>DECIMAL</code> columns arrive as <code>sql.Decimal</code>, <code>JSON</code> as lists and
+dictionaries, <code>DATE</code> and <code>DATETIME</code> and <code>TIMESTAMP</code> as <code>date.Date</code>, and
+<code>TIME</code> as <code>sql.Time</code>.</p>
+<p>MySQL has no boolean. <code>BOOLEAN</code> is another name for <code>TINYINT(1)</code>, so a
+value written as <code>true</code> comes back as <code>1</code>, and <code>db.supports('booleans')</code>
+is false to say so.</p>
+<p><code>BLOB</code> and <code>TEXT</code> share a type on the wire and are told apart only by
+the column's collation, which the adapter reads: a binary column
+arrives as <code>bytes</code> and a text one as a string. <code>BIT</code> and <code>GEOMETRY</code>
+arrive as <code>bytes</code>, having no shape Zuri could represent without
+inventing one. <code>SET</code> arrives as the comma separated text the server
+stores rather than as a list, because a list written back would be
+encoded as JSON and the column would quietly stop matching.</p>
+<p>A date MySQL considers absent is written as zeros, and <code>0000-00-00</code> is
+not a date any calendar has. It arrives as <code>nil</code>.</p>
+<h3 id="a-time-is-a-span-not-a-clock"><a class="anchor" href="#a-time-is-a-span-not-a-clock" aria-hidden="true" tabindex="-1"></a>A TIME is a span, not a clock</h3>
+<p>A <code>TIME</code> column runs from <code>-838:59:59.999999</code> to <code>838:59:59.999999</code>. It
+is a duration rather than a point in the day, so it can be negative and
+can exceed twenty four hours, and neither of those would survive being
+read into a <code>date.Date</code>. <code>sql.Time</code> holds it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">var</span> shift <span class="op">=</span> sql.<span class="fn">time</span>(<span class="num">9</span>, <span class="num">30</span>, <span class="num">0</span>)
+<span class="kw">var</span> late <span class="op">=</span> sql.<span class="fn">time</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">30</span>, <span class="num">0</span>, <span class="lit">true</span>)
+
+<span class="kw">echo</span> shift.<span class="fn">to_string</span>()
+<span class="kw">echo</span> shift.<span class="fn">total_seconds</span>()
+<span class="kw">echo</span> late.<span class="fn">to_string</span>()
+<span class="kw">echo</span> late.<span class="fn">total_seconds</span>()
+
+<span class="com"># Two spans of the same length are equal however each was built.</span>
+<span class="kw">echo</span> sql.<span class="fn">time</span>(<span class="num">1</span>, <span class="num">30</span>).<span class="fn">equals</span>(sql.<span class="fn">time</span>(<span class="num">0</span>, <span class="num">90</span>))
+
+<span class="com"># And the parts are kept as they were written.</span>
+<span class="kw">echo</span> sql.<span class="fn">time</span>(<span class="num">0</span>, <span class="num">90</span>).<span class="prop">minutes</span>
+
+<span class="kw">echo</span> sql.<span class="fn">parse_time</span>(<span class="str">'-838:59:59.999999'</span>).<span class="fn">to_string</span>()
+<span class="kw">echo</span> sql.<span class="fn">time_from_seconds</span>(<span class="op">-</span><span class="num">5400</span>).<span class="fn">to_string</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">09:30:00
+34200
+-00:00:30
+-30
+true
+90
+-838:59:59.999999
+-01:30:00
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="time-zones"><a class="anchor" href="#time-zones" aria-hidden="true" tabindex="-1"></a>Time zones</h3>
+<p>A <code>DATETIME</code> carries no zone, and a <code>TIMESTAMP</code> is converted to and
+from whatever zone the session is in. So the session's zone decides
+what a timestamp means, and leaving it to the server's configuration
+would make the same database read differently from two machines.</p>
+<p>The adapter sets the session to UTC when it connects. Every timestamp
+then arrives as UTC, and a <code>date.Date</code> written back is converted from
+whatever offset it carries. To leave the server's own setting alone,
+pass <code>time_zone</code> as <code>nil</code>, or name a zone to use instead:</p>
+<figure class="code"><pre><code class="language-zuri">sql.<span class="fn">open</span>(<span class="str">'mysql://localhost/app'</span>, { time_zone<span class="op">:</span> <span class="lit">nil</span> })
+sql.<span class="fn">open</span>(<span class="str">'mysql://localhost/app'</span>, { time_zone<span class="op">:</span> <span class="str">'+01:00'</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<h3 id="authentication"><a class="anchor" href="#authentication" aria-hidden="true" tabindex="-1"></a>Authentication</h3>
+<p><code>caching_sha2_password</code>, which is the default from MySQL 8.0 onwards,
+<code>mysql_native_password</code>, <code>sha256_password</code>, <code>mysql_clear_password</code>, and
+MariaDB's <code>client_ed25519</code>.</p>
+<p>Two of those need the password itself rather than a proof of it, the
+first time an account authenticates. Over TLS the password is sent as
+it is. Over a plain connection it is encrypted to a public key the
+server hands over first, so it is never readable in transit.
+<code>mysql_clear_password</code> has no such fallback and is refused outright on
+a connection that is not private, since it sends the password with
+nothing protecting it.</p>
+<h3 id="tls"><a class="anchor" href="#tls" aria-hidden="true" tabindex="-1"></a>TLS</h3>
+<p><code>sslmode</code> chooses how TLS is used:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>disable</code></td>
+<td>Never.</td>
+</tr>
+<tr>
+<td><code>prefer</code></td>
+<td>When the server offers it, without checking who the server is. The default.</td>
+</tr>
+<tr>
+<td><code>require</code></td>
+<td>Always, without checking who the server is.</td>
+</tr>
+<tr>
+<td><code>verify</code></td>
+<td>Always, checking the server's certificate and host name.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>MySQL's own spellings are accepted too. <code>DISABLED</code>, <code>PREFERRED</code> and
+<code>REQUIRED</code> mean what they say, and both <code>VERIFY_CA</code> and
+<code>VERIFY_IDENTITY</code> become <code>verify</code>. That makes <code>VERIFY_CA</code> stricter here
+than on the command line, where it checks the certificate but not the
+name: the difference can only cause a connection to be refused, never
+one to be wrongly trusted.</p>
+<p><code>ssl_ca</code> names a certificate authority to trust, and <code>ssl_cert</code> with
+<code>ssl_key</code> present a client certificate.</p>
+<h3 id="compression"><a class="anchor" href="#compression" aria-hidden="true" tabindex="-1"></a>Compression</h3>
+<p>The protocol can compress everything after the handshake:</p>
+<figure class="code"><pre><code class="language-zuri">sql.<span class="fn">open</span>(<span class="str">'mysql://localhost/app'</span>, { compression<span class="op">:</span> <span class="str">'zlib'</span> })
+sql.<span class="fn">open</span>(<span class="str">'mysql://localhost/app'</span>, { compression<span class="op">:</span> <span class="str">'zstd'</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>It is worth it for large results over a slow link and costs more than
+it saves on a local socket, so it is off unless asked for. A packet too
+small to benefit is sent uncompressed regardless, which the protocol
+allows for.</p>
+<h3 id="sending-a-file"><a class="anchor" href="#sending-a-file" aria-hidden="true" tabindex="-1"></a>Sending a file</h3>
+<p><code>LOAD DATA LOCAL INFILE</code> has the server name a file and the client send
+it. The file is read from the machine the program runs on, chosen by
+the server, so a hostile or compromised server could ask for anything
+the process can read. It is refused unless a reader is supplied:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> os
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'mysql://localhost/app'</span>, {
+  local_infile<span class="op">:</span> <span class="meta">@</span>(name) {
+    <span class="kw">return</span> os.<span class="fn">file</span>(name).<span class="fn">read</span>()
+  },
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The reader decides what may be sent, which is where that decision
+belongs. Refusing still answers the server, so the connection stays
+usable afterwards rather than waiting for a file that will never come.</p>
+<h3 id="statements-that-answer-more-than-once"><a class="anchor" href="#statements-that-answer-more-than-once" aria-hidden="true" tabindex="-1"></a>Statements that answer more than once</h3>
+<p>A stored procedure sends one result set per <code>select</code> inside it, then an
+OK packet. <code>query()</code> hands back the first and reads the rest, because
+leaving them unread would not lose them: it would give them to the next
+statement, which would then answer with this one's rows.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> first <span class="op">=</span> db.<span class="fn">query</span>(<span class="str">'call two_results()'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A routine's body has semicolons in it, and <code>exec_script()</code> splits a
+script on semicolons. So a <code>create procedure</code> goes through <code>exec()</code> as
+a single statement rather than through <code>exec_script()</code>.</p>
+<h3 id="reaching-the-adapter"><a class="anchor" href="#reaching-the-adapter" aria-hidden="true" tabindex="-1"></a>Reaching the adapter</h3>
+<figure class="code"><pre><code class="language-zuri">db.<span class="fn">native</span>().<span class="fn">flavor</span>() <span class="com"># 'mysql' or 'mariadb'</span>
+db.<span class="fn">native</span>().<span class="fn">connection_id</span>() <span class="com"># what KILL names</span>
+db.<span class="fn">native</span>().<span class="fn">parameters</span>() <span class="com"># what the server said about itself</span>
+db.<span class="fn">native</span>().<span class="fn">reset</span>() <span class="com"># back to a fresh session</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<h2 id="writing-your-own-adapter"><a class="anchor" href="#writing-your-own-adapter" aria-hidden="true" tabindex="-1"></a>Writing Your Own Adapter</h2>
+<p>An adapter for another engine implements four things: a <code>Driver</code> that
+reads a connection string and opens a connection, a <code>DriverConnection</code>
+that runs statements, a <code>DriverStatement</code>, and a <code>DriverCursor</code>.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> sql
+
+<span class="kw">class</span> <span class="type">DuckDbDriver</span> <span class="op">&lt;</span> sql.<span class="prop">Driver</span> {
+  <span class="fn">name</span>() { <span class="kw">return</span> <span class="str">'duckdb'</span> }
+  <span class="fn">schemes</span>() { <span class="kw">return</span> [<span class="str">'duckdb'</span>] }
+
+  <span class="fn">capabilities</span>() {
+    <span class="kw">var</span> caps <span class="op">=</span> sql.<span class="fn">default_capabilities</span>()
+    caps.<span class="fn">set</span>(<span class="str">'placeholder_style'</span>, sql.<span class="prop">QUESTION</span>)
+    caps.<span class="fn">set</span>(<span class="str">'returning'</span>, <span class="lit">true</span>)
+
+    <span class="kw">return</span> caps
+  }
+
+  <span class="fn">parse_dsn</span>(dsn) { ... }
+  <span class="fn">connect</span>(options) { ... }
+}
+
+sql.<span class="fn">register</span>(<span class="type">DuckDbDriver</span>())
+
+<span class="kw">var</span> db <span class="op">=</span> sql.<span class="fn">open</span>(<span class="str">'duckdb://./app.duckdb'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Everything above the adapter comes for free: pooling, transactions and
+savepoints, the CRUD helpers, placeholder translation, cursors, the
+error hierarchy, and models. What the adapter supplies is the engine.</p>
+<p>Schema changes and migrations need one thing more: the engine's
+spelling of a table. An adapter supplies it by subclassing
+<code>sql.DdlAdapter</code>, which already writes standard SQL, overriding what the
+engine says differently, <code>type_name()</code> for each column type and
+<code>key_definition()</code> for an <code>id()</code> among them, and returning an instance
+from its driver's <code>ddl()</code>. A driver with none refuses schema changes
+with <code>NotSupportedError</code>.</p>
+<p>The base classes raise <code>NotImplementedError</code> for anything left out, so
+an unfinished adapter fails where the gap is. An engine that genuinely
+cannot do something raises <code>NotSupportedError</code> instead, which reads
+differently on purpose: the first is an unfinished adapter, the second
+is an honest limit.</p>
+<h2 id="what-the-module-refuses"><a class="anchor" href="#what-the-module-refuses" aria-hidden="true" tabindex="-1"></a>What the Module Refuses</h2>
+<p><strong>Rows are dictionaries.</strong> The connection hands back rows, never
+objects. Models are <a href="ch17-03-models.html"><code>sql.model</code></a>, built on top and
+loaded only by a program that uses them.</p>
+<p><strong>It does not write your joins.</strong> The CRUD helpers cover a flat list of
+equality conditions, and models their own columns and associations.
+Anything past that is SQL.</p>
+<p><strong>It does not translate SQL.</strong> Placeholders are rewritten. Statements
+are not parsed, and a function only one engine has stays a function
+only one engine has.</p>
+<p><strong>It does not hide a difference by guessing.</strong> Where an engine cannot
+do what was asked, the answer is <code>NotSupportedError</code> naming the adapter
+and the feature, rather than an approximation nobody asked for.</p>
+<h2 id="module-reference"><a class="anchor" href="#module-reference" aria-hidden="true" tabindex="-1"></a>Module Reference</h2>
+<p>The standard library reference documents every class and method. The
+shape of the module:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sql.open(dsn, options)</code></td>
+<td>opens a connection</td>
+</tr>
+<tr>
+<td><code>sql.pool(dsn, options)</code></td>
+<td>opens a pool of them</td>
+</tr>
+<tr>
+<td><code>sql.register(driver)</code></td>
+<td>adds an adapter</td>
+</tr>
+<tr>
+<td><code>sql.drivers()</code></td>
+<td>what is registered</td>
+</tr>
+<tr>
+<td><code>sql.raw(fragment)</code></td>
+<td>marks SQL to be used as written</td>
+</tr>
+<tr>
+<td><code>sql.Decimal(text)</code></td>
+<td>an exact decimal</td>
+</tr>
+<tr>
+<td><code>sql.time(h, m, s)</code></td>
+<td>a signed span, as a <code>TIME</code> column holds one</td>
+</tr>
+<tr>
+<td><code>sql.parse_time(text)</code></td>
+<td>the same, read from text</td>
+</tr>
+<tr>
+<td><code>sql.blueprint</code></td>
+<td>a table described once for every engine</td>
+</tr>
+<tr>
+<td><code>sql.migrate</code></td>
+<td>versioned schema changes, and <code>Migrator</code> to apply them</td>
+</tr>
+<tr>
+<td><code>sql.model</code></td>
+<td>models: <code>Model</code>, <code>Query</code> and the errors they raise</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>On a <code>Connection</code>:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>query</code>, <code>exec</code>, <code>exec_script</code></td>
+<td>run a statement</td>
+</tr>
+<tr>
+<td><code>fetch_one</code>, <code>fetch_all</code>, <code>fetch_value</code>, <code>fetch_column</code></td>
+<td>read a result</td>
+</tr>
+<tr>
+<td><code>stream</code>, <code>prepare</code></td>
+<td>a cursor, and a compiled statement</td>
+</tr>
+<tr>
+<td><code>insert</code>, <code>insert_many</code>, <code>update</code>, <code>delete</code>, <code>find</code>, <code>find_one</code>, <code>count</code></td>
+<td>the four statements that are always the same</td>
+</tr>
+<tr>
+<td><code>transaction</code>, <code>begin</code>, <code>in_transaction</code></td>
+<td>transactions</td>
+</tr>
+<tr>
+<td><code>schema</code></td>
+<td>introspection, and <code>create_table</code>, <code>alter_table</code>, <code>rename_table</code>, <code>drop_table</code></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>a query over a model's rows</td>
+</tr>
+<tr>
+<td><code>driver</code>, <code>driver_name</code>, <code>capabilities</code>, <code>supports</code></td>
+<td>what this engine is</td>
+</tr>
+<tr>
+<td><code>native</code></td>
+<td>the adapter underneath</td>
+</tr>
+<tr>
+<td><code>ping</code>, <code>close</code>, <code>is_closed</code></td>
+<td>the connection itself</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>On a <code>Transaction</code>:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>query</code>, <code>exec</code></td>
+<td>run a statement</td>
+</tr>
+<tr>
+<td><code>fetch_one</code>, <code>fetch_all</code>, <code>fetch_value</code></td>
+<td>read a result</td>
+</tr>
+<tr>
+<td><code>insert</code>, <code>insert_many</code>, <code>update</code>, <code>delete</code>, <code>find</code>, <code>find_one</code>, <code>count</code></td>
+<td>the same helpers a connection has</td>
+</tr>
+<tr>
+<td><code>schema</code>, <code>model</code></td>
+<td>the connection's schema and models, inside the transaction</td>
+</tr>
+<tr>
+<td><code>commit</code>, <code>rollback</code>, <code>is_finished</code></td>
+<td>ending it</td>
+</tr>
+<tr>
+<td><code>connection</code>, <code>nested</code></td>
+<td>what it is running on, and whether it is a savepoint</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch17-00-sql.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch16-00-imagine.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">16</span>Imagine: Images</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch17-01-schema-changes.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">17.1</span>Changing the Schema</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#following-along">Following Along</a>
+        </li><li class="level-2">
+          <a href="#introduction">Introduction</a>
+        </li><li class="level-2">
+          <a href="#connecting">Connecting</a>
+        </li><li class="level-2">
+          <a href="#querying-and-fetching">Querying and Fetching</a>
+        </li><li class="level-2">
+          <a href="#parameters">Parameters</a>
+        </li><li class="level-2">
+          <a href="#rows-columns-and-types">Rows, Columns and Types</a>
+        </li><li class="level-3">
+          <a href="#exact-decimals">Exact decimals</a>
+        </li><li class="level-2">
+          <a href="#the-crud-helpers">The CRUD Helpers</a>
+        </li><li class="level-3">
+          <a href="#inserting-and-ids">Inserting and ids</a>
+        </li><li class="level-3">
+          <a href="#several-rows-at-once">Several rows at once</a>
+        </li><li class="level-3">
+          <a href="#finding-rows">Finding rows</a>
+        </li><li class="level-3">
+          <a href="#what-a-filter-can-say">What a filter can say</a>
+        </li><li class="level-3">
+          <a href="#ordering-limits-and-pages">Ordering, limits and pages</a>
+        </li><li class="level-3">
+          <a href="#updating-and-deleting">Updating and deleting</a>
+        </li><li class="level-3">
+          <a href="#values-that-are-not-values">Values that are not values</a>
+        </li><li class="level-3">
+          <a href="#inside-a-transaction">Inside a transaction</a>
+        </li><li class="level-3">
+          <a href="#where-they-stop">Where they stop</a>
+        </li><li class="level-2">
+          <a href="#transactions">Transactions</a>
+        </li><li class="level-2">
+          <a href="#streaming-large-results">Streaming Large Results</a>
+        </li><li class="level-2">
+          <a href="#prepared-statements">Prepared Statements</a>
+        </li><li class="level-2">
+          <a href="#connection-pools">Connection Pools</a>
+        </li><li class="level-2">
+          <a href="#errors">Errors</a>
+        </li><li class="level-2">
+          <a href="#schema-introspection">Schema Introspection</a>
+        </li><li class="level-2">
+          <a href="#switching-databases">Switching Databases</a>
+        </li><li class="level-2">
+          <a href="#sqlite-specifics">SQLite Specifics</a>
+        </li><li class="level-3">
+          <a href="#functions-written-in-zuri">Functions written in Zuri</a>
+        </li><li class="level-3">
+          <a href="#blobs-backups-and-hooks">Blobs, backups and hooks</a>
+        </li><li class="level-2">
+          <a href="#postgresql-specifics">PostgreSQL Specifics</a>
+        </li><li class="level-3">
+          <a href="#listening-for-notifications">Listening for notifications</a>
+        </li><li class="level-3">
+          <a href="#teaching-it-a-type">Teaching it a type</a>
+        </li><li class="level-2">
+          <a href="#mysql-specifics">MySQL Specifics</a>
+        </li><li class="level-3">
+          <a href="#what-arrives-from-where">What arrives from where</a>
+        </li><li class="level-3">
+          <a href="#a-time-is-a-span-not-a-clock">A TIME is a span, not a clock</a>
+        </li><li class="level-3">
+          <a href="#time-zones">Time zones</a>
+        </li><li class="level-3">
+          <a href="#authentication">Authentication</a>
+        </li><li class="level-3">
+          <a href="#tls">TLS</a>
+        </li><li class="level-3">
+          <a href="#compression">Compression</a>
+        </li><li class="level-3">
+          <a href="#sending-a-file">Sending a file</a>
+        </li><li class="level-3">
+          <a href="#statements-that-answer-more-than-once">Statements that answer more than once</a>
+        </li><li class="level-3">
+          <a href="#reaching-the-adapter">Reaching the adapter</a>
+        </li><li class="level-2">
+          <a href="#writing-your-own-adapter">Writing Your Own Adapter</a>
+        </li><li class="level-2">
+          <a href="#what-the-module-refuses">What the Module Refuses</a>
+        </li><li class="level-2">
+          <a href="#module-reference">Module Reference</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

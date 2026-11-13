@@ -1,0 +1,906 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Number Methods · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/appendix-05-02-number.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="teal" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item open"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="true" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html" aria-current="page"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Appendices</p>
+        <div class="content"><h1 id="number-methods">Number Methods</h1>
+<p>Every method on the built-in <code>number</code> type, with its signature, what it
+returns, and the cases where it does something other than the obvious
+thing.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Returns</th>
+<th>Summary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#to_string"><code>to_string()</code></a></td>
+<td><code>string</code></td>
+<td>Returns the string representation of the number.</td>
+</tr>
+<tr>
+<td><a href="#to_bool"><code>to_bool()</code></a></td>
+<td><code>boolean</code></td>
+<td>Converts the number to a boolean, by the same rule <code>if</code> uses.</td>
+</tr>
+<tr>
+<td><a href="#to_bigint"><code>to_bigint()</code></a></td>
+<td><code>bigint</code></td>
+<td>Converts the number to a <code>bigint</code>, the counterpart to <code>bigint.to_number()</code>.</td>
+</tr>
+<tr>
+<td><a href="#abs"><code>abs()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the absolute value of the number.</td>
+</tr>
+<tr>
+<td><a href="#chr"><code>chr()</code></a></td>
+<td><code>string</code></td>
+<td>Returns the Unicode character whose code point is equal to the number.</td>
+</tr>
+<tr>
+<td><a href="#bin"><code>bin()</code></a></td>
+<td><code>string</code></td>
+<td>Converts the number to its binary string representation.</td>
+</tr>
+<tr>
+<td><a href="#hex"><code>hex()</code></a></td>
+<td><code>string</code></td>
+<td>Converts the number to its hexadecimal string representation.</td>
+</tr>
+<tr>
+<td><a href="#oct"><code>oct()</code></a></td>
+<td><code>string</code></td>
+<td>Converts the number to its octal string representation.</td>
+</tr>
+<tr>
+<td><a href="#int"><code>int()</code></a></td>
+<td><code>number</code></td>
+<td>Truncates the number down to its integer part, discarding anything after the decimal point.</td>
+</tr>
+<tr>
+<td><a href="#max"><code>max(other: number)</code></a></td>
+<td><code>number</code></td>
+<td>Returns the larger of the number and <em>other</em>.</td>
+</tr>
+<tr>
+<td><a href="#min"><code>min(other: number)</code></a></td>
+<td><code>number</code></td>
+<td>Returns the smaller of the number and <em>other</em>.</td>
+</tr>
+<tr>
+<td><a href="#factorial"><code>factorial()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the factorial of the number, i.e.</td>
+</tr>
+<tr>
+<td><a href="#sin"><code>sin()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the sine of the number, taken to be in radians.</td>
+</tr>
+<tr>
+<td><a href="#cos"><code>cos()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the cosine of the number, taken to be in radians.</td>
+</tr>
+<tr>
+<td><a href="#tan"><code>tan()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the tangent of the number, taken to be in radians.</td>
+</tr>
+<tr>
+<td><a href="#sinh"><code>sinh()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the hyperbolic sine of the number.</td>
+</tr>
+<tr>
+<td><a href="#cosh"><code>cosh()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the hyperbolic cosine of the number.</td>
+</tr>
+<tr>
+<td><a href="#tanh"><code>tanh()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the hyperbolic tangent of the number.</td>
+</tr>
+<tr>
+<td><a href="#asin"><code>asin()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the arcsine (inverse sine) of the number, in radians.</td>
+</tr>
+<tr>
+<td><a href="#acos"><code>acos()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the arccosine (inverse cosine) of the number, in radians.</td>
+</tr>
+<tr>
+<td><a href="#atan"><code>atan()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the arctangent (inverse tangent) of the number, in radians.</td>
+</tr>
+<tr>
+<td><a href="#atan2"><code>atan2(x: number)</code></a></td>
+<td><code>number</code></td>
+<td>Returns the four-quadrant arctangent of the number and <em>x</em>, in radians.</td>
+</tr>
+<tr>
+<td><a href="#asinh"><code>asinh()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the inverse hyperbolic sine of the number.</td>
+</tr>
+<tr>
+<td><a href="#acosh"><code>acosh()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the inverse hyperbolic cosine of the number.</td>
+</tr>
+<tr>
+<td><a href="#atanh"><code>atanh()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the inverse hyperbolic tangent of the number.</td>
+</tr>
+<tr>
+<td><a href="#exp"><code>exp()</code></a></td>
+<td><code>number</code></td>
+<td>Returns <em>e</em> (Euler's number) raised to the power of the number.</td>
+</tr>
+<tr>
+<td><a href="#expm1"><code>expm1()</code></a></td>
+<td><code>number</code></td>
+<td>Returns <em>e</em> raised to the power of the number, minus <code>1</code>.</td>
+</tr>
+<tr>
+<td><a href="#log"><code>log()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the natural logarithm (base <em>e</em>) of the number.</td>
+</tr>
+<tr>
+<td><a href="#log2"><code>log2()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the base-2 logarithm of the number.</td>
+</tr>
+<tr>
+<td><a href="#log10"><code>log10()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the base-10 logarithm of the number.</td>
+</tr>
+<tr>
+<td><a href="#log1p"><code>log1p()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the natural logarithm of <code>1</code> plus the number.</td>
+</tr>
+<tr>
+<td><a href="#cbrt"><code>cbrt()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the cube root of the number.</td>
+</tr>
+<tr>
+<td><a href="#sqrt"><code>sqrt()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the square root of the number.</td>
+</tr>
+<tr>
+<td><a href="#sign"><code>sign()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the sign of the number: <code>1</code> if it is positive, <code>-1</code> if it is negative, and <code>0</code> (with its own original sign preserved) if it is zero.</td>
+</tr>
+<tr>
+<td><a href="#ceil"><code>ceil()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the smallest whole number greater than or equal to the number.</td>
+</tr>
+<tr>
+<td><a href="#round"><code>round()</code></a></td>
+<td><code>number</code></td>
+<td>Rounds the number to the nearest whole number.</td>
+</tr>
+<tr>
+<td><a href="#floor"><code>floor()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the largest whole number less than or equal to the number.</td>
+</tr>
+<tr>
+<td><a href="#is_nan"><code>is_nan()</code></a></td>
+<td><code>boolean</code></td>
+<td>Returns <code>true</code> if the number is NaN (not a number, e.g.</td>
+</tr>
+<tr>
+<td><a href="#is_inf"><code>is_inf()</code></a></td>
+<td><code>boolean</code></td>
+<td>Returns <code>true</code> if the number is positive or negative infinity, <code>false</code> otherwise.</td>
+</tr>
+<tr>
+<td><a href="#is_finite"><code>is_finite()</code></a></td>
+<td><code>boolean</code></td>
+<td>Returns <code>true</code> if the number is neither infinite nor NaN, <code>false</code> otherwise.</td>
+</tr>
+<tr>
+<td><a href="#trunc"><code>trunc()</code></a></td>
+<td><code>number</code></td>
+<td>Truncates the number towards zero, discarding anything after the decimal point.</td>
+</tr>
+<tr>
+<td><a href="#fraction"><code>fraction()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the digits after the number's decimal point, read as a whole number rather than a fraction.</td>
+</tr>
+<tr>
+<td><a href="#fixed"><code>fixed(n)</code></a></td>
+<td></td>
+<td>Returns the number rounded to <em>n</em> decimal places, with a half rounding away from zero the same way <code>round()</code> does.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2 id="to_string"><a class="anchor" href="#to_string" aria-hidden="true" tabindex="-1"></a><code>to_string()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">to_string</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the string representation of the number.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">5</span>.<span class="fn">to_string</span>()
+<span class="out">'5'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="to_bool"><a class="anchor" href="#to_bool" aria-hidden="true" tabindex="-1"></a><code>to_bool()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">to_bool</span>() <span class="op">-&gt;</span> boolean
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Converts the number to a boolean, by the same rule <code>if</code> uses. Zero
+(either sign) and <code>NaN</code> are <code>false</code>, and every other number, negative
+ones included, is <code>true</code>.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">5</span>.<span class="fn">to_bool</span>()
+<span class="out">true</span>
+<span class="prompt">%&gt; </span><span class="num">0</span>.<span class="fn">to_bool</span>()
+<span class="out">false</span>
+<span class="prompt">%&gt; </span>(<span class="op">-</span><span class="num">5</span>).<span class="fn">to_bool</span>()
+<span class="out">true</span>
+<span class="prompt">%&gt; </span>(<span class="num">0</span> <span class="op">/</span> <span class="num">0</span>).<span class="fn">to_bool</span>()
+<span class="out">false</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="to_bigint"><a class="anchor" href="#to_bigint" aria-hidden="true" tabindex="-1"></a><code>to_bigint()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">to_bigint</span>() <span class="op">-&gt;</span> bigint
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Converts the number to a <code>bigint</code>, the counterpart to
+<code>bigint.to_number()</code>.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">12345</span>.<span class="fn">to_bigint</span>()
+<span class="out">12345n</span>
+<span class="prompt">%&gt; </span><span class="num">2</span>.<span class="fn">to_bigint</span>() <span class="op">**</span> <span class="num">100</span>.<span class="fn">to_bigint</span>()
+<span class="out">1267650600228229401496703205376n</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>bigint</code></p>
+<p><strong>Raises</strong> <code>RangeError</code> if the number is not an exact integer.</p>
+<blockquote>
+<p><strong>Note:</strong> Only an exact integer has a <code>bigint</code> form, so a fractional
+number, <code>Infinity</code> and <code>NaN</code> all raise rather than being rounded or
+clamped. Numbers above <code>2^53</code> are already imprecise as doubles, so
+converting one yields the exact integer the double holds, not the
+decimal literal it was written as.</p>
+</blockquote>
+<h2 id="abs"><a class="anchor" href="#abs" aria-hidden="true" tabindex="-1"></a><code>abs()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">abs</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the absolute value of the number.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span>(<span class="op">-</span><span class="num">5</span>).<span class="fn">abs</span>()
+<span class="out">5</span>
+<span class="prompt">%&gt; </span><span class="num">5</span>.<span class="fn">abs</span>()
+<span class="out">5</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="chr"><a class="anchor" href="#chr" aria-hidden="true" tabindex="-1"></a><code>chr()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">chr</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the Unicode character whose code point is equal to the number.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">65</span>.<span class="fn">chr</span>()
+<span class="out">'A'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="bin"><a class="anchor" href="#bin" aria-hidden="true" tabindex="-1"></a><code>bin()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">bin</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Converts the number to its binary string representation. The number is
+truncated to an integer first.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">10</span>.<span class="fn">bin</span>()
+<span class="out">'1010'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>string</code></p>
+<blockquote>
+<p><strong>Note:</strong> A negative number always returns <code>'0'</code>; there is no signed or
+two's-complement form.</p>
+</blockquote>
+<h2 id="hex"><a class="anchor" href="#hex" aria-hidden="true" tabindex="-1"></a><code>hex()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">hex</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Converts the number to its hexadecimal string representation. The number
+is truncated to an integer first.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">255</span>.<span class="fn">hex</span>()
+<span class="out">'ff'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>string</code></p>
+<blockquote>
+<p><strong>Note:</strong> A negative number always returns <code>'0'</code>; there is no signed or
+two's-complement form.</p>
+</blockquote>
+<h2 id="oct"><a class="anchor" href="#oct" aria-hidden="true" tabindex="-1"></a><code>oct()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">oct</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Converts the number to its octal string representation. The number is
+truncated to an integer first.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">8</span>.<span class="fn">oct</span>()
+<span class="out">'10'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>string</code></p>
+<blockquote>
+<p><strong>Note:</strong> A negative number always returns <code>'0'</code>; there is no signed or
+two's-complement form.</p>
+</blockquote>
+<h2 id="int"><a class="anchor" href="#int" aria-hidden="true" tabindex="-1"></a><code>int()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">int</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Truncates the number down to its integer part, discarding anything after
+the decimal point. Unlike <code>floor()</code>, this rounds towards zero rather
+than towards negative infinity, so the result for a negative number
+differs from <code>floor()</code>.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">3.9</span>.<span class="fn">int</span>()
+<span class="out">3</span>
+<span class="prompt">%&gt; </span>(<span class="op">-</span><span class="num">3.9</span>).<span class="fn">int</span>()
+<span class="out">-3</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="max"><a class="anchor" href="#max" aria-hidden="true" tabindex="-1"></a><code>max()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">max</span>(other<span class="op">:</span> number) <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the larger of the number and <em>other</em>.</p>
+<p>A <code>NaN</code> never wins: when one of the two is <code>NaN</code>, the other is returned,
+and only two <code>NaN</code>s give <code>NaN</code>. <code>-0</code> counts as smaller than <code>0</code>, so
+<code>(-0.0).max(0)</code> is <code>0</code> whichever side the zeros are on.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">5</span>.<span class="fn">max</span>(<span class="num">9</span>)
+<span class="out">9</span>
+<span class="prompt">%&gt; </span><span class="num">9</span>.<span class="fn">max</span>(<span class="num">5</span>)
+<span class="out">9</span>
+<span class="prompt">%&gt; </span>(<span class="num">0</span> <span class="op">/</span> <span class="num">0</span>).<span class="fn">max</span>(<span class="num">3</span>)
+<span class="out">3</span>
+<span class="prompt">%&gt; </span>(<span class="op">-</span><span class="num">0.0</span>).<span class="fn">max</span>(<span class="num">0</span>)
+<span class="out">0</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>other</code> (<code>number</code>) — The number to compare against.</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="min"><a class="anchor" href="#min" aria-hidden="true" tabindex="-1"></a><code>min()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">min</span>(other<span class="op">:</span> number) <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the smaller of the number and <em>other</em>.</p>
+<p>A <code>NaN</code> never wins: when one of the two is <code>NaN</code>, the other is returned,
+and only two <code>NaN</code>s give <code>NaN</code>. <code>-0</code> counts as smaller than <code>0</code>, so
+<code>0.min(-0.0)</code> is <code>-0</code> whichever side the zeros are on.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">5</span>.<span class="fn">min</span>(<span class="num">9</span>)
+<span class="out">5</span>
+<span class="prompt">%&gt; </span><span class="num">9</span>.<span class="fn">min</span>(<span class="num">5</span>)
+<span class="out">5</span>
+<span class="prompt">%&gt; </span>(<span class="num">0</span> <span class="op">/</span> <span class="num">0</span>).<span class="fn">min</span>(<span class="num">3</span>)
+<span class="out">3</span>
+<span class="prompt">%&gt; </span><span class="num">0</span>.<span class="fn">min</span>(<span class="op">-</span><span class="num">0.0</span>)
+<span class="out">-0</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>other</code> (<code>number</code>) — The number to compare against.</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="factorial"><a class="anchor" href="#factorial" aria-hidden="true" tabindex="-1"></a><code>factorial()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">factorial</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the factorial of the number, i.e. the product of every positive
+integer less than or equal to it. <code>0.factorial()</code> is <code>1</code>, matching the
+standard mathematical definition.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">5</span>.<span class="fn">factorial</span>()
+<span class="out">120</span>
+<span class="prompt">%&gt; </span><span class="num">0</span>.<span class="fn">factorial</span>()
+<span class="out">1</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>number</code></p>
+<p><strong>Raises</strong> <code>Error</code> if the number is negative or not a whole number.</p>
+<h2 id="sin"><a class="anchor" href="#sin" aria-hidden="true" tabindex="-1"></a><code>sin()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">sin</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the sine of the number, taken to be in radians.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="cos"><a class="anchor" href="#cos" aria-hidden="true" tabindex="-1"></a><code>cos()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">cos</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the cosine of the number, taken to be in radians.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="tan"><a class="anchor" href="#tan" aria-hidden="true" tabindex="-1"></a><code>tan()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">tan</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the tangent of the number, taken to be in radians.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="sinh"><a class="anchor" href="#sinh" aria-hidden="true" tabindex="-1"></a><code>sinh()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">sinh</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the hyperbolic sine of the number.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="cosh"><a class="anchor" href="#cosh" aria-hidden="true" tabindex="-1"></a><code>cosh()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">cosh</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the hyperbolic cosine of the number.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="tanh"><a class="anchor" href="#tanh" aria-hidden="true" tabindex="-1"></a><code>tanh()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">tanh</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the hyperbolic tangent of the number.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="asin"><a class="anchor" href="#asin" aria-hidden="true" tabindex="-1"></a><code>asin()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">asin</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the arcsine (inverse sine) of the number, in radians.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<blockquote>
+<p><strong>Note:</strong> Only defined for a receiver between <code>-1</code> and <code>1</code> inclusive;
+outside that range, this returns <code>NaN</code> rather than raising an error.</p>
+</blockquote>
+<h2 id="acos"><a class="anchor" href="#acos" aria-hidden="true" tabindex="-1"></a><code>acos()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">acos</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the arccosine (inverse cosine) of the number, in radians.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<blockquote>
+<p><strong>Note:</strong> Only defined for a receiver between <code>-1</code> and <code>1</code> inclusive;
+outside that range, this returns <code>NaN</code> rather than raising an error.</p>
+</blockquote>
+<h2 id="atan"><a class="anchor" href="#atan" aria-hidden="true" tabindex="-1"></a><code>atan()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">atan</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the arctangent (inverse tangent) of the number, in radians.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="atan2"><a class="anchor" href="#atan2" aria-hidden="true" tabindex="-1"></a><code>atan2()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">atan2</span>(x<span class="op">:</span> number) <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the four-quadrant arctangent of the number and <em>x</em>, in radians.
+The receiver is treated as the y-coordinate and <em>x</em> as the x-coordinate,
+matching the conventional <code>atan2(y, x)</code> signature: <code>y.atan2(x)</code>.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">1.0</span>.<span class="fn">atan2</span>(<span class="num">1.0</span>)
+<span class="out">0.7853981633974483</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x</code> (<code>number</code>) — The x-coordinate.</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="asinh"><a class="anchor" href="#asinh" aria-hidden="true" tabindex="-1"></a><code>asinh()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">asinh</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the inverse hyperbolic sine of the number.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="acosh"><a class="anchor" href="#acosh" aria-hidden="true" tabindex="-1"></a><code>acosh()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">acosh</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the inverse hyperbolic cosine of the number.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<blockquote>
+<p><strong>Note:</strong> Only defined for a receiver greater than or equal to <code>1</code>;
+below that, this returns <code>NaN</code> rather than raising an error.</p>
+</blockquote>
+<h2 id="atanh"><a class="anchor" href="#atanh" aria-hidden="true" tabindex="-1"></a><code>atanh()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">atanh</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the inverse hyperbolic tangent of the number.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<blockquote>
+<p><strong>Note:</strong> Only defined for a receiver between <code>-1</code> and <code>1</code> exclusive;
+outside that range, this returns <code>NaN</code> rather than raising an error.</p>
+</blockquote>
+<h2 id="exp"><a class="anchor" href="#exp" aria-hidden="true" tabindex="-1"></a><code>exp()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">exp</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns <em>e</em> (Euler's number) raised to the power of the number.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="expm1"><a class="anchor" href="#expm1" aria-hidden="true" tabindex="-1"></a><code>expm1()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">expm1</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns <em>e</em> raised to the power of the number, minus <code>1</code>. For a number
+close to zero, this is more numerically accurate than computing <code>n.exp() - 1</code>
+directly.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="log"><a class="anchor" href="#log" aria-hidden="true" tabindex="-1"></a><code>log()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">log</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the natural logarithm (base <em>e</em>) of the number.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">1.0</span>.<span class="fn">log</span>()
+<span class="out">0</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="log2"><a class="anchor" href="#log2" aria-hidden="true" tabindex="-1"></a><code>log2()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">log2</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the base-2 logarithm of the number.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">8.0</span>.<span class="fn">log2</span>()
+<span class="out">3</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="log10"><a class="anchor" href="#log10" aria-hidden="true" tabindex="-1"></a><code>log10()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">log10</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the base-10 logarithm of the number.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">100.0</span>.<span class="fn">log10</span>()
+<span class="out">2</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="log1p"><a class="anchor" href="#log1p" aria-hidden="true" tabindex="-1"></a><code>log1p()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">log1p</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the natural logarithm of <code>1</code> plus the number. For a number close
+to zero, this is more numerically accurate than computing <code>(1 + n).log()</code>
+directly.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="cbrt"><a class="anchor" href="#cbrt" aria-hidden="true" tabindex="-1"></a><code>cbrt()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">cbrt</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the cube root of the number.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">27.0</span>.<span class="fn">cbrt</span>()
+<span class="out">3</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="sqrt"><a class="anchor" href="#sqrt" aria-hidden="true" tabindex="-1"></a><code>sqrt()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">sqrt</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the square root of the number.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">16</span>.<span class="fn">sqrt</span>()
+<span class="out">4</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>number</code></p>
+<blockquote>
+<p><strong>Note:</strong> For a negative number this returns <code>NaN</code> rather than raising
+an error; there is no <code>bigint</code>-style promotion into complex numbers.
+Check <code>is_nan()</code> on the result, or the sign of the receiver beforehand,
+if that distinction matters to the caller.</p>
+</blockquote>
+<h2 id="sign"><a class="anchor" href="#sign" aria-hidden="true" tabindex="-1"></a><code>sign()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">sign</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the sign of the number: <code>1</code> if it is positive, <code>-1</code> if it is
+negative, and <code>0</code> (with its own original sign preserved) if it is zero.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">7</span>.<span class="fn">sign</span>()
+<span class="out">1</span>
+<span class="prompt">%&gt; </span>(<span class="op">-</span><span class="num">7</span>).<span class="fn">sign</span>()
+<span class="out">-1</span>
+<span class="prompt">%&gt; </span><span class="num">0</span>.<span class="fn">sign</span>()
+<span class="out">0</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="ceil"><a class="anchor" href="#ceil" aria-hidden="true" tabindex="-1"></a><code>ceil()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">ceil</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the smallest whole number greater than or equal to the number.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">3.14159</span>.<span class="fn">ceil</span>()
+<span class="out">4</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="round"><a class="anchor" href="#round" aria-hidden="true" tabindex="-1"></a><code>round()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">round</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Rounds the number to the nearest whole number. A value exactly halfway
+between two whole numbers rounds away from zero.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">3.14159</span>.<span class="fn">round</span>()
+<span class="out">3</span>
+<span class="prompt">%&gt; </span><span class="num">3.6</span>.<span class="fn">round</span>()
+<span class="out">4</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="floor"><a class="anchor" href="#floor" aria-hidden="true" tabindex="-1"></a><code>floor()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">floor</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the largest whole number less than or equal to the number.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">3.14159</span>.<span class="fn">floor</span>()
+<span class="out">3</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="is_nan"><a class="anchor" href="#is_nan" aria-hidden="true" tabindex="-1"></a><code>is_nan()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">is_nan</span>() <span class="op">-&gt;</span> boolean
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns <code>true</code> if the number is NaN (not a number, e.g. the result of
+<code>0/0</code>), <code>false</code> otherwise.</p>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="is_inf"><a class="anchor" href="#is_inf" aria-hidden="true" tabindex="-1"></a><code>is_inf()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">is_inf</span>() <span class="op">-&gt;</span> boolean
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns <code>true</code> if the number is positive or negative infinity, <code>false</code>
+otherwise.</p>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="is_finite"><a class="anchor" href="#is_finite" aria-hidden="true" tabindex="-1"></a><code>is_finite()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">is_finite</span>() <span class="op">-&gt;</span> boolean
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns <code>true</code> if the number is neither infinite nor NaN, <code>false</code>
+otherwise.</p>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="trunc"><a class="anchor" href="#trunc" aria-hidden="true" tabindex="-1"></a><code>trunc()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">trunc</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Truncates the number towards zero, discarding anything after the decimal
+point. For values that fit in a 64-bit integer this matches <code>int()</code>;
+unlike <code>int()</code>, <code>trunc()</code> stays a floating-point result rather than
+going through an integer cast, so it does not overflow for numbers
+larger than a 64-bit integer can hold.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span>(<span class="op">-</span><span class="num">3.9</span>).<span class="fn">trunc</span>()
+<span class="out">-3</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="fraction"><a class="anchor" href="#fraction" aria-hidden="true" tabindex="-1"></a><code>fraction()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">fraction</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the digits after the number's decimal point, read as a whole
+number rather than a fraction. Note that this is NOT the same as <code>(n - n.int())</code>:
+<code>1.92.fraction()</code> is <code>92</code>, not <code>0.92</code>.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">1.92</span>.<span class="fn">fraction</span>()
+<span class="out">92</span>
+<span class="prompt">%&gt; </span><span class="num">1.5</span>.<span class="fn">fraction</span>()
+<span class="out">5</span>
+<span class="prompt">%&gt; </span><span class="num">5</span>.<span class="fn">fraction</span>()
+<span class="out">0</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="fixed"><a class="anchor" href="#fixed" aria-hidden="true" tabindex="-1"></a><code>fixed()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">fixed</span>(n)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the number rounded to <em>n</em> decimal places, with a half rounding
+away from zero the same way <code>round()</code> does.</p>
+<p>A number already shorter than <em>n</em> places is returned unchanged, and so
+are <code>NaN</code> and the infinities. Beyond 17 places an <code>f64</code> has no digits
+left to round, so a larger <em>n</em> behaves as 17.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="num">1.554576852757686786786</span>.<span class="fn">fixed</span>(<span class="num">9</span>)
+<span class="out">1.554576853</span>
+<span class="prompt">%&gt; </span><span class="num">1.554576852757686786786</span>.<span class="fn">fixed</span>(<span class="num">8</span>)
+<span class="out">1.55457685</span>
+<span class="prompt">%&gt; </span><span class="num">1.554576852757686786786</span>.<span class="fn">fixed</span>(<span class="num">1</span>)
+<span class="out">1.6</span>
+<span class="prompt">%&gt; </span><span class="num">1.554576852757686786786</span>.<span class="fn">fixed</span>(<span class="num">0</span>)
+<span class="out">2</span>
+<span class="prompt">%&gt; </span>(<span class="op">-</span><span class="num">2.5</span>).<span class="fn">fixed</span>(<span class="num">0</span>)
+<span class="out">-3</span>
+</code></pre><span class="code-label">REPL</span></figure>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/appendix-05-02-number.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="appendix-05-01-string.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title">String Methods</span>
+          </a>
+          <a class="turn-next" rel="next" href="appendix-05-03-bigint.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title">Bigint Methods</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#to_string"><code>to_string()</code></a>
+        </li><li class="level-2">
+          <a href="#to_bool"><code>to_bool()</code></a>
+        </li><li class="level-2">
+          <a href="#to_bigint"><code>to_bigint()</code></a>
+        </li><li class="level-2">
+          <a href="#abs"><code>abs()</code></a>
+        </li><li class="level-2">
+          <a href="#chr"><code>chr()</code></a>
+        </li><li class="level-2">
+          <a href="#bin"><code>bin()</code></a>
+        </li><li class="level-2">
+          <a href="#hex"><code>hex()</code></a>
+        </li><li class="level-2">
+          <a href="#oct"><code>oct()</code></a>
+        </li><li class="level-2">
+          <a href="#int"><code>int()</code></a>
+        </li><li class="level-2">
+          <a href="#max"><code>max()</code></a>
+        </li><li class="level-2">
+          <a href="#min"><code>min()</code></a>
+        </li><li class="level-2">
+          <a href="#factorial"><code>factorial()</code></a>
+        </li><li class="level-2">
+          <a href="#sin"><code>sin()</code></a>
+        </li><li class="level-2">
+          <a href="#cos"><code>cos()</code></a>
+        </li><li class="level-2">
+          <a href="#tan"><code>tan()</code></a>
+        </li><li class="level-2">
+          <a href="#sinh"><code>sinh()</code></a>
+        </li><li class="level-2">
+          <a href="#cosh"><code>cosh()</code></a>
+        </li><li class="level-2">
+          <a href="#tanh"><code>tanh()</code></a>
+        </li><li class="level-2">
+          <a href="#asin"><code>asin()</code></a>
+        </li><li class="level-2">
+          <a href="#acos"><code>acos()</code></a>
+        </li><li class="level-2">
+          <a href="#atan"><code>atan()</code></a>
+        </li><li class="level-2">
+          <a href="#atan2"><code>atan2()</code></a>
+        </li><li class="level-2">
+          <a href="#asinh"><code>asinh()</code></a>
+        </li><li class="level-2">
+          <a href="#acosh"><code>acosh()</code></a>
+        </li><li class="level-2">
+          <a href="#atanh"><code>atanh()</code></a>
+        </li><li class="level-2">
+          <a href="#exp"><code>exp()</code></a>
+        </li><li class="level-2">
+          <a href="#expm1"><code>expm1()</code></a>
+        </li><li class="level-2">
+          <a href="#log"><code>log()</code></a>
+        </li><li class="level-2">
+          <a href="#log2"><code>log2()</code></a>
+        </li><li class="level-2">
+          <a href="#log10"><code>log10()</code></a>
+        </li><li class="level-2">
+          <a href="#log1p"><code>log1p()</code></a>
+        </li><li class="level-2">
+          <a href="#cbrt"><code>cbrt()</code></a>
+        </li><li class="level-2">
+          <a href="#sqrt"><code>sqrt()</code></a>
+        </li><li class="level-2">
+          <a href="#sign"><code>sign()</code></a>
+        </li><li class="level-2">
+          <a href="#ceil"><code>ceil()</code></a>
+        </li><li class="level-2">
+          <a href="#round"><code>round()</code></a>
+        </li><li class="level-2">
+          <a href="#floor"><code>floor()</code></a>
+        </li><li class="level-2">
+          <a href="#is_nan"><code>is_nan()</code></a>
+        </li><li class="level-2">
+          <a href="#is_inf"><code>is_inf()</code></a>
+        </li><li class="level-2">
+          <a href="#is_finite"><code>is_finite()</code></a>
+        </li><li class="level-2">
+          <a href="#trunc"><code>trunc()</code></a>
+        </li><li class="level-2">
+          <a href="#fraction"><code>fraction()</code></a>
+        </li><li class="level-2">
+          <a href="#fixed"><code>fixed()</code></a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

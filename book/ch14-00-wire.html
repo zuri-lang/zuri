@@ -1,0 +1,1920 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wire: Templating · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch14-00-wire.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="purple" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html" aria-current="page"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Chapter 14 · The Big Modules</p>
+        <div class="content"><h1 id="wire">Wire</h1>
+<p>Wire is Zuri's built-in templating engine. Unlike most templating
+languages, Wire does not invent its own syntax on top of your markup.
+Every Wire feature is powered by attributes on ordinary HTML elements,
+which means anything a designer already knows about HTML transfers
+directly, and every valid HTML5 document is already a valid Wire
+template.</p>
+<p>Under the hood, a Wire template is compiled once — not re-interpreted
+on every render — into a small instruction tree, using the exact same
+<a href="ch13-00-stdlib-tour.html#html">WHATWG-conformant parser</a> that backs the <code>html</code> module.
+That has a consequence worth knowing up front: Wire understands your
+markup as <em>structure</em>, not as text. It knows that one interpolation
+sits inside a paragraph, another inside an <code>href</code>, and a third inside a
+<code>&lt;script&gt;</code> tag, and it escapes each one correctly for where it actually
+is. A value handed to a template can never turn into new markup by
+accident — that has to be requested explicitly, and Wire makes you say
+so out loud.</p>
+<ul>
+<li><a href="#introduction">Introduction</a>
+<ul>
+<li><a href="#wire-and-blade">Wire and Blade</a></li>
+<li><a href="#your-first-template">Your First Template</a></li>
+</ul>
+</li>
+<li><a href="#rendering-templates">Rendering Templates</a>
+<ul>
+<li><a href="#templates-from-files">Templates From Files</a></li>
+<li><a href="#templates-from-strings">Templates From Strings</a></li>
+<li><a href="#the-template-root">The Template Root</a></li>
+</ul>
+</li>
+<li><a href="#displaying-data">Displaying Data</a>
+<ul>
+<li><a href="#escaping-data">Escaping Data</a></li>
+<li><a href="#rendering-raw-markup">Rendering Raw Markup</a></li>
+<li><a href="#wire-and-javascript-frameworks">Wire and JavaScript Frameworks</a></li>
+</ul>
+</li>
+<li><a href="#the-expression-language">The Expression Language</a>
+<ul>
+<li><a href="#literals">Literals</a></li>
+<li><a href="#looking-up-values">Looking Up Values</a></li>
+<li><a href="#operators">Operators</a></li>
+<li><a href="#truthiness">Truthiness</a></li>
+<li><a href="#calling-functions">Calling Functions</a></li>
+</ul>
+</li>
+<li><a href="#filters">Filters</a>
+<ul>
+<li><a href="#chaining-filters">Chaining Filters</a></li>
+<li><a href="#the--argument-shorthand">The <code>=</code> Argument Shorthand</a></li>
+<li><a href="#available-filters">Available Filters</a></li>
+<li><a href="#writing-your-own-filter">Writing Your Own Filter</a></li>
+</ul>
+</li>
+<li><a href="#conditionals">Conditionals</a>
+<ul>
+<li><a href="#x-if-x-elif-and-x-else"><code>x-if</code>, <code>x-elif</code>, and <code>x-else</code></a></li>
+<li><a href="#x-not"><code>x-not</code></a></li>
+</ul>
+</li>
+<li><a href="#loops">Loops</a>
+<ul>
+<li><a href="#the-loop-variable">The <code>loop</code> Variable</a></li>
+<li><a href="#nesting-loops">Nesting Loops</a></li>
+<li><a href="#looping-without-a-wrapper-element">Looping Without a Wrapper Element</a></li>
+</ul>
+</li>
+<li><a href="#content-and-attributes">Content and Attributes</a>
+<ul>
+<li><a href="#x-text"><code>x-text</code></a></li>
+<li><a href="#x-html"><code>x-html</code></a></li>
+<li><a href="#x-attr"><code>x-attr</code></a></li>
+</ul>
+</li>
+<li><a href="#comments">Comments</a></li>
+<li><a href="#including-templates">Including Templates</a>
+<ul>
+<li><a href="#passing-data-to-an-include">Passing Data to an Include</a></li>
+<li><a href="#includes-as-components">Includes as Components</a></li>
+<li><a href="#computed-include-paths">Computed Include Paths</a></li>
+</ul>
+</li>
+<li><a href="#template-inheritance">Template Inheritance</a>
+<ul>
+<li><a href="#defining-a-layout">Defining a Layout</a></li>
+<li><a href="#extending-a-layout">Extending a Layout</a></li>
+<li><a href="#default-slot-content">Default Slot Content</a></li>
+<li><a href="#x-super"><code>x-super</code></a></li>
+<li><a href="#multi-level-inheritance">Multi-Level Inheritance</a></li>
+<li><a href="#overriding-a-definition">Overriding a Definition</a></li>
+</ul>
+</li>
+<li><a href="#security">Security</a>
+<ul>
+<li><a href="#why-everything-is-escaped-by-default">Why Everything Is Escaped by Default</a></li>
+<li><a href="#urls-are-checked-not-just-escaped">URLs Are Checked, Not Just Escaped</a></li>
+<li><a href="#scripts-and-stylesheets">Scripts and Stylesheets</a></li>
+<li><a href="#the-template-root-is-a-sandbox">The Template Root Is a Sandbox</a></li>
+</ul>
+</li>
+<li><a href="#extending-wire">Extending Wire</a>
+<ul>
+<li><a href="#custom-filters">Custom Filters</a></li>
+<li><a href="#globals">Globals</a></li>
+<li><a href="#custom-elements">Custom Elements</a></li>
+</ul>
+</li>
+<li><a href="#configuration">Configuration</a></li>
+<li><a href="#compiling-and-caching">Compiling and Caching</a></li>
+<li><a href="#error-handling">Error Handling</a></li>
+<li><a href="#full-directive-reference">Full Directive Reference</a></li>
+<li><a href="#cheat-sheet">Cheat Sheet</a></li>
+</ul>
+<h2 id="introduction"><a class="anchor" href="#introduction" aria-hidden="true" tabindex="-1"></a>Introduction</h2>
+<h3 id="wire-and-blade"><a class="anchor" href="#wire-and-blade" aria-hidden="true" tabindex="-1"></a>Wire and Blade</h3>
+<p>If you have used Laravel's Blade, PHP's own answer to templating, a lot
+of Wire will feel familiar in spirit even though the syntax is
+different. Both engines compile templates rather than interpret them
+on every request, both let you extend a base layout and override named
+sections of it, and both escape everything by default so that printing
+a user's name can never become a way for that user to run script in
+someone else's browser.</p>
+<p>Where Wire departs from Blade is in how it expresses control flow.
+Blade adds its own directive syntax on top of plain text
+(<code>@if</code>, <code>@foreach</code>, <code>{{ }}</code>) that a template author has to learn as a
+second language layered over HTML. Wire instead expresses everything
+as attributes on the HTML you were already going to write:</p>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span><span class="op">--</span> <span class="type">Blade</span> <span class="op">--</span><span class="subst">}}</span>
+@if ($user-&gt;isAdmin())
+    <span class="tag">&lt;p</span><span class="tag">&gt;</span>Welcome back, administrator.<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+@endif
+</code></pre><span class="code-label">HTML</span></figure>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span><span class="op">--</span> <span class="type">Wire</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;p</span> <span class="dir">x-if</span><span class="op">=</span><span class="str">"</span>user.<span class="prop">is_admin</span><span class="str">"</span><span class="tag">&gt;</span>Welcome back, administrator.<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>The practical benefit is that a Wire template can be handed to a
+designer who has never seen Zuri and they can still read it: it is
+HTML, with some attributes they can look up. It also means every Wire
+template validates as HTML5, can be opened directly in a browser to
+check its structure, and can be run through the <a href="ch13-00-stdlib-tour.html#html"><code>html</code>
+module</a>'s own tools (<code>html.format()</code>, a linter, a
+selector query) without anything special-casing Wire's own syntax.</p>
+<h3 id="your-first-template"><a class="anchor" href="#your-first-template" aria-hidden="true" tabindex="-1"></a>Your First Template</h3>
+<p>Here is the smallest possible Wire template, rendered from a string:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> wire
+
+<span class="kw">echo</span> wire.<span class="fn">render_string</span>(<span class="str">'&lt;p&gt;Hello {{ name }}&lt;/p&gt;'</span>, { name<span class="op">:</span> <span class="str">'Ada'</span> })
+<span class="com"># &lt;p&gt;Hello Ada&lt;/p&gt;</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>{{ name }}</code> is an interpolation: it evaluates the expression <code>name</code>
+against the variables you supplied and writes the result into the
+page, escaped for wherever it landed. Everything else in this guide is
+built out of that one idea, plus a handful of <code>x-</code> prefixed attributes
+that control <em>whether</em> and <em>how many times</em> an element is rendered.</p>
+<h2 id="rendering-templates"><a class="anchor" href="#rendering-templates" aria-hidden="true" tabindex="-1"></a>Rendering Templates</h2>
+<h3 id="templates-from-files"><a class="anchor" href="#templates-from-files" aria-hidden="true" tabindex="-1"></a>Templates From Files</h3>
+<p>For anything beyond a one-off snippet, templates live in files. Build
+a <code>Wire</code> instance, point it at a directory, and render by path:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> wire
+
+<span class="kw">var</span> view <span class="op">=</span> <span class="fn">wire</span>()
+view.<span class="fn">set_root</span>(<span class="str">'./views'</span>)
+
+<span class="kw">echo</span> view.<span class="fn">render</span>(<span class="str">'pages/home'</span>, { user, posts })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>render()</code>'s first argument is a path relative to the root. The
+<code>.html</code> extension is added automatically when the path as written
+names no file, so <code>'pages/home'</code> finds <code>pages/home.html</code>; a path that
+already carries an extension (<code>'pages/home.wire'</code>) is tried exactly as
+given first. <code>set_extension()</code> changes what gets tried when none is
+given.</p>
+<blockquote>
+<p><strong>Note</strong>
+A <code>Wire</code> instance is meant to be built once, configured, and reused
+for the life of your program — typically at startup, alongside
+however you already configure the rest of your application.
+Rendering does not mutate it, so it is safe to render from several
+places at once.</p>
+</blockquote>
+<h3 id="templates-from-strings"><a class="anchor" href="#templates-from-strings" aria-hidden="true" tabindex="-1"></a>Templates From Strings</h3>
+<p><code>render_string()</code> renders a template given directly as a string,
+without touching the filesystem. It behaves identically to <code>render()</code>
+in every other respect — the same directives, the same escaping, the
+same filters — and any <code>x-include</code> or <code>x-extend</code> inside the string
+still resolves against the configured root.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">echo</span> view.<span class="fn">render_string</span>(<span class="str">'&lt;p&gt;{{ greeting }}&lt;/p&gt;'</span>, { greeting<span class="op">:</span> <span class="str">'Hi there'</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The third argument names the source for error messages (it defaults
+to <code>&lt;source&gt;</code>), which is worth passing when the string came from
+somewhere with its own identity — a database row, a file you already
+had open for another reason:</p>
+<figure class="code"><pre><code class="language-zuri">view.<span class="fn">render_string</span>(row.<span class="prop">body</span>, { user }, <span class="str">'cms:page:</span><span class="subst">${</span>row.<span class="prop">id</span><span class="subst">}</span><span class="str">'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>render_string()</code> is not cached, since there is no file path to key a
+cache entry on. Reach for <code>render()</code> for anything rendered more than
+once.</p>
+<h3 id="the-template-root"><a class="anchor" href="#the-template-root" aria-hidden="true" tabindex="-1"></a>The Template Root</h3>
+<p>Every path — the one passed to <code>render()</code>, and the one written in
+every <code>x-include</code> and <code>x-extend</code> in every template — resolves <em>inside</em>
+the configured root directory, and nowhere else. This is not a
+convention; it is enforced by the loader on every single resolution,
+and <a href="#the-template-root-is-a-sandbox">it matters for security</a>, not
+just organization.</p>
+<figure class="code"><pre><code class="language-zuri">view.<span class="fn">set_root</span>(<span class="str">'./views'</span>)
+view.<span class="fn">root</span>()
+<span class="com"># '/home/you/project/views' — always the absolute path</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The root does not have to exist yet. <code>create_root()</code> makes it, and
+reports whether it had to:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">if</span> view.<span class="fn">create_root</span>() {
+  <span class="kw">echo</span> <span class="str">'Created a fresh views/ directory.'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Wire never creates this directory on its own initiative — a typo in a
+root path should read as &quot;template not found,&quot; not silently produce
+an empty folder somewhere unexpected.</p>
+<h2 id="displaying-data"><a class="anchor" href="#displaying-data" aria-hidden="true" tabindex="-1"></a>Displaying Data</h2>
+<p>You have already seen the basic form. <code>{{ expression }}</code> evaluates
+whatever is between the braces and writes the result into the page:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;h1</span><span class="tag">&gt;</span><span class="subst">{{</span> post.<span class="prop">title</span> <span class="subst">}}</span><span class="tag">&lt;/h1</span><span class="tag">&gt;</span>
+<span class="tag">&lt;p</span><span class="tag">&gt;</span>By <span class="subst">{{</span> post.<span class="prop">author</span>.<span class="prop">name</span> <span class="subst">}}</span><span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p><code>expression</code> is not limited to a bare variable name — it is a full
+expression, covered in its own section below — so all of the following
+are valid:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;p</span><span class="tag">&gt;</span><span class="subst">{{</span> post.<span class="prop">views</span> <span class="op">&gt;</span> <span class="num">1000</span> <span class="op">?</span> <span class="str">'Popular'</span> <span class="op">:</span> <span class="str">'New'</span> <span class="subst">}}</span><span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+<span class="tag">&lt;p</span><span class="tag">&gt;</span><span class="subst">{{</span> post.<span class="prop">tags</span><span class="op">|</span><span class="fn">join</span>(<span class="str">', '</span>) <span class="subst">}}</span><span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+<span class="tag">&lt;p</span><span class="tag">&gt;</span><span class="subst">{{</span> user.<span class="prop">nickname</span> <span class="op">??</span> user.<span class="prop">name</span> <span class="subst">}}</span><span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<h3 id="escaping-data"><a class="anchor" href="#escaping-data" aria-hidden="true" tabindex="-1"></a>Escaping Data</h3>
+<p>Every interpolation is escaped for the specific place it lands, and
+this cannot be turned off from inside a template. If <code>name</code> holds
+<code>&lt;b&gt;Ada&lt;/b&gt;</code>:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;p</span><span class="tag">&gt;</span>Hello <span class="subst">{{</span> name <span class="subst">}}</span><span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>renders as:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;p</span><span class="tag">&gt;</span>Hello <span class="ent">&amp;lt;</span>b<span class="ent">&amp;gt;</span>Ada<span class="ent">&amp;lt;</span>/b<span class="ent">&amp;gt;</span><span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>which is exactly what you want when <code>name</code> came from a form field, a
+database column, or anywhere else outside your own control. Wire is
+not guessing at this — because it compiles a real parsed document
+rather than gluing strings together, it always knows precisely which
+kind of place an interpolation sits in, and it applies the escaping
+that place needs:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Where the interpolation is</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Text between tags</td>
+<td><code>&amp;</code>, <code>&lt;</code>, <code>&gt;</code> become entities</td>
+</tr>
+<tr>
+<td>An ordinary attribute (<code>title</code>, <code>alt</code>, <code>data-*</code>, …)</td>
+<td><code>&amp;</code> and <code>&quot;</code> become entities</td>
+</tr>
+<tr>
+<td><code>href</code>, <code>src</code>, <code>action</code>, and other URL attributes</td>
+<td>the value's URL scheme is checked too</td>
+</tr>
+<tr>
+<td><code>&lt;script&gt;</code>, or an <code>on*</code> event handler attribute</td>
+<td>the value is encoded as JSON</td>
+</tr>
+<tr>
+<td><code>&lt;style&gt;</code></td>
+<td>anything outside a CSS-safe set is dropped</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>That is a materially stronger guarantee than &quot;the special characters
+got replaced&quot;: a value dropped into an <code>href</code> cannot smuggle in a
+<code>javascript:</code> scheme, and a value dropped into a <code>&lt;script&gt;</code> block
+cannot break out of its string literal, close the tag early, or open a
+comment — even though none of those things are <code>&lt;</code>, <code>&gt;</code>, or <code>&amp;</code>.</p>
+<h3 id="rendering-raw-markup"><a class="anchor" href="#rendering-raw-markup" aria-hidden="true" tabindex="-1"></a>Rendering Raw Markup</h3>
+<p>Escaping everything by default is right, but sometimes you genuinely
+have markup — the output of another render, a snippet you built and
+trust — and you want it written out as markup. The <code>raw</code> filter is how
+you say so:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;div</span> <span class="attr">class</span><span class="op">=</span><span class="str">"article-body"</span><span class="tag">&gt;</span><span class="subst">{{</span> post.<span class="prop">rendered_html</span><span class="op">|</span>raw <span class="subst">}}</span><span class="tag">&lt;/div</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>You can build the same value on the Zuri side and hand it to a
+template already marked as safe, with <code>wire.safe()</code>:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> wire
+
+view.<span class="fn">render_string</span>(<span class="str">'&lt;div&gt;{{ body }}&lt;/div&gt;'</span>, {
+  body<span class="op">:</span> wire.<span class="fn">safe</span>(<span class="str">'&lt;em&gt;already-trusted markup&lt;/em&gt;'</span>),
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<blockquote>
+<p><strong>Warning</strong>
+<code>raw</code> and <code>wire.safe()</code> are a promise that the value is safe to write
+unescaped at the place it lands. Applying either to anything a user
+submitted — a comment, a bio, a search query — reopens exactly the
+cross-site scripting hole the rest of Wire exists to close. Only
+reach for them on markup your own code produced.</p>
+</blockquote>
+<p>If you need to render markup as text on purpose — showing someone a
+literal <code>&lt;script&gt;</code> tag in a code sample, say — that is what plain
+interpolation already does; there is nothing extra to opt into.</p>
+<h3 id="wire-and-javascript-frameworks"><a class="anchor" href="#wire-and-javascript-frameworks" aria-hidden="true" tabindex="-1"></a>Wire and JavaScript Frameworks</h3>
+<p>Wire uses <code>{{ }}</code> for interpolation, the same delimiter many
+JavaScript templating libraries (Vue, Angular, Handlebars, Mustache)
+use for their own. If a Wire template also contains inline script that
+a browser-side framework is meant to interpret, escape the braces with
+a leading <code>%</code> so Wire leaves them alone:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;div</span> <span class="attr">id</span><span class="op">=</span><span class="str">"app"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;p</span><span class="tag">&gt;</span><span class="subst">{{</span> user.<span class="prop">name</span> <span class="subst">}}</span><span class="tag">&lt;/p</span><span class="tag">&gt;</span>          <span class="subst">{{</span><span class="op">--</span> rendered by <span class="type">Wire</span>, server<span class="op">-</span>side <span class="op">--</span><span class="subst">}}</span>
+  <span class="tag">&lt;p</span><span class="tag">&gt;</span>%{{ message }}<span class="tag">&lt;/p</span><span class="tag">&gt;</span>           <span class="subst">{{</span><span class="op">--</span> left <span class="kw">as</span> literal {{ message <span class="subst">}}</span>, for Vue --}}
+<span class="tag">&lt;/div</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p><code>%{{</code> renders as the literal text <code>{{</code>, and <code>%{!</code> does the same for
+<a href="#calling-functions">template function calls</a>. If you find yourself
+escaping braces constantly because most of a template belongs to a
+client-side framework, it may be worth keeping that section in its own
+file and serving it untouched rather than through Wire at all.</p>
+<h2 id="the-expression-language"><a class="anchor" href="#the-expression-language" aria-hidden="true" tabindex="-1"></a>The Expression Language</h2>
+<p>Everything between <code>{{</code> and <code>}}</code> — and everything given to <code>x-if</code>,
+<code>x-for</code>, <code>x-attr</code>, and the rest of the directives below — is written in
+Wire's own small expression language. It is deliberately not a full
+embedded copy of Zuri: there is no assignment, no way to declare
+anything, and no way to reach a global variable. A template describes
+a page; the logic that decides what the page contains belongs in the
+code that calls <code>render()</code>, not in the template itself.</p>
+<h3 id="literals"><a class="anchor" href="#literals" aria-hidden="true" tabindex="-1"></a>Literals</h3>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span> <span class="num">42</span> <span class="subst">}}</span>            <span class="subst">{{</span><span class="op">--</span> a number <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> <span class="num">3.14</span> <span class="subst">}}</span>           <span class="subst">{{</span><span class="op">--</span> a decimal <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> <span class="str">'a string'</span> <span class="subst">}}</span>     <span class="subst">{{</span><span class="op">--</span> single quotes <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> <span class="str">"a string"</span> <span class="subst">}}</span>     <span class="subst">{{</span><span class="op">--</span> <span class="kw">or</span> double, interchangeably <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> <span class="lit">true</span> <span class="subst">}}</span>           <span class="subst">{{</span><span class="op">--</span> <span class="lit">true</span> <span class="op">/</span> <span class="lit">false</span> <span class="op">/</span> <span class="lit">nil</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>] <span class="subst">}}</span>      <span class="subst">{{</span><span class="op">--</span> a list literal <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> { <span class="bi">id</span><span class="op">:</span> <span class="num">1</span>, name } <span class="subst">}}</span> <span class="subst">{{</span><span class="op">--</span> a dict literal; { name } is short <span class="kw">for</span> { name<span class="op">:</span> name } <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> <span class="num">0</span>..pages <span class="subst">}}</span>       <span class="subst">{{</span><span class="op">--</span> a range, exactly <span class="kw">as</span> <span class="type">Zuri</span> writes one <span class="op">--</span><span class="subst">}}</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<h3 id="looking-up-values"><a class="anchor" href="#looking-up-values" aria-hidden="true" tabindex="-1"></a>Looking Up Values</h3>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span> user.<span class="prop">name</span> <span class="subst">}}</span>                 <span class="subst">{{</span><span class="op">--</span> a dotted lookup <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> user.<span class="prop">address</span>.<span class="prop">city</span> <span class="subst">}}</span>         <span class="subst">{{</span><span class="op">--</span> chains <span class="kw">as</span> deep <span class="kw">as</span> you like <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> items.<span class="num">0</span> <span class="subst">}}</span>                   <span class="subst">{{</span><span class="op">--</span> a numeric key reads a list position <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> items[index] <span class="subst">}}</span>              <span class="subst">{{</span><span class="op">--</span> a computed index <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> items[<span class="op">-</span><span class="num">1</span>] <span class="subst">}}</span>                 <span class="subst">{{</span><span class="op">--</span> negative counts from the end <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> items.<span class="prop">length</span> <span class="subst">}}</span>               <span class="subst">{{</span><span class="op">--</span> a collection answers `length` by name <span class="op">--</span><span class="subst">}}</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>Reading a variable that was never supplied gives <code>nil</code> rather than
+raising, and reading a key off <code>nil</code> gives <code>nil</code> too. That is what
+makes an optional value safe to reach through without a guard in front
+of it:</p>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span> user.<span class="prop">profile</span>.<span class="prop">avatar_url</span> <span class="subst">}}</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>renders as nothing at all if <code>user</code> has no <code>profile</code>, instead of
+failing three levels down. Reach for <a href="#conditionals"><code>x-if</code></a> when the
+difference between &quot;empty&quot; and &quot;genuinely missing&quot; matters to what you
+show.</p>
+<blockquote>
+<p><strong>Note</strong>
+A name starting with an underscore can never be read from a
+template, the same way Zuri treats <code>_field</code> as private. If you find
+yourself wanting to read one, expose a public accessor from Zuri
+instead.</p>
+</blockquote>
+<h3 id="operators"><a class="anchor" href="#operators" aria-hidden="true" tabindex="-1"></a>Operators</h3>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span> price <span class="op">*</span> quantity <span class="subst">}}</span>
+<span class="subst">{{</span> subtotal <span class="op">+</span> tax <span class="subst">}}</span>
+<span class="subst">{{</span> stock <span class="op">-</span> reserved <span class="subst">}}</span>
+<span class="subst">{{</span> total <span class="op">/</span> count <span class="subst">}}</span>
+<span class="subst">{{</span> index <span class="op">%</span> <span class="num">2</span> <span class="subst">}}</span>
+
+<span class="subst">{{</span> a <span class="op">==</span> b <span class="subst">}}</span>   <span class="subst">{{</span> a <span class="op">!=</span> b <span class="subst">}}</span>
+<span class="subst">{{</span> a <span class="op">&lt;</span> b <span class="subst">}}</span>    <span class="subst">{{</span> a <span class="op">&lt;=</span> b <span class="subst">}}</span>
+<span class="subst">{{</span> a <span class="op">&gt;</span> b <span class="subst">}}</span>    <span class="subst">{{</span> a <span class="op">&gt;=</span> b <span class="subst">}}</span>
+
+<span class="subst">{{</span> <span class="str">'admin'</span> <span class="kw">in</span> user.<span class="prop">roles</span> <span class="subst">}}</span>
+<span class="subst">{{</span> <span class="str">'admin'</span> not <span class="kw">in</span> user.<span class="prop">roles</span> <span class="subst">}}</span>
+
+<span class="subst">{{</span> is_admin <span class="kw">and</span> is_active <span class="subst">}}</span>
+<span class="subst">{{</span> is_admin <span class="op">&amp;&amp;</span> is_active <span class="subst">}}</span>      <span class="subst">{{</span><span class="op">--</span> <span class="op">&amp;&amp;</span> is the same <span class="kw">as</span> `<span class="kw">and</span>` <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> is_guest <span class="kw">or</span> is_banned <span class="subst">}}</span>
+<span class="subst">{{</span> is_guest <span class="op">||</span> is_banned <span class="subst">}}</span>       <span class="subst">{{</span><span class="op">--</span> <span class="op">||</span> is the same <span class="kw">as</span> `<span class="kw">or</span>` <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> <span class="op">!</span>is_active <span class="subst">}}</span>
+<span class="subst">{{</span> not is_active <span class="subst">}}</span>               <span class="subst">{{</span><span class="op">--</span> <span class="op">!</span> is the same <span class="kw">as</span> `not` <span class="op">--</span><span class="subst">}}</span>
+
+<span class="subst">{{</span> stock <span class="op">&gt;</span> <span class="num">0</span> <span class="op">?</span> <span class="str">'In stock'</span> <span class="op">:</span> <span class="str">'Sold out'</span> <span class="subst">}}</span>
+<span class="subst">{{</span> nickname <span class="op">??</span> name <span class="subst">}}</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>A string on either side of <code>+</code> concatenates rather than raising:</p>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span> <span class="str">'Hello, '</span> <span class="op">+</span> user.<span class="prop">name</span> <span class="subst">}}</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p><code>??</code> and <code>or</code> look similar but answer different questions, and mixing
+them up is the single most common Wire mistake:</p>
+<ul>
+<li><code>??</code> asks &quot;was this ever supplied?&quot; and only falls back on <code>nil</code>.</li>
+<li><code>or</code> asks &quot;is this worth showing?&quot; using <a href="#truthiness">Wire's own
+truthiness</a>, and falls back on anything falsy — <code>nil</code>,
+<code>false</code>, an empty string, an empty collection, or the number <code>0</code>.</li>
+</ul>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span> discount <span class="op">??</span> <span class="num">0</span> <span class="subst">}}</span>   <span class="subst">{{</span><span class="op">--</span> a missing discount becomes <span class="num">0</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> discount <span class="kw">or</span> <span class="num">0</span> <span class="subst">}}</span>   <span class="subst">{{</span><span class="op">--</span> a discount that <span class="const">IS</span> <span class="num">0</span> also becomes <span class="num">0</span>, harmlessly here <span class="op">--</span><span class="subst">}}</span>
+
+<span class="subst">{{</span> stock_count <span class="op">??</span> <span class="str">'unknown'</span> <span class="subst">}}</span>  <span class="subst">{{</span><span class="op">--</span> <span class="num">0</span> <span class="kw">in</span> stock still shows <span class="kw">as</span> <span class="num">0</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> stock_count <span class="kw">or</span> <span class="str">'unknown'</span> <span class="subst">}}</span>  <span class="subst">{{</span><span class="op">--</span> <span class="num">0</span> <span class="kw">in</span> stock is treated the same <span class="kw">as</span> never supplied <span class="op">--</span><span class="subst">}}</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>Use <code>??</code> whenever zero is a legitimate value you want to keep, and
+<code>or</code> whenever you only want to show something when there is genuinely
+something to show.</p>
+<h3 id="truthiness"><a class="anchor" href="#truthiness" aria-hidden="true" tabindex="-1"></a>Truthiness</h3>
+<p><code>x-if</code>, <code>x-not</code>, <code>and</code>/<code>or</code>, <code>!</code>/<code>not</code>, and <code>? :</code> all use Wire's own
+notion of truthy and falsy, which differs from Zuri's own rules in one
+place, deliberately, for template authoring:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Wire</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nil</code>, <code>false</code></td>
+<td>falsy</td>
+</tr>
+<tr>
+<td><code>0</code>, <code>NaN</code></td>
+<td>falsy</td>
+</tr>
+<tr>
+<td>any other number, including negative ones</td>
+<td>truthy</td>
+</tr>
+<tr>
+<td>an empty string</td>
+<td>falsy</td>
+</tr>
+<tr>
+<td>a non-empty string</td>
+<td>truthy</td>
+</tr>
+<tr>
+<td>an empty list or dict</td>
+<td>falsy</td>
+</tr>
+<tr>
+<td>a non-empty list or dict</td>
+<td>truthy</td>
+</tr>
+<tr>
+<td>anything else</td>
+<td>truthy</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The difference is the empty collection. Zuri treats <code>[]</code> and <code>{}</code> as
+truthy; Wire treats them as falsy, so <code>x-if=&quot;results&quot;</code> correctly hides a
+section for a search that came back with nothing.</p>
+<h3 id="calling-functions"><a class="anchor" href="#calling-functions" aria-hidden="true" tabindex="-1"></a>Calling Functions</h3>
+<p>A value <a href="#globals">registered as a global</a> can be called directly:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;a</span> <span class="attr">href</span><span class="op">=</span><span class="str">"<span class="subst">{{</span> <span class="fn">route</span>(<span class="str">'user.profile'</span>, user.<span class="prop">id</span>) <span class="subst">}}</span>"</span><span class="tag">&gt;</span><span class="subst">{{</span> user.<span class="prop">name</span> <span class="subst">}}</span><span class="tag">&lt;/a</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>There is also an older, standalone spelling for calling a function
+that takes no arguments, kept from Wire's very first version because
+it reads well on its own:</p>
+<figure class="code"><pre><code class="language-html">{! current_year !}
+</code></pre><span class="code-label">HTML</span></figure>
+<p>is exactly the same as writing:</p>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span> <span class="fn">current_year</span>() <span class="subst">}}</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>Prefer <code>{{ fn() }}</code> for anything new; <code>{! !}</code> exists for templates that
+already use it and for the handful of cases — a page's build stamp, a
+feature flag — where a function taking nothing at all reads a little
+cleaner without the parentheses.</p>
+<h2 id="filters"><a class="anchor" href="#filters" aria-hidden="true" tabindex="-1"></a>Filters</h2>
+<p>A filter transforms the value on the left of a <code>|</code>. It is the same
+idea as a Unix pipe:</p>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span> name<span class="op">|</span>upper <span class="subst">}}</span>
+<span class="subst">{{</span> price<span class="op">|</span><span class="fn">round</span>(<span class="num">2</span>) <span class="subst">}}</span>
+<span class="subst">{{</span> post.<span class="prop">body</span><span class="op">|</span><span class="fn">truncate</span>(<span class="num">150</span>) <span class="subst">}}</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>The value being filtered is always the filter's first argument;
+anything written in parentheses follows it. <code>truncate(150)</code> above
+calls the <code>truncate</code> filter as <code>truncate(post.body, 150)</code>.</p>
+<h3 id="chaining-filters"><a class="anchor" href="#chaining-filters" aria-hidden="true" tabindex="-1"></a>Chaining Filters</h3>
+<p>Filters read left to right, each one's output feeding the next:</p>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span> name<span class="op">|</span>trim<span class="op">|</span>title <span class="subst">}}</span>
+<span class="subst">{{</span> comment.<span class="prop">body</span><span class="op">|</span>strip_tags<span class="op">|</span><span class="fn">truncate</span>(<span class="num">200</span>) <span class="subst">}}</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<h3 id="the--argument-shorthand"><a class="anchor" href="#the--argument-shorthand" aria-hidden="true" tabindex="-1"></a>The <code>=</code> Argument Shorthand</h3>
+<p>For a filter that takes exactly one argument, <code>name=value</code> is
+shorthand for <code>name(value)</code>:</p>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span> status<span class="op">|</span>is<span class="op">=</span><span class="str">'active'</span> <span class="subst">}}</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>is the same as:</p>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span> status<span class="op">|</span><span class="fn">is</span>(<span class="str">'active'</span>) <span class="subst">}}</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>This spelling exists for symmetry with Wire's very first version and
+reads naturally for a short comparison; the parenthesised form is
+equally valid everywhere and is the only option once a filter needs
+more than one argument.</p>
+<h3 id="available-filters"><a class="anchor" href="#available-filters" aria-hidden="true" tabindex="-1"></a>Available Filters</h3>
+<p><strong>Escaping</strong></p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Filter</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>raw</code></td>
+<td><a href="#rendering-raw-markup">Marks the value as markup</a>, skipping escaping entirely.</td>
+</tr>
+<tr>
+<td><code>escape</code> / <code>e</code></td>
+<td>Escapes for a context other than the one the value is being written into. Takes <code>'text'</code> (the default), <code>'attribute'</code>, <code>'url'</code>, <code>'script'</code>, or <code>'style'</code>.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>Text</strong></p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Filter</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>upper</code></td>
+<td>Converts to upper case.</td>
+</tr>
+<tr>
+<td><code>lower</code></td>
+<td>Converts to lower case.</td>
+</tr>
+<tr>
+<td><code>title</code></td>
+<td>Title Cases Every Word.</td>
+</tr>
+<tr>
+<td><code>capitalize</code></td>
+<td>Capitalizes only the first letter, leaving the rest alone.</td>
+</tr>
+<tr>
+<td><code>trim</code></td>
+<td>Removes leading and trailing whitespace of every kind (space, tab, newline).</td>
+</tr>
+<tr>
+<td><code>truncate(length, suffix?)</code></td>
+<td>Cuts to <code>length</code> characters, appending <code>suffix</code> (default <code>'…'</code>) only if anything was actually cut.</td>
+</tr>
+<tr>
+<td><code>replace(search, replacement?)</code></td>
+<td>Replaces every literal occurrence of <code>search</code>. Never a regular expression. <code>replacement</code> defaults to an empty string.</td>
+</tr>
+<tr>
+<td><code>lpad(width, fill?)</code></td>
+<td>Pads on the left to <code>width</code> characters, with <code>fill</code> (default a space).</td>
+</tr>
+<tr>
+<td><code>rpad(width, fill?)</code></td>
+<td>Pads on the right.</td>
+</tr>
+<tr>
+<td><code>repeat(count)</code></td>
+<td>Repeats the value <code>count</code> times.</td>
+</tr>
+<tr>
+<td><code>nl2br</code></td>
+<td>Turns line breaks into <code>&lt;br&gt;</code>, escaping the text first. Returns markup.</td>
+</tr>
+<tr>
+<td><code>line_breaks</code></td>
+<td>An alias for <code>nl2br</code>.</td>
+</tr>
+<tr>
+<td><code>strip_tags</code></td>
+<td>Removes every HTML tag, keeping only the text — a real parse, not a pattern match.</td>
+</tr>
+<tr>
+<td><code>slug</code></td>
+<td>Lower-cased, hyphen-separated, safe for a URL segment.</td>
+</tr>
+<tr>
+<td><code>url_encode</code></td>
+<td>Percent-encodes for use inside a URL.</td>
+</tr>
+<tr>
+<td><code>json</code></td>
+<td>Encodes as JSON text.</td>
+</tr>
+<tr>
+<td><code>json_script(id?)</code></td>
+<td>Wraps the value's JSON encoding in a <code>&lt;script type=&quot;application/json&quot;&gt;</code>, optionally with an <code>id</code>, ready to be read back by a script on the page. Returns markup.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>Numbers</strong></p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Filter</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>abs</code></td>
+<td>Removes the sign.</td>
+</tr>
+<tr>
+<td><code>round(places?)</code></td>
+<td>Rounds to <code>places</code> decimal places (default <code>0</code>), halves rounding away from zero.</td>
+</tr>
+<tr>
+<td><code>floor</code></td>
+<td>Rounds down to the nearest whole number.</td>
+</tr>
+<tr>
+<td><code>ceil</code></td>
+<td>Rounds up.</td>
+</tr>
+<tr>
+<td><code>number_format(places?, point?, separator?)</code></td>
+<td>Groups thousands and fixes the decimal places, like <code>1,234,567.89</code>. Pass <code>point</code>/<code>separator</code> to use another convention, e.g. <code>1.234.567,89</code>.</td>
+</tr>
+<tr>
+<td><code>filesize(binary?)</code></td>
+<td>A byte count written the way a person reads it — <code>1.4 MB</code> by default, or <code>1.3 MiB</code> with <code>binary</code> set to <code>true</code>.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>Collections</strong></p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Filter</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>length</code></td>
+<td>How many entries — works on a string, list, dict, or bytes. <code>nil</code> has length <code>0</code>.</td>
+</tr>
+<tr>
+<td><code>first</code></td>
+<td>The first entry, or <code>nil</code> if there is none.</td>
+</tr>
+<tr>
+<td><code>last</code></td>
+<td>The last entry.</td>
+</tr>
+<tr>
+<td><code>join(glue?)</code></td>
+<td>Joins entries into one string with <code>glue</code> (default <code>''</code>) between them.</td>
+</tr>
+<tr>
+<td><code>sort(key?)</code></td>
+<td>Sorted ascending; <code>key</code> sorts a list of dicts or instances by one field.</td>
+</tr>
+<tr>
+<td><code>reverse</code></td>
+<td>The entries backwards, or a string reversed.</td>
+</tr>
+<tr>
+<td><code>unique</code></td>
+<td>Duplicates removed, keeping the first of each.</td>
+</tr>
+<tr>
+<td><code>keys</code></td>
+<td>A dict's keys, in insertion order.</td>
+</tr>
+<tr>
+<td><code>values</code></td>
+<td>A dict's values, in insertion order.</td>
+</tr>
+<tr>
+<td><code>slice(start, end?)</code></td>
+<td>The entries from <code>start</code> up to but not including <code>end</code>. Negative positions count from the end.</td>
+</tr>
+<tr>
+<td><code>sum(key?)</code></td>
+<td>Adds the entries together; <code>key</code> sums one field of a list of dicts or instances.</td>
+</tr>
+<tr>
+<td><code>split(separator?)</code></td>
+<td>Splits a string into a list. <code>separator</code> defaults to any run of whitespace.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>Choice</strong></p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Filter</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>default(fallback)</code> / <code>alt</code></td>
+<td><code>fallback</code> when the value is <a href="#truthiness">falsy</a>, otherwise the value.</td>
+</tr>
+<tr>
+<td><code>empty</code></td>
+<td>Whether the value has nothing in it. Unlike falsiness, a number is never empty — not even <code>0</code>.</td>
+</tr>
+<tr>
+<td><code>is(expected)</code></td>
+<td>Whether the value equals <code>expected</code>.</td>
+</tr>
+<tr>
+<td><code>not(expected)</code></td>
+<td>Whether it differs.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>Dates</strong></p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Filter</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>date(format?)</code></td>
+<td>Formats a <code>date.Date</code>, a Unix timestamp, or a parseable date string, using <a href="ch13-00-stdlib-tour.html#date">the same format directives as <code>Date.format()</code></a>. Defaults to <code>'Y-m-d H:i:s'</code>.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;time</span> <span class="attr">datetime</span><span class="op">=</span><span class="str">"<span class="subst">{{</span> post.<span class="prop">published_at</span><span class="op">|</span><span class="fn">date</span>(<span class="str">'Y-m-d'</span>) <span class="subst">}}</span>"</span><span class="tag">&gt;</span>
+  <span class="subst">{{</span> post.<span class="prop">published_at</span><span class="op">|</span><span class="fn">date</span>(<span class="str">'jS F Y'</span>) <span class="subst">}}</span>
+<span class="tag">&lt;/time</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<h3 id="writing-your-own-filter"><a class="anchor" href="#writing-your-own-filter" aria-hidden="true" tabindex="-1"></a>Writing Your Own Filter</h3>
+<p>See <a href="#custom-filters">Custom Filters</a> below.</p>
+<h2 id="conditionals"><a class="anchor" href="#conditionals" aria-hidden="true" tabindex="-1"></a>Conditionals</h2>
+<h3 id="x-if-x-elif-and-x-else"><a class="anchor" href="#x-if-x-elif-and-x-else" aria-hidden="true" tabindex="-1"></a><code>x-if</code>, <code>x-elif</code>, and <code>x-else</code></h3>
+<p><code>x-if</code> renders an element, and everything inside it, only when its
+expression is <a href="#truthiness">truthy</a>:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;p</span> <span class="dir">x-if</span><span class="op">=</span><span class="str">"</span>user.<span class="prop">is_admin</span><span class="str">"</span><span class="tag">&gt;</span>You have administrator access.<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>If <code>user.is_admin</code> is falsy, the whole <code>&lt;p&gt;</code> — tag and contents — is
+left out of the page entirely. There is no empty element left behind.</p>
+<p>Chain further conditions with <code>x-elif</code>, and close the chain with a
+plain <code>x-else</code>:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;p</span> <span class="dir">x-if</span><span class="op">=</span><span class="str">"</span>user.<span class="prop">role</span> <span class="op">==</span> <span class="str">'admin'</span><span class="str">"</span><span class="tag">&gt;</span>Administrator<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+<span class="tag">&lt;p</span> <span class="dir">x-elif</span><span class="op">=</span><span class="str">"</span>user.<span class="prop">role</span> <span class="op">==</span> <span class="str">'staff'</span><span class="str">"</span><span class="tag">&gt;</span>Staff member<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+<span class="tag">&lt;p</span> <span class="dir">x-elif</span><span class="op">=</span><span class="str">"</span>user.<span class="prop">role</span> <span class="op">==</span> <span class="str">'contributor'</span><span class="str">"</span><span class="tag">&gt;</span>Contributor<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+<span class="tag">&lt;p</span> <span class="dir">x-else</span><span class="tag">&gt;</span>Member<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>Exactly one of these renders. Only whitespace and HTML comments are
+allowed between the elements in a chain — any real content in between
+ends it, and an <code>x-elif</code> or <code>x-else</code> with no <code>x-if</code> in front of it is
+rejected when the template compiles, not silently ignored:</p>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span><span class="op">--</span> this chain is broken by the text between the two elements <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;p</span> <span class="dir">x-if</span><span class="op">=</span><span class="str">"</span>a<span class="str">"</span><span class="tag">&gt;</span>A<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+some text
+<span class="tag">&lt;p</span> <span class="dir">x-else</span><span class="tag">&gt;</span>not A<span class="tag">&lt;/p</span><span class="tag">&gt;</span> <span class="subst">{{</span><span class="op">--</span> error<span class="op">:</span> x<span class="op">-</span><span class="kw">else</span> has no x<span class="op">-</span><span class="kw">if</span> <span class="kw">in</span> front of it <span class="op">--</span><span class="subst">}}</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<h3 id="x-not"><a class="anchor" href="#x-not" aria-hidden="true" tabindex="-1"></a><code>x-not</code></h3>
+<p><code>x-not</code> is the plain inverse of <code>x-if</code> — it renders when its expression
+is falsy — and does not take part in a chain:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;div</span> <span class="dir">x-not</span><span class="op">=</span><span class="str">"</span>user.<span class="prop">has_verified_email</span><span class="str">"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;p</span><span class="tag">&gt;</span>Please verify your email address.<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/div</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p><code>x-if=&quot;!condition&quot;</code> and <code>x-not=&quot;condition&quot;</code> mean the same thing;
+<code>x-not</code> exists because it often reads more naturally for a guard
+clause.</p>
+<h2 id="loops"><a class="anchor" href="#loops" aria-hidden="true" tabindex="-1"></a>Loops</h2>
+<p><code>x-for</code> repeats an element once per entry of whatever its expression
+evaluates to — a list, a dict, a string, or a range:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;ul</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;li</span> <span class="dir">x-for</span><span class="op">=</span><span class="str">"</span>posts<span class="str">"</span> <span class="dir">x-value</span><span class="op">=</span><span class="str">"</span>post<span class="str">"</span><span class="tag">&gt;</span><span class="subst">{{</span> post.<span class="prop">title</span> <span class="subst">}}</span><span class="tag">&lt;/li</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/ul</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>Notice that the <em>element itself</em> repeats, not just its contents — the
+example above produces one whole <code>&lt;li&gt;</code> per post, not one <code>&lt;li&gt;</code>
+wrapping every post. <code>x-value</code> names the variable each iteration binds
+its current entry to; leave it out entirely if you do not need to
+refer to the entry by name.</p>
+<p>An optional <code>x-key</code> binds the position (for a list) or the key (for a
+dict):</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;tr</span> <span class="dir">x-for</span><span class="op">=</span><span class="str">"</span>users<span class="str">"</span> <span class="dir">x-key</span><span class="op">=</span><span class="str">"</span><span class="bi">id</span><span class="str">"</span> <span class="dir">x-value</span><span class="op">=</span><span class="str">"</span>user<span class="str">"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;td</span><span class="tag">&gt;</span><span class="subst">{{</span> <span class="bi">id</span> <span class="subst">}}</span><span class="tag">&lt;/td</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;td</span><span class="tag">&gt;</span><span class="subst">{{</span> user.<span class="prop">name</span> <span class="subst">}}</span><span class="tag">&lt;/td</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/tr</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>Every kind of collection iterates naturally:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;li</span> <span class="dir">x-for</span><span class="op">=</span><span class="str">"</span>tags<span class="str">"</span> <span class="dir">x-value</span><span class="op">=</span><span class="str">"</span>tag<span class="str">"</span><span class="tag">&gt;</span><span class="subst">{{</span> tag <span class="subst">}}</span><span class="tag">&lt;/li</span><span class="tag">&gt;</span>              <span class="subst">{{</span><span class="op">--</span> a list <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;li</span> <span class="dir">x-for</span><span class="op">=</span><span class="str">"</span>scores<span class="str">"</span> <span class="dir">x-key</span><span class="op">=</span><span class="str">"</span>name<span class="str">"</span> <span class="dir">x-value</span><span class="op">=</span><span class="str">"</span>score<span class="str">"</span><span class="tag">&gt;</span>           <span class="subst">{{</span><span class="op">--</span> a dict <span class="op">--</span><span class="subst">}}</span>
+  <span class="subst">{{</span> name <span class="subst">}}</span>: <span class="subst">{{</span> score <span class="subst">}}</span>
+<span class="tag">&lt;/li</span><span class="tag">&gt;</span>
+<span class="tag">&lt;span</span> <span class="dir">x-for</span><span class="op">=</span><span class="str">"</span>word<span class="str">"</span> <span class="dir">x-value</span><span class="op">=</span><span class="str">"</span>letter<span class="str">"</span><span class="tag">&gt;</span><span class="subst">{{</span> letter <span class="subst">}}</span><span class="tag">&lt;/span</span><span class="tag">&gt;</span>    <span class="subst">{{</span><span class="op">--</span> a string, by character <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;option</span> <span class="dir">x-for</span><span class="op">=</span><span class="str">"</span><span class="num">1</span>..<span class="num">5</span><span class="str">"</span> <span class="dir">x-value</span><span class="op">=</span><span class="str">"</span>n<span class="str">"</span><span class="tag">&gt;</span><span class="subst">{{</span> n <span class="subst">}}</span><span class="tag">&lt;/option</span><span class="tag">&gt;</span>          <span class="subst">{{</span><span class="op">--</span> a range <span class="op">--</span><span class="subst">}}</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>A missing or empty collection simply renders nothing — there is no
+need to guard a loop with an <code>x-if</code> first:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;li</span> <span class="dir">x-for</span><span class="op">=</span><span class="str">"</span>comments<span class="str">"</span> <span class="dir">x-value</span><span class="op">=</span><span class="str">"</span>comment<span class="str">"</span><span class="tag">&gt;</span><span class="subst">{{</span> comment.<span class="prop">body</span> <span class="subst">}}</span><span class="tag">&lt;/li</span><span class="tag">&gt;</span>
+<span class="subst">{{</span><span class="op">--</span> renders nothing at all <span class="kw">if</span> `comments` is empty <span class="kw">or</span> was never supplied <span class="op">--</span><span class="subst">}}</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<h3 id="the-loop-variable"><a class="anchor" href="#the-loop-variable" aria-hidden="true" tabindex="-1"></a>The <code>loop</code> Variable</h3>
+<p>Every iteration publishes a <code>loop</code> variable with the following fields:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>loop.index</code></td>
+<td>The position, counting from <code>1</code>.</td>
+</tr>
+<tr>
+<td><code>loop.index0</code></td>
+<td>The position, counting from <code>0</code>.</td>
+</tr>
+<tr>
+<td><code>loop.first</code></td>
+<td><code>true</code> on the first pass.</td>
+</tr>
+<tr>
+<td><code>loop.last</code></td>
+<td><code>true</code> on the last pass.</td>
+</tr>
+<tr>
+<td><code>loop.length</code></td>
+<td>How many entries there are in total.</td>
+</tr>
+<tr>
+<td><code>loop.even</code></td>
+<td><code>true</code> on the 2nd, 4th, 6th, … pass — even-numbered by <code>loop.index</code>.</td>
+</tr>
+<tr>
+<td><code>loop.odd</code></td>
+<td><code>true</code> on the 1st, 3rd, 5th, … pass.</td>
+</tr>
+<tr>
+<td><code>loop.key</code></td>
+<td>The current key or index, whether or not <code>x-key</code> binds it too.</td>
+</tr>
+<tr>
+<td><code>loop.value</code></td>
+<td>The current value, whether or not <code>x-value</code> binds it too.</td>
+</tr>
+<tr>
+<td><code>loop.parent</code></td>
+<td>The enclosing loop's own <code>loop</code>, for a nested <code>x-for</code>.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;tr</span> <span class="dir">x-for</span><span class="op">=</span><span class="str">"</span>rows<span class="str">"</span> <span class="dir">x-value</span><span class="op">=</span><span class="str">"</span>row<span class="str">"</span> <span class="dir">x-attr</span><span class="op">=</span><span class="str">"</span>{ <span class="str">'class'</span><span class="op">:</span> loop.<span class="prop">odd</span> <span class="op">?</span> <span class="str">'zebra'</span> <span class="op">:</span> <span class="lit">nil</span> }<span class="str">"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;td</span><span class="tag">&gt;</span><span class="subst">{{</span> loop.<span class="prop">index</span> <span class="subst">}}</span><span class="tag">&lt;/td</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;td</span><span class="tag">&gt;</span><span class="subst">{{</span> row.<span class="prop">name</span> <span class="subst">}}</span><span class="tag">&lt;/td</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/tr</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<h3 id="nesting-loops"><a class="anchor" href="#nesting-loops" aria-hidden="true" tabindex="-1"></a>Nesting Loops</h3>
+<p><code>x-loop</code> renames the metadata variable a specific <code>x-for</code> publishes,
+which is what lets an inner loop's own <code>loop</code> and an outer loop's
+<code>loop</code> both be reached at once:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;table</span> <span class="dir">x-for</span><span class="op">=</span><span class="str">"</span>rows<span class="str">"</span> <span class="dir">x-loop</span><span class="op">=</span><span class="str">"</span>row<span class="str">"</span> <span class="dir">x-value</span><span class="op">=</span><span class="str">"</span>cells<span class="str">"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;tr</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;td</span> <span class="dir">x-for</span><span class="op">=</span><span class="str">"</span>cells<span class="str">"</span> <span class="dir">x-value</span><span class="op">=</span><span class="str">"</span>cell<span class="str">"</span><span class="tag">&gt;</span>
+      <span class="subst">{{</span> row.<span class="prop">index</span> <span class="subst">}}</span>, <span class="subst">{{</span> loop.<span class="prop">index</span> <span class="subst">}}</span>: <span class="subst">{{</span> cell <span class="subst">}}</span>
+    <span class="tag">&lt;/td</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;/tr</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/table</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>Without <code>x-loop</code>, the inner loop's own <code>loop</code> would simply shadow the
+outer one for the scope of the inner loop — reach for <code>loop.parent</code>
+instead if you would rather not rename anything:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;td</span> <span class="dir">x-for</span><span class="op">=</span><span class="str">"</span>cells<span class="str">"</span> <span class="dir">x-value</span><span class="op">=</span><span class="str">"</span>cell<span class="str">"</span><span class="tag">&gt;</span>
+  outer position <span class="subst">{{</span> loop.<span class="self">parent</span>.<span class="prop">index</span> <span class="subst">}}</span>, inner position <span class="subst">{{</span> loop.<span class="prop">index</span> <span class="subst">}}</span>
+<span class="tag">&lt;/td</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<h3 id="looping-without-a-wrapper-element"><a class="anchor" href="#looping-without-a-wrapper-element" aria-hidden="true" tabindex="-1"></a>Looping Without a Wrapper Element</h3>
+<p>Sometimes you want to repeat several elements together without a real
+element wrapping them, or without introducing any element at all. Put
+the directive on a <code>&lt;template&gt;</code> instead of on the element you want
+repeated:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;select</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;template</span> <span class="dir">x-for</span><span class="op">=</span><span class="str">"</span>countries<span class="str">"</span> <span class="dir">x-value</span><span class="op">=</span><span class="str">"</span>country<span class="str">"</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;option</span> <span class="attr">value</span><span class="op">=</span><span class="str">"<span class="subst">{{</span> country.<span class="prop">code</span> <span class="subst">}}</span>"</span><span class="tag">&gt;</span><span class="subst">{{</span> country.<span class="prop">name</span> <span class="subst">}}</span><span class="tag">&lt;/option</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;/template</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/select</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p><code>&lt;template&gt;</code> is the one HTML element the parser lets through
+completely untouched, wherever it appears — inside a <code>&lt;head&gt;</code>, inside
+a <code>&lt;table&gt;</code>, inside a <code>&lt;select&gt;</code> — and Wire removes it from the output
+entirely, leaving only what was inside it, once per pass. This is also
+the way to apply <a href="#conditionals"><code>x-if</code></a> to a group of elements without
+picking one of them to carry the attribute:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;template</span> <span class="dir">x-if</span><span class="op">=</span><span class="str">"</span>user.<span class="prop">is_admin</span><span class="str">"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;a</span> <span class="attr">href</span><span class="op">=</span><span class="str">"/admin"</span><span class="tag">&gt;</span>Dashboard<span class="tag">&lt;/a</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;a</span> <span class="attr">href</span><span class="op">=</span><span class="str">"/admin/users"</span><span class="tag">&gt;</span>Users<span class="tag">&lt;/a</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/template</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<h2 id="content-and-attributes"><a class="anchor" href="#content-and-attributes" aria-hidden="true" tabindex="-1"></a>Content and Attributes</h2>
+<h3 id="x-text"><a class="anchor" href="#x-text" aria-hidden="true" tabindex="-1"></a><code>x-text</code></h3>
+<p><code>x-text</code> replaces an element's children with its expression, escaped
+as plain text — useful when the element already has other attributes
+and you would rather not write the value twice:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;p</span> <span class="dir">x-text</span><span class="op">=</span><span class="str">"</span>post.<span class="prop">summary</span><span class="str">"</span><span class="tag">&gt;</span><span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>is the same as:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;p</span><span class="tag">&gt;</span><span class="subst">{{</span> post.<span class="prop">summary</span> <span class="subst">}}</span><span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>Anything written inside the element in the source is discarded; it
+exists only to describe what would go there without JavaScript.</p>
+<h3 id="x-html"><a class="anchor" href="#x-html" aria-hidden="true" tabindex="-1"></a><code>x-html</code></h3>
+<p><code>x-html</code> is <code>x-text</code>'s unescaped counterpart — it replaces the
+element's children with its expression's value, written as markup
+rather than text:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;div</span> <span class="dir">x-html</span><span class="op">=</span><span class="str">"</span>post.<span class="prop">rendered_body</span><span class="op">|</span>raw<span class="str">"</span><span class="tag">&gt;</span><span class="tag">&lt;/div</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>Note the <code>|raw</code>: <code>x-html</code> still expects a value marked safe, the same
+as an ordinary interpolation would. <code>x-html</code> only changes <em>where</em> the
+markup goes (replacing the whole element's contents, rather than
+sitting inline in a text run) — it does not, on its own, turn escaping
+off. The <a href="#rendering-raw-markup">same warning about untrusted input</a>
+applies here just as much as it does to the <code>raw</code> filter.</p>
+<h3 id="x-attr"><a class="anchor" href="#x-attr" aria-hidden="true" tabindex="-1"></a><code>x-attr</code></h3>
+<p><code>x-attr</code> spreads a dictionary of names and values onto the element as
+attributes:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;input</span> <span class="dir">x-attr</span><span class="op">=</span><span class="str">"</span>{ type<span class="op">:</span> <span class="str">'text'</span>, name<span class="op">:</span> field.<span class="prop">name</span>, required<span class="op">:</span> field.<span class="prop">is_required</span> }<span class="str">"</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>Within that dictionary:</p>
+<ul>
+<li><code>true</code> produces a valueless attribute (<code>required</code>), exactly as
+writing <code>required</code> by hand would.</li>
+<li><code>false</code> and <code>nil</code> leave the attribute off entirely, rather than
+writing it with an empty or literal <code>&quot;false&quot;</code> value.</li>
+<li>Anything else is written as the attribute's value, escaped for
+whatever that attribute means (a URL attribute is checked as a URL,
+same as always).</li>
+</ul>
+<p>This is what turns a boolean into a real HTML boolean attribute
+without a ternary in every place one is needed:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;button</span> <span class="dir">x-attr</span><span class="op">=</span><span class="str">"</span>{ disabled<span class="op">:</span> <span class="op">!</span>form.<span class="prop">is_valid</span> }<span class="str">"</span><span class="tag">&gt;</span>Submit<span class="tag">&lt;/button</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>A computed attribute takes over from one written directly on the same
+element, so you can set a sensible default and only override it when
+there is something to override:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;div</span> <span class="attr">class</span><span class="op">=</span><span class="str">"card"</span> <span class="dir">x-attr</span><span class="op">=</span><span class="str">"</span>{ <span class="str">'class'</span><span class="op">:</span> featured <span class="op">?</span> <span class="str">'card card-featured'</span> <span class="op">:</span> <span class="lit">nil</span> }<span class="str">"</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<h2 id="comments"><a class="anchor" href="#comments" aria-hidden="true" tabindex="-1"></a>Comments</h2>
+<p>HTML's own comment syntax is a server-side note in a Wire template. It
+never reaches the rendered page, and nothing inside one is evaluated —
+which is exactly what makes it safe to leave notes for other people
+maintaining the template, without those notes shipping to a browser:</p>
+<figure class="code"><pre><code class="language-html"><span class="com">&lt;!-- TODO: replace this hard-coded banner once marketing sends the real copy --&gt;</span>
+<span class="tag">&lt;div</span> <span class="attr">class</span><span class="op">=</span><span class="str">"banner"</span><span class="tag">&gt;</span>Coming soon<span class="tag">&lt;/div</span><span class="tag">&gt;</span>
+
+<span class="com">&lt;!-- this variable is not evaluated: {{ some.internal.detail }} --&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>If you genuinely want a comment to reach the browser — a conditional
+comment, a build stamp a deploy script checks for — turn comments back
+on for that <code>Wire</code> instance with <a href="#configuration"><code>set_comments(true)</code></a>.</p>
+<h2 id="including-templates"><a class="anchor" href="#including-templates" aria-hidden="true" tabindex="-1"></a>Including Templates</h2>
+<p><code>&lt;include path=&quot;...&quot; /&gt;</code> renders another template in its place. It
+also has a directive spelling, <code>&lt;template x-include=&quot;...&quot;&gt;</code>, which
+means exactly the same thing — the pseudo-element forms in this guide
+(<code>&lt;include&gt;</code>, <code>&lt;extend&gt;</code>, <code>&lt;declare&gt;</code>, <code>&lt;define&gt;</code>) are sugar, rewritten
+into the directive form before the template is even parsed, which is
+what lets them work correctly inside a <code>&lt;head&gt;</code> or a <code>&lt;table&gt;</code> where an
+element the parser does not recognise would otherwise be moved or
+dropped.</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;</span><span class="dir">include</span> <span class="attr">path</span><span class="op">=</span><span class="str">"partials/nav.html"</span> <span class="tag">/&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>is the same as:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;template</span> <span class="dir">x-include</span><span class="op">=</span><span class="str">"</span>partials<span class="op">/</span>nav.<span class="prop">html</span><span class="str">"</span><span class="tag">&gt;</span><span class="tag">&lt;/template</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>The path is resolved <a href="#the-template-root">inside the template root</a>,
+the same as <code>render()</code>'s own path argument.</p>
+<p>By default, an include sees every variable the page around it can
+see — it is not a separate scope:</p>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span><span class="op">--</span> page.<span class="prop">html</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;</span><span class="dir">include</span> <span class="attr">path</span><span class="op">=</span><span class="str">"partials/greeting.html"</span> <span class="tag">/&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span><span class="op">--</span> partials<span class="op">/</span>greeting.<span class="prop">html</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;p</span><span class="tag">&gt;</span>Hi, <span class="subst">{{</span> user.<span class="prop">name</span> <span class="subst">}}</span>!<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>renders correctly without <code>user</code> ever being passed explicitly to the
+partial.</p>
+<h3 id="passing-data-to-an-include"><a class="anchor" href="#passing-data-to-an-include" aria-hidden="true" tabindex="-1"></a>Passing Data to an Include</h3>
+<p><code>x-with</code> adds variables for the included template, alongside whatever
+it already inherits:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;</span><span class="dir">include</span> <span class="attr">path</span><span class="op">=</span><span class="str">"partials/badge.html"</span> <span class="dir">x-with</span><span class="op">=</span><span class="str">"</span>{ label<span class="op">:</span> <span class="str">'New'</span>, tone<span class="op">:</span> <span class="str">'green'</span> }<span class="str">"</span> <span class="tag">/&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p><code>only</code> withholds the surrounding scope entirely, leaving the partial
+with only what <code>x-with</code> gave it — turning a plain partial into
+something closer to a real component with a defined interface:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;</span><span class="dir">include</span> <span class="attr">path</span><span class="op">=</span><span class="str">"components/price-tag.html"</span> <span class="dir">x-with</span><span class="op">=</span><span class="str">"</span>{ amount<span class="op">:</span> item.<span class="prop">price</span> }<span class="str">"</span> <span class="attr">only</span> <span class="tag">/&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<h3 id="includes-as-components"><a class="anchor" href="#includes-as-components" aria-hidden="true" tabindex="-1"></a>Includes as Components</h3>
+<p>Anything written <em>inside</em> an <code>&lt;include&gt;</code> tag is handed to the included
+template as a named region called <code>content</code>, declared with
+<code>&lt;declare name=&quot;content&quot;&gt;</code>:</p>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span><span class="op">--</span> components<span class="op">/</span>card.<span class="prop">html</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;section</span> <span class="attr">class</span><span class="op">=</span><span class="str">"card"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;h3</span><span class="tag">&gt;</span><span class="subst">{{</span> title <span class="subst">}}</span><span class="tag">&lt;/h3</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;</span><span class="dir">declare</span> <span class="attr">name</span><span class="op">=</span><span class="str">"content"</span><span class="tag">&gt;</span><span class="tag">&lt;/</span><span class="dir">declare</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/section</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span><span class="op">--</span> the page <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;</span><span class="dir">include</span> <span class="attr">path</span><span class="op">=</span><span class="str">"components/card.html"</span> <span class="dir">x-with</span><span class="op">=</span><span class="str">"</span>{ title<span class="op">:</span> <span class="str">'Recent Orders'</span> }<span class="str">"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;p</span><span class="tag">&gt;</span><span class="subst">{{</span> orders<span class="op">|</span>length <span class="subst">}}</span> orders this week<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/</span><span class="dir">include</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>renders as:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;section</span> <span class="attr">class</span><span class="op">=</span><span class="str">"card"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;h3</span><span class="tag">&gt;</span>Recent Orders<span class="tag">&lt;/h3</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;p</span><span class="tag">&gt;</span>3 orders this week<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/section</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>The content you write inside the <code>&lt;include&gt;</code> tag keeps the scope it
+was written in — the page's, not the partial's — which is exactly what
+lets <code>{{ orders|length }}</code> above read a variable from the page even
+though <code>x-only</code> was not used and the card component never mentions
+<code>orders</code> at all.</p>
+<h3 id="computed-include-paths"><a class="anchor" href="#computed-include-paths" aria-hidden="true" tabindex="-1"></a>Computed Include Paths</h3>
+<p>A path is read as literal text, with <code>{{ }}</code> interpolation allowed
+inside it — not as an expression in its own right, so
+<code>x-include=&quot;header&quot;</code> names a file called <code>header</code>, rather than reading
+a variable of that name:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;</span><span class="dir">include</span> <span class="attr">path</span><span class="op">=</span><span class="str">"themes/<span class="subst">{{</span> current_theme <span class="subst">}}</span>/header.html"</span> <span class="tag">/&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>resolves a different file per render depending on <code>current_theme</code>,
+while everything after <code>path=&quot;themes/&quot;</code> up to the next <code>{{</code> is taken
+literally.</p>
+<h2 id="template-inheritance"><a class="anchor" href="#template-inheritance" aria-hidden="true" tabindex="-1"></a>Template Inheritance</h2>
+<p>Includes are for small, reusable fragments — a navbar, a footer, a
+badge. For whole-page structure — the parts of a layout every page on
+your site shares — template inheritance is the better fit. Where an
+include composes fragments together, inheritance lets a base layout
+define the <em>shape</em> of a page once, and lets each page fill in only the
+parts that differ.</p>
+<h3 id="defining-a-layout"><a class="anchor" href="#defining-a-layout" aria-hidden="true" tabindex="-1"></a>Defining a Layout</h3>
+<p>A base template marks the regions a page is allowed to fill in with
+<code>&lt;declare name=&quot;...&quot;&gt;</code>:</p>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span><span class="op">--</span> layouts<span class="op">/</span>app.<span class="prop">html</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="meta">&lt;!DOCTYPE html&gt;</span>
+<span class="tag">&lt;html</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;head</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;title</span><span class="tag">&gt;</span><span class="subst">{{</span> title <span class="subst">}}</span><span class="tag">&lt;/title</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;</span><span class="dir">declare</span> <span class="attr">name</span><span class="op">=</span><span class="str">"head"</span><span class="tag">&gt;</span><span class="tag">&lt;/</span><span class="dir">declare</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;/head</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;body</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;nav</span><span class="tag">&gt;</span><span class="com">&lt;!-- shared navigation --&gt;</span><span class="tag">&lt;/nav</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;main</span><span class="tag">&gt;</span>
+      <span class="tag">&lt;</span><span class="dir">declare</span> <span class="attr">name</span><span class="op">=</span><span class="str">"content"</span><span class="tag">&gt;</span><span class="tag">&lt;/</span><span class="dir">declare</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;/main</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;footer</span><span class="tag">&gt;</span>
+      <span class="tag">&lt;</span><span class="dir">declare</span> <span class="attr">name</span><span class="op">=</span><span class="str">"footer"</span><span class="tag">&gt;</span>
+        <span class="tag">&lt;p</span><span class="tag">&gt;</span><span class="ent">&amp;copy;</span> <span class="subst">{{</span> year <span class="subst">}}</span> My Company<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+      <span class="tag">&lt;/</span><span class="dir">declare</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;/footer</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;/body</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/html</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>Notice that <code>footer</code> has content already inside its <code>&lt;declare&gt;</code> tag.
+That becomes <a href="#default-slot-content">the default</a> — what renders when
+a page does not define that region at all.</p>
+<h3 id="extending-a-layout"><a class="anchor" href="#extending-a-layout" aria-hidden="true" tabindex="-1"></a>Extending a Layout</h3>
+<p>A page declares which layout it extends with <code>&lt;extend base=&quot;...&quot;&gt;</code>,
+and fills in regions with <code>&lt;define name=&quot;...&quot;&gt;</code>:</p>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span><span class="op">--</span> pages<span class="op">/</span>dashboard.<span class="prop">html</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;</span><span class="dir">extend</span> <span class="attr">base</span><span class="op">=</span><span class="str">"layouts/app.html"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;</span><span class="dir">define</span> <span class="attr">name</span><span class="op">=</span><span class="str">"head"</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;meta</span> <span class="attr">name</span><span class="op">=</span><span class="str">"description"</span> <span class="attr">content</span><span class="op">=</span><span class="str">"Your account dashboard."</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;/</span><span class="dir">define</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;</span><span class="dir">define</span> <span class="attr">name</span><span class="op">=</span><span class="str">"content"</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;h1</span><span class="tag">&gt;</span>Welcome back, <span class="subst">{{</span> user.<span class="prop">name</span> <span class="subst">}}</span><span class="tag">&lt;/h1</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;p</span><span class="tag">&gt;</span>You have <span class="subst">{{</span> notifications<span class="op">|</span>length <span class="subst">}}</span> new notifications.<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;/</span><span class="dir">define</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/</span><span class="dir">extend</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>Rendering <code>pages/dashboard.html</code> produces the layout's full structure,
+with <code>head</code> and <code>content</code> replaced by what the page defined, and
+<code>footer</code> left exactly as the layout's own default. Both the layout and
+the page are rendered against the same variables <code>render()</code> was given
+— there is no separate scope to pass anything through.</p>
+<p>Everything inside an <code>&lt;extend&gt;</code> must be inside a <code>&lt;define&gt;</code>. The base
+template owns the page's structure; a page's job is only to fill in
+the regions it was offered, not to add markup of its own outside them.
+A template can extend exactly one base.</p>
+<h3 id="default-slot-content"><a class="anchor" href="#default-slot-content" aria-hidden="true" tabindex="-1"></a>Default Slot Content</h3>
+<p>A region a page does not define keeps whatever the layout put inside
+its own <code>&lt;declare&gt;</code> tag:</p>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span><span class="op">--</span> pages<span class="op">/</span>minimal.<span class="prop">html</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;</span><span class="dir">extend</span> <span class="attr">base</span><span class="op">=</span><span class="str">"layouts/app.html"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;</span><span class="dir">define</span> <span class="attr">name</span><span class="op">=</span><span class="str">"content"</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;p</span><span class="tag">&gt;</span>Just this page's content — head and footer both use the layout's defaults.<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;/</span><span class="dir">define</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/</span><span class="dir">extend</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>A <code>&lt;declare&gt;</code> tag with nothing inside it — like <code>head</code> in the layout
+above — simply renders empty when nothing defines it.</p>
+<h3 id="x-super"><a class="anchor" href="#x-super" aria-hidden="true" tabindex="-1"></a><code>x-super</code></h3>
+<p><code>&lt;super /&gt;</code> — or its directive spelling, <code>&lt;template x-super&gt;&lt;/template&gt;</code>
+— renders whatever the region it sits inside would have shown before
+this definition replaced it. That lets a page <em>add to</em> a section
+instead of fully restating it:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;</span><span class="dir">extend</span> <span class="attr">base</span><span class="op">=</span><span class="str">"layouts/app.html"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;</span><span class="dir">define</span> <span class="attr">name</span><span class="op">=</span><span class="str">"footer"</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;</span><span class="dir">super</span> <span class="tag">/&gt;</span>
+    <span class="tag">&lt;p</span><span class="tag">&gt;</span><span class="tag">&lt;a</span> <span class="attr">href</span><span class="op">=</span><span class="str">"/privacy"</span><span class="tag">&gt;</span>Privacy Policy<span class="tag">&lt;/a</span><span class="tag">&gt;</span><span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;/</span><span class="dir">define</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/</span><span class="dir">extend</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>renders the layout's own copyright line, followed by the extra privacy
+link — without the page having to know or repeat what the layout's
+default footer actually said.</p>
+<h3 id="multi-level-inheritance"><a class="anchor" href="#multi-level-inheritance" aria-hidden="true" tabindex="-1"></a>Multi-Level Inheritance</h3>
+<p>A template that extends a base can itself declare regions of its own,
+letting a further template extend <em>it</em>. This is how a site with, say,
+a general layout and several page-type-specific layouts (a blog post,
+a product page) is usually structured:</p>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span><span class="op">--</span> layouts<span class="op">/</span>app.<span class="prop">html</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;html</span><span class="tag">&gt;</span><span class="tag">&lt;body</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;</span><span class="dir">declare</span> <span class="attr">name</span><span class="op">=</span><span class="str">"body"</span><span class="tag">&gt;</span><span class="tag">&lt;p</span><span class="tag">&gt;</span>default<span class="tag">&lt;/p</span><span class="tag">&gt;</span><span class="tag">&lt;/</span><span class="dir">declare</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/body</span><span class="tag">&gt;</span><span class="tag">&lt;/html</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span><span class="op">--</span> layouts<span class="op">/</span>article.<span class="prop">html</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;</span><span class="dir">extend</span> <span class="attr">base</span><span class="op">=</span><span class="str">"layouts/app.html"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;</span><span class="dir">define</span> <span class="attr">name</span><span class="op">=</span><span class="str">"body"</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;article</span><span class="tag">&gt;</span>
+      <span class="tag">&lt;</span><span class="dir">declare</span> <span class="attr">name</span><span class="op">=</span><span class="str">"article-content"</span><span class="tag">&gt;</span><span class="tag">&lt;/</span><span class="dir">declare</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;/article</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;/</span><span class="dir">define</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/</span><span class="dir">extend</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span><span class="op">--</span> pages<span class="op">/</span>post.<span class="prop">html</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;</span><span class="dir">extend</span> <span class="attr">base</span><span class="op">=</span><span class="str">"layouts/article.html"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;</span><span class="dir">define</span> <span class="attr">name</span><span class="op">=</span><span class="str">"article-content"</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;h1</span><span class="tag">&gt;</span><span class="subst">{{</span> post.<span class="prop">title</span> <span class="subst">}}</span><span class="tag">&lt;/h1</span><span class="tag">&gt;</span>
+    <span class="subst">{{</span> post.<span class="prop">body</span><span class="op">|</span>raw <span class="subst">}}</span>
+  <span class="tag">&lt;/</span><span class="dir">define</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/</span><span class="dir">extend</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>Rendering <code>pages/post.html</code> walks the whole chain: it extends
+<code>layouts/article.html</code>, which extends <code>layouts/app.html</code>, and the
+final page is assembled from all three.</p>
+<h3 id="overriding-a-definition"><a class="anchor" href="#overriding-a-definition" aria-hidden="true" tabindex="-1"></a>Overriding a Definition</h3>
+<p>Defining the same region twice in one template is almost always an
+accident — two people editing the same file, a copy-paste that was
+never cleaned up — so Wire refuses it at compile time unless you say
+the replacement is deliberate with <code>override</code>:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;</span><span class="dir">extend</span> <span class="attr">base</span><span class="op">=</span><span class="str">"layouts/app.html"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;</span><span class="dir">define</span> <span class="attr">name</span><span class="op">=</span><span class="str">"content"</span><span class="tag">&gt;</span><span class="tag">&lt;p</span><span class="tag">&gt;</span>First draft<span class="tag">&lt;/p</span><span class="tag">&gt;</span><span class="tag">&lt;/</span><span class="dir">define</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;</span><span class="dir">define</span> <span class="attr">name</span><span class="op">=</span><span class="str">"content"</span> <span class="attr">override</span><span class="tag">&gt;</span><span class="tag">&lt;p</span><span class="tag">&gt;</span>Final version<span class="tag">&lt;/p</span><span class="tag">&gt;</span><span class="tag">&lt;/</span><span class="dir">define</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/</span><span class="dir">extend</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>Without <code>override</code> on the second one, this template fails to compile
+with a clear message naming the region and both locations, rather than
+silently keeping whichever definition happened to come last.</p>
+<h2 id="security"><a class="anchor" href="#security" aria-hidden="true" tabindex="-1"></a>Security</h2>
+<h3 id="why-everything-is-escaped-by-default"><a class="anchor" href="#why-everything-is-escaped-by-default" aria-hidden="true" tabindex="-1"></a>Why Everything Is Escaped by Default</h3>
+<p>A templating engine's job includes keeping a value that came from
+outside your program — a form submission, a query string, another
+user's profile — from becoming markup, a script, or a link, unless you
+explicitly say it is safe to. Wire treats this as the default rather
+than an opt-in setting, for the same reason a seatbelt only works if
+putting it on is the ordinary thing to do rather than the thing you
+remember to do under pressure: the moment escaping is something you
+have to <em>remember</em> to turn on, the templates that skip it are the ones
+that get exploited.</p>
+<p>Every interpolation is escaped for the exact place it lands — see the
+<a href="#escaping-data">table earlier in this guide</a> — and there is no
+template-level setting to disable that. The only way past it is the
+explicit, visible <a href="#rendering-raw-markup"><code>raw</code> filter or <code>x-html</code>
+directive</a>, which is exactly the friction you
+want between &quot;displaying a value&quot; and &quot;trusting a value with
+unescaped markup.&quot;</p>
+<h3 id="urls-are-checked-not-just-escaped"><a class="anchor" href="#urls-are-checked-not-just-escaped" aria-hidden="true" tabindex="-1"></a>URLs Are Checked, Not Just Escaped</h3>
+<p>An attribute a browser reads as a URL — <code>href</code>, <code>src</code>, <code>action</code>, and
+several others — gets more than entity escaping. Its scheme is checked
+against an allowlist, and a disallowed scheme is replaced with
+<code>about:blank</code> rather than written through:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;a</span> <span class="attr">href</span><span class="op">=</span><span class="str">"<span class="subst">{{</span> profile_link <span class="subst">}}</span>"</span><span class="tag">&gt;</span><span class="subst">{{</span> user.<span class="prop">name</span> <span class="subst">}}</span><span class="tag">&lt;/a</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>If <code>profile_link</code> were <code>javascript:alert(document.cookie)</code>, the
+rendered <code>href</code> is <code>about:blank</code>, not the script URL. A URL with no
+scheme at all — every relative link, every absolute path, every
+protocol-relative URL — is always allowed, since none of those can
+name a handler in the first place.</p>
+<p>The default allowlist covers <code>http</code>, <code>https</code>, <code>mailto</code>, <code>tel</code>, and a
+handful of others; it deliberately leaves out <code>javascript</code>,
+<code>vbscript</code>, <code>data</code>, and <code>file</code>. <a href="#configuration"><code>set_url_schemes()</code></a>
+replaces the list for an application that genuinely needs another
+scheme — a custom <code>app:</code> handler, say.</p>
+<p><code>srcset</code> and <code>ping</code>, which each hold a <em>list</em> of URLs, have every entry
+in the list checked the same way, with descriptors (<code>2x</code>, <code>640w</code>) and
+separators preserved exactly as written.</p>
+<h3 id="scripts-and-stylesheets"><a class="anchor" href="#scripts-and-stylesheets" aria-hidden="true" tabindex="-1"></a>Scripts and Stylesheets</h3>
+<p>A value interpolated inside a <code>&lt;script&gt;</code> element, or inside an event
+handler attribute like <code>onclick</code>, is encoded as JSON rather than
+merely escaped — automatically, with no filter needed:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;script</span><span class="tag">&gt;</span>
+  <span class="kw">var</span> currentUser = {{ user }};
+<span class="tag">&lt;/script</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>renders the whole <code>user</code> value as a JSON literal, with its own quotes
+included. That is worth internalising, because it changes how you
+write the surrounding script: <strong>do not</strong> wrap the interpolation in
+your own quotes.</p>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span><span class="op">--</span> correct<span class="op">:</span> renders   <span class="kw">var</span> name <span class="op">=</span> <span class="str">"Ada"</span>;   <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;script</span><span class="tag">&gt;</span><span class="kw">var</span> name = {{ user.<span class="prop">name</span> }};<span class="tag">&lt;/script</span><span class="tag">&gt;</span>
+
+<span class="subst">{{</span><span class="op">--</span> wrong<span class="op">:</span> renders   <span class="kw">var</span> name <span class="op">=</span> <span class="str">'"Ada"'</span>;   which is not what you meant <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;script</span><span class="tag">&gt;</span><span class="kw">var</span> name = <span class="str">'{{ user.name }}'</span>;<span class="tag">&lt;/script</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>A value inside a <code>&lt;style&gt;</code> block has anything outside a conservative,
+CSS-safe character set dropped rather than escaped — there is no
+escape sequence that would stop a <code>&lt;</code> from being read by the HTML
+tokenizer looking for <code>&lt;/style&gt;</code>, so the only sound answer is for the
+character not to be there at all.</p>
+<h3 id="the-template-root-is-a-sandbox"><a class="anchor" href="#the-template-root-is-a-sandbox" aria-hidden="true" tabindex="-1"></a>The Template Root Is a Sandbox</h3>
+<p>Every path — whether it came from <code>render()</code>'s own argument, or from
+an <code>x-include</code>/<code>x-extend</code> written inside a template, even one built
+from an interpolated value — is resolved <em>inside</em> the configured root
+and refused if it resolves anywhere else, <code>..</code> segments and symbolic
+links both included:</p>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;</span><span class="dir">include</span> <span class="attr">path</span><span class="op">=</span><span class="str">"<span class="subst">{{</span> theme <span class="subst">}}</span>/header.html"</span> <span class="tag">/&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>If <code>theme</code> ever came from something a request controls, an unbounded
+loader would turn this into a way to read arbitrary files the process
+can reach. Wire's loader treats the root as a hard boundary instead:
+the worst a hostile value can do here is fail to find a template.</p>
+<h2 id="extending-wire"><a class="anchor" href="#extending-wire" aria-hidden="true" tabindex="-1"></a>Extending Wire</h2>
+<h3 id="custom-filters"><a class="anchor" href="#custom-filters" aria-hidden="true" tabindex="-1"></a>Custom Filters</h3>
+<p><code>register_filter()</code> adds a filter, or replaces one that already
+exists by that name. The value being filtered is always the first
+argument; anything the template passes after it follows:</p>
+<figure class="code"><pre><code class="language-zuri">view.<span class="fn">register_filter</span>(<span class="str">'excerpt'</span>, <span class="meta">@</span>(value, words) {
+  <span class="kw">var</span> count <span class="op">=</span> words <span class="op">==</span> <span class="lit">nil</span> <span class="op">?</span> <span class="num">25</span> <span class="op">:</span> words
+  <span class="kw">return</span> <span class="str">' '</span>.<span class="fn">join</span>(value.<span class="fn">split</span>(<span class="str">'/\\s+/'</span>).<span class="fn">take</span>(count)) <span class="op">+</span> <span class="str">'…'</span>
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;p</span><span class="tag">&gt;</span><span class="subst">{{</span> post.<span class="prop">body</span><span class="op">|</span><span class="fn">excerpt</span>(<span class="num">40</span>) <span class="subst">}}</span><span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>An argument the template leaves out arrives as <code>nil</code>, which is why
+<code>words == nil ? 25 : words</code> above supplies a sensible default rather than the
+filter insisting the template spell it out every time.</p>
+<p>A filter returning a plain value has that value escaped like any
+other — the same as an ordinary interpolation. A filter that genuinely
+produces markup returns <a href="#rendering-raw-markup"><code>wire.safe()</code></a>, and
+from that point on is responsible for what is inside it, exactly like
+<code>raw</code> and <code>x-html</code> are.</p>
+<h3 id="globals"><a class="anchor" href="#globals" aria-hidden="true" tabindex="-1"></a>Globals</h3>
+<p><code>register_global()</code> makes a value readable from every template
+without it being passed to <code>render()</code> explicitly:</p>
+<figure class="code"><pre><code class="language-zuri">view.<span class="fn">register_global</span>(<span class="str">'site_name'</span>, <span class="str">'Example Inc.'</span>)
+view.<span class="fn">register_global</span>(<span class="str">'route'</span>, <span class="meta">@</span>(name) {
+  <span class="kw">return</span> <span class="str">'/'</span> <span class="op">+</span> name
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;title</span><span class="tag">&gt;</span><span class="subst">{{</span> page_title <span class="subst">}}</span> — <span class="subst">{{</span> site_name <span class="subst">}}</span><span class="tag">&lt;/title</span><span class="tag">&gt;</span>
+<span class="tag">&lt;a</span> <span class="attr">href</span><span class="op">=</span><span class="str">"<span class="subst">{{</span> <span class="fn">route</span>(<span class="str">'user.profile'</span>, user.<span class="prop">id</span>) <span class="subst">}}</span>"</span><span class="tag">&gt;</span><span class="subst">{{</span> user.<span class="prop">name</span> <span class="subst">}}</span><span class="tag">&lt;/a</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>A variable of the same name passed to <code>render()</code> wins over a global —
+a global is a default, not a hard override, so a page can still shadow
+<code>site_name</code> for itself if it ever needs to.</p>
+<h3 id="custom-elements"><a class="anchor" href="#custom-elements" aria-hidden="true" tabindex="-1"></a>Custom Elements</h3>
+<p>For the rare case the directives genuinely cannot express,
+<code>register_element()</code> claims an HTML tag name outright and hands every
+element of that name to a Zuri function instead of writing it out:</p>
+<figure class="code"><pre><code class="language-zuri">view.<span class="fn">register_element</span>(<span class="str">'icon'</span>, <span class="meta">@</span>(view, element) {
+  <span class="kw">var</span> name <span class="op">=</span> element.<span class="prop">attributes</span>.<span class="fn">get</span>(<span class="str">'name'</span>, <span class="str">'dot'</span>)
+  <span class="kw">return</span> wire.<span class="fn">safe</span>(<span class="str">'&lt;svg class="icon"&gt;&lt;use href="#</span><span class="subst">${</span>name<span class="subst">}</span><span class="str">"&gt;&lt;/use&gt;&lt;/svg&gt;'</span>)
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;icon</span> <span class="attr">name</span><span class="op">=</span><span class="str">"star"</span> <span class="tag">/&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>The function receives the <code>Wire</code> instance and a dictionary describing
+the element — its tag name, its attributes (already rendered and
+escaped), its already-rendered children, and the scope it was written
+in. Return <code>wire.safe(markup)</code> to write markup, any other value to
+write it as escaped text, or <code>nil</code> to write nothing at all. Directives
+still work on a claimed element exactly as they read
+(<code>&lt;icon x-if=&quot;...&quot; /&gt;</code> behaves the way it looks), and the whole
+mechanism exists for genuinely dynamic, code-driven markup that a
+partial and <code>x-include</code> cannot express — reach for an include first;
+it is easier for the next person to read and does not require them to
+go find the Zuri function behind it.</p>
+<h2 id="configuration"><a class="anchor" href="#configuration" aria-hidden="true" tabindex="-1"></a>Configuration</h2>
+<p>Every setting can be passed to the <code>Wire</code> constructor at once, or set
+individually with its own method afterward:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> view <span class="op">=</span> <span class="fn">wire</span>({
+  root<span class="op">:</span> <span class="str">'./views'</span>,
+  extension<span class="op">:</span> <span class="str">'.html'</span>,
+  compact<span class="op">:</span> <span class="lit">true</span>,
+  comments<span class="op">:</span> <span class="lit">false</span>,
+  auto_reload<span class="op">:</span> <span class="lit">true</span>,
+  url_schemes<span class="op">:</span> [<span class="str">'https'</span>, <span class="str">'mailto'</span>],
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Option / method</th>
+<th>Default</th>
+<th>What it controls</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>root</code> / <code>set_root(path)</code></td>
+<td><code>./templates</code></td>
+<td>The directory every template path resolves inside.</td>
+</tr>
+<tr>
+<td><code>extension</code> / <code>set_extension(ext)</code></td>
+<td><code>.html</code></td>
+<td>Tried when a path names no file as written. Must start with <code>.</code>.</td>
+</tr>
+<tr>
+<td><code>compact</code> / <code>set_compact(bool)</code></td>
+<td><code>false</code></td>
+<td>Drops whitespace-only text between tags.</td>
+</tr>
+<tr>
+<td><code>comments</code> / <code>set_comments(bool)</code></td>
+<td><code>false</code></td>
+<td>Whether HTML comments reach the rendered output.</td>
+</tr>
+<tr>
+<td><code>auto_reload</code> / <code>set_auto_reload(bool)</code></td>
+<td><code>true</code></td>
+<td>Whether a cached template is checked against its file, and re-read if it changed, before each render.</td>
+</tr>
+<tr>
+<td><code>url_schemes</code> / <code>set_url_schemes(list)</code></td>
+<td>see <a href="#urls-are-checked-not-just-escaped">above</a></td>
+<td>Which URL schemes an <code>href</code>/<code>src</code>/etc. is allowed to use.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><code>root()</code> reports the currently configured root as an absolute path,
+and <code>create_root()</code> makes the directory if it does not exist yet
+(returning whether it had to).</p>
+<h2 id="compiling-and-caching"><a class="anchor" href="#compiling-and-caching" aria-hidden="true" tabindex="-1"></a>Compiling and Caching</h2>
+<p><code>render()</code> compiles a template into its instruction tree the first
+time it is used, and keeps the compiled result for next time — parsing
+and directive resolution happen once per template, not once per
+request. Every subsequent render just walks that tree.</p>
+<p>With <code>auto_reload</code> on (the default), each render checks the file's
+modification time and size against what was cached, and recompiles if
+either changed. That is one filesystem <code>stat</code> per template per
+render — cheap, and exactly what you want while actively editing
+templates. Turn it off with <code>set_auto_reload(false)</code> once you are
+running under load and are not editing templates live; <code>clear_cache()</code>
+is then how a long-running process picks up a new deployment.</p>
+<p>Under <code>zuri run --watch</code> the program goes further than reloading a
+template: a change to any template it has rendered restarts it, exactly
+as a change to its code does. Wire tells watch mode about every template
+file it reads.</p>
+<p><code>compile(path)</code> compiles a template without rendering it, and returns
+the compiled result — or raises, if the template has a mistake in it.
+That makes it a good fit for a startup-time check across a whole
+directory of templates, so a broken one is caught before the first
+request that would have hit it:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">for</span> name <span class="kw">in</span> os.<span class="fn">read_dir</span>(<span class="str">'./views'</span>, <span class="lit">true</span>) {
+  view.<span class="fn">compile</span>(name)
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<h2 id="error-handling"><a class="anchor" href="#error-handling" aria-hidden="true" tabindex="-1"></a>Error Handling</h2>
+<p>Everything Wire raises is a <code>wire.WireError</code>, and every one of them
+carries the template path and the line/column of the tag responsible,
+so catching the base class is enough to handle any template failure
+the same way — turning it into a 500 page, logging it with context,
+whatever your application needs:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">catch</span> {
+  <span class="kw">echo</span> view.<span class="fn">render</span>(<span class="str">'pages/dashboard'</span>, { user })
+} <span class="kw">as</span> e {
+  <span class="kw">if</span> <span class="bi">instance_of</span>(e, wire.<span class="prop">WireError</span>) {
+    log.<span class="fn">error</span>(<span class="str">'template failed: </span><span class="subst">${</span>e.<span class="prop">reason</span><span class="subst">}</span><span class="str"> at </span><span class="subst">${</span>e.<span class="fn">location</span>()<span class="subst">}</span><span class="str">'</span>)
+    <span class="kw">echo</span> view.<span class="fn">render</span>(<span class="str">'errors/500'</span>)
+  }
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Three more specific errors, each a <code>WireError</code>, tell you <em>what kind</em>
+of thing went wrong:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>Raised when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wire.TemplateSyntaxError</code></td>
+<td>A template does not compile: an unknown directive, a malformed expression, a broken inheritance chain. Always caught the first time a template is used, not on a later render.</td>
+</tr>
+<tr>
+<td><code>wire.TemplateNotFoundError</code></td>
+<td>A path names no file, or resolves outside the template root.</td>
+</tr>
+<tr>
+<td><code>wire.RenderError</code></td>
+<td>Something that depends on the values a template was given: iterating something that cannot be iterated, a filter rejecting its input, an include chain that never bottoms out.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>A variable that was simply never supplied is <em>not</em> one of these —
+that renders as empty and tests as falsy, by design, so an optional
+section can be written without a guard around every single field it
+touches.</p>
+<h2 id="full-directive-reference"><a class="anchor" href="#full-directive-reference" aria-hidden="true" tabindex="-1"></a>Full Directive Reference</h2>
+<p>Every directive Wire understands. An <code>x-</code> prefixed attribute outside
+this list fails to compile — Wire owns that whole prefix, so a typo
+like <code>x-fi</code> is caught the moment the template is compiled rather than
+silently doing nothing.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Directive</th>
+<th>Takes</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>x-if</code></td>
+<td>expression</td>
+<td>Renders only if truthy. Starts a chain.</td>
+</tr>
+<tr>
+<td><code>x-elif</code></td>
+<td>expression</td>
+<td>Continues an <code>x-if</code> chain.</td>
+</tr>
+<tr>
+<td><code>x-else</code></td>
+<td><em>(none)</em></td>
+<td>Closes an <code>x-if</code> chain.</td>
+</tr>
+<tr>
+<td><code>x-not</code></td>
+<td>expression</td>
+<td>Renders only if falsy. Does not chain.</td>
+</tr>
+<tr>
+<td><code>x-for</code></td>
+<td>expression</td>
+<td>Repeats the element once per entry.</td>
+</tr>
+<tr>
+<td><code>x-value</code></td>
+<td>name</td>
+<td>Binds each iteration's value.</td>
+</tr>
+<tr>
+<td><code>x-key</code></td>
+<td>name</td>
+<td>Binds each iteration's key/index.</td>
+</tr>
+<tr>
+<td><code>x-loop</code></td>
+<td>name</td>
+<td>Renames the loop metadata variable.</td>
+</tr>
+<tr>
+<td><code>x-text</code></td>
+<td>expression</td>
+<td>Replaces children with escaped text.</td>
+</tr>
+<tr>
+<td><code>x-html</code></td>
+<td>expression</td>
+<td>Replaces children with unescaped markup.</td>
+</tr>
+<tr>
+<td><code>x-attr</code></td>
+<td>expression (dict)</td>
+<td>Spreads attributes onto the element.</td>
+</tr>
+<tr>
+<td><code>x-include</code></td>
+<td>path</td>
+<td>Renders another template in this element's place.</td>
+</tr>
+<tr>
+<td><code>x-with</code></td>
+<td>expression (dict)</td>
+<td>Adds variables for an include.</td>
+</tr>
+<tr>
+<td><code>x-only</code></td>
+<td><em>(none)</em></td>
+<td>Withholds the surrounding scope from an include.</td>
+</tr>
+<tr>
+<td><code>x-extend</code></td>
+<td>path</td>
+<td>This template extends the named base.</td>
+</tr>
+<tr>
+<td><code>x-slot</code></td>
+<td>name</td>
+<td>Declares a region an extending template may replace.</td>
+</tr>
+<tr>
+<td><code>x-define</code></td>
+<td>name</td>
+<td>Replaces a base template's region.</td>
+</tr>
+<tr>
+<td><code>x-override</code></td>
+<td><em>(none)</em></td>
+<td>Permits redefining a region already defined once.</td>
+</tr>
+<tr>
+<td><code>x-super</code></td>
+<td><em>(none)</em></td>
+<td>Renders the definition this one replaces.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Five pseudo-elements are sugar for the directives above, rewritten
+before the template is parsed:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Pseudo-element</th>
+<th>Equivalent to</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&lt;include path=&quot;p&quot; /&gt;</code></td>
+<td><code>&lt;template x-include=&quot;p&quot;&gt;&lt;/template&gt;</code></td>
+</tr>
+<tr>
+<td><code>&lt;extend base=&quot;p&quot;&gt;…&lt;/extend&gt;</code></td>
+<td><code>&lt;template x-extend=&quot;p&quot;&gt;…&lt;/template&gt;</code></td>
+</tr>
+<tr>
+<td><code>&lt;declare name=&quot;n&quot;&gt;…&lt;/declare&gt;</code></td>
+<td><code>&lt;template x-slot=&quot;n&quot;&gt;…&lt;/template&gt;</code></td>
+</tr>
+<tr>
+<td><code>&lt;define name=&quot;n&quot;&gt;…&lt;/define&gt;</code></td>
+<td><code>&lt;template x-define=&quot;n&quot;&gt;…&lt;/template&gt;</code></td>
+</tr>
+<tr>
+<td><code>&lt;super /&gt;</code></td>
+<td><code>&lt;template x-super&gt;&lt;/template&gt;</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2 id="cheat-sheet"><a class="anchor" href="#cheat-sheet" aria-hidden="true" tabindex="-1"></a>Cheat Sheet</h2>
+<figure class="code"><pre><code class="language-html"><span class="subst">{{</span><span class="op">--</span> <span class="type">Variables</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> name <span class="subst">}}</span>
+<span class="subst">{{</span> user.<span class="prop">address</span>.<span class="prop">city</span> <span class="subst">}}</span>
+<span class="subst">{{</span> items.<span class="num">0</span> <span class="subst">}}</span>
+<span class="subst">{{</span> items[index] <span class="subst">}}</span>
+
+<span class="subst">{{</span><span class="op">--</span> <span class="type">Filters</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> name<span class="op">|</span>upper <span class="subst">}}</span>
+<span class="subst">{{</span> price<span class="op">|</span><span class="fn">round</span>(<span class="num">2</span>) <span class="subst">}}</span>
+<span class="subst">{{</span> post.<span class="prop">body</span><span class="op">|</span><span class="fn">truncate</span>(<span class="num">150</span>) <span class="subst">}}</span>
+<span class="subst">{{</span> status<span class="op">|</span>is<span class="op">=</span><span class="str">'active'</span> <span class="subst">}}</span>
+
+<span class="subst">{{</span><span class="op">--</span> <span class="type">Raw</span> markup <span class="op">--</span><span class="subst">}}</span>
+<span class="subst">{{</span> trusted_html<span class="op">|</span>raw <span class="subst">}}</span>
+
+<span class="subst">{{</span><span class="op">--</span> <span class="type">Conditionals</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;p</span> <span class="dir">x-if</span><span class="op">=</span><span class="str">"</span>condition<span class="str">"</span><span class="tag">&gt;</span>…<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+<span class="tag">&lt;p</span> <span class="dir">x-elif</span><span class="op">=</span><span class="str">"</span>other<span class="str">"</span><span class="tag">&gt;</span>…<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+<span class="tag">&lt;p</span> <span class="dir">x-else</span><span class="tag">&gt;</span>…<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+<span class="tag">&lt;p</span> <span class="dir">x-not</span><span class="op">=</span><span class="str">"</span>condition<span class="str">"</span><span class="tag">&gt;</span>…<span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+
+<span class="subst">{{</span><span class="op">--</span> <span class="type">Loops</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;li</span> <span class="dir">x-for</span><span class="op">=</span><span class="str">"</span>items<span class="str">"</span> <span class="dir">x-value</span><span class="op">=</span><span class="str">"</span>item<span class="str">"</span> <span class="dir">x-key</span><span class="op">=</span><span class="str">"</span>i<span class="str">"</span><span class="tag">&gt;</span><span class="subst">{{</span> i <span class="subst">}}</span>: <span class="subst">{{</span> item <span class="subst">}}</span><span class="tag">&lt;/li</span><span class="tag">&gt;</span>
+<span class="subst">{{</span> loop.<span class="prop">index</span> <span class="subst">}}</span> <span class="subst">{{</span> loop.<span class="prop">first</span> <span class="subst">}}</span> <span class="subst">{{</span> loop.<span class="prop">last</span> <span class="subst">}}</span> <span class="subst">{{</span> loop.<span class="prop">length</span> <span class="subst">}}</span>
+
+<span class="subst">{{</span><span class="op">--</span> <span class="type">Wrapper</span><span class="op">-</span>free groups <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;template</span> <span class="dir">x-for</span><span class="op">=</span><span class="str">"</span>items<span class="str">"</span> <span class="dir">x-value</span><span class="op">=</span><span class="str">"</span>item<span class="str">"</span><span class="tag">&gt;</span>…<span class="tag">&lt;/template</span><span class="tag">&gt;</span>
+<span class="tag">&lt;template</span> <span class="dir">x-if</span><span class="op">=</span><span class="str">"</span>condition<span class="str">"</span><span class="tag">&gt;</span>…<span class="tag">&lt;/template</span><span class="tag">&gt;</span>
+
+<span class="subst">{{</span><span class="op">--</span> <span class="type">Content</span> <span class="kw">and</span> attributes <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;p</span> <span class="dir">x-text</span><span class="op">=</span><span class="str">"</span>value<span class="str">"</span><span class="tag">&gt;</span><span class="tag">&lt;/p</span><span class="tag">&gt;</span>
+<span class="tag">&lt;div</span> <span class="dir">x-html</span><span class="op">=</span><span class="str">"</span>trusted_html<span class="op">|</span>raw<span class="str">"</span><span class="tag">&gt;</span><span class="tag">&lt;/div</span><span class="tag">&gt;</span>
+<span class="tag">&lt;input</span> <span class="dir">x-attr</span><span class="op">=</span><span class="str">"</span>{ type<span class="op">:</span> <span class="str">'text'</span>, disabled<span class="op">:</span> <span class="op">!</span>enabled }<span class="str">"</span><span class="tag">&gt;</span>
+
+<span class="subst">{{</span><span class="op">--</span> <span class="type">Comments</span> (never rendered) <span class="op">--</span><span class="subst">}}</span>
+<span class="com">&lt;!-- a note for the next person --&gt;</span>
+
+<span class="subst">{{</span><span class="op">--</span> <span class="type">Includes</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;</span><span class="dir">include</span> <span class="attr">path</span><span class="op">=</span><span class="str">"partials/nav.html"</span> <span class="tag">/&gt;</span>
+<span class="tag">&lt;</span><span class="dir">include</span> <span class="attr">path</span><span class="op">=</span><span class="str">"components/card.html"</span> <span class="dir">x-with</span><span class="op">=</span><span class="str">"</span>{ title<span class="op">:</span> <span class="str">'X'</span> }<span class="str">"</span> <span class="attr">only</span><span class="tag">&gt;</span>
+  content for the component's declared region
+<span class="tag">&lt;/</span><span class="dir">include</span><span class="tag">&gt;</span>
+
+<span class="subst">{{</span><span class="op">--</span> <span class="type">Inheritance</span> <span class="op">--</span><span class="subst">}}</span>
+<span class="tag">&lt;</span><span class="dir">extend</span> <span class="attr">base</span><span class="op">=</span><span class="str">"layouts/app.html"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;</span><span class="dir">define</span> <span class="attr">name</span><span class="op">=</span><span class="str">"content"</span><span class="tag">&gt;</span>…<span class="tag">&lt;/</span><span class="dir">define</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;</span><span class="dir">define</span> <span class="attr">name</span><span class="op">=</span><span class="str">"footer"</span><span class="tag">&gt;</span><span class="tag">&lt;</span><span class="dir">super</span> <span class="tag">/&gt;</span>…<span class="tag">&lt;/</span><span class="dir">define</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/</span><span class="dir">extend</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<p>Further reading: the <a href="ch13-00-stdlib-tour.html#html"><code>html</code> module</a> that Wire's parser
+and serializer are built on, and the <a href="ch13-00-stdlib-tour.html#date"><code>date</code> module</a>
+for the format directives the <code>date</code> filter accepts.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch14-00-wire.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch13-00-stdlib-tour.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">13</span>A Tour of the Standard Library</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch15-00-http.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">15</span>HTTP</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#introduction">Introduction</a>
+        </li><li class="level-3">
+          <a href="#wire-and-blade">Wire and Blade</a>
+        </li><li class="level-3">
+          <a href="#your-first-template">Your First Template</a>
+        </li><li class="level-2">
+          <a href="#rendering-templates">Rendering Templates</a>
+        </li><li class="level-3">
+          <a href="#templates-from-files">Templates From Files</a>
+        </li><li class="level-3">
+          <a href="#templates-from-strings">Templates From Strings</a>
+        </li><li class="level-3">
+          <a href="#the-template-root">The Template Root</a>
+        </li><li class="level-2">
+          <a href="#displaying-data">Displaying Data</a>
+        </li><li class="level-3">
+          <a href="#escaping-data">Escaping Data</a>
+        </li><li class="level-3">
+          <a href="#rendering-raw-markup">Rendering Raw Markup</a>
+        </li><li class="level-3">
+          <a href="#wire-and-javascript-frameworks">Wire and JavaScript Frameworks</a>
+        </li><li class="level-2">
+          <a href="#the-expression-language">The Expression Language</a>
+        </li><li class="level-3">
+          <a href="#literals">Literals</a>
+        </li><li class="level-3">
+          <a href="#looking-up-values">Looking Up Values</a>
+        </li><li class="level-3">
+          <a href="#operators">Operators</a>
+        </li><li class="level-3">
+          <a href="#truthiness">Truthiness</a>
+        </li><li class="level-3">
+          <a href="#calling-functions">Calling Functions</a>
+        </li><li class="level-2">
+          <a href="#filters">Filters</a>
+        </li><li class="level-3">
+          <a href="#chaining-filters">Chaining Filters</a>
+        </li><li class="level-3">
+          <a href="#the--argument-shorthand">The <code>=</code> Argument Shorthand</a>
+        </li><li class="level-3">
+          <a href="#available-filters">Available Filters</a>
+        </li><li class="level-3">
+          <a href="#writing-your-own-filter">Writing Your Own Filter</a>
+        </li><li class="level-2">
+          <a href="#conditionals">Conditionals</a>
+        </li><li class="level-3">
+          <a href="#x-if-x-elif-and-x-else"><code>x-if</code>, <code>x-elif</code>, and <code>x-else</code></a>
+        </li><li class="level-3">
+          <a href="#x-not"><code>x-not</code></a>
+        </li><li class="level-2">
+          <a href="#loops">Loops</a>
+        </li><li class="level-3">
+          <a href="#the-loop-variable">The <code>loop</code> Variable</a>
+        </li><li class="level-3">
+          <a href="#nesting-loops">Nesting Loops</a>
+        </li><li class="level-3">
+          <a href="#looping-without-a-wrapper-element">Looping Without a Wrapper Element</a>
+        </li><li class="level-2">
+          <a href="#content-and-attributes">Content and Attributes</a>
+        </li><li class="level-3">
+          <a href="#x-text"><code>x-text</code></a>
+        </li><li class="level-3">
+          <a href="#x-html"><code>x-html</code></a>
+        </li><li class="level-3">
+          <a href="#x-attr"><code>x-attr</code></a>
+        </li><li class="level-2">
+          <a href="#comments">Comments</a>
+        </li><li class="level-2">
+          <a href="#including-templates">Including Templates</a>
+        </li><li class="level-3">
+          <a href="#passing-data-to-an-include">Passing Data to an Include</a>
+        </li><li class="level-3">
+          <a href="#includes-as-components">Includes as Components</a>
+        </li><li class="level-3">
+          <a href="#computed-include-paths">Computed Include Paths</a>
+        </li><li class="level-2">
+          <a href="#template-inheritance">Template Inheritance</a>
+        </li><li class="level-3">
+          <a href="#defining-a-layout">Defining a Layout</a>
+        </li><li class="level-3">
+          <a href="#extending-a-layout">Extending a Layout</a>
+        </li><li class="level-3">
+          <a href="#default-slot-content">Default Slot Content</a>
+        </li><li class="level-3">
+          <a href="#x-super"><code>x-super</code></a>
+        </li><li class="level-3">
+          <a href="#multi-level-inheritance">Multi-Level Inheritance</a>
+        </li><li class="level-3">
+          <a href="#overriding-a-definition">Overriding a Definition</a>
+        </li><li class="level-2">
+          <a href="#security">Security</a>
+        </li><li class="level-3">
+          <a href="#why-everything-is-escaped-by-default">Why Everything Is Escaped by Default</a>
+        </li><li class="level-3">
+          <a href="#urls-are-checked-not-just-escaped">URLs Are Checked, Not Just Escaped</a>
+        </li><li class="level-3">
+          <a href="#scripts-and-stylesheets">Scripts and Stylesheets</a>
+        </li><li class="level-3">
+          <a href="#the-template-root-is-a-sandbox">The Template Root Is a Sandbox</a>
+        </li><li class="level-2">
+          <a href="#extending-wire">Extending Wire</a>
+        </li><li class="level-3">
+          <a href="#custom-filters">Custom Filters</a>
+        </li><li class="level-3">
+          <a href="#globals">Globals</a>
+        </li><li class="level-3">
+          <a href="#custom-elements">Custom Elements</a>
+        </li><li class="level-2">
+          <a href="#configuration">Configuration</a>
+        </li><li class="level-2">
+          <a href="#compiling-and-caching">Compiling and Caching</a>
+        </li><li class="level-2">
+          <a href="#error-handling">Error Handling</a>
+        </li><li class="level-2">
+          <a href="#full-directive-reference">Full Directive Reference</a>
+        </li><li class="level-2">
+          <a href="#cheat-sheet">Cheat Sheet</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

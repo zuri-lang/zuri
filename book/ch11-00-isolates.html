@@ -1,0 +1,1203 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Concurrency with Isolates · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch11-00-isolates.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="teal" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html" aria-current="page"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Chapter 11 · Working with the World</p>
+        <div class="content"><h1 id="concurrency-with-isolates">Concurrency with Isolates</h1>
+<p>Zuri's concurrency model has one rule: <strong>nothing is shared.</strong></p>
+<p>An isolate is a real operating-system thread running a complete, private
+VM. It has its own heap, its own garbage collector, its own register stack
+and its own module namespace. Two isolates never hold a pointer to the same
+object, which means there are no data races to reason about, no locks to
+take, and no stop-the-world pause in one thread caused by allocation in
+another.</p>
+<p>Values cross between isolates by being <strong>copied</strong>. The copy is a faithful
+one: cycles are preserved, shared identity inside one payload is preserved,
+and class instances arrive as instances of the same class.</p>
+<h2 id="spawning"><a class="anchor" href="#spawning" aria-hidden="true" tabindex="-1"></a>Spawning</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">square</span>(n) {
+  <span class="kw">return</span> n <span class="op">*</span> n
+}
+
+<span class="kw">var</span> task <span class="op">=</span> isolate.<span class="fn">spawn</span>(square, <span class="num">12</span>)
+
+<span class="kw">echo</span> task.<span class="fn">join</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">144
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>spawn(fn, ...args)</code> queues the call and returns an <code>Isolate</code> handle
+immediately. <code>join()</code> waits for it and gives you the result. Calling
+<code>join()</code> again returns the same value; it is not a one-shot.</p>
+<h3 id="what-can-be-spawned"><a class="anchor" href="#what-can-be-spawned" aria-hidden="true" tabindex="-1"></a>What Can Be Spawned</h3>
+<p>Any function: a top-level <code>def</code>, a helper declared inside another function,
+a lambda, a bound method. What it captures travels with it, including the
+modules it uses:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+<span class="kw">import</span> json
+
+<span class="kw">def</span> <span class="def">encode_all</span>(items) {
+  <span class="kw">return</span> items.<span class="fn">map</span>(<span class="meta">@</span>(item) <span class="op">=&gt;</span> json.<span class="fn">encode</span>(item)).<span class="fn">length</span>()
+}
+
+<span class="kw">echo</span> isolate.<span class="fn">spawn</span>(encode_all, [
+  { a<span class="op">:</span> <span class="num">1</span> },
+  { b<span class="op">:</span> <span class="num">2</span> },
+]).<span class="fn">join</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">2
+</code></pre><span class="code-label">Output</span></figure>
+<p>A module is not copied the way a list is. The isolate loads the same module
+for itself and uses its own copy, which is why this works at all: module
+top levels are declarations, they run once, and the result is cached. A
+module built out of live per-process state is the case to think twice
+about, since the isolate gets a fresh one rather than yours.</p>
+<p>Two things still cannot be spawned. <strong>A native function or a class</strong> as the
+spawn target itself; wrap it in a <code>def</code>. And <strong>a resource handle</strong> such as
+an open socket or file is <em>moved</em> rather than copied, so the side that
+handed it over no longer has it.</p>
+<p>Putting the worker in its own module stays the better structure once it
+grows past a few lines:</p>
+<figure class="code has-caption"><figcaption>work.zu</figcaption><pre><code class="language-zuri"><span class="kw">import</span> net
+
+<span class="kw">def</span> <span class="def">serve</span>(channel) {
+  <span class="kw">var</span> listener <span class="op">=</span> net.<span class="fn">TcpStream</span>()
+  <span class="com"># ...</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code has-caption"><figcaption>main.zu</figcaption><pre><code class="language-zuri"><span class="kw">import</span> isolate
+<span class="kw">import</span> .<span class="prop">work</span>
+
+isolate.<span class="fn">spawn</span>(work.<span class="prop">serve</span>, channel)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>That is the shape the rest of this book uses. A worker reached by name is
+resolved in the isolate's own namespace, so nothing about it has to be
+reconstructed.</p>
+<p>An <code>import</code> written inside the function body works too, and runs in the
+isolate:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">make_id</span>() {
+  <span class="kw">import</span> uuid
+
+  <span class="kw">return</span> uuid.<span class="fn">v4</span>().<span class="fn">to_string</span>().<span class="fn">length</span>()
+}
+
+<span class="kw">echo</span> isolate.<span class="fn">spawn</span>(make_id).<span class="fn">join</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">36
+</code></pre><span class="code-label">Output</span></figure>
+<p>The arguments are copied, not shared. An isolate that mutates a list it was
+handed is mutating its own copy:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">append_to</span>(items) {
+  items.<span class="fn">append</span>(<span class="str">'from the isolate'</span>)
+  <span class="kw">return</span> items.<span class="fn">length</span>()
+}
+
+<span class="kw">var</span> original <span class="op">=</span> [<span class="str">'a'</span>]
+
+<span class="kw">echo</span> isolate.<span class="fn">spawn</span>(append_to, original).<span class="fn">join</span>()
+<span class="kw">echo</span> original
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">2
+[a]
+</code></pre><span class="code-label">Output</span></figure>
+<p>The isolate saw two elements. The caller still has one. That is the whole
+concurrency model in one example: there is no way to write a data race,
+because there is nothing shared to race over.</p>
+<h2 id="running-many-at-once"><a class="anchor" href="#running-many-at-once" aria-hidden="true" tabindex="-1"></a>Running Many at Once</h2>
+<p>Spawn a list, join a list:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">square</span>(n) {
+  <span class="kw">return</span> n <span class="op">*</span> n
+}
+
+<span class="kw">var</span> tasks <span class="op">=</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>].<span class="fn">map</span>(<span class="meta">@</span>(n) <span class="op">=&gt;</span> isolate.<span class="fn">spawn</span>(square, n))
+
+<span class="kw">echo</span> tasks.<span class="fn">map</span>(<span class="meta">@</span>(task) <span class="op">=&gt;</span> task.<span class="fn">join</span>())
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[1, 4, 9, 16]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>isolate.map()</code> does exactly that in one call:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">square</span>(n) {
+  <span class="kw">return</span> n <span class="op">*</span> n
+}
+
+<span class="kw">echo</span> isolate.<span class="fn">map</span>(square, [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>])
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[1, 4, 9, 16, 25]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>wait_all(tasks, timeout)</code> waits for every task; <code>wait_any(tasks, timeout)</code>
+returns as soon as one finishes.</p>
+<h2 id="the-lifecycle-of-a-task"><a class="anchor" href="#the-lifecycle-of-a-task" aria-hidden="true" tabindex="-1"></a>The Lifecycle of a Task</h2>
+<p>A spawned task moves through exactly two states, and four methods let you
+ask about it without blocking.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+<span class="kw">import</span> .<span class="prop">work</span>
+
+<span class="kw">var</span> task <span class="op">=</span> isolate.<span class="fn">spawn</span>(work.<span class="prop">slow</span>, <span class="num">3</span>)
+
+<span class="kw">echo</span> task.<span class="fn">try_join</span>()
+<span class="kw">echo</span> task.<span class="fn">is_done</span>()
+<span class="kw">echo</span> task.<span class="fn">status</span>()
+
+<span class="kw">echo</span> task.<span class="fn">join</span>()
+<span class="kw">echo</span> task.<span class="fn">status</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">nil
+false
+pending
+finished
+done
+</code></pre><span class="code-label">Output</span></figure>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Answers</th>
+<th>Blocks?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>join(timeout)</code></td>
+<td>the result</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>try_join()</code></td>
+<td>the result, or <code>nil</code> if not ready</td>
+<td>no</td>
+</tr>
+<tr>
+<td><code>is_done()</code></td>
+<td>whether it has finished</td>
+<td>no</td>
+</tr>
+<tr>
+<td><code>status()</code></td>
+<td><code>'pending'</code> or <code>'done'</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td><code>name()</code></td>
+<td>the name it was given, or <code>nil</code></td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><code>try_join()</code> returning <code>nil</code> is ambiguous when the task's own result could
+be <code>nil</code>; pair it with <code>is_done()</code> when that matters.</p>
+<p><code>join()</code> may be called more than once. It is not a one-shot: the second
+call returns the same value immediately.</p>
+<h3 id="naming-a-task"><a class="anchor" href="#naming-a-task" aria-hidden="true" tabindex="-1"></a>Naming a Task</h3>
+<p><code>spawn()</code> leaves a task anonymous. <code>spawn_named()</code> gives it a name that
+shows up in diagnostics:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> named <span class="op">=</span> isolate.<span class="fn">spawn_named</span>(<span class="str">'importer'</span>, work.<span class="prop">quick</span>, <span class="num">5</span>)
+<span class="kw">var</span> plain <span class="op">=</span> isolate.<span class="fn">spawn</span>(work.<span class="prop">quick</span>, <span class="num">5</span>)
+
+<span class="kw">echo</span> named.<span class="fn">name</span>()
+<span class="kw">echo</span> plain.<span class="fn">name</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">importer
+nil
+</code></pre><span class="code-label">Output</span></figure>
+<p>Name anything long-running. A stuck program is far easier to diagnose when
+the task can say what it is.</p>
+<h2 id="timeouts-are-in-seconds"><a class="anchor" href="#timeouts-are-in-seconds" aria-hidden="true" tabindex="-1"></a>Timeouts Are in Seconds</h2>
+<p><strong>Every timeout in the <code>isolate</code> module is measured in seconds</strong>, and it
+takes a fraction:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">var</span> empty <span class="op">=</span> isolate.<span class="fn">channel</span>(<span class="num">1</span>)
+<span class="kw">var</span> start <span class="op">=</span> <span class="bi">time</span>()
+
+<span class="kw">catch</span> {
+  empty.<span class="fn">recv</span>(<span class="num">0.3</span>)
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>e.<span class="prop">type</span><span class="subst">}</span><span class="str"> after about </span><span class="subst">${</span>((<span class="bi">time</span>() <span class="op">-</span> start) <span class="op">*</span> <span class="num">10</span>).<span class="fn">round</span>() <span class="op">*</span> <span class="num">100</span><span class="subst">}</span><span class="str">ms'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">IsolateTimeoutError after about 300ms
+</code></pre><span class="code-label">Output</span></figure>
+<p>This applies to <code>join()</code>, <code>send()</code>, <code>recv()</code>, <code>select()</code>, <code>wait_any()</code>,
+<code>wait_all()</code> and <code>shutdown()</code> alike.</p>
+<p>It is worth stating loudly because <strong>the <code>net</code> module uses milliseconds</strong>
+for its own timeouts. <code>socket.set_read_timeout(5000)</code> is five seconds;
+<code>channel.recv(5000)</code> is an hour and twenty minutes. The two modules are
+easy to use in one program, and the mistake is silent — a timeout that
+never fires simply looks like a hang.</p>
+<p>Omitting the timeout means &quot;wait forever&quot;, which is the right default when
+the other side is code you control and the wrong one when it is not.</p>
+<h2 id="cancellation-is-cooperative"><a class="anchor" href="#cancellation-is-cooperative" aria-hidden="true" tabindex="-1"></a>Cancellation Is Cooperative</h2>
+<p><code>cancel()</code> <strong>requests</strong> that a task stop. It does not kill anything.</p>
+<p>What happens next depends on what the task is doing:</p>
+<p><strong>Blocked in a channel operation, a <code>join()</code>, a <code>wait_*</code> or a <code>select()</code></strong> —
+the call is interrupted within roughly 50ms and raises
+<code>IsolateCancelledError</code>.</p>
+<p><strong>Running ordinary code</strong> — nothing is interrupted. The task's own function
+must notice and return:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">slow</span>(seconds) {
+  <span class="kw">var</span> start <span class="op">=</span> <span class="bi">time</span>()
+
+  <span class="kw">while</span> <span class="bi">time</span>() <span class="op">-</span> start <span class="op">&lt;</span> seconds {
+    <span class="kw">if</span> isolate.<span class="fn">is_cancelled</span>() {
+      <span class="kw">return</span> <span class="str">'stopped early'</span>
+    }
+  }
+
+  <span class="kw">return</span> <span class="str">'ran to completion'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>isolate.is_cancelled()</code> is the module-level function a worker calls about
+itself. <code>task.is_cancelled()</code> is the method the <em>spawner</em> calls to ask
+whether it requested cancellation — and it answers <code>true</code> from the moment
+<code>cancel()</code> was called, whether or not the task noticed:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> task <span class="op">=</span> isolate.<span class="fn">spawn</span>(work.<span class="prop">slow</span>, <span class="num">3</span>)
+
+task.<span class="fn">cancel</span>()
+
+<span class="kw">echo</span> task.<span class="fn">join</span>()
+<span class="kw">echo</span> task.<span class="fn">is_cancelled</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">ran to completion
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p>That output is not a contradiction. The worker in this example does not
+poll, so it finished normally; <code>is_cancelled()</code> reports the request, not
+the outcome. A loop with no cancellation check is a loop that cannot be
+stopped.</p>
+<p>Put the check where the loop turns over, and make it cheap. Checking once
+per iteration of an outer loop is usually enough; checking inside the
+innermost arithmetic is not worth it.</p>
+<h2 id="what-can-cross-and-what-it-costs"><a class="anchor" href="#what-can-cross-and-what-it-costs" aria-hidden="true" tabindex="-1"></a>What Can Cross, and What It Costs</h2>
+<p>Arguments in, results out, and channel traffic all cross the same way:
+<strong>everything is copied</strong>. There is no sharing and no reference that
+survives the boundary.</p>
+<h3 id="the-copy-is-faithful"><a class="anchor" href="#the-copy-is-faithful" aria-hidden="true" tabindex="-1"></a>The Copy Is Faithful</h3>
+<p>A copy is not a shallow snapshot. Cycles survive, shared identity inside
+one payload survives, and a class instance arrives as an instance of the
+same class with its methods intact:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">class</span> <span class="type">Point</span> {
+
+  <span class="meta">@new</span>(x) {
+    <span class="self">self</span>.<span class="prop">x</span> <span class="op">=</span> x
+  }
+
+  <span class="fn">doubled</span>() {
+    <span class="kw">return</span> <span class="self">self</span>.<span class="prop">x</span> <span class="op">*</span> <span class="num">2</span>
+  }
+}
+
+<span class="kw">def</span> <span class="def">identity</span>(value) {
+  <span class="kw">return</span> value
+}
+
+<span class="com"># A list that contains itself.</span>
+<span class="kw">var</span> cyclic <span class="op">=</span> [<span class="num">1</span>]
+cyclic.<span class="fn">append</span>(cyclic)
+
+<span class="com"># Two slots holding one list.</span>
+<span class="kw">var</span> shared <span class="op">=</span> [<span class="num">1</span>]
+<span class="kw">var</span> pair <span class="op">=</span> [shared, shared]
+
+<span class="kw">echo</span> isolate.<span class="fn">spawn</span>(identity, <span class="type">Point</span>(<span class="num">3</span>)).<span class="fn">join</span>().<span class="fn">doubled</span>()
+<span class="kw">echo</span> <span class="bi">typeof</span>(isolate.<span class="fn">spawn</span>(identity, cyclic).<span class="fn">join</span>())
+
+<span class="kw">var</span> back <span class="op">=</span> isolate.<span class="fn">spawn</span>(identity, pair).<span class="fn">join</span>()
+back[<span class="num">0</span>].<span class="fn">append</span>(<span class="num">2</span>)
+
+<span class="kw">echo</span> back[<span class="num">1</span>].<span class="fn">length</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">6
+list
+2
+</code></pre><span class="code-label">Output</span></figure>
+<p>The last line is the one to notice. <code>pair</code> held the same list twice, and on
+the other side it still does: appending through <code>back[0]</code> is visible
+through <code>back[1]</code>. The copy preserved the <em>shape</em> of the sharing, not just
+the values.</p>
+<h3 id="what-cannot-cross"><a class="anchor" href="#what-cannot-cross" aria-hidden="true" tabindex="-1"></a>What Cannot Cross</h3>
+<p>A handful of things are tied to the isolate that made them, and sending one
+raises rather than silently producing something broken:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">identity</span>(value) {
+  <span class="kw">return</span> value
+}
+
+<span class="kw">catch</span> {
+  isolate.<span class="fn">spawn</span>(identity, <span class="bi">file</span>(<span class="str">'notes.txt'</span>))
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">message</span>.<span class="fn">lines</span>()[<span class="num">0</span>]
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">cannot send a file across isolates; only nil, bool, number, string, bytes, bigint, range, list, dict, instance, class, bound method, function, module, and native-pointer values can cross
+</code></pre><span class="code-label">Output</span></figure>
+<p>The message lists what <em>can</em> cross, which is the more useful half. An open
+file is the one you will meet: it is a handle onto a position in a
+descriptor this process owns, and there is no copy of that to hand over.
+Send the path instead and let the worker open it.</p>
+<h3 id="the-cost-model"><a class="anchor" href="#the-cost-model" aria-hidden="true" tabindex="-1"></a>The Cost Model</h3>
+<p>Spawning is cheap. A task is a small descriptor holding the callee and a
+snapshot of its arguments, pushed onto a queue the pool drains, so queueing
+a hundred thousand of them is reasonable.</p>
+<p>What is not free is the copy. Handing an isolate a large list copies the
+whole list, once per spawn. When a worker needs a lot of data, give it a
+<em>description</em> of the work — a path, a range of indices, a query — and let
+it do its own reading:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="com"># Copies the file's contents into every worker.</span>
+isolate.<span class="fn">map</span>(work.<span class="prop">process</span>, files.<span class="fn">map</span>(<span class="meta">@</span>(p) <span class="op">=&gt;</span> <span class="bi">file</span>(p).<span class="fn">read</span>()))
+
+<span class="com"># Copies a short path into every worker instead.</span>
+isolate.<span class="fn">map</span>(work.<span class="prop">read_and_process</span>, files)
+</code></pre><span class="code-label">Zuri</span></figure>
+<h2 id="errors-cross-the-boundary"><a class="anchor" href="#errors-cross-the-boundary" aria-hidden="true" tabindex="-1"></a>Errors Cross the Boundary</h2>
+<p>An uncaught error inside an isolate surfaces at the <code>join()</code> as an
+<code>IsolateError</code>, carrying the original error's message and the stack trace
+from inside the worker:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">boom</span>() {
+  <span class="kw">raise</span> <span class="type">ValueError</span>(<span class="str">'worker failed'</span>)
+}
+
+<span class="kw">catch</span> {
+  isolate.<span class="fn">spawn</span>(boom).<span class="fn">join</span>()
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">type</span>
+  <span class="kw">echo</span> e.<span class="prop">message</span>.<span class="fn">lines</span>()[<span class="num">0</span>]
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">IsolateError
+ValueError: worker failed
+</code></pre><span class="code-label">Output</span></figure>
+<p>Nothing is lost. You get the failure where you can do something about it,
+with enough information to find it. Note the shape of the message: the
+<code>IsolateError</code> wraps the worker's own error rather than replacing it, so
+<code>e.message</code> still names <code>ValueError</code> and the line it came from.</p>
+<p>An error in a task nobody joins has nowhere to surface. That is what
+<code>scope()</code>, further down, exists to prevent.</p>
+<h2 id="channels"><a class="anchor" href="#channels" aria-hidden="true" tabindex="-1"></a>Channels</h2>
+<p>A channel is a bounded queue that crosses isolate boundaries. One side
+sends, the other receives, and the values are copied on the way across like
+everything else:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">producer</span>(channel, count) {
+  <span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">0</span>; i <span class="op">&lt;</span> count; i<span class="op">++</span> {
+    channel.<span class="fn">send</span>(i)
+  }
+
+  channel.<span class="fn">close</span>()
+}
+
+<span class="kw">var</span> channel <span class="op">=</span> isolate.<span class="fn">channel</span>(<span class="num">4</span>)
+<span class="kw">var</span> task <span class="op">=</span> isolate.<span class="fn">spawn</span>(producer, channel, <span class="num">3</span>)
+
+<span class="kw">while</span> <span class="lit">true</span> {
+  <span class="kw">var</span> value <span class="op">=</span> channel.<span class="fn">recv</span>()
+
+  <span class="kw">if</span> value <span class="op">==</span> <span class="lit">nil</span> <span class="kw">and</span> channel.<span class="fn">is_closed</span>() {
+    <span class="kw">break</span>
+  }
+
+  <span class="kw">echo</span> value
+}
+
+task.<span class="fn">join</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">0
+1
+2
+</code></pre><span class="code-label">Output</span></figure>
+<p>Read the loop condition carefully, because it is the part that is easy to
+get wrong. <code>recv()</code> returns <code>nil</code> both for &quot;a <code>nil</code> was sent&quot; and for &quot;the
+channel is closed and drained&quot;, so the test for the end of the stream is
+<code>nil</code> <strong>and</strong> <code>is_closed()</code>. Checking only for <code>nil</code> would stop early on a
+legitimate <code>nil</code>; checking only <code>is_closed()</code> would stop before the queue
+had drained.</p>
+<p><code>channel(capacity)</code> bounds the queue, which gives you backpressure for
+free: a producer that outruns its consumer blocks on <code>send()</code> rather than
+growing the queue without limit.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>send(value, timeout)</code></td>
+<td>blocks while the channel is full</td>
+</tr>
+<tr>
+<td><code>recv(timeout)</code></td>
+<td>blocks while the channel is empty</td>
+</tr>
+<tr>
+<td><code>try_recv()</code></td>
+<td>returns immediately, <code>nil</code> when empty</td>
+</tr>
+<tr>
+<td><code>close()</code></td>
+<td>no more sends; pending receives drain, then return <code>nil</code></td>
+</tr>
+<tr>
+<td><code>is_closed()</code></td>
+<td>whether it has been closed</td>
+</tr>
+<tr>
+<td><code>length()</code></td>
+<td>how many values are waiting</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Every one of those behaviours is observable from a single isolate, which
+makes a channel easy to reason about before you introduce a second one:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">var</span> c <span class="op">=</span> isolate.<span class="fn">channel</span>(<span class="num">2</span>)
+
+c.<span class="fn">send</span>(<span class="str">'a'</span>)
+c.<span class="fn">send</span>(<span class="str">'b'</span>)
+
+<span class="kw">echo</span> c.<span class="fn">length</span>()
+<span class="kw">echo</span> c.<span class="fn">try_recv</span>()
+
+c.<span class="fn">close</span>()
+
+<span class="kw">echo</span> c.<span class="fn">is_closed</span>()
+<span class="kw">echo</span> c.<span class="fn">recv</span>()
+<span class="kw">echo</span> c.<span class="fn">recv</span>()
+
+<span class="kw">catch</span> {
+  c.<span class="fn">send</span>(<span class="str">'z'</span>)
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>e.<span class="prop">type</span><span class="subst">}</span><span class="str">: </span><span class="subst">${</span>e.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">2
+a
+true
+b
+nil
+IsolateError: cannot send on a closed channel
+</code></pre><span class="code-label">Output</span></figure>
+<p>Read the last four lines together. After <code>close()</code>, the queue still
+<strong>drains</strong>: <code>recv()</code> returned the buffered <code>b</code> before it started returning
+<code>nil</code>. A closed, drained channel returns <code>nil</code> forever rather than raising,
+and only <code>send()</code> raises.</p>
+<p>Closing twice is harmless. <code>try_recv()</code> on an empty channel returns <code>nil</code>
+immediately and never blocks.</p>
+<h2 id="selecting-across-channels"><a class="anchor" href="#selecting-across-channels" aria-hidden="true" tabindex="-1"></a>Selecting Across Channels</h2>
+<p><code>select()</code> waits on several channels at once and tells you which one
+produced a value:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">var</span> c1 <span class="op">=</span> isolate.<span class="fn">channel</span>(<span class="num">1</span>)
+<span class="kw">var</span> c2 <span class="op">=</span> isolate.<span class="fn">channel</span>(<span class="num">1</span>)
+
+c2.<span class="fn">send</span>(<span class="str">'from c2'</span>)
+
+<span class="kw">var</span> picked <span class="op">=</span> isolate.<span class="fn">select</span>([c1, c2], <span class="num">1000</span>)
+
+<span class="kw">echo</span> picked[<span class="num">1</span>]
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">from c2
+</code></pre><span class="code-label">Output</span></figure>
+<p>It returns <code>[channel, value]</code>, so you can tell where the value came from by
+comparing the first element against the channels you passed in. The second
+argument is a timeout in <strong>seconds</strong>, like every other timeout in this
+module — see <a href="#timeouts-are-in-seconds">Timeouts Are in Seconds</a>, because
+it is the opposite of what the <code>net</code> module does.</p>
+<p>This is the shape for a consumer fed by more than one producer — work on
+one channel, shutdown signals on another — without polling either.</p>
+<h2 id="broadcast"><a class="anchor" href="#broadcast" aria-hidden="true" tabindex="-1"></a>Broadcast</h2>
+<p>A channel delivers each value to exactly one receiver. A broadcast delivers
+each value to <strong>every</strong> subscriber:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">var</span> bus <span class="op">=</span> isolate.<span class="fn">broadcast</span>(<span class="num">4</span>)
+
+<span class="kw">var</span> a <span class="op">=</span> bus.<span class="fn">subscribe</span>()
+<span class="kw">var</span> b <span class="op">=</span> bus.<span class="fn">subscribe</span>()
+
+bus.<span class="fn">send</span>(<span class="str">'tick'</span>)
+
+<span class="kw">echo</span> a.<span class="fn">recv</span>()
+<span class="kw">echo</span> b.<span class="fn">recv</span>()
+<span class="kw">echo</span> bus.<span class="fn">subscriber_count</span>()
+
+bus.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">tick
+tick
+2
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>subscribe()</code> hands back an ordinary <code>Channel</code>, so everything in the
+channel table applies to it: <code>recv()</code>, <code>try_recv()</code>, <code>length()</code>, and the
+same backpressure.</p>
+<h3 id="a-subscriber-only-sees-what-comes-after-it"><a class="anchor" href="#a-subscriber-only-sees-what-comes-after-it" aria-hidden="true" tabindex="-1"></a>A Subscriber Only Sees What Comes After It</h3>
+<p>There is no replay. A subscriber that arrives late has missed everything
+sent before it subscribed:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">var</span> bus <span class="op">=</span> isolate.<span class="fn">broadcast</span>(<span class="num">4</span>)
+<span class="kw">var</span> early <span class="op">=</span> bus.<span class="fn">subscribe</span>()
+
+bus.<span class="fn">send</span>(<span class="str">'first'</span>)
+
+<span class="kw">var</span> late <span class="op">=</span> bus.<span class="fn">subscribe</span>()
+
+bus.<span class="fn">send</span>(<span class="str">'second'</span>)
+
+<span class="kw">echo</span> <span class="str">'early: </span><span class="subst">${</span>early.<span class="fn">recv</span>()<span class="subst">}</span><span class="str">, </span><span class="subst">${</span>early.<span class="fn">recv</span>()<span class="subst">}</span><span class="str">'</span>
+<span class="kw">echo</span> <span class="str">'late: </span><span class="subst">${</span>late.<span class="fn">try_recv</span>()<span class="subst">}</span><span class="str">'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">early: first, second
+late: second
+</code></pre><span class="code-label">Output</span></figure>
+<p>This matters when subscribers are set up concurrently with the producer.
+Subscribe everything <em>before</em> anything is sent, or accept that a consumer
+starting later begins mid-stream.</p>
+<h3 id="unsubscribing-and-sending-into-the-void"><a class="anchor" href="#unsubscribing-and-sending-into-the-void" aria-hidden="true" tabindex="-1"></a>Unsubscribing, and Sending Into the Void</h3>
+<p><code>unsubscribe(channel)</code> drops one subscriber. Sending with none at all is
+not an error — the value is simply discarded:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">var</span> bus <span class="op">=</span> isolate.<span class="fn">broadcast</span>(<span class="num">4</span>)
+<span class="kw">var</span> sub <span class="op">=</span> bus.<span class="fn">subscribe</span>()
+
+bus.<span class="fn">unsubscribe</span>(sub)
+
+<span class="kw">echo</span> bus.<span class="fn">subscriber_count</span>()
+<span class="kw">echo</span> bus.<span class="fn">send</span>(<span class="str">'nobody is listening'</span>)
+<span class="kw">echo</span> sub.<span class="fn">try_recv</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">0
+nil
+nil
+</code></pre><span class="code-label">Output</span></figure>
+<p>A dropped subscriber stops receiving new values immediately, and its
+channel keeps whatever was already queued in it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">var</span> bus <span class="op">=</span> isolate.<span class="fn">broadcast</span>(<span class="num">4</span>)
+<span class="kw">var</span> sub <span class="op">=</span> bus.<span class="fn">subscribe</span>()
+
+bus.<span class="fn">send</span>(<span class="str">'queued before unsubscribe'</span>)
+bus.<span class="fn">unsubscribe</span>(sub)
+
+<span class="kw">echo</span> sub.<span class="fn">try_recv</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">queued before unsubscribe
+</code></pre><span class="code-label">Output</span></figure>
+<p>So unsubscribing is not a way to discard what a consumer has not read yet;
+it only stops the flow.</p>
+<h3 id="closing"><a class="anchor" href="#closing" aria-hidden="true" tabindex="-1"></a>Closing</h3>
+<p><code>close()</code> closes the bus and every channel it handed out. Subscribers drain
+what they have and then receive <code>nil</code>; <code>send()</code> raises:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">var</span> bus <span class="op">=</span> isolate.<span class="fn">broadcast</span>(<span class="num">4</span>)
+<span class="kw">var</span> sub <span class="op">=</span> bus.<span class="fn">subscribe</span>()
+
+bus.<span class="fn">close</span>()
+
+<span class="kw">echo</span> bus.<span class="fn">is_closed</span>()
+<span class="kw">echo</span> sub.<span class="fn">try_recv</span>()
+
+<span class="kw">catch</span> {
+  bus.<span class="fn">send</span>(<span class="str">'too late'</span>)
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">type</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+nil
+IsolateError
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="backpressure-applies-per-subscriber"><a class="anchor" href="#backpressure-applies-per-subscriber" aria-hidden="true" tabindex="-1"></a>Backpressure Applies Per Subscriber</h3>
+<p>The capacity you give <code>broadcast()</code> is the capacity of <em>each</em> subscriber's
+channel. A subscriber that stops reading fills its own buffer, and once it
+is full the bus blocks on <code>send()</code> — one slow consumer holds up the
+producer and therefore everyone.</p>
+<p>When a slow consumer must not be allowed to do that, give the bus a larger
+capacity, or have that consumer read into its own queue and fall behind on
+its own time.</p>
+<h3 id="channel-or-broadcast"><a class="anchor" href="#channel-or-broadcast" aria-hidden="true" tabindex="-1"></a>Channel or Broadcast?</h3>
+<p>Use a <strong>channel</strong> when the work should be done once, by whichever worker is
+free. Use a <strong>broadcast</strong> when every consumer needs to see every event.
+Shutdown signals, configuration changes and progress events are broadcasts;
+jobs are channels.</p>
+<h2 id="scopes"><a class="anchor" href="#scopes" aria-hidden="true" tabindex="-1"></a>Scopes</h2>
+<p>A scope owns its children and does not return until all of them have
+finished:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">square</span>(n) {
+  <span class="kw">return</span> n <span class="op">*</span> n
+}
+
+<span class="kw">var</span> result <span class="op">=</span> isolate.<span class="fn">scope</span>(<span class="meta">@</span>(s) {
+  s.<span class="fn">spawn</span>(square, <span class="num">3</span>)
+  s.<span class="fn">spawn</span>(square, <span class="num">4</span>)
+
+  <span class="kw">return</span> s.<span class="fn">children</span>().<span class="fn">map</span>(<span class="meta">@</span>(child) <span class="op">=&gt;</span> child.<span class="fn">join</span>())
+})
+
+<span class="kw">echo</span> result
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[9, 16]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>scope(body)</code> calls <code>body</code> with a scope object, waits for everything
+spawned through it, and returns whatever the body returned.</p>
+<h3 id="it-waits-whether-or-not-you-join"><a class="anchor" href="#it-waits-whether-or-not-you-join" aria-hidden="true" tabindex="-1"></a>It Waits Whether or Not You Join</h3>
+<p>Joining inside the body is how you collect results. It is not how the
+waiting happens — that is the scope's job either way:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">square</span>(n) {
+  <span class="kw">return</span> n <span class="op">*</span> n
+}
+
+<span class="kw">echo</span> isolate.<span class="fn">scope</span>(<span class="meta">@</span>(s) {
+  s.<span class="fn">spawn</span>(square, <span class="num">3</span>)
+  s.<span class="fn">spawn_named</span>(<span class="str">'four'</span>, square, <span class="num">4</span>)
+
+  <span class="kw">return</span> s.<span class="fn">children</span>().<span class="fn">length</span>()
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">2
+</code></pre><span class="code-label">Output</span></figure>
+<p>Neither child was joined, and the scope still did not return until both had
+finished. <code>children()</code> gives you the <code>Isolate</code> objects in spawn order, and
+<code>s.spawn_named()</code> works exactly like the module-level one.</p>
+<h3 id="a-failure-stops-the-group"><a class="anchor" href="#a-failure-stops-the-group" aria-hidden="true" tabindex="-1"></a>A Failure Stops the Group</h3>
+<p>This is the real reason to use a scope. A bare <code>spawn()</code> whose result is
+never joined swallows its own error in silence; a scope raises:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">ok</span>(n) {
+  <span class="kw">return</span> n
+}
+
+<span class="kw">def</span> <span class="def">boom</span>() {
+  <span class="kw">raise</span> <span class="type">ValueError</span>(<span class="str">'worker failed'</span>)
+}
+
+<span class="kw">catch</span> {
+  isolate.<span class="fn">scope</span>(<span class="meta">@</span>(s) {
+    s.<span class="fn">spawn</span>(ok, <span class="num">1</span>)
+    s.<span class="fn">spawn</span>(boom)
+
+    <span class="kw">return</span> <span class="str">'never returned'</span>
+  })
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>e.<span class="prop">type</span><span class="subst">}</span><span class="str">: </span><span class="subst">${</span>e.<span class="prop">message</span>.<span class="fn">lines</span>()[<span class="num">0</span>]<span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">IsolateError: ValueError: worker failed
+</code></pre><span class="code-label">Output</span></figure>
+<p>The body's return value is discarded when a child failed, and the failure
+comes out of <code>scope()</code> itself. Reach for a scope whenever a piece of work
+fans out and must be complete — and correct — before the next step begins.</p>
+<h2 id="waiting-on-several-tasks"><a class="anchor" href="#waiting-on-several-tasks" aria-hidden="true" tabindex="-1"></a>Waiting on Several Tasks</h2>
+<p>Three helpers cover the shapes that come up, and they return different
+things:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">square</span>(n) {
+  <span class="kw">return</span> n <span class="op">*</span> n
+}
+
+<span class="kw">var</span> tasks <span class="op">=</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>].<span class="fn">map</span>(<span class="meta">@</span>(n) <span class="op">=&gt;</span> isolate.<span class="fn">spawn</span>(square, n))
+
+<span class="kw">echo</span> isolate.<span class="fn">wait_all</span>(tasks)
+<span class="kw">echo</span> <span class="bi">typeof</span>(isolate.<span class="fn">wait_any</span>([isolate.<span class="fn">spawn</span>(square, <span class="num">9</span>)]))
+<span class="kw">echo</span> isolate.<span class="fn">map</span>(square, [<span class="num">4</span>, <span class="num">5</span>])
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[1, 4, 9]
+Isolate
+[16, 25]
+</code></pre><span class="code-label">Output</span></figure>
+<p><strong><code>wait_all(tasks, timeout)</code></strong> returns the <strong>results</strong>, in the order the
+tasks were given, not the order they finished.</p>
+<p><strong><code>wait_any(tasks, timeout)</code></strong> returns the <strong><code>Isolate</code></strong> that finished
+first, not its result — you still call <code>join()</code> on it. That is what lets
+you tell <em>which</em> one won.</p>
+<p><strong><code>map(fn, items, timeout)</code></strong> spawns one task per item and collects the
+results, which is <code>wait_all</code> with the spawning done for you.</p>
+<p>All three raise <code>IsolateTimeoutError</code> if the timeout passes, and all three
+propagate a worker's failure:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">halve</span>(n) {
+  <span class="kw">if</span> n <span class="op">==</span> <span class="num">0</span> {
+    <span class="kw">raise</span> <span class="type">ValueError</span>(<span class="str">'cannot halve zero'</span>)
+  }
+
+  <span class="kw">return</span> n <span class="op">/</span> <span class="num">2</span>
+}
+
+<span class="kw">echo</span> isolate.<span class="fn">map</span>(halve, [<span class="num">2</span>, <span class="num">4</span>, <span class="num">6</span>])
+
+<span class="kw">catch</span> {
+  isolate.<span class="fn">map</span>(halve, [<span class="num">2</span>, <span class="num">0</span>, <span class="num">6</span>])
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>e.<span class="prop">type</span><span class="subst">}</span><span class="str">: </span><span class="subst">${</span>e.<span class="prop">message</span>.<span class="fn">lines</span>()[<span class="num">0</span>]<span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[1, 2, 3]
+IsolateError: ValueError: cannot halve zero
+</code></pre><span class="code-label">Output</span></figure>
+<p>The whole call fails on the first failing element. When individual failures
+are acceptable, spawn and join yourself with a <code>catch</code> around each <code>join()</code>,
+as the worked example below does.</p>
+<h2 id="isolates-can-spawn-isolates"><a class="anchor" href="#isolates-can-spawn-isolates" aria-hidden="true" tabindex="-1"></a>Isolates Can Spawn Isolates</h2>
+<p>There is no restriction on nesting. A worker may spawn its own tasks and
+join them, and they run on the same pool:</p>
+<figure class="code has-caption"><figcaption>work.zu</figcaption><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">double</span>(n) {
+  <span class="kw">return</span> n <span class="op">*</span> <span class="num">2</span>
+}
+
+<span class="kw">def</span> <span class="def">nested</span>(n) {
+  <span class="kw">return</span> isolate.<span class="fn">spawn</span>(double, n).<span class="fn">join</span>()
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> run main.zu
+<span class="out">6</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>This is worth knowing mostly as a warning, which the next section covers:
+nested tasks that block on each other are the fastest way to exhaust the
+pool.</p>
+<h2 id="the-pool"><a class="anchor" href="#the-pool" aria-hidden="true" tabindex="-1"></a>The Pool</h2>
+<p>Isolates do not each get a thread of their own. They run on a fixed pool of
+OS threads, sized to the machine's core count by default:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">echo</span> isolate.<span class="fn">cpu_count</span>() <span class="op">&gt;</span> <span class="num">0</span>
+<span class="kw">echo</span> isolate.<span class="fn">pool_size</span>() <span class="op">==</span> isolate.<span class="fn">cpu_count</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+true
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="sizing-it"><a class="anchor" href="#sizing-it" aria-hidden="true" tabindex="-1"></a>Sizing It</h3>
+<p><code>configure(threads)</code> changes the size, and it only works <strong>before the pool
+exists</strong> — which is to say, before the first spawn. It reports whether it
+did anything:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">echo</span> isolate.<span class="fn">configure</span>(<span class="num">7</span>)
+<span class="kw">echo</span> isolate.<span class="fn">pool_size</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+7
+</code></pre><span class="code-label">Output</span></figure>
+<p>Call it after a spawn and it returns <code>false</code> and changes nothing. It does
+not raise, so a <code>configure()</code> buried below some initialisation that already
+spawned will silently do nothing — put it at the very top of the entry
+file.</p>
+<p>The size is a ceiling, not a head count. A thread is started only when an
+isolate is waiting and every thread already started is busy, so sizing the
+pool generously for a burst costs nothing while the burst is not happening.
+<code>started_count()</code> says how many threads the pool has started so far:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+isolate.<span class="fn">configure</span>(<span class="num">8</span>)
+
+<span class="kw">echo</span> isolate.<span class="fn">started_count</span>()
+<span class="kw">echo</span> isolate.<span class="fn">spawn</span>(<span class="meta">@</span>() <span class="op">=&gt;</span> <span class="num">21</span> <span class="op">*</span> <span class="num">2</span>).<span class="fn">join</span>()
+<span class="kw">echo</span> isolate.<span class="fn">started_count</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">0
+42
+1
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="why-the-size-matters-more-than-it-looks"><a class="anchor" href="#why-the-size-matters-more-than-it-looks" aria-hidden="true" tabindex="-1"></a>Why the Size Matters More Than It Looks</h3>
+<p>A pool sized to your core count can <strong>deadlock</strong>, and the failure looks
+like a hang rather than an error.</p>
+<p>The mechanism: a task that blocks — on <code>join()</code>, on <code>recv()</code>, on a socket
+read — occupies its thread while it waits. If every thread is occupied by a
+task waiting for work that has no free thread to run on, nothing can ever
+progress.</p>
+<p>That happens most easily with three patterns:</p>
+<ul>
+<li>a server and a client that talk to each other in one process;</li>
+<li>nested spawns where the parent joins the child;</li>
+<li>a pipeline with more stages than threads.</li>
+</ul>
+<p><strong>Size the pool for the number of tasks that will be blocked at once, not
+for the number of cores.</strong> Threads that are blocked are not competing for
+CPU, so over-provisioning costs little; under-provisioning costs
+everything.</p>
+<h3 id="watching-it"><a class="anchor" href="#watching-it" aria-hidden="true" tabindex="-1"></a>Watching It</h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">echo</span> isolate.<span class="fn">active_count</span>() <span class="op">&gt;=</span> <span class="num">0</span>
+<span class="kw">echo</span> isolate.<span class="fn">queued_count</span>() <span class="op">&gt;=</span> <span class="num">0</span>
+<span class="kw">echo</span> isolate.<span class="fn">is_shutdown</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+true
+false
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>active_count()</code> is how many tasks are running; <code>queued_count()</code> is how
+many are waiting for a thread. A queued count that only grows is the
+signature of a starved pool.</p>
+<p><code>shutdown(timeout)</code> drains the pool and stops it. Most programs never call
+it; it is there for a long-lived process that wants to release its threads
+without exiting.</p>
+<h3 id="memory-while-waiting"><a class="anchor" href="#memory-while-waiting" aria-hidden="true" tabindex="-1"></a>Memory While Waiting</h3>
+<p>A pool thread keeps its isolate's heap from one task to the next, and the
+collector runs as a program allocates. A thread that waits allocates
+nothing, so a waiting thread collects on its own: once it has waited a
+second, for its next task or inside <code>recv()</code>, <code>select()</code>, <code>join()</code>,
+<code>wait_any()</code> or <code>wait_all()</code>, it collects its garbage and the memory that
+garbage held goes back to the system. The main thread does the same in
+those calls. A task that built and dropped a large structure leaves the
+process at its working size rather than its peak.</p>
+<p>A wait of a second or less returns before that point, and a heap that has
+grown by less than 4 MB since its last such collection is left as it is, so
+a loop of short waits pays nothing for it.</p>
+<h2 id="the-errors"><a class="anchor" href="#the-errors" aria-hidden="true" tabindex="-1"></a>The Errors</h2>
+<p>Three error types come out of this module, and they mean different things:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>Raised when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>IsolateError</code></td>
+<td>a worker raised or panicked, or an operation is invalid — sending on a closed channel. A panic that escapes a Rust library called through <code>ffi</code> ends the process instead; see <a href="ch26-00-ffi.html#rust-in-depth">Rust in Depth</a></td>
+</tr>
+<tr>
+<td><code>IsolateTimeoutError</code></td>
+<td>a timeout passed before the operation completed</td>
+</tr>
+<tr>
+<td><code>IsolateCancelledError</code></td>
+<td>a blocking call was interrupted by <code>cancel()</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>All three inherit from <code>Error</code>, so <code>catch</code> on its own catches every one and
+<code>instance_of()</code> sorts them.</p>
+<p>The distinction matters because they call for different responses. A
+timeout usually means retry or give up. A cancellation means shut down
+quietly. An <code>IsolateError</code> carrying a worker's failure means something in
+your own code went wrong, and the message names it.</p>
+<h2 id="a-worked-example"><a class="anchor" href="#a-worked-example" aria-hidden="true" tabindex="-1"></a>A Worked Example</h2>
+<p>Fan out a computation, collect the results, and report a failure without
+losing the rest:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">classify</span>(n) {
+  <span class="kw">if</span> n <span class="op">&lt;</span> <span class="num">0</span> {
+    <span class="kw">raise</span> <span class="type">ValueError</span>(<span class="str">'negative input: </span><span class="subst">${</span>n<span class="subst">}</span><span class="str">'</span>)
+  }
+
+  <span class="kw">if</span> n <span class="op">&lt;</span> <span class="num">2</span> {
+    <span class="kw">return</span> <span class="str">'small'</span>
+  }
+
+  <span class="kw">var</span> divisor <span class="op">=</span> <span class="num">2</span>
+
+  <span class="kw">while</span> divisor <span class="op">*</span> divisor <span class="op">&lt;=</span> n {
+    <span class="kw">if</span> n <span class="op">%</span> divisor <span class="op">==</span> <span class="num">0</span> {
+      <span class="kw">return</span> <span class="str">'composite'</span>
+    }
+
+    divisor<span class="op">++</span>
+  }
+
+  <span class="kw">return</span> <span class="str">'prime'</span>
+}
+
+<span class="kw">def</span> <span class="def">classify_all</span>(numbers) {
+  <span class="kw">var</span> tasks <span class="op">=</span> numbers.<span class="fn">map</span>(<span class="meta">@</span>(n) <span class="op">=&gt;</span> [n, isolate.<span class="fn">spawn</span>(classify, n)])
+  <span class="kw">var</span> results <span class="op">=</span> {}
+
+  <span class="kw">for</span> pair <span class="kw">in</span> tasks {
+    <span class="kw">catch</span> {
+      results[pair[<span class="num">0</span>]] <span class="op">=</span> pair[<span class="num">1</span>].<span class="fn">join</span>()
+    } <span class="kw">as</span> e {
+      results[pair[<span class="num">0</span>]] <span class="op">=</span> <span class="str">'failed'</span>
+    }
+  }
+
+  <span class="kw">return</span> results
+}
+
+<span class="kw">echo</span> <span class="fn">classify_all</span>([<span class="num">1</span>, <span class="num">7</span>, <span class="num">9</span>, <span class="op">-</span><span class="num">3</span>, <span class="num">97</span>])
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{1: small, 7: prime, 9: composite, -3: failed, 97: prime}
+</code></pre><span class="code-label">Output</span></figure>
+<p>Three things are doing the work there.</p>
+<p>Every task is spawned <strong>before</strong> any is joined. Spawning in one pass and
+joining in another is what makes the work overlap; joining inside the first
+loop would run them one after another and buy nothing.</p>
+<p>The number is carried alongside its task, because the results come back in
+whatever order the pool produces them and a bare list of results would lose
+which input each belonged to.</p>
+<p>And the <code>catch</code> is around one <code>join()</code>, so the one bad input becomes one
+<code>failed</code> entry rather than ending the batch. Move it outside the loop and
+the first failure takes the other four with it.</p>
+<h2 id="choosing-a-shape"><a class="anchor" href="#choosing-a-shape" aria-hidden="true" tabindex="-1"></a>Choosing a Shape</h2>
+<p><strong>Fan out, collect results.</strong> <code>isolate.map()</code>, or <code>scope()</code> when a failure
+must stop the group.</p>
+<p><strong>A pipeline.</strong> Channels between stages, each stage an isolate, each channel
+bounded so backpressure propagates all the way back to the source.</p>
+<p><strong>An event fan-out.</strong> A broadcast, one subscriber per consumer.</p>
+<p><strong>A server.</strong> <code>http.serve()</code> builds the whole pattern for you: one isolate
+per worker, a bounded backlog, connections handed out as they arrive.
+<a href="ch15-00-http.html">Chapter 15</a> covers it.</p>
+<p><strong>Nothing at all.</strong> Concurrency costs a copy at every boundary and a great
+deal of care at every join. A single-threaded loop that finishes in time is
+the better program.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch11-00-isolates.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch10-00-binary-data.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">10</span>Binary Data and Streams</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch12-00-networking.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">12</span>Networking</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#spawning">Spawning</a>
+        </li><li class="level-3">
+          <a href="#what-can-be-spawned">What Can Be Spawned</a>
+        </li><li class="level-2">
+          <a href="#running-many-at-once">Running Many at Once</a>
+        </li><li class="level-2">
+          <a href="#the-lifecycle-of-a-task">The Lifecycle of a Task</a>
+        </li><li class="level-3">
+          <a href="#naming-a-task">Naming a Task</a>
+        </li><li class="level-2">
+          <a href="#timeouts-are-in-seconds">Timeouts Are in Seconds</a>
+        </li><li class="level-2">
+          <a href="#cancellation-is-cooperative">Cancellation Is Cooperative</a>
+        </li><li class="level-2">
+          <a href="#what-can-cross-and-what-it-costs">What Can Cross, and What It Costs</a>
+        </li><li class="level-3">
+          <a href="#the-copy-is-faithful">The Copy Is Faithful</a>
+        </li><li class="level-3">
+          <a href="#what-cannot-cross">What Cannot Cross</a>
+        </li><li class="level-3">
+          <a href="#the-cost-model">The Cost Model</a>
+        </li><li class="level-2">
+          <a href="#errors-cross-the-boundary">Errors Cross the Boundary</a>
+        </li><li class="level-2">
+          <a href="#channels">Channels</a>
+        </li><li class="level-2">
+          <a href="#selecting-across-channels">Selecting Across Channels</a>
+        </li><li class="level-2">
+          <a href="#broadcast">Broadcast</a>
+        </li><li class="level-3">
+          <a href="#a-subscriber-only-sees-what-comes-after-it">A Subscriber Only Sees What Comes After It</a>
+        </li><li class="level-3">
+          <a href="#unsubscribing-and-sending-into-the-void">Unsubscribing, and Sending Into the Void</a>
+        </li><li class="level-3">
+          <a href="#closing">Closing</a>
+        </li><li class="level-3">
+          <a href="#backpressure-applies-per-subscriber">Backpressure Applies Per Subscriber</a>
+        </li><li class="level-3">
+          <a href="#channel-or-broadcast">Channel or Broadcast?</a>
+        </li><li class="level-2">
+          <a href="#scopes">Scopes</a>
+        </li><li class="level-3">
+          <a href="#it-waits-whether-or-not-you-join">It Waits Whether or Not You Join</a>
+        </li><li class="level-3">
+          <a href="#a-failure-stops-the-group">A Failure Stops the Group</a>
+        </li><li class="level-2">
+          <a href="#waiting-on-several-tasks">Waiting on Several Tasks</a>
+        </li><li class="level-2">
+          <a href="#isolates-can-spawn-isolates">Isolates Can Spawn Isolates</a>
+        </li><li class="level-2">
+          <a href="#the-pool">The Pool</a>
+        </li><li class="level-3">
+          <a href="#sizing-it">Sizing It</a>
+        </li><li class="level-3">
+          <a href="#why-the-size-matters-more-than-it-looks">Why the Size Matters More Than It Looks</a>
+        </li><li class="level-3">
+          <a href="#watching-it">Watching It</a>
+        </li><li class="level-3">
+          <a href="#memory-while-waiting">Memory While Waiting</a>
+        </li><li class="level-2">
+          <a href="#the-errors">The Errors</a>
+        </li><li class="level-2">
+          <a href="#a-worked-example">A Worked Example</a>
+        </li><li class="level-2">
+          <a href="#choosing-a-shape">Choosing a Shape</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

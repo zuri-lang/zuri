@@ -1,0 +1,2009 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Foreign Functions: C and Rust · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch26-00-ffi.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="teal" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html" aria-current="page"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Chapter 26 · Interoperability</p>
+        <div class="content"><h1 id="foreign-functions-c-and-rust">Foreign Functions: C and Rust</h1>
+<p>The <code>ffi</code> module calls code written in C and in Rust. It loads a shared
+library, describes the functions in it, and calls them with ordinary Zuri
+values; it turns Zuri functions into C function pointers so a library can
+call back; and it reads the declarations a header or a crate already
+contains, so the description is written once, by the people who wrote the
+library.</p>
+<p>Every value that crosses is converted and checked against its C type. An
+integer that does not fit is a <code>RangeError</code> at the call, not a truncated
+argument inside the library. Memory the module allocates knows its size,
+and a read past its end is refused before it happens. Where a check cannot
+be made, because C handed back an address with no extent attached, the
+module says so plainly rather than guessing.</p>
+<p>A C library, a Rust <code>cdylib</code>, and a static library of either are all
+reachable, and the layout of every record, packed, over-aligned or full of
+bitfields, is the one the platform's own compiler would give it.</p>
+<ul>
+<li><a href="#following-along">Following Along</a></li>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#loading-a-library">Loading a Library</a></li>
+<li><a href="#calling-a-function">Calling a Function</a></li>
+<li><a href="#types">Types</a></li>
+<li><a href="#numbers-at-the-boundary">Numbers at the Boundary</a></li>
+<li><a href="#declaring-from-c">Declaring from C</a></li>
+<li><a href="#declaring-from-rust">Declaring from Rust</a></li>
+<li><a href="#pointers-and-memory">Pointers and Memory</a></li>
+<li><a href="#strings-and-text">Strings and Text</a></li>
+<li><a href="#structs-unions-and-arrays">Structs, Unions and Arrays</a></li>
+<li><a href="#enums-and-constants">Enums and Constants</a></li>
+<li><a href="#callbacks">Callbacks</a></li>
+<li><a href="#callbacks-and-threads">Callbacks and Threads</a></li>
+<li><a href="#variadic-functions">Variadic Functions</a></li>
+<li><a href="#errors-and-errno">Errors and errno</a></li>
+<li><a href="#ownership-and-lifetimes">Ownership and Lifetimes</a></li>
+<li><a href="#static-libraries">Static Libraries</a></li>
+<li><a href="#isolates">Isolates</a></li>
+<li><a href="#rust-in-depth">Rust in Depth</a></li>
+<li><a href="#platform-differences">Platform Differences</a></li>
+<li><a href="#what-is-checked">What Is Checked</a></li>
+<li><a href="#what-the-module-refuses">What the Module Refuses</a></li>
+<li><a href="#module-reference">Module Reference</a></li>
+</ul>
+<blockquote>
+<p>Blocks on this page that list several calls together are <strong>reference
+listings</strong>, not programs: they show the shape of each call rather than a
+sequence to run. Anything presented as a complete program runs as
+written. The programs that call the C runtime run on Linux as shown;
+the ones that need a library of your own are shown rather than run.</p>
+</blockquote>
+<h2 id="following-along"><a class="anchor" href="#following-along" aria-hidden="true" tabindex="-1"></a>Following Along</h2>
+<p>The C runtime is on every machine, so most examples below call it.
+<code>ffi.LIBC</code> names it for the platform the program is running on, and
+<code>ffi.LIBM</code> names the maths library:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> libc <span class="op">=</span> ffi.<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>)
+<span class="kw">var</span> strlen <span class="op">=</span> libc.<span class="fn">function</span>(<span class="str">'strlen'</span>, ffi.<span class="prop">size_t</span>, [ffi.<span class="prop">string</span>])
+
+<span class="kw">echo</span> <span class="fn">strlen</span>(<span class="str">'Hello, C'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">8
+</code></pre><span class="code-label">Output</span></figure>
+<p>Some sections use a small library of your own. Save this as
+<code>geometry.c</code>:</p>
+<figure class="code"><pre><code class="language-c">#include &lt;math.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef struct { double x, y; } point;
+
+double distance(point a, point b) {
+  return hypot(a.x - b.x, a.y - b.y);
+}
+
+point midpoint(const point *a, const point *b) {
+  point m = { (a-&gt;x + b-&gt;x) / 2, (a-&gt;y + b-&gt;y) / 2 };
+  return m;
+}
+
+void scale_all(point *points, size_t n, double k) {
+  for (size_t i = 0; i &lt; n; i++) {
+    points[i].x *= k;
+    points[i].y *= k;
+  }
+}
+</code></pre><span class="code-label">c</span></figure>
+<p>and build it as a shared library with the C compiler:</p>
+<figure class="code"><pre><code class="language-sh"><span class="fn">cc</span> <span class="attr">-shared</span> <span class="attr">-fPIC</span> geometry.c <span class="attr">-o</span> libgeometry.so <span class="attr">-lm</span>       <span class="com"># Linux</span>
+<span class="fn">cc</span> <span class="attr">-dynamiclib</span> geometry.c <span class="attr">-o</span> libgeometry.dylib          <span class="com"># macOS</span>
+<span class="fn">cl</span> /LD geometry.c                                       <span class="com"># Windows</span>
+</code></pre><span class="code-label">Shell</span></figure>
+<p>The Rust sections use a crate built with <code>crate-type = [&quot;cdylib&quot;]</code>, shown
+where it is used.</p>
+<h2 id="introduction"><a class="anchor" href="#introduction" aria-hidden="true" tabindex="-1"></a>Introduction</h2>
+<p>Every language that grows up eventually needs code it did not write: a
+database engine, a codec, a cryptography library, a scientific kernel, a
+system call the standard library has no wrapper for. The code exists, it
+is fast and it is tested, and it speaks the C calling convention, which
+is the one convention every language on every platform agrees on. Rust
+libraries speak it too, through <code>extern &quot;C&quot;</code>.</p>
+<p>Calling across that boundary is a matter of describing, exactly, what the
+other side expects: how wide each integer is, where each member of a
+struct sits, which register a value travels in. The machine does not
+check any of it. A description that is off by one byte corrupts memory
+silently, and the bug shows up somewhere unrelated, later.</p>
+<p><code>ffi</code> makes that description a value the program can inspect, builds it
+from the source the library's authors already wrote, lays out every type
+the way the platform's compiler does, and checks every value against it
+at the moment it crosses:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> c <span class="op">=</span> ffi
+    .<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>)
+    .<span class="fn">declare</span>(
+      <span class="str">'
+  int abs(int n);
+  typedef struct { int quot; int rem; } div_t;
+  div_t div(int numerator, int denominator);
+'</span>,
+    )
+
+<span class="kw">echo</span> c.<span class="fn">abs</span>(<span class="op">-</span><span class="num">7</span>)
+<span class="kw">echo</span> c.<span class="fn">div</span>(<span class="num">17</span>, <span class="num">5</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">7
+{quot: 3, rem: 2}
+</code></pre><span class="code-label">Output</span></figure>
+<p>The declarations are the ones <code>&lt;stdlib.h&gt;</code> contains. The struct came back
+as a dictionary. And the conversion rules held on the way in:</p>
+<figure class="code has-output"><pre><code class="language-zuri">c.<span class="fn">abs</span>(<span class="num">3000000000</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">RangeError: abs() argument 1 'n': 3000000000 is out of range for 'int', which holds -2147483648 to 2147483647
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="loading-a-library"><a class="anchor" href="#loading-a-library" aria-hidden="true" tabindex="-1"></a>Loading a Library</h2>
+<p><code>ffi.open()</code> loads a shared library and returns a <code>Library</code>. It takes a
+path, a file name, or a bare name the platform's conventions complete:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> sqlite <span class="op">=</span> ffi.<span class="fn">open</span>(<span class="str">'sqlite3'</span>) <span class="com"># libsqlite3.so, libsqlite3.dylib, sqlite3.dll</span>
+<span class="kw">var</span> local <span class="op">=</span> ffi.<span class="fn">open</span>(<span class="str">'./build/libgeometry.so'</span>) <span class="com"># a path, as given</span>
+<span class="kw">var</span> vendored <span class="op">=</span> ffi.<span class="fn">open</span>(<span class="str">'geometry'</span>, {
+  paths<span class="op">:</span> [<span class="str">'vendor/lib'</span>],
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A bare name is tried in the directories given as <code>paths</code> first, then in
+the platform's own search order. On Linux, a library's unversioned
+<code>libname.so</code> is usually only installed with its development package, so
+<code>ffi.open()</code> also asks the dynamic loader's cache for the versioned file
+the runtime package ships, such as <code>libsqlite3.so.0</code>. On macOS the name is
+tried as a <code>.dylib</code> and as a framework.</p>
+<p><code>ffi.find()</code> answers the same question without loading anything:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">echo</span> ffi.<span class="fn">find</span>(<span class="str">'zuri_has_no_such_library'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">nil
+</code></pre><span class="code-label">Output</span></figure>
+<p>With no name at all, <code>ffi.open()</code> returns the running process, whose
+symbols include the C runtime and everything already loaded globally.</p>
+<p>Two options change how a library is loaded. <code>lazy: true</code> resolves its
+symbols as they are first used instead of all at once. <code>global: true</code>
+makes its symbols visible to libraries loaded after it and to the process
+handle, which a plugin that expects its host's symbols needs. Both are
+Unix concepts and have no effect on Windows, where every loaded module is
+searched when the process is asked for a symbol.</p>
+<p>A library that cannot be found or loaded raises <code>LoadError</code>, carrying the
+loader's own explanation: a missing dependency, a library for another
+architecture, a file that is not a library.</p>
+<h3 id="symbols"><a class="anchor" href="#symbols" aria-hidden="true" tabindex="-1"></a>Symbols</h3>
+<p>A <code>Library</code> answers whether it exports a name, and where:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> libc <span class="op">=</span> ffi.<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>)
+
+<span class="kw">echo</span> libc.<span class="fn">has</span>(<span class="str">'strlen'</span>)
+<span class="kw">echo</span> libc.<span class="fn">has</span>(<span class="str">'zuri_has_no_such_symbol'</span>)
+<span class="kw">echo</span> libc.<span class="fn">symbol</span>(<span class="str">'zuri_has_no_such_symbol'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+false
+nil
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>symbol()</code> returns a <code>Pointer</code> to the symbol. On glibc, <code>name@VERSION</code>
+asks for a particular version of a versioned symbol, for the rare program
+that must pin one.</p>
+<h3 id="closing"><a class="anchor" href="#closing" aria-hidden="true" tabindex="-1"></a>Closing</h3>
+<p><code>close()</code> stops a library being used: every function bound from it
+raises <code>LoadError</code> from then on. The code itself is unloaded once nothing
+refers to the library any longer, functions bound from it included, so a
+closed library is never unloaded out from under a call in progress.</p>
+<h2 id="calling-a-function"><a class="anchor" href="#calling-a-function" aria-hidden="true" tabindex="-1"></a>Calling a Function</h2>
+<p>A function is bound by name, return type and parameter types, and comes
+back as an ordinary Zuri function:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> libm <span class="op">=</span> ffi.<span class="fn">open</span>(ffi.<span class="prop">LIBM</span>)
+<span class="kw">var</span> pow <span class="op">=</span> libm.<span class="fn">function</span>(<span class="str">'pow'</span>, ffi.<span class="prop">double</span>, [ffi.<span class="prop">double</span>, ffi.<span class="prop">double</span>])
+
+<span class="kw">echo</span> <span class="fn">pow</span>(<span class="num">2</span>, <span class="num">10</span>)
+<span class="kw">echo</span> pow.<span class="fn">name</span>()
+<span class="kw">echo</span> pow.<span class="fn">arity</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1024
+pow
+2
+</code></pre><span class="code-label">Output</span></figure>
+<p>It can be stored, passed to <code>map()</code>, spawned onto an isolate, and called
+like any other function. The number of arguments is checked like any
+function's:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="fn">pow</span>(<span class="num">2</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">ArgumentError: 'pow' expects 2 arguments, got 1
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>ffi.describe()</code> reports what a foreign function is, and
+<code>ffi.is_foreign()</code> tells a foreign function from a Zuri one:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> abs <span class="op">=</span> ffi.<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>).<span class="fn">function</span>(<span class="str">'abs'</span>, ffi.<span class="prop">int</span>, [ffi.<span class="prop">int</span>])
+<span class="kw">var</span> about <span class="op">=</span> ffi.<span class="fn">describe</span>(abs)
+
+<span class="kw">echo</span> about.<span class="prop">name</span>
+<span class="kw">echo</span> about.<span class="prop">type</span>.<span class="fn">name</span>()
+<span class="kw">echo</span> ffi.<span class="fn">is_foreign</span>(abs)
+<span class="kw">echo</span> ffi.<span class="fn">is_foreign</span>(<span class="meta">@</span>(x) <span class="op">=&gt;</span> x)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">abs
+int (*)(int)
+true
+false
+</code></pre><span class="code-label">Output</span></figure>
+<p>Binding one function at a time suits a handful. For more, declarations
+read a header, as the next sections show.</p>
+<h2 id="types"><a class="anchor" href="#types" aria-hidden="true" tabindex="-1"></a>Types</h2>
+<p>Every C type is a <code>Type</code>. The module exports the built-in ones:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Zuri</th>
+<th>C</th>
+<th>Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ffi.void</code></td>
+<td><code>void</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>ffi.bool</code></td>
+<td><code>bool</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>ffi.char</code>, <code>ffi.schar</code>, <code>ffi.uchar</code></td>
+<td><code>char</code>, <code>signed char</code>, <code>unsigned char</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>ffi.short</code>, <code>ffi.ushort</code></td>
+<td><code>short</code>, <code>unsigned short</code></td>
+<td>2</td>
+</tr>
+<tr>
+<td><code>ffi.int</code>, <code>ffi.uint</code></td>
+<td><code>int</code>, <code>unsigned int</code></td>
+<td>4</td>
+</tr>
+<tr>
+<td><code>ffi.long</code>, <code>ffi.ulong</code></td>
+<td><code>long</code>, <code>unsigned long</code></td>
+<td>8, or 4 on Windows</td>
+</tr>
+<tr>
+<td><code>ffi.longlong</code>, <code>ffi.ulonglong</code></td>
+<td><code>long long</code>, <code>unsigned long long</code></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code>ffi.int8</code> ... <code>ffi.uint64</code></td>
+<td><code>int8_t</code> ... <code>uint64_t</code></td>
+<td>1 to 8</td>
+</tr>
+<tr>
+<td><code>ffi.int128</code>, <code>ffi.uint128</code></td>
+<td><code>__int128</code>, <code>unsigned __int128</code></td>
+<td>16</td>
+</tr>
+<tr>
+<td><code>ffi.size_t</code>, <code>ffi.ssize_t</code>, <code>ffi.ptrdiff_t</code></td>
+<td>the same</td>
+<td>8</td>
+</tr>
+<tr>
+<td><code>ffi.intptr_t</code>, <code>ffi.uintptr_t</code></td>
+<td>the same</td>
+<td>8</td>
+</tr>
+<tr>
+<td><code>ffi.wchar_t</code>, <code>ffi.char16_t</code>, <code>ffi.char32_t</code></td>
+<td>the same</td>
+<td>4, 2 on Windows; 2; 4</td>
+</tr>
+<tr>
+<td><code>ffi.float</code>, <code>ffi.double</code></td>
+<td>the same</td>
+<td>4, 8</td>
+</tr>
+<tr>
+<td><code>ffi.longdouble</code></td>
+<td><code>long double</code></td>
+<td>16, or 8 on Windows and Apple Arm</td>
+</tr>
+<tr>
+<td><code>ffi.complex_float</code>, <code>ffi.complex_double</code></td>
+<td><code>float _Complex</code>, <code>double _Complex</code></td>
+<td>8, 16</td>
+</tr>
+<tr>
+<td><code>ffi.ptr</code></td>
+<td><code>void *</code></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code>ffi.string</code></td>
+<td><code>const char *</code>, as text</td>
+<td>8</td>
+</tr>
+<tr>
+<td><code>ffi.wstring</code></td>
+<td><code>const wchar_t *</code>, as text</td>
+<td>8</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>and Rust's names for the same types: <code>ffi.i8</code> through <code>ffi.u128</code>,
+<code>ffi.isize</code>, <code>ffi.usize</code>, <code>ffi.f32</code>, <code>ffi.f64</code>, and <code>ffi.rust_char</code> for
+Rust's <code>char</code>. A Rust name and its C counterpart are the same type:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">echo</span> ffi.<span class="prop">i32</span>.<span class="fn">equals</span>(ffi.<span class="prop">int32</span>)
+<span class="kw">echo</span> ffi.<span class="prop">int32</span>.<span class="fn">equals</span>(ffi.<span class="prop">int</span>)
+<span class="kw">echo</span> ffi.<span class="prop">usize</span>.<span class="fn">equals</span>(ffi.<span class="prop">size_t</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+true
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p>A type knows its size, alignment and kind on this platform:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">echo</span> ffi.<span class="prop">int</span>.<span class="fn">size</span>()
+<span class="kw">echo</span> ffi.<span class="prop">double</span>.<span class="fn">align</span>()
+<span class="kw">echo</span> ffi.<span class="prop">uint16</span>.<span class="fn">kind</span>()
+<span class="kw">echo</span> ffi.<span class="prop">string</span>.<span class="fn">kind</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">4
+8
+int
+string
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="building-types"><a class="anchor" href="#building-types" aria-hidden="true" tabindex="-1"></a>Building types</h3>
+<p>Pointers, arrays, <code>const</code> and function types are built from other types:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> names <span class="op">=</span> ffi.<span class="fn">pointer</span>(ffi.<span class="prop">char</span>).<span class="fn">array</span>(<span class="num">4</span>)
+<span class="kw">var</span> compare <span class="op">=</span> ffi.<span class="fn">function_type</span>(ffi.<span class="prop">int</span>, [ffi.<span class="prop">ptr</span>, ffi.<span class="prop">ptr</span>])
+
+<span class="kw">echo</span> names.<span class="fn">name</span>()
+<span class="kw">echo</span> names.<span class="fn">size</span>()
+<span class="kw">echo</span> compare.<span class="fn">pointer</span>().<span class="fn">name</span>()
+<span class="kw">echo</span> ffi.<span class="prop">char</span>.<span class="fn">as_const</span>().<span class="fn">pointer</span>().<span class="fn">name</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">char *[4]
+32
+int (*)(void *, void *)
+const char *
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>ffi.type()</code> reads a C spelling of a built-in type, which is often the
+shortest way to write one:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">echo</span> ffi.<span class="fn">type</span>(<span class="str">'unsigned long long'</span>).<span class="fn">equals</span>(ffi.<span class="prop">ulonglong</span>)
+<span class="kw">echo</span> ffi.<span class="fn">type</span>(<span class="str">'void (*)(int, const char *)'</span>).<span class="fn">kind</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+function pointer
+</code></pre><span class="code-label">Output</span></figure>
+<p>Structs, unions and enums are built member by member; <a href="#structs-unions-and-arrays">Structs, Unions
+and Arrays</a> and <a href="#enums-and-constants">Enums and
+Constants</a> cover them.</p>
+<h2 id="numbers-at-the-boundary"><a class="anchor" href="#numbers-at-the-boundary" aria-hidden="true" tabindex="-1"></a>Numbers at the Boundary</h2>
+<p>A Zuri number is a double, which holds every integer up to 2^53 exactly
+and no further. C integer types reach 2^64 and, with <code>__int128</code>, 2^128.
+So integers cross the boundary this way:</p>
+<ul>
+<li><strong>Going in</strong>, a number must be a whole number that fits the type, and
+a bigint may be given for any integer type. A fraction, a string, or a
+bool for an integer is a <code>TypeError</code>; a value outside the type's range
+is a <code>RangeError</code>. Nothing is ever truncated or wrapped.</li>
+<li><strong>Coming out</strong>, an integer is a number when it lies within 2^53 of
+zero, and a bigint beyond that, so no value is ever rounded.</li>
+</ul>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> strtoull <span class="op">=</span> ffi.<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>).<span class="fn">function</span>(<span class="str">'strtoull'</span>, ffi.<span class="prop">uint64</span>, [
+  ffi.<span class="prop">string</span>,
+  ffi.<span class="prop">ptr</span>,
+  ffi.<span class="prop">int</span>,
+])
+
+<span class="kw">echo</span> <span class="fn">strtoull</span>(<span class="str">'42'</span>, <span class="lit">nil</span>, <span class="num">10</span>)
+<span class="kw">echo</span> <span class="fn">strtoull</span>(<span class="str">'18446744073709551615'</span>, <span class="lit">nil</span>, <span class="num">10</span>)
+<span class="kw">echo</span> <span class="bi">typeof</span>(<span class="fn">strtoull</span>(<span class="str">'18446744073709551615'</span>, <span class="lit">nil</span>, <span class="num">10</span>))
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">42
+18446744073709551615n
+bigint
+</code></pre><span class="code-label">Output</span></figure>
+<p>A type that can be either is the program's to handle:
+<code>is_bigint(value)</code>, or comparing against a bigint, which compares
+correctly with a number too.</p>
+<p>Floating-point types take any number. <code>long double</code> is wider than a
+double on some platforms, 80-bit extended precision on x86-64 Linux and
+macOS and 128-bit quad precision on Arm Linux; going in is exact, and
+coming out rounds to the nearest double, as C's own conversion does.</p>
+<p><code>bool</code> takes and gives a Zuri bool, and a C character type takes a number
+or a one-character string:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> toupper <span class="op">=</span> ffi.<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>).<span class="fn">function</span>(<span class="str">'toupper'</span>, ffi.<span class="prop">int</span>, [ffi.<span class="prop">int</span>])
+
+<span class="kw">echo</span> <span class="fn">toupper</span>(<span class="str">'q'</span>.<span class="fn">ord</span>())
+<span class="kw">echo</span> <span class="fn">toupper</span>(<span class="num">97</span>).<span class="fn">chr</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">81
+A
+</code></pre><span class="code-label">Output</span></figure>
+<p>A complex number is a list of two, <code>[real, imaginary]</code>, and passing one
+by value is available wherever the C compiler has <code>_Complex</code>, which is
+everywhere but Windows.</p>
+<h2 id="declaring-from-c"><a class="anchor" href="#declaring-from-c" aria-hidden="true" tabindex="-1"></a>Declaring from C</h2>
+<p><code>ffi.declare()</code> reads C declarations and returns a <code>Declarations</code>: a set
+of types, functions, variables and constants that is not tied to any
+library. Binding it to one produces a namespace:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> api <span class="op">=</span> ffi.<span class="fn">declare</span>(
+  <span class="str">'
+  typedef struct { long quot; long rem; } ldiv_t;
+  ldiv_t ldiv(long numerator, long denominator);
+  long labs(long n);
+'</span>,
+)
+
+<span class="kw">var</span> c <span class="op">=</span> api.<span class="fn">bind</span>(ffi.<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>))
+
+<span class="kw">echo</span> c.<span class="fn">labs</span>(<span class="op">-</span><span class="num">12</span>)
+<span class="kw">echo</span> c.<span class="fn">ldiv</span>(<span class="num">100</span>, <span class="num">7</span>)
+<span class="kw">echo</span> c.<span class="prop">ldiv_t</span>.<span class="fn">size</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">12
+{quot: 14, rem: 2}
+16
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>Library.declare()</code> does both steps at once, and is what most programs
+use.</p>
+<p>The namespace holds a function for each declared function, a <code>Pointer</code>
+for each declared variable, each constant, and each type that has a name
+of its own. It is read the way a module is. A tagged type with no typedef,
+such as <code>struct stat</code>, is reached through the declarations instead:
+<code>api.type('struct stat')</code>.</p>
+<p>A declared function that the library does not export is a <code>SymbolError</code>
+naming every one that is missing. <code>allow_missing: true</code> binds the rest
+and leaves those out, for a header describing several versions of a
+library.</p>
+<h3 id="what-is-read"><a class="anchor" href="#what-is-read" aria-hidden="true" tabindex="-1"></a>What is read</h3>
+<p>Everything a header says about an API:</p>
+<ul>
+<li><code>typedef</code>, <code>struct</code>, <code>union</code> and <code>enum</code>, including forward declarations,
+self-referencing records, nested records, anonymous members, bitfields
+and flexible array members;</li>
+<li>function prototypes, variadic ones included, and function pointer types
+however deeply they nest;</li>
+<li><code>extern</code> variables;</li>
+<li><code>_Static_assert</code>, which is evaluated, so a header that checks its own
+assumptions checks them here too;</li>
+<li><code>__attribute__((packed))</code>, <code>aligned(n)</code>, <code>ms_abi</code> and <code>sysv_abi</code>,
+<code>__declspec(align(n))</code>, <code>_Alignas</code>, and <code>asm</code> labels that give a
+function a different symbol name; every other attribute is read past;</li>
+<li><code>extern &quot;C&quot; { ... }</code>, as headers shared with C++ write it.</li>
+</ul>
+<p>A function with a body, as an inline helper in a header has one, is read
+and not bound, because the library need not export it.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> api <span class="op">=</span> ffi.<span class="fn">declare</span>(
+  <span class="str">'
+  struct node;
+  typedef struct node node;
+  struct node { int value; node *next; };
+
+  typedef struct {
+    struct { double x, y; } origin;
+    union { int id; char tag[8]; };
+  } shape;
+
+  _Static_assert(sizeof(shape) == 24, "shape is 24 bytes");
+'</span>,
+)
+
+<span class="kw">echo</span> api.<span class="fn">type</span>(<span class="str">'node'</span>).<span class="fn">size</span>()
+<span class="kw">echo</span> api.<span class="fn">type</span>(<span class="str">'shape'</span>).<span class="fn">offset_of</span>(<span class="str">'tag'</span>)
+<span class="kw">echo</span> api.<span class="fn">type</span>(<span class="str">'shape'</span>).<span class="fn">has_field</span>(<span class="str">'id'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">16
+16
+true
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="the-preprocessor"><a class="anchor" href="#the-preprocessor" aria-hidden="true" tabindex="-1"></a>The preprocessor</h3>
+<p>Real header text is full of preprocessor lines, so enough of the
+preprocessor runs for it to read as written:</p>
+<ul>
+<li><code>#define</code> of a value is expanded wherever the name appears and becomes a
+constant: numbers in any base with any suffix, floating-point numbers,
+character constants, strings, adjacent strings joined, and expressions
+over other constants. A value cast to a pointer type, the way a header
+spells a sentinel such as <code>((void *) -1)</code>, is a <code>Pointer</code> of that type at
+that address, and <code>nil</code> when the address is zero. A macro can use a type
+declared after it, as C allows, since a macro means something only where
+it is used.</li>
+<li><code>#if</code>, <code>#ifdef</code>, <code>#ifndef</code>, <code>#elif</code>, <code>#else</code> and <code>#endif</code> are evaluated,
+with <code>defined()</code>, against the macros the target platform's compiler
+predefines: <code>__linux__</code>, <code>__APPLE__</code>, <code>_WIN32</code>, <code>__x86_64__</code>,
+<code>__aarch64__</code>, <code>__LP64__</code> and the rest. <code>__has_include()</code> and the
+other <code>__has_</code> queries answer no.</li>
+<li><code>#pragma pack</code> applies to the records declared after it, exactly where
+it is written.</li>
+<li><code>#undef</code> removes a macro, and <code>#error</code> stops with its message.</li>
+<li>Including a C standard header is accepted, because everything it
+declares is already known; <code>&lt;stdio.h&gt;</code> also declares <code>FILE</code>.</li>
+</ul>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> api <span class="op">=</span> ffi.<span class="fn">declare</span>(
+  <span class="str">'
+  #include &lt;stdint.h&gt;
+  #define VERSION_MAJOR 2
+  #define VERSION_MINOR 7
+  #define VERSION ((VERSION_MAJOR &lt;&lt; 8) | VERSION_MINOR)
+  #define NAME "geo" "metry"
+
+  #if VERSION &gt;= 0x200
+  typedef struct { uint32_t flags; double scale; } options;
+  #else
+  typedef struct { uint32_t flags; } options;
+  #endif
+
+  #pragma pack(push, 1)
+  typedef struct { uint8_t kind; uint32_t length; } header;
+  #pragma pack(pop)
+'</span>,
+)
+
+<span class="kw">echo</span> api.<span class="fn">constant</span>(<span class="str">'VERSION'</span>)
+<span class="kw">echo</span> api.<span class="fn">constant</span>(<span class="str">'NAME'</span>)
+<span class="kw">echo</span> api.<span class="fn">type</span>(<span class="str">'options'</span>).<span class="fn">size</span>()
+<span class="kw">echo</span> api.<span class="fn">type</span>(<span class="str">'header'</span>).<span class="fn">size</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">519
+geometry
+16
+5
+</code></pre><span class="code-label">Output</span></figure>
+<p>Two things are refused, each with the line and column of the problem.
+Including any other file, because declarations are read as given, never
+fetched: paste in the ones the program needs. And using a function-like
+macro, which would need the preprocessor's full expansion rules; define a
+function-like macro and it is recorded, and only using one is an error.</p>
+<h3 id="text-returns"><a class="anchor" href="#text-returns" aria-hidden="true" tabindex="-1"></a>Text returns</h3>
+<p>C cannot say who owns a returned pointer, but its convention is clear
+enough to follow: a function returning <code>const char *</code> hands back text it
+keeps, and one returning <code>char *</code> usually hands over memory. So a
+declared function returning <code>const char *</code> returns a string, <code>nil</code> for a
+null pointer, and one returning <code>char *</code> returns a <code>Pointer</code>, which the
+program reads and releases. The same holds for <code>const wchar_t *</code>.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> c <span class="op">=</span> ffi
+    .<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>)
+    .<span class="fn">declare</span>(
+      <span class="str">'
+  int setenv(const char *name, const char *value, int overwrite);
+  const char *getenv(const char *name);
+'</span>,
+    )
+
+c.<span class="fn">setenv</span>(<span class="str">'ZURI_FFI_DEMO'</span>, <span class="str">'hello'</span>, <span class="num">1</span>)
+<span class="kw">echo</span> c.<span class="fn">getenv</span>(<span class="str">'ZURI_FFI_DEMO'</span>)
+<span class="kw">echo</span> c.<span class="fn">getenv</span>(<span class="str">'ZURI_FFI_NOT_SET'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">hello
+nil
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>getenv</code> is declared <code>char *getenv(const char *)</code> in the real header;
+writing it as <code>const char *</code> here is the program saying it will not free
+the result, which is true.</p>
+<h3 id="growing-a-set-and-sharing-one"><a class="anchor" href="#growing-a-set-and-sharing-one" aria-hidden="true" tabindex="-1"></a>Growing a set, and sharing one</h3>
+<p>Sources are added to a set one after another, and each sees what came
+before. One set can include another, whose types it can then use without
+owning them, which is how two libraries share one set of common types:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> common <span class="op">=</span> ffi.<span class="fn">declare</span>(<span class="str">'typedef struct { double x, y; } point;'</span>)
+
+<span class="kw">var</span> shapes <span class="op">=</span> ffi
+    .<span class="fn">declarations</span>()
+    .<span class="fn">include</span>(common)
+    .<span class="fn">declare</span>(<span class="str">'typedef struct { point from, to; } segment;'</span>)
+    .<span class="fn">declare</span>(<span class="str">'double length(segment s);'</span>)
+
+<span class="kw">echo</span> shapes.<span class="fn">type</span>(<span class="str">'segment'</span>).<span class="fn">size</span>()
+<span class="kw">echo</span> shapes.<span class="fn">functions</span>().<span class="prop">length</span>.<span class="fn">signature</span>().<span class="prop">params</span>[<span class="num">0</span>].<span class="fn">name</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">32
+segment
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>types()</code>, <code>functions()</code>, <code>variables()</code> and <code>constants()</code> list what a set
+holds, and <code>type()</code> resolves any C spelling against it:
+<code>shapes.type('segment *[2]')</code>.</p>
+<h2 id="declaring-from-rust"><a class="anchor" href="#declaring-from-rust" aria-hidden="true" tabindex="-1"></a>Declaring from Rust</h2>
+<p>A Rust library is reached through the C ABI it exports: <code>extern &quot;C&quot;</code>
+functions, and the <code>#[repr(C)]</code> types they take. <code>ffi.declare_rust()</code>
+reads that surface as a crate writes it, so its source can be handed over
+as it stands. Given this <code>lib.rs</code>, built with <code>crate-type = [&quot;cdylib&quot;]</code>:</p>
+<figure class="code"><pre><code class="language-rust">use std::ffi::{CStr, CString, c_char};
+
+#[repr(C)]
+pub struct Point {
+    pub x: f64,
+    pub y: f64,
+}
+
+#[repr(C)]
+pub enum Shape {
+    Circle { radius: f64 },
+    Rect { w: f64, h: f64 },
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn area(shape: Shape) -&gt; f64 {
+    match shape {
+        Shape::Circle { radius } =&gt; std::f64::consts::PI * radius * radius,
+        Shape::Rect { w, h } =&gt; w * h,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn midpoint(a: &amp;Point, b: &amp;Point) -&gt; Point {
+    Point { x: (a.x + b.x) / 2.0, y: (a.y + b.y) / 2.0 }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn greet(name: *const c_char) -&gt; *mut c_char {
+    let name = unsafe { CStr::from_ptr(name) }.to_string_lossy();
+    CString::new(format!("hello, {name}")).unwrap().into_raw()
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn free_greeting(text: *mut c_char) {
+    drop(unsafe { CString::from_raw(text) });
+}
+</code></pre><span class="code-label">rust</span></figure>
+<p>the Zuri side reads the same file:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> source <span class="op">=</span> <span class="bi">file</span>(<span class="str">'shapes/src/lib.rs'</span>).<span class="fn">read</span>()
+<span class="kw">var</span> shapes <span class="op">=</span> ffi
+    .<span class="fn">open</span>(<span class="str">'shapes'</span>, {
+      paths<span class="op">:</span> [<span class="str">'shapes/target/release'</span>],
+    })
+    .<span class="fn">declare_rust</span>(source)
+
+<span class="kw">echo</span> shapes.<span class="fn">area</span>({ variant<span class="op">:</span> <span class="str">'Rect'</span>, w<span class="op">:</span> <span class="num">2</span>, h<span class="op">:</span> <span class="num">3</span> })
+<span class="kw">echo</span> shapes.<span class="fn">midpoint</span>({ x<span class="op">:</span> <span class="num">0</span>, y<span class="op">:</span> <span class="num">0</span> }, { x<span class="op">:</span> <span class="num">4</span>, y<span class="op">:</span> <span class="num">2</span> })
+
+<span class="kw">var</span> greeting <span class="op">=</span> shapes.<span class="fn">greet</span>(<span class="str">'zuri'</span>).<span class="fn">own</span>(shapes.<span class="prop">free_greeting</span>)
+<span class="kw">echo</span> greeting.<span class="fn">read_string</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">6
+{x: 2, y: 1}
+hello, zuri
+</code></pre><span class="code-label">Output</span></figure>
+<p>What is read, and what is skipped:</p>
+<ul>
+<li>functions in <code>extern &quot;C&quot;</code> blocks (and <code>unsafe extern &quot;C&quot;</code> ones), with
+<code>#[link_name]</code> for a different symbol;</li>
+<li><code>extern &quot;C&quot; fn</code> definitions marked <code>#[no_mangle]</code> or <code>#[export_name]</code>,
+with their bodies skipped; one with neither is refused, because it is
+exported under a mangled name nothing can look up;</li>
+<li><code>#[repr(C)]</code>, <code>#[repr(C, packed)]</code>, <code>#[repr(C, align(N))]</code> and
+<code>#[repr(transparent)]</code> structs, tuple structs and unions;</li>
+<li>enums with <code>#[repr(C)]</code> or an integer <code>#[repr]</code>, with and without
+fields;</li>
+<li><code>type</code> aliases, <code>const</code> items and statics;</li>
+<li><code>#[cfg(...)]</code>, evaluated for the platform the program is running on;</li>
+<li>everything else, from <code>use</code> lines to <code>impl</code> blocks, macros and private
+functions, is read past.</li>
+</ul>
+<p>A type may be used before it is declared, as Rust allows, and a struct
+without <code>#[repr(C)]</code> can only be used through a pointer, because Rust's
+own layout is unspecified. <a href="#rust-in-depth">Rust in Depth</a> covers how
+each Rust type crosses.</p>
+<p>C and Rust declarations go in the same set, and each sees the other's
+types, which suits a crate that ships a C header beside its source.</p>
+<h2 id="pointers-and-memory"><a class="anchor" href="#pointers-and-memory" aria-hidden="true" tabindex="-1"></a>Pointers and Memory</h2>
+<p>A <code>Pointer</code> is an address with, optionally, the type of what it points
+at. Memory comes from <code>ffi.alloc()</code>, zeroed and typed:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> numbers <span class="op">=</span> ffi.<span class="fn">alloc</span>(ffi.<span class="prop">int</span>, <span class="num">4</span>)
+numbers.<span class="fn">set</span>(<span class="num">0</span>, <span class="num">10</span>)
+numbers.<span class="fn">set</span>(<span class="num">3</span>, <span class="num">40</span>)
+
+<span class="kw">echo</span> numbers.<span class="fn">get</span>(<span class="num">0</span>)
+<span class="kw">echo</span> numbers.<span class="fn">to_list</span>(<span class="num">4</span>)
+<span class="kw">echo</span> numbers.<span class="fn">add</span>(<span class="num">3</span>).<span class="fn">get</span>()
+<span class="kw">echo</span> numbers.<span class="fn">size</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">10
+[10, 0, 0, 40]
+40
+16
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>get()</code> and <code>set()</code> read and write elements of the pointer's type, as C's
+<code>ptr[i]</code> does, and <code>add()</code> steps by elements, as C's <code>ptr + i</code> does.
+<code>read()</code> and <code>write()</code> take a type of their own and a byte offset, and work
+on any pointer:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> header <span class="op">=</span> ffi.<span class="fn">alloc_bytes</span>(<span class="num">16</span>)
+header.<span class="fn">write</span>(ffi.<span class="prop">uint32</span>, <span class="num">3405691582</span>)
+header.<span class="fn">write</span>(ffi.<span class="prop">double</span>, <span class="num">2.5</span>, <span class="num">8</span>)
+
+<span class="kw">echo</span> header.<span class="fn">read</span>(ffi.<span class="prop">uint32</span>)
+<span class="kw">echo</span> header.<span class="fn">read</span>(ffi.<span class="prop">double</span>, <span class="num">8</span>)
+<span class="kw">echo</span> header.<span class="fn">read</span>(ffi.<span class="prop">uint8</span>)
+<span class="kw">echo</span> header.<span class="fn">cast</span>(ffi.<span class="prop">uint16</span>).<span class="fn">get</span>(<span class="num">1</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">3405691582
+2.5
+190
+51966
+</code></pre><span class="code-label">Output</span></figure>
+<p>Memory is little-endian on every platform the module runs on, which the
+third line shows. <code>cast()</code> gives a pointer a type, or takes it away.</p>
+<h3 id="checked-access"><a class="anchor" href="#checked-access" aria-hidden="true" tabindex="-1"></a>Checked access</h3>
+<p>Memory the module allocated knows its extent, and every access through a
+pointer into it is checked against that extent before it happens:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> numbers <span class="op">=</span> ffi.<span class="fn">alloc</span>(ffi.<span class="prop">int</span>, <span class="num">4</span>)
+
+<span class="kw">catch</span> {
+  numbers.<span class="fn">get</span>(<span class="num">4</span>)
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">type</span>
+  <span class="kw">echo</span> e.<span class="prop">message</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">PointerError
+4 bytes at offset 16 fall outside the 16-byte block this pointer belongs to
+</code></pre><span class="code-label">Output</span></figure>
+<p>A write that fails to convert writes nothing, so a record is never left
+half updated. Freed memory refuses every access, and freeing it twice is
+an error rather than a double free.</p>
+<p>A pointer C handed back carries no extent, because C did not say how much
+memory is behind it. Only a null pointer is caught through one; how much
+is there is whatever the library's documentation says.</p>
+<h3 id="pointers-as-arguments"><a class="anchor" href="#pointers-as-arguments" aria-hidden="true" tabindex="-1"></a>Pointers as arguments</h3>
+<p>A pointer parameter accepts more than a <code>Pointer</code>, each for the duration
+of the call:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Passed</th>
+<th>Becomes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nil</code></td>
+<td>a null pointer</td>
+</tr>
+<tr>
+<td>a <code>Pointer</code></td>
+<td>its address</td>
+</tr>
+<tr>
+<td>a string</td>
+<td>a NUL-terminated copy, for a pointer to characters</td>
+</tr>
+<tr>
+<td>bytes</td>
+<td>the bytes' own storage, with nothing copied</td>
+</tr>
+<tr>
+<td>a list</td>
+<td>a temporary array of the target type, written back after the call</td>
+</tr>
+<tr>
+<td>a dictionary</td>
+<td>a temporary record, written back after the call</td>
+</tr>
+<tr>
+<td>a Zuri function</td>
+<td>a callback, for a function pointer</td>
+</tr>
+<tr>
+<td>a <code>Callback</code></td>
+<td>its code</td>
+</tr>
+<tr>
+<td>a foreign function</td>
+<td>its address</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>A list or dictionary is written back only when the pointer is not to a
+<code>const</code> type, so it works as an out-parameter:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> frexp <span class="op">=</span> ffi.<span class="fn">open</span>(ffi.<span class="prop">LIBM</span>).<span class="fn">function</span>(<span class="str">'frexp'</span>, ffi.<span class="prop">double</span>, [
+  ffi.<span class="prop">double</span>,
+  ffi.<span class="fn">pointer</span>(ffi.<span class="prop">int</span>),
+])
+
+<span class="kw">var</span> exponent <span class="op">=</span> [<span class="num">0</span>]
+<span class="kw">echo</span> <span class="fn">frexp</span>(<span class="num">48</span>, exponent)
+<span class="kw">echo</span> exponent[<span class="num">0</span>]
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">0.75
+6
+</code></pre><span class="code-label">Output</span></figure>
+<p>Bytes pass their own storage, so a C function that fills a buffer fills
+the bytes directly:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> memset <span class="op">=</span> ffi.<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>).<span class="fn">function</span>(<span class="str">'memset'</span>, ffi.<span class="prop">ptr</span>, [
+  ffi.<span class="prop">ptr</span>,
+  ffi.<span class="prop">int</span>,
+  ffi.<span class="prop">size_t</span>,
+])
+
+<span class="kw">var</span> buffer <span class="op">=</span> <span class="bi">bytes</span>(<span class="num">6</span>)
+<span class="fn">memset</span>(buffer, <span class="num">65</span>, <span class="num">4</span>)
+<span class="kw">echo</span> buffer
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">(41 41 41 41 00 00)
+</code></pre><span class="code-label">Output</span></figure>
+<p>A bytes value passed to a call must not be resized by a callback while
+the call is running; its storage is only guaranteed to stay where it is
+for as long as nothing changes its length.</p>
+<h3 id="other-allocations"><a class="anchor" href="#other-allocations" aria-hidden="true" tabindex="-1"></a>Other allocations</h3>
+<p><code>ffi.alloc_bytes(size, align)</code> allocates untyped memory. <code>ffi.malloc()</code>
+allocates from the C allocator, for memory that will be handed to C code
+which frees it with <code>free()</code>; it is never freed when the pointer is
+collected. <code>ffi.at(address, type)</code> makes a pointer from a known address.
+<code>copy_from()</code>, <code>fill()</code> and <code>compare()</code> are <code>memmove</code>, <code>memset</code> and
+<code>memcmp</code> over checked memory.</p>
+<h2 id="strings-and-text"><a class="anchor" href="#strings-and-text" aria-hidden="true" tabindex="-1"></a>Strings and Text</h2>
+<p>A string passed where a pointer to characters is expected becomes a
+NUL-terminated copy for the duration of the call, in the encoding the
+character type implies: UTF-8 for <code>char</code>, UTF-16 for <code>char16_t</code>, UTF-32
+for <code>char32_t</code>, and <code>wchar_t</code>'s own, which is UTF-16 on Windows and
+UTF-32 elsewhere.</p>
+<p><code>ffi.string</code> and <code>ffi.wstring</code> are pointer types that also convert back:
+a function declared to return one returns a Zuri string, and <code>nil</code> for a
+null pointer.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> libc <span class="op">=</span> ffi.<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>)
+<span class="kw">var</span> strstr <span class="op">=</span> libc.<span class="fn">function</span>(<span class="str">'strstr'</span>, ffi.<span class="prop">string</span>, [ffi.<span class="prop">string</span>, ffi.<span class="prop">string</span>])
+
+<span class="kw">echo</span> <span class="fn">strstr</span>(<span class="str">'needle in a haystack'</span>, <span class="str">'hay'</span>)
+<span class="kw">echo</span> <span class="fn">strstr</span>(<span class="str">'needle in a haystack'</span>, <span class="str">'pin'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">haystack
+nil
+</code></pre><span class="code-label">Output</span></figure>
+<p>Text that has to outlive a call, because it is stored in a struct or kept
+by the library, goes in memory of its own with <code>ffi.alloc_string()</code>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> text <span class="op">=</span> ffi.<span class="fn">alloc_string</span>(<span class="str">'naïve'</span>)
+
+<span class="kw">echo</span> text.<span class="fn">read_string</span>()
+<span class="kw">echo</span> text.<span class="fn">read_bytes</span>(<span class="num">6</span>)
+<span class="kw">echo</span> ffi.<span class="fn">alloc_string</span>(<span class="str">'naïve'</span>, <span class="str">'utf-16'</span>).<span class="fn">read_string</span>(<span class="lit">nil</span>, <span class="str">'utf-16'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">naïve
+(6e 61 c3 af 76 65)
+naïve
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>read_string()</code> reads up to the terminator, or exactly a given number of
+code units, in any of the four encodings, and raises <code>ValueError</code> for
+text that is not valid in its encoding. <code>write_string()</code> writes text and
+its terminator. When a read has no terminator inside a block of known
+size, it is refused rather than run past the end.</p>
+<h2 id="structs-unions-and-arrays"><a class="anchor" href="#structs-unions-and-arrays" aria-hidden="true" tabindex="-1"></a>Structs, Unions and Arrays</h2>
+<p>A record is built member by member, and laid out the way the platform's C
+compiler lays it out:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> <span class="type">Header</span> <span class="op">=</span> ffi
+    .<span class="fn">struct</span>(<span class="str">'Header'</span>)
+    .<span class="fn">add_field</span>(<span class="str">'tag'</span>, ffi.<span class="prop">uint8</span>)
+    .<span class="fn">add_field</span>(<span class="str">'length'</span>, ffi.<span class="prop">uint32</span>)
+    .<span class="fn">add_field</span>(<span class="str">'checksum'</span>, ffi.<span class="prop">uint64</span>)
+
+<span class="kw">echo</span> <span class="type">Header</span>.<span class="fn">size</span>()
+<span class="kw">echo</span> <span class="type">Header</span>.<span class="fn">offset_of</span>(<span class="str">'length'</span>)
+<span class="kw">echo</span> <span class="type">Header</span>.<span class="fn">offset_of</span>(<span class="str">'checksum'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">16
+4
+8
+</code></pre><span class="code-label">Output</span></figure>
+<p>It is sealed the first time anything needs its size, including passing a
+value of it, and cannot change after that. <code>set_packed()</code> packs it as
+<code>#pragma pack</code> does, <code>set_align()</code> raises its alignment, and <code>add_field()</code>
+takes a minimum alignment for one member, as <code>_Alignas</code> gives:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> <span class="type">Packed</span> <span class="op">=</span> ffi
+    .<span class="fn">struct</span>(<span class="str">'Packed'</span>)
+    .<span class="fn">add_field</span>(<span class="str">'tag'</span>, ffi.<span class="prop">uint8</span>)
+    .<span class="fn">add_field</span>(<span class="str">'length'</span>, ffi.<span class="prop">uint32</span>)
+    .<span class="fn">set_packed</span>()
+<span class="kw">var</span> <span class="type">Wide</span> <span class="op">=</span> ffi.<span class="fn">struct</span>(<span class="str">'Wide'</span>).<span class="fn">add_field</span>(<span class="str">'tag'</span>, ffi.<span class="prop">uint8</span>).<span class="fn">set_align</span>(<span class="num">64</span>)
+
+<span class="kw">echo</span> <span class="type">Packed</span>.<span class="fn">size</span>()
+<span class="kw">echo</span> <span class="type">Wide</span>.<span class="fn">size</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">5
+64
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="values"><a class="anchor" href="#values" aria-hidden="true" tabindex="-1"></a>Values</h3>
+<p>A record value is a dictionary of its members, going in and coming out. A
+member left out of a dictionary going in is zero. Nested records are
+nested dictionaries, and array members are lists, except that an array of
+<code>char</code> reads as the string in it and an array of other bytes reads as
+bytes:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> <span class="type">Item</span> <span class="op">=</span> ffi
+    .<span class="fn">struct</span>(<span class="str">'Item'</span>)
+    .<span class="fn">add_field</span>(<span class="str">'name'</span>, ffi.<span class="prop">char</span>.<span class="fn">array</span>(<span class="num">8</span>))
+    .<span class="fn">add_field</span>(<span class="str">'counts'</span>, ffi.<span class="prop">int</span>.<span class="fn">array</span>(<span class="num">3</span>))
+
+<span class="kw">var</span> item <span class="op">=</span> ffi.<span class="fn">alloc</span>(<span class="type">Item</span>)
+item.<span class="fn">set</span>(<span class="num">0</span>, {
+  name<span class="op">:</span> <span class="str">'widget'</span>,
+  counts<span class="op">:</span> [<span class="num">1</span>, <span class="num">2</span>],
+})
+
+<span class="kw">echo</span> item.<span class="fn">get</span>()
+<span class="kw">echo</span> item.<span class="fn">get_field</span>(<span class="str">'counts'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{name: widget, counts: [1, 2, 0]}
+[1, 2, 0]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Through a pointer, <code>get_field()</code> and <code>set_field()</code> read and write one
+member, as <code>ptr-&gt;name</code> does, and <code>field()</code> points at one, as <code>&amp;ptr-&gt;name</code>
+does. <code>fields()</code> lists the members with their offsets.</p>
+<h3 id="bitfields"><a class="anchor" href="#bitfields" aria-hidden="true" tabindex="-1"></a>Bitfields</h3>
+<p><code>add_bitfield()</code> adds a member of a given width. Bitfields follow the
+platform's rules for packing them, GCC's and Clang's on Linux and macOS
+and MSVC's on Windows, including a zero-width bitfield ending a storage
+unit:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> <span class="type">Flags</span> <span class="op">=</span> ffi
+    .<span class="fn">struct</span>(<span class="str">'Flags'</span>)
+    .<span class="fn">add_bitfield</span>(<span class="str">'ready'</span>, ffi.<span class="prop">uint</span>, <span class="num">1</span>)
+    .<span class="fn">add_bitfield</span>(<span class="str">'mode'</span>, ffi.<span class="prop">uint</span>, <span class="num">3</span>)
+    .<span class="fn">add_bitfield</span>(<span class="str">'delta'</span>, ffi.<span class="prop">int</span>, <span class="num">4</span>)
+
+<span class="kw">var</span> flags <span class="op">=</span> ffi.<span class="fn">alloc</span>(<span class="type">Flags</span>)
+flags.<span class="fn">set_field</span>(<span class="str">'mode'</span>, <span class="num">5</span>)
+flags.<span class="fn">set_field</span>(<span class="str">'delta'</span>, <span class="op">-</span><span class="num">3</span>)
+
+<span class="kw">echo</span> flags.<span class="fn">get</span>()
+<span class="kw">echo</span> <span class="type">Flags</span>.<span class="fn">fields</span>()[<span class="num">2</span>].<span class="prop">bit_offset</span>
+
+<span class="kw">catch</span> {
+  flags.<span class="fn">set_field</span>(<span class="str">'mode'</span>, <span class="num">8</span>)
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">message</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{ready: 0, mode: 5, delta: -3}
+4
+8 does not fit in the 3-bit field 'mode', which holds 0 to 7
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="unions"><a class="anchor" href="#unions" aria-hidden="true" tabindex="-1"></a>Unions</h3>
+<p>A union value going in is a dictionary holding one member, the one to
+store. Coming out, it holds every member, each read from the same bytes,
+because only the program knows which one is meaningful:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> <span class="type">Bits</span> <span class="op">=</span> ffi
+    .<span class="fn">union</span>(<span class="str">'Bits'</span>)
+    .<span class="fn">add_field</span>(<span class="str">'f'</span>, ffi.<span class="prop">float</span>)
+    .<span class="fn">add_field</span>(<span class="str">'u'</span>, ffi.<span class="prop">uint32</span>)
+<span class="kw">var</span> value <span class="op">=</span> ffi.<span class="fn">alloc</span>(<span class="type">Bits</span>)
+value.<span class="fn">set</span>(<span class="num">0</span>, { f<span class="op">:</span> <span class="num">1</span> })
+
+<span class="kw">echo</span> value.<span class="fn">get</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{f: 1, u: 1065353216}
+</code></pre><span class="code-label">Output</span></figure>
+<p>A union read back and passed in again is accepted as it is, because its
+members agree; members that disagree are a <code>TypeError</code>.</p>
+<h3 id="by-value"><a class="anchor" href="#by-value" aria-hidden="true" tabindex="-1"></a>By value</h3>
+<p>Records pass to and return from functions by value, whatever their shape.
+Which registers a record travels in depends on its size and on the types
+of its members, differently on every platform, and those rules are
+applied to the record's real layout, packed and over-aligned records and
+bitfields included:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> geometry <span class="op">=</span> ffi
+    .<span class="fn">open</span>(<span class="str">'geometry'</span>)
+    .<span class="fn">declare</span>(
+      <span class="str">'
+  typedef struct { double x, y; } point;
+  double distance(point a, point b);
+  point midpoint(const point *a, const point *b);
+  void scale_all(point *points, size_t n, double k);
+'</span>,
+    )
+
+<span class="kw">echo</span> geometry.<span class="fn">distance</span>({ x<span class="op">:</span> <span class="num">0</span>, y<span class="op">:</span> <span class="num">0</span> }, { x<span class="op">:</span> <span class="num">3</span>, y<span class="op">:</span> <span class="num">4</span> })
+<span class="kw">echo</span> geometry.<span class="fn">midpoint</span>({ x<span class="op">:</span> <span class="num">0</span>, y<span class="op">:</span> <span class="num">0</span> }, { x<span class="op">:</span> <span class="num">4</span>, y<span class="op">:</span> <span class="num">2</span> })
+
+<span class="kw">var</span> points <span class="op">=</span> [
+  { x<span class="op">:</span> <span class="num">1</span>, y<span class="op">:</span> <span class="num">1</span> },
+  { x<span class="op">:</span> <span class="num">2</span>, y<span class="op">:</span> <span class="num">3</span> },
+]
+geometry.<span class="fn">scale_all</span>(points, <span class="num">2</span>, <span class="num">10</span>)
+<span class="kw">echo</span> points
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">5
+{x: 2, y: 1}
+[{x: 10, y: 10}, {x: 20, y: 30}]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>midpoint</code> takes pointers to records, and the dictionaries went in as
+temporary records. <code>scale_all</code> takes a pointer to an array of them, and a
+list of dictionaries went in as a temporary array and was written back.</p>
+<h2 id="enums-and-constants"><a class="anchor" href="#enums-and-constants" aria-hidden="true" tabindex="-1"></a>Enums and Constants</h2>
+<p>An enum is an integer type with named constants. A value of one is a
+number, and anywhere one goes in, a constant's name may go instead:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> <span class="type">Level</span> <span class="op">=</span> ffi.<span class="fn">enum</span>(<span class="str">'Level'</span>).<span class="fn">add_constant</span>(<span class="str">'LOW'</span>, <span class="num">1</span>).<span class="fn">add_constant</span>(<span class="str">'HIGH'</span>, <span class="num">10</span>)
+
+<span class="kw">echo</span> <span class="type">Level</span>.<span class="fn">constants</span>()
+<span class="kw">echo</span> <span class="type">Level</span>.<span class="fn">value</span>(<span class="str">'HIGH'</span>)
+<span class="kw">echo</span> <span class="type">Level</span>.<span class="fn">size</span>()
+
+<span class="kw">var</span> level <span class="op">=</span> ffi.<span class="fn">alloc</span>(<span class="type">Level</span>)
+level.<span class="fn">set</span>(<span class="num">0</span>, <span class="str">'HIGH'</span>)
+<span class="kw">echo</span> level.<span class="fn">get</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{LOW: 1, HIGH: 10}
+10
+4
+10
+</code></pre><span class="code-label">Output</span></figure>
+<p>Declared enums come with their constants, and a declared enum is stored
+as <code>int</code> unless its values need more, or it says otherwise
+(<code>enum x : uint8_t</code>), or GCC's <code>packed</code> attribute asks for the smallest
+type. Every enum constant, <code>#define</code> constant and Rust <code>const</code> is a
+constant of the declarations, and a member of the namespace they bind to.</p>
+<h2 id="callbacks"><a class="anchor" href="#callbacks" aria-hidden="true" tabindex="-1"></a>Callbacks</h2>
+<p>A Zuri function passed where a function pointer is expected becomes a C
+function pointer for the length of that call:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> c <span class="op">=</span> ffi
+    .<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>)
+    .<span class="fn">declare</span>(
+      <span class="str">'
+  void qsort(void *base, size_t count, size_t size,
+             int (*compare)(const void *, const void *));
+'</span>,
+    )
+
+<span class="kw">var</span> numbers <span class="op">=</span> ffi.<span class="fn">alloc</span>(ffi.<span class="prop">int</span>, <span class="num">5</span>)
+<span class="kw">for</span> i, n <span class="kw">in</span> [<span class="num">42</span>, <span class="num">7</span>, <span class="num">19</span>, <span class="num">3</span>, <span class="num">25</span>] {
+  numbers.<span class="fn">set</span>(i, n)
+}
+
+c.<span class="fn">qsort</span>(numbers, <span class="num">5</span>, <span class="num">4</span>, <span class="meta">@</span>(a, b) {
+  <span class="kw">return</span> a.<span class="fn">cast</span>(ffi.<span class="prop">int</span>).<span class="fn">get</span>() <span class="op">-</span> b.<span class="fn">cast</span>(ffi.<span class="prop">int</span>).<span class="fn">get</span>()
+})
+
+<span class="kw">echo</span> numbers.<span class="fn">to_list</span>(<span class="num">5</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[3, 7, 19, 25, 42]
+</code></pre><span class="code-label">Output</span></figure>
+<p>The arguments arrive converted from their C types, pointers as
+<code>Pointer</code>s, records as dictionaries, and the return value is converted to
+the callback's return type, a small integer widened to a full register the
+way a C compiler returns one.</p>
+<h3 id="lasting-callbacks"><a class="anchor" href="#lasting-callbacks" aria-hidden="true" tabindex="-1"></a>Lasting callbacks</h3>
+<p>A library that keeps a function pointer and calls it later, a signal
+handler, an event callback, a logging hook, needs a callback that
+outlives the call that handed it over. <code>ffi.callback()</code> makes one:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> on_event <span class="op">=</span> ffi.<span class="fn">callback</span>(<span class="meta">@</span>(code) {
+  <span class="kw">echo</span> <span class="str">'event </span><span class="subst">${</span>code<span class="subst">}</span><span class="str">'</span>
+}, ffi.<span class="fn">function_type</span>(ffi.<span class="prop">void</span>, [ffi.<span class="prop">int</span>]))
+
+library.<span class="fn">set_handler</span>(on_event)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A lasting callback lives until <code>release()</code>. Nothing else frees it,
+because nothing can know when the library has finished with the pointer;
+a callback that is never released lives as long as the program. After
+<code>release()</code> it can no longer be passed, and C must not call it again.</p>
+<h3 id="errors-inside-a-callback"><a class="anchor" href="#errors-inside-a-callback" aria-hidden="true" tabindex="-1"></a>Errors inside a callback</h3>
+<p>A Zuri error cannot unwind through C frames; the C code in between
+expects to finish. So an error raised inside a callback is trapped, C gets
+a zero back (or the callback's <code>error_value</code>), and the error is raised
+again, as it was, the moment the C function returns:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> c <span class="op">=</span> ffi
+    .<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>)
+    .<span class="fn">declare</span>(
+      <span class="str">'
+  void qsort(void *base, size_t count, size_t size,
+             int (*compare)(const void *, const void *));
+'</span>,
+    )
+
+<span class="kw">var</span> numbers <span class="op">=</span> ffi.<span class="fn">alloc</span>(ffi.<span class="prop">int</span>, <span class="num">3</span>)
+
+<span class="kw">catch</span> {
+  c.<span class="fn">qsort</span>(numbers, <span class="num">3</span>, <span class="num">4</span>, <span class="meta">@</span>(a, b) {
+    <span class="kw">raise</span> <span class="type">ValueError</span>(<span class="str">'comparison refused'</span>)
+  })
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>e.<span class="prop">type</span><span class="subst">}</span><span class="str">: </span><span class="subst">${</span>e.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">ValueError: comparison refused
+</code></pre><span class="code-label">Output</span></figure>
+<p>The first error is the one raised; later calls into the callback during
+the same C call see the error value.</p>
+<h2 id="callbacks-and-threads"><a class="anchor" href="#callbacks-and-threads" aria-hidden="true" tabindex="-1"></a>Callbacks and Threads</h2>
+<p>C libraries run threads of their own, and those threads call callbacks.
+A Zuri isolate runs on one thread, so a call from any other thread is
+posted to the isolate that made the callback, and the calling thread
+waits until the isolate has run it. The isolate answers at its next
+safepoint, the same points where it checks for signals, or at once when
+it is inside a foreign call or in <code>ffi.serve()</code>.</p>
+<p>That covers a library whose threads call back while the program does
+something else. It does not cover a function that blocks the isolate
+until its own threads have finished calling back: the isolate would be
+waiting for the function, the function for its threads, and the threads
+for the isolate. <code>ffi.threaded()</code> gives such a function a variant that
+runs on a helper thread while the isolate keeps answering:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> c <span class="op">=</span> ffi
+    .<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>)
+    .<span class="fn">declare</span>(
+      <span class="str">'
+  typedef unsigned long pthread_t;
+  int pthread_create(pthread_t *thread, const void *attributes,
+                     void *(*start)(void *), void *argument);
+  int pthread_join(pthread_t thread, void **result);
+'</span>,
+    )
+
+<span class="kw">var</span> seen <span class="op">=</span> []
+<span class="kw">var</span> start <span class="op">=</span> ffi.<span class="fn">callback</span>(<span class="meta">@</span>(argument) {
+  seen.<span class="fn">append</span>(argument.<span class="fn">address</span>())
+  <span class="kw">return</span> <span class="lit">nil</span>
+}, ffi.<span class="fn">function_type</span>(ffi.<span class="prop">ptr</span>, [ffi.<span class="prop">ptr</span>]))
+
+<span class="kw">var</span> thread <span class="op">=</span> ffi.<span class="fn">alloc</span>(ffi.<span class="prop">ulong</span>)
+c.<span class="fn">pthread_create</span>(thread, <span class="lit">nil</span>, start, ffi.<span class="fn">at</span>(<span class="num">42</span>))
+
+<span class="kw">var</span> join <span class="op">=</span> ffi.<span class="fn">threaded</span>(c.<span class="prop">pthread_join</span>)
+<span class="fn">join</span>(thread.<span class="fn">get</span>(), <span class="lit">nil</span>)
+
+<span class="kw">echo</span> seen
+start.<span class="fn">release</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[42]
+</code></pre><span class="code-label">Output</span></figure>
+<p>The callback ran on the isolate's own thread, in the middle of the
+threaded call. A program with nothing else to do while it waits for calls
+from another thread can wait in <code>ffi.serve(timeout)</code>, which answers
+whatever is posted and returns how many it answered.</p>
+<h2 id="variadic-functions"><a class="anchor" href="#variadic-functions" aria-hidden="true" tabindex="-1"></a>Variadic Functions</h2>
+<p>A variadic function, <code>printf</code> and its family, takes its fixed parameters
+by type and any number after them. Each argument past the fixed ones
+travels as the type its value suggests:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Travels as</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a whole number that fits an <code>int</code></td>
+<td><code>int</code></td>
+</tr>
+<tr>
+<td>a larger whole number</td>
+<td><code>long long</code></td>
+</tr>
+<tr>
+<td>any other number</td>
+<td><code>double</code></td>
+</tr>
+<tr>
+<td>a bigint</td>
+<td><code>long long</code>, or <code>unsigned long long</code> when it needs to be</td>
+</tr>
+<tr>
+<td>a bool</td>
+<td><code>int</code></td>
+</tr>
+<tr>
+<td>a string</td>
+<td><code>const char *</code></td>
+</tr>
+<tr>
+<td>a pointer, bytes or <code>nil</code></td>
+<td><code>void *</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Anything else is given its type with <code>Type.of()</code>, and C's promotions still
+apply on top: a <code>float</code> travels as a <code>double</code>, and a type narrower than
+<code>int</code> as an <code>int</code>.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> snprintf <span class="op">=</span> ffi
+    .<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>)
+    .<span class="fn">function</span>(
+      <span class="str">'snprintf'</span>,
+      ffi.<span class="prop">int</span>,
+      [ffi.<span class="fn">pointer</span>(ffi.<span class="prop">char</span>), ffi.<span class="prop">size_t</span>, ffi.<span class="prop">string</span>],
+      { variadic<span class="op">:</span> <span class="lit">true</span> },
+    )
+
+<span class="kw">var</span> buffer <span class="op">=</span> ffi.<span class="fn">alloc</span>(ffi.<span class="prop">char</span>, <span class="num">64</span>)
+
+<span class="fn">snprintf</span>(buffer, <span class="num">64</span>, <span class="str">'%s has %d items at %.2f each'</span>, <span class="str">'cart'</span>, <span class="num">3</span>, <span class="num">4.5</span>)
+<span class="kw">echo</span> buffer.<span class="fn">read_string</span>()
+
+<span class="fn">snprintf</span>(
+  buffer,
+  <span class="num">64</span>,
+  <span class="str">'%.1f, %ld, %c'</span>,
+  ffi.<span class="prop">double</span>.<span class="fn">of</span>(<span class="num">2</span>),
+  ffi.<span class="prop">long</span>.<span class="fn">of</span>(<span class="op">-</span><span class="num">7</span>),
+  ffi.<span class="prop">char</span>.<span class="fn">of</span>(<span class="str">'z'</span>),
+)
+<span class="kw">echo</span> buffer.<span class="fn">read_string</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">cart has 3 items at 4.50 each
+2.0, -7, z
+</code></pre><span class="code-label">Output</span></figure>
+<p>The second call shows why <code>of()</code> exists: <code>%.1f</code> with a bare <code>2</code> would pass
+an <code>int</code>, and <code>printf</code> would read a double that was never there.</p>
+<h2 id="errors-and-errno"><a class="anchor" href="#errors-and-errno" aria-hidden="true" tabindex="-1"></a>Errors and errno</h2>
+<p>The module's own errors all descend from <code>FfiError</code>:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>Raised when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>FfiError</code></td>
+<td>a type cannot be used as asked: a record with no size passed by value, a signature libffi cannot call</td>
+</tr>
+<tr>
+<td><code>LoadError</code></td>
+<td>a library cannot be found or loaded, or a function is called after its library was closed</td>
+</tr>
+<tr>
+<td><code>SymbolError</code></td>
+<td>a library does not export a symbol</td>
+</tr>
+<tr>
+<td><code>DeclarationError</code></td>
+<td>C or Rust source cannot be read; <code>line</code> and <code>column</code> point at the problem</td>
+</tr>
+<tr>
+<td><code>PointerError</code></td>
+<td>memory would be accessed out of bounds, through null, after being freed, or freed twice</td>
+</tr>
+<tr>
+<td><code>CallbackError</code></td>
+<td>a released callback is used</td>
+</tr>
+<tr>
+<td><code>LinkError</code></td>
+<td>a static library cannot be linked</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>A value that does not convert to its C type raises the prelude's
+<code>TypeError</code> or <code>RangeError</code>, the same errors any function raises for a bad
+argument, and the message names the function, the argument and the type.</p>
+<h3 id="errno"><a class="anchor" href="#errno" aria-hidden="true" tabindex="-1"></a>errno</h3>
+<p>C reports failure through <code>errno</code>, which anything that runs afterwards may
+change. So <code>errno</code> is cleared immediately before every foreign call and
+read immediately after it, and <code>ffi.errno()</code> reports what the most recent
+call on this isolate left there:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> strtol <span class="op">=</span> ffi.<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>).<span class="fn">function</span>(<span class="str">'strtol'</span>, ffi.<span class="prop">long</span>, [
+  ffi.<span class="prop">string</span>,
+  ffi.<span class="prop">ptr</span>,
+  ffi.<span class="prop">int</span>,
+])
+
+<span class="kw">echo</span> <span class="fn">strtol</span>(<span class="str">'123'</span>, <span class="lit">nil</span>, <span class="num">10</span>)
+<span class="kw">echo</span> ffi.<span class="fn">errno</span>()
+
+<span class="fn">strtol</span>(<span class="str">'99999999999999999999999'</span>, <span class="lit">nil</span>, <span class="num">10</span>)
+<span class="kw">echo</span> ffi.<span class="fn">errno</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">123
+0
+34
+</code></pre><span class="code-label">Output</span></figure>
+<p>34 is <code>ERANGE</code>. On Windows, <code>ffi.last_error()</code> reports <code>GetLastError()</code> the
+same way; it is always zero elsewhere. <code>ffi.set_errno()</code> sets <code>errno</code> for
+the rare function that reads it.</p>
+<h2 id="ownership-and-lifetimes"><a class="anchor" href="#ownership-and-lifetimes" aria-hidden="true" tabindex="-1"></a>Ownership and Lifetimes</h2>
+<p>Three kinds of memory cross the boundary, and each has one owner.</p>
+<p><strong>Memory from <code>ffi.alloc()</code></strong> belongs to the program. It is freed when the
+last pointer into it is collected, or earlier with <code>free()</code>. Pointers made
+from it with <code>add()</code>, <code>offset()</code>, <code>cast()</code> and <code>field()</code> share it and keep
+it alive. The one rule is that a pointer must stay reachable for as long
+as C holds the address; memory C was given and Zuri forgot is memory freed
+under C's feet.</p>
+<p><strong>Memory from <code>ffi.malloc()</code></strong> belongs to whoever frees it. It is never
+freed on collection, because the usual reason to allocate it is to hand
+it to C code that frees it with <code>free()</code>. <code>free()</code> releases it otherwise.</p>
+<p><strong>Memory C allocated</strong> belongs to C until the program takes it over with
+<code>own()</code>, naming the function that releases it, or with no function for
+memory the C allocator's <code>free()</code> releases:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+
+<span class="kw">var</span> c <span class="op">=</span> ffi
+    .<span class="fn">open</span>(ffi.<span class="prop">LIBC</span>)
+    .<span class="fn">declare</span>(
+      <span class="str">'
+  char *strdup(const char *text);
+  void free(void *pointer);
+'</span>,
+    )
+
+<span class="kw">var</span> copy <span class="op">=</span> c.<span class="fn">strdup</span>(<span class="str">'owned by Zuri now'</span>).<span class="fn">own</span>(c.<span class="prop">free</span>)
+<span class="kw">echo</span> copy.<span class="fn">read_string</span>()
+<span class="kw">echo</span> copy.<span class="fn">is_owned</span>()
+
+copy.<span class="fn">free</span>()
+<span class="kw">echo</span> copy.<span class="fn">is_freed</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">owned by Zuri now
+true
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p>An owned pointer is released when it is collected, or with <code>free()</code>; every
+pointer derived from it refuses access afterwards. A destructor is any
+foreign function of one pointer: <code>sqlite3_close</code>, <code>png_destroy</code>,
+<code>CString::from_raw</code> wrapped in an <code>extern &quot;C&quot;</code> function. Only a pointer to
+the start of an allocation can free it.</p>
+<p>The collector runs a destructor in the middle of its own work, where no
+Zuri code can run, so a destructor that calls a callback during a
+collection gets zero back, or the callback's <code>error_value</code>, every time. <code>free()</code> runs the
+destructor from the program, where callbacks work as they do anywhere
+else.</p>
+<h2 id="static-libraries"><a class="anchor" href="#static-libraries" aria-hidden="true" tabindex="-1"></a>Static Libraries</h2>
+<p>A static library is object code waiting for a linker; nothing can load it
+at run time as it stands. <code>ffi.link()</code> hands it to the platform's linker,
+which links every object in it into a shared library, and loads that:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> geometry <span class="op">=</span> ffi.<span class="fn">link</span>(<span class="str">'build/libgeometry.a'</span>, {
+  libraries<span class="op">:</span> [<span class="str">'m'</span>],
+})
+<span class="kw">var</span> rust <span class="op">=</span> ffi.<span class="fn">link</span>(<span class="str">'shapes/target/release/libshapes.a'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The linker is the C compiler, <code>cc</code> or whatever <code>$CC</code> names, on Linux and
+macOS, and MSVC's <code>link.exe</code> on Windows, found through the Visual Studio
+installation. The result is cached under a name derived from the archives'
+contents and the options, in <code>ffi.default_link_cache()</code> or the <code>cache</code>
+option's directory, so the linker runs once for a given input and every
+later program start loads the cached library.</p>
+<p>A Rust <code>staticlib</code> carries the Rust standard library with it, which in
+turn needs a handful of system libraries. An archive holding Rust code is
+recognised and linked against them without being asked.</p>
+<p>On Windows, a static library's functions are not marked for export, so
+the linked DLL exports every symbol the archives define with an
+unmangled name, or exactly the ones listed in the <code>exports</code> option.</p>
+<p><code>libraries</code>, <code>search_paths</code> and <code>flags</code> pass further libraries, their
+directories and raw arguments to the linker, and <code>linker</code> replaces it.
+A failure raises <code>LinkError</code> carrying the linker's own output.</p>
+<h2 id="isolates"><a class="anchor" href="#isolates" aria-hidden="true" tabindex="-1"></a>Isolates</h2>
+<p>Types, pointers, libraries, foreign functions, callbacks and declarations
+all cross to another isolate, and none of them is moved: both sides keep a
+working handle on the same thing. A type is a description, a library a
+handle the loader shares across threads, and a pointer an address, so
+memory one isolate writes, another reads:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> ffi
+<span class="kw">import</span> isolate
+
+<span class="kw">def</span> <span class="def">fill</span>(memory, value) {
+  memory.<span class="fn">set</span>(<span class="num">0</span>, value)
+  <span class="kw">return</span> memory.<span class="fn">get</span>(<span class="num">0</span>)
+}
+
+<span class="kw">var</span> shared <span class="op">=</span> ffi.<span class="fn">alloc</span>(ffi.<span class="prop">int</span>, <span class="num">1</span>)
+<span class="kw">echo</span> isolate.<span class="fn">spawn</span>(fill, shared, <span class="num">99</span>).<span class="fn">join</span>()
+<span class="kw">echo</span> shared.<span class="fn">get</span>(<span class="num">0</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">99
+99
+</code></pre><span class="code-label">Output</span></figure>
+<p>Whatever the memory holds is shared without any synchronisation, as it
+is between C threads. A callback belongs to the isolate that made it:
+passed elsewhere, its calls still run on that isolate.</p>
+<h2 id="rust-in-depth"><a class="anchor" href="#rust-in-depth" aria-hidden="true" tabindex="-1"></a>Rust in Depth</h2>
+<p>Every Rust type that has a defined C ABI crosses, and the rest are refused
+with the reason.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Rust</th>
+<th>Crosses as</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>i8</code> ... <code>u128</code>, <code>isize</code>, <code>usize</code></td>
+<td>integers, 128-bit ones by value included</td>
+</tr>
+<tr>
+<td><code>f32</code>, <code>f64</code></td>
+<td>numbers</td>
+</tr>
+<tr>
+<td><code>bool</code></td>
+<td>a bool</td>
+</tr>
+<tr>
+<td><code>char</code></td>
+<td>a one-character string; checked to be a Unicode scalar value</td>
+</tr>
+<tr>
+<td><code>*const T</code>, <code>*mut T</code></td>
+<td>a <code>Pointer</code>, <code>nil</code> for null</td>
+</tr>
+<tr>
+<td><code>&amp;T</code>, <code>&amp;mut T</code>, <code>NonNull&lt;T&gt;</code>, <code>Box&lt;T&gt;</code></td>
+<td>a <code>Pointer</code>; <code>nil</code> is refused going in</td>
+</tr>
+<tr>
+<td><code>Option&lt;&amp;T&gt;</code>, <code>Option&lt;NonNull&lt;T&gt;&gt;</code>, <code>Option&lt;Box&lt;T&gt;&gt;</code></td>
+<td>a <code>Pointer</code> or <code>nil</code></td>
+</tr>
+<tr>
+<td><code>extern &quot;C&quot; fn(...)</code></td>
+<td>a function pointer: a Zuri function or a <code>Callback</code> in, a callable out</td>
+</tr>
+<tr>
+<td><code>Option&lt;extern &quot;C&quot; fn(...)&gt;</code></td>
+<td>the same, or <code>nil</code></td>
+</tr>
+<tr>
+<td><code>NonZeroU32</code> and the other <code>NonZero</code> types</td>
+<td>a number; zero is refused</td>
+</tr>
+<tr>
+<td><code>Option&lt;NonZeroU32&gt;</code></td>
+<td>a number, or <code>nil</code> for <code>None</code></td>
+</tr>
+<tr>
+<td><code>[T; N]</code></td>
+<td>a list</td>
+</tr>
+<tr>
+<td><code>#[repr(C)]</code> struct</td>
+<td>a dictionary</td>
+</tr>
+<tr>
+<td><code>#[repr(transparent)]</code> struct</td>
+<td>its field</td>
+</tr>
+<tr>
+<td><code>#[repr(C)]</code> or <code>#[repr(u8)]</code> enum without fields</td>
+<td>a number, or a variant name going in</td>
+</tr>
+<tr>
+<td><code>#[repr(C)]</code>, <code>#[repr(C, u8)]</code> or <code>#[repr(u8)]</code> enum with fields</td>
+<td>a dictionary with a <code>variant</code> key</td>
+</tr>
+<tr>
+<td><code>MaybeUninit&lt;T&gt;</code>, <code>ManuallyDrop&lt;T&gt;</code>, <code>Cell&lt;T&gt;</code></td>
+<td>as <code>T</code></td>
+</tr>
+<tr>
+<td><code>PhantomData&lt;T&gt;</code></td>
+<td>nothing; it takes no space</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>An enum with fields is laid out by the rules those representations
+define. A value names its variant, and its fields are the rest of the
+dictionary; a tuple variant's fields are <code>'0'</code>, <code>'1'</code> and so on, and a
+variant without fields may be passed as just its name:</p>
+<figure class="code"><pre><code class="language-zuri">shapes.<span class="fn">area</span>({ variant<span class="op">:</span> <span class="str">'Circle'</span>, radius<span class="op">:</span> <span class="num">2</span> })
+shapes.<span class="fn">area</span>({ variant<span class="op">:</span> <span class="str">'Rect'</span>, w<span class="op">:</span> <span class="num">2</span>, h<span class="op">:</span> <span class="num">3</span> })
+tokens.<span class="fn">value</span>({ variant<span class="op">:</span> <span class="str">'Number'</span>, <span class="str">'0'</span><span class="op">:</span> <span class="num">42</span> })
+tokens.<span class="fn">value</span>(<span class="str">'Plus'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A slice crosses as the pointer and the length Rust's own FFI convention
+pairs it into; <code>ffi.slice(type)</code> builds that <code>#[repr(C)]</code> struct:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> <span class="type">Slice</span> <span class="op">=</span> ffi.<span class="fn">slice</span>(ffi.<span class="prop">i32</span>)
+<span class="kw">var</span> values <span class="op">=</span> ffi.<span class="fn">alloc</span>(ffi.<span class="prop">i32</span>, <span class="num">3</span>)
+lib.<span class="fn">sum_slice</span>({ ptr<span class="op">:</span> values, len<span class="op">:</span> <span class="num">3</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Refused, each with the reason: <code>&amp;str</code>, <code>&amp;[T]</code>, <code>String</code>, <code>Vec</code>, and every
+other type without a stable layout; trait objects; tuples; generic types
+and functions; <code>Option</code> of a type without a niche; a function without
+<code>#[no_mangle]</code> or <code>#[export_name]</code>; and the <code>extern &quot;Rust&quot;</code> ABI.</p>
+<p>A panic in a Rust library will end the process if it escapes the function
+called from Zuri. A library that catches its panics at its own boundary,
+or keeps them on threads of its own, returns normally. One that lets a
+panic escape ends the process, even from an isolate. An <code>extern &quot;C&quot;</code>
+function aborts at once. An <code>extern &quot;C-unwind&quot;</code> function unwinds into
+Zuri, which cannot catch a panic from another copy of Rust's runtime and
+aborts. A Rust library built with <code>panic = &quot;abort&quot;</code> ends the process at
+any panic. This is the one panic that does not stay inside its isolate.</p>
+<h2 id="platform-differences"><a class="anchor" href="#platform-differences" aria-hidden="true" tabindex="-1"></a>Platform Differences</h2>
+<p>The module runs on 64-bit little-endian platforms, x86-64 and Arm, on
+Linux, macOS and Windows, and follows each one's C compiler:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Linux x86-64</th>
+<th>Linux Arm</th>
+<th>macOS x86-64</th>
+<th>macOS Arm</th>
+<th>Windows x86-64</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>long</code></td>
+<td>8</td>
+<td>8</td>
+<td>8</td>
+<td>8</td>
+<td>4</td>
+</tr>
+<tr>
+<td><code>char</code></td>
+<td>signed</td>
+<td>unsigned</td>
+<td>signed</td>
+<td>signed</td>
+<td>signed</td>
+</tr>
+<tr>
+<td><code>wchar_t</code></td>
+<td>4, signed</td>
+<td>4, unsigned</td>
+<td>4, signed</td>
+<td>4, signed</td>
+<td>2, unsigned</td>
+</tr>
+<tr>
+<td><code>long double</code></td>
+<td>80-bit</td>
+<td>128-bit</td>
+<td>80-bit</td>
+<td>64-bit</td>
+<td>64-bit</td>
+</tr>
+<tr>
+<td><code>_Complex</code> by value</td>
+<td>yes</td>
+<td>yes</td>
+<td>yes</td>
+<td>yes</td>
+<td>no</td>
+</tr>
+<tr>
+<td>enum past <code>int</code></td>
+<td>wider type</td>
+<td>wider type</td>
+<td>wider type</td>
+<td>wider type</td>
+<td><code>int</code>, truncated</td>
+</tr>
+<tr>
+<td>bitfield rules</td>
+<td>GCC</td>
+<td>GCC</td>
+<td>Clang</td>
+<td>Clang</td>
+<td>MSVC</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><code>ffi.platform()</code> reports these for the running platform. A program that
+passes records between platforms through files or sockets gets the same
+layouts the C compiler on each one produces, which is what the C code
+there expects.</p>
+<p>Calling conventions follow the platform too: System V on Linux and macOS
+x86-64, AAPCS64 on Arm, with Apple's variations on it, and the Microsoft
+x64 convention on Windows. On x86-64, a function type or <code>Library.function()</code>
+can ask for <code>abi: 'win64'</code>, and on Unix <code>abi: 'sysv64'</code>, for a function
+compiled for the other convention; declarations read <code>ms_abi</code> and
+<code>sysv_abi</code> attributes and Rust's <code>extern &quot;win64&quot;</code> and <code>extern &quot;sysv64&quot;</code>.</p>
+<p>128-bit integers cross by value under every one of them, in both
+directions. The Microsoft x64 convention passes one by reference and
+returns it in a vector register, as rustc, Clang and GCC compile it, so a
+callback returning <code>i128</code> works there as it does everywhere else.</p>
+<h2 id="what-is-checked"><a class="anchor" href="#what-is-checked" aria-hidden="true" tabindex="-1"></a>What Is Checked</h2>
+<p>A foreign call runs code the module cannot see into, so the guarantees
+stop where C begins. Inside them:</p>
+<ul>
+<li>every value is converted to its declared type, with integers checked
+against their range and every other kind against its type;</li>
+<li>memory the module allocated is bounds-checked and refuses use after
+<code>free()</code>; freeing twice is an error;</li>
+<li>a null pointer is caught before it is read or written through;</li>
+<li>a failed write changes nothing;</li>
+<li>a Zuri error inside a callback never unwinds through C, and a Rust panic
+inside the module never reaches C;</li>
+<li>a callback called from any thread runs on its own isolate.</li>
+</ul>
+<p>Beyond them, what C does is C's. A description that disagrees with the
+library, a pointer read past what the library says is there, a callback C
+calls after it was released, bytes resized by a callback while C writes to
+them: each of these is undefined behaviour in C, and it stays so here.
+Reading declarations from the library's own header or crate, rather than
+writing them by hand, is the surest way to keep the first of these away.</p>
+<h2 id="what-the-module-refuses"><a class="anchor" href="#what-the-module-refuses" aria-hidden="true" tabindex="-1"></a>What the Module Refuses</h2>
+<p><strong>It does not run the C preprocessor in full.</strong> Macros that define values
+and conditional blocks are evaluated; including other files and expanding
+function-like macros are not, and are refused where they appear.</p>
+<p><strong>It does not compile C.</strong> Static libraries are linked by the platform's
+own linker, which needs a C toolchain on the machine that links them.</p>
+<p><strong>It does not guess ownership.</strong> A pointer C returns is not freed until
+the program says how, with <code>own()</code>.</p>
+<p><strong>It does not free a callback on its own.</strong> A callback lives until
+<code>release()</code>, because only the program knows when the library is done
+with it.</p>
+<p><strong>It does not unwind through foreign frames.</strong> Errors are trapped and
+raised again once C has returned. A panic in a callback waits the same way,
+then carries on and ends its isolate. A panic that escapes a Rust library
+ends the process, as <a href="#rust-in-depth">Rust in Depth</a> describes.</p>
+<h2 id="module-reference"><a class="anchor" href="#module-reference" aria-hidden="true" tabindex="-1"></a>Module Reference</h2>
+<p>The standard library reference documents every class and method. The
+shape of the module:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ffi.open(name, options)</code></td>
+<td>loads a library, or the process</td>
+</tr>
+<tr>
+<td><code>ffi.find(name, paths)</code></td>
+<td>where a library would load from</td>
+</tr>
+<tr>
+<td><code>ffi.link(archives, options)</code></td>
+<td>links static libraries and loads the result</td>
+</tr>
+<tr>
+<td><code>ffi.declare(source)</code>, <code>ffi.declare_rust(source)</code>, <code>ffi.declarations()</code></td>
+<td>sets of declarations</td>
+</tr>
+<tr>
+<td><code>ffi.struct(name)</code>, <code>ffi.union(name)</code>, <code>ffi.enum(name, type)</code></td>
+<td>records and enums, built by hand</td>
+</tr>
+<tr>
+<td><code>ffi.pointer(type, options)</code>, <code>ffi.array(type, length)</code>, <code>ffi.function_type(returns, params, options)</code>, <code>ffi.slice(type)</code>, <code>ffi.type(spelling)</code></td>
+<td>other types</td>
+</tr>
+<tr>
+<td><code>ffi.alloc(type, count)</code>, <code>ffi.alloc_bytes(size)</code>, <code>ffi.malloc(size)</code>, <code>ffi.alloc_string(text)</code>, <code>ffi.at(address, type)</code></td>
+<td>memory</td>
+</tr>
+<tr>
+<td><code>ffi.function(pointer, type)</code>, <code>ffi.threaded(function)</code>, <code>ffi.describe(function)</code>, <code>ffi.is_foreign(value)</code></td>
+<td>foreign functions</td>
+</tr>
+<tr>
+<td><code>ffi.callback(function, type, options)</code>, <code>ffi.serve(timeout)</code></td>
+<td>callbacks</td>
+</tr>
+<tr>
+<td><code>ffi.errno()</code>, <code>ffi.set_errno(n)</code>, <code>ffi.last_error()</code></td>
+<td>error codes</td>
+</tr>
+<tr>
+<td><code>ffi.platform()</code>, <code>ffi.default_link_cache()</code></td>
+<td>facts about the platform</td>
+</tr>
+<tr>
+<td><code>ffi.LIBC</code>, <code>ffi.LIBM</code></td>
+<td>the C runtime and maths libraries</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>On a <code>Library</code>: <code>function</code>, <code>variable</code>, <code>symbol</code>, <code>has</code>, <code>declare</code>,
+<code>declare_rust</code>, <code>bind</code>, <code>path</code>, <code>close</code>, <code>is_closed</code>.</p>
+<p>On a <code>Pointer</code>: <code>get</code>, <code>set</code>, <code>read</code>, <code>write</code>, <code>get_field</code>, <code>set_field</code>,
+<code>field</code>, <code>read_string</code>, <code>write_string</code>, <code>read_bytes</code>, <code>write_bytes</code>,
+<code>to_list</code>, <code>add</code>, <code>offset</code>, <code>cast</code>, <code>copy_from</code>, <code>fill</code>, <code>compare</code>,
+<code>own</code>, <code>free</code>, <code>is_owned</code>, <code>is_freed</code>, <code>address</code>, <code>is_null</code>, <code>type</code>,
+<code>size</code>, <code>equals</code>.</p>
+<p>On a <code>Type</code>: <code>name</code>, <code>kind</code>, <code>size</code>, <code>align</code>, <code>is_const</code>, <code>target</code>,
+<code>length</code>, <code>signature</code>, <code>pointer</code>, <code>array</code>, <code>as_const</code>, <code>of</code>, <code>equals</code>; on
+a <code>StructType</code> or <code>UnionType</code> also <code>add_field</code>, <code>add_bitfield</code>,
+<code>set_packed</code>, <code>set_align</code>, <code>fields</code>, <code>offset_of</code>, <code>has_field</code>, <code>variants</code>;
+on an <code>EnumType</code>, <code>add_constant</code>, <code>constants</code>, <code>value</code>.</p>
+<p>On a <code>Declarations</code>: <code>declare</code>, <code>declare_rust</code>, <code>include</code>, <code>type</code>,
+<code>constant</code>, <code>constants</code>, <code>types</code>, <code>functions</code>, <code>variables</code>, <code>bind</code>.</p>
+<p>On a <code>Callback</code>: <code>pointer</code>, <code>type</code>, <code>release</code>, <code>is_released</code>.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch26-00-ffi.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch25-08-testing.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">25.8</span>Testing the Board</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch27-00-packages.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">27</span>Packages and Nyssa</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#following-along">Following Along</a>
+        </li><li class="level-2">
+          <a href="#introduction">Introduction</a>
+        </li><li class="level-2">
+          <a href="#loading-a-library">Loading a Library</a>
+        </li><li class="level-3">
+          <a href="#symbols">Symbols</a>
+        </li><li class="level-3">
+          <a href="#closing">Closing</a>
+        </li><li class="level-2">
+          <a href="#calling-a-function">Calling a Function</a>
+        </li><li class="level-2">
+          <a href="#types">Types</a>
+        </li><li class="level-3">
+          <a href="#building-types">Building types</a>
+        </li><li class="level-2">
+          <a href="#numbers-at-the-boundary">Numbers at the Boundary</a>
+        </li><li class="level-2">
+          <a href="#declaring-from-c">Declaring from C</a>
+        </li><li class="level-3">
+          <a href="#what-is-read">What is read</a>
+        </li><li class="level-3">
+          <a href="#the-preprocessor">The preprocessor</a>
+        </li><li class="level-3">
+          <a href="#text-returns">Text returns</a>
+        </li><li class="level-3">
+          <a href="#growing-a-set-and-sharing-one">Growing a set, and sharing one</a>
+        </li><li class="level-2">
+          <a href="#declaring-from-rust">Declaring from Rust</a>
+        </li><li class="level-2">
+          <a href="#pointers-and-memory">Pointers and Memory</a>
+        </li><li class="level-3">
+          <a href="#checked-access">Checked access</a>
+        </li><li class="level-3">
+          <a href="#pointers-as-arguments">Pointers as arguments</a>
+        </li><li class="level-3">
+          <a href="#other-allocations">Other allocations</a>
+        </li><li class="level-2">
+          <a href="#strings-and-text">Strings and Text</a>
+        </li><li class="level-2">
+          <a href="#structs-unions-and-arrays">Structs, Unions and Arrays</a>
+        </li><li class="level-3">
+          <a href="#values">Values</a>
+        </li><li class="level-3">
+          <a href="#bitfields">Bitfields</a>
+        </li><li class="level-3">
+          <a href="#unions">Unions</a>
+        </li><li class="level-3">
+          <a href="#by-value">By value</a>
+        </li><li class="level-2">
+          <a href="#enums-and-constants">Enums and Constants</a>
+        </li><li class="level-2">
+          <a href="#callbacks">Callbacks</a>
+        </li><li class="level-3">
+          <a href="#lasting-callbacks">Lasting callbacks</a>
+        </li><li class="level-3">
+          <a href="#errors-inside-a-callback">Errors inside a callback</a>
+        </li><li class="level-2">
+          <a href="#callbacks-and-threads">Callbacks and Threads</a>
+        </li><li class="level-2">
+          <a href="#variadic-functions">Variadic Functions</a>
+        </li><li class="level-2">
+          <a href="#errors-and-errno">Errors and errno</a>
+        </li><li class="level-3">
+          <a href="#errno">errno</a>
+        </li><li class="level-2">
+          <a href="#ownership-and-lifetimes">Ownership and Lifetimes</a>
+        </li><li class="level-2">
+          <a href="#static-libraries">Static Libraries</a>
+        </li><li class="level-2">
+          <a href="#isolates">Isolates</a>
+        </li><li class="level-2">
+          <a href="#rust-in-depth">Rust in Depth</a>
+        </li><li class="level-2">
+          <a href="#platform-differences">Platform Differences</a>
+        </li><li class="level-2">
+          <a href="#what-is-checked">What Is Checked</a>
+        </li><li class="level-2">
+          <a href="#what-the-module-refuses">What the Module Refuses</a>
+        </li><li class="level-2">
+          <a href="#module-reference">Module Reference</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

@@ -1,0 +1,703 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Files and the Filesystem · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch09-00-files.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="teal" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html" aria-current="page"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Chapter 9 · Working with the World</p>
+        <div class="content"><h1 id="files-and-the-filesystem">Files and the Filesystem</h1>
+<p>Two things do the work here. The built-in <code>file()</code> function gives you a
+handle to one file. The <code>os</code> module covers everything else: directories,
+paths, globs, temporary files and the environment.</p>
+<h2 id="opening-a-file"><a class="anchor" href="#opening-a-file" aria-hidden="true" tabindex="-1"></a>Opening a File</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> handle <span class="op">=</span> <span class="bi">file</span>(<span class="str">'notes.txt'</span>)
+<span class="kw">var</span> writer <span class="op">=</span> <span class="bi">file</span>(<span class="str">'notes.txt'</span>, <span class="str">'w'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>file(path)</code> defaults to read mode. The second argument is the mode:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>r</code></td>
+<td>read; the file must exist</td>
+</tr>
+<tr>
+<td><code>w</code></td>
+<td>write; creates the file, truncates an existing one</td>
+</tr>
+<tr>
+<td><code>a</code></td>
+<td>append; writes always go to the end, creates the file</td>
+</tr>
+<tr>
+<td><code>r+</code></td>
+<td>read and update; the file must exist</td>
+</tr>
+<tr>
+<td><code>w+</code></td>
+<td>read and update; creates the file, does <strong>not</strong> truncate</td>
+</tr>
+<tr>
+<td><code>a+</code></td>
+<td>read and append; creates the file</td>
+</tr>
+<tr>
+<td><code>x</code></td>
+<td>write; creates the file, fails if the path already exists</td>
+</tr>
+<tr>
+<td><code>x+</code></td>
+<td>read and write; creates the file, fails if the path already exists</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Append <code>b</code> to any of them for binary mode: <code>'rb'</code>, <code>'wb'</code>, <code>'ab'</code>.</p>
+<p><code>x</code> is the one to reach for when two programs might create the same file.
+The existence check and the creation happen in a single step, so exactly
+one of them succeeds and every other one fails, which is what a lock file
+needs.</p>
+<p>Creating a handle does not touch the disk. Nothing happens until you read,
+write or call <code>open()</code>.</p>
+<h2 id="reading-a-whole-file"><a class="anchor" href="#reading-a-whole-file" aria-hidden="true" tabindex="-1"></a>Reading a Whole File</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="bi">file</span>(<span class="str">'notes.txt'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'It works!'</span>)
+
+<span class="kw">echo</span> <span class="bi">file</span>(<span class="str">'notes.txt'</span>).<span class="fn">read</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">It works!
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>read()</code> with no argument opens the file, reads all of it, and closes it
+again. That is the one-liner for &quot;give me this file's contents&quot;, and it is
+what you want most of the time.</p>
+<p>In text mode you get a string, decoded strictly as UTF-8. In binary mode
+you get <code>bytes</code>.</p>
+<h3 id="reading-in-chunks"><a class="anchor" href="#reading-in-chunks" aria-hidden="true" tabindex="-1"></a>Reading in Chunks</h3>
+<p><code>read(length)</code> reads at most that many bytes and leaves the handle open, so
+you can call it again. This is how you process a file too large to hold in
+memory at once:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="bi">file</span>(<span class="str">'notes.txt'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'alpha\nbeta\ngamma\n'</span>)
+
+<span class="kw">var</span> handle <span class="op">=</span> <span class="bi">file</span>(<span class="str">'notes.txt'</span>)
+handle.<span class="fn">open</span>()
+
+<span class="kw">var</span> chunks <span class="op">=</span> <span class="num">0</span>
+
+<span class="kw">while</span> <span class="lit">true</span> {
+  <span class="kw">var</span> chunk <span class="op">=</span> handle.<span class="fn">read</span>(<span class="num">6</span>)
+
+  <span class="kw">if</span> chunk.<span class="fn">is_empty</span>() {
+    <span class="kw">break</span>
+  }
+
+  chunks<span class="op">++</span>
+}
+
+handle.<span class="fn">close</span>()
+
+<span class="kw">echo</span> chunks
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">3
+</code></pre><span class="code-label">Output</span></figure>
+<p>Six bytes at a time is a demonstration; in real code the chunk is tens of
+kilobytes. The shape is what matters: open once, read until you get an
+empty result, close once.</p>
+<p>Note that chunks fall wherever the byte count lands, not on line
+boundaries. A chunked reader that needs whole lines has to keep the tail of
+each chunk and join it to the front of the next.</p>
+<h3 id="reading-lines"><a class="anchor" href="#reading-lines" aria-hidden="true" tabindex="-1"></a>Reading Lines</h3>
+<p>For text you want line by line, the simplest form reads the file and splits
+it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="bi">file</span>(<span class="str">'notes.txt'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'alpha\nbeta\ngamma\n'</span>)
+
+<span class="kw">for</span> line <span class="kw">in</span> <span class="bi">file</span>(<span class="str">'notes.txt'</span>).<span class="fn">read</span>().<span class="fn">lines</span>() {
+  <span class="kw">echo</span> <span class="str">'[</span><span class="subst">${</span>line<span class="subst">}</span><span class="str">]'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[alpha]
+[beta]
+[gamma]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>lines()</code> handles both <code>\n</code> and <code>\r\n</code>, and drops the trailing empty
+piece a final newline would otherwise produce.</p>
+<h2 id="writing"><a class="anchor" href="#writing" aria-hidden="true" tabindex="-1"></a>Writing</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="bi">file</span>(<span class="str">'notes.txt'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'It works!'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Like <code>read()</code>, <code>write()</code> opens the handle if it is closed, writes, flushes,
+and closes it again. One call, one complete file.</p>
+<p>That auto-close has a consequence worth being precise about. <strong>Two
+consecutive <code>write()</code> calls on a closed handle in <code>w</code> mode each truncate
+the file, so only the last one survives.</strong> When you are writing more than
+once, open the handle yourself:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">var</span> handle <span class="op">=</span> <span class="bi">file</span>(<span class="str">'notes.txt'</span>, <span class="str">'w'</span>)
+handle.<span class="fn">open</span>()
+
+handle.<span class="fn">write</span>(<span class="str">'first line\n'</span>)
+handle.<span class="fn">write</span>(<span class="str">'second line\n'</span>)
+
+handle.<span class="fn">close</span>()
+
+<span class="kw">echo</span> <span class="bi">file</span>(<span class="str">'notes.txt'</span>).<span class="fn">read</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">first line
+second line
+
+</code></pre><span class="code-label">Output</span></figure>
+<p>The explicit <code>open()</code> is what keeps the handle open across both writes.
+Without it, each <code>write()</code> would open, truncate, write and close, and only
+<code>second line</code> would survive.</p>
+<p>An already-open handle is written to where it stands, so the sequence above
+does exactly what it reads like.</p>
+<p><code>puts()</code> writes without ever opening or closing. It requires an open
+handle, and it is the method to reach for inside a loop.</p>
+<h2 id="reading-and-writing-at-a-position"><a class="anchor" href="#reading-and-writing-at-a-position" aria-hidden="true" tabindex="-1"></a>Reading and Writing at a Position</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> handle <span class="op">=</span> <span class="bi">file</span>(<span class="str">'notes.txt'</span>)
+handle.<span class="fn">open</span>()
+
+handle.<span class="fn">seek</span>(<span class="num">6</span>, <span class="num">0</span>)
+<span class="kw">echo</span> handle.<span class="fn">tell</span>()
+<span class="kw">echo</span> handle.<span class="fn">read</span>(<span class="num">4</span>)
+
+handle.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>seek(offset, whence)</code> takes <code>0</code> for the start of the file, <code>1</code> for the
+current position and <code>2</code> for the end. The <code>io</code> module names them:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> io
+
+handle.<span class="fn">seek</span>(<span class="num">0</span>, io.<span class="prop">SEEK_SET</span>)
+handle.<span class="fn">seek</span>(<span class="op">-</span><span class="num">10</span>, io.<span class="prop">SEEK_END</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>tell()</code> reports the current offset.</p>
+<h2 id="asking-about-a-file"><a class="anchor" href="#asking-about-a-file" aria-hidden="true" tabindex="-1"></a>Asking About a File</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> handle <span class="op">=</span> <span class="bi">file</span>(<span class="str">'notes.txt'</span>)
+
+<span class="kw">echo</span> handle.<span class="fn">exists</span>()
+<span class="kw">echo</span> handle.<span class="fn">path</span>()
+<span class="kw">echo</span> handle.<span class="fn">abs_path</span>()
+<span class="kw">echo</span> handle.<span class="fn">name</span>()
+<span class="kw">echo</span> handle.<span class="fn">mode</span>()
+<span class="kw">echo</span> handle.<span class="fn">is_open</span>()
+<span class="kw">echo</span> handle.<span class="fn">is_closed</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>stats()</code> returns a dictionary of metadata about the file on disk:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="bi">file</span>(<span class="str">'notes.txt'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'alpha\nbeta\n'</span>)
+
+<span class="kw">var</span> info <span class="op">=</span> <span class="bi">file</span>(<span class="str">'notes.txt'</span>).<span class="fn">stats</span>()
+
+<span class="kw">echo</span> info.<span class="prop">size</span>
+<span class="kw">echo</span> info.<span class="prop">is_readable</span>
+<span class="kw">echo</span> info.<span class="fn">keys</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">11
+true
+[is_readable, is_writable, is_executable, is_symbolic, size, mode, dev, ino, nlink, uid, gid, mtime, atime, ctime, blocks, blksize]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>size</code> is in bytes. <code>mtime</code>, <code>atime</code> and <code>ctime</code> are epoch seconds, ready
+to hand to the <code>date</code> module. <code>mode</code> is the raw permission-and-type word,
+and the <code>stat</code> module is what turns it into an answer:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> stat
+
+<span class="bi">file</span>(<span class="str">'notes.txt'</span>).<span class="fn">chmod</span>(0c644)
+
+<span class="kw">var</span> info <span class="op">=</span> <span class="bi">file</span>(<span class="str">'notes.txt'</span>).<span class="fn">stats</span>()
+
+<span class="kw">echo</span> stat.<span class="fn">S_ISREG</span>(info.<span class="prop">mode</span>)
+<span class="kw">echo</span> stat.<span class="fn">S_ISDIR</span>(info.<span class="prop">mode</span>)
+<span class="kw">echo</span> stat.<span class="fn">file_mode</span>(info.<span class="prop">mode</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+false
+-rw-r--r--
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>S_ISREG</code>, <code>S_ISDIR</code>, <code>S_ISLNK</code> and the rest of the family each answer one
+question about the kind of entry. <code>file_mode()</code> renders the permission bits
+the way <code>ls -l</code> does.</p>
+<h2 id="managing-files"><a class="anchor" href="#managing-files" aria-hidden="true" tabindex="-1"></a>Managing Files</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="bi">file</span>(<span class="str">'notes.txt'</span>).<span class="fn">copy</span>(<span class="str">'backup.txt'</span>)
+<span class="bi">file</span>(<span class="str">'backup.txt'</span>).<span class="fn">rename</span>(<span class="str">'archive.txt'</span>)
+<span class="bi">file</span>(<span class="str">'archive.txt'</span>).<span class="fn">delete</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>There is also <code>truncate(length)</code>, <code>chmod(mode)</code>, <code>set_times(access, modify)</code> and <code>symlink(target)</code>.</p>
+<h2 id="always-close-what-you-opened"><a class="anchor" href="#always-close-what-you-opened" aria-hidden="true" tabindex="-1"></a>Always Close What You Opened</h2>
+<p><code>read()</code> and <code>write()</code> clean up after themselves. Anything you opened with
+<code>open()</code> is yours to close, and the cleanest way to guarantee it is a
+<code>catch</code> that closes on the way out:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> handle <span class="op">=</span> <span class="bi">file</span>(path, <span class="str">'w'</span>)
+handle.<span class="fn">open</span>()
+
+<span class="kw">catch</span> {
+  <span class="fn">write_everything</span>(handle)
+} <span class="kw">as</span> e
+
+handle.<span class="fn">close</span>()
+
+<span class="kw">if</span> e {
+  <span class="kw">raise</span> e
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>For something that has to be cleaned up however the program ends, rather
+than however one block ends, register it with <code>os.at_exit()</code>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> os
+
+<span class="kw">var</span> scratch <span class="op">=</span> <span class="bi">file</span>(<span class="str">'scratch.txt'</span>, <span class="str">'w'</span>)
+scratch.<span class="fn">open</span>()
+
+os.<span class="fn">at_exit</span>(<span class="meta">@</span>{
+  scratch.<span class="fn">close</span>()
+  scratch.<span class="fn">delete</span>()
+})
+
+scratch.<span class="fn">write</span>(<span class="str">'working notes'</span>)
+<span class="kw">echo</span> scratch.<span class="fn">is_open</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+</code></pre><span class="code-label">Output</span></figure>
+<p>Handlers run last registered first, and they run whether the program
+reached the end of its script, called <code>os.exit()</code>, or stopped on an
+uncaught error. A handler that raises is reported on standard error and
+the rest still run, so one failed cleanup cannot cancel the others.</p>
+<h2 id="directories"><a class="anchor" href="#directories" aria-hidden="true" tabindex="-1"></a>Directories</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> os
+
+os.<span class="fn">create_dir</span>(<span class="str">'sub/deep'</span>, <span class="lit">nil</span>, <span class="lit">true</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The three arguments are the path, the permission bits, and whether to
+create intermediate directories. It returns <code>false</code> when the directory
+already existed.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">echo</span> os.<span class="fn">dir_exists</span>(<span class="str">'sub'</span>)
+<span class="kw">echo</span> os.<span class="fn">is_dir</span>(<span class="str">'sub'</span>)
+<span class="kw">echo</span> os.<span class="fn">remove_dir</span>(<span class="str">'sub'</span>, <span class="lit">true</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>remove_dir</code>'s second argument makes it recursive.</p>
+<h2 id="listing-and-globbing"><a class="anchor" href="#listing-and-globbing" aria-hidden="true" tabindex="-1"></a>Listing and Globbing</h2>
+<p>Everything in this section works on a real tree, so build one first:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> os
+
+os.<span class="fn">create_dir</span>(<span class="str">'tree/sub'</span>, <span class="lit">nil</span>, <span class="lit">true</span>)
+
+<span class="bi">file</span>(<span class="str">'tree/top.txt'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'a'</span>)
+<span class="bi">file</span>(<span class="str">'tree/sub/nested.txt'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'b'</span>)
+<span class="bi">file</span>(<span class="str">'tree/sub/notes.md'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'c'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>read_dir()</code> lists one directory:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> os.<span class="fn">read_dir</span>(<span class="str">'tree'</span>)
+<span class="kw">echo</span> os.<span class="fn">read_dir</span>(<span class="str">'tree'</span>, <span class="lit">true</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[., .., sub, top.txt]
+[., .., sub, sub/nested.txt, sub/notes.md, top.txt]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Three things to notice. <code>.</code> and <code>..</code> are included, so a loop over the result
+almost always wants to skip them. The recursive form returns nested entries
+as paths <strong>relative to the directory you asked about</strong>, not as bare names,
+which is what makes them usable directly. And entries come back sorted by
+name, with a directory's contents following immediately after it, so the
+listing reads the same on every machine and filesystem.</p>
+<p><code>glob()</code> is usually what you actually want:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> os.<span class="fn">glob</span>(<span class="str">'*.txt'</span>, <span class="str">'tree'</span>)
+<span class="kw">echo</span> os.<span class="fn">glob</span>(<span class="str">'**/*.txt'</span>, <span class="str">'tree'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[top.txt]
+[sub/nested.txt]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>*</code> matches within one path segment; <code>**</code> matches across segments. The
+second argument is the base directory, and results come back relative to
+it.</p>
+<p>Read those two results together, because the distinction catches people
+out. <code>*.txt</code> found the file at the top and not the nested one. <code>**/*.txt</code>
+found the nested one and <strong>not</strong> the top-level one, because <code>**/</code> means
+&quot;in a subdirectory&quot;. Neither pattern finds both.</p>
+<p>To match at every depth, glob <code>**</code> and filter:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> os.<span class="fn">glob</span>(<span class="str">'**'</span>, <span class="str">'tree'</span>)
+<span class="kw">echo</span> os.<span class="fn">glob</span>(<span class="str">'**'</span>, <span class="str">'tree'</span>).<span class="fn">filter</span>(<span class="meta">@</span>(p) <span class="op">=&gt;</span> p.<span class="fn">ends_with</span>(<span class="str">'.txt'</span>))
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[sub, sub/nested.txt, sub/notes.md, top.txt]
+[sub/nested.txt, top.txt]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>**</code> on its own matches every entry at every depth, directories included,
+which is why the filter is doing real work in the second line. <code>glob()</code>
+walks with <code>read_dir()</code> underneath, so matches arrive in that same sorted
+order.</p>
+<p>Clean up when you are done:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> os.<span class="fn">remove_dir</span>(<span class="str">'tree'</span>, <span class="lit">true</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="paths"><a class="anchor" href="#paths" aria-hidden="true" tabindex="-1"></a>Paths</h2>
+<p>Every path function is pure string manipulation except where noted:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> os.<span class="fn">join_paths</span>(<span class="str">'sub'</span>, <span class="str">'a.txt'</span>)
+<span class="kw">echo</span> os.<span class="fn">base_name</span>(<span class="str">'sub/a.txt'</span>)
+<span class="kw">echo</span> os.<span class="fn">dir_name</span>(<span class="str">'sub/a.txt'</span>)
+<span class="kw">echo</span> os.<span class="fn">real_path</span>(<span class="str">'sub'</span>)
+<span class="kw">echo</span> os.<span class="fn">relative_path</span>(os.<span class="fn">cwd</span>(), <span class="str">'/full/path/to/sub'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">sub/a.txt
+a.txt
+sub
+/home/you/project/sub
+sub
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>real_path()</code> resolves symlinks and requires the path to exist.
+<code>abs_path()</code> does not. <code>expand_user()</code> turns a leading <code>~</code> into the home
+directory. <code>path_contains(base, candidate)</code> answers whether one path is
+inside another, which is the check you need before serving a file a user
+named. On Windows, both it and <code>relative_path()</code> ignore case, the way
+Windows itself looks names up.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">echo</span> os.<span class="fn">cwd</span>()
+<span class="kw">echo</span> os.<span class="fn">home_dir</span>()
+os.<span class="fn">change_dir</span>(<span class="str">'/some/where'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<h2 id="temporary-files"><a class="anchor" href="#temporary-files" aria-hidden="true" tabindex="-1"></a>Temporary Files</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">echo</span> os.<span class="fn">temp_dir</span>()
+
+<span class="kw">var</span> path <span class="op">=</span> os.<span class="fn">create_temp_file</span>(<span class="str">'report-'</span>, <span class="str">'.csv'</span>)
+<span class="kw">var</span> dir <span class="op">=</span> os.<span class="fn">create_temp_dir</span>(<span class="str">'build-'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Both create the thing and hand you its path. Clean them up yourself when
+you are done.</p>
+<h2 id="environment-variables"><a class="anchor" href="#environment-variables" aria-hidden="true" tabindex="-1"></a>Environment Variables</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">echo</span> os.<span class="fn">get_env</span>(<span class="str">'HOME'</span>)
+<span class="kw">echo</span> os.<span class="fn">get_env</span>(<span class="str">'NOPE'</span>, <span class="str">'fallback'</span>)
+
+os.<span class="fn">set_env</span>(<span class="str">'ZURI_BOOK'</span>, <span class="str">'1'</span>)
+os.<span class="fn">unset_env</span>(<span class="str">'ZURI_BOOK'</span>)
+
+<span class="kw">echo</span> os.<span class="fn">environ</span>()
+<span class="kw">echo</span> os.<span class="fn">expand_vars</span>(<span class="str">'$HOME/projects'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>get_env()</code> takes a fallback. <code>environ()</code> gives the whole set as a
+dictionary.</p>
+<h2 id="locating-files-relative-to-your-code"><a class="anchor" href="#locating-files-relative-to-your-code" aria-hidden="true" tabindex="-1"></a>Locating Files Relative to Your Code</h2>
+<p>The current working directory is wherever the user ran <code>zuri</code> from, which
+is not where your source lives. Use <code>__file__</code>:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> os
+
+<span class="kw">var</span> <span class="const">HERE</span> <span class="op">=</span> os.<span class="fn">dir_name</span>(__file__)
+<span class="kw">var</span> templates <span class="op">=</span> os.<span class="fn">join_paths</span>(<span class="const">HERE</span>, <span class="str">'templates'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Doing this in every module that reads a file next to itself is the
+difference between a program that works and one that works only from the
+project root.</p>
+<h2 id="watching-for-changes"><a class="anchor" href="#watching-for-changes" aria-hidden="true" tabindex="-1"></a>Watching for Changes</h2>
+<p>An <code>os.Watcher</code> is told when files change, by the operating system, as
+they change. It does not look at the files over and over. It asks the
+platform's own mechanism to report them: inotify on Linux, FSEvents on
+macOS, <code>ReadDirectoryChangesW</code> on Windows, kqueue on the BSDs. FSEvents
+watches only about one directory for every twelve files a process may
+have open, so on macOS the first watcher raises the process's soft limit
+on open files as far as the hard limit allows.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> os
+
+<span class="kw">var</span> dir <span class="op">=</span> os.<span class="fn">create_temp_dir</span>(<span class="str">'notes-'</span>)
+<span class="kw">var</span> watcher <span class="op">=</span> os.<span class="fn">Watcher</span>().<span class="fn">add</span>(dir)
+
+<span class="bi">file</span>(os.<span class="fn">join_paths</span>(dir, <span class="str">'todo.txt'</span>), <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'buy milk'</span>)
+
+<span class="kw">var</span> event <span class="op">=</span> watcher.<span class="fn">next</span>(<span class="num">5000</span>)
+
+<span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>event.<span class="prop">kind</span><span class="subst">}</span><span class="str"> </span><span class="subst">${</span>os.<span class="fn">base_name</span>(event.<span class="prop">path</span>)<span class="subst">}</span><span class="str">'</span>
+
+watcher.<span class="fn">close</span>()
+os.<span class="fn">remove_dir</span>(dir, <span class="lit">true</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">create todo.txt
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>add()</code> takes a directory, which is watched with everything under it, or
+a single file. <code>next()</code> waits for the next event and takes a timeout in
+milliseconds, returning <code>nil</code> if nothing happened in time. Each event's
+<code>kind</code> is one of these:</p>
+<ul>
+<li><code>'create'</code>: something now stands at <code>path</code>;</li>
+<li><code>'modify'</code>: the file at <code>path</code> changed in place;</li>
+<li><code>'remove'</code>: nothing stands at <code>path</code> any more;</li>
+<li><code>'rescan'</code>: the operating system dropped events, so anything may have
+changed.</li>
+</ul>
+<p>A rename is a <code>'remove'</code> of the old path and a <code>'create'</code> of the new one.
+Reading a file is never reported.</p>
+<p>A watcher can follow a child process too, and then its exit arrives in
+the same wait as the file changes:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> os
+
+<span class="kw">var</span> child <span class="op">=</span> os.<span class="fn">spawn</span>(os.<span class="prop">exe_path</span>, [<span class="str">'--version'</span>], { stdout<span class="op">:</span> <span class="str">'null'</span> })
+<span class="kw">var</span> watcher <span class="op">=</span> os.<span class="fn">Watcher</span>().<span class="fn">follow</span>(child)
+
+<span class="kw">var</span> event <span class="op">=</span> watcher.<span class="fn">next</span>(<span class="num">5000</span>)
+
+<span class="kw">echo</span> event.<span class="prop">kind</span>
+<span class="kw">echo</span> event.<span class="prop">process</span>.<span class="fn">wait</span>()
+
+watcher.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">exit
+0
+</code></pre><span class="code-label">Output</span></figure>
+<p>A <code>for</code> loop over a watcher waits for event after event until the
+watcher is closed. A signal handler is still answered while it waits,
+which makes Ctrl+C the natural way to stop one:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> os
+
+<span class="kw">var</span> watcher <span class="op">=</span> os.<span class="fn">Watcher</span>().<span class="fn">add</span>(<span class="str">'templates'</span>)
+
+os.<span class="fn">on_signal</span>(<span class="str">'INT'</span>, <span class="meta">@</span>() {
+  watcher.<span class="fn">close</span>()
+  <span class="kw">return</span> <span class="lit">true</span>
+})
+
+<span class="kw">for</span> event <span class="kw">in</span> watcher {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>event.<span class="prop">kind</span><span class="subst">}</span><span class="str"> </span><span class="subst">${</span>event.<span class="prop">path</span><span class="subst">}</span><span class="str">'</span>
+}
+
+<span class="kw">echo</span> <span class="str">'stopped watching'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>This is what <code>zuri run --watch</code> is built on.</p>
+<h2 id="a-worked-example"><a class="anchor" href="#a-worked-example" aria-hidden="true" tabindex="-1"></a>A Worked Example</h2>
+<p>Counting words across every text file in a directory tree, start to finish:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> os
+
+<span class="kw">def</span> <span class="def">text_files</span>(root) {
+  <span class="kw">return</span> os.<span class="fn">glob</span>(<span class="str">'**'</span>, root).<span class="fn">filter</span>(<span class="meta">@</span>(p) <span class="op">=&gt;</span> p.<span class="fn">ends_with</span>(<span class="str">'.txt'</span>))
+}
+
+<span class="kw">def</span> <span class="def">word_count</span>(root) {
+  <span class="kw">var</span> counts <span class="op">=</span> {}
+
+  <span class="kw">for</span> path <span class="kw">in</span> <span class="fn">text_files</span>(root) {
+    <span class="kw">var</span> text <span class="op">=</span> <span class="bi">file</span>(os.<span class="fn">join_paths</span>(root, path)).<span class="fn">read</span>()
+
+    <span class="kw">for</span> word <span class="kw">in</span> text.<span class="fn">lower</span>().<span class="fn">split</span>(<span class="str">'/\W+/'</span>) {
+      <span class="kw">if</span> word.<span class="fn">is_empty</span>() {
+        <span class="kw">continue</span>
+      }
+
+      counts.<span class="fn">set</span>(word, counts.<span class="fn">get</span>(word, <span class="num">0</span>) <span class="op">+</span> <span class="num">1</span>)
+    }
+  }
+
+  <span class="kw">return</span> counts
+}
+
+os.<span class="fn">create_dir</span>(<span class="str">'wc/sub'</span>, <span class="lit">nil</span>, <span class="lit">true</span>)
+
+<span class="bi">file</span>(<span class="str">'wc/a.txt'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'Hello world, hello!'</span>)
+<span class="bi">file</span>(<span class="str">'wc/sub/b.txt'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'World of Zuri.'</span>)
+<span class="bi">file</span>(<span class="str">'wc/sub/skip.md'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'not counted'</span>)
+
+<span class="kw">echo</span> <span class="fn">word_count</span>(<span class="str">'wc'</span>)
+
+os.<span class="fn">remove_dir</span>(<span class="str">'wc'</span>, <span class="lit">true</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{hello: 2, world: 2, of: 1, zuri: 1}
+</code></pre><span class="code-label">Output</span></figure>
+<p>Four things in that function are worth pointing at.</p>
+<p><code>glob('**', root)</code> returns paths <strong>relative to the root</strong>, so they have to
+be joined back onto it before they can be opened. Forgetting that join is
+the most common mistake in code that globs.</p>
+<p>The <code>.md</code> file is absent from the result because <code>text_files()</code> filtered it
+out, which is the filter doing the job <code>**</code> alone cannot.</p>
+<p><code>split('/\W+/')</code> is a regular expression, which is why punctuation does not
+end up in the keys — <code>world,</code> and <code>hello!</code> became <code>world</code> and <code>hello</code>. A
+plain <code>split(' ')</code> would have kept both.</p>
+<p>And <code>counts.get(word, 0) + 1</code> supplies the starting value for a key that
+does not exist yet. Without the fallback, the first sighting of every word
+would raise.</p>
+<h2 id="where-to-go-next"><a class="anchor" href="#where-to-go-next" aria-hidden="true" tabindex="-1"></a>Where to Go Next</h2>
+<p>Binary files, byte streams and the <code>io</code> module's in-memory files are
+<a href="ch10-00-binary-data.html">Chapter 10</a>. Reading a file over the network is
+<a href="ch12-00-networking.html">Chapter 12</a>. The complete list of methods a file
+handle carries is <a href="appendix-05-09-file.html">Appendix E</a>.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch09-00-files.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch08-00-modules.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">8</span>The Module System</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch10-00-binary-data.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">10</span>Binary Data and Streams</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#opening-a-file">Opening a File</a>
+        </li><li class="level-2">
+          <a href="#reading-a-whole-file">Reading a Whole File</a>
+        </li><li class="level-3">
+          <a href="#reading-in-chunks">Reading in Chunks</a>
+        </li><li class="level-3">
+          <a href="#reading-lines">Reading Lines</a>
+        </li><li class="level-2">
+          <a href="#writing">Writing</a>
+        </li><li class="level-2">
+          <a href="#reading-and-writing-at-a-position">Reading and Writing at a Position</a>
+        </li><li class="level-2">
+          <a href="#asking-about-a-file">Asking About a File</a>
+        </li><li class="level-2">
+          <a href="#managing-files">Managing Files</a>
+        </li><li class="level-2">
+          <a href="#always-close-what-you-opened">Always Close What You Opened</a>
+        </li><li class="level-2">
+          <a href="#directories">Directories</a>
+        </li><li class="level-2">
+          <a href="#listing-and-globbing">Listing and Globbing</a>
+        </li><li class="level-2">
+          <a href="#paths">Paths</a>
+        </li><li class="level-2">
+          <a href="#temporary-files">Temporary Files</a>
+        </li><li class="level-2">
+          <a href="#environment-variables">Environment Variables</a>
+        </li><li class="level-2">
+          <a href="#locating-files-relative-to-your-code">Locating Files Relative to Your Code</a>
+        </li><li class="level-2">
+          <a href="#watching-for-changes">Watching for Changes</a>
+        </li><li class="level-2">
+          <a href="#a-worked-example">A Worked Example</a>
+        </li><li class="level-2">
+          <a href="#where-to-go-next">Where to Go Next</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

@@ -1,0 +1,670 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Performance and the JIT · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch22-00-performance.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="gold" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html" aria-current="page"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Chapter 22 · Going Deeper</p>
+        <div class="content"><h1 id="performance-and-the-jit">Performance and the JIT</h1>
+<p>Zuri runs your bytecode in an interpreter until a piece of it gets hot,
+then compiles that piece to machine code and runs it there instead. Two
+compilers share the work, one quick and one thorough, and a hot function
+passes through both. The tiering happens on its own, on background
+threads, with no annotations and no flags.</p>
+<p>Here is what that is worth on a plain recursive Fibonacci, measured on one
+idle machine:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">fib</span>(n) {
+  <span class="kw">if</span> n <span class="op">&lt;</span> <span class="num">2</span> {
+    <span class="kw">return</span> n
+  }
+  <span class="kw">return</span> <span class="fn">fib</span>(n <span class="op">-</span> <span class="num">1</span>) <span class="op">+</span> <span class="fn">fib</span>(n <span class="op">-</span> <span class="num">2</span>)
+}
+
+<span class="kw">var</span> start <span class="op">=</span> <span class="bi">time</span>()
+<span class="kw">echo</span> <span class="fn">fib</span>(<span class="num">27</span>)
+<span class="kw">echo</span> <span class="str">'took </span><span class="subst">${</span>((<span class="bi">time</span>() <span class="op">-</span> start) <span class="op">*</span> <span class="num">1000</span>).<span class="fn">round</span>()<span class="subst">}</span><span class="str">ms'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> run fib.zu
+<span class="out">196418</span>
+<span class="out">took 14ms</span>
+
+<span class="prompt">$ </span><span class="var">ZURI_JIT</span><span class="op">=</span>0 <span class="fn">zuri</span> run fib.zu
+<span class="out">196418</span>
+<span class="out">took 47ms</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>Over three times, for a function that does nothing but add and compare, and
+you write nothing to get it. The rest of this chapter explains how the
+compilers work and covers the handful of cases where what you write decides
+whether you get it.</p>
+<h2 id="the-two-compilers"><a class="anchor" href="#the-two-compilers" aria-hidden="true" tabindex="-1"></a>The Two Compilers</h2>
+<p><strong>Kebbi</strong> is the baseline compiler. It turns a function's bytecode into machine code
+one instruction at a time, keeps values in machine registers, and proves
+what it can about types before it compiles: a parameter annotated <code>list</code> is
+a list, and a counter that starts at 0 and steps by 1 is a whole number.
+Kebbi compiles quickly, and its code runs several times faster than the
+interpreter.</p>
+<p><strong>Bayelsa</strong> is the optimizing compiler. It builds the whole function as a graph of
+typed values, then optimizes that graph before it generates any machine
+code. It carries a fact proven once to every later use, moves checks that
+cannot change out of loops, keeps loop counters as plain integers, builds
+small functions into the functions that call them, and bets on what a
+function has done so far wherever nothing proves it. Bayelsa takes longer
+to compile, and its code is the fastest Zuri produces.</p>
+<p>Both compile with Cranelift, and both run on background threads. A program
+never waits for a compile: it carries on in the interpreter, or in the code
+it already has, until the new code is ready.</p>
+<h3 id="how-a-function-compiles"><a class="anchor" href="#how-a-function-compiles" aria-hidden="true" tabindex="-1"></a>How a Function Compiles</h3>
+<ol>
+<li><strong>The interpreter.</strong> Every function starts here. It counts its calls and
+its loop turns, and records the kind of value each operation meets.</li>
+<li><strong>Bayelsa (default).</strong> Once a function is warm, Bayelsa compiles it
+directly from the feedback the interpreter gathered. Small helper calls
+inline, constant checks hoist out of loops, and variables stay in CPU
+registers.</li>
+<li><strong>Kebbi fallback.</strong> If Bayelsa declines a function (for instance, because
+it contains a <code>catch</code> block), Kebbi compiles it instead.</li>
+</ol>
+<p>When requested via <code>ZURI_JIT_TIERED=1</code>, Zuri can also run a multi-tier
+pipeline: a warm function compiles in Kebbi first with profiling
+instrumentation, and once that profiling code has done enough work, Bayelsa
+compiles it from the gathered feedback.</p>
+<h3 id="when-a-bet-fails"><a class="anchor" href="#when-a-bet-fails" aria-hidden="true" tabindex="-1"></a>When a Bet Fails</h3>
+<p>Bayelsa compiles what it has seen. A loop that only ever added whole
+numbers does integer arithmetic; a module constant that held <code>10</code> is
+compared as the integer 10; an index that only ever met <code>bytes</code> reads a
+byte. Each bet is checked where it is made, and a failed check hands the
+frame back to the interpreter at that exact instruction, with every
+variable as the compiled code left it. This is a <strong>deoptimisation</strong>.</p>
+<p>The place that failed is remembered. The next compile of the function makes
+no bet there, so a function deoptimises at a given place once, not every
+time round.</p>
+<h3 id="what-stays-in-kebbi"><a class="anchor" href="#what-stays-in-kebbi" aria-hidden="true" tabindex="-1"></a>What Stays in Kebbi</h3>
+<p>Bayelsa leaves a function to Kebbi in two cases:</p>
+<ul>
+<li>The function contains a <code>catch</code>. Kebbi compiles it, handlers included.</li>
+<li>The function's hot operations are ones Kebbi handles inline and Bayelsa
+would hand to the runtime: arithmetic on values that were not always
+numbers, method calls on strings, and indexing lists and strings whose
+kind nothing settles. Kebbi's code is the faster of the two there.</li>
+</ul>
+<p>A function left in Kebbi is rebuilt without its profiling and runs at
+Kebbi's full speed.</p>
+<h2 id="how-tiering-works"><a class="anchor" href="#how-tiering-works" aria-hidden="true" tabindex="-1"></a>How Tiering Works</h2>
+<p>Every function counts its own calls, and every loop counts its own
+back-edges. When a counter crosses its threshold, a compile job goes to a
+background thread. When the machine code comes back, later calls use it.</p>
+<p>The threshold is not a fixed number. It scales with the function's size:</p>
+<figure class="code"><pre><code class="language-text">threshold = K / sqrt(instruction_count)
+</code></pre></figure>
+<p>A large function gets a low threshold, because it is doing more work per
+call and the compilation pays for itself sooner. A three-instruction getter
+gets a high one, because compiling it is speculative and most tiny
+functions never run enough to earn it back.</p>
+<p>Loops get their own, lower threshold through <strong>on-stack replacement</strong>. A
+loop inside a function that is only ever called once still compiles, and
+execution jumps from the interpreter into the middle of the compiled
+version without unwinding anything. That is what makes a one-shot batch
+script fast. A loop's threshold follows the same curve from the loop's own
+length, so a short loop in a long function, such as setup code walking a
+small table, turns many times before it compiles the function around it.</p>
+<p>You can watch it happen:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="var">ZURI_JIT_LOG</span><span class="op">=</span>1 <span class="fn">zuri</span> run fib.zu
+<span class="out">[jit] 'fib' goes straight to Bayelsa</span>
+<span class="out">[jit] compiled 'fib' in Bayelsa (13 bytecode ops, 0 osr point(s))</span>
+<span class="out">196418</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p><code>fib</code> goes straight to Bayelsa because warm functions compile directly
+through the optimizing compiler by default. With Bayelsa off (<code>ZURI_JIT_KEBBI=1</code>),
+Kebbi compiles it instead, and the line lists what Kebbi proved:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="var">ZURI_JIT_KEBBI</span><span class="op">=</span>1 <span class="var">ZURI_JIT_LOG</span><span class="op">=</span>1 <span class="fn">zuri</span> run fib.zu
+<span class="out">[jit] compiled 'fib' in Kebbi (13 bytecode ops, 0 osr point(s), speculative_params=0x1, speculative_regs=0x0, speculative_lists=0x0, speculative_ints=0x1)</span>
+<span class="out">196418</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>A function Bayelsa leaves to Kebbi gets a line saying why:</p>
+<figure class="code"><pre><code class="language-text">[jit] 'report' stays in Kebbi: catch at ip 5
+</code></pre></figure>
+<p>And you can see what did and did not make it:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="var">ZURI_JIT_COVERAGE</span><span class="op">=</span>1 <span class="fn">zuri</span> run fib.zu
+<span class="out">=== jit coverage ===</span>
+<span class="out">status	calls	threshold	ops	osr	name</span>
+<span class="out">compiled	62009	169	11	0	fib</span>
+<span class="out">cold	0	56	100	0	@.script</span>
+<span class="out">...</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p><code>calls</code> against <code>threshold</code> tells you how close something came.</p>
+<h2 id="keep-errors-for-errors"><a class="anchor" href="#keep-errors-for-errors" aria-hidden="true" tabindex="-1"></a>Keep Errors for Errors</h2>
+<p>A function with a <code>catch</code> compiles like any other. While no error comes
+through, a <code>catch</code> costs next to nothing: the handler is registered and
+dropped around the body, and the body runs as compiled code.</p>
+<p>What costs is an error that is actually raised. A <code>raise</code> hands the frame
+back to the interpreter at that instruction, and a caught error resumes at
+its handler in the interpreter too. The function returns to compiled code
+the next time its loop comes round, or the next time it is called. For a
+genuine failure that is the right trade. For an outcome a loop meets every
+few iterations, it is not:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">parse_or_raise</span>(i) {
+  <span class="kw">if</span> i <span class="op">%</span> <span class="num">10</span> <span class="op">==</span> <span class="num">0</span> {
+    <span class="kw">raise</span> <span class="type">ValueError</span>(<span class="str">'not a digit'</span>)
+  }
+  <span class="kw">return</span> i <span class="op">%</span> <span class="num">10</span>
+}
+
+<span class="kw">def</span> <span class="def">parse_or_nil</span>(i) {
+  <span class="kw">if</span> i <span class="op">%</span> <span class="num">10</span> <span class="op">==</span> <span class="num">0</span> {
+    <span class="kw">return</span> <span class="lit">nil</span>
+  }
+  <span class="kw">return</span> i <span class="op">%</span> <span class="num">10</span>
+}
+
+<span class="kw">def</span> <span class="def">with_raise</span>(n) {
+  <span class="kw">var</span> total <span class="op">=</span> <span class="num">0</span>
+  <span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">0</span>; i <span class="op">&lt;</span> n; i<span class="op">++</span> {
+    <span class="kw">catch</span> {
+      total <span class="op">+=</span> <span class="fn">parse_or_raise</span>(i)
+    } <span class="kw">as</span> e {
+      total <span class="op">+=</span> <span class="num">0</span>
+    }
+  }
+  <span class="kw">return</span> total
+}
+
+<span class="kw">def</span> <span class="def">with_nil</span>(n) {
+  <span class="kw">var</span> total <span class="op">=</span> <span class="num">0</span>
+  <span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">0</span>; i <span class="op">&lt;</span> n; i<span class="op">++</span> {
+    <span class="kw">var</span> digit <span class="op">=</span> <span class="fn">parse_or_nil</span>(i)
+    <span class="kw">if</span> digit <span class="op">!=</span> <span class="lit">nil</span> {
+      total <span class="op">+=</span> digit
+    }
+  }
+  <span class="kw">return</span> total
+}
+
+<span class="kw">def</span> <span class="def">timed</span>(label, work) {
+  <span class="kw">var</span> start <span class="op">=</span> <span class="bi">time</span>()
+  <span class="fn">work</span>()
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>label<span class="subst">}</span><span class="str">: </span><span class="subst">${</span>((<span class="bi">time</span>() <span class="op">-</span> start) <span class="op">*</span> <span class="num">1000</span>).<span class="fn">round</span>()<span class="subst">}</span><span class="str">ms'</span>
+}
+
+<span class="fn">timed</span>(<span class="str">'raise and catch'</span>, <span class="meta">@</span>() {
+  <span class="kw">iter</span> <span class="kw">var</span> r <span class="op">=</span> <span class="num">0</span>; r <span class="op">&lt;</span> <span class="num">200</span>; r<span class="op">++</span> {
+    <span class="fn">with_raise</span>(<span class="num">1000</span>)
+  }
+})
+
+<span class="fn">timed</span>(<span class="str">'return nil     '</span>, <span class="meta">@</span>() {
+  <span class="kw">iter</span> <span class="kw">var</span> r <span class="op">=</span> <span class="num">0</span>; r <span class="op">&lt;</span> <span class="num">200</span>; r<span class="op">++</span> {
+    <span class="fn">with_nil</span>(<span class="num">1000</span>)
+  }
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Two hundred rounds of a thousand iterations, one in ten of them failing:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>raise</code>, caught in the loop</td>
+<td>73ms</td>
+</tr>
+<tr>
+<td><code>nil</code> returned and checked</td>
+<td>11ms</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>When failing is an expected outcome, input that might not parse or a key
+that might be missing, return a value that says so and test it. Keep
+<code>raise</code> for what the caller cannot reasonably carry on from. A <code>raise</code> that
+never fires, a guard clause at the top of a function, costs the compiled
+path nothing.</p>
+<h2 id="type-annotations-are-a-performance-feature"><a class="anchor" href="#type-annotations-are-a-performance-feature" aria-hidden="true" tabindex="-1"></a>Type Annotations Are a Performance Feature</h2>
+<p>The JIT speculates on the types it has seen. When it has been told instead,
+it does not need to guess, and the guard disappears.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">sum_untyped</span>(values) {
+  <span class="kw">var</span> total <span class="op">=</span> <span class="num">0</span>
+  <span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">0</span>; i <span class="op">&lt;</span> values.<span class="fn">length</span>(); i<span class="op">++</span> {
+    total <span class="op">+=</span> values[i]
+  }
+  <span class="kw">return</span> total
+}
+
+<span class="kw">def</span> <span class="def">sum_typed</span>(values<span class="op">:</span> list) {
+  <span class="kw">var</span> total <span class="op">=</span> <span class="num">0</span>
+  <span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">0</span>; i <span class="op">&lt;</span> values.<span class="fn">length</span>(); i<span class="op">++</span> {
+    total <span class="op">+=</span> values[i]
+  }
+  <span class="kw">return</span> total
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Twenty thousand rounds over a thousand-element list:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>values: list</code></td>
+<td>85ms</td>
+</tr>
+<tr>
+<td>no annotation</td>
+<td>150ms</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Running them in both orders gives the same answer, which is the check that
+tells you it is the annotation and not the warm-up.</p>
+<p>Annotate the parameters of any function on a hot path. It costs one word
+per parameter and it documents the function at the same time.</p>
+<h2 id="keep-types-stable"><a class="anchor" href="#keep-types-stable" aria-hidden="true" tabindex="-1"></a>Keep Types Stable</h2>
+<p>Speculation works by assuming the future looks like the past. A variable
+that holds a number on ten thousand iterations and a string on the ten
+thousand and first causes a <strong>deoptimisation</strong>: the compiled code bails to
+the interpreter, and the function may be recompiled with a weaker
+assumption.</p>
+<p>One deopt is cheap. A loop that deopts every iteration is slower than never
+compiling at all.</p>
+<p>In practice this means:</p>
+<ul>
+<li>One variable, one kind of value.</li>
+<li>A list of numbers, not a list of numbers-and-sometimes-strings.</li>
+<li>A field that starts <code>nil</code> and later holds a number is two types. Start it
+at <code>0</code>.</li>
+</ul>
+<p>That last one is the common case. <code>var count</code> on a class field is a <code>nil</code>
+until the constructor runs, and every read of it in compiled code has to
+handle both. <code>var count = 0</code> does not.</p>
+<h2 id="where-to-put-a-hot-loop"><a class="anchor" href="#where-to-put-a-hot-loop" aria-hidden="true" tabindex="-1"></a>Where to Put a Hot Loop</h2>
+<p>A per-element loop belongs in a <strong>typed free function</strong>, not in a method
+reading a field:</p>
+<p>Slower, because every iteration reads <code>self.pixels</code> back through a field
+guard:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">Canvas</span> {
+  <span class="kw">var</span> pixels <span class="op">=</span> <span class="bi">bytes</span>(<span class="num">0</span>)
+
+  <span class="fn">brighten</span>(amount) {
+    <span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">0</span>; i <span class="op">&lt;</span> <span class="self">self</span>.<span class="prop">pixels</span>.<span class="fn">length</span>(); i<span class="op">++</span> {
+      <span class="self">self</span>.<span class="prop">pixels</span>[i] <span class="op">=</span> <span class="self">self</span>.<span class="prop">pixels</span>[i] <span class="op">+</span> amount
+    }
+  }
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Faster, because the loop sees plain locals whose types are declared:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">_brighten</span>(pixels<span class="op">:</span> <span class="bi">bytes</span>, amount<span class="op">:</span> number) {
+  <span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">0</span>; i <span class="op">&lt;</span> pixels.<span class="fn">length</span>(); i<span class="op">++</span> {
+    pixels[i] <span class="op">=</span> pixels[i] <span class="op">+</span> amount
+  }
+}
+
+<span class="kw">class</span> <span class="type">Canvas</span> {
+  <span class="kw">var</span> pixels <span class="op">=</span> <span class="bi">bytes</span>(<span class="num">0</span>)
+
+  <span class="fn">brighten</span>(amount) {
+    <span class="fn">_brighten</span>(<span class="self">self</span>.<span class="prop">pixels</span>, amount)
+  }
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The standard library's <code>imagine</code> module is written this way throughout, and
+the difference on a per-pixel loop is measured in multiples, not percent.</p>
+<h2 id="reading-the-bytecode"><a class="anchor" href="#reading-the-bytecode" aria-hidden="true" tabindex="-1"></a>Reading the Bytecode</h2>
+<p>When you want to know what the compiler actually did, ask it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">echo</span> zuri.<span class="fn">compile</span>(<span class="str">'var a = 1 + 2'</span>).<span class="fn">map</span>(<span class="meta">@</span>(i) <span class="op">=&gt;</span> i.<span class="prop">op</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[LoadConst, AddImm, SetGlobal, LoadNil, Return]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>AddImm</code> rather than a separate load tells you the constant was folded into
+the instruction. This is the fastest way to check whether a rewrite did
+what you hoped, and it never goes stale.</p>
+<h2 id="measuring-honestly"><a class="anchor" href="#measuring-honestly" aria-hidden="true" tabindex="-1"></a>Measuring Honestly</h2>
+<p>Every number in this chapter is one measurement on one machine. Treat them
+as ratios rather than as figures to reproduce: yours will differ with your
+processor, your build and what else the machine is doing. Five rules make
+the difference between a measurement and a guess.</p>
+<p><strong>Warm up before you time.</strong> The first few hundred iterations run
+interpreted, and if your benchmark is short, that is all you measured.</p>
+<p><strong>Run each variant on its own.</strong> Two variants in one process share warm-up
+state and a heap. Order them both ways; if the answer changes, you measured
+the order.</p>
+<p><strong>Watch the machine.</strong> A laptop under sustained load throttles, and a
+second run is not comparable to the first. Check the load before the timed
+run, not before the build that precedes it.</p>
+<p><strong>Change one thing.</strong> A &quot;fix&quot; that touches three sites has three possible
+explanations for its effect, and at least one of them is usually a
+regression hiding behind the other two.</p>
+<p><strong>Measure the real program.</strong> A microbenchmark of one function tells you
+about that function in isolation, with a warm cache and no competing
+allocation. <code>ZURI_JIT_COVERAGE=1</code> on the actual workload tells you which
+function to look at in the first place, which is nearly always the more
+valuable answer.</p>
+<h3 id="timing-something-yourself"><a class="anchor" href="#timing-something-yourself" aria-hidden="true" tabindex="-1"></a>Timing Something Yourself</h3>
+<p><code>time()</code> returns epoch seconds with microsecond resolution, so a timing
+harness is four lines:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">timed</span>(label, work) {
+  <span class="kw">var</span> start <span class="op">=</span> <span class="bi">time</span>()
+  <span class="kw">var</span> result <span class="op">=</span> <span class="fn">work</span>()
+
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>label<span class="subst">}</span><span class="str">: </span><span class="subst">${</span>((<span class="bi">time</span>() <span class="op">-</span> start) <span class="op">*</span> <span class="num">1000</span>).<span class="fn">round</span>()<span class="subst">}</span><span class="str">ms'</span>
+
+  <span class="kw">return</span> result
+}
+
+<span class="kw">var</span> squares <span class="op">=</span> <span class="fn">timed</span>(<span class="str">'build a list'</span>, <span class="meta">@</span>() {
+  <span class="kw">var</span> out <span class="op">=</span> []
+
+  <span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">0</span>; i <span class="op">&lt;</span> <span class="num">200000</span>; i<span class="op">++</span> {
+    out.<span class="fn">append</span>(i <span class="op">*</span> i)
+  }
+
+  <span class="kw">return</span> out
+})
+
+<span class="kw">echo</span> squares.<span class="fn">length</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The elapsed line will differ every run; the length will not. Print both, so
+a change in the second tells you the harness broke rather than the code
+getting faster.</p>
+<h2 id="choosing-a-mode"><a class="anchor" href="#choosing-a-mode" aria-hidden="true" tabindex="-1"></a>Choosing a Mode</h2>
+<p>Bayelsa compiles directly by default, falling back to Kebbi whenever a function
+is declined. <code>ZURI_JIT_KEBBI=1</code> (or <code>ZURI_JIT_BAYELSA=0</code>) turns Bayelsa off, and
+every hot function then stays in Kebbi. <code>ZURI_JIT_TIERED=1</code> enables the multi-tier
+pipeline where Kebbi profiles before Bayelsa compiles.</p>
+<p>Keep the default for anything that runs long enough for its speed to
+matter: servers, batch jobs, numeric work, anything whose hot loops run for
+more than a moment. That is where Bayelsa's code repays its compile many
+times over.</p>
+<p>Turn Bayelsa off (<code>ZURI_JIT_KEBBI=1</code>) when:</p>
+<ul>
+<li><strong>The program is short.</strong> A script that finishes in a fraction of a
+second spends a real share of its life compiling, and the
+faster code arrives too late to pay for itself.</li>
+<li><strong>Cores are scarce.</strong> Bayelsa's compiles take more processor time than
+Kebbi's. On a machine or container held to one core, or with every core
+busy with isolates, that time comes out of the program's own.</li>
+<li><strong>Start-up is the workload.</strong> A command-line tool run over and over, a
+few milliseconds each time, gains nothing from code that is faster on
+its thousandth iteration.</li>
+<li><strong>Timings have to hold from the first run.</strong> Kebbi reaches its speed
+sooner and stays there.</li>
+</ul>
+<p>Measure both. The switch is one variable, and running the real workload
+each way settles the question for that workload.</p>
+<h2 id="the-environment-variables"><a class="anchor" href="#the-environment-variables" aria-hidden="true" tabindex="-1"></a>The Environment Variables</h2>
+<p>These exist for measurement and debugging. Ordinary programs need none of
+them.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ZURI_JIT=0</code></td>
+<td>disable the JIT entirely</td>
+</tr>
+<tr>
+<td><code>ZURI_JIT_KEBBI=1</code></td>
+<td>compile with Kebbi alone (same as <code>ZURI_JIT_BAYELSA=0</code>)</td>
+</tr>
+<tr>
+<td><code>ZURI_JIT_TIERED=1</code></td>
+<td>enable multi-tier mode (Kebbi profiling before Bayelsa)</td>
+</tr>
+<tr>
+<td><code>ZURI_JIT_LOG=1</code></td>
+<td>one line per compilation attempt</td>
+</tr>
+<tr>
+<td><code>ZURI_JIT_LOG_IR=1</code></td>
+<td>dump the Cranelift IR, and Bayelsa's own before it</td>
+</tr>
+<tr>
+<td><code>ZURI_JIT_COVERAGE=1</code></td>
+<td>a table of what compiled, at exit</td>
+</tr>
+<tr>
+<td><code>ZURI_JIT_NO_SPECIALIZATION=1</code></td>
+<td>compile, but do not speculate on types</td>
+</tr>
+<tr>
+<td><code>ZURI_JIT_THREADS=n</code></td>
+<td>background compiler threads</td>
+</tr>
+<tr>
+<td><code>ZURI_JIT_CALL_K</code>, <code>ZURI_JIT_OSR_K</code></td>
+<td>the warm-up curve constants</td>
+</tr>
+<tr>
+<td><code>ZURI_JIT_TIERUP_K</code></td>
+<td>how much profiling work comes before Bayelsa (tiered mode)</td>
+</tr>
+<tr>
+<td><code>ZURI_GC_LOG=1</code></td>
+<td>garbage collector activity</td>
+</tr>
+<tr>
+<td><code>ZURI_GC_NURSERY_MB=n</code></td>
+<td>the young generation's starting and smallest size, in megabytes</td>
+</tr>
+<tr>
+<td><code>ZURI_OPCODE_PROFILE=1</code></td>
+<td>interpreter opcode histogram</td>
+</tr>
+<tr>
+<td><code>MIMALLOC_PURGE_DELAY=n</code></td>
+<td>milliseconds freed memory waits before going back to the system; 10 unless set</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><code>ZURI_JIT=0</code> is the most useful one. Running a benchmark with and without it
+tells you immediately whether your hot path is being compiled at all, which
+is the first question to ask when something is slower than it should be.</p>
+<h2 id="when-to-stop"><a class="anchor" href="#when-to-stop" aria-hidden="true" tabindex="-1"></a>When to Stop</h2>
+<p>The interpreter is fast and the JIT is automatic. Most Zuri code needs no
+performance work at all, and the code that does usually needs exactly one
+of the three things in this chapter: return a value instead of raising for
+an expected outcome, annotate a parameter, or stop putting two types in one
+variable.</p>
+<p>Reach for anything more exotic only after <code>ZURI_JIT_COVERAGE</code> has told you
+which function is actually the problem.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch22-00-performance.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch21-00-metaprogramming.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">21</span>Metaprogramming and Reflection</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch23-00-testing.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">23</span>Testing</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#the-two-compilers">The Two Compilers</a>
+        </li><li class="level-3">
+          <a href="#how-a-function-compiles">How a Function Compiles</a>
+        </li><li class="level-3">
+          <a href="#when-a-bet-fails">When a Bet Fails</a>
+        </li><li class="level-3">
+          <a href="#what-stays-in-kebbi">What Stays in Kebbi</a>
+        </li><li class="level-2">
+          <a href="#how-tiering-works">How Tiering Works</a>
+        </li><li class="level-2">
+          <a href="#keep-errors-for-errors">Keep Errors for Errors</a>
+        </li><li class="level-2">
+          <a href="#type-annotations-are-a-performance-feature">Type Annotations Are a Performance Feature</a>
+        </li><li class="level-2">
+          <a href="#keep-types-stable">Keep Types Stable</a>
+        </li><li class="level-2">
+          <a href="#where-to-put-a-hot-loop">Where to Put a Hot Loop</a>
+        </li><li class="level-2">
+          <a href="#reading-the-bytecode">Reading the Bytecode</a>
+        </li><li class="level-2">
+          <a href="#measuring-honestly">Measuring Honestly</a>
+        </li><li class="level-3">
+          <a href="#timing-something-yourself">Timing Something Yourself</a>
+        </li><li class="level-2">
+          <a href="#choosing-a-mode">Choosing a Mode</a>
+        </li><li class="level-2">
+          <a href="#the-environment-variables">The Environment Variables</a>
+        </li><li class="level-2">
+          <a href="#when-to-stop">When to Stop</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

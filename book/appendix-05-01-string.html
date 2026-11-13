@@ -1,0 +1,1238 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>String Methods · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/appendix-05-01-string.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="teal" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item open"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="true" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html" aria-current="page"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Appendices</p>
+        <div class="content"><h1 id="string-methods">String Methods</h1>
+<p>Every method on the built-in <code>string</code> type, with its signature, what it
+returns, and the cases where it does something other than the obvious
+thing.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Returns</th>
+<th>Summary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#length"><code>length()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the length of a string.</td>
+</tr>
+<tr>
+<td><a href="#upper"><code>upper()</code></a></td>
+<td><code>string</code></td>
+<td>Returns a copy of the string with all the cased characters converted to uppercase.</td>
+</tr>
+<tr>
+<td><a href="#lower"><code>lower()</code></a></td>
+<td><code>string</code></td>
+<td>Return a copy of the string with all the cased characters converted to lowercase.</td>
+</tr>
+<tr>
+<td><a href="#is_alpha"><code>is_alpha()</code></a></td>
+<td><code>boolean</code></td>
+<td>Returns <code>true</code> if all the characters in the string are all alphabets and the string is not empty., otherwise returns <code>false</code>.</td>
+</tr>
+<tr>
+<td><a href="#is_alnum"><code>is_alnum()</code></a></td>
+<td><code>boolean</code></td>
+<td>Returns <code>true</code> if all the characters in the string are either alphabets or numbers and the string is not empty, otherwise returns <code>false</code>.</td>
+</tr>
+<tr>
+<td><a href="#is_number"><code>is_number()</code></a></td>
+<td></td>
+<td>Returns <code>true</code> if all the characters in the string are all digits and the string is not empty, otherwise returns <code>false</code>.</td>
+</tr>
+<tr>
+<td><a href="#is_lower"><code>is_lower()</code></a></td>
+<td><code>boolean</code></td>
+<td>Returns <code>true</code> if at least one character in the string is cased, all cased characters are lower cased and the string is not empty.</td>
+</tr>
+<tr>
+<td><a href="#is_upper"><code>is_upper()</code></a></td>
+<td><code>boolean</code></td>
+<td>Returns <code>true</code> if at least one character in the string is cased, all cased characters are upper cased and the string is not empty.</td>
+</tr>
+<tr>
+<td><a href="#is_space"><code>is_space()</code></a></td>
+<td><code>boolean</code></td>
+<td>Returns <code>true</code> if there are only whitespace characters in the string and the string is not empty.</td>
+</tr>
+<tr>
+<td><a href="#ord"><code>ord()</code></a></td>
+<td><code>number</code></td>
+<td>Returns the Unicode code point of the string, which must be exactly one character long.</td>
+</tr>
+<tr>
+<td><a href="#trim"><code>trim(chars: ?string)</code></a></td>
+<td><code>string</code></td>
+<td>Returns a copy of the string with characters stripped from both ends.</td>
+</tr>
+<tr>
+<td><a href="#ltrim"><code>ltrim(chars: ?string)</code></a></td>
+<td><code>string</code></td>
+<td>Returns a copy of the string with characters stripped from its start only.</td>
+</tr>
+<tr>
+<td><a href="#rtrim"><code>rtrim(chars: ?string)</code></a></td>
+<td><code>string</code></td>
+<td>Returns a copy of the string with characters stripped from its end only.</td>
+</tr>
+<tr>
+<td><a href="#join"><code>join(string: string)</code></a></td>
+<td><code>string</code></td>
+<td>Returns a string which is a concatenation of the items in the iterable using the <em>string</em> as the separator.</td>
+</tr>
+<tr>
+<td><a href="#split"><code>split(delimiter: string)</code></a></td>
+<td><code>list</code></td>
+<td>Returns a list of words or characters in a string after separating the content of the string at every point where the <em>delimiter</em> is found.</td>
+</tr>
+<tr>
+<td><a href="#index_of"><code>index_of(str: string, start_index: ?number)</code></a></td>
+<td><code>number</code></td>
+<td>Returns the index position of the first occurrence of the string <em><code>str</code></em> in the string <em><code>string</code></em>.</td>
+</tr>
+<tr>
+<td><a href="#last_index_of"><code>last_index_of(str: string, end_index: ?number)</code></a></td>
+<td><code>number</code></td>
+<td>Returns the index position of the last occurrence of the string <em><code>str</code></em> in the string <em><code>string</code></em>, searching from the end.</td>
+</tr>
+<tr>
+<td><a href="#starts_with"><code>starts_with(str: string)</code></a></td>
+<td><code>boolean</code></td>
+<td>Returns <code>true</code> if the string begins with the string or character specified in <em>str</em>, otherwise it returns <code>false</code>.</td>
+</tr>
+<tr>
+<td><a href="#ends_with"><code>ends_with(str: string)</code></a></td>
+<td><code>boolean</code></td>
+<td>Returns <code>true</code> if the string ends with the string or character specified in <em>str</em>, otherwise it returns <code>false</code>.</td>
+</tr>
+<tr>
+<td><a href="#count"><code>count(str: string)</code></a></td>
+<td><code>number</code></td>
+<td>Returns the number of non-overlapping occurrences of the substring <em>str</em> in the string.</td>
+</tr>
+<tr>
+<td><a href="#to_number"><code>to_number(base)</code></a></td>
+<td><code>number</code></td>
+<td>Returns the first numeric value contained in the string if any exists or <code>0</code> if the string contains no numeric value.</td>
+</tr>
+<tr>
+<td><a href="#to_bigint"><code>to_bigint(base)</code></a></td>
+<td><code>bigint</code></td>
+<td>Returns the integer value of the string as a <code>bigint</code>, or <code>0n</code> if the string does not spell one.</td>
+</tr>
+<tr>
+<td><a href="#to_list"><code>to_list()</code></a></td>
+<td><code>list</code></td>
+<td>Returns a list whose elements consists of every character contained in the string in order of appearance.</td>
+</tr>
+<tr>
+<td><a href="#to_bytes"><code>to_bytes()</code></a></td>
+<td><code>bytes</code></td>
+<td>Returns the content of the string as a stream of <code>bytes</code>.</td>
+</tr>
+<tr>
+<td><a href="#lpad"><code>lpad(width: number, fill: ?string)</code></a></td>
+<td><code>string</code></td>
+<td>Returns the string left justified in a string of length <em>width</em>.</td>
+</tr>
+<tr>
+<td><a href="#rpad"><code>rpad(width: number, fill: ?string)</code></a></td>
+<td><code>string</code></td>
+<td>Returns the string right justified in a string of length <em>width</em>.</td>
+</tr>
+<tr>
+<td><a href="#match"><code>match(str: string)</code></a></td>
+<td><code>boolean|dictionary</code></td>
+<td>If the string <em>str</em> is a regular string, this method returns <code>true</code> if the <em>string</em> contains a substring <em>str</em>.</td>
+</tr>
+<tr>
+<td><a href="#matches"><code>matches(reg: string)</code></a></td>
+<td><code>dictionary</code></td>
+<td>Returns a dictionary containing every match of the given regular expression <em>reg</em> in the source string.</td>
+</tr>
+<tr>
+<td><a href="#replace"><code>replace(str: string, replacement: string, use_regex: ?bool)</code></a></td>
+<td><code>string</code></td>
+<td>Returns a copy of the string with all occurrences or matches of <em>str</em> replaced by the <em>replacement</em> string.</td>
+</tr>
+<tr>
+<td><a href="#replace_with"><code>replace_with(regex: string, callback: function)</code></a></td>
+<td><code>string</code></td>
+<td>Returns a copy of the string with all occurrences or matches of <em>regex</em> replaced with the result of the function <em>callback</em> which is invoked only if and after a match has occurred.</td>
+</tr>
+<tr>
+<td><a href="#ascii"><code>ascii()</code></a></td>
+<td><code>string</code></td>
+<td>Reinterprets the string as a raw byte view: each byte of its UTF-8 encoding becomes its own character (a codepoint between <code>0</code> and <code>255</code>, i.e.</td>
+</tr>
+<tr>
+<td><a href="#case_fold"><code>case_fold()</code></a></td>
+<td><code>string</code></td>
+<td>Returns a copy of the string case-folded for case-insensitive comparison, using full Unicode case folding rather than plain lowercasing.</td>
+</tr>
+<tr>
+<td><a href="#compare"><code>compare(other: string)</code></a></td>
+<td><code>number</code></td>
+<td>Compares the string with another string.</td>
+</tr>
+<tr>
+<td><a href="#is_empty"><code>is_empty()</code></a></td>
+<td><code>boolean</code></td>
+<td>Returns true if the string is empty, false otherwise.</td>
+</tr>
+<tr>
+<td><a href="#contains"><code>contains(str: string)</code></a></td>
+<td><code>boolean</code></td>
+<td>Returns true if the string contains the specified substring, false otherwise.</td>
+</tr>
+<tr>
+<td><a href="#lines"><code>lines()</code></a></td>
+<td><code>list</code></td>
+<td>Returns the lines of the string as an list as it would be if split on newline characters.</td>
+</tr>
+<tr>
+<td><a href="#each_line"><code>each_line(callback: function)</code></a></td>
+<td><code>void</code></td>
+<td>Iterates over each line of the string, calling the provided callback function with the line and its index.</td>
+</tr>
+<tr>
+<td><a href="#each"><code>each(callback: function)</code></a></td>
+<td><code>void</code></td>
+<td>Iterates over each character of the string, calling the provided callback function with the character and its index.</td>
+</tr>
+<tr>
+<td><a href="#capitalize"><code>capitalize()</code></a></td>
+<td><code>string</code></td>
+<td>Returns a new string with the first character capitalized and the rest in lowercase.</td>
+</tr>
+<tr>
+<td><a href="#title"><code>title()</code></a></td>
+<td><code>string</code></td>
+<td>Returns a new string with each word capitalized.</td>
+</tr>
+<tr>
+<td><a href="#to_string"><code>to_string()</code></a></td>
+<td><code>string</code></td>
+<td>Returns the string itself.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2 id="length"><a class="anchor" href="#length" aria-hidden="true" tabindex="-1"></a><code>length()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">length</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the length of a string. Note that this method is UTF-8
+compatible and will return the UTF-8 length for the string if the string
+contains UTF-8 characters whether written directly or via the <code>\u</code> or
+<code>\U</code> escapes.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'This is a pretty long string'</span>.<span class="fn">length</span>()
+<span class="out">28</span>
+<span class="prompt">%&gt; </span><span class="str">'उनका एक समय'</span>.<span class="fn">length</span>()
+<span class="out">11</span>
+<span class="prompt">%&gt; </span><span class="str">'This text mixes English and 粵語'</span>.<span class="fn">length</span>()
+<span class="out">30</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="upper"><a class="anchor" href="#upper" aria-hidden="true" tabindex="-1"></a><code>upper()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">upper</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns a copy of the string with all the cased characters converted to
+uppercase. Note that the result of this method may return <code>false</code> when
+tested with <code>is_upper()</code> of the <em>string</em> contains Unicode characters
+that are not case folded.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'zuri'</span>.<span class="fn">upper</span>()
+<span class="out">'ZURI'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="lower"><a class="anchor" href="#lower" aria-hidden="true" tabindex="-1"></a><code>lower()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">lower</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Return a copy of the string with all the cased characters converted to
+lowercase.<br></p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'Zuri Is Bae'</span>.<span class="fn">lower</span>()
+<span class="out">'zuri is bae'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="is_alpha"><a class="anchor" href="#is_alpha" aria-hidden="true" tabindex="-1"></a><code>is_alpha()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">is_alpha</span>() <span class="op">-&gt;</span> boolean
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns <code>true</code> if all the characters in the string are all alphabets and
+the string is not empty., otherwise returns <code>false</code>.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'abracadabra'</span>.<span class="fn">is_alpha</span>()
+<span class="out">true</span>
+<span class="prompt">%&gt; </span><span class="str">'my tooth aches'</span>.<span class="fn">is_alpha</span>()
+<span class="out">false</span>
+<span class="prompt">%&gt; </span><span class="str">''</span>.<span class="fn">is_alpha</span>()
+<span class="out">false</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="is_alnum"><a class="anchor" href="#is_alnum" aria-hidden="true" tabindex="-1"></a><code>is_alnum()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">is_alnum</span>() <span class="op">-&gt;</span> boolean
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns <code>true</code> if all the characters in the string are either alphabets
+or numbers and the string is not empty, otherwise returns <code>false</code>. This
+method is the same as <code>string.is_alpha() or string.is_number()</code>.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'3Idiots'</span>.<span class="fn">is_alnum</span>()
+<span class="out">true</span>
+<span class="prompt">%&gt; </span><span class="str">'Three Idiots'</span>.<span class="fn">is_alnum</span>()
+<span class="out">false</span>
+<span class="prompt">%&gt; </span><span class="str">'3 Idiots'</span>.<span class="fn">is_alnum</span>()
+<span class="out">false</span>
+<span class="prompt">%&gt; </span><span class="str">'3'</span>.<span class="fn">is_alnum</span>()
+<span class="out">true</span>
+<span class="prompt">%&gt; </span><span class="str">'idiots'</span>.<span class="fn">is_alnum</span>()
+<span class="out">true</span>
+<span class="prompt">%&gt; </span><span class="str">''</span>.<span class="fn">is_alnum</span>()
+<span class="out">false</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="is_number"><a class="anchor" href="#is_number" aria-hidden="true" tabindex="-1"></a><code>is_number()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="bi">is_number</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns <code>true</code> if all the characters in the string are all digits and
+the string is not empty, otherwise returns <code>false</code>.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'123.5'</span>.<span class="fn">is_number</span>()
+<span class="out">false</span>
+<span class="prompt">%&gt; </span><span class="str">'1970'</span>.<span class="fn">is_number</span>()
+<span class="out">true</span>
+<span class="prompt">%&gt; </span><span class="str">'1980s'</span>.<span class="fn">is_number</span>()
+<span class="out">false</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<h2 id="is_lower"><a class="anchor" href="#is_lower" aria-hidden="true" tabindex="-1"></a><code>is_lower()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">is_lower</span>() <span class="op">-&gt;</span> boolean
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns <code>true</code> if at least one character in the string is cased, all
+cased characters are lower cased and the string is not empty. Otherwise,
+it returns <code>false</code>.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'all'</span>.<span class="fn">is_lower</span>()
+<span class="out">true</span>
+<span class="prompt">%&gt; </span><span class="str">'all...123'</span>.<span class="fn">is_lower</span>()
+<span class="out">true</span>
+<span class="prompt">%&gt; </span><span class="str">'All...123'</span>.<span class="fn">is_lower</span>()
+<span class="out">false</span>
+<span class="prompt">%&gt; </span><span class="str">''</span>.<span class="fn">is_lower</span>()
+<span class="out">false</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="is_upper"><a class="anchor" href="#is_upper" aria-hidden="true" tabindex="-1"></a><code>is_upper()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">is_upper</span>() <span class="op">-&gt;</span> boolean
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns <code>true</code> if at least one character in the string is cased, all
+cased characters are upper cased and the string is not empty. Otherwise,
+it returns <code>false</code>.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'ALL'</span>.<span class="fn">is_upper</span>()
+<span class="out">true</span>
+<span class="prompt">%&gt; </span><span class="str">'ALL...123'</span>.<span class="fn">is_upper</span>()
+<span class="out">true</span>
+<span class="prompt">%&gt; </span><span class="str">'All...123'</span>.<span class="fn">is_upper</span>()
+<span class="out">false</span>
+<span class="prompt">%&gt; </span><span class="str">''</span>.<span class="fn">is_upper</span>()
+<span class="out">false</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="is_space"><a class="anchor" href="#is_space" aria-hidden="true" tabindex="-1"></a><code>is_space()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">is_space</span>() <span class="op">-&gt;</span> boolean
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns <code>true</code> if there are only whitespace characters in the string and
+the string is not empty. Otherwise, it returns empty.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'.     '</span>.<span class="fn">is_space</span>()
+<span class="out">false</span>
+<span class="prompt">%&gt; </span><span class="str">'\r\n'</span>.<span class="fn">is_space</span>()
+<span class="out">true</span>
+<span class="prompt">%&gt; </span><span class="str">'\t  '</span>.<span class="fn">is_space</span>()
+<span class="out">true</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="ord"><a class="anchor" href="#ord" aria-hidden="true" tabindex="-1"></a><code>ord()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">ord</span>() <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the Unicode code point of the string, which must be exactly one
+character long.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'A'</span>.<span class="fn">ord</span>()
+<span class="out">65</span>
+<span class="prompt">%&gt; </span><span class="str">'AB'</span>.<span class="fn">ord</span>()
+<span class="err">Unhandled Error: ord() must be called on a single character, got AB</span>
+<span class="out">StackTrace:</span>
+<span class="out">  &lt;repl&gt;:1 -&gt; @.script()</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>number</code></p>
+<p><strong>Raises</strong> <code>Error</code> if the string is not exactly one character long.</p>
+<h2 id="trim"><a class="anchor" href="#trim" aria-hidden="true" tabindex="-1"></a><code>trim()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">trim</span>(chars<span class="op">:</span> <span class="op">?</span>string) <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns a copy of the string with characters stripped from both ends.</p>
+<p>With no argument, whitespace is stripped: space, tab (<code>\t</code>), line feed
+(<code>\n</code>), vertical tab, form feed and carriage return (<code>\r</code>). Other
+Unicode spaces, such as a no-break space, are kept.</p>
+<p>Given <em><code>chars</code></em>, every character in it is stripped instead, in any order
+and any number of times, until a character not in <em><code>chars</code></em> is reached
+at each end. <em><code>chars</code></em> is a set of characters, not a prefix or suffix:
+<code>'xyax'.trim('xy')</code> is <code>'a'</code>. An empty <em><code>chars</code></em> strips nothing.</p>
+<p>The string itself is never changed. A string with nothing to strip comes
+back as an equal copy.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'  example  '</span>.<span class="fn">trim</span>()
+<span class="out">'example'</span>
+<span class="prompt">%&gt; </span><span class="str">'\t example \r\n'</span>.<span class="fn">trim</span>()
+<span class="out">'example'</span>
+<span class="prompt">%&gt; </span><span class="str">'  example  '</span>.<span class="fn">trim</span>(<span class="str">'e'</span>)
+<span class="out">'  example  '</span>
+<span class="prompt">%&gt; </span><span class="str">'example'</span>.<span class="fn">trim</span>(<span class="str">'e'</span>)
+<span class="out">'xampl'</span>
+<span class="prompt">%&gt; </span><span class="str">'--==example==--'</span>.<span class="fn">trim</span>(<span class="str">'-='</span>)
+<span class="out">'example'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>chars</code> (<code>?string</code>) — The characters to strip (Default = whitespace).</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="ltrim"><a class="anchor" href="#ltrim" aria-hidden="true" tabindex="-1"></a><code>ltrim()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">ltrim</span>(chars<span class="op">:</span> <span class="op">?</span>string) <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns a copy of the string with characters stripped from its start
+only. The characters stripped are chosen exactly as they are for
+<code>trim()</code>: whitespace when <em><code>chars</code></em> is not given, or every character of
+<em><code>chars</code></em> when it is.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'  example  '</span>.<span class="fn">ltrim</span>()
+<span class="out">'example  '</span>
+<span class="prompt">%&gt; </span><span class="str">'example'</span>.<span class="fn">ltrim</span>(<span class="str">'e'</span>)
+<span class="out">'xample'</span>
+<span class="prompt">%&gt; </span><span class="str">'0012'</span>.<span class="fn">ltrim</span>(<span class="str">'0'</span>)
+<span class="out">'12'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>chars</code> (<code>?string</code>) — The characters to strip (Default = whitespace).</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="rtrim"><a class="anchor" href="#rtrim" aria-hidden="true" tabindex="-1"></a><code>rtrim()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">rtrim</span>(chars<span class="op">:</span> <span class="op">?</span>string) <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns a copy of the string with characters stripped from its end only.
+The characters stripped are chosen exactly as they are for <code>trim()</code>:
+whitespace when <em><code>chars</code></em> is not given, or every character of <em><code>chars</code></em>
+when it is.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'  example  '</span>.<span class="fn">rtrim</span>()
+<span class="out">'  example'</span>
+<span class="prompt">%&gt; </span><span class="str">'example'</span>.<span class="fn">rtrim</span>(<span class="str">'e'</span>)
+<span class="out">'exampl'</span>
+<span class="prompt">%&gt; </span><span class="str">'line\r\n'</span>.<span class="fn">rtrim</span>(<span class="str">'\r\n'</span>)
+<span class="out">'line'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>chars</code> (<code>?string</code>) — The characters to strip (Default = whitespace).</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="join"><a class="anchor" href="#join" aria-hidden="true" tabindex="-1"></a><code>join()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">join</span>(string<span class="op">:</span> string) <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns a string which is a concatenation of the items in the iterable
+using the <em>string</em> as the separator. If the iterable contains just one
+item or the <em>string</em> is empty, the original element is returned. If the
+<em>iterable</em> contains non-string items, the items are converted to their
+string representation before joining.</p>
+<p><code>Bytes</code> are the only non supported iterables.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">','</span>.<span class="fn">join</span>([<span class="str">'ok'</span>, <span class="num">1</span>, <span class="lit">true</span>])
+<span class="out">'ok,1,true'</span>
+<span class="prompt">%&gt; </span><span class="str">'--'</span>.<span class="fn">join</span>(<span class="str">'name'</span>)
+<span class="out">'n--a--m--e'</span>
+<span class="prompt">%&gt; </span><span class="str">','</span>.<span class="fn">join</span>(<span class="str">'a'</span>)
+<span class="out">'a'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>string</code> (<code>string</code>) — The string to join the items in the iterable.</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="split"><a class="anchor" href="#split" aria-hidden="true" tabindex="-1"></a><code>split()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">split</span>(delimiter<span class="op">:</span> string) <span class="op">-&gt;</span> list
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns a list of words or characters in a string after separating the
+content of the string at every point where the <em>delimiter</em> is found.</p>
+<p>If the <em>delimiter</em> is an empty string, the resultant list will contain
+the individual characters of the string in the order in which they
+appear in the original string. Consecutive delimiters are not grouped
+together and are deemed to delimit empty strings. Splitting an empty
+string with a specified separator returns an empty list.</p>
+<p>This method has full UTF-8 support.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'name'</span>.<span class="fn">split</span>(<span class="str">''</span>)
+<span class="out">[n, a, m, e]</span>
+<span class="prompt">%&gt; </span><span class="str">'1&lt;&gt;2&lt;&gt;3'</span>.<span class="fn">split</span>(<span class="str">'&lt;&gt;'</span>)
+<span class="out">[1, , 2, , 3]</span>
+<span class="prompt">%&gt; </span><span class="str">'1,2,3'</span>.<span class="fn">split</span>(<span class="str">','</span>)
+<span class="out">[1, 2, 3]</span>
+<span class="prompt">%&gt; </span><span class="str">''</span>.<span class="fn">split</span>(<span class="str">','</span>)
+<span class="out">[]</span>
+<span class="prompt">%&gt; </span><span class="str">'地点'</span>.<span class="fn">split</span>(<span class="str">''</span>)
+<span class="out">[地, 点]</span>
+<span class="prompt">%&gt; </span><span class="str">'who is in the garden'</span>.<span class="fn">split</span>(<span class="str">'/\s/'</span>)
+<span class="out">[who, is, in, the, garden]</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>delimiter</code> (<code>string</code>) — The delimiter to use the split the string.</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<h2 id="index_of"><a class="anchor" href="#index_of" aria-hidden="true" tabindex="-1"></a><code>index_of()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">index_of</span>(str<span class="op">:</span> string, start_index<span class="op">:</span> <span class="op">?</span>number) <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the index position of the first occurrence of the string <em><code>str</code></em>
+in the string <em><code>string</code></em>. If the <em>str</em> cannot be found anywhere in
+<em>string</em>, it returns -1. If the <code>start_index</code> parameter is given, it
+will start scanning from the given index.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'hello, world'</span>.<span class="fn">index_of</span>(<span class="str">' '</span>)
+<span class="out">6</span>
+<span class="prompt">%&gt; </span><span class="str">'hello, world'</span>.<span class="fn">index_of</span>(<span class="str">'e'</span>)
+<span class="out">1</span>
+<span class="prompt">%&gt; </span><span class="str">'hello, world'</span>.<span class="fn">index_of</span>(<span class="str">'q'</span>)
+<span class="out">-1</span>
+<span class="prompt">%&gt; </span><span class="str">'hello, world'</span>.<span class="fn">index_of</span>(<span class="str">'o'</span>)
+<span class="out">4</span>
+<span class="prompt">%&gt; </span><span class="str">'hello, world'</span>.<span class="fn">index_of</span>(<span class="str">'o'</span>, <span class="num">5</span>)  <span class="com"># next index of `o` starting from index 5.</span>
+<span class="out">8</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>str</code> (<code>string</code>) — The string to search for.</li>
+<li><code>start_index</code> (<code>?number</code>) — The index to start the search from.</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="last_index_of"><a class="anchor" href="#last_index_of" aria-hidden="true" tabindex="-1"></a><code>last_index_of()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">last_index_of</span>(str<span class="op">:</span> string, end_index<span class="op">:</span> <span class="op">?</span>number) <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the index position of the last occurrence of the string <em><code>str</code></em>
+in the string <em><code>string</code></em>, searching from the end. If <em>str</em> cannot be
+found anywhere in <em>string</em>, it returns -1.</p>
+<p>If the <code>end_index</code> parameter is given, only a match that <em>begins</em> at or
+before that index counts. That is the same thing <code>index_of()</code>'s own
+second parameter bounds, so for any index <code>n</code>, <code>index_of(str, n)</code> and
+<code>last_index_of(str, n)</code> are the first and last matches of the two halves
+<code>n</code> splits the string into.</p>
+<p>An empty <em>str</em> returns -1, matching <code>index_of()</code>.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'hello, world'</span>.<span class="fn">last_index_of</span>(<span class="str">'o'</span>)
+<span class="out">8</span>
+<span class="prompt">%&gt; </span><span class="str">'hello, world'</span>.<span class="fn">last_index_of</span>(<span class="str">'l'</span>)
+<span class="out">10</span>
+<span class="prompt">%&gt; </span><span class="str">'hello, world'</span>.<span class="fn">last_index_of</span>(<span class="str">'q'</span>)
+<span class="out">-1</span>
+<span class="prompt">%&gt; </span><span class="str">'hello, world'</span>.<span class="fn">last_index_of</span>(<span class="str">'o'</span>, <span class="num">7</span>)  <span class="com"># last `o` starting at or before index 7.</span>
+<span class="out">4</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p>Splitting a path on its final separator is the usual reason to reach for
+it:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="kw">var</span> path <span class="op">=</span> <span class="str">'a/b/c'</span>
+<span class="prompt">%&gt; </span>path.<span class="fn">last_index_of</span>(<span class="str">'/'</span>)
+<span class="out">3</span>
+<span class="prompt">%&gt; </span>path[path.<span class="fn">last_index_of</span>(<span class="str">'/'</span>) <span class="op">+</span> <span class="num">1</span>, path.<span class="fn">length</span>()]
+<span class="out">'c'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>str</code> (<code>string</code>) — The string to search for.</li>
+<li><code>end_index</code> (<code>?number</code>) — The highest index a match may start at.</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="starts_with"><a class="anchor" href="#starts_with" aria-hidden="true" tabindex="-1"></a><code>starts_with()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">starts_with</span>(str<span class="op">:</span> string) <span class="op">-&gt;</span> boolean
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns <code>true</code> if the string begins with the string or character
+specified in <em>str</em>, otherwise it returns <code>false</code>.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'hello, world'</span>.<span class="fn">starts_with</span>(<span class="str">'hello'</span>)
+<span class="out">true</span>
+<span class="prompt">%&gt; </span><span class="str">'hello, world'</span>.<span class="fn">starts_with</span>(<span class="str">'hellios'</span>)
+<span class="out">false</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>str</code> (<code>string</code>) — The string to search for.</li>
+</ul>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="ends_with"><a class="anchor" href="#ends_with" aria-hidden="true" tabindex="-1"></a><code>ends_with()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">ends_with</span>(str<span class="op">:</span> string) <span class="op">-&gt;</span> boolean
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns <code>true</code> if the string ends with the string or character specified
+in <em>str</em>, otherwise it returns <code>false</code>.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'gumtree'</span>.<span class="fn">ends_with</span>(<span class="str">'tree'</span>)
+<span class="out">true</span>
+<span class="prompt">%&gt; </span><span class="str">'gumtree'</span>.<span class="fn">ends_with</span>(<span class="str">'mree'</span>)
+<span class="out">false</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>str</code> (<code>string</code>) — The string to search for.</li>
+</ul>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="count"><a class="anchor" href="#count" aria-hidden="true" tabindex="-1"></a><code>count()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">count</span>(str<span class="op">:</span> string) <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the number of non-overlapping occurrences of the substring <em>str</em>
+in the string.</p>
+<p><em>For those coming from Python who may consider this method similar to
+Python's own, this method differs in that it does not allow specifying a
+start and end region for the operation. Zuri considers this unnecessary
+as the same can be accomplished by slicing the string.</em></p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'Hallelujah'</span>.<span class="fn">count</span>(<span class="str">'l'</span>)
+<span class="out">3</span>
+<span class="prompt">%&gt; </span><span class="str">'ding dong'</span>.<span class="fn">count</span>(<span class="str">'ng'</span>)
+<span class="out">2</span>
+<span class="prompt">%&gt; </span><span class="str">'ding dong'</span>[<span class="num">2</span>,<span class="num">7</span>].<span class="fn">count</span>(<span class="str">'ng'</span>) <span class="com"># setting region to search for counts - 'ng do'</span>
+<span class="out">1</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>str</code> (<code>string</code>) — The string to search for.</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="to_number"><a class="anchor" href="#to_number" aria-hidden="true" tabindex="-1"></a><code>to_number()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">to_number</span>(base) <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the first numeric value contained in the string if any exists or
+<code>0</code> if the string contains no numeric value. Floating numbers that have
+the same value as their integer counterparts will return the integer
+value.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'123.0 hell'</span>.<span class="fn">to_number</span>()
+<span class="out">123</span>
+<span class="prompt">%&gt; </span><span class="str">'427 and 12'</span>.<span class="fn">to_number</span>()
+<span class="out">427</span>
+<span class="prompt">%&gt; </span><span class="str">'96.3 of 31'</span>.<span class="fn">to_number</span>()
+<span class="out">96.3</span>
+<span class="prompt">%&gt; </span><span class="str">'error'</span>.<span class="fn">to_number</span>()
+<span class="out">0</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>base</code> (<code>number</code>) — The base the digits are in, from 2 to 36. Defaults
+to <code>10</code>. A fractional part is only read in base 10, since no other base
+spells one.</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<p><strong>Raises</strong> <code>RangeError</code> if <code>base</code> is outside 2 to 36.</p>
+<h2 id="to_bigint"><a class="anchor" href="#to_bigint" aria-hidden="true" tabindex="-1"></a><code>to_bigint()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">to_bigint</span>(base) <span class="op">-&gt;</span> bigint
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the integer value of the string as a <code>bigint</code>, or <code>0n</code> if the
+string does not spell one.</p>
+<p>This is <code>to_number()</code> for integers too large to be a number. A number is
+exact only up to 2^53; past that, digits are lost, and an id or a
+<code>BIGINT UNSIGNED</code> read from a database routinely runs past it. Every
+digit survives here however long the run.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'9007199254740993'</span>.<span class="fn">to_bigint</span>()
+<span class="out">9007199254740993n</span>
+<span class="prompt">%&gt; </span><span class="str">'9007199254740993'</span>.<span class="fn">to_number</span>()   <span class="com"># rounded down by one</span>
+<span class="out">9007199254740992</span>
+<span class="prompt">%&gt; </span><span class="str">'-42'</span>.<span class="fn">to_bigint</span>()
+<span class="out">-42n</span>
+<span class="prompt">%&gt; </span><span class="str">'ff'</span>.<span class="fn">to_bigint</span>(<span class="num">16</span>)
+<span class="out">255n</span>
+<span class="prompt">%&gt; </span><span class="str">'row 427 of 12'</span>.<span class="fn">to_bigint</span>()
+<span class="out">427n</span>
+<span class="prompt">%&gt; </span><span class="str">'error'</span>.<span class="fn">to_bigint</span>()
+<span class="out">0n</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p>The number is found exactly as <code>to_number()</code> finds it: the first one
+written in the string, with any text around it ignored. No fractional
+part is read, since this produces an integer, so <code>'12.5'.to_bigint()</code> is
+<code>12n</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>base</code> (<code>number</code>) — The base the digits are in, from 2 to 36. Defaults
+to <code>10</code>.</li>
+</ul>
+<p><strong>Returns</strong> <code>bigint</code></p>
+<p><strong>Raises</strong> <code>RangeError</code> if <code>base</code> is outside 2 to 36.</p>
+<h2 id="to_list"><a class="anchor" href="#to_list" aria-hidden="true" tabindex="-1"></a><code>to_list()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">to_list</span>() <span class="op">-&gt;</span> list
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns a list whose elements consists of every character contained in
+the string in order of appearance. Characters that repeat in the string
+will have different entries in the same index as they appear in the
+string.<br></p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'Zuri'</span>.<span class="fn">to_list</span>()
+<span class="out">[Z, u, r, i]</span>
+<span class="prompt">%&gt; </span><span class="str">'Plantation'</span>.<span class="fn">to_list</span>()
+<span class="out">[P, l, a, n, t, a, t, i, o, n]</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>list</code></p>
+<h2 id="to_bytes"><a class="anchor" href="#to_bytes" aria-hidden="true" tabindex="-1"></a><code>to_bytes()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">to_bytes</span>() <span class="op">-&gt;</span> <span class="bi">bytes</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the content of the string as a stream of <code>bytes</code>.</p>
+<blockquote>
+<p>The Zuri REPL <em>may</em> truncate long bytes data when printing
+to console/terminal.</p>
+</blockquote>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'Zuri'</span>.<span class="fn">to_bytes</span>()
+<span class="out">(42 6c 61 64 65)</span>
+<span class="prompt">%&gt; </span><span class="str">'Plantation'</span>.<span class="fn">to_bytes</span>()
+<span class="out">(50 6c 61 6e 74 61 74 69 6f 6e)</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h2 id="lpad"><a class="anchor" href="#lpad" aria-hidden="true" tabindex="-1"></a><code>lpad()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">lpad</span>(width<span class="op">:</span> number, fill<span class="op">:</span> <span class="op">?</span>string) <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the string left justified in a string of length <em>width</em>. Padding
+is done using the specified character <em>fill</em> if given of a space (<code>' '</code>)
+if a <em>fill</em> is not specified. The original string is returned if width
+is less than <em><code>string.length()</code></em>.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'cat'</span>.<span class="fn">lpad</span>(<span class="num">5</span>)
+<span class="out">'  cat'</span>
+<span class="prompt">%&gt; </span><span class="str">'cat'</span>.<span class="fn">lpad</span>(<span class="num">5</span>, <span class="str">'-'</span>)
+<span class="out">'--cat'</span>
+<span class="prompt">%&gt; </span><span class="str">'cat'</span>.<span class="fn">lpad</span>(<span class="num">2</span>, <span class="str">'-'</span>)
+<span class="out">'cat'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>width</code> (<code>number</code>) — The length of the string after padding.</li>
+<li><code>fill</code> (<code>?string</code>) — The character to use for padding.</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="rpad"><a class="anchor" href="#rpad" aria-hidden="true" tabindex="-1"></a><code>rpad()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">rpad</span>(width<span class="op">:</span> number, fill<span class="op">:</span> <span class="op">?</span>string) <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the string right justified in a string of length <em>width</em>.
+Padding is done using the specified character <em>fill</em> if given of a space
+(<code>' '</code>) if a <em>fill</em> is not specified. The original string is returned if
+width is less than <em><code>string.length()</code></em>.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'Hmm'</span>.<span class="fn">rpad</span>(<span class="num">6</span>)
+<span class="out">'Hmm   '</span>
+<span class="prompt">%&gt; </span><span class="str">'Hmm'</span>.<span class="fn">rpad</span>(<span class="num">6</span>, <span class="str">'.'</span>)
+<span class="out">'Hmm...'</span>
+<span class="prompt">%&gt; </span><span class="str">'Hmm'</span>.<span class="fn">rpad</span>(<span class="num">3</span>, <span class="str">'.'</span>)
+<span class="out">'Hmm'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>width</code> (<code>number</code>) — The length of the string after padding.</li>
+<li><code>fill</code> (<code>?string</code>) — The character to use for padding.</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="match"><a class="anchor" href="#match" aria-hidden="true" tabindex="-1"></a><code>match()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">match</span>(str<span class="op">:</span> string) <span class="op">-&gt;</span> boolean<span class="op">|</span>dictionary
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>If the string <em>str</em> is a regular string, this method returns <code>true</code> if
+the <em>string</em> contains a substring <em>str</em>. Otherwise, it returns <code>false</code>.</p>
+<p>If the string <em>str</em> contains a valid <a href="ch04-01-strings.html#regular-expressions">regular
+expression</a> (we'll get to that shortly below), it
+returns <code>false</code> if a match for the regex <em>str</em> cannot be found in the
+string. Otherwise, it returns a <a href="ch04-04-dictionaries.html">dictionary</a> of the
+first match: the whole match under key <code>0</code>, each capture group under its
+number, and a named group under its name as well. A group that takes no
+part in the match is <code>nil</code>. Groups that share a name, under the <code>J</code>
+modifier, give the name to the one that took part.</p>
+<p>If the <em>offset</em> argument is specified, it becomes the offset in the
+<em>string</em> at which to start matching.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'gorilla'</span>.<span class="fn">match</span>(<span class="str">'go'</span>)      <span class="com"># regular string match</span>
+<span class="out">true</span>
+<span class="prompt">%&gt; </span><span class="str">'gorilla'</span>.<span class="fn">match</span>(<span class="str">'gox'</span>)     <span class="com"># regular string non-match</span>
+<span class="out">false</span>
+<span class="prompt">%&gt; </span><span class="str">'gorilla'</span>.<span class="fn">match</span>(<span class="str">'/?gox/'</span>)  <span class="com"># regular expression match</span>
+<span class="out">{0: go}</span>
+<span class="prompt">%&gt; </span><span class="str">'gorilla'</span>.<span class="fn">match</span>(<span class="str">'/gox\d/'</span>) <span class="com"># regular expression non-match</span>
+<span class="out">false</span>
+<span class="prompt">%&gt; </span><span class="str">'2024-01'</span>.<span class="fn">match</span>(<span class="str">'/(?&lt;year&gt;\d+)-(\d+)/'</span>)
+<span class="out">{0: 2024-01, 1: 2024, 2: 01, year: 2024}</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>str</code> (<code>string</code>) — The string to match.</li>
+</ul>
+<p><strong>Returns</strong> <code>boolean|dictionary</code></p>
+<h2 id="matches"><a class="anchor" href="#matches" aria-hidden="true" tabindex="-1"></a><code>matches()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">matches</span>(reg<span class="op">:</span> string) <span class="op">-&gt;</span> dictionary
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns a dictionary containing every match of the given regular
+expression <em>reg</em> in the source string. If no match is found, each key of
+the <a href="ch04-04-dictionaries.html">dictionary</a> holds an empty list, so <code>{0: []}</code> for a
+pattern with no groups.</p>
+<p>If the <em>offset</em> argument is specified, it becomes the offset in the
+<em>string</em> at which to start matching.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'123 dollars'</span>.<span class="fn">matches</span>(<span class="str">'/[a-z]+|\d+/'</span>)
+<span class="out">{0: [123, dollars]}</span>
+<span class="prompt">%&gt; </span><span class="str">'who is in the garden'</span>.<span class="fn">matches</span>(<span class="str">'/\w+/'</span>)
+<span class="out">{0: [who, is, in, the, garden]}</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>reg</code> (<code>string</code>) — The regular expression to match.</li>
+</ul>
+<p><strong>Returns</strong> <code>dictionary</code></p>
+<h2 id="replace"><a class="anchor" href="#replace" aria-hidden="true" tabindex="-1"></a><code>replace()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">replace</span>(str<span class="op">:</span> string, replacement<span class="op">:</span> string, use_regex<span class="op">:</span> <span class="op">?</span>bool) <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns a copy of the string with all occurrences or matches of <em>str</em>
+replaced by the <em>replacement</em> string.</p>
+<p>In the <em>replacement</em> string, if <em>str</em> is a regular expression, then
+capture groups can be referenced using the syntax <code>$index</code>. Taking as an
+example, capture group <code>0</code> contains the entire match and can be used in
+the <em>replacement</em> string as <code>$0</code>.</p>
+<blockquote>
+<p>To escape the <code>$</code> sign in the <em>replacement</em> string, use
+the double backslashes (<code>\\</code>).</p>
+</blockquote>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'lady friend'</span>.<span class="fn">replace</span>(<span class="str">'d'</span>, <span class="str">'z'</span>)  <span class="com"># non-regex</span>
+<span class="out">'lazy frienz'</span>
+<span class="prompt">%&gt; </span><span class="str">'John is 26 years old'</span>.<span class="fn">replace</span>(<span class="str">'/(\d+)/'</span>, <span class="str">'1$1'</span>) <span class="com"># regex example</span>
+<span class="out">'John is 126 years old'</span>
+<span class="prompt">%&gt; </span><span class="str">'John is 26 years old'</span>.<span class="fn">replace</span>(<span class="str">'/(\d+)/'</span>, <span class="str">'1\\$2'</span>)
+<span class="out">'John is 1$2 years old'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>str</code> (<code>string</code>) — The string to match.</li>
+<li><code>replacement</code> (<code>string</code>) — The replacement string.</li>
+<li><code>use_regex</code> (<code>?bool</code>) — Whether to use the regular expression or the
+string string as the match string (default = true).</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<blockquote>
+<p><strong>Note:</strong> When the third parameter <em><code>use_regex</code></em> is set to false, <em>str</em>
+will never be treated as a regular expression even if it contains a
+valid regular expression.</p>
+</blockquote>
+<h2 id="replace_with"><a class="anchor" href="#replace_with" aria-hidden="true" tabindex="-1"></a><code>replace_with()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">replace_with</span>(regex<span class="op">:</span> string, callback<span class="op">:</span> function) <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns a copy of the string with all occurrences or matches of <em>regex</em>
+replaced with the result of the function <em>callback</em> which is invoked
+only if and after a match has occurred.</p>
+<p>The callback function is defined as follows:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">replacer</span>(match, p1, p2, <span class="com">/* …, */</span> pN, offset, string) {
+  <span class="kw">return</span> replacement
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The arguments to the function are as follows:</p>
+<ul>
+<li>
+<p><code>match</code>: The matched substring. (Corresponds to <code>$0</code>.)</p>
+</li>
+<li>
+<p><code>p1, p2, …, pN</code>: The nth string found by a capture group
+(including named capturing groups) corresponds to <code>$1</code>, <code>$2</code>, etc. For
+example, if the pattern is <code>/(\a+)(\b+)/</code>, then <code>p1</code> is the match for
+<code>\a+</code>, and <code>p2</code> is the match for <code>\b+</code>. If the group is part of a
+disjunction (e.g. <code>&quot;abc&quot;.replace_with('/(a)|(b)/', replacer)</code>), the
+unmatched alternative will be <code>nil</code>.</p>
+</li>
+<li>
+<p><code>offset</code>: The offset of the matched substring within the
+whole string being examined. For example, if the whole string was
+<code>'abcd'</code>, and the matched substring was <code>'bc'</code>, then this argument will
+be <code>1</code>.</p>
+</li>
+<li>
+<p><code>string</code>: The whole string being examined.</p>
+</li>
+</ul>
+<p>The exact number of arguments depends on how many capture groups are
+contained in the regex.</p>
+<p>For example:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="kw">echo</span> <span class="str">'name'</span>.<span class="fn">replace_with</span>(<span class="str">'/m/'</span>, <span class="meta">@</span>(match, offset) {
+<span class="prompt">.. </span>  <span class="kw">return</span> match <span class="op">+</span> <span class="str">'-'</span>
+<span class="prompt">.. </span>})
+<span class="out">'nam-e'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p>Below is another example that uses a capture group:</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="kw">var</span> text <span class="op">=</span> <span class="str">'all is well'</span>
+<span class="prompt">%&gt; </span>
+<span class="prompt">%&gt; </span><span class="kw">echo</span> text.<span class="fn">replace_with</span>(<span class="str">'/([a-z]+)/'</span>, <span class="meta">@</span>(match, val) {
+<span class="prompt">.. </span>  <span class="kw">if</span> val <span class="op">==</span> <span class="str">'is'</span> <span class="kw">return</span> <span class="str">'is not'</span>
+<span class="prompt">.. </span>  <span class="kw">return</span> <span class="str">'will be'</span>
+<span class="prompt">.. </span>})
+<span class="out">'will be is not will be'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>regex</code> (<code>string</code>) — The regular expression to match.</li>
+<li><code>callback</code> (<code>function</code>) — The callback function to invoke for each
+match.</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="ascii"><a class="anchor" href="#ascii" aria-hidden="true" tabindex="-1"></a><code>ascii()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">ascii</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Reinterprets the string as a raw byte view: each byte of its UTF-8
+encoding becomes its own character (a codepoint between <code>0</code> and <code>255</code>,
+i.e. a Latin-1-style one-byte-per-character mapping), rather than the
+decoded sequence of Unicode characters that <code>length()</code>, <code>each()</code>, and
+indexing otherwise operate on.</p>
+<p>The result is still a valid string (every codepoint between <code>0</code> and
+<code>255</code> is valid UTF-8), so it can be used anywhere a normal string can.
+It just no longer round-trips back through the original multi-byte
+characters if the string had any, and its <code>length()</code> now reports the
+original BYTE count of the string rather than its original CHARACTER
+count.</p>
+<p>This is meant for the rare case where code needs to walk a string
+byte-for-byte instead of character-by-character, e.g. one that
+originated from a byte stream where the bytes were never meant to be
+decoded as Unicode at all.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'café'</span>.<span class="fn">length</span>()
+<span class="out">4</span>
+<span class="prompt">%&gt; </span><span class="str">'café'</span>.<span class="fn">ascii</span>().<span class="fn">length</span>()
+<span class="out">5</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="case_fold"><a class="anchor" href="#case_fold" aria-hidden="true" tabindex="-1"></a><code>case_fold()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">case_fold</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns a copy of the string case-folded for case-insensitive
+comparison, using full Unicode case folding rather than plain
+lowercasing. This matters for characters whose fold is not just their
+lowercase form: for example, the German <code>ß</code> folds to <code>ss</code>.</p>
+<p>Two strings that are considered equal ignoring case will always produce
+identical output from <code>case_fold()</code>, which makes it the correct method
+to use for case-insensitive comparisons; <code>lower()</code> is not a substitute
+for it.</p>
+<figure class="code"><pre><code class="language-zuri-repl"><span class="prompt">%&gt; </span><span class="str">'HELLO World'</span>.<span class="fn">case_fold</span>()
+<span class="out">'hello world'</span>
+<span class="prompt">%&gt; </span><span class="str">'Straße'</span>.<span class="fn">case_fold</span>()
+<span class="out">'strasse'</span>
+</code></pre><span class="code-label">REPL</span></figure>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="compare"><a class="anchor" href="#compare" aria-hidden="true" tabindex="-1"></a><code>compare()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">compare</span>(other<span class="op">:</span> string) <span class="op">-&gt;</span> number
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Compares the string with another string.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>other</code> (<code>string</code>) — The other string to compare with.</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code> — A negative number if the string is less than the
+other string. - Zero if the strings are equal. - A positive number if
+the string is greater than the other string.</p>
+<p><strong>Raises</strong> <code>Error</code> if the other string is not a string.</p>
+<h2 id="is_empty"><a class="anchor" href="#is_empty" aria-hidden="true" tabindex="-1"></a><code>is_empty()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">is_empty</span>() <span class="op">-&gt;</span> boolean
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns true if the string is empty, false otherwise.</p>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="contains"><a class="anchor" href="#contains" aria-hidden="true" tabindex="-1"></a><code>contains()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">contains</span>(str<span class="op">:</span> string) <span class="op">-&gt;</span> boolean
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns true if the string contains the specified substring, false
+otherwise.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>str</code> (<code>string</code>) — The substring to search for.</li>
+</ul>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="lines"><a class="anchor" href="#lines" aria-hidden="true" tabindex="-1"></a><code>lines()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">lines</span>() <span class="op">-&gt;</span> list
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the lines of the string as an list as it would be if split on
+newline characters.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h2 id="each_line"><a class="anchor" href="#each_line" aria-hidden="true" tabindex="-1"></a><code>each_line()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">each_line</span>(callback<span class="op">:</span> function) <span class="op">-&gt;</span> void
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Iterates over each line of the string, calling the provided callback
+function with the line and its index.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>callback</code> (<code>function</code>) — A function that takes two arguments: the
+line and its index.</li>
+</ul>
+<p><strong>Returns</strong> <code>void</code></p>
+<p><strong>Raises</strong> <code>Error</code> if the callback is not a function.</p>
+<h2 id="each"><a class="anchor" href="#each" aria-hidden="true" tabindex="-1"></a><code>each()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">each</span>(callback<span class="op">:</span> function) <span class="op">-&gt;</span> void
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Iterates over each character of the string, calling the provided
+callback function with the character and its index.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>callback</code> (<code>function</code>) — A function that takes two arguments: the
+character and its index.</li>
+</ul>
+<p><strong>Returns</strong> <code>void</code></p>
+<p><strong>Raises</strong> <code>Error</code> if the callback is not a function.</p>
+<h2 id="capitalize"><a class="anchor" href="#capitalize" aria-hidden="true" tabindex="-1"></a><code>capitalize()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">capitalize</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns a new string with the first character capitalized and the rest
+in lowercase.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="title"><a class="anchor" href="#title" aria-hidden="true" tabindex="-1"></a><code>title()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">title</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns a new string with each word capitalized.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="to_string"><a class="anchor" href="#to_string" aria-hidden="true" tabindex="-1"></a><code>to_string()</code></h2>
+<figure class="code"><pre><code class="language-zuri"><span class="fn">to_string</span>() <span class="op">-&gt;</span> string
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Returns the string itself.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/appendix-05-01-string.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="appendix-05-type-methods.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title">E - Built-in Type Methods</span>
+          </a>
+          <a class="turn-next" rel="next" href="appendix-05-02-number.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title">Number Methods</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#length"><code>length()</code></a>
+        </li><li class="level-2">
+          <a href="#upper"><code>upper()</code></a>
+        </li><li class="level-2">
+          <a href="#lower"><code>lower()</code></a>
+        </li><li class="level-2">
+          <a href="#is_alpha"><code>is_alpha()</code></a>
+        </li><li class="level-2">
+          <a href="#is_alnum"><code>is_alnum()</code></a>
+        </li><li class="level-2">
+          <a href="#is_number"><code>is_number()</code></a>
+        </li><li class="level-2">
+          <a href="#is_lower"><code>is_lower()</code></a>
+        </li><li class="level-2">
+          <a href="#is_upper"><code>is_upper()</code></a>
+        </li><li class="level-2">
+          <a href="#is_space"><code>is_space()</code></a>
+        </li><li class="level-2">
+          <a href="#ord"><code>ord()</code></a>
+        </li><li class="level-2">
+          <a href="#trim"><code>trim()</code></a>
+        </li><li class="level-2">
+          <a href="#ltrim"><code>ltrim()</code></a>
+        </li><li class="level-2">
+          <a href="#rtrim"><code>rtrim()</code></a>
+        </li><li class="level-2">
+          <a href="#join"><code>join()</code></a>
+        </li><li class="level-2">
+          <a href="#split"><code>split()</code></a>
+        </li><li class="level-2">
+          <a href="#index_of"><code>index_of()</code></a>
+        </li><li class="level-2">
+          <a href="#last_index_of"><code>last_index_of()</code></a>
+        </li><li class="level-2">
+          <a href="#starts_with"><code>starts_with()</code></a>
+        </li><li class="level-2">
+          <a href="#ends_with"><code>ends_with()</code></a>
+        </li><li class="level-2">
+          <a href="#count"><code>count()</code></a>
+        </li><li class="level-2">
+          <a href="#to_number"><code>to_number()</code></a>
+        </li><li class="level-2">
+          <a href="#to_bigint"><code>to_bigint()</code></a>
+        </li><li class="level-2">
+          <a href="#to_list"><code>to_list()</code></a>
+        </li><li class="level-2">
+          <a href="#to_bytes"><code>to_bytes()</code></a>
+        </li><li class="level-2">
+          <a href="#lpad"><code>lpad()</code></a>
+        </li><li class="level-2">
+          <a href="#rpad"><code>rpad()</code></a>
+        </li><li class="level-2">
+          <a href="#match"><code>match()</code></a>
+        </li><li class="level-2">
+          <a href="#matches"><code>matches()</code></a>
+        </li><li class="level-2">
+          <a href="#replace"><code>replace()</code></a>
+        </li><li class="level-2">
+          <a href="#replace_with"><code>replace_with()</code></a>
+        </li><li class="level-2">
+          <a href="#ascii"><code>ascii()</code></a>
+        </li><li class="level-2">
+          <a href="#case_fold"><code>case_fold()</code></a>
+        </li><li class="level-2">
+          <a href="#compare"><code>compare()</code></a>
+        </li><li class="level-2">
+          <a href="#is_empty"><code>is_empty()</code></a>
+        </li><li class="level-2">
+          <a href="#contains"><code>contains()</code></a>
+        </li><li class="level-2">
+          <a href="#lines"><code>lines()</code></a>
+        </li><li class="level-2">
+          <a href="#each_line"><code>each_line()</code></a>
+        </li><li class="level-2">
+          <a href="#each"><code>each()</code></a>
+        </li><li class="level-2">
+          <a href="#capitalize"><code>capitalize()</code></a>
+        </li><li class="level-2">
+          <a href="#title"><code>title()</code></a>
+        </li><li class="level-2">
+          <a href="#to_string"><code>to_string()</code></a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>

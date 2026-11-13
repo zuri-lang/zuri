@@ -1,0 +1,1727 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Imagine: Images · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch16-00-imagine.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=0b209a4edb">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="purple" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print the whole book" aria-label="Print the whole book">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html" aria-current="page"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Chapter 16 · The Big Modules</p>
+        <div class="content"><h1 id="imagine">Imagine</h1>
+<p>The <code>imagine</code> module is Zuri's image library: decoding, drawing,
+transforming and encoding raster images.</p>
+<p>It covers the whole path an image takes through a program. A photograph
+arrives as an upload, gets checked, oriented, resized and sharpened, has
+a watermark composited onto it, and goes back out as a WebP. A chart is
+built from nothing but shapes and text. An avatar is cropped to a
+square, rounded off, and cached as a data URL. None of that needs
+anything outside the standard library.</p>
+<blockquote>
+<p>Every image on this page is the output of the code beside it,
+produced by <a href="imagine/figures.zu"><code>docs/book/src/imagine/figures.zu</code></a>. Re-run
+that script and the figures follow whatever the module actually does.</p>
+</blockquote>
+<ul>
+<li><a href="#introduction">Introduction</a>
+<ul>
+<li><a href="#a-first-image">A First Image</a></li>
+<li><a href="#copying-and-mutation">Copying and Mutation</a></li>
+</ul>
+</li>
+<li><a href="#colours">Colours</a>
+<ul>
+<li><a href="#writing-a-colour">Writing a Colour</a></li>
+<li><a href="#the-color-class">The Color Class</a></li>
+<li><a href="#colour-spaces">Colour Spaces</a></li>
+<li><a href="#contrast-and-accessibility">Contrast and Accessibility</a></li>
+</ul>
+</li>
+<li><a href="#loading-and-saving">Loading and Saving</a>
+<ul>
+<li><a href="#opening-an-image">Opening an Image</a></li>
+<li><a href="#checking-before-decoding">Checking Before Decoding</a></li>
+<li><a href="#saving">Saving</a></li>
+<li><a href="#format-reference">Format Reference</a></li>
+<li><a href="#encoding-options">Encoding Options</a></li>
+<li><a href="#data-urls">Data URLs</a></li>
+</ul>
+</li>
+<li><a href="#resizing-and-reshaping">Resizing and Reshaping</a>
+<ul>
+<li><a href="#choosing-a-resize">Choosing a Resize</a></li>
+<li><a href="#resampling-filters">Resampling Filters</a></li>
+<li><a href="#cropping-padding-and-trimming">Cropping, Padding and Trimming</a></li>
+<li><a href="#rotating-and-mirroring">Rotating and Mirroring</a></li>
+<li><a href="#exif-orientation">EXIF Orientation</a></li>
+</ul>
+</li>
+<li><a href="#filters">Filters</a>
+<ul>
+<li><a href="#tone-and-exposure">Tone and Exposure</a></li>
+<li><a href="#colour">Colour</a></li>
+<li><a href="#blur-sharpen-and-detail">Blur, Sharpen and Detail</a></li>
+<li><a href="#writing-your-own-filter">Writing Your Own Filter</a></li>
+</ul>
+</li>
+<li><a href="#drawing">Drawing</a>
+<ul>
+<li><a href="#shapes">Shapes</a></li>
+<li><a href="#strokes-and-anti-aliasing">Strokes and Anti-aliasing</a></li>
+<li><a href="#line-caps">Line Caps</a></li>
+<li><a href="#paths-and-polygons">Paths and Polygons</a></li>
+<li><a href="#filling-areas">Filling Areas</a></li>
+<li><a href="#gradients">Gradients</a></li>
+<li><a href="#clipping">Clipping</a></li>
+</ul>
+</li>
+<li><a href="#text">Text</a>
+<ul>
+<li><a href="#the-built-in-font">The Built-in Font</a></li>
+<li><a href="#loading-a-font">Loading a Font</a></li>
+<li><a href="#drawing-text">Drawing Text</a></li>
+<li><a href="#measuring-and-positioning">Measuring and Positioning</a></li>
+<li><a href="#wrapping">Wrapping</a></li>
+<li><a href="#what-text-layout-does-not-do">What Text Layout Does Not Do</a></li>
+</ul>
+</li>
+<li><a href="#compositing">Compositing</a>
+<ul>
+<li><a href="#drawing-one-image-onto-another">Drawing One Image Onto Another</a></li>
+<li><a href="#blend-modes">Blend Modes</a></li>
+<li><a href="#masks">Masks</a></li>
+<li><a href="#layers">Layers</a></li>
+</ul>
+</li>
+<li><a href="#inspecting-an-image">Inspecting an Image</a></li>
+<li><a href="#animation">Animation</a></li>
+<li><a href="#working-with-pixels-directly">Working With Pixels Directly</a></li>
+<li><a href="#errors">Errors</a></li>
+<li><a href="#performance-and-memory">Performance and Memory</a></li>
+<li><a href="#recipes">Recipes</a></li>
+</ul>
+<blockquote>
+<p>Blocks in this chapter that list several calls together — three ways to
+save, four filters, a family of methods — are <strong>reference listings</strong>, not
+programs. They show the shape of each call rather than a sequence you
+could run, and several would conflict if pasted into one file. Anything
+presented as a complete program on this page runs as written.</p>
+</blockquote>
+<h2 id="following-along"><a class="anchor" href="#following-along" aria-hidden="true" tabindex="-1"></a>Following Along</h2>
+<p>Most examples below operate on a file called <code>photo.jpg</code>. Use your own, or
+make one — the module can draw its own test subject:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> imagine { <span class="type">Image</span> }
+
+<span class="type">Image</span>(<span class="num">320</span>, <span class="num">240</span>, <span class="str">'#1e3a5f'</span>)
+    .<span class="fn">fill_circle</span>(<span class="num">220</span>, <span class="num">70</span>, <span class="num">40</span>, <span class="str">'#ffd166'</span>)
+    .<span class="fn">fill_rect</span>(<span class="num">0</span>, <span class="num">170</span>, <span class="num">320</span>, <span class="num">70</span>, <span class="str">'#2a9d8f'</span>)
+    .<span class="fn">fill_polygon</span>([
+      [<span class="num">40</span>, <span class="num">170</span>],
+      [<span class="num">110</span>, <span class="num">80</span>],
+      [<span class="num">180</span>, <span class="num">170</span>],
+    ], <span class="str">'#264653'</span>)
+    .<span class="fn">save</span>(<span class="str">'photo.jpg'</span>)
+
+<span class="kw">echo</span> <span class="type">Image</span>.<span class="fn">open</span>(<span class="str">'photo.jpg'</span>).<span class="fn">size</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{width: 320, height: 240}
+</code></pre><span class="code-label">Output</span></figure>
+<p>Everything from here on assumes that file exists in the working directory.</p>
+<h2 id="introduction"><a class="anchor" href="#introduction" aria-hidden="true" tabindex="-1"></a>Introduction</h2>
+<h3 id="a-first-image"><a class="anchor" href="#a-first-image" aria-hidden="true" tabindex="-1"></a>A First Image</h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> imagine { <span class="type">Image</span> }
+
+<span class="type">Image</span>.<span class="fn">open</span>(<span class="str">'photo.jpg'</span>).<span class="fn">thumbnail</span>(<span class="num">400</span>, <span class="num">400</span>).<span class="fn">save</span>(<span class="str">'thumb.webp'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Three lines: decode, shrink, encode. The format on the way in comes
+from the file's contents, and the format on the way out comes from the
+extension you saved it as.</p>
+<p>Building an image from scratch works the same way.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> imagine { <span class="type">Image</span>, <span class="type">Color</span> }
+
+<span class="type">Image</span>(<span class="num">400</span>, <span class="num">200</span>, <span class="str">'#0f172a'</span>)
+    .<span class="fn">fill_circle</span>(<span class="num">200</span>, <span class="num">100</span>, <span class="num">70</span>, <span class="str">'#38bdf8'</span>)
+    .<span class="fn">circle</span>(<span class="num">200</span>, <span class="num">100</span>, <span class="num">70</span>, <span class="str">'white'</span>, { thickness<span class="op">:</span> <span class="num">3</span> })
+    .<span class="fn">save</span>(<span class="str">'badge.png'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><img src="imagine/images/first-image.png" alt="A dark rectangle with a cyan circle outlined in white" /></p>
+<p>Almost every method returns an image, so operations chain.</p>
+<h3 id="copying-and-mutation"><a class="anchor" href="#copying-and-mutation" aria-hidden="true" tabindex="-1"></a>Copying and Mutation</h3>
+<p>There is one rule in this module that is worth learning before anything
+else, because everything else follows from it:</p>
+<blockquote>
+<p><strong>Operations that change the image's size return a new image.
+Everything else changes the image in place.</strong></p>
+</blockquote>
+<p><code>resize()</code>, <code>crop()</code>, <code>rotate()</code>, <code>flip()</code>, <code>transpose()</code> and <code>pad()</code>
+all leave the original untouched and hand back a new one. Drawing,
+filters and compositing all modify the image you called them on and
+return it so the chain continues.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> original <span class="op">=</span> <span class="type">Image</span>.<span class="fn">open</span>(<span class="str">'photo.jpg'</span>)
+
+<span class="kw">var</span> small <span class="op">=</span> original.<span class="fn">thumbnail</span>(<span class="num">200</span>, <span class="num">200</span>) <span class="com"># original is untouched</span>
+small.<span class="fn">grayscale</span>() <span class="com"># small is now grey</span>
+
+<span class="kw">echo</span> original.<span class="fn">size</span>() <span class="com"># still the full size, still colour</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>That means a mixed chain reads correctly, and it means <code>clone()</code> is what
+you reach for when you want to keep an image before filtering it.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> greyed <span class="op">=</span> photo.<span class="fn">clone</span>().<span class="fn">grayscale</span>() <span class="com"># photo keeps its colour</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<h2 id="colours"><a class="anchor" href="#colours" aria-hidden="true" tabindex="-1"></a>Colours</h2>
+<h3 id="writing-a-colour"><a class="anchor" href="#writing-a-colour" aria-hidden="true" tabindex="-1"></a>Writing a Colour</h3>
+<p>Anywhere a colour is expected, five spellings are accepted. These are
+all the same red:</p>
+<figure class="code"><pre><code class="language-zuri">image.<span class="fn">fill</span>(<span class="type">Color</span>(<span class="num">255</span>, <span class="num">0</span>, <span class="num">0</span>))
+image.<span class="fn">fill</span>(<span class="str">'#ff0000'</span>)
+image.<span class="fn">fill</span>(<span class="str">'red'</span>)
+image.<span class="fn">fill</span>(0xFF0000FF)
+image.<span class="fn">fill</span>([<span class="num">255</span>, <span class="num">0</span>, <span class="num">0</span>])
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Hexadecimal strings take all four CSS lengths, with or without the
+leading <code>#</code>: <code>#f00</code>, <code>#f00c</code>, <code>#ff0000</code>, <code>#ff0000cc</code>. Names are the full
+CSS Color Level 4 list, matched ignoring case, spaces and hyphens, so
+<code>'Dark Sea Green'</code> and <code>'darkseagreen'</code> are the same colour.</p>
+<p>Alpha runs 0 (transparent) to 255 (opaque), as in CSS and PNG.</p>
+<h3 id="the-color-class"><a class="anchor" href="#the-color-class" aria-hidden="true" tabindex="-1"></a>The Color Class</h3>
+<p><code>Color</code> is an immutable value type. Every method that would change one
+returns a new colour, so a colour held in a variable is safe to pass
+around.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> imagine { <span class="type">Color</span> }
+
+<span class="kw">var</span> brand <span class="op">=</span> <span class="type">Color</span>.<span class="fn">hex</span>(<span class="str">'#4f46e5'</span>)
+
+brand.<span class="prop">r</span> <span class="com"># 79</span>
+brand.<span class="fn">to_hex</span>() <span class="com"># '#4f46e5'</span>
+brand.<span class="fn">to_packed</span>() <span class="com"># 0x4F46E5FF</span>
+
+brand.<span class="fn">with_alpha</span>(<span class="num">128</span>) <span class="com"># half transparent</span>
+brand.<span class="fn">fade</span>(<span class="num">0.5</span>) <span class="com"># halves whatever alpha it already had</span>
+brand.<span class="fn">lighten</span>(<span class="num">20</span>) <span class="com"># 20 percentage points of HSL lightness</span>
+brand.<span class="fn">darken</span>(<span class="num">20</span>)
+brand.<span class="fn">saturate</span>(<span class="num">15</span>)
+brand.<span class="fn">desaturate</span>(<span class="num">15</span>)
+brand.<span class="fn">rotate_hue</span>(<span class="num">180</span>)
+brand.<span class="fn">mix</span>(<span class="str">'white'</span>, <span class="num">0.25</span>) <span class="com"># a quarter of the way to white</span>
+brand.<span class="fn">invert</span>()
+brand.<span class="fn">to_grayscale</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>over()</code> flattens a translucent colour against a background, which is
+what happens when it is drawn onto something solid:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="type">Color</span>(<span class="num">255</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">128</span>).<span class="fn">over</span>(<span class="str">'white'</span>) <span class="com"># '#ff7f7f'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<h3 id="colour-spaces"><a class="anchor" href="#colour-spaces" aria-hidden="true" tabindex="-1"></a>Colour Spaces</h3>
+<p>Conversions come from the <a href="#"><code>colors</code></a> module, so the conventions are
+the same ones it and CSS use: hue in degrees, everything else in
+percentage points from 0 to 100.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="type">Color</span>.<span class="fn">hsl</span>(<span class="num">240</span>, <span class="num">100</span>, <span class="num">50</span>) <span class="com"># '#0000ff'</span>
+<span class="type">Color</span>.<span class="fn">hsv</span>(<span class="num">120</span>, <span class="num">100</span>, <span class="num">100</span>) <span class="com"># '#00ff00'</span>
+<span class="type">Color</span>.<span class="fn">hwb</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>) <span class="com"># '#ff0000'</span>
+<span class="type">Color</span>.<span class="fn">cmyk</span>(<span class="num">0</span>, <span class="num">100</span>, <span class="num">100</span>, <span class="num">0</span>) <span class="com"># '#ff0000'</span>
+<span class="type">Color</span>.<span class="fn">lab</span>(<span class="num">40.7</span>, <span class="num">50.6</span>, <span class="op">-</span><span class="num">79.1</span>) <span class="com"># perceptually uniform</span>
+<span class="type">Color</span>.<span class="fn">xyz</span>(<span class="num">0.2</span>, <span class="num">0.15</span>, <span class="num">0.7</span>)
+
+brand.<span class="fn">to_hsl</span>() <span class="com"># { h: 243.4, s: 75.4, l: 58.6, a: 255 }</span>
+brand.<span class="fn">to_hsv</span>()
+brand.<span class="fn">to_hwb</span>()
+brand.<span class="fn">to_cmyk</span>()
+brand.<span class="fn">to_lab</span>()
+brand.<span class="fn">to_xyz</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Lab is the right space for interpolating between two colours when the
+intermediate steps need to look evenly spaced to the eye. CMYK here is
+the naive conversion with no output profile, so it is right for
+generating colours and wrong for predicting a printing press.</p>
+<h3 id="contrast-and-accessibility"><a class="anchor" href="#contrast-and-accessibility" aria-hidden="true" tabindex="-1"></a>Contrast and Accessibility</h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> background <span class="op">=</span> <span class="type">Color</span>.<span class="fn">hex</span>(<span class="str">'#1e293b'</span>)
+
+background.<span class="fn">luminance</span>() <span class="com"># 0 to 1, WCAG relative luminance</span>
+background.<span class="fn">contrast_ratio</span>(<span class="str">'#ffffff'</span>) <span class="com"># 1 to 21</span>
+background.<span class="fn">is_dark</span>() <span class="com"># true</span>
+background.<span class="fn">best_contrast</span>() <span class="com"># white, since the background is dark</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>WCAG asks for a ratio of at least 4.5 for normal text and 3 for large
+text, so <code>best_contrast()</code> is the quick way to pick a legible foreground
+for a colour you did not choose:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> label <span class="op">=</span> swatch.<span class="fn">best_contrast</span>(<span class="str">'#ffffff'</span>, <span class="str">'#111111'</span>)
+
+card.<span class="fn">text</span>(<span class="num">20</span>, <span class="num">20</span>, name, font, label)
+</code></pre><span class="code-label">Zuri</span></figure>
+<h2 id="loading-and-saving"><a class="anchor" href="#loading-and-saving" aria-hidden="true" tabindex="-1"></a>Loading and Saving</h2>
+<h3 id="opening-an-image"><a class="anchor" href="#opening-an-image" aria-hidden="true" tabindex="-1"></a>Opening an Image</h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> photo <span class="op">=</span> <span class="type">Image</span>.<span class="fn">open</span>(<span class="str">'photo.jpg'</span>) <span class="com"># from a path</span>
+<span class="kw">var</span> photo <span class="op">=</span> <span class="type">Image</span>.<span class="fn">open</span>(<span class="bi">file</span>(<span class="str">'photo.jpg'</span>)) <span class="com"># from an open file</span>
+<span class="kw">var</span> photo <span class="op">=</span> <span class="type">Image</span>.<span class="fn">decode</span>(upload) <span class="com"># from bytes in memory</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The format is detected from the contents rather than the name, so a
+mislabelled file still opens. When the contents cannot be identified —
+TGA carries no signature of its own — <code>Image.open()</code> falls back to the
+file extension.</p>
+<p><code>Image.decode()</code> takes options:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="type">Image</span>.<span class="fn">decode</span>(upload, { format<span class="op">:</span> <span class="str">'png'</span> }) <span class="com"># fail unless it really is a PNG</span>
+<span class="type">Image</span>.<span class="fn">decode</span>(raw, { orient<span class="op">:</span> <span class="lit">false</span> }) <span class="com"># skip EXIF auto-rotation</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Naming the format explicitly is worth doing when you already know it
+from a <code>Content-Type</code> or an extension: a file claiming to be a PNG that
+is really something else then fails loudly instead of being decoded as
+whatever it actually is.</p>
+<h3 id="checking-before-decoding"><a class="anchor" href="#checking-before-decoding" aria-hidden="true" tabindex="-1"></a>Checking Before Decoding</h3>
+<p>An image costs four bytes per pixel once decoded, so a 6000x4000
+photograph occupies 96 MB in memory however small its file was. For
+anything arriving from outside the program, read the header first:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> imagine
+<span class="kw">import</span> imagine { <span class="type">Image</span> }
+
+<span class="kw">var</span> header <span class="op">=</span> imagine.<span class="fn">probe</span>(upload)
+
+<span class="kw">if</span> header <span class="op">==</span> <span class="lit">nil</span> {
+  <span class="kw">raise</span> <span class="type">Error</span>(<span class="str">'that is not an image'</span>)
+}
+
+<span class="kw">if</span> header.<span class="prop">width</span> <span class="op">*</span> header.<span class="prop">height</span> <span class="op">&gt;</span> <span class="num">40000000</span> {
+  <span class="kw">raise</span> <span class="type">Error</span>(<span class="str">'image is too large'</span>)
+}
+
+<span class="kw">var</span> photo <span class="op">=</span> imagine.<span class="fn">decode</span>(upload)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>probe()</code> returns <code>{format, width, height}</code> or <code>nil</code>. It reads only the
+header, which costs microseconds where decoding the same file costs tens
+of milliseconds. <code>imagine.detect()</code> is the same check when you only want
+the format name.</p>
+<h3 id="saving"><a class="anchor" href="#saving" aria-hidden="true" tabindex="-1"></a>Saving</h3>
+<figure class="code"><pre><code class="language-zuri">photo.<span class="fn">save</span>(<span class="str">'out.png'</span>)
+photo.<span class="fn">save</span>(<span class="str">'out.jpg'</span>, { quality<span class="op">:</span> <span class="num">90</span> })
+photo.<span class="fn">save</span>(<span class="str">'out.dat'</span>, { format<span class="op">:</span> <span class="str">'webp'</span> }) <span class="com"># extension overridden</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The format comes from the extension unless <code>format</code> says otherwise. To
+get the bytes instead of a file:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> data <span class="op">=</span> photo.<span class="fn">encode</span>(<span class="str">'webp'</span>)
+<span class="kw">var</span> data <span class="op">=</span> photo.<span class="fn">to_png</span>()
+<span class="kw">var</span> data <span class="op">=</span> photo.<span class="fn">to_jpeg</span>(<span class="num">90</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>encode()</code> with no format uses whatever the image was decoded from,
+falling back to PNG for an image built in memory.</p>
+<h3 id="format-reference"><a class="anchor" href="#format-reference" aria-hidden="true" tabindex="-1"></a>Format Reference</h3>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Read</th>
+<th>Write</th>
+<th>Alpha</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PNG</td>
+<td>yes</td>
+<td>yes</td>
+<td>yes</td>
+<td>Lossless. The safe default.</td>
+</tr>
+<tr>
+<td>JPEG</td>
+<td>yes</td>
+<td>yes</td>
+<td>no</td>
+<td>Lossy. Photographs only.</td>
+</tr>
+<tr>
+<td>WebP</td>
+<td>yes</td>
+<td>yes</td>
+<td>yes</td>
+<td><strong>Written lossless</strong>, so smaller than PNG but larger than a lossy WebP.</td>
+</tr>
+<tr>
+<td>AVIF</td>
+<td>no</td>
+<td>yes</td>
+<td>yes</td>
+<td>Smallest files, slowest to encode.</td>
+</tr>
+<tr>
+<td>GIF</td>
+<td>yes</td>
+<td>yes</td>
+<td>1-bit</td>
+<td>256 colours. The only animated format that can be written.</td>
+</tr>
+<tr>
+<td>BMP</td>
+<td>yes</td>
+<td>yes</td>
+<td>yes</td>
+<td>Uncompressed and enormous.</td>
+</tr>
+<tr>
+<td>TIFF</td>
+<td>yes</td>
+<td>yes</td>
+<td>yes</td>
+<td>Common in printing and scanning.</td>
+</tr>
+<tr>
+<td>TGA</td>
+<td>yes</td>
+<td>yes</td>
+<td>yes</td>
+<td>No signature; needs an extension or an explicit format.</td>
+</tr>
+<tr>
+<td>QOI</td>
+<td>yes</td>
+<td>yes</td>
+<td>yes</td>
+<td>Lossless, several times faster than PNG.</td>
+</tr>
+<tr>
+<td>ICO</td>
+<td>yes</td>
+<td>yes</td>
+<td>yes</td>
+<td>Icon container.</td>
+</tr>
+<tr>
+<td>PNM</td>
+<td>yes</td>
+<td>yes</td>
+<td>no</td>
+<td>Trivially simple, trivially large.</td>
+</tr>
+<tr>
+<td>WBMP</td>
+<td>yes</td>
+<td>yes</td>
+<td>no</td>
+<td>One bit per pixel.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Three entries need explaining.</p>
+<p><strong>AVIF is write-only</strong>: opening one raises <code>DecodeError</code>.</p>
+<p><strong>TGA has no magic number</strong>, so it can only be identified by its file
+extension or by naming the format outright.</p>
+<p><strong>WebP is written losslessly.</strong> Reading handles both lossy and lossless
+WebP, but the encoder here only writes lossless, so <code>quality</code> has no
+effect on it and a photograph saved as WebP will be larger than one
+saved by a tool that can write lossy WebP. For a photograph where size
+matters, JPEG or AVIF is the better target; WebP here is a
+smaller-than-PNG lossless format with alpha.</p>
+<p>Never assume; ask:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> imagine
+
+<span class="kw">var</span> can <span class="op">=</span> imagine.<span class="fn">capabilities</span>()
+
+<span class="kw">echo</span> can.<span class="prop">decode</span>.<span class="fn">contains</span>(<span class="str">'png'</span>)
+<span class="kw">echo</span> can.<span class="prop">encode</span>.<span class="fn">contains</span>(<span class="str">'webp'</span>)
+<span class="kw">echo</span> can.<span class="prop">animated</span>.<span class="fn">contains</span>(<span class="str">'gif'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+true
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>decode</code>, <code>encode</code> and <code>animated</code> are each a list of format names, so
+<code>contains()</code> answers the question you actually have.</p>
+<h3 id="encoding-options"><a class="anchor" href="#encoding-options" aria-hidden="true" tabindex="-1"></a>Encoding Options</h3>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Formats</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>quality</code></td>
+<td>JPEG, AVIF</td>
+<td>1 to 100. Defaults to 85 for JPEG, 80 for AVIF.</td>
+</tr>
+<tr>
+<td><code>compression</code></td>
+<td>PNG</td>
+<td><code>'fast'</code>, <code>'default'</code> or <code>'best'</code>. All lossless.</td>
+</tr>
+<tr>
+<td><code>speed</code></td>
+<td>AVIF, GIF</td>
+<td>AVIF 1-10, lower is slower and smaller. GIF 1-30, lower is slower and picks better colours; 15 by default.</td>
+</tr>
+<tr>
+<td><code>background</code></td>
+<td>JPEG</td>
+<td>What transparent pixels are flattened against. Defaults to white.</td>
+</tr>
+<tr>
+<td><code>threshold</code></td>
+<td>WBMP</td>
+<td>The brightness cut, 0 to 255.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>JPEG has no alpha channel, so transparency has to go somewhere on the
+way out. It is flattened against <code>background</code> rather than silently
+dropped, because dropping it turns transparent pixels black:</p>
+<figure class="code"><pre><code class="language-zuri">logo.<span class="fn">save</span>(<span class="str">'logo.jpg'</span>, { background<span class="op">:</span> <span class="str">'#ffffff'</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>To see the result first, or to choose the colour once and keep it, do it
+explicitly:</p>
+<figure class="code"><pre><code class="language-zuri">logo.<span class="fn">flatten</span>(<span class="str">'#ffffff'</span>).<span class="fn">save</span>(<span class="str">'logo.jpg'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<h3 id="data-urls"><a class="anchor" href="#data-urls" aria-hidden="true" tabindex="-1"></a>Data URLs</h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> url <span class="op">=</span> icon.<span class="fn">to_data_url</span>(<span class="str">'png'</span>)
+<span class="com"># 'data:image/png;base64,iVBORw0...'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Base64 costs a third more bytes than the raw image, so this suits icons
+and small graphics rather than photographs.</p>
+<h2 id="resizing-and-reshaping"><a class="anchor" href="#resizing-and-reshaping" aria-hidden="true" tabindex="-1"></a>Resizing and Reshaping</h2>
+<h3 id="choosing-a-resize"><a class="anchor" href="#choosing-a-resize" aria-hidden="true" tabindex="-1"></a>Choosing a Resize</h3>
+<p>There are six, and picking the right one is most of the work:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Aspect ratio</th>
+<th>Enlarges?</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>resize(w, h)</code></td>
+<td>not kept</td>
+<td>yes</td>
+<td>exactly <code>w x h</code>, possibly distorted</td>
+</tr>
+<tr>
+<td><code>scale(factor)</code></td>
+<td>kept</td>
+<td>yes</td>
+<td>the same image, scaled</td>
+</tr>
+<tr>
+<td><code>thumbnail(w, h)</code></td>
+<td>kept</td>
+<td><strong>no</strong></td>
+<td>fits inside the box</td>
+</tr>
+<tr>
+<td><code>fit(w, h)</code></td>
+<td>kept</td>
+<td>yes</td>
+<td>fits inside the box</td>
+</tr>
+<tr>
+<td><code>cover(w, h)</code></td>
+<td>kept</td>
+<td>yes</td>
+<td>fills the box, cropping the overflow</td>
+</tr>
+<tr>
+<td><code>contain(w, h)</code></td>
+<td>kept</td>
+<td>yes</td>
+<td>fits the box, padding the remainder</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><code>thumbnail()</code> is the one you usually want for thumbnails, and the
+refusal to enlarge is the reason: scaling a small image up to fill a
+thumbnail box only makes it blurry. Use <code>fit()</code> when you do want it
+scaled up.</p>
+<p><code>cover()</code> and <code>contain()</code> both produce exactly the size asked for. They
+differ in what they sacrifice — <code>cover()</code> loses part of the image,
+<code>contain()</code> adds bars:</p>
+<figure class="code"><pre><code class="language-zuri">photo.<span class="fn">cover</span>(<span class="num">300</span>, <span class="num">300</span>) <span class="com"># crops to a square</span>
+photo.<span class="fn">cover</span>(<span class="num">300</span>, <span class="num">300</span>, { anchor<span class="op">:</span> <span class="const">TOP</span> }) <span class="com"># keeps the top, crops the bottom</span>
+photo.<span class="fn">contain</span>(<span class="num">300</span>, <span class="num">300</span>, { background<span class="op">:</span> <span class="str">'white'</span> }) <span class="com"># letterboxes instead</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The same 320x180 image asked for a 120x120 result four ways:</p>
+<p><img src="imagine/images/resize-modes.png" alt="thumbnail, cover, contain and resize compared" /></p>
+<p><code>thumbnail()</code> keeps the proportions and does not fill the box.
+<code>cover()</code> fills it and loses the sides. <code>contain()</code> fills it and adds
+bars. <code>resize()</code> fills it by distorting the picture.</p>
+<p>The anchors are <code>TOP_LEFT</code>, <code>TOP</code>, <code>TOP_RIGHT</code>, <code>LEFT</code>, <code>CENTER</code>,
+<code>RIGHT</code>, <code>BOTTOM_LEFT</code>, <code>BOTTOM</code> and <code>BOTTOM_RIGHT</code>. <code>CENTER</code> is the
+default, and <code>TOP</code> is what you want for photographs of people, where the
+face is rarely in the bottom third.</p>
+<h3 id="resampling-filters"><a class="anchor" href="#resampling-filters" aria-hidden="true" tabindex="-1"></a>Resampling Filters</h3>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Filter</th>
+<th>Speed</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>NEAREST</code></td>
+<td>fastest</td>
+<td>Pixel art, QR codes, anything whose edges must stay hard.</td>
+</tr>
+<tr>
+<td><code>BILINEAR</code></td>
+<td>fast</td>
+<td>When speed matters more than sharpness.</td>
+</tr>
+<tr>
+<td><code>BICUBIC</code></td>
+<td>moderate</td>
+<td>A good default for photographs.</td>
+</tr>
+<tr>
+<td><code>GAUSSIAN</code></td>
+<td>moderate</td>
+<td>Deliberately soft; for noisy input, or before sharpening.</td>
+</tr>
+<tr>
+<td><code>LANCZOS</code></td>
+<td>slowest</td>
+<td>Thumbnails and any large reduction. The default.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<figure class="code"><pre><code class="language-zuri">photo.<span class="fn">thumbnail</span>(<span class="num">200</span>, <span class="num">200</span>, <span class="const">LANCZOS</span>)
+sprite.<span class="fn">scale</span>(<span class="num">4</span>, <span class="const">NEAREST</span>) <span class="com"># keeps pixel art crisp</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A 16x16 sprite enlarged seven times over, so the differences are
+visible at all:</p>
+<p><img src="imagine/images/resample-filters.png" alt="the four resampling filters compared on an enlarged sprite" /></p>
+<p>This is the case where <code>NEAREST</code> is right and everything else is
+wrong. Shrinking a photograph inverts that judgement entirely.</p>
+<p><code>LANCZOS</code> is the default because most resizing is shrinking, and that is
+where it earns its cost. It can produce faint ringing next to very
+high-contrast edges, which is the price of its sharpness; <code>BICUBIC</code> is
+the fallback when that shows.</p>
+<h3 id="cropping-padding-and-trimming"><a class="anchor" href="#cropping-padding-and-trimming" aria-hidden="true" tabindex="-1"></a>Cropping, Padding and Trimming</h3>
+<figure class="code"><pre><code class="language-zuri">photo.<span class="fn">crop</span>(<span class="num">100</span>, <span class="num">50</span>, <span class="num">400</span>, <span class="num">300</span>) <span class="com"># x, y, width, height</span>
+photo.<span class="fn">pad</span>(<span class="num">20</span>) <span class="com"># 20 pixels on every side</span>
+photo.<span class="fn">pad</span>(<span class="num">10</span>, <span class="num">20</span>, <span class="num">10</span>, <span class="num">20</span>, <span class="str">'white'</span>) <span class="com"># top, right, bottom, left, colour</span>
+photo.<span class="fn">trim</span>() <span class="com"># remove a uniform border</span>
+photo.<span class="fn">trim</span>({ tolerance<span class="op">:</span> <span class="num">8</span> }) <span class="com"># allow for JPEG noise in the border</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>crop()</code> requires its rectangle to fit inside the image and raises
+<code>BoundsError</code> otherwise. Clamping a crop that runs off the edge would
+hand back different dimensions than were asked for, which is a worse
+surprise than an error. Pad first when the region really is meant to
+extend past the edge.</p>
+<p><code>trim()</code> takes the border colour from the top-left pixel unless you name
+one. Scanned documents and screenshots almost always want a tolerance,
+because a &quot;white&quot; border from a lossy format is not exactly white.</p>
+<p><img src="imagine/images/trim.png" alt="a small shape on a large background, then trimmed to it" /></p>
+<h3 id="rotating-and-mirroring"><a class="anchor" href="#rotating-and-mirroring" aria-hidden="true" tabindex="-1"></a>Rotating and Mirroring</h3>
+<figure class="code"><pre><code class="language-zuri">photo.<span class="fn">rotate_90</span>() <span class="com"># lossless</span>
+photo.<span class="fn">rotate_180</span>()
+photo.<span class="fn">rotate_270</span>()
+photo.<span class="fn">rotate</span>(<span class="num">37</span>, <span class="str">'white'</span>) <span class="com"># resamples, grows the canvas</span>
+
+photo.<span class="fn">flip_horizontal</span>()
+photo.<span class="fn">flip_vertical</span>()
+photo.<span class="fn">flip</span>(<span class="const">FLIP_BOTH</span>)
+photo.<span class="fn">transpose</span>() <span class="com"># reflect across the main diagonal</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Quarter turns are exact: every pixel is moved, none is resampled. Any
+other angle interpolates, and grows the canvas to hold the rotated
+corners with <code>background</code> filling the gaps.</p>
+<h3 id="exif-orientation"><a class="anchor" href="#exif-orientation" aria-hidden="true" tabindex="-1"></a>EXIF Orientation</h3>
+<p>Phone cameras usually store the sensor's orientation in the file rather
+than rotating the pixels, so a photograph whose bytes are sideways is
+meant to be displayed upright. <code>Image.open()</code> and <code>Image.decode()</code>
+handle this for you.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="type">Image</span>.<span class="fn">open</span>(<span class="str">'photo.jpg'</span>) <span class="com"># upright</span>
+<span class="type">Image</span>.<span class="fn">open</span>(<span class="str">'photo.jpg'</span>, { orient<span class="op">:</span> <span class="lit">false</span> }) <span class="com"># exactly as stored</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>All eight orientation values are handled, including the four mirrored
+ones that scanners and some front-facing cameras produce.</p>
+<h2 id="filters"><a class="anchor" href="#filters" aria-hidden="true" tabindex="-1"></a>Filters</h2>
+<p>Filters change the image in place and return it, so they chain.</p>
+<figure class="code"><pre><code class="language-zuri">photo.<span class="fn">grayscale</span>().<span class="fn">contrast</span>(<span class="num">15</span>).<span class="fn">sharpen</span>(<span class="num">0.5</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<h3 id="tone-and-exposure"><a class="anchor" href="#tone-and-exposure" aria-hidden="true" tabindex="-1"></a>Tone and Exposure</h3>
+<figure class="code"><pre><code class="language-zuri">photo.<span class="fn">brightness</span>(<span class="num">20</span>) <span class="com"># -255 to 255, added to each channel</span>
+photo.<span class="fn">contrast</span>(<span class="num">15</span>) <span class="com"># -100 to 100, around mid-grey</span>
+photo.<span class="fn">gamma</span>(<span class="num">1.2</span>) <span class="com"># above 1 lifts midtones, below 1 lowers them</span>
+photo.<span class="fn">levels</span>(<span class="num">20</span>, <span class="num">235</span>) <span class="com"># stretch this input range to full scale</span>
+photo.<span class="fn">levels</span>(<span class="num">20</span>, <span class="num">235</span>, <span class="num">1.1</span>) <span class="com"># ...with a midtone curve</span>
+photo.<span class="fn">threshold</span>(<span class="num">128</span>) <span class="com"># every pixel to black or white</span>
+photo.<span class="fn">posterize</span>(<span class="num">6</span>) <span class="com"># six evenly spaced steps per channel</span>
+photo.<span class="fn">invert</span>() <span class="com"># a photographic negative</span>
+photo.<span class="fn">opacity</span>(<span class="num">0.5</span>) <span class="com"># scale the alpha channel</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>levels()</code> is the single most useful correction for a flat or
+washed-out photograph. Everything at or below the black point becomes
+black, everything at or above the white point becomes white, and the
+range between is stretched to fill the scale.</p>
+<p><img src="imagine/images/filters-tone.png" alt="brightness, contrast and gamma applied to one image" /></p>
+<p><img src="imagine/images/filters-tone-2.png" alt="levels, posterize, threshold and invert applied to one image" /></p>
+<p>Note the difference between <code>posterize()</code> and <code>quantize()</code>:
+<code>posterize()</code> spaces its levels evenly, <code>quantize()</code> picks the colours
+to suit the image, so a photograph survives far fewer of them.</p>
+<figure class="code"><pre><code class="language-zuri">photo.<span class="fn">quantize</span>(<span class="num">32</span>) <span class="com"># 32 well-chosen colours</span>
+photo.<span class="fn">quantize</span>(<span class="num">16</span>, <span class="lit">true</span>) <span class="com"># ...with dithering</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>auto_levels()</code> does the same job as <code>levels()</code> without being told
+where the endpoints are; it is shown alongside the detail filters
+below.</p>
+<h3 id="colour"><a class="anchor" href="#colour" aria-hidden="true" tabindex="-1"></a>Colour</h3>
+<figure class="code"><pre><code class="language-zuri">photo.<span class="fn">grayscale</span>()
+photo.<span class="fn">sepia</span>()
+photo.<span class="fn">saturate</span>(<span class="num">1.4</span>) <span class="com"># 0 removes colour, 1 is unchanged</span>
+photo.<span class="fn">hue_rotate</span>(<span class="num">45</span>)
+photo.<span class="fn">tint</span>(<span class="str">'#ff8800'</span>, <span class="num">0.3</span>) <span class="com"># blend a flat colour in</span>
+photo.<span class="fn">colorize</span>(<span class="str">'#4f46e5'</span>) <span class="com"># monochrome in one colour</span>
+photo.<span class="fn">duotone</span>(<span class="str">'#1e1b4b'</span>, <span class="str">'#fbbf24'</span>)
+photo.<span class="fn">flatten</span>(<span class="str">'white'</span>) <span class="com"># composite over a colour, drop alpha</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>grayscale()</code> weights the channels for perceived brightness, so a bright
+yellow comes out light and a deep blue comes out dark. That is different
+from <code>saturate(0)</code>, which keeps HSL lightness and makes both mid-grey.</p>
+<p><img src="imagine/images/filters-color.png" alt="grayscale, sepia, saturate and hue rotation" /></p>
+<p><img src="imagine/images/filters-color-2.png" alt="duotone, tint, colorize and a dithered eight-colour quantization" /></p>
+<h3 id="blur-sharpen-and-detail"><a class="anchor" href="#blur-sharpen-and-detail" aria-hidden="true" tabindex="-1"></a>Blur, Sharpen and Detail</h3>
+<figure class="code"><pre><code class="language-zuri">photo.<span class="fn">blur</span>(<span class="num">3</span>) <span class="com"># Gaussian; the argument is its sigma</span>
+photo.<span class="fn">sharpen</span>(<span class="num">0.8</span>)
+photo.<span class="fn">smooth</span>() <span class="com"># a cheap, harsher 3x3 average</span>
+photo.<span class="fn">emboss</span>()
+photo.<span class="fn">edges</span>()
+photo.<span class="fn">mean_removal</span>()
+photo.<span class="fn">pixelate</span>(<span class="num">12</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>blur()</code> is a true separable Gaussian, so a large radius costs linearly
+rather than quadratically. Its argument is the standard deviation: about
+two thirds of each pixel's contribution falls within that distance, and
+the visible spread is roughly three times it.</p>
+<p>Alpha is premultiplied for the duration of a blur, so blurring a shape
+on a transparent background does not drag a dark halo into its edge.</p>
+<p><img src="imagine/images/filters-detail.png" alt="blur, sharpen, edge detection and emboss" /></p>
+<p><img src="imagine/images/filters-detail-2.png" alt="pixelate, smooth, mean removal and automatic levels" /></p>
+<h3 id="writing-your-own-filter"><a class="anchor" href="#writing-your-own-filter" aria-hidden="true" tabindex="-1"></a>Writing Your Own Filter</h3>
+<p>Nearly every filter above is one of three primitives with different
+numbers in it, and all three are available directly.</p>
+<p><strong>A lookup table</strong> covers any per-channel tone curve. The table is built
+once whatever the image's size, then applied at memory speed.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> imagine { filters }
+
+<span class="com"># A gentle S-curve: more contrast, but the highlights survive.</span>
+<span class="kw">var</span> curve <span class="op">=</span> filters.<span class="fn">build_lut</span>(<span class="meta">@</span>(value) {
+  <span class="kw">var</span> t <span class="op">=</span> value <span class="op">/</span> <span class="num">255</span>
+  <span class="kw">return</span> <span class="num">255</span> <span class="op">*</span> t <span class="op">*</span> t <span class="op">*</span> (<span class="num">3</span> <span class="op">-</span> <span class="num">2</span> <span class="op">*</span> t)
+})
+
+photo.<span class="fn">apply_lut</span>(curve, curve, curve, <span class="lit">nil</span>) <span class="com"># nil leaves alpha alone</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>A colour matrix</strong> covers anything that mixes channels — saturation,
+hue rotation, channel swaps, tinting. It is the 4x5 matrix SVG and CSS
+filters use, written row by row, with the last entry of each row a
+constant in 0-255 units.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="com"># Swap the red and blue channels.</span>
+photo.<span class="fn">apply_matrix</span>([<span class="num">0</span>, <span class="num">0</span>, <span class="num">1</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">1</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">1</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">1</span>, <span class="num">0</span>])
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Applying several matrices in a row is both slower and less accurate than
+combining them and applying the result once:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> both <span class="op">=</span> filters.<span class="fn">combine_matrices</span>(
+  filters.<span class="fn">grayscale_matrix</span>(),
+  filters.<span class="fn">saturation_matrix</span>(<span class="num">1.2</span>),
+)
+
+photo.<span class="fn">apply_matrix</span>(both)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>A convolution kernel</strong> covers anything that reads a pixel's
+neighbours.</p>
+<figure class="code"><pre><code class="language-zuri">photo.<span class="fn">convolve</span>([<span class="num">0</span>, <span class="op">-</span><span class="num">1</span>, <span class="num">0</span>, <span class="op">-</span><span class="num">1</span>, <span class="num">5</span>, <span class="op">-</span><span class="num">1</span>, <span class="num">0</span>, <span class="op">-</span><span class="num">1</span>, <span class="num">0</span>])
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The kernel must be square with an odd side. The default divisor of 0
+means &quot;divide by the kernel's own sum&quot;, which is what nearly every
+published kernel expects.</p>
+<p>One trap is worth knowing. Alpha goes through the kernel along with the
+colour channels, which is right for a blur and wrong for anything whose
+weights do not sum to one. A Laplacian over a uniformly opaque image
+sums to zero, which would make the whole result invisible:</p>
+<figure class="code"><pre><code class="language-zuri">photo.<span class="fn">convolve</span>(filters.<span class="fn">edge_kernel</span>(), { divisor<span class="op">:</span> <span class="num">1</span>, keep_alpha<span class="op">:</span> <span class="lit">true</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The built-in <code>edges()</code>, <code>emboss()</code>, <code>sharpen()</code> and <code>mean_removal()</code>
+already do this.</p>
+<p>The S-curve and the channel-swap matrix from this section, run against
+the same picture:</p>
+<p><img src="imagine/images/custom-filters.png" alt="an original image beside an S-curve LUT and a channel-swap matrix" /></p>
+<p><code>edge</code> controls what happens off the image's border: <code>EDGE_CLAMP</code> (the
+default) repeats the nearest edge pixel, <code>EDGE_TRANSPARENT</code> treats the
+outside as empty, and <code>EDGE_WRAP</code> wraps to the opposite side for images
+meant to tile.</p>
+<h2 id="drawing"><a class="anchor" href="#drawing" aria-hidden="true" tabindex="-1"></a>Drawing</h2>
+<h3 id="shapes"><a class="anchor" href="#shapes" aria-hidden="true" tabindex="-1"></a>Shapes</h3>
+<p>Coordinates start at the top-left corner. Integer coordinates fall on
+pixel corners rather than centres, so a rectangle from (0, 0) to
+(10, 10) covers exactly the first ten pixels in each direction.</p>
+<figure class="code"><pre><code class="language-zuri">image.<span class="fn">pixel</span>(x, y, color) <span class="com"># one pixel, blended</span>
+image.<span class="fn">line</span>(x1, y1, x2, y2, color)
+image.<span class="fn">rect</span>(x, y, w, h, color) <span class="com"># outline</span>
+image.<span class="fn">fill_rect</span>(x, y, w, h, color)
+image.<span class="fn">rounded_rect</span>(x, y, w, h, radius, color)
+image.<span class="fn">fill_rounded_rect</span>(x, y, w, h, radius, color)
+image.<span class="fn">circle</span>(cx, cy, r, color)
+image.<span class="fn">fill_circle</span>(cx, cy, r, color)
+image.<span class="fn">ellipse</span>(cx, cy, rx, ry, color)
+image.<span class="fn">fill_ellipse</span>(cx, cy, rx, ry, color)
+image.<span class="fn">arc</span>(cx, cy, rx, ry, start, end, color)
+image.<span class="fn">pie</span>(cx, cy, rx, ry, start, end, color) <span class="com"># closed through the centre</span>
+image.<span class="fn">chord</span>(cx, cy, rx, ry, start, end, color) <span class="com"># closed along the chord</span>
+image.<span class="fn">bezier</span>(x1, y1, cx1, cy1, cx2, cy2, x2, y2, color)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Angles are in degrees, measured clockwise from three o'clock, matching
+the direction the y axis runs.</p>
+<p><img src="imagine/images/shapes.png" alt="lines, rectangles, ellipses, arcs, a pie slice, a polygon and a bezier" /></p>
+<p>Drawing outside the image is never an error; anything that falls outside
+is clipped away. That is what makes it safe to draw a shape that only
+partly overlaps.</p>
+<h3 id="strokes-and-anti-aliasing"><a class="anchor" href="#strokes-and-anti-aliasing" aria-hidden="true" tabindex="-1"></a>Strokes and Anti-aliasing</h3>
+<figure class="code"><pre><code class="language-zuri">image.<span class="fn">thickness</span>(<span class="num">4</span>) <span class="com"># applies to every subsequent stroke</span>
+image.<span class="fn">antialias</span>(<span class="lit">false</span>) <span class="com"># hard edges</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Both are settings on the image rather than per-call arguments, though a
+single call can override the thickness:</p>
+<figure class="code"><pre><code class="language-zuri">image.<span class="fn">line</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">100</span>, <span class="num">100</span>, <span class="str">'black'</span>, { thickness<span class="op">:</span> <span class="num">8</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Strokes are centred on the path, so a thickness of 4 puts 2 pixels on
+each side. Joints and the ends of an open path are rounded.</p>
+<p>Anti-aliasing is on by default. Turn it off for output that has to be
+pixel-exact — barcodes, QR codes, anything that will be thresholded
+afterwards.</p>
+<p><img src="imagine/images/antialias.png" alt="the same circle and line drawn with anti-aliasing off and on" /></p>
+<p>Stroke widths of 1, 3, 6 and 12:</p>
+<p><img src="imagine/images/strokes.png" alt="four vertical lines of increasing thickness" /></p>
+<h3 id="line-caps"><a class="anchor" href="#line-caps" aria-hidden="true" tabindex="-1"></a>Line Caps</h3>
+<p>How an open stroke finishes at its two ends is a separate choice from
+its width:</p>
+<figure class="code"><pre><code class="language-zuri">image.<span class="fn">cap</span>(<span class="const">CAP_ROUND</span>) <span class="com"># a half-disc. The default.</span>
+image.<span class="fn">cap</span>(<span class="const">CAP_SQUARE</span>) <span class="com"># a square, reaching the same distance</span>
+image.<span class="fn">cap</span>(<span class="const">CAP_BUTT</span>) <span class="com"># stops dead at the endpoint</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><img src="imagine/images/caps.png" alt="the same line drawn with butt, round and square caps, with its endpoints marked" /></p>
+<p>The red marks are the exact coordinates the line was given. A round or
+square cap reaches half the stroke's width past them; a butt cap does
+not.</p>
+<p><code>CAP_BUTT</code> is the one to reach for whenever the coordinates have to
+mean exactly what they say — segments meeting end to end, a scale bar
+of a known length, the pieces of a dashed line. <code>CAP_SQUARE</code> gives the
+same reach as round with a blunt finish.</p>
+<p>A single call can override the surface's setting:</p>
+<figure class="code"><pre><code class="language-zuri">image.<span class="fn">line</span>(<span class="num">40</span>, <span class="num">200</span>, <span class="num">40</span>, <span class="num">40</span>, <span class="str">'#334155'</span>, { thickness<span class="op">:</span> <span class="num">6</span>, cap<span class="op">:</span> <span class="const">CAP_BUTT</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Joins <em>between</em> a path's segments are always round, and closed outlines
+have no ends, so neither is affected by this.</p>
+<h3 id="paths-and-polygons"><a class="anchor" href="#paths-and-polygons" aria-hidden="true" tabindex="-1"></a>Paths and Polygons</h3>
+<p>Every filled shape in this module becomes a polygon and goes through one
+scanline rasterizer, and every outline becomes the polygon around its
+stroke and goes through the same one. A shape not listed above can be
+drawn by supplying the points:</p>
+<figure class="code"><pre><code class="language-zuri">image.<span class="fn">fill_polygon</span>([
+  [<span class="num">10</span>, <span class="num">10</span>],
+  [<span class="num">90</span>, <span class="num">30</span>],
+  [<span class="num">50</span>, <span class="num">80</span>],
+], <span class="str">'#4f46e5'</span>)
+image.<span class="fn">polygon</span>([
+  [<span class="num">10</span>, <span class="num">10</span>],
+  [<span class="num">90</span>, <span class="num">30</span>],
+  [<span class="num">50</span>, <span class="num">80</span>],
+], <span class="str">'black'</span>) <span class="com"># outline, closed</span>
+image.<span class="fn">polyline</span>([
+  [<span class="num">10</span>, <span class="num">10</span>],
+  [<span class="num">90</span>, <span class="num">30</span>],
+  [<span class="num">50</span>, <span class="num">80</span>],
+], <span class="str">'black'</span>) <span class="com"># not closed</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Points may be a list of <code>[x, y]</code> pairs or a flat list of alternating
+values; both read naturally depending on where the points came from.
+The outline is closed for you, so the last point does not need to repeat
+the first.</p>
+<p>Self-intersecting outlines are filled by the non-zero winding rule,
+which fills a five-pointed star solid. Pass <code>{ even_odd: true }</code> for the
+other convention, which leaves its middle empty.</p>
+<p><img src="imagine/images/winding.png" alt="a solid star and a hollow one, from identical points" /></p>
+<h3 id="filling-areas"><a class="anchor" href="#filling-areas" aria-hidden="true" tabindex="-1"></a>Filling Areas</h3>
+<figure class="code"><pre><code class="language-zuri">image.<span class="fn">fill</span>(<span class="str">'#0f172a'</span>) <span class="com"># every pixel, ignoring the clip</span>
+image.<span class="fn">clear</span>() <span class="com"># every pixel to transparent</span>
+image.<span class="fn">flood_fill</span>(x, y, color)
+image.<span class="fn">flood_fill</span>(x, y, color, <span class="num">12</span>) <span class="com"># with a tolerance</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Gradients get <a href="#gradients">their own section</a> below.</p>
+<p><code>fill()</code> replaces rather than blends, so filling with a transparent
+colour empties the image instead of leaving it unchanged.</p>
+<p>Flood fill spreads four-connected — up, down, left and right, but not
+diagonally — through pixels within <code>tolerance</code> of the colour at the
+starting point. A tolerance of 0 spreads only through exactly equal
+pixels; on a photograph or anything anti-aliased you will want more.</p>
+<p><img src="imagine/images/flood-fill.png" alt="two flood fills stopped by a drawn barrier" /></p>
+<h3 id="gradients"><a class="anchor" href="#gradients" aria-hidden="true" tabindex="-1"></a>Gradients</h3>
+<figure class="code"><pre><code class="language-zuri">image.<span class="fn">linear_gradient</span>(x1, y1, x2, y2, stops)
+image.<span class="fn">radial_gradient</span>(cx, cy, radius, stops)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A linear gradient runs along the vector from the first point to the
+second. Everything before that vector takes the first stop's colour and
+everything past it takes the last stop's, so a short vector across a
+large area gives a hard transition with flat bands on either side.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="com"># top to bottom</span>
+image.<span class="fn">linear_gradient</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, image.<span class="fn">height</span>(), [<span class="str">'#0f172a'</span>, <span class="str">'#334155'</span>])
+
+<span class="com"># diagonal, three colours</span>
+image.<span class="fn">linear_gradient</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">400</span>, <span class="num">200</span>, [<span class="str">'#4f46e5'</span>, <span class="str">'#f472b6'</span>, <span class="str">'#fbbf24'</span>])
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Stops are either bare colours, spaced evenly, or <code>[offset, colour]</code>
+pairs with the offset running 0 to 1:</p>
+<figure class="code"><pre><code class="language-zuri">image.<span class="fn">linear_gradient</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">200</span>, <span class="num">0</span>, [
+  [<span class="num">0</span>, <span class="str">'black'</span>],
+  [<span class="num">0.25</span>, <span class="str">'red'</span>],
+  [<span class="num">1</span>, <span class="str">'white'</span>],
+])
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><img src="imagine/images/gradient-linear.png" alt="two linear gradients, one evenly spaced and one with explicit offsets" /></p>
+<p>By default a gradient replaces what is there. Pass <code>{ blend: true }</code> to
+composite it instead, which is what makes overlays and vignettes work:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="com"># a vignette over an existing photograph</span>
+photo.<span class="fn">radial_gradient</span>(
+  photo.<span class="fn">width</span>() <span class="op">/</span> <span class="num">2</span>,
+  photo.<span class="fn">height</span>() <span class="op">/</span> <span class="num">2</span>,
+  photo.<span class="fn">width</span>() <span class="op">*</span> <span class="num">0.7</span>,
+  [
+    [<span class="num">0</span>, <span class="type">Color</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>)],
+    [<span class="num">1</span>, <span class="type">Color</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">180</span>)],
+  ],
+  { blend<span class="op">:</span> <span class="lit">true</span> },
+)
+
+<span class="com"># a caption scrim along the bottom</span>
+photo.<span class="fn">linear_gradient</span>(
+  <span class="num">0</span>,
+  photo.<span class="fn">height</span>() <span class="op">-</span> <span class="num">120</span>,
+  <span class="num">0</span>,
+  photo.<span class="fn">height</span>(),
+  [<span class="type">Color</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>), <span class="type">Color</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">200</span>)],
+  { blend<span class="op">:</span> <span class="lit">true</span> },
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>{ rect: {x, y, width, height} }</code> confines the fill to a rectangle
+instead of covering the whole surface.</p>
+<p><img src="imagine/images/gradient-radial.png" alt="an image, the same image with a radial vignette, and with a linear scrim" /></p>
+<p>Both of those are the snippets above, run against the picture on the
+left.</p>
+<h3 id="clipping"><a class="anchor" href="#clipping" aria-hidden="true" tabindex="-1"></a>Clipping</h3>
+<figure class="code"><pre><code class="language-zuri">image.<span class="fn">clip</span>(<span class="num">20</span>, <span class="num">20</span>, <span class="num">100</span>, <span class="num">100</span>)
+image.<span class="fn">fill_rect</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">500</span>, <span class="num">500</span>, <span class="str">'red'</span>) <span class="com"># only the clip is painted</span>
+image.<span class="fn">clear_clip</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A clip confines every drawing operation until it is cleared. It does not
+affect reading: <code>get_pixel()</code> sees the whole image either way.</p>
+<p><img src="imagine/images/clipping.png" alt="two circles drawn through a rectangular clip, with the clip outlined" /></p>
+<h2 id="text"><a class="anchor" href="#text" aria-hidden="true" tabindex="-1"></a>Text</h2>
+<h3 id="the-built-in-font"><a class="anchor" href="#the-built-in-font" aria-hidden="true" tabindex="-1"></a>The Built-in Font</h3>
+<p><code>imagine</code> ships no font file, so everything in the next section
+depends on what is installed on the machine and can fail. One font
+always works:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> imagine { <span class="type">Image</span>, <span class="type">StrokeFont</span> }
+
+<span class="type">Image</span>(
+  <span class="num">300</span>,
+  <span class="num">70</span>,
+  <span class="str">'white'</span>,
+).<span class="fn">text</span>(<span class="num">16</span>, <span class="num">20</span>, <span class="str">'Always available'</span>, <span class="type">StrokeFont</span>(<span class="num">28</span>), <span class="str">'#0f172a'</span>).<span class="fn">save</span>(<span class="str">'label.png'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>Font.builtin(size)</code> is the same thing under a name you will find from
+<code>Font</code>.</p>
+<p>It is not a font file. Every glyph is defined as geometry — centre-line
+strokes rather than filled outlines — in
+<a href="https://github.com/zuri-lang/zuri/blob/main/libs/imagine/strokefont.zu"><code>libs/imagine/strokefont.zu</code></a>, and
+drawn through the same anti-aliased rasterizer as everything else. So
+it scales cleanly to any size, and its weight is a parameter rather
+than part of the design:</p>
+<p><img src="imagine/images/builtin-weights.png" alt="the built-in font at four weights" /></p>
+<figure class="code"><pre><code class="language-zuri"><span class="type">StrokeFont</span>(<span class="num">24</span>) <span class="com"># regular</span>
+<span class="type">StrokeFont</span>(<span class="num">24</span>).<span class="fn">weight</span>(<span class="num">0.13</span>) <span class="com"># bold</span>
+<span class="type">StrokeFont</span>(<span class="num">24</span>).<span class="fn">weight</span>(<span class="num">0.05</span>) <span class="com"># light</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Here is the whole thing:</p>
+<p><img src="imagine/images/builtin-specimen.png" alt="a specimen of the built-in font: uppercase, lowercase, digits and punctuation" /></p>
+<p><strong>What it is for.</strong> Labels, chart axes, watermarks, diagrams,
+placeholder text, and any output that has to work on a machine with no
+fonts installed. The look is geometric and single-weight, closer to a
+technical drawing than to a typeface, because that is what centre-line
+strokes give you honestly.</p>
+<p><strong>What it is not for.</strong> Body text, headlines, or anything where the
+shapes themselves matter. Load a real font for those.</p>
+<p><strong>Coverage</strong> is printable ASCII, from space through <code>~</code>. Anything else
+draws the empty box a font uses for a glyph it does not have, so text
+in another script comes out visibly missing rather than silently blank.</p>
+<p>A <code>StrokeFont</code> has the same interface as a <code>Font</code> — <code>size()</code>,
+<code>metrics()</code>, <code>measure()</code>, <code>render()</code>, <code>wrap()</code> — so anywhere a font is
+accepted, either works.</p>
+<h3 id="loading-a-font"><a class="anchor" href="#loading-a-font" aria-hidden="true" tabindex="-1"></a>Loading a Font</h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> imagine { <span class="type">Font</span> }
+
+<span class="kw">var</span> font <span class="op">=</span> <span class="type">Font</span>.<span class="fn">load</span>(<span class="str">'assets/Inter.ttf'</span>, <span class="num">24</span>)
+<span class="kw">var</span> font <span class="op">=</span> <span class="type">Font</span>.<span class="fn">from_bytes</span>(embedded_font, <span class="num">24</span>)
+<span class="kw">var</span> font <span class="op">=</span> <span class="type">Font</span>.<span class="fn">system</span>(<span class="str">'DejaVu Sans'</span>, <span class="num">24</span>)
+<span class="kw">var</span> font <span class="op">=</span> <span class="type">Font</span>.<span class="fn">sans</span>(<span class="num">24</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>Font.load()</code> reads a TrueType or OpenType file and caches the parsed
+face by path, so loading the same file twice in one process parses it
+once. <code>Font.system()</code> searches the platform's font directories by family
+name, matching ignoring case, spaces and hyphens.</p>
+<p><code>Font.sans()</code> finds whichever common sans-serif font is installed. It is
+a convenience for scripts and tests, not something to rely on for output
+that must look the same everywhere: which font it lands on depends on
+the machine, and a container image with no fonts installed has none to
+find. It raises <code>FontError</code> in that case, pointing at
+<code>Font.builtin()</code>, which never depends on what is installed.</p>
+<p>A <code>Font</code> is immutable and cheap to copy. <code>size()</code> returns the same face
+at another size, sharing the parsed data:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> title <span class="op">=</span> font.<span class="fn">size</span>(<span class="num">32</span>)
+<span class="kw">var</span> body <span class="op">=</span> font.<span class="fn">size</span>(<span class="num">14</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<h3 id="drawing-text"><a class="anchor" href="#drawing-text" aria-hidden="true" tabindex="-1"></a>Drawing Text</h3>
+<figure class="code"><pre><code class="language-zuri">image.<span class="fn">text</span>(<span class="num">20</span>, <span class="num">20</span>, <span class="str">'Hello'</span>, font, <span class="str">'#111111'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>x</code> and <code>y</code> are the top-left corner of the text's box, not its baseline,
+because the corner is what you know when placing text in a layout. Pass
+<code>{ baseline: true }</code> when you want <code>y</code> to mean the first line's
+baseline instead.</p>
+<p>A <code>\n</code> starts a new line.</p>
+<figure class="code"><pre><code class="language-zuri">card.<span class="fn">text</span>(<span class="num">24</span>, <span class="num">24</span>, <span class="str">'Quarterly report\n2026'</span>, title, <span class="str">'#111111'</span>, {
+  align<span class="op">:</span> <span class="const">ALIGN_CENTER</span>,
+  line_height<span class="op">:</span> <span class="num">1.4</span>,
+  tracking<span class="op">:</span> <span class="num">0.5</span>,
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>align</code> positions the lines against each other, not against the image.
+<code>line_height</code> is a multiplier on the font's own recommended spacing, and
+<code>tracking</code> adds pixels between characters.</p>
+<p><img src="imagine/images/text.png" alt="headline and body text drawn onto an image" /></p>
+<p><img src="imagine/images/text-align.png" alt="the same three lines under left, centre and right alignment" /></p>
+<h3 id="measuring-and-positioning"><a class="anchor" href="#measuring-and-positioning" aria-hidden="true" tabindex="-1"></a>Measuring and Positioning</h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> box <span class="op">=</span> image.<span class="fn">text_size</span>(<span class="str">'Hello'</span>, font)
+<span class="com"># { width: 58, height: 28, baseline: 22.3, lines: 1 }</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Measuring costs a fraction of drawing, so it is the right way to lay
+text out before committing to it — centring, wrapping, or sizing a
+background to fit.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> box <span class="op">=</span> card.<span class="fn">text_size</span>(label, font)
+
+card.<span class="fn">fill_rounded_rect</span>(<span class="num">16</span>, <span class="num">16</span>, box.<span class="prop">width</span> <span class="op">+</span> <span class="num">24</span>, box.<span class="prop">height</span> <span class="op">+</span> <span class="num">16</span>, <span class="num">8</span>, <span class="str">'#1e293b'</span>)
+card.<span class="fn">text</span>(<span class="num">28</span>, <span class="num">24</span>, label, font, <span class="str">'white'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>To position by anchor instead of coordinates:</p>
+<figure class="code"><pre><code class="language-zuri">card.<span class="fn">place_text</span>(<span class="str">'SOLD OUT'</span>, font, <span class="str">'white'</span>, <span class="const">CENTER</span>)
+card.<span class="fn">place_text</span>(<span class="str">'v2.1'</span>, font, <span class="str">'#94a3b8'</span>, <span class="const">BOTTOM_RIGHT</span>, { margin<span class="op">:</span> <span class="num">12</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<h3 id="wrapping"><a class="anchor" href="#wrapping" aria-hidden="true" tabindex="-1"></a>Wrapping</h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> body <span class="op">=</span> <span class="type">Font</span>.<span class="fn">load</span>(<span class="str">'assets/Inter.ttf'</span>, <span class="num">16</span>)
+
+page.<span class="fn">text</span>(<span class="num">40</span>, <span class="num">120</span>, article, body, <span class="str">'#334155'</span>, { width<span class="op">:</span> <span class="num">520</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The <code>width</code> option wraps the text to that many pixels before drawing
+it. <code>text_size()</code> takes the same option, so measuring wrapped text
+gives the box it will actually occupy.</p>
+<p>To get the broken text itself — to store it, or to draw it in pieces —
+call <code>wrap()</code> on the font:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> lines <span class="op">=</span> body.<span class="fn">wrap</span>(article, <span class="num">520</span>).<span class="fn">split</span>(<span class="str">'\n'</span>)
+
+<span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>lines.<span class="fn">length</span>()<span class="subst">}</span><span class="str"> lines'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Newlines already in the text are kept as paragraph breaks, and runs of
+spaces are collapsed. Words are kept whole where they can be; a single
+word too long for the width is broken between characters rather than
+allowed to overflow, since text spilling out of an image cannot be
+scrolled to.</p>
+<p><img src="imagine/images/text-wrap.png" alt="the same paragraph wrapped to two different widths" /></p>
+<h3 id="what-text-layout-does-not-do"><a class="anchor" href="#what-text-layout-does-not-do" aria-hidden="true" tabindex="-1"></a>What Text Layout Does Not Do</h3>
+<p>Glyphs are positioned by advance width with kerning applied. That covers
+Latin, Greek, Cyrillic and anything else written left to right without
+contextual shaping.</p>
+<p>It does not do complex shaping. Arabic letters will not join, Indic
+clusters will not reorder, and ligatures are not substituted. Those need
+a shaping engine, and a standard library that pretended to do them would
+be worse than one that says plainly it does not.</p>
+<h2 id="compositing"><a class="anchor" href="#compositing" aria-hidden="true" tabindex="-1"></a>Compositing</h2>
+<h3 id="drawing-one-image-onto-another"><a class="anchor" href="#drawing-one-image-onto-another" aria-hidden="true" tabindex="-1"></a>Drawing One Image Onto Another</h3>
+<figure class="code"><pre><code class="language-zuri">photo.<span class="fn">draw_image</span>(logo, <span class="num">20</span>, <span class="num">20</span>)
+photo.<span class="fn">draw_image</span>(logo, <span class="num">20</span>, <span class="num">20</span>, { opacity<span class="op">:</span> <span class="num">0.6</span> })
+photo.<span class="fn">place</span>(logo, <span class="const">BOTTOM_RIGHT</span>, { margin<span class="op">:</span> <span class="num">16</span>, opacity<span class="op">:</span> <span class="num">0.5</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The source is clipped to the destination, and its position may be
+negative, so a sprite hanging off the top-left corner draws correctly.
+Compositing an image onto itself works; it is copied first.</p>
+<h3 id="blend-modes"><a class="anchor" href="#blend-modes" aria-hidden="true" tabindex="-1"></a>Blend Modes</h3>
+<figure class="code"><pre><code class="language-zuri">photo.<span class="fn">draw_image</span>(texture, <span class="num">0</span>, <span class="num">0</span>, { blend<span class="op">:</span> <span class="const">BLEND_MULTIPLY</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>BLEND_NORMAL</code></td>
+<td>Ordinary alpha compositing. The default.</td>
+</tr>
+<tr>
+<td><code>BLEND_MULTIPLY</code></td>
+<td>Never lighter than either input. Shadows.</td>
+</tr>
+<tr>
+<td><code>BLEND_SCREEN</code></td>
+<td>Never darker than either input. Glows.</td>
+</tr>
+<tr>
+<td><code>BLEND_OVERLAY</code></td>
+<td>Multiply in the shadows, screen in the highlights.</td>
+</tr>
+<tr>
+<td><code>BLEND_DARKEN</code> / <code>BLEND_LIGHTEN</code></td>
+<td>Keep the darker or lighter channel.</td>
+</tr>
+<tr>
+<td><code>BLEND_COLOR_DODGE</code> / <code>BLEND_COLOR_BURN</code></td>
+<td>Strong brighten or darken.</td>
+</tr>
+<tr>
+<td><code>BLEND_HARD_LIGHT</code> / <code>BLEND_SOFT_LIGHT</code></td>
+<td>Overlay with the roles swapped; and a gentler version.</td>
+</tr>
+<tr>
+<td><code>BLEND_DIFFERENCE</code> / <code>BLEND_EXCLUSION</code></td>
+<td>Absolute difference; and a lower-contrast variant.</td>
+</tr>
+<tr>
+<td><code>BLEND_ADD</code> / <code>BLEND_SUBTRACT</code></td>
+<td>Add or subtract, clamped.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The formulas are the ones in the CSS compositing specification, which is
+also what every image editor implements.</p>
+<p><code>BLEND_DIFFERENCE</code> makes a quick visual diff: identical images blended
+this way come out black.</p>
+<p>A red circle drawn onto a gradient under eight of the modes:</p>
+<p><img src="imagine/images/blend-modes.png" alt="normal, multiply, screen and overlay" /></p>
+<p><img src="imagine/images/blend-modes-2.png" alt="darken, colour dodge, difference and soft light" /></p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> diff <span class="op">=</span> before.<span class="fn">clone</span>().<span class="fn">draw_image</span>(after, <span class="num">0</span>, <span class="num">0</span>, { blend<span class="op">:</span> <span class="const">BLEND_DIFFERENCE</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Drawing operations — lines, shapes, text — always use ordinary alpha
+compositing. To draw a shape under a blend mode, draw it on a layer and
+composite the layer.</p>
+<h3 id="masks"><a class="anchor" href="#masks" aria-hidden="true" tabindex="-1"></a>Masks</h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> stencil <span class="op">=</span> photo.<span class="fn">layer</span>()
+stencil.<span class="fn">fill_circle</span>(<span class="num">200</span>, <span class="num">200</span>, <span class="num">150</span>, <span class="str">'white'</span>)
+
+photo.<span class="fn">mask</span>(stencil) <span class="com"># everything outside the circle becomes transparent</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Each pixel keeps its colour and takes its transparency from the mask:
+opaque white shows the image through fully, black or transparent hides
+it, and greys give partial transparency. The mask's own alpha counts, so
+a shape drawn on a transparent background works as a mask without being
+filled in first.</p>
+<p>The mask must be the same size as the image.</p>
+<p><img src="imagine/images/mask.png" alt="an image, a circular mask, and the masked result" /></p>
+<h3 id="layers"><a class="anchor" href="#layers" aria-hidden="true" tabindex="-1"></a>Layers</h3>
+<p><code>layer()</code> gives a transparent image of the same size. Building a
+composite out of layers is how you get effects that a single pass
+cannot, and it is the answer whenever you want a blend mode or an
+opacity applied to a group of operations rather than one:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> glow <span class="op">=</span> photo.<span class="fn">layer</span>()
+
+glow.<span class="fn">fill_circle</span>(<span class="num">200</span>, <span class="num">150</span>, <span class="num">80</span>, <span class="str">'#fbbf24'</span>)
+glow.<span class="fn">blur</span>(<span class="num">30</span>)
+
+photo.<span class="fn">draw_image</span>(glow, <span class="num">0</span>, <span class="num">0</span>, { blend<span class="op">:</span> <span class="const">BLEND_SCREEN</span>, opacity<span class="op">:</span> <span class="num">0.7</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><img src="imagine/images/layers-glow.png" alt="an image before and after a blurred glow layer is screened in" /></p>
+<h2 id="inspecting-an-image"><a class="anchor" href="#inspecting-an-image" aria-hidden="true" tabindex="-1"></a>Inspecting an Image</h2>
+<figure class="code"><pre><code class="language-zuri">photo.<span class="fn">width</span>() <span class="com"># dimensions</span>
+photo.<span class="fn">height</span>()
+photo.<span class="fn">size</span>() <span class="com"># { width, height }</span>
+photo.<span class="fn">bounds</span>() <span class="com"># { x: 0, y: 0, width, height }</span>
+photo.<span class="fn">format</span>() <span class="com"># what it was decoded from, or nil</span>
+photo.<span class="fn">is_opaque</span>() <span class="com"># walks the alpha channel</span>
+photo.<span class="fn">info</span>() <span class="com"># all of the above, plus a pixel count</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Beyond the shape, four methods read what is actually in the image.</p>
+<p><strong><code>histogram()</code></strong> counts how many pixels hold each value, as four
+256-entry lists: <code>red</code>, <code>green</code>, <code>blue</code> and <code>luma</code>. Fully transparent
+pixels are skipped, since their colour is not visible. A histogram is
+what tells you an image is underexposed (everything bunched at the low
+end), flat (bunched in the middle), or clipped (a spike at 0 or 255).</p>
+<p><strong><code>auto_levels()</code></strong> is the automatic form of <code>levels()</code>: it finds the
+black and white points from the brightness histogram and stretches the
+range between them, ignoring a small fraction at each end so a handful
+of stray pixels cannot decide the result.</p>
+<figure class="code"><pre><code class="language-zuri">photo.<span class="fn">auto_levels</span>()
+photo.<span class="fn">auto_levels</span>({ clip<span class="op">:</span> <span class="num">0.02</span>, gamma<span class="op">:</span> <span class="num">1.1</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong><code>average_color()</code></strong> returns the mean colour, weighting each pixel by
+its alpha so a mostly transparent image reports the colour of the part
+you can see.</p>
+<p><strong><code>dominant_colors()</code></strong> returns the colours occupying the most of the
+image, most common first. The image is shrunk and reduced to a small
+palette first, so it costs about the same whatever the original size.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> accent <span class="op">=</span> photo.<span class="fn">dominant_colors</span>(<span class="num">1</span>)[<span class="num">0</span>]
+
+page.<span class="fn">fill</span>(accent.<span class="fn">darken</span>(<span class="num">40</span>)) <span class="com"># a placeholder while the photo loads</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><img src="imagine/images/dominant-colors.png" alt="an image beside the five colours occupying most of it" /></p>
+<p><strong><code>difference()</code></strong> scores how far two images are apart, from 0
+(identical) to 1, which makes it usable as a rendering assertion:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">if</span> rendered.<span class="fn">difference</span>(expected) <span class="op">&gt;</span> <span class="num">0.01</span> {
+  <span class="kw">raise</span> <span class="type">Error</span>(<span class="str">'the rendering changed'</span>)
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<h2 id="animation"><a class="anchor" href="#animation" aria-hidden="true" tabindex="-1"></a>Animation</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> imagine { <span class="type">Animation</span> }
+
+<span class="kw">var</span> animation <span class="op">=</span> <span class="type">Animation</span>.<span class="fn">open</span>(<span class="str">'loading.gif'</span>)
+
+animation.<span class="fn">length</span>() <span class="com"># frame count</span>
+animation.<span class="fn">duration</span>() <span class="com"># milliseconds for one pass</span>
+animation.<span class="fn">frame</span>(<span class="num">0</span>) <span class="com"># one frame, as an Image</span>
+animation.<span class="fn">frames</span>() <span class="com"># the live list</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Frames come back already composited against whatever preceded them, so
+frame 5 can be used on its own without replaying the first four. The
+disposal and transparency rules an animated GIF is built from never
+surface.</p>
+<p>Building and transforming:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> frames <span class="op">=</span> []
+
+<span class="kw">iter</span> <span class="kw">var</span> i <span class="op">=</span> <span class="num">0</span>; i <span class="op">&lt;</span> <span class="num">30</span>; i<span class="op">++</span> {
+  <span class="kw">var</span> frame <span class="op">=</span> <span class="type">Image</span>(<span class="num">200</span>, <span class="num">200</span>, <span class="str">'black'</span>)
+  frame.<span class="fn">fill_circle</span>(<span class="num">100</span>, <span class="num">100</span>, i <span class="op">*</span> <span class="num">3</span>, <span class="str">'#38bdf8'</span>)
+  frames.<span class="fn">append</span>(frame)
+}
+
+<span class="type">Animation</span>(frames, <span class="num">40</span>, <span class="num">0</span>).<span class="fn">save</span>(<span class="str">'pulse.gif'</span>) <span class="com"># 40ms per frame, loops forever</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><img src="imagine/images/animation.gif" alt="an animated GIF of a growing, colour-shifting circle" /></p>
+<figure class="code"><pre><code class="language-zuri">animation
+    .<span class="fn">map</span>(<span class="meta">@</span>(frame) {
+      <span class="kw">return</span> frame.<span class="fn">grayscale</span>().<span class="fn">blur</span>(<span class="num">1</span>)
+    })
+    .<span class="fn">repeat</span>(<span class="num">3</span>)
+    .<span class="fn">save</span>(<span class="str">'out.gif'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>map()</code> copies each frame before the function sees it, so a filter chain
+works directly as the body and the original animation is left alone.
+That copy is why <code>map()</code> costs as much memory again as the animation
+itself; to filter in place, walk <code>frames()</code> and change each image
+directly.</p>
+<p>Animated GIF and animated WebP can both be read, and only GIF can be
+written. A still image decodes as a one-frame animation rather than an
+error, so code handling both does not need to branch.</p>
+<p>Every frame must be the same size, since animated formats have one
+canvas that each frame paints into.</p>
+<h2 id="working-with-pixels-directly"><a class="anchor" href="#working-with-pixels-directly" aria-hidden="true" tabindex="-1"></a>Working With Pixels Directly</h2>
+<p><code>pixels()</code> hands back the live buffer. It is 8-bit RGBA with straight
+(not premultiplied) alpha, laid out row by row with no padding, so pixel
+<code>(x, y)</code> begins at byte <code>(y * width + x) * 4</code>.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> buffer <span class="op">=</span> image.<span class="fn">pixels</span>()
+<span class="kw">var</span> total <span class="op">=</span> buffer.<span class="fn">length</span>()
+
+<span class="kw">iter</span> <span class="kw">var</span> at <span class="op">=</span> <span class="num">0</span>; at <span class="op">&lt;</span> total; at <span class="op">+=</span> <span class="num">4</span> {
+  buffer[at] <span class="op">=</span> <span class="num">255</span> <span class="op">-</span> buffer[at] <span class="com"># invert red only</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>This is deliberate, and it is much faster than a method call per pixel,
+so an operation this module does not provide can still be written
+efficiently in Zuri. Annotating a function's parameters pays off here:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">darken_edges</span>(pixels<span class="op">:</span> <span class="bi">bytes</span>, width<span class="op">:</span> number, height<span class="op">:</span> number) {
+  <span class="kw">iter</span> <span class="kw">var</span> y <span class="op">=</span> <span class="num">0</span>; y <span class="op">&lt;</span> height; y<span class="op">++</span> {
+    <span class="kw">iter</span> <span class="kw">var</span> x <span class="op">=</span> <span class="num">0</span>; x <span class="op">&lt;</span> width; x<span class="op">++</span> {
+      <span class="kw">var</span> at <span class="op">=</span> (y <span class="op">*</span> width <span class="op">+</span> x) <span class="op">*</span> <span class="num">4</span>
+      <span class="com"># ...</span>
+    }
+  }
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>set_pixels()</code> takes a buffer back, which is how you save a copy before
+a destructive filter and restore it afterwards:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> saved <span class="op">=</span> image.<span class="fn">pixels</span>().<span class="fn">clone</span>()
+
+image.<span class="fn">blur</span>(<span class="num">8</span>)
+image.<span class="fn">set_pixels</span>(saved) <span class="com"># back where it started</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>Image.from_pixels()</code> builds an image around a buffer that came from
+somewhere else entirely.</p>
+<h2 id="errors"><a class="anchor" href="#errors" aria-hidden="true" tabindex="-1"></a>Errors</h2>
+<p>Failures fall into two groups. An argument of the wrong <em>type</em> raises
+<code>TypeError</code>, from the parameter's own type declaration. Everything else
+descends from <code>ImageError</code>, so one catch covers it:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> imagine { <span class="type">Image</span>, <span class="type">ImageError</span>, <span class="type">DecodeError</span> }
+
+<span class="kw">catch</span> {
+  <span class="kw">var</span> photo <span class="op">=</span> <span class="type">Image</span>.<span class="fn">open</span>(path)
+} <span class="kw">as</span> e {
+  <span class="kw">if</span> <span class="bi">instance_of</span>(e, <span class="type">DecodeError</span>) {
+    <span class="kw">echo</span> <span class="str">'not a readable image'</span>
+  } <span class="kw">else</span> {
+    <span class="kw">echo</span> <span class="str">'something else went wrong: </span><span class="subst">${</span>e.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+  }
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>Raised when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ImageError</code></td>
+<td>The base class. Also raised directly for bad arguments.</td>
+</tr>
+<tr>
+<td><code>DecodeError</code></td>
+<td>The data is not an image, is a format this build cannot read, or is truncated.</td>
+</tr>
+<tr>
+<td><code>EncodeError</code></td>
+<td>The image cannot be written in the requested format.</td>
+</tr>
+<tr>
+<td><code>FormatError</code></td>
+<td>A format name or file extension is not one this module knows.</td>
+</tr>
+<tr>
+<td><code>BoundsError</code></td>
+<td>A rectangle, crop or resize falls outside the image, or a dimension is below 1.</td>
+</tr>
+<tr>
+<td><code>FontError</code></td>
+<td>A font cannot be parsed, found, or laid out with.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Two kinds of failure sit outside that hierarchy on purpose.</p>
+<p><strong>Wrong argument type raises <code>TypeError</code>.</strong> Parameters declare their
+types, so the check happens at the boundary and the message names the
+parameter:</p>
+<figure class="code"><pre><code class="language-zuri">image.<span class="fn">rotate</span>(<span class="str">'sideways'</span>)
+<span class="com"># TypeError: rotate() expects parameter 'degrees' (argument 1)</span>
+<span class="com">#            to be a number, got string</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>A malformed colour raises <code>ValueError</code></strong>, because that is what
+[[colors]] reports for it and relabelling would lose the distinction
+between &quot;not a colour&quot; and &quot;not a string&quot;:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="type">Color</span>.<span class="fn">hex</span>(<span class="str">'nonsense'</span>) <span class="com"># ValueError, from colors</span>
+<span class="type">Color</span>.<span class="fn">named</span>(<span class="str">'chartroose'</span>) <span class="com"># ValueError, from colors</span>
+<span class="type">Color</span>.<span class="fn">hex</span>(<span class="num">42</span>) <span class="com"># TypeError, from the type declaration</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A value of the right type but the wrong <em>range</em> is still an
+<code>ImageError</code> subclass, since that is a judgement this module makes
+rather than a type the runtime can check:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="type">Image</span>(<span class="num">0</span>, <span class="num">100</span>) <span class="com"># BoundsError, not TypeError</span>
+filters.<span class="fn">gamma_lut</span>(<span class="op">-</span><span class="num">1</span>) <span class="com"># ImageError</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>DecodeError</code> is the one to always be ready for, since anything arriving
+from outside the program can raise it.</p>
+<p>Drawing operations do not raise <code>BoundsError</code>. A line running off the
+edge of the canvas is clipped, which is what every drawing API does; it
+is only the operations that must return an image of an exact size that
+have no sensible way to continue.</p>
+<h2 id="performance-and-memory"><a class="anchor" href="#performance-and-memory" aria-hidden="true" tabindex="-1"></a>Performance and Memory</h2>
+<p>Four bytes per pixel, always. A 6000x4000 photograph is 96 MB decoded
+however small its file was, and a 100-frame 500x500 animation is 100 MB.
+<code>probe()</code> before decoding anything whose size you do not control.</p>
+<p>Some rough guidance on what costs what:</p>
+<ul>
+<li><strong>Decoding and encoding</strong> dominate almost every pipeline. PNG at
+<code>'best'</code> compression is several times slower than at <code>'default'</code> for a
+few percent of size; AVIF is slower still.</li>
+<li><strong>Resizing</strong> costs roughly in proportion to the <em>output</em> size, so
+shrinking is cheap and enlarging is not. <code>LANCZOS</code> costs a few times
+<code>NEAREST</code>.</li>
+<li><strong>Blur</strong> is linear in its radius, not quadratic, because it is
+separable. A 3x3 <code>convolve()</code> is cheaper than <code>blur(1)</code>, but by
+<code>blur(5)</code> the Gaussian has won by a wide margin.</li>
+<li><strong>Lookup tables and colour matrices</strong> are memory-bound and about as
+fast as touching every pixel can be. Chain as many as you like, but
+combine matrices with <code>combine_matrices()</code> rather than applying them
+one at a time — that is both faster and more accurate, since the
+intermediate result is never rounded back to 8 bits.</li>
+<li><strong>Drawing</strong> costs in proportion to the area covered, and
+anti-aliasing samples each pixel row four times over. Turning it off
+is a real saving on very large fills.</li>
+</ul>
+<p>Resize before filtering whenever the result is going to be smaller
+anyway. Filtering a 24-megapixel photograph and then shrinking it to a
+thumbnail does the same visual work at forty times the cost.</p>
+<h2 id="recipes"><a class="anchor" href="#recipes" aria-hidden="true" tabindex="-1"></a>Recipes</h2>
+<p><strong>A thumbnail pipeline for uploads</strong></p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> imagine
+<span class="kw">import</span> imagine { <span class="type">Image</span>, <span class="type">DecodeError</span>, <span class="const">LANCZOS</span>, <span class="const">TOP</span> }
+
+<span class="kw">def</span> <span class="def">make_thumbnail</span>(upload) {
+  <span class="kw">var</span> header <span class="op">=</span> imagine.<span class="fn">probe</span>(upload)
+
+  <span class="kw">if</span> header <span class="op">==</span> <span class="lit">nil</span> {
+    <span class="kw">raise</span> <span class="type">DecodeError</span>(<span class="str">'not an image'</span>)
+  }
+
+  <span class="kw">if</span> header.<span class="prop">width</span> <span class="op">*</span> header.<span class="prop">height</span> <span class="op">&gt;</span> <span class="num">50000000</span> {
+    <span class="kw">raise</span> <span class="type">DecodeError</span>(<span class="str">'image too large'</span>)
+  }
+
+  <span class="kw">return</span> <span class="type">Image</span>.<span class="fn">decode</span>(upload)
+      .<span class="fn">cover</span>(<span class="num">400</span>, <span class="num">400</span>, { anchor<span class="op">:</span> <span class="const">TOP</span>, filter<span class="op">:</span> <span class="const">LANCZOS</span> })
+      .<span class="fn">sharpen</span>(<span class="num">0.4</span>)
+      .<span class="fn">encode</span>(<span class="str">'webp'</span>)
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>A rounded avatar with a border</strong></p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> imagine { <span class="type">Image</span> }
+
+<span class="kw">def</span> <span class="def">avatar</span>(source, size) {
+  <span class="kw">var</span> photo <span class="op">=</span> <span class="type">Image</span>.<span class="fn">decode</span>(source).<span class="fn">cover</span>(size, size)
+
+  <span class="kw">var</span> stencil <span class="op">=</span> photo.<span class="fn">layer</span>()
+  stencil.<span class="fn">fill_circle</span>(size <span class="op">/</span> <span class="num">2</span>, size <span class="op">/</span> <span class="num">2</span>, size <span class="op">/</span> <span class="num">2</span> <span class="op">-</span> <span class="num">2</span>, <span class="str">'white'</span>)
+  photo.<span class="fn">mask</span>(stencil)
+
+  photo.<span class="fn">circle</span>(size <span class="op">/</span> <span class="num">2</span>, size <span class="op">/</span> <span class="num">2</span>, size <span class="op">/</span> <span class="num">2</span> <span class="op">-</span> <span class="num">2</span>, <span class="str">'#e2e8f0'</span>, { thickness<span class="op">:</span> <span class="num">3</span> })
+
+  <span class="kw">return</span> photo
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><img src="imagine/images/recipe-avatar.png" alt="a photograph cropped to a circle with a pale ring around it" /></p>
+<p><strong>A social card</strong></p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> imagine { <span class="type">Image</span>, <span class="type">Font</span>, <span class="type">Color</span>, <span class="const">ALIGN_LEFT</span> }
+
+<span class="kw">def</span> <span class="def">card</span>(title, subtitle) {
+  <span class="kw">var</span> image <span class="op">=</span> <span class="type">Image</span>(<span class="num">1200</span>, <span class="num">630</span>, <span class="str">'#0f172a'</span>)
+  <span class="kw">var</span> heading <span class="op">=</span> <span class="type">Font</span>.<span class="fn">load</span>(<span class="str">'assets/Inter-Bold.ttf'</span>, <span class="num">64</span>)
+  <span class="kw">var</span> body <span class="op">=</span> heading.<span class="fn">size</span>(<span class="num">30</span>)
+
+  image.<span class="fn">fill_rect</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">1200</span>, <span class="num">8</span>, <span class="str">'#38bdf8'</span>)
+
+  <span class="kw">var</span> box <span class="op">=</span> image.<span class="fn">text_size</span>(title, heading, { align<span class="op">:</span> <span class="const">ALIGN_LEFT</span> })
+  image.<span class="fn">text</span>(<span class="num">80</span>, <span class="num">200</span>, title, heading, <span class="str">'white'</span>, { align<span class="op">:</span> <span class="const">ALIGN_LEFT</span> })
+  image.<span class="fn">text</span>(<span class="num">80</span>, <span class="num">200</span> <span class="op">+</span> box.<span class="prop">height</span> <span class="op">+</span> <span class="num">24</span>, subtitle, body, <span class="str">'#94a3b8'</span>)
+
+  <span class="kw">return</span> image.<span class="fn">to_png</span>()
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><img src="imagine/images/recipe-card.png" alt="a dark social card with a cyan rule, a headline and a subtitle" /></p>
+<p><strong>Serving a generated image over HTTP</strong></p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http
+<span class="kw">import</span> imagine { <span class="type">Image</span>, <span class="type">Font</span>, <span class="const">CENTER</span> }
+<span class="kw">import</span> imagine.<span class="prop">formats</span>
+
+<span class="kw">var</span> server <span class="op">=</span> http.<span class="fn">server</span>(<span class="num">8000</span>)
+<span class="kw">var</span> font <span class="op">=</span> <span class="type">Font</span>.<span class="fn">load</span>(<span class="str">'assets/Inter.ttf'</span>, <span class="num">20</span>)
+
+server.<span class="fn">get</span>(<span class="str">'/badge/:label'</span>, <span class="meta">@</span>(request, response) {
+  <span class="kw">var</span> image <span class="op">=</span> <span class="type">Image</span>(<span class="num">220</span>, <span class="num">60</span>, <span class="str">'#1e293b'</span>)
+
+  image.<span class="fn">fill_rounded_rect</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">220</span>, <span class="num">60</span>, <span class="num">8</span>, <span class="str">'#334155'</span>)
+  image.<span class="fn">place_text</span>(request.<span class="fn">param</span>(<span class="str">'label'</span>), font, <span class="str">'white'</span>, <span class="const">CENTER</span>)
+
+  response.<span class="fn">content_type</span>(formats.<span class="fn">mime_for</span>(<span class="str">'png'</span>))
+  response.<span class="fn">cache_for</span>(<span class="num">86400</span>)
+  response.<span class="fn">write</span>(image.<span class="fn">to_png</span>())
+})
+
+server.<span class="fn">listen</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>Comparing two images</strong></p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> imagine { <span class="const">BLEND_DIFFERENCE</span> }
+
+<span class="kw">def</span> <span class="def">differs</span>(a, b) {
+  <span class="kw">if</span> a.<span class="fn">size</span>() <span class="op">!=</span> b.<span class="fn">size</span>() {
+    <span class="kw">return</span> <span class="lit">true</span>
+  }
+
+  <span class="kw">var</span> diff <span class="op">=</span> a.<span class="fn">clone</span>().<span class="fn">draw_image</span>(b, <span class="num">0</span>, <span class="num">0</span>, { blend<span class="op">:</span> <span class="const">BLEND_DIFFERENCE</span> })
+  <span class="kw">var</span> pixels <span class="op">=</span> diff.<span class="fn">pixels</span>()
+  <span class="kw">var</span> total <span class="op">=</span> pixels.<span class="fn">length</span>()
+
+  <span class="kw">iter</span> <span class="kw">var</span> at <span class="op">=</span> <span class="num">0</span>; at <span class="op">&lt;</span> total; at <span class="op">+=</span> <span class="num">4</span> {
+    <span class="kw">if</span> pixels[at] <span class="op">&gt;</span> <span class="num">8</span> <span class="kw">or</span> pixels[at <span class="op">+</span> <span class="num">1</span>] <span class="op">&gt;</span> <span class="num">8</span> <span class="kw">or</span> pixels[at <span class="op">+</span> <span class="num">2</span>] <span class="op">&gt;</span> <span class="num">8</span> {
+      <span class="kw">return</span> <span class="lit">true</span>
+    }
+  }
+
+  <span class="kw">return</span> <span class="lit">false</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch16-00-imagine.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch15-00-http.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">15</span>HTTP</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch17-00-sql.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">17</span>Databases</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#following-along">Following Along</a>
+        </li><li class="level-2">
+          <a href="#introduction">Introduction</a>
+        </li><li class="level-3">
+          <a href="#a-first-image">A First Image</a>
+        </li><li class="level-3">
+          <a href="#copying-and-mutation">Copying and Mutation</a>
+        </li><li class="level-2">
+          <a href="#colours">Colours</a>
+        </li><li class="level-3">
+          <a href="#writing-a-colour">Writing a Colour</a>
+        </li><li class="level-3">
+          <a href="#the-color-class">The Color Class</a>
+        </li><li class="level-3">
+          <a href="#colour-spaces">Colour Spaces</a>
+        </li><li class="level-3">
+          <a href="#contrast-and-accessibility">Contrast and Accessibility</a>
+        </li><li class="level-2">
+          <a href="#loading-and-saving">Loading and Saving</a>
+        </li><li class="level-3">
+          <a href="#opening-an-image">Opening an Image</a>
+        </li><li class="level-3">
+          <a href="#checking-before-decoding">Checking Before Decoding</a>
+        </li><li class="level-3">
+          <a href="#saving">Saving</a>
+        </li><li class="level-3">
+          <a href="#format-reference">Format Reference</a>
+        </li><li class="level-3">
+          <a href="#encoding-options">Encoding Options</a>
+        </li><li class="level-3">
+          <a href="#data-urls">Data URLs</a>
+        </li><li class="level-2">
+          <a href="#resizing-and-reshaping">Resizing and Reshaping</a>
+        </li><li class="level-3">
+          <a href="#choosing-a-resize">Choosing a Resize</a>
+        </li><li class="level-3">
+          <a href="#resampling-filters">Resampling Filters</a>
+        </li><li class="level-3">
+          <a href="#cropping-padding-and-trimming">Cropping, Padding and Trimming</a>
+        </li><li class="level-3">
+          <a href="#rotating-and-mirroring">Rotating and Mirroring</a>
+        </li><li class="level-3">
+          <a href="#exif-orientation">EXIF Orientation</a>
+        </li><li class="level-2">
+          <a href="#filters">Filters</a>
+        </li><li class="level-3">
+          <a href="#tone-and-exposure">Tone and Exposure</a>
+        </li><li class="level-3">
+          <a href="#colour">Colour</a>
+        </li><li class="level-3">
+          <a href="#blur-sharpen-and-detail">Blur, Sharpen and Detail</a>
+        </li><li class="level-3">
+          <a href="#writing-your-own-filter">Writing Your Own Filter</a>
+        </li><li class="level-2">
+          <a href="#drawing">Drawing</a>
+        </li><li class="level-3">
+          <a href="#shapes">Shapes</a>
+        </li><li class="level-3">
+          <a href="#strokes-and-anti-aliasing">Strokes and Anti-aliasing</a>
+        </li><li class="level-3">
+          <a href="#line-caps">Line Caps</a>
+        </li><li class="level-3">
+          <a href="#paths-and-polygons">Paths and Polygons</a>
+        </li><li class="level-3">
+          <a href="#filling-areas">Filling Areas</a>
+        </li><li class="level-3">
+          <a href="#gradients">Gradients</a>
+        </li><li class="level-3">
+          <a href="#clipping">Clipping</a>
+        </li><li class="level-2">
+          <a href="#text">Text</a>
+        </li><li class="level-3">
+          <a href="#the-built-in-font">The Built-in Font</a>
+        </li><li class="level-3">
+          <a href="#loading-a-font">Loading a Font</a>
+        </li><li class="level-3">
+          <a href="#drawing-text">Drawing Text</a>
+        </li><li class="level-3">
+          <a href="#measuring-and-positioning">Measuring and Positioning</a>
+        </li><li class="level-3">
+          <a href="#wrapping">Wrapping</a>
+        </li><li class="level-3">
+          <a href="#what-text-layout-does-not-do">What Text Layout Does Not Do</a>
+        </li><li class="level-2">
+          <a href="#compositing">Compositing</a>
+        </li><li class="level-3">
+          <a href="#drawing-one-image-onto-another">Drawing One Image Onto Another</a>
+        </li><li class="level-3">
+          <a href="#blend-modes">Blend Modes</a>
+        </li><li class="level-3">
+          <a href="#masks">Masks</a>
+        </li><li class="level-3">
+          <a href="#layers">Layers</a>
+        </li><li class="level-2">
+          <a href="#inspecting-an-image">Inspecting an Image</a>
+        </li><li class="level-2">
+          <a href="#animation">Animation</a>
+        </li><li class="level-2">
+          <a href="#working-with-pixels-directly">Working With Pixels Directly</a>
+        </li><li class="level-2">
+          <a href="#errors">Errors</a>
+        </li><li class="level-2">
+          <a href="#performance-and-memory">Performance and Memory</a>
+        </li><li class="level-2">
+          <a href="#recipes">Recipes</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=0b209a4edb" defer=""></script>
+  
+  
+
+
+</body></html>
