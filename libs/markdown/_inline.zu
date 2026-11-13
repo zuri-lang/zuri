@@ -1,0 +1,2292 @@
+/**
+ * The inline half of the parser: the text of a paragraph, heading, cell
+ * or term in, a run of inline nodes out.
+ *
+ * Emphasis and links follow the specification's delimiter stack
+ * algorithm. While a block's text is being parsed its inlines are kept
+ * in a linked list, so wrapping a run of them in emphasis or a link
+ * costs nothing per node, and the list becomes `children` lists once
+ * the block is done.
+ */
+
+import ._text { * }
+import .node { Node }
+
+# A run of inline nodes under construction: each entry holds its node,
+# its neighbours, and the entries it contains.
+class _Item {
+  var node
+  var parent_node
+  var next
+  var prev
+  var first
+  var last
+
+  @new(node) {
+    self.node = node
+  }
+}
+
+# One `*`, `_`, `~`, `=` or quote run that may open or close something.
+class _Delimiter {
+  var cc = ''
+  var count = 0
+  var original = 0
+  var item
+  var previous
+  var next
+  var can_open = false
+  var can_close = false
+}
+
+# One `[` or `![` that may start a link, an image, a span or a footnote
+# reference.
+class _Bracket {
+  var item
+  var previous
+  var previous_delimiter
+  var index = 0
+  var image = false
+  var active = true
+  var bracket_after = false
+}
+
+def _append(owner: _Item, item: _Item) {
+  item.parent_node = owner
+  item.prev = owner.last
+  item.next = nil
+
+  if owner.last != nil {
+    owner.last.next = item
+  } else {
+    owner.first = item
+  }
+
+  owner.last = item
+}
+
+def _unlink(item: _Item) {
+  var owner = item.parent_node
+
+  if item.prev != nil {
+    item.prev.next = item.next
+  } else if owner != nil {
+    owner.first = item.next
+  }
+
+  if item.next != nil {
+    item.next.prev = item.prev
+  } else if owner != nil {
+    owner.last = item.prev
+  }
+
+  item.parent_node = nil
+  item.prev = nil
+  item.next = nil
+}
+
+def _insert_after(reference: _Item, item: _Item) {
+  var owner = reference.parent_node
+
+  item.parent_node = owner
+  item.prev = reference
+  item.next = reference.next
+
+  if reference.next != nil {
+    reference.next.prev = item
+  } else if owner != nil {
+    owner.last = item
+  }
+
+  reference.next = item
+}
+
+def _text(literal: string) {
+  var node = Node('text')
+
+  node.literal = literal
+
+  return _Item(node)
+}
+
+def _emoji_table() {
+  import ._emoji
+
+  return _emoji.EMOJI
+}
+
+class InlineParser {
+  var subject = ''
+  var pos = 0
+  var length = 0
+  var root
+  var delimiters
+  var brackets
+  var refmap = {}
+  var footnotes = {}
+  var abbreviations = {}
+  var special = {}
+  var ticks_scanned = false
+  var ticks_last = {}
+  var no_gt_after = -1
+  var no_math_after = -1
+  var unclosed = {}
+  var no_display_math_after = -1
+  var emoji = {}
+  var smart = false
+  var use_strikethrough = false
+  var use_subscript = false
+  var use_superscript = false
+  var use_mark = false
+  var use_math = false
+  var use_emoji = false
+  var use_footnotes = false
+  var use_attributes = false
+  var use_autolinks = false
+  var use_abbreviations = false
+  var options = {}
+  var note_count = 0
+
+  @new(options: dict) {
+    self.options = options
+    self.smart = options.smart
+    self.use_strikethrough = options.strikethrough
+    self.use_subscript = options.subscript
+    self.use_superscript = options.superscript
+    self.use_mark = options.mark
+    self.use_math = options.math
+    self.use_emoji = options.emoji
+    self.use_footnotes = options.footnotes
+    self.use_attributes = options.attributes
+    self.use_autolinks = options.autolinks
+    self.use_abbreviations = options.abbreviations
+
+    var special = '\n`[]\\!<&*_'
+
+    if self.smart {
+      special += '\'".-'
+    }
+
+    if self.use_strikethrough or self.use_subscript {
+      special += '~'
+    }
+
+    if self.use_superscript or self.use_footnotes {
+      special += '^'
+    }
+
+    if self.use_mark {
+      special += '='
+    }
+
+    if self.use_math {
+      special += '$'
+    }
+
+    if self.use_emoji {
+      special += ':'
+      self.emoji = _emoji_table()
+    }
+
+    self.special = {}
+
+    for c in special {
+      self.special.set(c, true)
+    }
+  }
+
+  _peek_at(index: number) {
+    return index < self.length ? self.subject[index] : ''
+  }
+
+  _reset(subject: string) {
+    self.subject = subject
+    self.pos = 0
+    self.length = subject.length()
+    self.delimiters = nil
+    self.brackets = nil
+    self.ticks_scanned = false
+    self.ticks_last = {}
+    self.no_gt_after = -1
+    self.no_math_after = -1
+    self.no_display_math_after = -1
+    self.unclosed = {}
+  }
+
+  # Parses _node_'s `literal` into its children and clears the literal.
+  parse(node: Node) {
+    var content = node.literal == nil ? '' : node.literal.trim(' \t\n\r')
+
+    node.literal = nil
+    self._reset(content)
+    self.root = _Item(node)
+
+    while self.pos < self.length {
+      self._parse_inline()
+    }
+
+    self._process_emphasis(nil)
+    _build(self.root, node)
+
+    if self.use_autolinks {
+      _autolink(node)
+    }
+
+    if self.use_abbreviations and !self.abbreviations.is_empty() {
+      _abbreviate(node, self.abbreviations)
+    }
+  }
+
+  _add(item: _Item) {
+    _append(self.root, item)
+
+    return item
+  }
+
+  _add_text(literal: string) {
+    return self._add(_text(literal))
+  }
+
+  _parse_inline() {
+    var c = self.subject[self.pos]
+    var handled = false
+
+    using c {
+      when '\n' {
+        handled = self._parse_newline()
+      }
+      when '\\' {
+        handled = self._parse_backslash()
+      }
+      when '`' {
+        handled = self._parse_backticks()
+      }
+      when '*', '_' {
+        handled = self._handle_delimiter(c)
+      }
+      when '~' {
+        handled = self._parse_tilde()
+      }
+      when '=' {
+        handled = self.use_mark and self._handle_delimiter(c)
+      }
+      when '^' {
+        if self.use_footnotes and self._peek_at(self.pos + 1) == '[' {
+          handled = self._parse_inline_note()
+        }
+
+        if !handled and self.use_superscript {
+          handled = self._parse_script('^', 'superscript')
+        }
+      }
+      when '$' {
+        handled = self.use_math and self._parse_math()
+      }
+      when ':' {
+        handled = self.use_emoji and self._parse_emoji()
+      }
+      when '\'', '"' {
+        handled = self.smart and self._handle_delimiter(c)
+      }
+      when '[' {
+        handled = self._parse_open_bracket()
+      }
+      when '!' {
+        handled = self._parse_bang()
+      }
+      when ']' {
+        handled = self._parse_close_bracket()
+      }
+      when '<' {
+        handled = self._parse_autolink() or self._parse_html_tag()
+      }
+      when '&' {
+        handled = self._parse_entity()
+      }
+      default {
+        handled = self._parse_string()
+      }
+    }
+
+    if !handled {
+      self.pos++
+      self._add_text(c)
+    }
+  }
+
+  _parse_newline() {
+    self.pos++
+
+    var last = self.root.last
+
+    if last != nil and
+        last.node.type == 'text' and
+        last.node.literal.ends_with(' ') {
+      var literal = last.node.literal
+      var hard = literal.ends_with('  ')
+
+      last.node.literal = literal.rtrim(' ')
+      self._add(_Item(Node(hard ? 'linebreak' : 'softbreak')))
+    } else {
+      self._add(_Item(Node('softbreak')))
+    }
+
+    while self.pos < self.length and is_space_or_tab(self.subject[self.pos]) {
+      self.pos++
+    }
+
+    return true
+  }
+
+  _parse_backslash() {
+    var next = self._peek_at(self.pos + 1)
+
+    if next == '\n' {
+      self.pos += 2
+      self._add(_Item(Node('linebreak')))
+
+      while self.pos < self.length and is_space_or_tab(self.subject[self.pos]) {
+        self.pos++
+      }
+    } else if next != '' and ESCAPABLE.contains(next) {
+      self.pos += 2
+      self._add_text(next)
+    } else {
+      self.pos++
+      self._add_text('\\')
+    }
+
+    return true
+  }
+
+  _parse_backticks() {
+    var start = self.pos
+    var i = start
+
+    while i < self.length and self.subject[i] == '`' {
+      i++
+    }
+
+    var count = i - start
+    var after_open = i
+
+    # Once the whole subject has been scanned for closers without luck,
+    # a run of this length has no closer anywhere, which keeps a line of
+    # unmatched backticks from being rescanned once for each.
+    if self.ticks_scanned {
+      var last = self.ticks_last.get(count)
+
+      if last == nil or last < after_open {
+        self.pos = after_open
+        self._add_text('`' * count)
+
+        return true
+      }
+    }
+
+    while i < self.length {
+      if self.subject[i] != '`' {
+        i++
+
+        continue
+      }
+
+      var run_start = i
+
+      while i < self.length and self.subject[i] == '`' {
+        i++
+      }
+
+      var run = i - run_start
+
+      if !self.ticks_scanned {
+        self.ticks_last.set(run, run_start)
+      }
+
+      if run == count {
+        var contents = self.subject[after_open, run_start].replace(
+          '\n',
+          ' ',
+          false,
+        )
+
+        if contents.length() > 1 and
+            contents[0] == ' ' and
+            contents[contents.length() - 1] == ' ' and
+            !is_blank(contents) {
+          contents = contents[1, contents.length() - 1]
+        }
+
+        var node = Node('code')
+
+        node.literal = contents
+        self.pos = i
+        self._add(_Item(node))
+
+        if self.use_attributes {
+          self._take_attributes(node)
+        }
+
+        return true
+      }
+    }
+
+    self.ticks_scanned = true
+    self.pos = after_open
+    self._add_text('`' * count)
+
+    return true
+  }
+
+  # Reads a `{...}` attributes block straight after the current position
+  # into _node_, when there is one.
+  _take_attributes(node: Node) {
+    if self._peek_at(self.pos) != '{' {
+      return false
+    }
+
+    var found = parse_attributes(self.subject, self.pos)
+
+    if found == nil {
+      return false
+    }
+
+    merge_attributes(node.attributes, found[0])
+    self.pos = found[1]
+
+    return true
+  }
+
+  # How the run of _cc_ at the current position may act: its length and
+  # whether it can open and close.
+  _scan_delimiters(cc: string) {
+    var start = self.pos
+    var i = start
+
+    if cc == '\'' or cc == '"' {
+      i++
+    } else {
+      while i < self.length and self.subject[i] == cc {
+        i++
+      }
+    }
+
+    var count = i - start
+    var before = start == 0 ? '' : self.subject[start - 1]
+    var after = self._peek_at(i)
+    var after_space = is_whitespace(after)
+    var after_punct = !after_space and is_punctuation(after)
+    var before_space = is_whitespace(before)
+    var before_punct = !before_space and is_punctuation(before)
+    var left = !after_space and (!after_punct or before_space or before_punct)
+    var right = !before_space and (!before_punct or after_space or after_punct)
+    var can_open = left
+    var can_close = right
+
+    if cc == '_' {
+      can_open = left and (!right or before_punct)
+      can_close = right and (!left or after_punct)
+    } else if cc == '\'' or cc == '"' {
+      can_open = left and !right
+    }
+
+    return [count, can_open, can_close]
+  }
+
+  _handle_delimiter(cc: string) {
+    var scanned = self._scan_delimiters(cc)
+    var count = scanned[0]
+    var start = self.pos
+
+    self.pos += count
+
+    var literal = self.subject[start, self.pos]
+
+    if cc == '\'' {
+      literal = '’'
+    } else if cc == '"' {
+      literal = '“'
+    }
+
+    var item = self._add_text(literal)
+    var usable = scanned[1] or scanned[2]
+
+    if cc == '=' and count != 2 {
+      usable = false
+    }
+
+    if cc == '~' and count > 2 {
+      usable = false
+    }
+
+    if usable {
+      var delimiter = _Delimiter()
+
+      delimiter.cc = cc
+      delimiter.count = count
+      delimiter.original = count
+      delimiter.item = item
+      delimiter.previous = self.delimiters
+      delimiter.can_open = scanned[1]
+      delimiter.can_close = scanned[2]
+
+      if self.delimiters != nil {
+        self.delimiters.next = delimiter
+      }
+
+      self.delimiters = delimiter
+    }
+
+    return true
+  }
+
+  _parse_tilde() {
+    if self.use_subscript and self._peek_at(self.pos + 1) != '~' {
+      if self._parse_script('~', 'subscript') {
+        return true
+      }
+    }
+
+    if self.use_strikethrough {
+      return self._handle_delimiter('~')
+    }
+
+    return false
+  }
+
+  # `^[text]`: a footnote written where it is referred to, as Pandoc
+  # allows. The reference holds the note's text as its children, and is
+  # numbered with the other footnotes when the document is rendered.
+  _parse_inline_note() {
+    var i = self.pos + 2
+    var depth = 1
+
+    while i < self.length {
+      var c = self.subject[i]
+
+      if c == '\\' {
+        i += 2
+
+        continue
+      }
+
+      if c == '[' {
+        depth++
+      } else if c == ']' {
+        depth--
+
+        if depth == 0 {
+          break
+        }
+      }
+
+      i++
+    }
+
+    if depth != 0 or i >= self.length {
+      return false
+    }
+
+    var content = self.subject[self.pos + 2, i]
+
+    if content.trim().is_empty() {
+      return false
+    }
+
+    var inner = InlineParser(self.options)
+    var holder = Node('paragraph')
+    var note = Node('footnote_reference')
+
+    inner.refmap = self.refmap
+    inner.footnotes = self.footnotes
+    inner.abbreviations = self.abbreviations
+    self.note_count++
+    inner.note_count = self.note_count
+    note.label = 'inline-${self.note_count}'
+    holder.literal = content
+    inner.parse(holder)
+    self.note_count = inner.note_count
+
+    for child in holder.children {
+      child.parent_node = note
+      note.children.append(child)
+    }
+
+    self.pos = i + 1
+    self._add(_Item(note))
+
+    return true
+  }
+
+  # `^text^` or `~text~`: Pandoc's superscript and subscript, which may
+  # hold no unescaped whitespace.
+  _parse_script(mark: string, type: string) {
+    if mark == '^' and
+        self.use_footnotes and
+        self.pos > 0 and
+        self.subject[self.pos - 1] == '[' {
+      return false
+    }
+
+    var i = self.pos + 1
+
+    while i < self.length {
+      var c = self.subject[i]
+
+      if c == '\\' and i + 1 < self.length {
+        i += 2
+
+        continue
+      }
+
+      if c == mark {
+        break
+      }
+
+      if is_whitespace(c) {
+        return false
+      }
+
+      i++
+    }
+
+    if i >= self.length or i == self.pos + 1 {
+      return false
+    }
+
+    var node = Node(type)
+    var text = Node('text')
+
+    text.literal = unescape(
+      self.subject[self.pos + 1, i].replace('\\ ', ' ', false),
+    )
+    text.parent_node = node
+    node.children.append(text)
+    self.pos = i + 1
+    self._add(_Item(node))
+
+    return true
+  }
+
+  # `$...$` and `$$...$$`, with Pandoc's rules: inline math may not start
+  # or end with whitespace, nor end just before a digit.
+  _parse_math() {
+    var start = self.pos
+
+    # Once a scan has run to the end without finding a closer, no later
+    # opener can find one either, so neither kind is scanned for again.
+    if self._peek_at(start + 1) == '$' {
+      if self.no_display_math_after >= 0 and
+          start >= self.no_display_math_after {
+        return false
+      }
+
+      var close = self.subject.index_of('$$', start + 2)
+
+      if close < 0 {
+        self.no_display_math_after = start
+
+        return false
+      }
+
+      if close == start + 2 {
+        return false
+      }
+
+      var node = Node('math')
+
+      node.literal = self.subject[start + 2, close]
+      node.display = true
+      self.pos = close + 2
+      self._add(_Item(node))
+
+      return true
+    }
+
+    var first = self._peek_at(start + 1)
+
+    if first == '' or is_whitespace(first) {
+      return false
+    }
+
+    if self.no_math_after >= 0 and start >= self.no_math_after {
+      return false
+    }
+
+    var i = start + 1
+
+    while i < self.length {
+      var c = self.subject[i]
+
+      if c == '\\' {
+        i += 2
+
+        continue
+      }
+
+      if c == '$' and
+          !is_whitespace(self.subject[i - 1]) and
+          !is_digit(self._peek_at(i + 1)) {
+        var node = Node('math')
+
+        node.literal = self.subject[start + 1, i]
+        node.display = false
+        self.pos = i + 1
+        self._add(_Item(node))
+
+        return true
+      }
+
+      i++
+    }
+
+    self.no_math_after = start
+
+    return false
+  }
+
+  _parse_emoji() {
+    var i = self.pos + 1
+
+    while i < self.length {
+      var c = self.subject[i]
+
+      if is_ascii_alnum(c) or c == '_' or c == '+' or c == '-' {
+        i++
+      } else {
+        break
+      }
+    }
+
+    if i >= self.length or self.subject[i] != ':' or i == self.pos + 1 {
+      return false
+    }
+
+    var name = self.subject[self.pos + 1, i]
+    var character = self.emoji.get(name)
+
+    if character == nil {
+      return false
+    }
+
+    var node = Node('emoji')
+
+    node.literal = character
+    node.label = name
+    self.pos = i + 1
+    self._add(_Item(node))
+
+    return true
+  }
+
+  _parse_open_bracket() {
+    var start = self.pos
+
+    self.pos++
+    self._add_bracket(self._add_text('['), start, false)
+
+    return true
+  }
+
+  _parse_bang() {
+    var start = self.pos
+
+    self.pos++
+
+    if self._peek_at(self.pos) == '[' {
+      self.pos++
+      self._add_bracket(self._add_text('!['), start + 1, true)
+    } else {
+      self._add_text('!')
+    }
+
+    return true
+  }
+
+  _add_bracket(item: _Item, index: number, image: bool) {
+    if self.brackets != nil {
+      self.brackets.bracket_after = true
+    }
+
+    var bracket = _Bracket()
+
+    bracket.item = item
+    bracket.previous = self.brackets
+    bracket.previous_delimiter = self.delimiters
+    bracket.index = index
+    bracket.image = image
+    self.brackets = bracket
+  }
+
+  _parse_close_bracket() {
+    var close = self.pos
+
+    self.pos++
+
+    var start = self.pos
+    var opener = self.brackets
+
+    if opener == nil {
+      self._add_text(']')
+
+      return true
+    }
+
+    if !opener.active {
+      self._add_text(']')
+      self.brackets = opener.previous
+
+      return true
+    }
+
+    var image = opener.image
+    var matched = false
+    var destination = nil
+    var title = nil
+    var attributes = nil
+
+    # An inline link: `[text](destination "title")`.
+    if self._peek_at(self.pos) == '(' {
+      self.pos++
+      self._spnl()
+
+      destination = self._parse_link_destination()
+
+      if destination != nil {
+        self._spnl()
+
+        if is_whitespace(self._peek_at(self.pos - 1)) {
+          title = self._parse_link_title()
+        }
+
+        self._spnl()
+
+        if self._peek_at(self.pos) == ')' {
+          self.pos++
+          matched = true
+        }
+      }
+
+      if !matched {
+        self.pos = start
+        title = nil
+      }
+    }
+
+    # A bracketed span: `[text]{.class}`.
+    if !matched and
+        !image and
+        self.use_attributes and
+        self._peek_at(self.pos) == '{' {
+      var found = parse_attributes(self.subject, self.pos)
+
+      if found != nil {
+        self.pos = found[1]
+
+        var span = _Item(Node('span'))
+
+        span.node.attributes = found[0]
+        self._close_with(opener, span, false)
+
+        return true
+      }
+    }
+
+    # A reference: `[text][label]`, `[text][]` or `[text]`.
+    if !matched {
+      var before_label = self.pos
+      var label_length = self._scan_link_label()
+      var label = nil
+
+      if label_length > 2 {
+        label = self.subject[before_label + 1, before_label + label_length - 1]
+      } else if !opener.bracket_after and close - opener.index <= 1000 {
+        label = self.subject[opener.index + 1, close]
+      }
+
+      if label_length == 0 {
+        self.pos = start
+      }
+
+      if label != nil {
+        var found = self.refmap.get(normalize_label(label))
+
+        if found != nil {
+          destination = found.destination
+          title = found.title
+          matched = true
+        }
+      }
+
+      if !matched {
+        self.pos = start
+      }
+    }
+
+    # A footnote reference: `[^label]`. After a `!` it is still one, and
+    # the `!` stays as text.
+    if !matched and
+        self.use_footnotes and
+        self._peek_at(opener.index + 1) == '^' {
+      var label = self.subject[opener.index + 2, close]
+      var definition = label.is_empty()
+          ? nil
+          : self.footnotes.get(normalize_label(label))
+
+      if definition != nil {
+        self.pos = start
+
+        var reference = _Item(Node('footnote_reference'))
+
+        reference.node.label = definition.label
+        self._replace_bracket(opener, reference, image)
+
+        return true
+      }
+    }
+
+    if !matched {
+      self.brackets = opener.previous
+      self.pos = start
+      self._add_text(']')
+
+      return true
+    }
+
+    var node = Node(image ? 'image' : 'link')
+
+    node.destination = destination
+    node.title = title == nil ? '' : title
+
+    var item = _Item(node)
+
+    self._close_with(opener, item, !image)
+
+    if self.use_attributes {
+      self._take_attributes(node)
+    }
+
+    return true
+  }
+
+  # Moves everything after _opener_ into _item_, puts _item_ in the
+  # opener's place, and settles the emphasis inside it. A link also
+  # stops every earlier `[` from becoming a link, since links do not
+  # nest.
+  _close_with(opener: _Bracket, item: _Item, is_link: bool) {
+    var current = opener.item.next
+
+    while current != nil {
+      var next = current.next
+
+      _unlink(current)
+      _append(item, current)
+      current = next
+    }
+
+    self._add(item)
+    self._process_emphasis(opener.previous_delimiter)
+    self.brackets = opener.previous
+    _unlink(opener.item)
+
+    if is_link {
+      var earlier = self.brackets
+
+      while earlier != nil {
+        if !earlier.image {
+          earlier.active = false
+        }
+
+        earlier = earlier.previous
+      }
+    }
+  }
+
+  # Throws away everything from _opener_ on, delimiters included, and
+  # adds _item_ in its place, after a `!` when _keep_bang_ asks.
+  _replace_bracket(opener: _Bracket, item: _Item, keep_bang: bool) {
+    var current = opener.item
+
+    while current != nil {
+      var next = current.next
+
+      _unlink(current)
+      current = next
+    }
+
+    while self.delimiters != opener.previous_delimiter {
+      self._remove_delimiter(self.delimiters)
+    }
+
+    self.brackets = opener.previous
+
+    if keep_bang {
+      self._add_text('!')
+    }
+
+    self._add(item)
+  }
+
+  _spnl() {
+    while self.pos < self.length and is_space_or_tab(self.subject[self.pos]) {
+      self.pos++
+    }
+
+    if self._peek_at(self.pos) == '\n' {
+      self.pos++
+
+      while self.pos < self.length and is_space_or_tab(self.subject[self.pos]) {
+        self.pos++
+      }
+    }
+  }
+
+  # The destination of a link at the current position, unescaped and
+  # percent-encoded, or `nil` when there is none.
+  _parse_link_destination() {
+    var start = self.pos
+
+    if self._peek_at(start) == '<' {
+      var i = start + 1
+
+      while i < self.length {
+        var c = self.subject[i]
+
+        if c == '\\' and i + 1 < self.length {
+          i += 2
+
+          continue
+        }
+
+        if c == '>' {
+          self.pos = i + 1
+
+          return normalize_uri(unescape(self.subject[start + 1, i]))
+        }
+
+        if c == '<' or c == '\n' {
+          return nil
+        }
+
+        i++
+      }
+
+      return nil
+    }
+
+    var i = start
+    var depth = 0
+
+    while i < self.length {
+      var c = self.subject[i]
+
+      if c == '\\' and
+          i + 1 < self.length and
+          ESCAPABLE.contains(self.subject[i + 1]) {
+        i += 2
+
+        continue
+      }
+
+      if c == '(' {
+        depth++
+
+        # The specification lets an implementation limit how deep the
+        # parentheses go, and without a limit an unclosed run of them
+        # is rescanned to the end from every `](`.
+        if depth > 32 {
+          return nil
+        }
+      } else if c == ')' {
+        if depth < 1 {
+          break
+        }
+
+        depth--
+      } else if c == ' ' or c.ord() < 0x20 or c.ord() == 0x7F {
+        break
+      }
+
+      i++
+    }
+
+    if i == start and self._peek_at(i) != ')' {
+      return nil
+    }
+
+    if depth != 0 {
+      return nil
+    }
+
+    self.pos = i
+
+    return normalize_uri(unescape(self.subject[start, i]))
+  }
+
+  # The title of a link at the current position, unescaped, or `nil`.
+  _parse_link_title() {
+    var open = self._peek_at(self.pos)
+    var close = open
+
+    if open == '(' {
+      close = ')'
+    } else if open != '"' and open != "'" {
+      return nil
+    }
+
+    var i = self.pos + 1
+
+    while i < self.length {
+      var c = self.subject[i]
+
+      if c == '\\' and i + 1 < self.length {
+        i += 2
+
+        continue
+      }
+
+      if c == close {
+        var title = unescape(self.subject[self.pos + 1, i])
+
+        self.pos = i + 1
+
+        return title
+      }
+
+      if open == '(' and c == '(' {
+        return nil
+      }
+
+      i++
+    }
+
+    return nil
+  }
+
+  # The length of the `[label]` at the current position, brackets
+  # included, or 0 when there is none. The position moves past it.
+  _scan_link_label() {
+    if self._peek_at(self.pos) != '[' {
+      return 0
+    }
+
+    var i = self.pos + 1
+    var count = 0
+
+    while i < self.length {
+      var c = self.subject[i]
+
+      if c == '\\' and i + 1 < self.length {
+        i += 2
+        count += 2
+
+        continue
+      }
+
+      if c == '[' {
+        return 0
+      }
+
+      if c == ']' {
+        if count > 999 {
+          return 0
+        }
+
+        var length = i + 1 - self.pos
+
+        self.pos = i + 1
+
+        return length
+      }
+
+      i++
+      count++
+    }
+
+    return 0
+  }
+
+  _parse_autolink() {
+    var start = self.pos
+
+    if self.no_gt_after >= 0 and start >= self.no_gt_after {
+      return false
+    }
+
+    var close = self.subject.index_of('>', start + 1)
+
+    if close < 0 {
+      self.no_gt_after = start
+
+      return false
+    }
+
+    var inner = self.subject[start + 1, close]
+
+    if inner.is_empty() {
+      return false
+    }
+
+    var destination = nil
+
+    if inner.match('/^[A-Za-z][A-Za-z0-9+.\\-]{1,31}:[^<>\\x00-\\x20]*$/') !=
+        false {
+      destination = normalize_uri(decode_entities(inner))
+    } else if inner.match(
+          '/^[a-zA-Z0-9.!#$%&\'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/',
+        ) !=
+        false {
+      destination = normalize_uri('mailto:' + decode_entities(inner))
+    } else {
+      return false
+    }
+
+    var node = Node('link')
+
+    node.destination = destination
+    node.title = ''
+
+    var text = Node('text')
+
+    text.literal = decode_entities(inner)
+    text.parent_node = node
+    node.children.append(text)
+    self.pos = close + 1
+    self._add(_Item(node))
+
+    return true
+  }
+
+  _parse_html_tag() {
+    var start = self.pos
+
+    if self.no_gt_after >= 0 and start >= self.no_gt_after {
+      return false
+    }
+
+    # A comment, processing instruction or CDATA section that is never
+    # closed would otherwise be searched for its end from every `<` that
+    # opens another.
+    var kind = ''
+
+    if starts_at(self.subject, start, '<!--') {
+      kind = '-->'
+    } else if starts_at(self.subject, start, '<?') {
+      kind = '?>'
+    } else if starts_at(self.subject, start, '<![CDATA[') {
+      kind = ']]>'
+    }
+
+    var unclosed = self.unclosed.get(kind)
+
+    if unclosed != nil and start >= unclosed {
+      return false
+    }
+
+    var end = scan_html_tag(self.subject, start)
+
+    if end < 0 {
+      # These fail only for want of their closing text, which no later
+      # one will find either.
+      if !kind.is_empty() {
+        self.unclosed.set(kind, start)
+      }
+
+      return false
+    }
+
+    var node = Node('html_inline')
+
+    node.literal = self.subject[self.pos, end]
+    self.pos = end
+    self._add(_Item(node))
+
+    return true
+  }
+
+  _parse_entity() {
+    var end = scan_entity(self.subject, self.pos)
+
+    if end < 0 {
+      return false
+    }
+
+    var decoded = decode_entity(self.subject[self.pos, end])
+
+    if decoded == nil {
+      return false
+    }
+
+    self.pos = end
+    self._add_text(decoded)
+
+    return true
+  }
+
+  _parse_string() {
+    var start = self.pos
+    var i = start
+
+    while i < self.length and !self.special.contains(self.subject[i]) {
+      i++
+    }
+
+    if i == start {
+      if !self.smart {
+        return false
+      }
+
+      var c = self.subject[i]
+
+      if c == '.' or c == '-' {
+        while i < self.length and self.subject[i] == c {
+          i++
+        }
+      } else {
+        return false
+      }
+    }
+
+    var text = self.subject[start, i]
+
+    self.pos = i
+
+    if self.smart {
+      text = _smarten(text)
+    }
+
+    self._add_text(text)
+
+    return true
+  }
+
+  _remove_delimiter(delimiter: _Delimiter) {
+    if delimiter.previous != nil {
+      delimiter.previous.next = delimiter.next
+    }
+
+    if delimiter.next == nil {
+      self.delimiters = delimiter.previous
+    } else {
+      delimiter.next.previous = delimiter.previous
+    }
+  }
+
+  _process_emphasis(bottom) {
+    # The lowest opener worth looking at again for each kind of closer,
+    # so a run of closers with no opener is not searched once for each.
+    var openers_bottom = [
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+      bottom,
+    ]
+    var closer = self.delimiters
+
+    while closer != nil and closer.previous != bottom {
+      closer = closer.previous
+    }
+
+    while closer != nil {
+      if !closer.can_close {
+        closer = closer.next
+
+        continue
+      }
+
+      var cc = closer.cc
+      var index = 0
+
+      using cc {
+        when '\'' {
+          index = 0
+        }
+        when '"' {
+          index = 1
+        }
+        when '_' {
+          index = 2 + (closer.can_open ? 3 : 0) + closer.original % 3
+        }
+        when '*' {
+          index = 8 + (closer.can_open ? 3 : 0) + closer.original % 3
+        }
+        when '~' {
+          index = 14 + closer.original % 3
+        }
+        when '=' {
+          index = 17 + closer.original % 3
+        }
+      }
+
+      var opener = closer.previous
+      var found = false
+
+      while opener != nil and
+          opener != bottom and
+          opener != openers_bottom[index] {
+        var odd = (closer.can_open or opener.can_close) and
+            closer.original % 3 != 0 and
+            (opener.original + closer.original) % 3 == 0
+
+        if opener.cc == cc and opener.can_open and !odd {
+          found = true
+
+          break
+        }
+
+        opener = opener.previous
+      }
+
+      var old_closer = closer
+
+      if cc == '*' or cc == '_' {
+        if !found {
+          closer = closer.next
+        } else {
+          var use = closer.count >= 2 and opener.count >= 2 ? 2 : 1
+          var opener_node = opener.item.node
+          var closer_node = closer.item.node
+
+          opener.count -= use
+          closer.count -= use
+          opener_node.literal = opener_node
+              .literal[0, opener_node.literal.length() - use]
+          closer_node.literal = closer_node
+              .literal[0, closer_node.literal.length() - use]
+
+          var wrapper = _Item(Node(use == 1 ? 'emphasis' : 'strong'))
+
+          self._wrap_between(opener, closer, wrapper)
+
+          if opener.count == 0 {
+            _unlink(opener.item)
+            self._remove_delimiter(opener)
+          }
+
+          if closer.count == 0 {
+            _unlink(closer.item)
+
+            var next = closer.next
+
+            self._remove_delimiter(closer)
+            closer = next
+          }
+        }
+      } else if cc == '~' or cc == '=' {
+        if !found {
+          closer = closer.next
+        } else {
+          var next = closer.next
+
+          if opener.count == closer.count {
+            var wrapper = _Item(Node(cc == '~' ? 'strikethrough' : 'mark'))
+
+            self._wrap_between(opener, closer, wrapper)
+            _unlink(opener.item)
+            _unlink(closer.item)
+          }
+
+          var delimiter = closer
+
+          while delimiter != nil and delimiter != opener {
+            var previous = delimiter.previous
+
+            self._remove_delimiter(delimiter)
+            delimiter = previous
+          }
+
+          self._remove_delimiter(opener)
+          closer = next
+        }
+      } else if cc == '\'' {
+        closer.item.node.literal = '’'
+
+        if found {
+          opener.item.node.literal = '‘'
+        }
+
+        closer = closer.next
+      } else if cc == '"' {
+        closer.item.node.literal = '”'
+
+        if found {
+          opener.item.node.literal = '“'
+        }
+
+        closer = closer.next
+      }
+
+      if !found {
+        openers_bottom[index] = old_closer.previous
+
+        if !old_closer.can_open {
+          self._remove_delimiter(old_closer)
+        }
+      }
+    }
+
+    while self.delimiters != nil and self.delimiters != bottom {
+      self._remove_delimiter(self.delimiters)
+    }
+  }
+
+  # Moves the inlines between _opener_ and _closer_ into _wrapper_, puts
+  # the wrapper between them, and drops the delimiters in between.
+  _wrap_between(opener: _Delimiter, closer: _Delimiter, wrapper: _Item) {
+    var current = opener.item.next
+
+    while current != nil and current != closer.item {
+      var next = current.next
+
+      _unlink(current)
+      _append(wrapper, current)
+      current = next
+    }
+
+    _insert_after(opener.item, wrapper)
+
+    if opener.next != closer {
+      opener.next = closer
+      closer.previous = opener
+    }
+  }
+
+  /**
+   * Reads link reference definitions off the start of _text_ into
+   * _refmap_. Returns how many characters the first one took, or 0 when
+   * the text does not start with one.
+   */
+  parse_reference(text: string, refmap: dict) {
+    self._reset(text)
+
+    var label_length = self._scan_link_label()
+
+    if label_length == 0 or self._peek_at(self.pos) != ':' {
+      return 0
+    }
+
+    var label = text[1, label_length - 1]
+
+    self.pos++
+    self._spnl()
+
+    var destination_start = self.pos
+    var destination = self._parse_link_destination()
+
+    if destination == nil {
+      return 0
+    }
+
+    # A bare destination may not be empty.
+    if self.pos == destination_start {
+      return 0
+    }
+
+    var before_title = self.pos
+
+    self._spnl()
+
+    var title = nil
+
+    if self.pos != before_title {
+      title = self._parse_link_title()
+    }
+
+    if title == nil {
+      self.pos = before_title
+    }
+
+    if !self._at_line_end() {
+      if title == nil {
+        return 0
+      }
+
+      title = nil
+      self.pos = before_title
+
+      if !self._at_line_end() {
+        return 0
+      }
+    }
+
+    var key = normalize_label(label)
+
+    if key.is_empty() {
+      return 0
+    }
+
+    if !refmap.contains(key) {
+      refmap.set(key, { destination, title: title == nil ? '' : title })
+    }
+
+    return self.pos
+  }
+
+  _at_line_end() {
+    var i = self.pos
+
+    while i < self.length and is_space_or_tab(self.subject[i]) {
+      i++
+    }
+
+    if i >= self.length {
+      self.pos = i
+
+      return true
+    }
+
+    if self.subject[i] == '\n' {
+      self.pos = i + 1
+
+      return true
+    }
+
+    return false
+  }
+}
+
+# Turns a run of items into _node_'s children, joining neighbouring text.
+def _build(owner: _Item, node: Node) {
+  var children = []
+  var item = owner.first
+  var pending = nil
+  var run = []
+
+  while item != nil {
+    var child = item.node
+
+    if child.type == 'text' {
+      if child.literal.is_empty() {
+        item = item.next
+
+        continue
+      }
+
+      if pending != nil {
+        run.append(child.literal)
+        item = item.next
+
+        continue
+      }
+
+      pending = child
+      run = [child.literal]
+    } else {
+      if pending != nil and run.length() > 1 {
+        pending.literal = ''.join(run)
+      }
+
+      pending = nil
+    }
+
+    child.parent_node = node
+    children.append(child)
+
+    if item.first != nil {
+      _build(item, child)
+    }
+
+    item = item.next
+  }
+
+  if pending != nil and run.length() > 1 {
+    pending.literal = ''.join(run)
+  }
+
+  node.children = children
+}
+
+# Smart dashes and ellipses: `--` is an en dash, `---` an em dash, and
+# a longer run is split as evenly as the two allow.
+def _smarten(text: string) {
+  if text.contains('...') {
+    text = text.replace('...', '…', false)
+  }
+
+  if !text.contains('--') {
+    return text
+  }
+
+  var out = []
+  var i = 0
+  var length = text.length()
+
+  while i < length {
+    if text[i] != '-' {
+      var start = i
+
+      while i < length and text[i] != '-' {
+        i++
+      }
+
+      out.append(text[start, i])
+
+      continue
+    }
+
+    var start = i
+
+    while i < length and text[i] == '-' {
+      i++
+    }
+
+    var count = i - start
+
+    if count == 1 {
+      out.append('-')
+
+      continue
+    }
+
+    var em = 0
+    var en = 0
+
+    if count % 3 == 0 {
+      em = count / 3
+    } else if count % 2 == 0 {
+      en = count / 2
+    } else if count % 3 == 2 {
+      en = 1
+      em = (count - 2) / 3
+    } else {
+      en = 2
+      em = (count - 4) / 3
+    }
+
+    out.append('—' * em + '–' * en)
+  }
+
+  return ''.join(out)
+}
+
+var _URL_SCHEMES = { http: true, https: true, ftp: true }
+
+def _is_host_character(c: string) {
+  if is_whitespace(c) {
+    return false
+  }
+
+  if ESCAPABLE.contains(c) {
+    return false
+  }
+
+  if c.ord() < 128 {
+    return true
+  }
+
+  return c.match('/^\\p{P}$/u') == false
+}
+
+# The length of the domain at _start_ in _text_, or 0 when it is not a
+# valid one. An underscore in either of the last two labels rules it
+# out, and unless _allow_short_ there must be at least one dot.
+def _check_domain(text: string, start: number, allow_short: bool) {
+  var length = text.length()
+  var dots = 0
+  var underscores_last = 0
+  var underscores = 0
+  var i = start + 1
+
+  while i < length - 1 {
+    var c = text[i]
+
+    if c == '\\' and i < length - 2 {
+      i++
+      c = text[i]
+    }
+
+    if c == '_' {
+      underscores++
+    } else if c == '.' {
+      underscores_last = underscores
+      underscores = 0
+      dots++
+    } else if c != '-' and !_is_host_character(c) {
+      break
+    }
+
+    i++
+  }
+
+  if underscores_last > 0 or underscores > 0 {
+    return 0
+  }
+
+  if allow_short {
+    return i - start
+  }
+
+  return dots > 0 ? i - start : 0
+}
+
+# Where a GFM autolink that runs to _end_ really ends, once trailing
+# punctuation, an unmatched `)` and an entity-like `&name;` are taken
+# off. _start_ is where it begins.
+def _trim_autolink(text: string, start: number, end: number) {
+  var opening = 0
+  var closing = 0
+
+  iter var i = start; i < end; i++ {
+    var c = text[i]
+
+    if c == '<' {
+      end = i
+
+      break
+    }
+
+    if c == '(' {
+      opening++
+    } else if c == ')' {
+      closing++
+    }
+  }
+
+  while end > start {
+    var c = text[end - 1]
+
+    using c {
+      when ')' {
+        if closing <= opening {
+          return end
+        }
+
+        closing--
+        end--
+      }
+      when '?', '!', '.', ',', ':', '*', '_', '~', '\'', '"' {
+        end--
+      }
+      when ';' {
+        var back = end - 2
+
+        while back > start and is_ascii_letter(text[back]) {
+          back--
+        }
+
+        if back < end - 2 and text[back] == '&' {
+          end = back
+        } else {
+          end--
+        }
+      }
+      default {
+        return end
+      }
+    }
+  }
+
+  return end
+}
+
+def _run_to_space(text: string, i: number) {
+  var length = text.length()
+
+  while i < length and !is_whitespace(text[i]) and text[i] != '<' {
+    i++
+  }
+
+  return i
+}
+
+# The GFM autolink that starts at _i_ in _text_, as `[start, end, url]`,
+# or `nil`. _floor_ is how far back a scheme or an email address may
+# reach.
+def _autolink_at(text: string, i: number, floor: number) {
+  var c = text[i]
+
+  if c == 'w' {
+    if !starts_at(text, i, 'www.') {
+      return nil
+    }
+
+    if i > 0 {
+      var before = text[i - 1]
+
+      if !is_whitespace(before) and
+          before != '*' and
+          before != '_' and
+          before != '~' and
+          before != '(' {
+        return nil
+      }
+    }
+
+    if _check_domain(text, i, false) == 0 {
+      return nil
+    }
+
+    var end = _trim_autolink(text, i, _run_to_space(text, i))
+
+    if end <= i {
+      return nil
+    }
+
+    return [i, end, 'http://' + text[i, end]]
+  }
+
+  if c == ':' {
+    if !starts_at(text, i, '://') {
+      return nil
+    }
+
+    var start = i
+
+    while start > floor and is_ascii_letter(text[start - 1]) {
+      start--
+    }
+
+    if !_URL_SCHEMES.contains(text[start, i].lower()) {
+      return nil
+    }
+
+    if _check_domain(text, i + 3, true) == 0 {
+      return nil
+    }
+
+    var end = _trim_autolink(text, start, _run_to_space(text, i + 3))
+
+    if end <= i + 3 {
+      return nil
+    }
+
+    return [start, end, text[start, end]]
+  }
+
+  if c == '@' {
+    return _email_at(text, i, floor)
+  }
+
+  return nil
+}
+
+def _protocol_before(
+  text: string,
+  colon: number,
+  protocol: string,
+  floor: number,
+) {
+  var start = colon + 1 - protocol.length()
+
+  if start < floor or text[start, colon + 1] != protocol {
+    return false
+  }
+
+  return start == floor or !is_ascii_alnum(text[start - 1])
+}
+
+def _email_at(text: string, at: number, floor: number) {
+  var length = text.length()
+  var start = at
+  var mailto = true
+  var xmpp = false
+
+  while start > floor {
+    var c = text[start - 1]
+
+    if is_ascii_alnum(c) or c == '.' or c == '+' or c == '-' or c == '_' {
+      start--
+
+      continue
+    }
+
+    if c == ':' {
+      if _protocol_before(text, start - 1, 'mailto:', floor) {
+        mailto = false
+        start -= 'mailto:'.length()
+
+        break
+      }
+
+      if _protocol_before(text, start - 1, 'xmpp:', floor) {
+        mailto = false
+        xmpp = true
+        start -= 'xmpp:'.length()
+
+        break
+      }
+    }
+
+    break
+  }
+
+  var local_start = mailto ? start : start + (xmpp ? 5 : 7)
+
+  if local_start == at {
+    return nil
+  }
+
+  var end = at
+  var ats = 0
+  var dots = 0
+
+  while end < length {
+    var c = text[end]
+
+    if is_ascii_alnum(c) {
+      end++
+
+      continue
+    }
+
+    if c == '@' {
+      ats++
+    } else if c == '.' and end < length - 1 and is_ascii_alnum(text[end + 1]) {
+      dots++
+    } else if c == '/' and xmpp {
+      end++
+
+      continue
+    } else if c != '-' and c != '_' {
+      break
+    }
+
+    end++
+  }
+
+  if end - at < 2 or ats != 1 or dots == 0 {
+    return nil
+  }
+
+  var last = text[end - 1]
+
+  if !is_ascii_letter(last) and last != '.' {
+    return nil
+  }
+
+  end = _trim_autolink(text, at, end)
+
+  if end <= at {
+    return nil
+  }
+
+  var address = text[start, end]
+
+  return [start, end, mailto ? 'mailto:' + address : address]
+}
+
+# Splits the text beneath _node_ around GFM's extended autolinks: bare
+# `www.` and `http://` addresses and email addresses. Nothing inside a
+# link or an image is touched, since links do not nest.
+def _autolink(node: Node) {
+  var children = []
+  var changed = false
+
+  for child in node.children {
+    if child.type == 'text' {
+      var parts = _autolink_text(child.literal)
+
+      if parts == nil {
+        children.append(child)
+      } else {
+        changed = true
+
+        for part in parts {
+          part.parent_node = node
+          children.append(part)
+        }
+      }
+    } else {
+      if child.type != 'link' and
+          child.type != 'image' and
+          !child.children.is_empty() {
+        _autolink(child)
+      }
+
+      children.append(child)
+    }
+  }
+
+  if changed {
+    node.children = children
+  }
+}
+
+def _autolink_text(text: string) {
+  if !text.contains('www.') and !text.contains('://') and !text.contains('@') {
+    return nil
+  }
+
+  var parts = []
+  var floor = 0
+  var i = 0
+  var length = text.length()
+
+  while i < length {
+    var c = text[i]
+
+    if c != 'w' and c != ':' and c != '@' {
+      i++
+
+      continue
+    }
+
+    var found = _autolink_at(text, i, floor)
+
+    if found == nil {
+      i++
+
+      continue
+    }
+
+    if found[0] > floor {
+      var before = Node('text')
+
+      before.literal = text[floor, found[0]]
+      parts.append(before)
+    }
+
+    var link = Node('link')
+    var label = Node('text')
+
+    link.destination = normalize_uri(found[2])
+    link.title = ''
+    label.literal = text[found[0], found[1]]
+    label.parent_node = link
+    link.children.append(label)
+    parts.append(link)
+    floor = found[1]
+    i = floor
+  }
+
+  if parts.is_empty() {
+    return nil
+  }
+
+  if floor < length {
+    var after = Node('text')
+
+    after.literal = text[floor,]
+    parts.append(after)
+  }
+
+  return parts
+}
+
+# Wraps each whole-word use of a defined abbreviation in the text
+# beneath _node_.
+def _abbreviate(node: Node, abbreviations: dict) {
+  var terms = abbreviations.keys()
+
+  # Longer terms first, so `HTML5` is found before `HTML`.
+  terms.sort(@(a, b) => b.length() - a.length())
+
+  _abbreviate_in(node, abbreviations, terms)
+}
+
+def _abbreviate_in(node: Node, abbreviations: dict, terms: list) {
+  var children = []
+  var changed = false
+
+  for child in node.children {
+    if child.type == 'text' {
+      var parts = _abbreviate_text(child.literal, abbreviations, terms)
+
+      if parts == nil {
+        children.append(child)
+      } else {
+        changed = true
+
+        for part in parts {
+          part.parent_node = node
+          children.append(part)
+        }
+      }
+    } else {
+      if !child.children.is_empty() and child.type != 'abbreviation' {
+        _abbreviate_in(child, abbreviations, terms)
+      }
+
+      children.append(child)
+    }
+  }
+
+  if changed {
+    node.children = children
+  }
+}
+
+def _is_word_edge(c: string) {
+  return is_whitespace(c) or is_punctuation(c)
+}
+
+def _abbreviate_text(text: string, abbreviations: dict, terms: list) {
+  var parts = []
+  var floor = 0
+  var i = 0
+  var length = text.length()
+
+  while i < length {
+    if i > 0 and !_is_word_edge(text[i - 1]) {
+      i++
+
+      continue
+    }
+
+    var matched = nil
+
+    for term in terms {
+      var end = i + term.length()
+
+      if starts_at(text, i, term) and
+          (end >= length or _is_word_edge(text[end])) {
+        matched = term
+
+        break
+      }
+    }
+
+    if matched == nil {
+      i++
+
+      continue
+    }
+
+    if i > floor {
+      var before = Node('text')
+
+      before.literal = text[floor, i]
+      parts.append(before)
+    }
+
+    var abbreviation = Node('abbreviation')
+    var inner = Node('text')
+
+    abbreviation.title = abbreviations.get(matched)
+    inner.literal = matched
+    inner.parent_node = abbreviation
+    abbreviation.children.append(inner)
+    parts.append(abbreviation)
+    i += matched.length()
+    floor = i
+  }
+
+  if parts.is_empty() {
+    return nil
+  }
+
+  if floor < length {
+    var after = Node('text')
+
+    after.literal = text[floor,]
+    parts.append(after)
+  }
+
+  return parts
+}

@@ -1,0 +1,1712 @@
+/**
+ * The block half of the parser: lines in, a tree of blocks out. The
+ * text of each paragraph, heading, table cell, term and line is left in
+ * the node's `literal` for the inline parser.
+ *
+ * The algorithm is the one the CommonMark specification's appendix
+ * describes. Each line is matched against the blocks still open, from
+ * the document down. Whatever the line does not continue is closed,
+ * and what is left of the line may open new blocks before the rest of
+ * it is added as text.
+ */
+
+import ._text { * }
+import .node { Node }
+import .errors { MetadataError }
+
+var _CODE_INDENT = 4
+
+# The characters a block can start with. A line whose first non-space
+# character is none of these can only be text, so the starts are not
+# tried at all.
+var _SPECIAL = {
+  '#': true,
+  '`': true,
+  '~': true,
+  '*': true,
+  '+': true,
+  '_': true,
+  '=': true,
+  '<': true,
+  '>': true,
+  '-': true,
+  '0': true,
+  '1': true,
+  '2': true,
+  '3': true,
+  '4': true,
+  '5': true,
+  '6': true,
+  '7': true,
+  '8': true,
+  '9': true,
+  '[': true,
+  ':': true,
+  '|': true,
+}
+
+var _ALERTS = {
+  note: true,
+  tip: true,
+  important: true,
+  warning: true,
+  caution: true,
+}
+
+var _TOC_MARKERS = {
+  '[toc]': true,
+  '[[toc]]': true,
+  '[[_toc_]]': true,
+  '\${toc}': true,
+}
+
+# One block that is still open, with what the parser needs to know about
+# it while it stays open.
+class _Open {
+  var node
+  var kind = ''
+  var lines = []
+  var fenced = false
+  var fence_char = ''
+  var fence_length = 0
+  var fence_offset = 0
+  var html_kind = 0
+  var marker_offset = 0
+  var padding = 0
+  var ordered = false
+  var bullet = ''
+  var delimiter = ''
+  var columns = 0
+  var alignments = []
+  var spans = []
+  var loose = false
+
+  @new(node, kind) {
+    self.node = node
+    self.kind = kind
+    self.lines = []
+    self.alignments = []
+    self.spans = []
+  }
+}
+
+# Whether a block of kind _parent_ may hold one of kind _child_.
+def _can_contain(container: string, child: string) {
+  using container {
+    when 'document',
+        'block_quote',
+        'item',
+        'footnote_definition',
+        'definition',
+        'div' {
+      return child != 'item' and child != 'definition'
+    }
+    when 'list' {
+      return child == 'item'
+    }
+    when 'definition_list' {
+      return child == 'definition'
+    }
+  }
+
+  return false
+}
+
+def _accepts_lines(kind: string) {
+  return kind == 'paragraph' or kind == 'code_block' or kind == 'html_block'
+}
+
+class BlockParser {
+  var inline
+  var doc
+  var stack = []
+  var line = ''
+  var length = 0
+  var line_number = 0
+  var offset = 0
+  var column = 0
+  var next_nonspace = 0
+  var next_nonspace_column = 0
+  var indent = 0
+  var indented = false
+  var blank = false
+  var partially_consumed_tab = false
+  var all_closed = true
+  var last_matched = 0
+  var refmap = {}
+  var footnotes = {}
+  var abbreviations = {}
+  var use_tables = false
+  var use_tasks = false
+  var use_footnotes = false
+  var use_alerts = false
+  var use_definitions = false
+  var use_divs = false
+  var use_attributes = false
+  var use_abbreviations = false
+  var use_toc = false
+  var use_line_blocks = false
+  var use_math = false
+  var use_metadata = false
+
+  @new(options: dict, inline) {
+    self.inline = inline
+    self.use_tables = options.tables
+    self.use_tasks = options.task_lists
+    self.use_footnotes = options.footnotes
+    self.use_alerts = options.alerts
+    self.use_definitions = options.definition_lists
+    self.use_divs = options.divs
+    self.use_attributes = options.attributes
+    self.use_abbreviations = options.abbreviations
+    self.use_toc = options.toc
+    self.use_line_blocks = options.line_blocks
+    self.use_math = options.math
+    self.use_metadata = options.metadata
+  }
+
+  parse(source: string) {
+    self.doc = Node('document')
+    self.doc.line = 1
+    self.stack = [_Open(self.doc, 'document')]
+    self.refmap = {}
+    self.footnotes = {}
+    self.abbreviations = {}
+    self.line_number = 0
+    self.all_closed = true
+    self.last_matched = 0
+
+    var text = source
+
+    if text.contains('\r') {
+      text = text.replace('\r\n', '\n', false).replace('\r', '\n', false)
+    }
+
+    var lines = text.split('\n')
+
+    if text.ends_with('\n') and !lines.is_empty() {
+      lines.pop()
+    }
+
+    var first = 0
+
+    if self.use_metadata {
+      first = self._front_matter(lines)
+      self.line_number = first
+    }
+
+    var count = lines.length()
+
+    iter var i = first; i < count; i++ {
+      self._incorporate_line(lines[i])
+    }
+
+    while !self.stack.is_empty() {
+      self._finalize(self.stack.last(), count)
+    }
+
+    if self.use_definitions {
+      _merge_definition_lists(self.doc)
+    }
+
+    return self.doc
+  }
+
+  # Reads YAML front matter off the top of _lines_, when it is there, and
+  # returns the index of the first line after it.
+  _front_matter(lines: list) {
+    # As in Pandoc, a `---` with a blank line under it is a thematic
+    # break rather than the start of front matter.
+    if lines.length() < 2 or
+        lines[0].rtrim(' \t') != '---' or
+        is_blank(lines[1]) {
+      return 0
+    }
+
+    iter var i = 1; i < lines.length(); i++ {
+      var closing = lines[i].rtrim(' \t')
+
+      if closing == '---' or closing == '...' {
+        import yaml
+
+        var data
+
+        catch {
+          data = yaml.parse('\n'.join(lines[1, i]))
+        } as error
+
+        if error != nil {
+          raise MetadataError(
+            'the front matter is not valid YAML: ${error.message}',
+            1,
+          )
+        }
+
+        if data == nil {
+          data = {}
+        }
+
+        if !is_dict(data) {
+          raise MetadataError(
+            'the front matter must be a mapping of names to values',
+            1,
+          )
+        }
+
+        self.doc.metadata = data
+
+        return i + 1
+      }
+    }
+
+    return 0
+  }
+
+  _find_next_nonspace() {
+    # Where the spaces end does not change until the offset passes it, so
+    # the deeply nested containers of one line do not each scan them
+    # again.
+    if self.next_nonspace > self.offset {
+      self.indent = self.next_nonspace_column - self.column
+      self.indented = self.indent >= _CODE_INDENT
+
+      return
+    }
+
+    var line = self.line
+    var length = self.length
+    var i = self.offset
+    var columns = self.column
+    var c = ''
+
+    while i < length {
+      c = line[i]
+
+      if c == ' ' {
+        i++
+        columns++
+      } else if c == '\t' {
+        i++
+        columns += 4 - (columns % 4)
+      } else {
+        break
+      }
+    }
+
+    self.blank = i >= length
+    self.next_nonspace = i
+    self.next_nonspace_column = columns
+    self.indent = columns - self.column
+    self.indented = self.indent >= _CODE_INDENT
+  }
+
+  _advance_next_nonspace() {
+    self.offset = self.next_nonspace
+    self.column = self.next_nonspace_column
+    self.partially_consumed_tab = false
+  }
+
+  # Moves forward _count_ characters, or _count_ columns when _columns_
+  # is true, in which case a tab may be only partly consumed.
+  _advance_offset(count: number, columns: bool) {
+    var line = self.line
+
+    while count > 0 and self.offset < self.length {
+      if line[self.offset] == '\t' {
+        var to_tab = 4 - (self.column % 4)
+
+        if columns {
+          self.partially_consumed_tab = to_tab > count
+
+          var step = to_tab > count ? count : to_tab
+
+          self.column += step
+
+          if !self.partially_consumed_tab {
+            self.offset++
+          }
+
+          count -= step
+        } else {
+          self.partially_consumed_tab = false
+          self.column += to_tab
+          self.offset++
+          count--
+        }
+      } else {
+        self.partially_consumed_tab = false
+        self.offset++
+        self.column++
+        count--
+      }
+    }
+  }
+
+  _peek(index: number) {
+    return index < self.length ? self.line[index] : ''
+  }
+
+  _add_line() {
+    var tip = self.stack.last()
+
+    if self.partially_consumed_tab {
+      self.offset++
+
+      var to_tab = 4 - (self.column % 4)
+
+      tip.lines.append(' ' * to_tab + self.line[self.offset,])
+    } else {
+      tip.lines.append(self.line[self.offset,])
+    }
+  }
+
+  _add_child(kind: string) {
+    while !_can_contain(self.stack.last().kind, kind) {
+      self._finalize(self.stack.last(), self.line_number - 1)
+    }
+
+    var node = Node(kind)
+    var owner = self.stack.last().node
+
+    node.line = self.line_number
+    node.parent_node = owner
+    owner.children.append(node)
+
+    var block = _Open(node, kind)
+
+    self.stack.append(block)
+
+    return block
+  }
+
+  _close_unmatched() {
+    if !self.all_closed {
+      while self.stack.length() - 1 > self.last_matched {
+        self._finalize(self.stack.last(), self.line_number - 1)
+      }
+
+      self.all_closed = true
+    }
+  }
+
+  _incorporate_line(line: string) {
+    if line.contains('\u0000') {
+      line = line.replace('\u0000', '�', false)
+    }
+
+    self.line = line
+    self.length = line.length()
+    self.offset = 0
+    self.column = 0
+    self.blank = false
+    self.partially_consumed_tab = false
+    self.next_nonspace = -1
+    self.line_number++
+
+    var stack = self.stack
+    var old_depth = stack.length() - 1
+    var depth = 0
+
+    while depth < stack.length() - 1 {
+      self._find_next_nonspace()
+
+      var result = self._continue(stack[depth + 1], depth + 1)
+
+      if result == 2 {
+        return
+      }
+
+      if result != 0 {
+        break
+      }
+
+      depth++
+    }
+
+    self.all_closed = depth == old_depth
+    self.last_matched = depth
+
+    var container = stack[depth]
+    var matched_leaf = container.kind != 'paragraph' and
+        _accepts_lines(container.kind)
+
+    while !matched_leaf {
+      self._find_next_nonspace()
+
+      if !self.indented and !_SPECIAL.contains(self._peek(self.next_nonspace)) {
+        self._advance_next_nonspace()
+
+        break
+      }
+
+      var result = self._try_starts(container)
+
+      if result == 0 {
+        self._advance_next_nonspace()
+
+        break
+      }
+
+      container = self.stack.last()
+
+      if result == 2 {
+        matched_leaf = true
+      }
+    }
+
+    var tip = self.stack.last()
+
+    if !self.all_closed and !self.blank and tip.kind == 'paragraph' {
+      # A lazy continuation line.
+      self._add_line()
+
+      return
+    }
+
+    self._close_unmatched()
+    container = self.stack.last()
+
+    var kind = container.kind
+
+    if _accepts_lines(kind) {
+      self._add_line()
+
+      if kind == 'html_block' and
+          container.html_kind >= 1 and
+          container.html_kind <= 5 and
+          html_block_ends(self.line[self.offset,], container.html_kind) {
+        self._finalize(container, self.line_number)
+      }
+    } else if kind == 'table' {
+      if self.offset < self.length and !self.blank {
+        self._add_table_row(container, self.line[self.offset,])
+      }
+    } else if self.offset < self.length and !self.blank {
+      self._add_child('paragraph')
+      self._advance_next_nonspace()
+      self._add_line()
+    }
+  }
+
+  # Whether _block_ goes on through the current line: 0 when it does, 1
+  # when it does not, and 2 when the line closed it and nothing more is
+  # to be done with the line.
+  _continue(block: _Open, depth: number) {
+    using block.kind {
+      when 'paragraph' {
+        return self.blank ? 1 : 0
+      }
+      when 'block_quote' {
+        if !self.indented and self._peek(self.next_nonspace) == '>' {
+          self._advance_next_nonspace()
+          self._advance_offset(1, false)
+
+          if is_space_or_tab(self._peek(self.offset)) {
+            self._advance_offset(1, true)
+          }
+
+          return 0
+        }
+
+        return 1
+      }
+      when 'item', 'definition' {
+        if self.indent >= block.marker_offset + block.padding {
+          self._advance_offset(block.marker_offset + block.padding, true)
+
+          return 0
+        }
+
+        # A blank line goes on with an item that has something in it. An
+        # item that opened on a blank line ends at the next one.
+        if self.blank and !block.node.children.is_empty() {
+          self._advance_next_nonspace()
+
+          return 0
+        }
+
+        return 1
+      }
+      when 'code_block' {
+        return self._continue_code(block)
+      }
+      when 'html_block' {
+        return self.blank and (block.html_kind == 6 or block.html_kind == 7)
+            ? 1
+            : 0
+      }
+      when 'list', 'definition_list' {
+        return 0
+      }
+      when 'table' {
+        return self.blank ? 1 : 0
+      }
+      when 'footnote_definition' {
+        if self.blank {
+          return 0
+        }
+
+        if self.indent >= _CODE_INDENT {
+          self._advance_offset(_CODE_INDENT, true)
+
+          return 0
+        }
+
+        return 1
+      }
+      when 'div' {
+        return self._continue_div(depth)
+      }
+    }
+
+    # Headings, thematic breaks and the rest take a single line.
+    return 1
+  }
+
+  _continue_code(block: _Open) {
+    if !block.fenced {
+      if self.indent >= _CODE_INDENT {
+        self._advance_offset(_CODE_INDENT, true)
+      } else if self.blank {
+        self._advance_next_nonspace()
+      } else {
+        return 1
+      }
+
+      return 0
+    }
+
+    if self.indent <= 3 and self._peek(self.next_nonspace) == block.fence_char {
+      var i = self.next_nonspace
+
+      while i < self.length and self.line[i] == block.fence_char {
+        i++
+      }
+
+      if i - self.next_nonspace >= block.fence_length and
+          is_blank(self.line[i,]) {
+        self._finalize(block, self.line_number)
+
+        return 2
+      }
+    }
+
+    # Up to the opening fence's own indentation is not part of the code.
+    var skip = block.fence_offset
+
+    while skip > 0 and is_space_or_tab(self._peek(self.offset)) {
+      self._advance_offset(1, true)
+      skip--
+    }
+
+    return 0
+  }
+
+  _continue_div(depth: number) {
+    if self.indented or !_is_closing_div_fence(self.line, self.next_nonspace) {
+      return 0
+    }
+
+    # The fence belongs to the innermost open div, and a code or HTML
+    # block takes it as its own text.
+    iter var i = depth + 1; i < self.stack.length(); i++ {
+      var kind = self.stack[i].kind
+
+      if kind == 'div' or kind == 'code_block' or kind == 'html_block' {
+        return 0
+      }
+    }
+
+    while self.stack.length() > depth {
+      self._finalize(self.stack.last(), self.line_number)
+    }
+
+    return 2
+  }
+
+  # Tries every kind of block that can start here, in the order the
+  # specification gives them precedence. 0 when none does, 1 when a
+  # container started and more may start inside it, 2 when a leaf did.
+  _try_starts(container: _Open) {
+    var c = self._peek(self.next_nonspace)
+
+    if !self.indented {
+      if c == '>' {
+        return self._start_block_quote()
+      }
+
+      if c == '#' {
+        var result = self._start_atx_heading()
+
+        if result != 0 {
+          return result
+        }
+      }
+
+      if c == '`' or c == '~' {
+        var result = self._start_fence()
+
+        if result != 0 {
+          return result
+        }
+      }
+
+      if c == '<' {
+        var result = self._start_html_block(container)
+
+        if result != 0 {
+          return result
+        }
+      }
+
+      if (c == '=' or c == '-') and container.kind == 'paragraph' {
+        var result = self._start_setext_heading(container)
+
+        if result != 0 {
+          return result
+        }
+      }
+
+      if c == '*' or c == '-' or c == '_' {
+        var result = self._start_thematic_break()
+
+        if result != 0 {
+          return result
+        }
+      }
+
+      if c == '[' and self.use_footnotes {
+        var result = self._start_footnote()
+
+        if result != 0 {
+          return result
+        }
+      }
+
+      if c == ':' and self.use_divs and container.kind != 'paragraph' {
+        var result = self._start_div()
+
+        if result != 0 {
+          return result
+        }
+      }
+
+      if (c == ':' or c == '~') and self.use_definitions {
+        var result = self._start_definition(container)
+
+        if result != 0 {
+          return result
+        }
+      }
+    }
+
+    if !self.indented or container.kind == 'list' {
+      var result = self._start_list_item(container)
+
+      if result != 0 {
+        return result
+      }
+    }
+
+    if self.indented and self.stack.last().kind != 'paragraph' and !self.blank {
+      self._advance_offset(_CODE_INDENT, true)
+      self._close_unmatched()
+      self._add_child('code_block')
+
+      return 2
+    }
+
+    if !self.indented and self.use_tables and container.kind == 'paragraph' {
+      return self._start_table(container)
+    }
+
+    return 0
+  }
+
+  _start_block_quote() {
+    self._advance_next_nonspace()
+    self._advance_offset(1, false)
+
+    if is_space_or_tab(self._peek(self.offset)) {
+      self._advance_offset(1, true)
+    }
+
+    self._close_unmatched()
+    self._add_child('block_quote')
+
+    return 1
+  }
+
+  _start_atx_heading() {
+    var i = self.next_nonspace
+
+    while i < self.length and self.line[i] == '#' {
+      i++
+    }
+
+    var level = i - self.next_nonspace
+
+    if level > 6 or (i < self.length and !is_space_or_tab(self.line[i])) {
+      return 0
+    }
+
+    self._advance_next_nonspace()
+    self._advance_offset(level, false)
+    self._close_unmatched()
+
+    var block = self._add_child('heading')
+    var content = self.line[self.offset,]
+
+    block.node.level = level
+
+    if self.use_attributes {
+      content = self._take_attributes(block.node, content)
+    }
+
+    block.node.literal = _strip_closing_hashes(content)
+    self._advance_offset(self.length - self.offset, false)
+
+    return 2
+  }
+
+  # _content_ without a trailing `{...}` attributes block, which is merged
+  # into _node_'s attributes.
+  _take_attributes(node: Node, content: string) {
+    var text = content.rtrim(' \t')
+
+    if !text.ends_with('}') {
+      return content
+    }
+
+    var brace = text.last_index_of('{')
+
+    while brace >= 0 {
+      var found = parse_attributes(text, brace)
+
+      if found != nil and found[1] == text.length() {
+        merge_attributes(node.attributes, found[0])
+
+        return text[0, brace].rtrim(' \t')
+      }
+
+      brace = brace > 0 ? text.last_index_of('{', brace - 1) : -1
+    }
+
+    return content
+  }
+
+  _start_fence() {
+    var c = self._peek(self.next_nonspace)
+    var i = self.next_nonspace
+
+    while i < self.length and self.line[i] == c {
+      i++
+    }
+
+    var count = i - self.next_nonspace
+
+    if count < 3 {
+      return 0
+    }
+
+    if c == '`' and self.line.index_of('`', i) >= 0 {
+      return 0
+    }
+
+    self._close_unmatched()
+
+    var block = self._add_child('code_block')
+
+    block.fenced = true
+    block.fence_char = c
+    block.fence_length = count
+    block.fence_offset = self.indent
+    self._advance_next_nonspace()
+    self._advance_offset(count, false)
+
+    return 2
+  }
+
+  _start_html_block(container: _Open) {
+    var in_paragraph = container.kind == 'paragraph' or
+        (!self.all_closed and
+            !self.blank and
+            self.stack.last().kind == 'paragraph')
+    var kind = html_block_start(self.line, self.next_nonspace, in_paragraph)
+
+    if kind == 0 {
+      return 0
+    }
+
+    self._close_unmatched()
+
+    var block = self._add_child('html_block')
+
+    block.html_kind = kind
+
+    return 2
+  }
+
+  _start_setext_heading(container: _Open) {
+    var c = self._peek(self.next_nonspace)
+    var i = self.next_nonspace
+
+    while i < self.length and self.line[i] == c {
+      i++
+    }
+
+    if !is_blank(self.line[i,]) {
+      return 0
+    }
+
+    self._close_unmatched()
+
+    var content = self._take_definitions(
+      container.node,
+      '\n'.join(container.lines),
+    )
+
+    if content.is_empty() {
+      container.lines = []
+
+      return 0
+    }
+
+    var heading = Node('heading')
+
+    heading.level = c == '=' ? 1 : 2
+    heading.line = container.node.line
+
+    if self.use_attributes {
+      content = self._take_attributes(heading, content)
+    }
+
+    heading.literal = content
+    container.node.replace_with(heading)
+    self.stack.pop()
+    self.stack.append(_Open(heading, 'heading'))
+    self._advance_offset(self.length - self.offset, false)
+
+    return 2
+  }
+
+  _start_thematic_break() {
+    var c = self._peek(self.next_nonspace)
+    var count = 0
+
+    iter var i = self.next_nonspace; i < self.length; i++ {
+      var here = self.line[i]
+
+      if here == c {
+        count++
+      } else if !is_space_or_tab(here) {
+        return 0
+      }
+    }
+
+    if count < 3 {
+      return 0
+    }
+
+    self._close_unmatched()
+    self._add_child('thematic_break')
+    self._advance_offset(self.length - self.offset, false)
+
+    return 2
+  }
+
+  _start_footnote() {
+    var start = self.next_nonspace
+
+    if !starts_at(self.line, start, '[^') {
+      return 0
+    }
+
+    var i = start + 2
+
+    while i < self.length {
+      var c = self.line[i]
+
+      if c == ']' or c == ' ' or c == '\t' {
+        break
+      }
+
+      i++
+    }
+
+    if i == start + 2 or
+        i + 1 >= self.length or
+        self.line[i] != ']' or
+        self.line[i + 1] != ':' {
+      return 0
+    }
+
+    var label = self.line[start + 2, i]
+
+    self._close_unmatched()
+
+    var block = self._add_child('footnote_definition')
+
+    block.node.label = label
+
+    var key = normalize_label(label)
+
+    if !self.footnotes.contains(key) {
+      self.footnotes.set(key, block.node)
+    }
+
+    self._advance_next_nonspace()
+    self._advance_offset(i + 2 - self.offset, false)
+
+    while is_space_or_tab(self._peek(self.offset)) {
+      self._advance_offset(1, false)
+    }
+
+    return 1
+  }
+
+  _start_div() {
+    var i = self.next_nonspace
+
+    while i < self.length and self.line[i] == ':' {
+      i++
+    }
+
+    if i - self.next_nonspace < 3 {
+      return 0
+    }
+
+    var rest = self.line[i,].trim(' \t')
+
+    # Closing colons after the attributes are allowed and mean nothing.
+    rest = rest.rtrim(':').rtrim(' \t')
+
+    if rest.is_empty() {
+      return 0
+    }
+
+    var attributes = {}
+
+    if rest[0] == '{' {
+      var found = parse_attributes(rest, 0)
+
+      if found == nil or found[1] != rest.length() {
+        return 0
+      }
+
+      attributes = found[0]
+    } else {
+      iter var j = 0; j < rest.length(); j++ {
+        if is_whitespace(rest[j]) {
+          return 0
+        }
+      }
+
+      attributes = { 'class': rest }
+    }
+
+    self._close_unmatched()
+
+    var block = self._add_child('div')
+
+    block.node.attributes = attributes
+    self._advance_offset(self.length - self.offset, false)
+
+    return 1
+  }
+
+  _start_definition(container: _Open) {
+    var marker = self.next_nonspace
+    var after = self._peek(marker + 1)
+
+    if !is_space_or_tab(after) {
+      return 0
+    }
+
+    var list
+
+    if container.kind == 'definition_list' {
+      list = container.node
+    } else if container.kind == 'paragraph' {
+      if container.lines.length() != 1 {
+        return 0
+      }
+
+      self._close_unmatched()
+
+      var paragraph = container.node
+
+      self._finalize(container, self.line_number - 1)
+
+      # Finalising can remove the paragraph or make it something else.
+      if paragraph.parent_node == nil or paragraph.type != 'paragraph' {
+        return 0
+      }
+
+      list = self._wrap_term(paragraph)
+    } else {
+      var last = container.node.last_child()
+      var depth = self.last_matched
+
+      if last == nil or
+          last.type != 'paragraph' or
+          last.literal == nil or
+          last.literal.contains('\n') {
+        return 0
+      }
+
+      if depth + 1 < self.stack.length() and
+          self.stack[depth + 1].node == last {
+        return 0
+      }
+
+      self._close_unmatched()
+      list = self._wrap_term(last)
+    }
+
+    if self.stack.last().node != list {
+      self._close_unmatched()
+
+      while self.stack.last().node != list {
+        self._finalize(self.stack.last(), self.line_number - 1)
+      }
+    }
+
+    self._advance_next_nonspace()
+    self._advance_offset(1, true)
+
+    var start_column = self.column
+    var start_offset = self.offset
+
+    while self.column - start_column < 5 and
+        is_space_or_tab(self._peek(self.offset)) {
+      self._advance_offset(1, true)
+    }
+
+    var spaces = self.column - start_column
+    var padding = 1 + spaces
+
+    if spaces >= 5 or spaces < 1 or self.offset >= self.length {
+      padding = 2
+      self.column = start_column
+      self.offset = start_offset
+
+      if is_space_or_tab(self._peek(self.offset)) {
+        self._advance_offset(1, true)
+      }
+    }
+
+    var block = self._add_child('definition')
+
+    block.marker_offset = self.indent
+    block.padding = padding
+
+    return 1
+  }
+
+  # Makes _paragraph_ the term of a new definition list in its place, and
+  # opens that list.
+  _wrap_term(paragraph: Node) {
+    var list = Node('definition_list')
+
+    list.line = paragraph.line
+    paragraph.replace_with(list)
+    paragraph.type = 'term'
+    paragraph.parent_node = list
+    list.children.append(paragraph)
+    self.stack.append(_Open(list, 'definition_list'))
+
+    return list
+  }
+
+  _start_list_item(container: _Open) {
+    if self.indent >= 4 {
+      return 0
+    }
+
+    var start = self.next_nonspace
+    var c = self._peek(start)
+    var ordered = false
+    var number = 0
+    var delimiter = ''
+    var marker_end = start
+
+    if c == '-' or c == '+' or c == '*' {
+      marker_end = start + 1
+    } else if is_digit(c) {
+      var i = start
+
+      while i < self.length and i - start < 9 and is_digit(self.line[i]) {
+        i++
+      }
+
+      var d = self._peek(i)
+
+      if d != '.' and d != ')' {
+        return 0
+      }
+
+      number = self.line[start, i].to_number()
+
+      if container.kind == 'paragraph' and number != 1 {
+        return 0
+      }
+
+      ordered = true
+      delimiter = d
+      marker_end = i + 1
+    } else {
+      return 0
+    }
+
+    var next = self._peek(marker_end)
+
+    if next != '' and !is_space_or_tab(next) {
+      return 0
+    }
+
+    if container.kind == 'paragraph' and is_blank(self.line[marker_end,]) {
+      return 0
+    }
+
+    var marker_length = marker_end - start
+
+    self._advance_next_nonspace()
+    self._advance_offset(marker_length, true)
+
+    var start_column = self.column
+    var start_offset = self.offset
+
+    while true {
+      self._advance_offset(1, true)
+
+      if self.column - start_column >= 5 or
+          !is_space_or_tab(self._peek(self.offset)) {
+        break
+      }
+    }
+
+    var blank_item = self.offset >= self.length
+    var spaces = self.column - start_column
+    var padding = marker_length + spaces
+
+    if spaces >= 5 or spaces < 1 or blank_item {
+      padding = marker_length + 1
+      self.column = start_column
+      self.offset = start_offset
+
+      if is_space_or_tab(self._peek(self.offset)) {
+        self._advance_offset(1, true)
+      }
+    }
+
+    self._close_unmatched()
+
+    var tip = self.stack.last()
+    var matches = tip.kind == 'list' and
+        tip.ordered == ordered and
+        (ordered ? tip.delimiter == delimiter : tip.bullet == c)
+
+    if !matches {
+      var list = self._add_child('list')
+
+      list.ordered = ordered
+      list.delimiter = delimiter
+      list.bullet = ordered ? '' : c
+      list.node.ordered = ordered
+
+      if ordered {
+        list.node.start = number
+        list.node.delimiter = delimiter
+      } else {
+        list.node.bullet = c
+      }
+
+      list.node.tight = true
+    }
+
+    var item = self._add_child('item')
+
+    item.marker_offset = self.indent
+    item.padding = padding
+
+    return 1
+  }
+
+  _start_table(container: _Open) {
+    var alignments = table_alignments(self.line[self.next_nonspace,])
+
+    if alignments == nil or container.lines.is_empty() {
+      return 0
+    }
+
+    var header = container.lines.last()
+    var cells = split_table_row(header)
+
+    if cells.length() != alignments.length() {
+      return 0
+    }
+
+    self._close_unmatched()
+    container.lines.pop()
+
+    var paragraph = container.node
+
+    if container.lines.is_empty() {
+      paragraph.detach()
+      self.stack.pop()
+    } else {
+      self._finalize(container, self.line_number - 2)
+    }
+
+    var block = self._add_child('table')
+
+    block.node.line = self.line_number - 1
+    block.columns = alignments.length()
+    block.alignments = alignments
+
+    var head = Node('table_head')
+
+    head.line = self.line_number - 1
+    head.end_line = self.line_number
+    block.node.append_child(head)
+    head.append_child(self._table_row(block, cells, self.line_number - 1))
+    self._advance_offset(self.length - self.offset, false)
+
+    return 2
+  }
+
+  _table_row(block: _Open, cells: list, line: number) {
+    var row = Node('table_row')
+
+    row.line = line
+    row.end_line = line
+
+    iter var i = 0; i < block.columns; i++ {
+      var cell = Node('table_cell')
+
+      cell.align = block.alignments[i]
+      cell.literal = i < cells.length() ? cells[i] : ''
+      cell.line = line
+      cell.end_line = line
+      row.append_child(cell)
+    }
+
+    return row
+  }
+
+  _add_table_row(block: _Open, text: string) {
+    var table = block.node
+    var body = table.last_child()
+
+    if body.type != 'table_body' {
+      body = Node('table_body')
+      body.line = self.line_number
+      table.append_child(body)
+    }
+
+    body.end_line = self.line_number
+    body.append_child(
+      self._table_row(block, split_table_row(text), self.line_number),
+    )
+  }
+
+  # Reads the link reference definitions, and the abbreviations when
+  # those are on, that open a paragraph's _content_, and returns what is
+  # left. _node_'s first line moves past them.
+  _take_definitions(node: Node, content: string) {
+    while !content.is_empty() {
+      var used = 0
+
+      if content[0] == '[' {
+        used = self.inline.parse_reference(content, self.refmap)
+      } else if self.use_abbreviations and starts_at(content, 0, '*[') {
+        used = self._parse_abbreviation(content)
+      }
+
+      if used == 0 {
+        break
+      }
+
+      node.line += content[0, used].count('\n')
+      content = content[used,]
+    }
+
+    return content
+  }
+
+  # Reads `*[TERM]: expansion` at the start of _content_ and returns how
+  # many characters it took, or 0.
+  _parse_abbreviation(content: string) {
+    var close = content.index_of(']', 2)
+    var line_end = content.index_of('\n')
+
+    if line_end < 0 {
+      line_end = content.length()
+    }
+
+    if close < 3 or
+        close > line_end or
+        close + 1 >= content.length() or
+        content[close + 1] != ':' {
+      return 0
+    }
+
+    var term = content[2, close]
+
+    if term.contains('[') or term.trim().is_empty() {
+      return 0
+    }
+
+    var title = content[close + 2, line_end].trim()
+
+    if !self.abbreviations.contains(term) {
+      self.abbreviations.set(term, title)
+    }
+
+    return line_end < content.length() ? line_end + 1 : line_end
+  }
+
+  _finalize(block: _Open, line_number: number) {
+    self.stack.pop()
+
+    var node = block.node
+
+    node.end_line = line_number
+
+    using block.kind {
+      when 'paragraph' {
+        self._finalize_paragraph(block)
+      }
+      when 'code_block' {
+        self._finalize_code(block)
+      }
+      when 'html_block' {
+        node.literal = '\n'.join(block.lines) + '\n'
+      }
+      when 'item', 'definition' {
+        var spans = block.spans
+
+        for child in node.children {
+          spans.append([child.line, child.end_line])
+        }
+
+        spans.sort(@(a, b) => a[0] - b[0])
+        node.end_line = spans.is_empty() ? node.line : spans.last()[1]
+
+        iter var i = 0; i + 1 < spans.length(); i++ {
+          if spans[i + 1][0] > spans[i][1] + 1 {
+            self.stack.last().loose = true
+          }
+        }
+      }
+      when 'list' {
+        _finalize_list(node, block.loose)
+      }
+      when 'definition_list' {
+        _finalize_definitions(node)
+      }
+      when 'block_quote' {
+        if self.use_alerts {
+          _make_alert(node)
+        }
+      }
+    }
+  }
+
+  _finalize_paragraph(block: _Open) {
+    var node = block.node
+    var first_line = node.line
+    var content = self._take_definitions(node, '\n'.join(block.lines))
+
+    if is_blank(content.replace('\n', ' ', false)) {
+      # The definitions still count as a block when telling whether a
+      # list is tight.
+      self.stack.last().spans.append([first_line, node.end_line])
+      node.detach()
+
+      return
+    }
+
+    if self.use_tasks and
+        node.parent_node.type == 'item' and
+        node.parent_node.children[0] == node and
+        content.length() >= 3 and
+        content[0] == '[' and
+        content[2] == ']' and
+        (content[1] == ' ' or content[1] == 'x' or content[1] == 'X') and
+        (content.length() == 3 or is_whitespace(content[3])) {
+      node.parent_node.checked = content[1] != ' '
+      content = content[3,].ltrim(' \t')
+
+      if content.is_empty() {
+        node.detach()
+
+        return
+      }
+    }
+
+    if self.use_toc and _TOC_MARKERS.contains(content.trim().lower()) {
+      node.type = 'toc'
+
+      return
+    }
+
+    if self.use_line_blocks and _is_line_block(content) {
+      _make_line_block(node, content)
+
+      return
+    }
+
+    node.literal = content
+  }
+
+  _finalize_code(block: _Open) {
+    var node = block.node
+    var lines = block.lines
+
+    if block.fenced {
+      var info = lines.is_empty()
+          ? ''
+          : unescape_backslashes(decode_entities(lines[0]).trim())
+      var body = []
+
+      iter var i = 1; i < lines.length(); i++ {
+        body.append(lines[i])
+        body.append('\n')
+      }
+
+      node.literal = ''.join(body)
+
+      if self.use_attributes and info.ends_with('}') {
+        info = self._take_attributes(node, info)
+
+        if info.is_empty() and node.attributes.contains('class') {
+          var classes = node.attributes.get('class').split(' ')
+
+          info = classes[0]
+          classes.remove_at(0)
+
+          if classes.is_empty() {
+            node.attributes.remove('class')
+          } else {
+            node.attributes.set('class', ' '.join(classes))
+          }
+        }
+      }
+
+      node.info = info
+
+      if self.use_math and (info == 'math' or info.starts_with('math ')) {
+        node.type = 'math_block'
+        node.info = nil
+      }
+
+      return
+    }
+
+    while !lines.is_empty() and is_blank(lines.last()) {
+      lines.pop()
+    }
+
+    var body = []
+
+    for line in lines {
+      body.append(line)
+      body.append('\n')
+    }
+
+    node.literal = ''.join(body)
+    node.end_line = node.line + (lines.is_empty() ? 0 : lines.length() - 1)
+  }
+}
+
+# Whether the line holds a closing `:::` fence of a div at _start_.
+def _is_closing_div_fence(line: string, start: number) {
+  var i = start
+
+  while i < line.length() and line[i] == ':' {
+    i++
+  }
+
+  return i - start >= 3 and is_blank(line[i,])
+}
+
+# _content_ without the closing run of `#` an ATX heading may end with.
+def _strip_closing_hashes(content: string) {
+  var text = content.rtrim(' \t')
+  var i = text.length()
+
+  while i > 0 and text[i - 1] == '#' {
+    i--
+  }
+
+  if i == text.length() {
+    return text
+  }
+
+  if i == 0 {
+    return ''
+  }
+
+  if is_space_or_tab(text[i - 1]) {
+    return text[0, i].rtrim(' \t')
+  }
+
+  return text
+}
+
+# A list is loose when blank lines part its items, or part two blocks
+# directly inside one item, which finalising each item has already
+# found out.
+def _finalize_list(list: Node, loose: bool) {
+  var items = list.children
+  var count = items.length()
+
+  list.tight = !loose
+
+  iter var i = 0; i + 1 < count; i++ {
+    if items[i + 1].line > items[i].end_line + 1 {
+      list.tight = false
+
+      break
+    }
+  }
+
+  if count > 0 {
+    list.end_line = items.last().end_line
+  }
+}
+
+# A definition is loose when a blank line parts it from what comes
+# before it or parts two of its blocks.
+def _finalize_definitions(list: Node) {
+  var children = list.children
+
+  iter var i = 0; i < children.length(); i++ {
+    var node = children[i]
+
+    if node.type != 'definition' {
+      continue
+    }
+
+    var tight = i == 0 or node.line <= children[i - 1].end_line + 1
+
+    iter var j = 0; j + 1 < node.children.length(); j++ {
+      if node.children[j + 1].line > node.children[j].end_line + 1 {
+        tight = false
+      }
+    }
+
+    node.tight = tight
+  }
+
+  if !children.is_empty() {
+    list.end_line = children.last().end_line
+  }
+}
+
+# Definition lists parted only by blank lines are one list.
+def _merge_definition_lists(node: Node) {
+  var children = node.children
+  var i = 0
+
+  while i < children.length() {
+    var child = children[i]
+
+    if child.type == 'definition_list' and
+        i > 0 and
+        children[i - 1].type == 'definition_list' {
+      var into = children[i - 1]
+
+      for inner in child.children {
+        inner.parent_node = into
+        into.children.append(inner)
+      }
+
+      into.end_line = child.end_line
+      children.remove_at(i)
+
+      continue
+    }
+
+    _merge_definition_lists(child)
+    i++
+  }
+}
+
+# Turns a block quote whose first line is `[!NOTE]` or one of the other
+# alert markers into an alert of that kind.
+def _make_alert(quote: Node) {
+  var first = quote.first_child()
+
+  if first == nil or first.type != 'paragraph' or first.literal == nil {
+    return
+  }
+
+  var text = first.literal
+  var line_end = text.index_of('\n')
+  var marker = (line_end < 0 ? text : text[0, line_end]).trim()
+
+  if marker.length() < 4 or
+      !marker.starts_with('[!') or
+      !marker.ends_with(']') {
+    return
+  }
+
+  var kind = marker[2, marker.length() - 1].lower()
+
+  if !_ALERTS.contains(kind) {
+    return
+  }
+
+  quote.type = 'alert'
+  quote.kind = kind
+
+  if line_end < 0 {
+    first.detach()
+  } else {
+    first.literal = text[line_end + 1,]
+    first.line++
+  }
+}
+
+def _is_line_block(content: string) {
+  return content == '|' or
+      content.starts_with('| ') or
+      content.starts_with('|\n')
+}
+
+# Turns a paragraph of `| `-prefixed lines into a line block, one `line`
+# node for each. A line that does not start with `|` continues the one
+# before it. Spaces at the start of a line are kept as no-break spaces,
+# since they are the point of writing a line block.
+def _make_line_block(node: Node, content: string) {
+  var lines = []
+
+  for raw in content.split('\n') {
+    if raw.starts_with('|') and (raw.length() == 1 or raw[1] == ' ') {
+      var text = raw.length() > 2 ? raw[2,] : ''
+      var lead = 0
+
+      while lead < text.length() and text[lead] == ' ' {
+        lead++
+      }
+
+      lines.append(' ' * lead + text[lead,])
+    } else if !lines.is_empty() {
+      lines[lines.length() - 1] = lines.last() + ' ' + raw.trim()
+    }
+  }
+
+  node.type = 'line_block'
+
+  for text in lines {
+    var line = Node('line')
+
+    line.literal = text
+    line.line = node.line
+    line.end_line = node.line
+    node.append_child(line)
+  }
+}

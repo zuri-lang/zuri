@@ -1,0 +1,72 @@
+/**
+ * @module markdown.errors
+ *
+ * The errors the `markdown` module raises.
+ *
+ * Markdown itself has no errors: every string is a document, and text
+ * that fails to be one construct is simply text. What can fail is what
+ * sits around the Markdown, such as front matter that is not valid
+ * YAML.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+/**
+ * Base class for every error this module raises.
+ *
+ * @printable
+ */
+class MarkdownError < Error {
+
+  /**
+   * @param string message
+   */
+  @new(message) {
+    parent(message)
+    self.type = 'MarkdownError'
+  }
+
+  to_string() {
+    return '<${self.type}: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Front matter that could not be read: YAML that does not parse, or
+ * YAML that is not a mapping.
+ *
+ * ```zuri
+ * import markdown
+ *
+ * catch {
+ *   markdown.parse('---\n- a list\n---\n', { metadata: true })
+ * } as error {
+ *   echo error.message
+ * }
+ * ```
+ *
+ * @printable
+ */
+class MetadataError < MarkdownError {
+
+  /**
+   * The source line the front matter starts on.
+   *
+   * @type number
+   */
+  var line = 1
+
+  /**
+   * @param string message
+   * @param ?number line
+   */
+  @new(message, line) {
+    parent(message)
+    self.type = 'MetadataError'
+    self.line = line == nil ? 1 : line
+  }
+}

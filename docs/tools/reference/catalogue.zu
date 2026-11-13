@@ -23,7 +23,7 @@ var GROUPS = [
   {
     title: 'Text and Markup',
     blurb: 'Parsing, building and colouring text meant to be read.',
-    modules: ['html', 'wire', 'url', 'mime', 'colors'],
+    modules: ['html', 'markdown', 'wire', 'url', 'mime', 'colors'],
   },
   {
     title: 'Data Formats',

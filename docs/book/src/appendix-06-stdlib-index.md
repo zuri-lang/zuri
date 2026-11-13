@@ -25,6 +25,7 @@ a doc block stating its parameters, its defaults and its edge cases.
 | Module | What it is for | Book |
 | --- | --- | --- |
 | `html` | a WHATWG-conformant parser, a DOM and CSS selectors | [13](ch13-00-stdlib-tour.md) |
+| `markdown` | CommonMark and GitHub Flavored Markdown to HTML, with Pandoc-style extensions | none |
 | `wire` | templating, with directives as HTML attributes | [14](ch14-00-wire.md) |
 | `url` | parse, build and percent-encode URLs | [13](ch13-00-stdlib-tour.md) |
 | `mime` | detect a media type from a name or from content | [13](ch13-00-stdlib-tour.md) |
@@ -255,6 +256,14 @@ One module per element width, each exporting a single class.
 | `log.console` | `ConsoleTransport`, the default |
 | `log.file` | `FileTransport`, with size-based rotation |
 | `log.dispatch` | configuring which transports receive what |
+
+### `markdown`
+
+| Submodule | What it is for |
+| --- | --- |
+| `markdown.node` | `Node`, the parsed document and everything you can do to it |
+| `markdown.renderer` | `HtmlRenderer`, turning the tree into HTML one node type at a time |
+| `markdown.errors` | `MarkdownError` and `MetadataError` |
 
 ### `net`
 

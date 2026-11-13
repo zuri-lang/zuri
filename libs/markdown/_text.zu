@@ -1,0 +1,958 @@
+/**
+ * Character classes, escaping and normalisation shared by the parsers
+ * and the renderers. Every definition here follows the CommonMark
+ * specification's own: what counts as punctuation, as whitespace, as
+ * an entity, as a raw HTML tag.
+ */
+
+import html.entities
+
+def _set_of(characters: string) {
+  var out = {}
+
+  for c in characters {
+    out.set(c, true)
+  }
+
+  return out
+}
+
+/** The ASCII punctuation characters, every one a backslash may escape. */
+var ESCAPABLE = _set_of('!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~')
+
+# The Unicode Zs category, with tab, line feed, form feed and carriage
+# return: the specification's Unicode whitespace.
+var _WHITESPACE = _set_of(' \t\n\u000C\r         ' + '      　')
+
+var _ASCII_ALNUM = _set_of(
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
+)
+
+var _HEX_DIGITS = _set_of('0123456789abcdefABCDEF')
+
+var _DIGITS = _set_of('0123456789')
+
+# Whether a character outside ASCII is in the Unicode P or S category,
+# remembered once asked, since the same few characters recur.
+var _punctuation = {}
+
+/**
+ * Whether _c_ is a Unicode punctuation character: one in the P or S
+ * general categories.
+ */
+def is_punctuation(c: string) {
+  if ESCAPABLE.contains(c) {
+    return true
+  }
+
+  if c.is_empty() or c.ord() < 128 {
+    return false
+  }
+
+  var known = _punctuation.get(c)
+
+  if known != nil {
+    return known
+  }
+
+  var found = c.match('/^[\\p{P}\\p{S}]$/u') != false
+
+  _punctuation.set(c, found)
+
+  return found
+}
+
+/** Whether _c_ is Unicode whitespace. The empty string, standing for the edge of the text, counts. */
+def is_whitespace(c: string) {
+  return c.is_empty() or _WHITESPACE.contains(c)
+}
+
+def is_space_or_tab(c: string) {
+  return c == ' ' or c == '\t'
+}
+
+def is_ascii_alnum(c: string) {
+  return _ASCII_ALNUM.contains(c)
+}
+
+def is_ascii_letter(c: string) {
+  return _ASCII_ALNUM.contains(c) and !_DIGITS.contains(c)
+}
+
+def is_digit(c: string) {
+  return _DIGITS.contains(c)
+}
+
+def is_hex_digit(c: string) {
+  return _HEX_DIGITS.contains(c)
+}
+
+/** Whether _prefix_ appears in _text_ at _start_. */
+def starts_at(text: string, start: number, prefix: string) {
+  var end = start + prefix.length()
+
+  return end <= text.length() and text[start, end] == prefix
+}
+
+/** Whether _line_ holds nothing but spaces and tabs. */
+def is_blank(line: string) {
+  for c in line {
+    if c != ' ' and c != '\t' {
+      return false
+    }
+  }
+
+  return true
+}
+
+/** _text_ escaped for HTML: `&`, `<`, `>` and `"`. */
+def escape_html(text: string) {
+  if !text.contains('&') and
+      !text.contains('<') and
+      !text.contains('>') and
+      !text.contains('"') {
+    return text
+  }
+
+  return text
+      .replace('&', '&amp;', false)
+      .replace('<', '&lt;', false)
+      .replace('>', '&gt;', false)
+      .replace('"', '&quot;', false)
+}
+
+/**
+ * The index just past the entity or numeric character reference that
+ * starts at _start_ in _text_, or `-1` when none does. Only the shape is
+ * checked; `decode_entity()` says whether a name is real.
+ */
+def scan_entity(text: string, start: number) {
+  var length = text.length()
+  var i = start + 1
+
+  if i >= length {
+    return -1
+  }
+
+  if text[i] == '#' {
+    i++
+
+    var hex = i < length and (text[i] == 'x' or text[i] == 'X')
+
+    if hex {
+      i++
+    }
+
+    var from = i
+    var limit = hex ? 6 : 7
+
+    while i < length and i - from < limit {
+      if hex ? !_HEX_DIGITS.contains(text[i]) : !_DIGITS.contains(text[i]) {
+        break
+      }
+
+      i++
+    }
+
+    if i == from or i >= length or text[i] != ';' {
+      return -1
+    }
+
+    return i + 1
+  }
+
+  if !is_ascii_letter(text[i]) {
+    return -1
+  }
+
+  var from = i
+
+  i++
+
+  while i < length and i - from < 32 and _ASCII_ALNUM.contains(text[i]) {
+    i++
+  }
+
+  if i - from < 2 or i >= length or text[i] != ';' {
+    return -1
+  }
+
+  return i + 1
+}
+
+/**
+ * The character a reference such as `&amp;`, `&#35;` or `&#x22;` stands
+ * for, or `nil` when it names no character. Numbers outside Unicode, a
+ * surrogate and zero become U+FFFD.
+ */
+def decode_entity(reference: string) {
+  if reference[1] == '#' {
+    var hex = reference[2] == 'x' or reference[2] == 'X'
+    var digits = reference[hex ? 3 : 2, reference.length() - 1]
+    var code = hex ? digits.to_number(16) : digits.to_number(10)
+
+    if code == 0 or code > 0x10FFFF or (code >= 0xD800 and code <= 0xDFFF) {
+      return '�'
+    }
+
+    return code.chr()
+  }
+
+  var chars = reference.to_list()
+  var found = entities.consume_reference(chars, 0, false)
+
+  # A name that is not in the table can still start with one of the
+  # legacy names that need no semicolon, which would decode only part
+  # of it. Only a match that takes in the semicolon is a reference.
+  if found.next != chars.length() {
+    return nil
+  }
+
+  return found.text
+}
+
+/** _text_ with its backslash escapes and character references resolved. */
+def unescape(text: string) {
+  if !text.contains('\\') and !text.contains('&') {
+    return text
+  }
+
+  var out = []
+  var length = text.length()
+  var start = 0
+  var i = 0
+
+  while i < length {
+    var c = text[i]
+
+    if c == '\\' and i + 1 < length and ESCAPABLE.contains(text[i + 1]) {
+      out.append(text[start, i])
+      out.append(text[i + 1])
+      i += 2
+      start = i
+
+      continue
+    }
+
+    if c == '&' {
+      var end = scan_entity(text, i)
+
+      if end > 0 {
+        var decoded = decode_entity(text[i, end])
+
+        if decoded != nil {
+          out.append(text[start, i])
+          out.append(decoded)
+          i = end
+          start = i
+
+          continue
+        }
+      }
+    }
+
+    i++
+  }
+
+  out.append(text[start,])
+
+  return ''.join(out)
+}
+
+var _URI_SAFE = _set_of(
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789' +
+      ';/?:@&=+$,-_.!~*\'()#',
+)
+
+def _hex_table() {
+  var out = []
+
+  iter var i = 0; i < 256; i++ {
+    out.append('%' + i.hex().upper().lpad(2, '0'))
+  }
+
+  return out
+}
+
+var _PERCENT = _hex_table()
+
+/**
+ * _uri_ percent-encoded the way CommonMark renderers write a link: a
+ * character that may not stand bare in a URL is encoded as UTF-8, and
+ * an escape that is already there is kept.
+ */
+def normalize_uri(uri: string) {
+  var length = uri.length()
+  var clean = true
+
+  for c in uri {
+    if !_URI_SAFE.contains(c) {
+      clean = false
+
+      break
+    }
+  }
+
+  if clean {
+    return uri
+  }
+
+  var out = []
+  var i = 0
+
+  while i < length {
+    var c = uri[i]
+
+    if _URI_SAFE.contains(c) {
+      out.append(c)
+    } else if c == '%' and
+        i + 2 < length and
+        _HEX_DIGITS.contains(uri[i + 1]) and
+        _HEX_DIGITS.contains(uri[i + 2]) {
+      out.append(uri[i, i + 3])
+      i += 2
+    } else {
+      for byte in c.to_bytes() {
+        out.append(_PERCENT[byte])
+      }
+    }
+
+    i++
+  }
+
+  return ''.join(out)
+}
+
+/**
+ * A link label as the key it is matched by: case folded, trimmed, with
+ * every run of whitespace inside it made one space.
+ */
+def normalize_label(label: string) {
+  return label.replace('/[ \\t\\r\\n]+/', ' ', true).trim(' ').case_fold()
+}
+
+def _set_of_words(words: string) {
+  var out = {}
+
+  for word in words.split(' ') {
+    out.set(word, true)
+  }
+
+  return out
+}
+
+var _BLOCK_TAGS = _set_of_words(
+  'address article aside base basefont blockquote body caption center ' +
+      'col colgroup dd details dialog dir div dl dt fieldset figcaption ' +
+      'figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hr ' +
+      'html iframe legend li link main menu menuitem nav noframes ol ' +
+      'optgroup option p param search section summary table tbody td ' +
+      'tfoot th thead title tr track ul',
+)
+
+var _RAW_TAGS = _set_of_words('pre script style textarea')
+
+/**
+ * The kind of HTML block, 1 to 7 as the specification numbers them,
+ * that _line_ opens at _start_, or 0 for none. Kind 7 cannot interrupt a
+ * paragraph, so _in_paragraph_ rules it out.
+ */
+def html_block_start(line: string, start: number, in_paragraph: bool) {
+  var length = line.length()
+
+  if start + 1 >= length or line[start] != '<' {
+    return 0
+  }
+
+  var next = line[start + 1]
+
+  if next == '!' {
+    if starts_at(line, start, '<!--') {
+      return 2
+    }
+
+    if starts_at(line, start, '<![CDATA[') {
+      return 5
+    }
+
+    if start + 2 < length and is_ascii_letter(line[start + 2]) {
+      return 4
+    }
+
+    return 0
+  }
+
+  if next == '?' {
+    return 3
+  }
+
+  var closing = next == '/'
+  var i = start + (closing ? 2 : 1)
+  var from = i
+
+  while i < length and _ASCII_ALNUM.contains(line[i]) {
+    i++
+  }
+
+  var name = line[from, i].lower()
+  var after = i < length ? line[i] : ''
+
+  if !closing and _RAW_TAGS.contains(name) {
+    if after == '' or after == '>' or is_space_or_tab(after) {
+      return 1
+    }
+  }
+
+  if _BLOCK_TAGS.contains(name) {
+    if after == '' or after == '>' or is_space_or_tab(after) {
+      return 6
+    }
+
+    if after == '/' and i + 1 < length and line[i + 1] == '>' {
+      return 6
+    }
+  }
+
+  if in_paragraph {
+    return 0
+  }
+
+  var end = scan_html_tag(line, start, true)
+
+  if end > 0 and is_blank(line[end,]) {
+    return 7
+  }
+
+  return 0
+}
+
+/** Whether _line_ holds the end of an HTML block of _kind_ 1 to 5. */
+def html_block_ends(line: string, kind: number) {
+  using kind {
+    when 1 {
+      var lowered = line.lower()
+
+      return lowered.contains('</script>') or
+          lowered.contains('</pre>') or
+          lowered.contains('</style>') or
+          lowered.contains('</textarea>')
+    }
+    when 2 {
+      return line.contains('-->')
+    }
+    when 3 {
+      return line.contains('?>')
+    }
+    when 4 {
+      return line.contains('>')
+    }
+    when 5 {
+      return line.contains(']]>')
+    }
+  }
+
+  return false
+}
+
+def _is_tag_space(c: string) {
+  return c == ' ' or c == '\t' or c == '\n' or c == '\r' or c == '\u000C'
+}
+
+def _skip_tag_space(text: string, i: number) {
+  var length = text.length()
+
+  while i < length and _is_tag_space(text[i]) {
+    i++
+  }
+
+  return i
+}
+
+/**
+ * The index just past the raw HTML that starts at the `<` at _start_
+ * in _text_, or `-1` when it is not raw HTML: an open tag, a closing
+ * tag, a comment, a processing instruction, a declaration or a CDATA
+ * section. _tags_only_ accepts open and closing tags alone, which is
+ * what an HTML block of kind 7 starts with.
+ */
+def scan_html_tag(text: string, start: number, tags_only: ?bool) {
+  var length = text.length()
+  var i = start + 1
+
+  if i >= length {
+    return -1
+  }
+
+  var c = text[i]
+
+  if c == '/' {
+    i++
+
+    if i >= length or !is_ascii_letter(text[i]) {
+      return -1
+    }
+
+    while i < length and (_ASCII_ALNUM.contains(text[i]) or text[i] == '-') {
+      i++
+    }
+
+    i = _skip_tag_space(text, i)
+
+    return i < length and text[i] == '>' ? i + 1 : -1
+  }
+
+  if is_ascii_letter(c) {
+    while i < length and (_ASCII_ALNUM.contains(text[i]) or text[i] == '-') {
+      i++
+    }
+
+    while true {
+      var before = i
+
+      i = _skip_tag_space(text, i)
+
+      if i >= length {
+        return -1
+      }
+
+      c = text[i]
+
+      if c == '>' {
+        return i + 1
+      }
+
+      if c == '/' {
+        return i + 1 < length and text[i + 1] == '>' ? i + 2 : -1
+      }
+
+      # An attribute needs whitespace before it.
+      if i == before {
+        return -1
+      }
+
+      if !(is_ascii_letter(c) or c == '_' or c == ':') {
+        return -1
+      }
+
+      i++
+
+      while i < length {
+        c = text[i]
+
+        if _ASCII_ALNUM.contains(c) or
+            c == '_' or
+            c == '.' or
+            c == ':' or
+            c == '-' {
+          i++
+        } else {
+          break
+        }
+      }
+
+      var value = _skip_tag_space(text, i)
+
+      if value < length and text[value] == '=' {
+        i = _skip_tag_space(text, value + 1)
+
+        if i >= length {
+          return -1
+        }
+
+        c = text[i]
+
+        if c == '"' or c == "'" {
+          var close = text.index_of(c, i + 1)
+
+          if close < 0 {
+            return -1
+          }
+
+          i = close + 1
+        } else {
+          var from = i
+
+          while i < length {
+            c = text[i]
+
+            if _is_tag_space(c) or
+                c == '"' or
+                c == "'" or
+                c == '=' or
+                c == '<' or
+                c == '>' or
+                c == '`' {
+              break
+            }
+
+            i++
+          }
+
+          if i == from {
+            return -1
+          }
+        }
+      }
+    }
+  }
+
+  if tags_only {
+    return -1
+  }
+
+  if c == '!' {
+    if starts_at(text, start, '<!--') {
+      if starts_at(text, start, '<!-->') {
+        return start + 5
+      }
+
+      if starts_at(text, start, '<!--->') {
+        return start + 6
+      }
+
+      var close = text.index_of('-->', start + 4)
+
+      return close < 0 ? -1 : close + 3
+    }
+
+    if starts_at(text, start, '<![CDATA[') {
+      var close = text.index_of(']]>', start + 9)
+
+      return close < 0 ? -1 : close + 3
+    }
+
+    if start + 2 < length and is_ascii_letter(text[start + 2]) {
+      var close = text.index_of('>', start + 2)
+
+      return close < 0 ? -1 : close + 1
+    }
+
+    return -1
+  }
+
+  if c == '?' {
+    var close = text.index_of('?>', start + 2)
+
+    return close < 0 ? -1 : close + 2
+  }
+
+  return -1
+}
+
+def _attribute_name_char(c: string) {
+  return _ASCII_ALNUM.contains(c) or
+      c == '_' or
+      c == '-' or
+      c == ':' or
+      c == '.'
+}
+
+/**
+ * Reads a `{#id .class key=value}` block whose `{` is at _start_ in
+ * _text_. Returns `[attributes, end]`, where _end_ is the index just past
+ * the `}`, or `nil` when the braces do not hold attributes. Classes are
+ * gathered into one space-separated `class`, and a lone `-` stands for
+ * the class `unnumbered`.
+ */
+def parse_attributes(text: string, start: number) {
+  var length = text.length()
+
+  if start >= length or text[start] != '{' {
+    return nil
+  }
+
+  var attributes = {}
+  var classes = []
+  var i = start + 1
+
+  while true {
+    i = _skip_tag_space(text, i)
+
+    if i >= length {
+      return nil
+    }
+
+    var c = text[i]
+
+    if c == '}' {
+      break
+    }
+
+    if c == '#' or c == '.' {
+      var from = i + 1
+
+      i = from
+
+      while i < length and
+          !_is_tag_space(text[i]) and
+          text[i] != '}' and
+          text[i] != '{' and
+          text[i] != '#' and
+          text[i] != '.' {
+        i++
+      }
+
+      if i == from {
+        return nil
+      }
+
+      if c == '#' {
+        attributes.set('id', text[from, i])
+      } else {
+        classes.append(text[from, i])
+      }
+    } else if c == '-' and
+        i + 1 < length and
+        (text[i + 1] == '}' or _is_tag_space(text[i + 1])) {
+      classes.append('unnumbered')
+      i++
+    } else if _attribute_name_char(c) {
+      var from = i
+
+      while i < length and _attribute_name_char(text[i]) {
+        i++
+      }
+
+      var key = text[from, i]
+
+      if i >= length or text[i] != '=' {
+        return nil
+      }
+
+      i++
+
+      if i >= length {
+        return nil
+      }
+
+      var value = ''
+      var quote = text[i]
+
+      if quote == '"' or quote == "'" {
+        var parts = []
+
+        i++
+
+        while i < length and text[i] != quote {
+          if text[i] == '\\' and i + 1 < length {
+            i++
+          }
+
+          parts.append(text[i])
+          i++
+        }
+
+        if i >= length {
+          return nil
+        }
+
+        i++
+        value = ''.join(parts)
+      } else {
+        var begin = i
+
+        while i < length and !_is_tag_space(text[i]) and text[i] != '}' {
+          i++
+        }
+
+        if i == begin {
+          return nil
+        }
+
+        value = text[begin, i]
+      }
+
+      if key == 'class' {
+        classes.append(value)
+      } else {
+        attributes.set(key, value)
+      }
+    } else {
+      return nil
+    }
+
+    if i < length and !_is_tag_space(text[i]) and text[i] != '}' {
+      return nil
+    }
+  }
+
+  if !classes.is_empty() {
+    attributes.set('class', ' '.join(classes))
+  }
+
+  return [attributes, i + 1]
+}
+
+/**
+ * Adds _extra_ to _attributes_: an `id` replaces the one there, a `class`
+ * joins the classes there, and anything else is set.
+ */
+def merge_attributes(attributes: dict, extra: dict) {
+  for key, value in extra {
+    if key == 'class' and attributes.contains('class') {
+      attributes.set('class', attributes.get('class') + ' ' + value)
+    } else {
+      attributes.set(key, value)
+    }
+  }
+
+  return attributes
+}
+
+/**
+ * Splits a table row into its cells. A pipe with a backslash before it
+ * belongs to the cell and loses the backslash; one leading and one
+ * trailing pipe are dropped, and each cell is trimmed.
+ */
+def split_table_row(line: string) {
+  var text = line.trim(' \t')
+  var length = text.length()
+  var cells = []
+  var current = []
+  var i = 0
+
+  if length > 0 and text[0] == '|' {
+    i = 1
+  }
+
+  var trailing = false
+
+  while i < length {
+    var c = text[i]
+
+    if c == '\\' and i + 1 < length and text[i + 1] == '|' {
+      current.append('|')
+      i += 2
+
+      continue
+    }
+
+    if c == '|' {
+      cells.append(''.join(current).trim(' \t'))
+      current = []
+      trailing = i == length - 1
+    } else {
+      current.append(c)
+    }
+
+    i++
+  }
+
+  if !trailing or !current.is_empty() {
+    cells.append(''.join(current).trim(' \t'))
+  }
+
+  return cells
+}
+
+/**
+ * The alignments a table's delimiter row sets, one a column: `'left'`,
+ * `'center'`, `'right'` or `nil`. `nil` in place of the list when _line_
+ * is not a delimiter row.
+ */
+def table_alignments(line: string) {
+  if !line.contains('|') {
+    return nil
+  }
+
+  var out = []
+
+  for cell in split_table_row(line) {
+    var length = cell.length()
+
+    if length == 0 {
+      return nil
+    }
+
+    var left = cell[0] == ':'
+    var right = cell[length - 1] == ':'
+    var from = left ? 1 : 0
+    var to = right ? length - 1 : length
+
+    if from >= to {
+      return nil
+    }
+
+    iter var i = from; i < to; i++ {
+      if cell[i] != '-' {
+        return nil
+      }
+    }
+
+    if left and right {
+      out.append('center')
+    } else if left {
+      out.append('left')
+    } else if right {
+      out.append('right')
+    } else {
+      out.append(nil)
+    }
+  }
+
+  return out
+}
+
+/** _text_ with its character references resolved and its backslashes left alone. */
+def decode_entities(text: string) {
+  if !text.contains('&') {
+    return text
+  }
+
+  var out = []
+  var length = text.length()
+  var start = 0
+  var i = text.index_of('&')
+
+  while i >= 0 {
+    var end = scan_entity(text, i)
+
+    if end > 0 {
+      var decoded = decode_entity(text[i, end])
+
+      if decoded != nil {
+        out.append(text[start, i])
+        out.append(decoded)
+        start = end
+        i = end < length ? text.index_of('&', end) : -1
+
+        continue
+      }
+    }
+
+    i = i + 1 < length ? text.index_of('&', i + 1) : -1
+  }
+
+  out.append(text[start,])
+
+  return ''.join(out)
+}
+
+/** _text_ with its backslash escapes resolved and its references left alone. */
+def unescape_backslashes(text: string) {
+  if !text.contains('\\') {
+    return text
+  }
+
+  var out = []
+  var length = text.length()
+  var start = 0
+  var i = 0
+
+  while i < length {
+    if text[i] == '\\' and i + 1 < length and ESCAPABLE.contains(text[i + 1]) {
+      out.append(text[start, i])
+      out.append(text[i + 1])
+      i += 2
+      start = i
+
+      continue
+    }
+
+    i++
+  }
+
+  out.append(text[start,])
+
+  return ''.join(out)
+}
