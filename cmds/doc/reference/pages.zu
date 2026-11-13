@@ -151,7 +151,7 @@ def _member(
   owner: string,
   level: string,
   owner_module,
-  index,
+  context,
 ) {
   out.append('${level} ${heading_of(member, owner)}')
   out.append('')
@@ -159,9 +159,10 @@ def _member(
   out.append(_signature(member))
   out.append('```')
   out.append('')
+  _source(out, owner_module, member.line, context)
 
   for line in demote(
-    reflow(_references(member.block.body, owner_module, index)),
+    reflow(_references(member.block.body, owner_module, context)),
     level.length() + 1,
   ) {
     out.append(line)
@@ -174,7 +175,7 @@ def _member(
 
 # A constant is rendered like a member but with its value beside it,
 # since a constant with no visible value tells a reader nothing.
-def _constant(out: list, member, level: string, owner_module, index) {
+def _constant(out: list, member, level: string, owner_module, context) {
   out.append('${level} `${member.name}`')
   out.append('')
   out.append('```zuri,ignore')
@@ -194,9 +195,10 @@ def _constant(out: list, member, level: string, owner_module, index) {
 
   out.append('```')
   out.append('')
+  _source(out, owner_module, member.line, context)
 
   for line in demote(
-    reflow(_references(member.block.body, owner_module, index)),
+    reflow(_references(member.block.body, owner_module, context)),
     level.length() + 1,
   ) {
     out.append(line)
@@ -217,7 +219,7 @@ var CAPABILITIES = {
   'iterable': 'can be walked with `for` and `iter`',
 }
 
-def _class(out: list, klass, level: string, module, index) {
+def _class(out: list, klass, level: string, module, context) {
   var inner = '${level}#'
 
   out.append('${level} `${klass.name}`')
@@ -232,9 +234,10 @@ def _class(out: list, klass, level: string, module, index) {
 
   out.append('```')
   out.append('')
+  _source(out, module, klass.line, context)
 
   for line in demote(
-    reflow(_references(klass.block.body, module, index)),
+    reflow(_references(klass.block.body, module, context)),
     inner.length() + 1,
   ) {
     out.append(line)
@@ -284,7 +287,7 @@ def _class(out: list, klass, level: string, module, index) {
     out.append('')
 
     for line in demote(
-      reflow(_references(klass.constructor.block.body, module, index)),
+      reflow(_references(klass.constructor.block.body, module, context)),
       inner.length() + 1,
     ) {
       out.append(line)
@@ -296,11 +299,11 @@ def _class(out: list, klass, level: string, module, index) {
   }
 
   for method in klass.static_methods {
-    _member(out, method, klass.name, inner, module, index)
+    _member(out, method, klass.name, inner, module, context)
   }
 
   for method in klass.methods {
-    _member(out, method, klass.name, inner, module, index)
+    _member(out, method, klass.name, inner, module, context)
   }
 }
 
@@ -312,7 +315,7 @@ def _class(out: list, klass, level: string, module, index) {
 # `{string}` in a tag is a type, and neither is a reference to
 # anything. Anything that does not resolve is left exactly as written
 # rather than guessed at.
-def _references(lines: list, module, index) {
+def _references(lines: list, module, context) {
   var fenced = false
 
   return lines.map(@(line) {
@@ -344,7 +347,7 @@ def _references(lines: list, module, index) {
       }
 
       var name = line[open + 1, close]
-      var target = _resolve(name, module, index)
+      var target = _resolve(name, module, context)
 
       out += line[at, open]
       out += target == nil ? line[open, close + 1] : target
@@ -359,7 +362,7 @@ def _references(lines: list, module, index) {
 # (`Ipv4`), and a bare one means the module it was written in. Bare
 # names are tried against this module's own prefix first, then its
 # root, so `net/ip.zu` saying `{Ipv4}` finds `net.Ipv4`.
-def _resolve(name: string, module, index) {
+def _resolve(name: string, module, context) {
   if name == '' or name.contains(' ') {
     return nil
   }
@@ -379,7 +382,7 @@ def _resolve(name: string, module, index) {
     '${module.prefix}.${bare}',
     '${module.root}.${bare}',
   ] {
-    var entry = index.get(candidate, nil)
+    var entry = context.index.get(candidate, nil)
 
     if entry != nil {
       var target = entry.page == module.slug() ? '' : '${entry.page}.md'
@@ -392,13 +395,38 @@ def _resolve(name: string, module, index) {
     }
   }
 
+  # A name from somewhere else, the standard library or another
+  # package, when the caller knows where those are documented.
+  if context.resolve != nil {
+    var address = context.resolve(bare)
+
+    if address != nil {
+      return '[`${name}`](${address})'
+    }
+  }
+
   return nil
 }
 
-# Where a member is documented, as a markdown link. `index` maps a
-# call path to the page that carries it.
-def _link(member, owner: string, index, from_page: string) {
-  var entry = index.get(member.path, nil)
+# A link to where _line_ of _module_ is in its source, when the caller
+# says where the source can be read.
+def _source(out: list, module, line: number, context) {
+  if context.source == nil {
+    return
+  }
+
+  var address = context.source(module, line)
+
+  if address != nil {
+    out.append('[Source](${address})')
+    out.append('')
+  }
+}
+
+# Where a member is documented, as a markdown link, through the
+# index in _context_, which maps a call path to the page that carries it.
+def _link(member, owner: string, context, from_page: string) {
+  var entry = context.index.get(member.path, nil)
 
   if entry == nil {
     return '`${member.path}`'
@@ -467,36 +495,36 @@ def _import(module) {
 }
 
 # One row of an index table.
-def _row(member, kind: string, index, page: string) {
-  return '| ${_link(member, '', index, page)} | ${kind} | ${_summary(member.block)} |'
+def _row(member, kind: string, context, page: string) {
+  return '| ${_link(member, '', context, page)} | ${kind} | ${_summary(member.block)} |'
 }
 
 # The whole public surface of a root module, gathered from every module
 # beneath it. This is the first thing on a root module's page: a reader
 # who knows only `import os` can find `os.get_env` here without knowing
 # that `os/env.zu` exists.
-def _surface(out: list, module, index) {
+def _surface(out: list, module, context) {
   var rows = []
 
   for entry in module.tree() {
     for member in entry.constants {
       rows.append({
         sort: member.path,
-        row: _row(member, 'constant', index, module.slug()),
+        row: _row(member, 'constant', context, module.slug()),
       })
     }
 
     for member in entry.functions {
       rows.append({
         sort: member.path,
-        row: _row(member, 'function', index, module.slug()),
+        row: _row(member, 'function', context, module.slug()),
       })
     }
 
     for member in entry.classes {
       rows.append({
         sort: member.path,
-        row: _row(member, 'class', index, module.slug()),
+        row: _row(member, 'class', context, module.slug()),
       })
     }
   }
@@ -571,9 +599,22 @@ def _submodules(out: list, module) {
  *
  * @param Module module
  * @param dict index: call path to `{ page, anchor }`, for cross-links
+ * @param ?dict options:
+ *    - `source` (`function`): given a module and a line, the address
+ *      that shows that line of its source, or `nil`; each name links to
+ *      its own when this is given.
+ *    - `resolve` (`function`): given a name written in braces that no
+ *      page here documents, the address of the page that does, or
+ *      `nil`.
  * @returns string
  */
-def page(module, index) {
+def page(module, index, options: ?dict) {
+  var given = options == nil ? {} : options
+  var context = {
+    index,
+    source: given.get('source', nil),
+    resolve: given.get('resolve', nil),
+  }
   var out = []
 
   out.append('# `${module.name}`')
@@ -594,7 +635,7 @@ def page(module, index) {
   }
 
   for line in demote(
-    reflow(_references(module.overview.body, module, index)),
+    reflow(_references(module.overview.body, module, context)),
     2,
   ) {
     out.append(line)
@@ -616,7 +657,7 @@ def page(module, index) {
   }
 
   if module.exposure == 'root' {
-    _surface(out, module, index)
+    _surface(out, module, context)
   }
 
   _submodules(out, module)
@@ -626,7 +667,7 @@ def page(module, index) {
     out.append('')
 
     for member in module.constants {
-      _constant(out, member, '###', module, index)
+      _constant(out, member, '###', module, context)
     }
   }
 
@@ -635,7 +676,7 @@ def page(module, index) {
     out.append('')
 
     for member in module.functions {
-      _member(out, member, '', '###', module, index)
+      _member(out, member, '', '###', module, context)
     }
   }
 
@@ -644,7 +685,7 @@ def page(module, index) {
     out.append('')
 
     for klass in module.classes {
-      _class(out, klass, '###', module, index)
+      _class(out, klass, '###', module, context)
     }
   }
 

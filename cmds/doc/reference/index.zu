@@ -27,6 +27,12 @@ import .pages
 /** The file that marks a source directory as the generator's own. */
 var MARKER = '.zuri-doc-generated'
 
+/**
+ * Bumped whenever the pages the generator writes change, so a store of
+ * them, such as a package repository's, knows to write them again.
+ */
+var GENERATOR = 1
+
 # Directories at the top of a project that hold no modules of its own.
 var _NOT_MODULES = ['tests', 'docs', 'examples', 'benchmarks', 'cmds']
 
@@ -233,4 +239,165 @@ def generate(config: Config) {
   ).write('zuri doc generate writes this directory, and empties it first.\n')
 
   return report
+}
+
+# Whether a doc block says anything: prose, or a tag.
+def _documented(block) {
+  return block.tags.length() > 0 or
+      block.body.some(@(line) => !line.trim().is_empty())
+}
+
+/**
+ * How much of the public surface under _roots_ has a doc block: every
+ * function, constant and class, and every field, method and constructor
+ * of a class.
+ *
+ * @param list roots
+ * @returns dict: `{ names, documented, missing }`, the count of public
+ *    names, how many are documented, and the paths of those that are
+ *    not.
+ */
+def coverage(roots: list) {
+  var names = 0
+  var documented = 0
+  var missing = []
+
+  def count(path: string, block) {
+    names++
+
+    if _documented(block) {
+      documented++
+    } else {
+      missing.append(path)
+    }
+  }
+
+  for root in roots {
+    for module in root.tree() {
+      for member in module.constants + module.functions {
+        count(member.path, member.block)
+      }
+
+      for klass in module.classes {
+        count(klass.path, klass.block)
+
+        if klass.constructor != nil {
+          count('${klass.path}()', klass.constructor.block)
+        }
+
+        for member in klass.fields +
+            klass.statics +
+            klass.methods +
+            klass.static_methods {
+          count(member.path, member.block)
+        }
+      }
+    }
+  }
+
+  return { names, documented, missing }
+}
+
+/**
+ * Every public name under _roots_ that has a heading of its own, for
+ * searching: `{ path, name, kind, page, anchor, summary }` each, `page`
+ * being the slug of the page it is on and `kind` one of `function`,
+ * `constant`, `class` and `method`.
+ *
+ * @param list roots
+ * @returns list[dict]
+ */
+def symbols(roots: list) {
+  var found = []
+
+  def add(member, kind: string, page: string, anchor: string) {
+    found.append({
+      path: member.path,
+      name: member.name,
+      kind,
+      page,
+      anchor,
+      summary: member.block.summary(),
+    })
+  }
+
+  for root in roots {
+    for module in root.tree() {
+      var page = module.slug()
+
+      for member in module.constants {
+        add(member, 'constant', page, pages.anchor(member.name))
+      }
+
+      for member in module.functions {
+        add(member, 'function', page, pages.anchor(member.name))
+      }
+
+      for klass in module.classes {
+        add(klass, 'class', page, pages.anchor(klass.name))
+
+        for method in klass.methods + klass.static_methods {
+          add(
+            method,
+            'method',
+            page,
+            pages.anchor('${klass.name}.${method.name}'),
+          )
+        }
+      }
+    }
+  }
+
+  return found
+}
+
+/**
+ * The reference for a set of files held anywhere: in a directory, or in
+ * an archive read into memory. This is what `generate()` does, without
+ * writing anything, for a caller that keeps the pages itself.
+ *
+ * @param list relatives: every file's path, written with `/`; those
+ *    that are not public modules are passed over, as are the
+ *    directories at the top that hold no modules of the project's own.
+ * @param function text_of: a path to the text of that file.
+ * @param ?string package: the name the modules are imported under, or
+ *    `nil` when each one is imported by its own name.
+ * @param ?dict options: as `pages.page()` takes them, for source links
+ *    and names documented elsewhere.
+ * @returns dict: `{ roots, pages, symbols, coverage, warnings }`,
+ *    `pages` holding `{ slug, name, summary, markdown }` for each module,
+ *    in the order of the contents.
+ */
+def document(
+  relatives: list,
+  text_of: function,
+  package: ?string,
+  options: ?dict,
+) {
+  var warnings = []
+  var candidates = relatives.filter(
+    @(path) => !_NOT_MODULES.contains(path.split('/')[0]),
+  )
+  var roots = model.read_sources(candidates, text_of, package, warnings)
+  var index = pages.build_index(roots)
+  var written = []
+
+  for root in roots {
+    for module in root.tree() {
+      written.append({
+        slug: module.slug(),
+        name: module.name,
+        summary: module.overview.summary(),
+        markdown: pages.page(module, index, options),
+      })
+    }
+  }
+
+  return {
+    roots,
+    pages: written,
+    symbols: symbols(roots),
+    coverage: coverage(roots),
+    warnings,
+  }
 }

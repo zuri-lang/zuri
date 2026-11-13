@@ -47,6 +47,18 @@ A published version never changes. To fix one, publish the next
 version. A version's dependencies must all come from a registry, since
 a git or path dependency means nothing on anyone else's machine.
 
+## The API reference
+
+Every version's page has an API tab beside its README: a page for each
+public module, with every function, constant and class it declares,
+written from the doc blocks in the published files. It is written when
+the version is published, and nothing has to be built or uploaded for
+it. The repository reads the code and never runs it.
+
+A module is any `.zu` file but a test, one in `tests`, `docs`,
+`examples`, `benchmarks` or `cmds`, and one whose path has a part
+starting with an underscore, which the compiler keeps private.
+
 ## Yanking a version
 
 ```sh

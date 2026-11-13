@@ -15,6 +15,7 @@
         </ul>
         <nav class="tabs" aria-label="Package">
           <a href="{{ base }}" x-attr="{ 'aria-current': tab == 'readme' ? 'page' : nil }">Readme</a>
+          <a href="{{ base }}?tab=api" x-attr="{ 'aria-current': tab == 'api' ? 'page' : nil }">API</a>
           <a href="{{ base }}?tab=versions" x-attr="{ 'aria-current': tab == 'versions' ? 'page' : nil }">Versions<span class="count">{{ versions|length }}</span></a>
           <a href="{{ base }}?tab=dependencies" x-attr="{ 'aria-current': tab == 'dependencies' ? 'page' : nil }">Dependencies<span class="count">{{ dependencies|length }}</span></a>
         </nav>
@@ -48,6 +49,15 @@
                 </tbody>
               </table>
             </div>
+          </template>
+          <template x-elif="tab == 'api'">
+            <div class="api" x-if="api.modules">
+              <nav class="api-modules" aria-label="Modules">
+                <a x-for="api.modules" x-value="module" href="{{ module.url }}" class="depth-{{ module.depth }}" x-attr="{ 'aria-current': module.current ? 'page' : nil }">{{ module.name }}</a>
+              </nav>
+              <article class="prose">{{ api.page }}</article>
+            </div>
+            <p class="empty" x-not="api.modules">{{ package.name }} {{ version.version }} has no public modules to document.</p>
           </template>
           <template x-elif="tab == 'dependencies'">
             <div class="table-wrap" x-if="dependencies">

@@ -449,6 +449,69 @@ class Database {
     })
   }
 
+  /**
+   * What is known of a version's API reference: `{ version_id,
+   * generator, names, documented, modules, warnings, created_at }`, with
+   * `modules` and `warnings` decoded, or `nil` when it has none yet.
+   *
+   * @param version_id
+   * @returns ?dict
+   */
+  docs_of(version_id) {
+    var row = self.connection.find_one('version_docs', { version_id })
+
+    if row == nil {
+      return nil
+    }
+
+    row.set('modules', json.decode(row.modules))
+    row.set('warnings', json.decode(row.warnings))
+
+    return row
+  }
+
+  /**
+   * One page of a version's API reference, or `nil`.
+   *
+   * @param version_id
+   * @param string slug
+   * @returns ?dict: `{ version_id, slug, name, markdown }`.
+   */
+  doc_page(version_id, slug: string) {
+    return self.connection.find_one('doc_pages', { version_id, slug })
+  }
+
+  /**
+   * Stores a version's API reference in place of any it had.
+   *
+   * @param version_id
+   * @param dict fields: `{ generator, names, documented, modules,
+   *    warnings }`, `modules` and `warnings` being lists.
+   * @param list pages: `{ slug, name, markdown }` each.
+   */
+  save_docs(version_id, fields: dict, pages: list) {
+    self.connection.delete('doc_pages', { version_id })
+    self.connection.delete('version_docs', { version_id })
+    self.connection.insert('version_docs', {
+      version_id,
+      generator: fields.generator,
+      names: fields.names,
+      documented: fields.documented,
+      modules: json.encode(fields.modules),
+      warnings: json.encode(fields.warnings),
+      created_at: _now(),
+    })
+
+    for page in pages {
+      self.connection.insert('doc_pages', {
+        version_id,
+        slug: page.slug,
+        name: page.name,
+        markdown: page.markdown,
+      })
+    }
+  }
+
   set_yanked(version_id, yanked: bool) {
     self.connection.update(
       'versions',

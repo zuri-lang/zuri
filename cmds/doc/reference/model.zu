@@ -383,13 +383,15 @@ def _binding(node) {
  * that depends on its neighbours.
  *
  * @param string name: the dotted module path
- * @param string path: the file to read
+ * @param string path: the file, relative to the modules' directory and
+ *    written with `/`.
  * @param bool is_package
+ * @param string text: what the file holds.
  * @returns Module
  */
-def read(name: string, path: string, is_package: bool) {
+def read(name: string, path: string, is_package: bool, text: string) {
   var module = Module(name, path, is_package)
-  var nodes = zuri.parse(file(path).read())
+  var nodes = zuri.parse(text)
 
   # The first doc block with an `@module` tag is the module's own
   # documentation; a second is a stray.
@@ -661,6 +663,32 @@ def is_module(relative: string) {
  * @returns list[Module]: the root modules, alphabetically
  */
 def read_all(root: string, relatives: list, package: ?string, problems: ?list) {
+  return read_sources(
+    relatives,
+    @(relative) => file(os.join_paths(root, relative)).read(),
+    package,
+    problems,
+  )
+}
+
+/**
+ * Reads the public modules among _relatives_, as `read_all()` does,
+ * asking _text_of_ for what each file holds, so the files can come from
+ * anywhere: a directory, or an archive held in memory.
+ *
+ * @param list relatives: paths, written with `/`.
+ * @param function text_of: a path to the text of that file.
+ * @param ?string package: the name the modules are imported under, or
+ *    `nil` when each one is imported by its own name.
+ * @param ?list problems: where a file that cannot be read is reported.
+ * @returns list[Module]: the root modules, alphabetically
+ */
+def read_sources(
+  relatives: list,
+  text_of: function,
+  package: ?string,
+  problems: ?list,
+) {
   var modules = {}
 
   for relative in relatives {
@@ -674,10 +702,11 @@ def read_all(root: string, relatives: list, package: ?string, problems: ?list) {
       continue
     }
 
-    var path = os.join_paths(root, relative)
-
     catch {
-      modules.set(name, read(name, path, relative.ends_with('index.zu')))
+      modules.set(
+        name,
+        read(name, relative, relative.ends_with('index.zu'), text_of(relative)),
+      )
     } as error {
       if problems != nil {
         problems.append('${relative} could not be read: ${error.message}')

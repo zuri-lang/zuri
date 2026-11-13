@@ -34,7 +34,7 @@ def _colour(code: string, language: string) {
   return nil
 }
 
-var _renderer = markdown({
+var _OPTIONS = {
   preset: 'gfm',
   html: true,
   # The sanitizer removes these elements outright, where the tag filter
@@ -42,14 +42,29 @@ var _renderer = markdown({
   tag_filter: false,
   heading_ids: 'github',
   highlight: _colour,
-})
+}
+
+var _renderer = markdown(_OPTIONS)
 
 /**
  * _source_ as safe markup.
  *
  * @param string source: Markdown.
+ * @param ?function links: given each link's destination, the one to
+ *    write in its place, for pages whose links are written for
+ *    somewhere else.
  * @returns string
  */
-def render(source: string) {
-  return sanitize.clean(_renderer.render(source))
+def render(source: string, links: ?function) {
+  if links == nil {
+    return sanitize.clean(_renderer.render(source))
+  }
+
+  var renderer = markdown(_OPTIONS).use(@(doc) {
+    for link in doc.find_all('link') {
+      link.destination = links(link.destination)
+    }
+  })
+
+  return sanitize.clean(renderer.render(source))
 }

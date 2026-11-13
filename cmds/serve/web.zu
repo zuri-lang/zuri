@@ -72,7 +72,64 @@ var LINKS = {
 var TOP_KEYWORDS = 24
 
 /** The tabs a package page has, the first shown when none is asked for. */
-var TABS = ['readme', 'versions', 'dependencies']
+var TABS = ['readme', 'api', 'versions', 'dependencies']
+
+# A link on a page of the API reference, which is written to another
+# module's page as `slug.md`, as the API tab at _base_ reaches it. The
+# sanitizer puts `user-content-` in front of every id, so a heading
+# on another page is reached by that.
+def _api_link(destination: string, base: string) {
+  var found = destination.match('/^([A-Za-z0-9_.-]+)\\.md(#(.*))?$/')
+
+  if found == false {
+    return destination
+  }
+
+  var page = '${base}?tab=api&module=${found[1]}'
+  var anchor = found.get(3, nil)
+
+  return anchor == nil or anchor.is_empty()
+      ? page
+      : '${page}#user-content-${anchor}'
+}
+
+# What the API tab shows for _version_ of the package called _name_:
+# every module of its reference, and the page of the one asked for.
+def _api(nyssa, request, name: string, version: dict, base: string) {
+  var docs = service.docs_for(nyssa, name, version)
+
+  if docs == nil or docs.modules.is_empty() {
+    return { modules: [], page: nil }
+  }
+
+  var modules = docs.modules
+  var slug = request.query_param('module', modules[0].slug)
+
+  if !modules.some(@(module) => module.slug == slug) {
+    slug = modules[0].slug
+  }
+
+  var row = nyssa.db.doc_page(version.id, slug)
+
+  return {
+    modules: modules.map(
+      @(module) => {
+        name: module.name,
+        url: '${base}?tab=api&module=${module.slug}',
+        current: module.slug == slug,
+        depth: module.name.count('.'),
+      },
+    ),
+    page: row == nil
+        ? nil
+        : wire.safe(
+            markup.render(
+              row.markdown,
+              @(destination) => _api_link(destination, base),
+            ),
+          ),
+  }
+}
 
 # The CSRF token of the visitor's session, made on first use.
 def _csrf(request) {
@@ -451,6 +508,9 @@ def routes(server, nyssa) {
       tab = TABS[0]
     }
 
+    var base = '/packages/${package.name}' +
+        (wanted == nil ? '' : '/${shown.version}')
+
     _page(nyssa, request, response, 'package', {
       flush: true,
       page_title: '${package.name} ${shown.version}',
@@ -458,9 +518,8 @@ def routes(server, nyssa) {
           ? nil
           : package.description,
       tab,
-      base:
-          '/packages/${package.name}' +
-          (wanted == nil ? '' : '/${shown.version}'),
+      base,
+      api: tab == 'api' ? _api(nyssa, request, package.name, shown, base) : nil,
       latest: package.latest,
       manifest_line: _manifest_line(nyssa, package.name, shown.version),
       package: {

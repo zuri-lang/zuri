@@ -119,6 +119,13 @@ version that exists is refused. To fix a version, publish the next one.
 
 The first account to publish a name owns it.
 
+Every version's page on the registry has an API tab beside its README.
+It is the package's API reference, written from the doc blocks in the
+published files the way `zuri doc generate` writes one, with a page for
+each public module ([Chapter 30](ch30-00-documentation.md#generating-an-api-reference)).
+Nothing has to be built or uploaded for it: the registry reads the code
+and never runs it.
+
 ## Yanking
 
 ```sh

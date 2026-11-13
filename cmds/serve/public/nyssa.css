@@ -31,6 +31,13 @@
   --warn-paper: #fff4e5;
   --warn-edge: #f5c889;
 
+  /* Zuri code, coloured by the language's own lexer. */
+  --code-keyword: #744baa;
+  --code-string: #0f7b55;
+  --code-number: #b35a00;
+  --code-comment: #8a8e9e;
+  --code-decorator: #c2371a;
+
   --wide: 80rem;
   --gut: clamp(1rem, 4vw, 3rem);
 
@@ -57,6 +64,11 @@
     --danger: #ff7a5c;
     --warn-paper: #2a2112;
     --warn-edge: #6b4a17;
+    --code-keyword: #c3a6f2;
+    --code-string: #74d4a2;
+    --code-number: #f5b062;
+    --code-comment: #7d8294;
+    --code-decorator: #ff8f73;
   }
 }
 
@@ -124,6 +136,27 @@ pre {
   border-radius: var(--r-md);
   background: var(--paper-2);
   line-height: 1.5;
+}
+
+pre .kw {
+  color: var(--code-keyword);
+}
+
+pre .str {
+  color: var(--code-string);
+}
+
+pre .num {
+  color: var(--code-number);
+}
+
+pre .com {
+  color: var(--code-comment);
+  font-style: italic;
+}
+
+pre .dec {
+  color: var(--code-decorator);
 }
 
 h1,
@@ -1357,4 +1390,60 @@ th.number {
   padding-block: 1.25rem;
   border-top: 1px solid var(--slab-edge);
   font-size: 0.82rem;
+}
+
+/* The API tab: the modules down the side, and the page of one beside them. */
+.api {
+  display: grid;
+  grid-template-columns: minmax(0, 13rem) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+.api-modules {
+  position: sticky;
+  top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+.api-modules a {
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.api-modules a:hover {
+  color: var(--ink);
+  background: var(--edge);
+}
+
+.api-modules a[aria-current] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.api-modules .depth-1 {
+  padding-left: 1.25rem;
+}
+
+.api-modules .depth-2,
+.api-modules .depth-3,
+.api-modules .depth-4 {
+  padding-left: 2rem;
+}
+
+@media (max-width: 720px) {
+  .api {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .api-modules {
+    position: static;
+  }
 }

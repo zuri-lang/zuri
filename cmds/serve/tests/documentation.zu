@@ -1,0 +1,176 @@
+# The API reference a repository writes for every version it is sent:
+# generated when the version is published, from the doc blocks in its
+# own archive, and shown on the package's page.
+
+import http
+import os
+import test { * }
+
+import ._harness { World, commit, write }
+import ..db { Database }
+
+var world = World('documentation')
+var KIT = nil
+
+# A package whose root lifts everything in `app`, and exposes `radar`
+# as a namespace.
+var APP = '/**
+ * @module app
+ *
+ * Forecasts for anywhere.
+ */
+
+/**
+ * The forecast for _place_, as a {Report}.
+ *
+ * @param string place: where to look.
+ * @returns Report
+ */
+def forecast(place: string) {
+  return Report(place)
+}
+
+/**
+ * One forecast. {forecast()} makes them.
+ */
+class Report {
+
+  /** Where it is for. @type string */
+  var place
+
+  @new(place: string) {
+    self.place = place
+  }
+
+  /**
+   * It, said aloud.
+   *
+   * @returns string
+   */
+  say() {
+    return \'Rain in \' + self.place
+  }
+}
+
+def undocumented() {}
+'
+
+var RADAR = '/**
+ * @module radar
+ *
+ * What the radar sees.
+ */
+
+/** The latest sweep. */
+def sweep() {}
+'
+
+def page(path: string) {
+  return http.get(world.url + path).as_text()
+}
+
+before_all(@{
+  world.start()
+  world.account('ada', world.dir('signin'))
+
+  KIT = world.project('weather-kit')
+
+  write(
+    KIT,
+    'index.zu',
+    '/**\n * Weather, as a package.\n */\n\nimport @.app { * }\nimport @.radar\n',
+  )
+  write(KIT, 'app/index.zu', APP)
+  write(KIT, 'radar.zu', RADAR)
+  commit(KIT)
+
+  var published = world.zuri(['publish', '--registry', world.url], KIT)
+
+  if published.status != 0 {
+    raise Error('publishing failed: ${published.all}')
+  }
+})
+
+after_all(@{
+  world.finish()
+})
+
+# The repository's own database, for looking behind the site.
+def database() {
+  return Database('sqlite://' + os.join_paths(world.root, 'nyssa', 'nyssa.db'))
+}
+
+describe('the API tab', @{
+  it('is written when the version is published', @{
+    var db = database()
+    var rows = db.connection.fetch_all('select * from version_docs', {})
+    var pages = db.connection.fetch_value(
+      'select count(*) from doc_pages',
+      {},
+      0,
+    )
+
+    db.close()
+
+    expect(rows.length()).to_be(1)
+    expect(pages).to_be(3)
+  })
+
+  it('lists every module of the version', @{
+    var shown = page('/packages/weather-kit?tab=api')
+
+    expect(shown).to_contain('aria-current="page">API</a>')
+    expect(shown).to_contain('>weather_kit</a>')
+    expect(shown).to_contain('>weather_kit.app</a>')
+    expect(shown).to_contain('>weather_kit.radar</a>')
+  })
+
+  it("opens on the package's own page, listing its whole surface", @{
+    var shown = page('/packages/weather-kit?tab=api')
+
+    expect(shown).to_contain('Weather, as a package.')
+    expect(shown).to_contain(
+      'href="/packages/weather-kit?tab=api&amp;module=weather_kit-app#user-content-forecast"',
+    )
+  })
+
+  it('shows the page of the module asked for', @{
+    var shown = page('/packages/weather-kit?tab=api&module=weather_kit-app')
+
+    expect(shown).to_contain('id="user-content-forecast"')
+    expect(shown)
+        .to_contain('weather_kit</span>.<span class="id">forecast</span>')
+    expect(shown).to_contain('id="user-content-reportsay"')
+  })
+
+  it('links a name written in braces to where it is documented', @{
+    var shown = page('/packages/weather-kit?tab=api&module=weather_kit-app')
+
+    expect(shown)
+        .to_contain('<a href="#user-content-report"><code>Report</code></a>')
+    expect(
+      shown,
+    ).to_contain('<a href="#user-content-forecast"><code>forecast()</code></a>')
+  })
+
+  it('shows the first module for one it does not have', @{
+    expect(page('/packages/weather-kit?tab=api&module=nothing'))
+        .to_contain('Weather, as a package.')
+  })
+
+  it('is there for a version asked for by number', @{
+    expect(page('/packages/weather-kit/0.1.0?tab=api&module=weather_kit-radar'))
+        .to_contain('The latest sweep.')
+  })
+
+  it('is written again when an older generator wrote it', @{
+    var db = database()
+
+    db.connection.update('version_docs', { generator: 0 }, {})
+    db.connection.delete('doc_pages', {})
+    db.close()
+
+    expect(page('/packages/weather-kit?tab=api&module=weather_kit-radar'))
+        .to_contain('The latest sweep.')
+  })
+})

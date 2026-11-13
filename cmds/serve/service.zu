@@ -19,6 +19,7 @@ import .._shared.fsx
 import .._shared.manifest as manifest_module
 import .._shared.names
 import .._shared.semver
+import ..doc.reference
 import .auth
 import .context { iso, latest_of }
 
@@ -303,7 +304,7 @@ def publish(nyssa, token: dict, data: bytes, metadata: dict, address: string) {
   var key = names.normalized(name)
   var version_key = _version_key(version)
 
-  return nyssa.db.transaction(@{
+  var published = nyssa.db.transaction(@{
     var package = nyssa.db.package_by_name(key)
 
     if package == nil {
@@ -364,6 +365,17 @@ def publish(nyssa, token: dict, data: bytes, metadata: dict, address: string) {
 
     return { name, version, checksum }
   })
+
+  # The reference is written from the archive already in hand. A version
+  # is published whether or not its doc blocks can be read; one that
+  # fails here is tried again when its reference is first asked for.
+  catch {
+    var package = nyssa.db.package_by_name(key)
+
+    _document(nyssa, name, nyssa.db.version_of(package.id, version_key), files)
+  } as error {}
+
+  return published
 }
 
 # Brings a package's own row up to date with its versions.
@@ -1118,4 +1130,80 @@ def index(nyssa, name: string) {
   })
 
   return { name: package.name, versions }
+}
+
+/**
+ * The files of a published version, read from its archive: each path,
+ * written with `/`, to what it holds. Empty when the archive is not
+ * here.
+ *
+ * @param nyssa
+ * @param dict version: the version's row.
+ * @returns dict
+ */
+def files_of(nyssa, version: dict) {
+  var path = nyssa.blobs.path_of(version.checksum)
+  var files = {}
+
+  if path == nil or !file(path).exists() {
+    return files
+  }
+
+  archive.read(path, @(entry, contents) {
+    if entry.kind == 'file' {
+      files.set(entry.path, contents)
+    }
+  })
+
+  return files
+}
+
+# Writes the API reference of _version_, a row, of the package called
+# _name_, from _files_, the version's archive read into memory.
+def _document(nyssa, name: string, version: dict, files: dict) {
+  var result = reference.document(
+    files.keys(),
+    @(path) => files.get(path).to_string(),
+    names.import_name(name),
+    nil,
+  )
+
+  nyssa.db.transaction(@{
+    nyssa.db.save_docs(version.id, {
+      generator: reference.GENERATOR,
+      names: result.coverage.names,
+      documented: result.coverage.documented,
+      modules: result.pages.map(
+        @(page) => { slug: page.slug, name: page.name, summary: page.summary },
+      ),
+      warnings: result.warnings,
+    }, result.pages)
+  })
+}
+
+/**
+ * The API reference of a published version, as `db.docs_of()` gives
+ * it. It is written now when the version has none yet, or has one an
+ * older generator wrote.
+ *
+ * @param nyssa
+ * @param string name: the package's name.
+ * @param dict version: the version's row.
+ * @returns ?dict: `nil` when it cannot be written, as when the archive
+ *    is missing.
+ */
+def docs_for(nyssa, name: string, version: dict) {
+  var docs = nyssa.db.docs_of(version.id)
+
+  if docs != nil and docs.generator == reference.GENERATOR {
+    return docs
+  }
+
+  # Two workers asked at once write it twice, and the second write
+  # fails on the first one's rows, which are just as good.
+  catch {
+    _document(nyssa, name, version, files_of(nyssa, version))
+  } as error {}
+
+  return nyssa.db.docs_of(version.id)
 }
