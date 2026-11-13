@@ -300,6 +300,12 @@ class Site {
     var view = wire()
     var theme = self.config.theme_dir
 
+    # A template runs code, so documentation built in a sandbox gets the
+    # built-in one, whatever its theme holds.
+    if self.config.sandbox != nil {
+      theme = nil
+    }
+
     if theme != nil and file(os.join_paths(theme, 'page.html')).exists() {
       view.set_root(theme)
     } else {
@@ -333,9 +339,14 @@ class Site {
     return hash.md5(text)[0, 10]
   }
 
-  # Writes _contents_ to _path_ under the output directory.
+  # Writes _contents_ to _path_ under the output directory, and nowhere
+  # else.
   _write(path: string, contents: string) {
     var full = os.join_paths(self.config.output, path)
+
+    if !os.path_contains(self.config.output, full) {
+      raise UsageError('${path} would be written outside the site')
+    }
 
     fsx.ensure_dir(os.dir_name(full))
     file(full, 'w').write(contents)

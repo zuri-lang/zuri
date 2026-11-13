@@ -138,6 +138,12 @@ such as `{http.Request}`, links to the standard library's reference,
 which the registry serves for the Zuri it runs on, or to the API of a
 package it depends on from the same registry.
 
+Documentation in `docs`, built with `zuri doc`, is the package's guide.
+A registry that serves guides builds it when the version is published
+and links it from the version's page, from the package's own files
+alone: whatever its `doc.toml` names and its pages include has to be in
+the package ([Packages' Guides](ch27-06-nyssa.md#packages-guides)).
+
 ## Yanking
 
 ```sh

@@ -86,7 +86,8 @@ class World {
   /**
    * Starts `zuri serve`, and waits until it answers.
    *
-   * @param ?list extra: more flags for it.
+   * @param ?list extra: more flags for it, in which `{port}` stands for
+   *    the port it listens on.
    */
   start(extra: ?list) {
     var port = self._free_port()
@@ -106,7 +107,8 @@ class World {
     ]
 
     if extra != nil {
-      flags = flags + extra
+      flags = flags +
+          extra.map(@(flag) => flag.replace('{port}', port.to_string(), false))
     }
 
     self.server = spawn(os.exe_path, flags, {

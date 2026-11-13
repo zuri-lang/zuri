@@ -67,6 +67,12 @@ Every name in the reference links to the line that declares it, on the
 version's Source tab, which shows every file the version holds with
 its lines numbered and its Zuri coloured.
 
+Documentation in `docs`, built with `zuri doc`, is the package's guide.
+Where the repository serves guides, it is built when the version is
+published and linked from the version's page. It is built from the
+package's own files alone, so whatever its `doc.toml` names and its
+pages include has to be in the package.
+
 A name in braces that the package's own pages do not document, as
 `{http.Request}` or `{weather_kit.forecast()}`, links to where it is
 documented: the standard library's reference, which the repository

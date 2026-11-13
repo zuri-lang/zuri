@@ -93,6 +93,10 @@ def _member(outer: Config, directory: string) {
   var member = config.load(directory)
   var name = os.base_name(directory)
 
+  if outer.sandbox != nil {
+    config.confine(member, outer.sandbox)
+  }
+
   member.output = os.join_paths(outer.output, name)
 
   if outer.url != nil {

@@ -234,6 +234,7 @@ def _refresh(settings: dict) {
   }
 
   service.refresh_documentation(nyssa)
+  service.refresh_guides(nyssa)
   nyssa.db.close()
 }
 

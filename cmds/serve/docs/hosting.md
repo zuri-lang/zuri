@@ -60,6 +60,23 @@ A connection string that carries a password belongs in
 database up to date and exits, which is how to prepare one before the
 first start; `zuri serve` does the same on its own when it starts.
 
+## Packages' guides
+
+A package can ship a guide, documentation `zuri doc` builds, in its
+`docs` directory. Give the repository a host to serve them on and it
+builds each version's guide as it is published:
+
+```toml
+[guides]
+url = "https://guides.packages.example.com"
+```
+
+The guides host must not be the repository's own, even on another
+port, since a guide is its package's own HTML and scripts and a cookie
+belongs to every port of its host. Point it at the repository like the
+repository's own address; the repository answers each by the name it
+was asked for.
+
 ## Serving it safely
 
 Passwords and tokens cross the network whenever anyone signs in or

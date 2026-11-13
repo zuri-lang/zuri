@@ -270,12 +270,14 @@ def _select(text: string, selector: ?string, where: string) {
  * @param string text
  * @param string path: the file's own path, which includes are relative to.
  * @param ?number depth: how many includes deep this already is.
+ * @param ?string within: the directory every included file must be
+ *    inside, or `nil` for anywhere.
  * @returns dict: `{ text, title }`, with `title` `nil` unless the text
  *    gives one.
- * @throws UsageError When an included file is missing, or includes run
- *    too deep
+ * @throws UsageError When an included file is missing or outside
+ *    _within_, or includes run too deep
  */
-def preprocess(text: string, path: string, depth: ?number) {
+def preprocess(text: string, path: string, depth: ?number, within: ?string) {
   var level = depth == nil ? 0 : depth
   var out = []
   var title = nil
@@ -323,13 +325,24 @@ def preprocess(text: string, path: string, depth: ?number) {
         var selector = colon < 0 ? nil : argument[colon + 1,]
         var full = os.abs_path(os.join_paths(os.dir_name(path), target))
 
+        if within != nil and !os.path_contains(within, full) {
+          raise UsageError(
+            '${path}: cannot include ${target}; it is outside the package',
+          )
+        }
+
         if !file(full).exists() {
           raise UsageError(
             '${path}: cannot include ${target}; there is no such file',
           )
         }
 
-        var included = preprocess(fsx.read_text(full), full, level + 1).text
+        var included = preprocess(
+          fsx.read_text(full),
+          full,
+          level + 1,
+          within,
+        ).text
 
         out.append(text[at, open])
         out.append(_select(included, selector, path))
@@ -503,7 +516,7 @@ def _read(docs: Documentation, chapter: Chapter) {
     file(full, 'w').write('# ${chapter.title}\n')
   }
 
-  var read = preprocess(fsx.read_text(full), full)
+  var read = preprocess(fsx.read_text(full), full, 0, docs.config.sandbox)
 
   chapter.text = read.text
   chapter.page_title = read.title

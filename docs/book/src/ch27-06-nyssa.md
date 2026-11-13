@@ -39,6 +39,7 @@ Every setting is a flag, a `NYSSA_` environment variable, or a line in
 | `--trust-proxy` | `NYSSA_TRUST_PROXY` | off |
 | `--read-only` | `NYSSA_READ_ONLY` | off |
 | `--tls-cert`, `--tls-key` | `NYSSA_TLS_CERT`, `NYSSA_TLS_KEY` | none |
+| `--guides-url` | `NYSSA_GUIDES_URL` | none; packages' guides are neither built nor served |
 | | `NYSSA_NAME` | `Nyssa`, the name the site shows |
 | | `NYSSA_MAIL_URL`, `NYSSA_MAIL_USERNAME`, `NYSSA_MAIL_PASSWORD`, `NYSSA_MAIL_FROM` | none |
 
@@ -110,6 +111,33 @@ The second is for a repository behind a proxy that terminates TLS,
 such as nginx or a load balancer, and makes it believe the client
 addresses the proxy forwards. Listening beyond this machine with
 neither prints a warning.
+
+## Packages' Guides
+
+A package can ship a guide, documentation `zuri doc` builds, in its
+`docs` directory ([Chapter 30](ch30-00-documentation.md)). Given a host
+to serve them on, the repository builds each version's guide when the
+version is published, and links it from the version's page:
+
+```sh
+zuri serve --guides-url https://guides.packages.example.com
+```
+
+A guide is its package's own HTML and scripts, so it is served on that
+host alone, never on the repository's. There its scripts run where
+nothing of the repository's is, no session and no signed-in page, which
+is why the guides host must not be the repository's host, even on
+another port: a cookie belongs to every port of its host. Point the
+guides host at the repository like its own address, through the same
+proxy if there is one; the repository answers each by the name it was
+asked for. A guide is read at `/<package>/<version>/` there, and
+`/<package>/` is its newest version's.
+
+A guide is built from its package's files alone. What its `doc.toml`
+names and what its pages include must be inside the package, or it is
+not built, and its own page template is never used, since a template
+runs code. Every version published before guides were served has its
+guide built in the background when the repository next starts.
 
 ## Accounts
 

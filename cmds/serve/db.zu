@@ -752,6 +752,54 @@ class Database {
   }
 
   /**
+   * What is known of the guide a version ships: `{ version_id, title,
+   * problem, built_at }`, `title` being `nil` when it ships none, or
+   * `nil` when nothing is known yet.
+   *
+   * @param version_id
+   * @returns ?dict
+   */
+  guide_of(version_id) {
+    return self.connection.find_one('guides', { version_id })
+  }
+
+  /**
+   * Records what became of a version's guide.
+   *
+   * @param version_id
+   * @param ?string title: `nil` for a version that ships none.
+   * @param ?string problem: what stopped it being built, or `nil`.
+   */
+  save_guide(version_id, title, problem) {
+    self.connection.delete('guides', { version_id })
+    self.connection.insert('guides', {
+      version_id,
+      title,
+      problem,
+      built_at: _now(),
+    })
+  }
+
+  /**
+   * The newest version of every package with nothing known of its
+   * guide.
+   *
+   * @returns list[dict]: the versions' rows, each with `package`, the
+   *    package's name.
+   */
+  versions_needing_guides() {
+    return self.connection.fetch_all(
+      '
+      select v.*, p.name as package
+      from packages p
+      join versions v on v.package_id = p.id and v.version = p.latest
+      left join guides g on g.version_id = v.id
+      where g.version_id is null',
+      {},
+    )
+  }
+
+  /**
    * The newest version of every package whose API reference is missing,
    * or was written by a writer other than _writer_.
    *

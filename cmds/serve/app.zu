@@ -16,6 +16,7 @@ import http.session.sql { SqlStore }
 
 import .api
 import .context { Nyssa }
+import .guides
 import .plan
 import .web
 
@@ -61,6 +62,10 @@ def setup(server) {
 
   server.use(middleware.request_id())
   server.use(middleware.logger({ trust_proxy: trust }))
+
+  # The guides host is answered before anything below sets a header or
+  # a cookie for the repository's own pages.
+  server.use(guides.middleware(nyssa))
   server.use(middleware.security_headers({ content_security_policy: POLICY }))
 
   server.use(@(request, response, next) {

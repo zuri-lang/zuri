@@ -17,6 +17,7 @@
           <a href="{{ base }}" x-attr="{ 'aria-current': tab == 'readme' ? 'page' : nil }">Readme</a>
           <a href="{{ base }}?tab=api" x-attr="{ 'aria-current': tab == 'api' ? 'page' : nil }">API</a>
           <a href="{{ base }}?tab=source" x-attr="{ 'aria-current': tab == 'source' ? 'page' : nil }">Source</a>
+          <a x-if="guide" href="{{ guide }}" rel="noopener">Guide <span aria-hidden="true">↗</span></a>
           <a href="{{ base }}?tab=versions" x-attr="{ 'aria-current': tab == 'versions' ? 'page' : nil }">Versions<span class="count">{{ versions|length }}</span></a>
           <a href="{{ base }}?tab=dependencies" x-attr="{ 'aria-current': tab == 'dependencies' ? 'page' : nil }">Dependencies<span class="count">{{ dependencies|length }}</span></a>
         </nav>

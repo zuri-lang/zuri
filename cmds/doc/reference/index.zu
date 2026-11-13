@@ -82,6 +82,10 @@ def source_of(config: Config) {
     raise UsageError('[reference] modules is ${root}, which is not a directory')
   }
 
+  if config.sandbox != nil and !os.path_contains(config.sandbox, root) {
+    raise UsageError('the modules of [reference] are outside the package')
+  }
+
   var found = {
     root,
     package: nil,

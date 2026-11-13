@@ -178,6 +178,17 @@ class Config {
   var siblings = []
 
   /**
+   * The directory everything the documentation reads must be inside,
+   * when it is built from files nobody building it wrote, as a package
+   * repository builds a published package's guide, or `nil`. Its own
+   * page template is then left unused too, since a template runs code.
+   * `confine()` sets it.
+   *
+   * @type ?string
+   */
+  var sandbox
+
+  /**
    * How the pages are generated from doc blocks, or `nil` when they are
    * written by hand: `{ modules, package, exclude, intro, groups }`,
    * `modules` and `intro` being absolute paths or `nil`, `package` a
@@ -498,7 +509,17 @@ def parse(text: string, root: string) {
       raise UsageError('${FILE_NAME}: [redirects] "${from}" must be an address')
     }
 
-    config.redirects.set(from.ltrim('/'), to)
+    var page = from.ltrim('/')
+
+    # An old address is a page of this site; one that climbs out of it
+    # would be written somewhere else.
+    if page.replace('\\', '/', false).split('/').contains('..') {
+      raise UsageError(
+        '${FILE_NAME}: [redirects] "${from}" climbs out of the site',
+      )
+    }
+
+    config.redirects.set(page, to)
   }
 
   var theme_dir = os.join_paths(root, 'theme')
@@ -547,4 +568,45 @@ def load(root: string) {
   config.members.sort()
 
   return config
+}
+
+/**
+ * Keeps _settings_ to the directory _root_: every file its `doc.toml`
+ * names must be inside it, as must every file a page includes, and its
+ * own page template is not used. This is for building documentation
+ * from files nobody building it wrote.
+ *
+ * @param Config settings
+ * @param string root
+ * @throws UsageError Naming the first setting that reaches outside
+ *    _root_
+ */
+def confine(settings: Config, root: string) {
+  var named = [
+    ['the documentation itself', settings.root],
+    ['[documentation] source', settings.source],
+    ['[site] logo', settings.logo],
+    ['[site] favicon', settings.favicon],
+  ]
+
+  for path in settings.css {
+    named.append(['[site] css', path])
+  }
+
+  for path in settings.js {
+    named.append(['[site] js', path])
+  }
+
+  if settings.reference != nil {
+    named.append(['[reference] modules', settings.reference.modules])
+    named.append(['[reference] intro', settings.reference.intro])
+  }
+
+  for entry in named {
+    if entry[1] != nil and !os.path_contains(root, entry[1]) {
+      raise UsageError('${FILE_NAME}: ${entry[0]} is outside the package')
+    }
+  }
+
+  settings.sandbox = root
 }

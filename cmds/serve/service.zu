@@ -22,6 +22,8 @@ import .._shared.manifest as manifest_module
 import .._shared.names
 import .._shared.paths
 import .._shared.semver
+import ..doc.build as doc_build
+import ..doc.config as doc_config
 import ..doc.reference
 import .auth
 import .context { iso, latest_of }
@@ -375,8 +377,10 @@ def publish(nyssa, token: dict, data: bytes, metadata: dict, address: string) {
   # fails here is tried again when its reference is first asked for.
   catch {
     var package = nyssa.db.package_by_name(key)
+    var row = nyssa.db.version_of(package.id, version_key)
 
-    _document(nyssa, name, nyssa.db.version_of(package.id, version_key), files)
+    _document(nyssa, name, row, files)
+    build_guide(nyssa, name, row, files)
   } as error {
     _not_documented(name, version, error)
   }
@@ -1518,4 +1522,114 @@ def _not_documented(name: string, version: string, error) {
   io.stderr.write(
     'the API reference of ${name} ${version} could not be written: ${typeof(error)}: ${error.message}\n',
   )
+}
+
+/**
+ * Where the guide of version _version_ of the package called _name_ is
+ * built to, under the storage directory.
+ *
+ * @param nyssa
+ * @param string name
+ * @param string version
+ * @returns string
+ */
+def guide_dir(nyssa, name: string, version: string) {
+  return os.join_paths(
+    nyssa.settings.storage,
+    'guides',
+    names.normalized(name),
+    version,
+  )
+}
+
+/**
+ * The address of a version's guide on the guides host, or `nil` when the
+ * repository serves no guides.
+ *
+ * @param nyssa
+ * @param string name
+ * @param string version
+ * @returns ?string
+ */
+def guide_address(nyssa, name: string, version: string) {
+  var base = nyssa.settings.get('guides_url', nil)
+
+  return base == nil ? nil : '${base}/${name}/${version}/'
+}
+
+/**
+ * Builds the guide a version ships, the documentation `zuri doc` builds
+ * from its `docs` directory, when the repository serves guides. The
+ * guide is built from the version's own files and nothing else: what
+ * its `doc.toml` names and its pages include must be in the package,
+ * and its own page template is not used, since a template runs code.
+ * What became of it is recorded either way, and a guide that cannot be
+ * built is said so to whoever runs the repository.
+ *
+ * @param nyssa
+ * @param string name: the package's name.
+ * @param dict version: the version's row.
+ * @param dict files: the version's archive, read into memory.
+ */
+def build_guide(nyssa, name: string, version: dict, files: dict) {
+  if nyssa.settings.get('guides_url', nil) == nil {
+    return
+  }
+
+  if !files.contains('docs/doc.toml') {
+    nyssa.db.save_guide(version.id, nil, nil)
+    return
+  }
+
+  var scratch = os.join_paths(
+    nyssa.settings.storage,
+    'tmp',
+    'guide-' + fsx.unique(),
+  )
+
+  catch {
+    for path, contents in files {
+      fsx.atomic_write(os.join_paths(scratch, path), contents)
+    }
+
+    var settings = doc_config.load(os.join_paths(scratch, 'docs'))
+
+    doc_config.confine(settings, scratch)
+    settings.output = guide_dir(nyssa, name, version.version)
+    settings.url = guide_address(nyssa, name, version.version)
+    settings.cname = nil
+
+    # A guide built again replaces the one built before.
+    if os.dir_exists(settings.output) {
+      fsx.remove(settings.output)
+    }
+
+    doc_build.build(settings)
+    nyssa.db.save_guide(version.id, settings.title, nil)
+  } as error {
+    nyssa.db.save_guide(version.id, nil, error.message)
+    io.stderr.write(
+      'the guide of ${name} ${version.version} could not be built: ${error.message}\n',
+    )
+  }
+
+  fsx.remove(scratch)
+}
+
+/**
+ * Builds the guide of the newest version of every package that has
+ * nothing recorded of its guide, as when the repository has only just
+ * begun to serve guides. It runs in the background when the repository
+ * starts.
+ *
+ * @param nyssa
+ */
+def refresh_guides(nyssa) {
+  if nyssa.settings.get('guides_url', nil) == nil {
+    return
+  }
+
+  for version in nyssa.db.versions_needing_guides() {
+    build_guide(nyssa, version.package, version, files_of(nyssa, version))
+  }
 }

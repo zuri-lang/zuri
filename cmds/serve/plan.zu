@@ -36,6 +36,9 @@
  * url = "smtp://mail.example.com"
  * username = "nyssa"
  * from = "Example Packages <packages@example.com>"
+ *
+ * [guides]
+ * url = "https://guides.example-packages.com"
  * ```
  *
  * The database is SQLite in the storage directory unless `database`
@@ -47,6 +50,10 @@
  * `[mail] password`, never from a flag, where it would sit in the
  * shell history and the process list.
  *
+ * `[guides] url` is where the guides packages ship in `docs` are
+ * served, on a host that is not the repository's. Without it they are
+ * neither built nor served.
+ *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
@@ -54,6 +61,7 @@ import args
 import json
 import os
 import toml
+import url
 
 import .._shared.errors { UsageError }
 import .._shared.fsx
@@ -93,6 +101,7 @@ def defaults() {
     mail_username: nil,
     mail_password: nil,
     mail_from: nil,
+    guides_url: nil,
   }
 }
 
@@ -114,6 +123,7 @@ var _FILE_KEYS = {
   mail_username: ['mail', 'username'],
   mail_password: ['mail', 'password'],
   mail_from: ['mail', 'from'],
+  guides_url: ['guides', 'url'],
 }
 
 # The settings a flag can give, with their flag names.
@@ -131,6 +141,7 @@ var _FLAGS = {
   database: 'database',
   signup: 'signup',
   max_archive_size: 'max-archive-size',
+  guides_url: 'guides-url',
 }
 
 var _NUMBERS = ['port', 'workers', 'max_archive_size']
@@ -210,6 +221,11 @@ def parser() {
     'max-archive-size',
     'The largest archive accepted, in bytes',
     { type: args.INT, metavar: 'bytes' },
+  )
+  parser.add_option(
+    'guides-url',
+    "Where packages' own guides are served, on a host of its own",
+    { type: args.STRING, metavar: 'url' },
   )
 
   parser.add_command('migrate', 'Brings the database up to date and exits')
@@ -429,6 +445,38 @@ def check(chosen: dict) {
 
   chosen.set('public_url', public_url)
 
+  var guides_url = chosen.guides_url
+
+  if guides_url != nil and !guides_url.trim().is_empty() {
+    guides_url = guides_url.trim()
+
+    while guides_url.ends_with('/') {
+      guides_url = guides_url[0, guides_url.length() - 1]
+    }
+
+    if !guides_url.starts_with('http://') and
+        !guides_url.starts_with('https://') {
+      raise UsageError(
+        "the guides address must start with http:// or https://, not '${guides_url}'",
+      )
+    }
+
+    # A guide is a package's own HTML and scripts. Served from the
+    # repository's own host, it could read what the repository's pages
+    # hold; a cookie is shared by every port of a host, so a port of
+    # its own is not enough.
+    if host_of(guides_url) == host_of(public_url) {
+      raise UsageError(
+        'the guides address must be on a host of its own, not ${host_of(public_url)}, ' +
+            "so a package's guide cannot reach the repository's pages",
+      )
+    }
+
+    chosen.set('guides_url', guides_url)
+  } else {
+    chosen.set('guides_url', nil)
+  }
+
   if chosen.database == nil or chosen.database.trim().is_empty() {
     chosen.set(
       'database',
@@ -476,4 +524,14 @@ def decode() {
   }
 
   return json.decode(text)
+}
+
+/**
+ * The host of the address _address_, lower case, without its port.
+ *
+ * @param string address
+ * @returns string
+ */
+def host_of(address: string) {
+  return url.parse(address).host.lower()
 }

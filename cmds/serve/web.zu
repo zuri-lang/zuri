@@ -612,6 +612,7 @@ def routes(server, nyssa) {
         ? _api(nyssa, request, package.name, shown, base)
         : nil
     var docs = nyssa.db.docs_of(shown.id)
+    var guide = nyssa.db.guide_of(shown.id)
 
     _page(nyssa, request, response, 'package', {
       flush: true,
@@ -622,6 +623,9 @@ def routes(server, nyssa) {
       tab,
       base,
       api,
+      guide: guide == nil or guide.title == nil
+          ? nil
+          : service.guide_address(nyssa, package.name, shown.version),
       coverage: docs == nil or docs.names == 0
           ? nil
           : {
