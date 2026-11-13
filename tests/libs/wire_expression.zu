@@ -238,6 +238,11 @@ assert out('{{ v|slug }}', { v: 'Hello, World! 12' }) == 'hello-world-12',
     'slug'
 assert out('{{ v|strip_tags }}', { v: '<p title="a>b">x<b>y</b></p>' }) == 'xy',
     'strip_tags really parses rather than pattern-matching'
+assert out('{{ v|url_encode }}', { v: 'a/b c' }) == 'a/b+c',
+    'url_encode keeps reserved characters'
+assert out('{{ v|url_encode(false) }}', { v: 'rain & sun #2' }) ==
+    'rain+%26+sun+%232',
+    'url_encode(false) encodes them too, for one value in a query'
 ok('the text filters')
 
 assert out('{{ v|abs }}', { v: -3 }) == '3', 'abs'

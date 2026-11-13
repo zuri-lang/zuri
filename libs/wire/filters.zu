@@ -393,13 +393,18 @@ def slug(value) {
 }
 
 /**
- * The value percent encoded for use inside a URL.
+ * The value percent encoded for use inside a URL, as `url.encode()`
+ * encodes it. Reserved characters such as `/`, `&` and `#` are kept
+ * unless _reserved_ is `false`, which is what one value in a query
+ * needs: `/search?q={{ query|url_encode(false) }}`.
  *
  * @param any value
+ * @param ?bool reserved: Default `true`. Whether the reserved
+ *    characters are kept as they are.
  * @returns string
  */
-def url_encode(value) {
-  return _url.encode(stringify(unwrap(value)))
+def url_encode(value, reserved: ?bool) {
+  return _url.encode(stringify(unwrap(value)), false, reserved)
 }
 
 /**

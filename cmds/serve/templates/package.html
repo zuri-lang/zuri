@@ -11,7 +11,7 @@
           <li x-if="owners">by <a x-for="owners" x-value="owner" href="/publishers/{{ owner }}">{{ owner }}{{ loop.last ? '' : ', ' }}</a></li>
         </ul>
         <ul class="tags" x-if="package.keywords">
-          <li x-for="package.keywords" x-value="word"><a class="tag" href="/search?q={{ word|url_encode }}">{{ word }}</a></li>
+          <li x-for="package.keywords" x-value="word"><a class="tag" href="/search?q={{ word|url_encode(false) }}">{{ word }}</a></li>
         </ul>
         <nav class="tabs" aria-label="Package">
           <a href="{{ base }}" x-attr="{ 'aria-current': tab == 'readme' ? 'page' : nil }">Readme</a>

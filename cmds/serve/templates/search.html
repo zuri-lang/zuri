@@ -27,12 +27,12 @@
       <p class="empty" x-else>Nothing has been published yet.</p>
     </div>
     <nav class="pages" aria-label="Pages" x-if="pages|length > 1">
-      <a x-if="previous" href="/search?q={{ query|url_encode }}&amp;sort={{ sort }}&amp;page={{ previous }}">Previous</a>
+      <a x-if="previous" href="/search?q={{ query|url_encode(false) }}&amp;sort={{ sort }}&amp;page={{ previous }}">Previous</a>
       <template x-for="pages" x-value="p">
         <strong x-if="p.current">{{ p.number }}</strong>
-        <a x-else href="/search?q={{ query|url_encode }}&amp;sort={{ sort }}&amp;page={{ p.number }}">{{ p.number }}</a>
+        <a x-else href="/search?q={{ query|url_encode(false) }}&amp;sort={{ sort }}&amp;page={{ p.number }}">{{ p.number }}</a>
       </template>
-      <a x-if="next_page" href="/search?q={{ query|url_encode }}&amp;sort={{ sort }}&amp;page={{ next_page }}">Next</a>
+      <a x-if="next_page" href="/search?q={{ query|url_encode(false) }}&amp;sort={{ sort }}&amp;page={{ next_page }}">Next</a>
     </nav>
   </define>
 </extend>
