@@ -1,0 +1,258 @@
+/**
+ * `SUMMARY.md`: the documentation's table of contents, and the one place its
+ * structure is written down.
+ *
+ * ```markdown
+ * # Summary
+ *
+ * [Introduction](introduction.md)
+ *
+ * # Getting Started
+ *
+ * - [Installation](install.md)
+ *   - [On Windows](install/windows.md)
+ * - [A Draft]()
+ *
+ * ---
+ *
+ * [Appendix](appendix.md)
+ * ```
+ *
+ * - The first heading, when it comes first, is the summary's own title,
+ *   and is not shown. Every other level one heading starts a part, a
+ *   titled group of chapters.
+ * - A link in a list is a numbered chapter, and a list inside its item
+ *   holds its sections. Links outside any list are unnumbered chapters,
+ *   such as an introduction before the numbered ones or an appendix
+ *   after them.
+ * - A link with no destination is a draft: it is listed, but has no
+ *   page yet.
+ * - A thematic break draws a separator in the contents.
+ *
+ * One addition: a part heading or a chapter link given the class
+ * `unnumbered`, as in `# Appendices {.unnumbered}` or
+ * `- [Glossary](glossary.md){.unnumbered}`, leaves its chapters
+ * unnumbered without taking a number from those after it. Pandoc spells
+ * an unnumbered heading the same way.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import markdown
+import url
+
+import .._shared.errors { UsageError }
+
+/**
+ * One line of the contents: a chapter, a part's title, or a separator.
+ */
+class Entry {
+
+  /** `'chapter'`, `'part'` or `'separator'`. @type string */
+  var kind
+
+  /** The title as plain text. @type string */
+  var title = ''
+
+  /**
+   * The link the title came from, whose children hold its inline markup,
+   * or `nil`.
+   *
+   * @type ?Node
+   */
+  var node
+
+  /** The page's path as written, decoded, or `nil` for a draft. @type ?string */
+  var target
+
+  /** The line of `SUMMARY.md` it is on. @type number */
+  var line = 0
+
+  /** Whether it is a numbered chapter. @type bool */
+  var numbered = false
+
+  /** Whether `unnumbered` was asked for. @type bool */
+  var unnumbered = false
+
+  /** The chapters nested beneath it. @type list[Entry] */
+  var children = []
+
+  @new(kind: string, line: number) {
+    self.kind = kind
+    self.line = line
+    self.children = []
+  }
+
+  @to_string() {
+    return '<Entry ${self.kind} ${self.title}>'
+  }
+}
+
+# The markdown reader for a summary: CommonMark, plus the attributes
+# `unnumbered` is written with.
+var _reader = markdown({ preset: 'commonmark', attributes: true, html: true })
+
+def _has_class(node, name: string) {
+  var classes = node.attributes.get('class', '')
+
+  return is_string(classes) and classes.split(' ').contains(name)
+}
+
+def _fail(line: number, message: string) {
+  raise UsageError('SUMMARY.md:${line}: ${message}')
+}
+
+# A chapter from a link node on _line_.
+def _chapter(link, numbered: bool, line: number) {
+  var entry = Entry('chapter', line)
+
+  entry.title = link.text_content().trim()
+  entry.node = link
+  entry.numbered = numbered
+  entry.unnumbered = _has_class(link, 'unnumbered')
+
+  var destination = link.destination.trim()
+
+  entry.target = destination.is_empty() ? nil : url.decode(destination)
+
+  if entry.title.is_empty() {
+    _fail(line, 'a chapter needs a title')
+  }
+
+  return entry
+}
+
+# The chapters in a paragraph of links, one link to a line.
+def _links(paragraph) {
+  var found = []
+  var line = paragraph.line
+
+  for child in paragraph.children {
+    using child.type {
+      when 'link' {
+        found.append(_chapter(child, false, line))
+      }
+      when 'softbreak', 'linebreak' {
+        line++
+      }
+      when 'text' {
+        if !child.literal.trim().is_empty() {
+          _fail(
+            paragraph.line,
+            "'${child.literal.trim()}' is not a link; a chapter outside a list is written [Title](page.md)",
+          )
+        }
+      }
+      default {
+        _fail(
+          paragraph.line,
+          'a chapter outside a list is written [Title](page.md)',
+        )
+      }
+    }
+  }
+
+  return found
+}
+
+# The numbered chapters in a list, with the lists inside them.
+def _list(list_node, unnumbered: bool) {
+  var found = []
+
+  for item in list_node.children {
+    var first = item.first_child()
+    var link = nil
+
+    if first != nil and first.type == 'paragraph' {
+      for child in first.children {
+        if child.type == 'link' {
+          link = child
+          break
+        }
+
+        if child.type != 'text' or !child.literal.trim().is_empty() {
+          break
+        }
+      }
+    }
+
+    if link == nil {
+      _fail(
+        item.line,
+        'every item in a list is a chapter, written - [Title](page.md)',
+      )
+    }
+
+    var entry = _chapter(link, true, item.line)
+
+    if unnumbered {
+      entry.unnumbered = true
+    }
+
+    for child in item.children {
+      if child.type == 'list' {
+        entry.children.extend(_list(child, entry.unnumbered))
+      }
+    }
+
+    found.append(entry)
+  }
+
+  return found
+}
+
+/**
+ * The contents of _text_, a `SUMMARY.md`.
+ *
+ * @param string text
+ * @returns list[Entry]: the top level, in order, with each chapter's
+ *    sections in its `children`.
+ * @throws UsageError When a line is not something a summary can hold
+ */
+def parse(text: string) {
+  var doc = _reader.parse(text)
+  var entries = []
+  var unnumbered = false
+  var first = true
+
+  for block in doc.children {
+    using block.type {
+      when 'heading' {
+        if first and block.level == 1 {
+          first = false
+          continue
+        }
+
+        var part = Entry('part', block.line)
+
+        part.title = block.text_content().trim()
+        part.node = block
+        part.unnumbered = _has_class(block, 'unnumbered')
+        unnumbered = part.unnumbered
+        entries.append(part)
+      }
+      when 'paragraph' {
+        entries.extend(_links(block))
+      }
+      when 'list' {
+        entries.extend(_list(block, unnumbered))
+      }
+      when 'thematic_break' {
+        entries.append(Entry('separator', block.line))
+      }
+      when 'html_block' {
+        # A comment, left for whoever edits the file.
+      }
+      default {
+        _fail(
+          block.line,
+          'a summary holds headings, lists of links and separators',
+        )
+      }
+    }
+
+    first = false
+  }
+
+  return entries
+}

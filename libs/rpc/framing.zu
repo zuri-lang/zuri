@@ -149,7 +149,9 @@ class HeaderFraming {
 
         if blank < 0 {
           if self._buffer.length() > _MAX_HEADER {
-            raise RpcFramingError('a header block ran past ${_MAX_HEADER} bytes')
+            raise RpcFramingError(
+              'a header block ran past ${_MAX_HEADER} bytes',
+            )
           }
 
           break
@@ -193,7 +195,9 @@ class HeaderFraming {
 
       if name == 'content-length' {
         if !value.is_number() {
-          raise RpcFramingError("Content-Length is not a whole number: '${value}'")
+          raise RpcFramingError(
+            "Content-Length is not a whole number: '${value}'",
+          )
         }
 
         length = value.to_number()
@@ -207,7 +211,9 @@ class HeaderFraming {
     }
 
     if length > self._max_size {
-      raise RpcFramingError('a message of ${length} bytes is over the ${self._max_size}-byte limit')
+      raise RpcFramingError(
+        'a message of ${length} bytes is over the ${self._max_size}-byte limit',
+      )
     }
 
     return length
@@ -450,7 +456,9 @@ class MessageFraming {
   feed(data: bytes) {
     if data.length() > self._max_size {
       var size = data.length()
-      raise RpcFramingError('a message of ${size} bytes is over the ${self._max_size}-byte limit')
+      raise RpcFramingError(
+        'a message of ${size} bytes is over the ${self._max_size}-byte limit',
+      )
     }
 
     return data.is_empty() ? [] : [data]

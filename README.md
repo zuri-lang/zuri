@@ -43,7 +43,8 @@ powershell -c "irm https://zuri-lang.github.io/zuri/install.ps1 | iex"
 ```
 
 Releases cover Linux and macOS on x86-64 and ARM, and Windows on
-x86-64. `zuri upgrade` keeps an installation current, and
+x86-64. On Linux there is a build for glibc 2.28 or later and one for
+musl, as on Alpine. `zuri upgrade` keeps an installation current, and
 [Installation](docs/book/src/ch01-01-installation.md) covers choosing
 a version and building from source.
 

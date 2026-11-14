@@ -40,8 +40,8 @@ var _SPECIALS = '()<>[]:;@\\,."'
 
 # The characters an atom may contain, which is what decides whether a
 # local part or a display name can be written without quotes.
-var _ATEXT = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-  + "0123456789!#$%&'*+-/=?^_`{|}~"
+var _ATEXT = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' +
+    "0123456789!#$%&'*+-/=?^_`{|}~"
 
 /**
  * One address, with the display name that was written alongside it.
@@ -83,9 +83,9 @@ class Address {
       raise MessageError('an address needs a local part: ${spec}')
     }
 
-    self.address = self.domain == '' ?
-      _write_local(self.local) :
-      '${_write_local(self.local)}@${self.domain}'
+    self.address = self.domain == ''
+        ? _write_local(self.local)
+        : '${_write_local(self.local)}@${self.domain}'
   }
 
   /**
@@ -128,8 +128,8 @@ class Address {
       return false
     }
 
-    return self.local == other.local
-      and self.domain.lower() == other.domain.lower()
+    return self.local == other.local and
+        self.domain.lower() == other.domain.lower()
   }
 
   /**
@@ -409,8 +409,11 @@ def _parse_item(tokens: list, at: number) {
   while index < tokens.length() {
     var token = tokens[index]
 
-    if token.kind == 'special' and (token.value == '<' or token.value == ':'
-      or token.value == ',' or token.value == ';') {
+    if token.kind == 'special' and
+        (token.value == '<' or
+            token.value == ':' or
+            token.value == ',' or
+            token.value == ';') {
       break
     }
 
@@ -418,9 +421,9 @@ def _parse_item(tokens: list, at: number) {
     index++
   }
 
-  if index >= tokens.length()
-    or tokens[index].value == ','
-    or tokens[index].value == ';' {
+  if index >= tokens.length() or
+      tokens[index].value == ',' or
+      tokens[index].value == ';' {
     return { item: _build(_addr_spec_of(prefix), ''), end: index }
   }
 
@@ -450,8 +453,8 @@ def _parse_item(tokens: list, at: number) {
   index++
 
   while index < tokens.length() and tokens[index].value != ';' {
-    if tokens[index].kind == 'space'
-      or (tokens[index].kind == 'special' and tokens[index].value == ',') {
+    if tokens[index].kind == 'space' or
+        (tokens[index].kind == 'special' and tokens[index].value == ',') {
       index++
       continue
     }
@@ -495,8 +498,8 @@ def parse_groups(text: string) {
   while at < tokens.length() {
     var token = tokens[at]
 
-    if token.kind == 'space'
-      or (token.kind == 'special' and token.value == ',') {
+    if token.kind == 'space' or
+        (token.kind == 'special' and token.value == ',') {
       at++
       continue
     }

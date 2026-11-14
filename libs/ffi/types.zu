@@ -40,7 +40,9 @@ class Type {
   var _handle
 
   @new() {
-    raise FfiError('types come from the ffi module, never from the Type constructor')
+    raise FfiError(
+      'types come from the ffi module, never from the Type constructor',
+    )
   }
 
   /**

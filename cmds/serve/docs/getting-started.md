@@ -32,7 +32,10 @@ zuri install http-extra --registry {{url}}
 ## Finding one
 
 Search from the box at the top of every page, or from the command
-line:
+line. On the site, a single word is also looked for among the names
+every package documents, so `forecast` or `app.forecast` finds the
+function and the package it is in, and leads straight to where it is
+documented:
 
 ```sh
 zuri search json

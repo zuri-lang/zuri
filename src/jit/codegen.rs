@@ -317,23 +317,16 @@ const CALL_FRAME_SIZE: i64 = vm::CALL_FRAME_SIZE as i64;
 /// cell: see `object::obj_function_jit_entry_offset`'s own docs for
 /// why every direct call reads this fresh instead of baking it.
 const PROTO_JIT_ENTRY_OFFSET: i32 = object::obj_function_jit_entry_offset() as i32;
-/// Byte offsets (from a `*mut VM`) of `Heap::bytes_allocated`/`next_gc`
-/// (major) and `young_bytes_allocated` (minor); lets `emit_safepoint`
-/// inline both `Heap::needs_major_gc()`/`needs_minor_gc()` checks
-/// (three loads + two compares; the young threshold itself is a
-/// compile-time immediate, see `Heap::young_budget`) instead of an
-/// unconditional FFI call on every loop back-edge and call site, only
-/// actually calling into Rust on the rare branch where a collection
-/// (of either kind) is really about to happen.
+/// Byte offsets (from a `*mut VM`) of the `Heap` fields compiled code
+/// reads and writes: the flag `emit_safepoint` tests, so a safepoint only
+/// calls into Rust when a collection is owed, and the cursors and young
+/// count an inline allocation bumps.
 const HEAP_JIT_GC_NEEDED_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_JIT_GC_NEEDED_OFFSET) as i32;
 const HEAP_NURSERY_CUR_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_NURSERY_CUR_OFFSET) as i32;
 const HEAP_NURSERY_END_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_NURSERY_END_OFFSET) as i32;
 const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_BYTES_ALLOCATED_OFFSET) as i32;
-const HEAP_BYTES_ALLOCATED_OFFSET: i32 =
-  (vm::VM_HEAP_OFFSET + object::HEAP_BYTES_ALLOCATED_OFFSET) as i32;
-const HEAP_LIVE_COUNT_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_LIVE_COUNT_OFFSET) as i32;
 const HEAP_YOUNG_HEADER_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_HEADER_OFFSET) as i32;
 const HEAP_FINALIZE_CUR_OFFSET: i32 =
@@ -13311,16 +13304,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         .store(flags, next_acur, vm, HEAP_FIELD_ARENA_CUR_OFFSET);
     }
 
-    let live = self
-      .fb
-      .ins()
-      .load(types::I64, flags, vm, HEAP_LIVE_COUNT_OFFSET);
-    let next_live = self.fb.ins().iadd_imm_s(live, 1);
-    self
-      .fb
-      .ins()
-      .store(flags, next_live, vm, HEAP_LIVE_COUNT_OFFSET);
-
     let young = self
       .fb
       .ins()
@@ -13330,15 +13313,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .fb
       .ins()
       .store(flags, next_young, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
-    let total = self
-      .fb
-      .ins()
-      .load(types::I64, flags, vm, HEAP_BYTES_ALLOCATED_OFFSET);
-    let next_total = self.fb.ins().iadd_imm_s(total, accounted_bytes);
-    self
-      .fb
-      .ins()
-      .store(flags, next_total, vm, HEAP_BYTES_ALLOCATED_OFFSET);
 
     // Raise the GC flag once the young budget is spent. `icmp` already
     // yields an i8, the flag's own width.

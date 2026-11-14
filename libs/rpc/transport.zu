@@ -51,8 +51,7 @@ class StdioTransport {
   /**
    * Returns a new {StdioTransport}.
    */
-  @new() {
-  }
+  @new() {}
 
   /**
    * The next bytes on stdin, at most `max` of them, or empty bytes
@@ -475,6 +474,7 @@ def pipe() {
   var backward = isolate.channel()
 
   return [
-    ChannelTransport(backward, forward), ChannelTransport(forward, backward),
+    ChannelTransport(backward, forward),
+    ChannelTransport(forward, backward),
   ]
 }

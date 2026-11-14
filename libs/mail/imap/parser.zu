@@ -38,7 +38,12 @@ var STATUSES = ['OK', 'NO', 'BAD', 'PREAUTH', 'BYE']
 # The flags with a defined meaning, as opposed to the keywords a server
 # or a client invents.
 var SYSTEM_FLAGS = [
-  '\\Seen', '\\Answered', '\\Flagged', '\\Deleted', '\\Draft', '\\Recent',
+  '\\Seen',
+  '\\Answered',
+  '\\Flagged',
+  '\\Deleted',
+  '\\Draft',
+  '\\Recent',
 ]
 
 def _is_digit(value: number) {
@@ -49,9 +54,16 @@ def _is_digit(value: number) {
 # of these can be part of one. This is the strict rule, the one a value
 # has to meet to be written without quotes.
 def _ends_atom(value: number) {
-  return value == 0x20 or value == 0x28 or value == 0x29 or value == 0x7b
-    or value == 0x22 or value == 0x5b or value == 0x5d or value < 0x20
-    or value == 0x25 or value == 0x2a
+  return value == 0x20 or
+      value == 0x28 or
+      value == 0x29 or
+      value == 0x7b or
+      value == 0x22 or
+      value == 0x5b or
+      value == 0x5d or
+      value < 0x20 or
+      value == 0x25 or
+      value == 0x2a
 }
 
 # The characters that end a bare value being read. A star and a percent
@@ -60,8 +72,14 @@ def _ends_atom(value: number) {
 # PERMANENTFLAGS list. Reading them as part of the value takes all of
 # those in.
 def _ends_token(value: number) {
-  return value == 0x20 or value == 0x28 or value == 0x29 or value == 0x7b
-    or value == 0x22 or value == 0x5b or value == 0x5d or value < 0x20
+  return value == 0x20 or
+      value == 0x28 or
+      value == 0x29 or
+      value == 0x7b or
+      value == 0x22 or
+      value == 0x5b or
+      value == 0x5d or
+      value < 0x20
 }
 
 /**
@@ -182,7 +200,9 @@ def _read_literal(state) {
   var count = inside.to_number()
 
   if state.source == nil {
-    raise ProtocolError('a literal cannot be read without the connection it came from')
+    raise ProtocolError(
+      'a literal cannot be read without the connection it came from',
+    )
   }
 
   # A sender that waited is waiting now. Only a reader that can grant
@@ -202,13 +222,15 @@ def _read_literal(state) {
 def _read_atom(state) {
   var start = state.at
 
-  while state.at < state.text.length()
-    and !_ends_token(state.text[state.at].ord()) {
+  while state.at < state.text.length() and
+      !_ends_token(state.text[state.at].ord()) {
     state.at++
   }
 
   if state.at == start {
-    raise ProtocolError('expected something at position ${start} of ${state.text}')
+    raise ProtocolError(
+      'expected something at position ${start} of ${state.text}',
+    )
   }
 
   # A fetch item names its section in brackets right after the item
@@ -445,9 +467,9 @@ class Response {
     }
 
     if is_number(self.tokens[0]) {
-      return self.tokens.length() > 1 and is_string(self.tokens[1]) ?
-        self.tokens[1].upper() :
-        nil
+      return self.tokens.length() > 1 and is_string(self.tokens[1])
+          ? self.tokens[1].upper()
+          : nil
     }
 
     return is_string(self.tokens[0]) ? self.tokens[0].upper() : nil
@@ -480,8 +502,8 @@ class Response {
     var from = is_number(self.tokens[0]) ? 2 : 1
 
     return from >= self.tokens.length()
-      ? []
-      : self.tokens[from, self.tokens.length()]
+        ? []
+        : self.tokens[from, self.tokens.length()]
   }
 
   to_string() {
@@ -519,8 +541,14 @@ def _flatten(values: list) {
 # of their own, all of it values. Every other code is an atom, and then,
 # when it says more, any text but a closing bracket.
 var _VALUED_CODES = [
-  'APPENDUID', 'BADCHARSET', 'CAPABILITY', 'COPYUID', 'PERMANENTFLAGS',
-  'UIDNEXT', 'UIDVALIDITY', 'UNSEEN',
+  'APPENDUID',
+  'BADCHARSET',
+  'CAPABILITY',
+  'COPYUID',
+  'PERMANENTFLAGS',
+  'UIDNEXT',
+  'UIDVALIDITY',
+  'UNSEEN',
 ]
 
 # The code in brackets at the start of `remainder`, and what follows it.
@@ -666,10 +694,10 @@ def quote(value: string) {
   var needs_quotes = value == ''
 
   for byte_value in value.to_bytes() {
-    if byte_value == 0x0d
-      or byte_value == 0x0a
-      or byte_value > 0x7f
-      or byte_value == 0 {
+    if byte_value == 0x0d or
+        byte_value == 0x0a or
+        byte_value > 0x7f or
+        byte_value == 0 {
       needs_literal = true
       break
     }

@@ -81,9 +81,24 @@ var NODE_DOCUMENT_FRAGMENT = 11
  * take no end tag and still turn up in real documents.
  */
 var VOID_ELEMENTS = [
-  'area', 'base', 'basefont', 'bgsound', 'br', 'col', 'embed',
-  'frame', 'hr', 'img', 'input', 'keygen', 'link', 'meta', 'param',
-  'source', 'track', 'wbr',
+  'area',
+  'base',
+  'basefont',
+  'bgsound',
+  'br',
+  'col',
+  'embed',
+  'frame',
+  'hr',
+  'img',
+  'input',
+  'keygen',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
 ]
 
 /**
@@ -101,7 +116,12 @@ var VOID_ELEMENTS = [
  * text inside a `<noscript>` serialize into live markup.
  */
 var RAW_TEXT_ELEMENTS = [
-  'style', 'script', 'xmp', 'iframe', 'noembed', 'noframes',
+  'style',
+  'script',
+  'xmp',
+  'iframe',
+  'noembed',
+  'noframes',
   'plaintext',
 ]
 
@@ -508,9 +528,7 @@ class Node {
     var at = reference.index_in_parent()
 
     if at < 0 or id(reference.parent_node) != id(self) {
-      raise HierarchyError(
-        'the reference node is not a child of this node',
-      )
+      raise HierarchyError('the reference node is not a child of this node')
     }
 
     self.children.insert(node, at)
@@ -552,7 +570,9 @@ class Node {
    */
   replace_child(replacement: Node, existing: Node) {
     if id(existing.parent_node) != id(self) {
-      raise HierarchyError('the node being replaced is not a child of this node')
+      raise HierarchyError(
+        'the node being replaced is not a child of this node',
+      )
     }
 
     self._check_insertable(replacement)
@@ -1029,9 +1049,10 @@ class Text < Node {
     # Inside a script or a stylesheet the text *is* the markup, so
     # escaping it would corrupt it. Everywhere else it has to be
     # escaped or the document cannot be read back.
-    if host != nil and host.is_element() and
-      host.namespace == HTML_NAMESPACE and
-      RAW_TEXT_ELEMENTS.contains(host.tag_name) {
+    if host != nil and
+        host.is_element() and
+        host.namespace == HTML_NAMESPACE and
+        RAW_TEXT_ELEMENTS.contains(host.tag_name) {
       out.append(self.data)
       return
     }
@@ -1340,8 +1361,9 @@ class Document < Node {
     }
 
     for child in root.children {
-      if child.is_element() and child.tag_name == tag_name and
-        child.namespace == HTML_NAMESPACE {
+      if child.is_element() and
+          child.tag_name == tag_name and
+          child.namespace == HTML_NAMESPACE {
         return child
       }
     }

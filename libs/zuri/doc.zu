@@ -65,9 +65,27 @@ var _TAG_ALIASES = {
 # go, as in `@param ...number values`. Recognising them is what stops
 # a type being read as if it were the argument's name.
 var _TYPE_WORDS = [
-  'any', 'number', 'int', 'float', 'string', 'list', 'dict', 'bool',
-  'boolean', 'bytes', 'file', 'function', 'callable', 'range',
-  'bigint', 'instance', 'class', 'module', 'iterable', 'void', 'nil',
+  'any',
+  'number',
+  'int',
+  'float',
+  'string',
+  'list',
+  'dict',
+  'bool',
+  'boolean',
+  'bytes',
+  'file',
+  'function',
+  'callable',
+  'range',
+  'bigint',
+  'instance',
+  'class',
+  'module',
+  'iterable',
+  'void',
+  'nil',
   'pointer',
 ]
 
@@ -327,9 +345,9 @@ def _take_type(text: string) {
   # through its module, `http.Request`. So is a list of them written
   # `[Point]`.
   var is_class = !!root.match('/^([a-z_][a-z0-9_]*\.)*[A-Z][A-Za-z0-9_]*$/')
-  var is_list_of = bare.starts_with('[')
-    and bare.ends_with(']')
-    and bare.length() > 2
+  var is_list_of = bare.starts_with('[') and
+      bare.ends_with(']') and
+      bare.length() > 2
 
   if _TYPE_WORDS.contains(root.lower()) or is_class or is_list_of {
     return {

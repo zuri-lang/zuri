@@ -86,15 +86,21 @@ $ zuri publish --dry-run
 Would publish weather 0.1.0
 
   53 B   .gitattributes
-  217 B  .gitignore
-  461 B  README.md
+  250 B  .gitignore
+  472 B  README.md
   541 B  app/index.zu
-  376 B  index.zu
-  206 B  project.toml
+  387 B  index.zu
+  177 B  project.toml
 
 6 files, 1.8 KiB unpacked, 1.6 KiB packed
-sha256:0a6b340e81682bde7e4364e2209333ba32c1f3852ff10558bf513550e2758b30
+sha256:f617dec6d820dd15409fdfa4954d53d6e2809b969a5ab23c997b7476456b7e19
+Documented: 2 of 2 public names (100%)
 ```
+
+The last line counts the public names in the package's modules that
+have a doc block, the way the registry counts them for the version's
+page, and names the first few that have none. Publishing says the same
+before it sends anything.
 
 The archive is built the same way every time: sorted entries, fixed
 times and owners, normalised permissions. The same files always make
@@ -118,6 +124,25 @@ reported as already published; publishing different files under a
 version that exists is refused. To fix a version, publish the next one.
 
 The first account to publish a name owns it.
+
+Every version's page on the registry has an API tab beside its README.
+It is the package's API reference, written from the doc blocks in the
+published files the way `zuri doc generate` writes one, with a page for
+each public module ([Chapter 30](ch30-00-documentation.md#generating-an-api-reference)).
+Nothing has to be built or uploaded for it: the registry reads the code
+and never runs it. Each name links to the line that declares it, on the
+Source tab, where every file of the version can be read, and a search
+on the registry's site for a name finds it in the newest version of
+each package. A name in braces the package does not document itself,
+such as `{http.Request}`, links to the standard library's reference,
+which the registry serves for the Zuri it runs on, or to the API of a
+package it depends on from the same registry.
+
+Documentation in `docs`, built with `zuri doc`, is the package's guide.
+A registry that serves guides builds it when the version is published
+and links it from the version's page, from the package's own files
+alone: whatever its `doc.toml` names and its pages include has to be in
+the package ([Packages' Guides](ch27-06-nyssa.md#packages-guides)).
 
 ## Yanking
 

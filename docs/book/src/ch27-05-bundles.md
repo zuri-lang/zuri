@@ -53,9 +53,14 @@ names an unpacked runtime to use instead. The platforms are:
 
 - `x86_64-unknown-linux-gnu`
 - `aarch64-unknown-linux-gnu`
+- `x86_64-unknown-linux-musl`
+- `aarch64-unknown-linux-musl`
 - `x86_64-apple-darwin`
 - `aarch64-apple-darwin`
 - `x86_64-pc-windows-msvc`
+
+A bundle runs wherever its runtime does: a GNU one on glibc 2.28 or
+later, and a musl one on any musl system, a bare Alpine included.
 
 A single-file bundle for macOS is built on any machine. Its payload
 goes inside the executable's image rather than after it, and the result

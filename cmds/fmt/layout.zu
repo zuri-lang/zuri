@@ -4,12 +4,17 @@
  * Builds the layout document for a parsed program: what each statement,
  * declaration and expression prints as, and every place it may break.
  *
- * The line breaks the author wrote are the layout. Wherever the document
- * offers a break and the source already had one, the break is kept, and
- * a list, chain or condition the author spread out keeps its lines and
- * breaks elsewhere only where the width needs it. One written on a
- * single line is the formatter's to break, and only when it does not
- * fit. Breaks are only ever offered where the parser accepts one.
+ * The rules follow the Dart formatter's. A list of arguments, items or
+ * parameters stays on one line when it fits; otherwise it opens out one
+ * item to a line with a trailing comma, unless a single function or
+ * collection among the arguments can open out on its own while the rest
+ * stay on the line. An operator chain breaks after every operator of
+ * one precedence, a conditional before its `?` and `:`, a method chain
+ * before every call, and each continued line sits two levels past the
+ * one it continues. The layout depends only on the code: where the
+ * source broke its lines does not matter, apart from the blank lines
+ * kept between statements and between items, and the rows of a
+ * collection holding a `#` comment.
  *
  * The document is built in source order, which is what lets every
  * comment be placed where it was written: each piece of code takes the
@@ -30,9 +35,23 @@ var _DECLARING = ['Var', 'VarList', 'Decl', 'Function']
 
 # Node kinds that are written exactly as the source has them.
 var _LEAVES = [
-  'Nil', 'Bool', 'Integer', 'Float', 'BigNumber', 'Literal', 'Interpolation',
-  'Identifier', 'Self', 'Parent',
+  'Nil',
+  'Bool',
+  'Integer',
+  'Float',
+  'BigNumber',
+  'Literal',
+  'Interpolation',
+  'Identifier',
+  'Self',
+  'Parent',
 ]
+
+# The kinds of number literal.
+var _NUMBERS = ['Integer', 'Float', 'BigNumber']
+
+# The links of a chain of calls and reads on one value.
+var _LINKS = ['Call', 'Get', 'Index', 'Slice']
 
 # The two quotes a string, or a dictionary key written as one, opens with.
 var _QUOTES = ['\'', '"']
@@ -50,25 +69,74 @@ def _implicit(node) {
   return node.start == node.end
 }
 
-# Whether a lone item hugs the brackets around it, `f(g(` or `f([`,
-# rather than taking a line of its own when it does not fit: an item
-# that opens brackets of its own, which is where it breaks instead, or
-# one that cannot break at all and would be no shorter on its own line.
-def _hugs(node) {
-  if _LEAVES.contains(node.kind) {
+# Whether `node` is a number literal, signed or not.
+def _number(node) {
+  if node.kind == 'Unary' and node.fields.op == 'Minus' {
+    return _NUMBERS.contains(node.fields.operand.kind)
+  }
+
+  return _NUMBERS.contains(node.kind)
+}
+
+# Whether `node` is a list or dictionary literal with something in it.
+def _collection(node) {
+  using node.kind {
+    when 'List' return !node.fields.items.is_empty()
+    when 'Dict' return !node.fields.keys.is_empty()
+  }
+
+  return false
+}
+
+# Whether `node` holds a list or dictionary with something in it,
+# anywhere inside it, however deep and whatever lies in between.
+def _holds_collection(node) {
+  if is_list(node) {
+    return node.some(_holds_collection)
+  }
+
+  if !is_instance(node) {
+    return false
+  }
+
+  if _collection(node) {
     return true
   }
 
-  using node.kind {
-    when 'Call', 'List', 'Dict', 'Grouping', 'Index', 'Slice', 'Get' {
+  for name in node.fields.keys() {
+    if _holds_collection(node.fields[name]) {
       return true
-    }
-    when 'Anonymous' {
-      return node.fields.declaration.fields.body.kind == 'Block'
     }
   }
 
   return false
+}
+
+# Whether `node` is a call or a collection holding exactly one argument
+# or item.
+def _single(node) {
+  using node.kind {
+    when 'Call' return node.fields.arguments.length() == 1
+    when 'List' return node.fields.items.length() == 1
+    when 'Dict' return node.fields.keys.length() == 1
+  }
+
+  return false
+}
+
+# Whether `node` is a collection or a call with something in its
+# brackets, which can open out like a block.
+def _opens_out(node) {
+  if node.kind == 'Call' {
+    return !node.fields.arguments.is_empty()
+  }
+
+  return _collection(node)
+}
+
+# Whether `name` reads as a class name, starting with a capital letter.
+def _capitalized(name: string) {
+  return name != '' and name[0].is_upper()
 }
 
 # How tightly an operator binds, loosest first. Operators of one level
@@ -118,6 +186,43 @@ def _operands(node) {
   return backwards.reverse()
 }
 
+# One call or property read in a chain: the comments before its `.`,
+# its `.name`, the arguments when it is a call, and the subscripts and
+# calls that follow it before the next `.`. `kind` is `property`,
+# `empty` for a call with no arguments, `call` for one with some, or
+# `block` for one whose arguments include a function or collection that
+# opens out on its own.
+class _Link {
+  var lead = nil
+  var name = nil
+  var arguments = nil
+  var after = nil
+  var kind = 'property'
+
+  @new(lead, name) {
+    self.lead = lead
+    self.name = name
+    self.after = []
+  }
+
+  # Whether its arguments can break.
+  splits() {
+    return self.kind == 'call' or self.kind == 'block'
+  }
+
+  # The link as it prints after its comments, with its arguments
+  # deciding their own breaks when `free_arguments`.
+  doc(free_arguments: bool) {
+    if self.arguments == nil {
+      return [self.name, self.after]
+    }
+
+    var arguments = free_arguments ? free(self.arguments) : self.arguments
+
+    return [self.name, arguments, self.after]
+  }
+}
+
 /**
  * Builds layout documents for one source.
  */
@@ -156,15 +261,12 @@ class Layout {
     return token.text
   }
 
-  # A gap where the layout may break. Its comments stay where they were,
-  # one sharing the line with the code before it at the end of that
-  # line, and a gap the source broke breaks, with a blank line kept.
-  # `otherwise` is what the gap is when the source wrote none of that.
-  _break(gap, otherwise) {
-    if gap.comments.is_empty() and !gap.is_broken() {
-      return otherwise
-    }
-
+  # The comments of a gap, each where it was written: one sharing the
+  # line with the code before it at the end of that line, and one the
+  # source gave a line of its own on a line of its own. Gives
+  # `[doc, ends]`, where `ends` is whether the last comment ends its
+  # line, as a `#` comment always does.
+  _comments(gap) {
     var out = []
 
     for entry in gap.comments {
@@ -176,15 +278,30 @@ class Layout {
       }
     }
 
-    if !gap.is_broken() {
-      out.append(otherwise)
-
-      return out
+    if gap.comments.is_empty() {
+      return [out, false]
     }
 
-    out.append(gap.after >= 2 ? BLANKLINE : HARDLINE)
+    var last = gap.comments.last().token
 
-    return out
+    return [out, last.kind == 'Comment' or gap.after > 0]
+  }
+
+  # A gap where the layout may break: its comments, then `otherwise`,
+  # or a line break when the last comment ends its line, with a blank
+  # line after it kept.
+  _break(gap, otherwise) {
+    if gap.comments.is_empty() {
+      return otherwise
+    }
+
+    var placed = self._comments(gap)
+
+    if !placed[1] {
+      return [placed[0], otherwise]
+    }
+
+    return [placed[0], gap.after >= 2 ? BLANKLINE : HARDLINE]
   }
 
   # A gap the layout writes no break into. A comment the author left in
@@ -194,21 +311,9 @@ class Layout {
       return ''
     }
 
-    var out = []
+    var placed = self._comments(gap)
 
-    for entry in gap.comments {
-      if entry.before == 0 {
-        out.append([' ', self._comment(entry.token, false)])
-      } else {
-        out.append([HARDLINE, self._comment(entry.token, true)])
-      }
-    }
-
-    var last = gap.comments.last().token
-
-    out.append(last.kind == 'Comment' or gap.after > 0 ? HARDLINE : ' ')
-
-    return out
+    return [placed[0], placed[1] ? HARDLINE : ' ']
   }
 
   # Places the comments written before `offset`.
@@ -323,7 +428,7 @@ class Layout {
   }
 
   # Whether `node` is a declaration laid out across several lines: a
-  # function, method or class with a body that opens.
+  # function, method or class with something in its body.
   _opens(node) {
     var target = node.kind == 'Decl' ? node.fields.declaration : node
 
@@ -331,17 +436,15 @@ class Layout {
       when 'Function', 'Method' {
         var body = target.fields.body
 
-        return !_code(body.fields.statements).is_empty()
-          or !self.src.quiet(body.start + 1, body.end - 1)
-          or self.src.breaks(body.start + 1, body.end - 1)
+        return !_code(body.fields.statements).is_empty() or
+            !self.src.quiet(body.start + 1, body.end - 1)
       }
       when 'Class' {
         var f = target.fields
         var open = self.src.next(self._class_head_end(target))
 
-        return !_code(f.properties + f.methods).is_empty()
-          or !self.src.quiet(open.end, target.end - 1)
-          or self.src.breaks(open.end, target.end - 1)
+        return !_code(f.properties + f.methods).is_empty() or
+            !self.src.quiet(open.end, target.end - 1)
       }
     }
 
@@ -386,8 +489,14 @@ class Layout {
 
   # Blocks and bodies
 
+  # The braces around a body and the lines inside them, a group that is
+  # always broken so the body opens out wherever it is.
+  _opened(body) {
+    return broken_group(['{', nest(body), HARDLINE, '}'])
+  }
+
   # A `{ }` block. One with statements always opens, one statement to a
-  # line; an empty one stays as it was written, closed up or open.
+  # line; an empty one closes up to `{}`.
   _block(block) {
     var lead = self._flush(block.start)
     var close = block.end - 1
@@ -396,18 +505,16 @@ class Layout {
     self.src.skip(block.start + 1)
 
     if items.is_empty() and self.src.quiet(block.start + 1, close) {
-      var open = self.src.breaks(block.start + 1, close)
-
       self.src.skip(block.end)
 
-      return [lead, open ? ['{', HARDLINE, '}'] : '{}']
+      return [lead, '{}']
     }
 
     var body = self._sequence(items, close, false)
 
     self.src.skip(block.end)
 
-    return [lead, '{', nest(body), HARDLINE, '}']
+    return [lead, self._opened(body)]
   }
 
   # A single statement braced into a block of its own: the body of an
@@ -416,9 +523,9 @@ class Layout {
   _braced(statement) {
     var lead = self._lead(self.src.take(statement.start), nil, statement, false)
     var item = self._item(statement)
-    var trailing = self._break(self.src.take_trailing(statement.end), '')
+    var trailing = self._comments(self.src.take_trailing(statement.end))[0]
 
-    return ['{', nest([lead, item, trailing]), HARDLINE, '}']
+    return self._opened([lead, item, trailing])
   }
 
   # The body of an `if`, `else`, loop or arm, after its header. A block
@@ -434,7 +541,13 @@ class Layout {
       var gap = self.src.take(body.start)
 
       if gap.is_broken() {
-        return nest([self._break(gap, ''), self._item(body)])
+        var placed = self._comments(gap)
+
+        return nest([
+          placed[0],
+          gap.after >= 2 ? BLANKLINE : HARDLINE,
+          self._item(body),
+        ])
       }
 
       return [self._loose(gap), ' ', self._item(body)]
@@ -597,10 +710,8 @@ class Layout {
     }
 
     if arms.is_empty() and self.src.quiet(open.end, close) {
-      var spread = self.src.breaks(open.end, close)
-
       self.src.skip(node.end)
-      out.append(spread ? ['{', HARDLINE, '}'] : '{}')
+      out.append('{}')
 
       return out
     }
@@ -608,7 +719,7 @@ class Layout {
     var body = self._sequence(arms, close, false)
 
     self.src.skip(node.end)
-    out.append(['{', nest(body), HARDLINE, '}'])
+    out.append(self._opened(body))
 
     return out
   }
@@ -634,7 +745,7 @@ class Layout {
       index += 1
     }
 
-    return ['when ', group(indent(labels)), self._arm(f.body)]
+    return ['when ', group(continued(labels)), self._arm(f.body)]
   }
 
   _default(arm) {
@@ -655,13 +766,16 @@ class Layout {
 
     if !gap.comments.is_empty() {
       return [
-        ' {', nest([self._break(gap, HARDLINE), self._item(body)]), HARDLINE,
-        '}',
+        ' ',
+        self._opened([self._break(gap, HARDLINE), self._item(body)]),
       ]
     }
 
     var statement = self._item(body)
-    var braced = [' {', nest([HARDLINE, statement]), HARDLINE, '}']
+    var braced = [
+      ' ',
+      self._opened([HARDLINE, statement]),
+    ]
 
     return choose(_ARM_WIDTH, [' ', statement], braced)
   }
@@ -718,7 +832,12 @@ class Layout {
 
     return [
       'assert ',
-      group(indent([condition, before, ',', self._break(gap, LINE), message])),
+      group([
+        condition,
+        before,
+        ',',
+        continued([self._break(gap, LINE), message]),
+      ]),
     ]
   }
 
@@ -750,7 +869,7 @@ class Layout {
     return out
   }
 
-  # `var a = 1, b = 2`, broken after a comma where the author broke it.
+  # `var a = 1, b = 2`, broken after a comma when it does not fit.
   _var_list(node, spelled: bool) {
     var declarations = node.fields.declarations
     var first = declarations[0]
@@ -772,7 +891,7 @@ class Layout {
 
     var word = spelled ? (first.fields.is_constant ? 'const ' : 'var ') : ''
 
-    return [word, group(indent(parts))]
+    return [word, group(continued(parts))]
   }
 
   _import(node) {
@@ -808,7 +927,10 @@ class Layout {
         var close = self.src.next(star.end)
 
         out.append([
-          self._flush(open.start), '{ ', self._flush(star.start), '* ',
+          self._flush(open.start),
+          '{ ',
+          self._flush(star.start),
+          '* ',
         ])
         self.src.skip(star.end)
         out.append([self._flush(close.start), '}'])
@@ -819,9 +941,19 @@ class Layout {
 
       var close = self._closer(open, f.elements)
 
-      out.append(self._bracket(
-        '{', '}', open.start, close.start, f.elements, true, true, 'expr',
-      ))
+      out.append(
+        self._bracket(
+          '{',
+          '}',
+          open.start,
+          close.start,
+          f.elements,
+          true,
+          true,
+          'expr',
+          'plain',
+        ),
+      )
 
       return out
     }
@@ -844,9 +976,13 @@ class Layout {
     var out = ['def ', self._flush(f.name_span.start), f.name]
 
     self.src.skip(f.name_span.end)
-    out.append(self._parameters(
-      self.src.next(f.name_span.end), f.parameters, f.is_variadic,
-    ))
+    out.append(
+      self._parameters(
+        self.src.next(f.name_span.end),
+        f.parameters,
+        f.is_variadic,
+      ),
+    )
     out.append([' ', self._block(f.body)])
 
     return out
@@ -862,9 +998,13 @@ class Layout {
 
     out.append([self._flush(f.name_span.start), f.name])
     self.src.skip(f.name_span.end)
-    out.append(self._parameters(
-      self.src.next(f.name_span.end), f.parameters, f.is_variadic,
-    ))
+    out.append(
+      self._parameters(
+        self.src.next(f.name_span.end),
+        f.parameters,
+        f.is_variadic,
+      ),
+    )
     out.append([' ', self._block(f.body)])
 
     return out
@@ -921,18 +1061,15 @@ class Layout {
 
     var open = self.src.next(self._class_head_end(node))
     var close = node.end - 1
-    var members = _code(f.properties + f.methods).sort(
-      @(a, b) => a.start - b.start,
-    )
+    var members = _code(f.properties + f.methods)
+        .sort(@(a, b) => a.start - b.start)
 
     out.append([' ', self._flush(open.start)])
     self.src.skip(open.end)
 
     if members.is_empty() and self.src.quiet(open.end, close) {
-      var spread = self.src.breaks(open.end, close)
-
       self.src.skip(node.end)
-      out.append(spread ? ['{', HARDLINE, '}'] : '{}')
+      out.append('{}')
 
       return out
     }
@@ -940,7 +1077,7 @@ class Layout {
     var body = self._sequence(members, close, false)
 
     self.src.skip(node.end)
-    out.append(['{', nest(body), HARDLINE, '}'])
+    out.append(self._opened(body))
 
     return out
   }
@@ -966,8 +1103,15 @@ class Layout {
     var close = self._closer(open, parameters)
 
     return self._bracket(
-      '(', ')', open.start, close.start, parameters, false, !variadic,
+      '(',
+      ')',
+      open.start,
+      close.start,
+      parameters,
+      false,
+      !variadic,
       'parameter',
+      'plain',
     )
   }
 
@@ -1005,22 +1149,33 @@ class Layout {
   # Lists
 
   # A bracketed list of items separated by commas: arguments, parameters,
-  # a list or dictionary literal, an import's names.
+  # a list or dictionary literal, an import's names. `role` is
+  # `arguments` for a call's arguments, `collection` for a list or
+  # dictionary literal and `plain` for the rest.
   #
-  # A list the author wrote on one line is the formatter's: kept flat
-  # when it fits, otherwise opened out with as many items to a line as
-  # fit and a trailing comma. One the author broke keeps its lines while
-  # they fit, the opener's and closer's breaks included; once a line of
-  # several items runs past the width, the items are laid out again as
-  # many to a line as fit. A lone item that opens brackets of its own
-  # hugs these, so it breaks inside rather than moving to a line of its
-  # own.
+  # It stays on one line when it fits, and otherwise opens out one item
+  # to a line with a trailing comma. A list or dictionary literal holding
+  # another one with something in it, at any depth and through any call,
+  # always opens out. Among a call's arguments, a single
+  # function with a body, or failing that a single collection, followed
+  # by at most one more argument, may instead open out on its own with
+  # the other arguments kept on the line: `each(items, @{`. A blank line
+  # between two items is kept once the list opens out.
   #
-  # A dictionary made up mostly of `key: value` pairs takes one pair to
-  # a line instead, whenever it does not stay on one line.
+  # A list of numbers, with or without `nil` among them, fills its lines,
+  # as many to a line as fit, and a collection holding a `#` comment
+  # between its items keeps the source's rows, each laid out like a list
+  # of its own.
   _bracket(
-    open: string, close: string, open_at: number, close_at: number,
-    items: list, spaced: bool, trailing: bool, kind: string,
+    open: string,
+    close: string,
+    open_at: number,
+    close_at: number,
+    items: list,
+    spaced: bool,
+    trailing: bool,
+    kind: string,
+    role: string,
   ) {
     var lead = self._flush(open_at)
     var count = items.length()
@@ -1036,54 +1191,46 @@ class Layout {
         return [lead, open, close]
       }
 
+      var placed = self._comments(inside)
+
       return [
-        lead, base([open, nest(self._break(inside, '')), HARDLINE, close]),
+        lead,
+        broken_group([open, nest(placed[0]), HARDLINE, close]),
       ]
     }
 
-    var after_open = self.src.breaks(open_at + 1, items[0].start)
-    var before_close = self.src.breaks(items.last().end, close_at)
-    var authored = after_open or before_close
+    var gaps = []
+    var docs = []
+    var quiet = true
     var index = 0
-
-    while !authored and index < count - 1 {
-      authored = self.src.breaks(items[index].end, items[index + 1].start)
-      index += 1
-    }
-
-    var paired = kind == 'entry' and self._pairs(items) * 2 > count
-    var space = spaced ? ' ' : ''
-    var opening = nil
-    var parts = []
-
-    index = 0
 
     for item in items {
       var gap = self.src.take(item.start)
 
-      if index == 0 {
-        opening = gap
-      } else {
-        parts.append(self._separator(gap))
-      }
+      gaps.append(gap)
+      quiet = quiet and gap.comments.is_empty()
 
       var item_doc = self._element(kind, item)
 
       if index < count - 1 {
         var comma = self.src.next(item.end)
-        var before = self._loose(self.src.take(comma.start))
+        var before = self.src.take(comma.start)
 
+        quiet = quiet and before.comments.is_empty()
         self.src.skip(comma.end)
-        parts.append([item_doc, before, ','])
+        docs.append([item_doc, self._loose(before), ','])
       } else {
         var after = self.src.next(item.end)
 
         if after.kind == 'Comma' and after.start < close_at {
-          item_doc = [item_doc, self._loose(self.src.take(after.start))]
+          var before = self.src.take(after.start)
+
+          quiet = quiet and before.comments.is_empty()
+          item_doc = [item_doc, self._loose(before)]
           self.src.skip(after.end)
         }
 
-        parts.append(item_doc)
+        docs.append(item_doc)
       }
 
       index += 1
@@ -1091,96 +1238,229 @@ class Layout {
 
     var closing = self.src.take(close_at)
 
+    quiet = quiet and closing.comments.is_empty()
     self.src.skip(close_at + 1)
 
-    if paired {
-      return [
-        lead, self._paired(open, close, opening, parts, closing, authored),
-      ]
-    }
+    var soft = spaced ? LINE : SOFTLINE
+    var placed = self._comments(closing)
+    var comma = trailing ? if_break(',', '') : ''
+    var end = [nest(placed[0]), placed[1] ? HARDLINE : soft, close]
 
-    if !authored {
-      var opener = self._break(opening, '')
-      var closer = self._break(closing, '')
-
-      if count == 1 and kind != 'entry' and _hugs(items[0]) {
-        return [lead, open, opener, space, parts[0], closer, space, close]
-      }
-
-      var soft = spaced ? LINE : SOFTLINE
+    if role == 'collection' and self._has_line_comment(gaps, closing) {
+      var rows = self._rows(gaps, docs)
 
       return [
         lead,
-        group(base([
-          open, opener, nest([soft, fill(parts)]),
-          trailing ? if_break(',', '') : '', closer, soft, close,
-        ])),
+        broken_group([
+          open,
+          nest([rows, comma]),
+          end,
+        ]),
       ]
     }
 
-    var first = after_open
-      ? self._break(opening, HARDLINE)
-      : [self._break(opening, ''), space]
-    var last = before_close
-      ? [trailing ? ',' : '', self._break(closing, HARDLINE)]
-      : [self._break(closing, ''), space]
+    var parts = [self._break(gaps[0], soft)]
 
-    return [lead, base([open, nest([first, fill(parts)]), last, close])]
+    index = 0
+
+    for item_doc in docs {
+      if index > 0 {
+        parts.append(self._separator(gaps[index]))
+      }
+
+      parts.append(item_doc)
+      index += 1
+    }
+
+    var numbers = role == 'collection' and
+        kind == 'expr' and
+        quiet and
+        count > 1 and
+        items.every(@(item) => _number(item) or item.kind == 'Nil') and
+        items.some(_number)
+
+    if numbers {
+      var filled = [parts[0], fill(parts[1,])]
+
+      return [
+        lead,
+        group([
+          open,
+          nest([filled, comma]),
+          end,
+        ]),
+      ]
+    }
+
+    var opened = [
+      open,
+      nest([parts, comma]),
+      end,
+    ]
+
+    if role == 'collection' and self._nests(items, kind) {
+      return [lead, broken_group(opened)]
+    }
+
+    var block = role == 'arguments' and quiet ? self._block_index(items) : -1
+
+    if block == -1 {
+      return [lead, group(opened)]
+    }
+
+    index = 0
+
+    for item_doc in docs {
+      if index != block and flat_width(item_doc) < 0 {
+        return [lead, group(opened)]
+      }
+
+      index += 1
+    }
+
+    var natural = [open]
+    var hugged = [open]
+
+    index = 0
+
+    for item_doc in docs {
+      if index > 0 {
+        natural.append(' ')
+        hugged.append(' ')
+      }
+
+      natural.append(item_doc)
+      hugged.append(index == block ? expanded(item_doc) : item_doc)
+      index += 1
+    }
+
+    natural.append(close)
+    hugged.append(close)
+
+    var layouts = [natural]
+
+    if _collection(items[block]) {
+      layouts.append(hugged)
+    }
+
+    layouts.append(broken_group(opened))
+
+    return [lead, first_fit(layouts)]
   }
 
-  # What separates two items of a bracketed list the author broke: the
-  # comments between them, and a line break that is kept while the lines
-  # around it fit.
+  # Whether a collection's items hold another list or dictionary with
+  # something in it, anywhere inside them.
+  _nests(items: list, kind: string) {
+    if kind == 'entry' {
+      return items.some(@(entry) => _holds_collection([entry.key, entry.value]))
+    }
+
+    return items.some(_holds_collection)
+  }
+
+  # What separates two items of an opened list: the comments between
+  # them, and a blank line where the source left one.
   _separator(gap) {
-    if gap.comments.is_empty() and gap.newlines == 1 {
-      return KEPTLINE
+    if gap.comments.is_empty() and gap.newlines >= 2 {
+      return if_break(BLANKLINE, LINE)
     }
 
     return self._break(gap, LINE)
   }
 
-  # How many entries of a dictionary are `key: value` pairs rather than
-  # the shorthand `name`.
-  _pairs(entries: list) {
-    var count = 0
+  # Whether a `#` comment sits before any item of a list or before its
+  # closer.
+  _has_line_comment(gaps: list, closing) {
+    var found = closing.comments.some(@(entry) => entry.token.kind == 'Comment')
 
-    for entry in entries {
-      if !self._shorthand(entry) {
-        count += 1
-      }
+    for gap in gaps {
+      found = found or
+          gap.comments.some(@(entry) => entry.token.kind == 'Comment')
     }
 
-    return count
+    return found
   }
 
-  # A dictionary of `key: value` pairs: on one line when it fits there,
-  # otherwise one pair to a line, its braces on lines of their own. One
-  # the author broke stays broken. `parts` alternates the pairs, each
-  # with its comma, and what separates them.
-  _paired(
-    open: string, close: string, opening, parts: list, closing, authored: bool,
-  ) {
-    if !authored {
-      return group(base([
-        open, self._break(opening, ''), nest([LINE, parts]), if_break(',', ''),
-        self._break(closing, ''), LINE, close,
-      ]))
-    }
-
-    var lines = []
+  # The items of a collection laid out in the rows the source wrote them
+  # in, the rows one to a line and each laid out like a list of its own.
+  _rows(gaps: list, docs: list) {
+    var parts = []
+    var row = []
     var index = 0
 
-    for part in parts {
-      var apart = index % 2 == 1 and (part == LINE or part == KEPTLINE)
+    for item_doc in docs {
+      var gap = gaps[index]
+      var starts = index == 0 or gap.newlines > 0 or !gap.comments.is_empty()
 
-      lines.append(apart ? HARDLINE : part)
+      if starts {
+        if !row.is_empty() {
+          parts.append(group(row))
+          row = []
+        }
+
+        if index == 0 {
+          parts.append(self._break(gap, HARDLINE))
+        } else {
+          var blank = gap.comments.is_empty() and gap.newlines >= 2
+
+          parts.append(blank ? BLANKLINE : self._break(gap, HARDLINE))
+        }
+      } else {
+        row.append(LINE)
+      }
+
+      row.append(item_doc)
       index += 1
     }
 
-    return base([
-      open, nest([self._break(opening, HARDLINE), lines]), ',',
-      self._break(closing, HARDLINE), close,
-    ])
+    parts.append(group(row))
+
+    return parts
+  }
+
+  # The argument that may open out on its own while the others stay on
+  # the line, or `-1` when none may: the one function with a body, or
+  # when there is none, the one collection with something in it. It has
+  # to be the last argument or the one before it.
+  _block_index(items: list) {
+    var function = -1
+    var collection = -1
+    var index = 0
+
+    for item in items {
+      if self._block_function(item) {
+        function = function == -1 ? index : -2
+      } else if _collection(item) {
+        collection = collection == -1 ? index : -2
+      }
+
+      index += 1
+    }
+
+    var chosen = function >= 0 ? function : collection
+
+    if chosen < 0 or chosen < items.length() - 2 {
+      return -1
+    }
+
+    return chosen
+  }
+
+  # Whether `node` is a function written as a value with a block body
+  # that holds something.
+  _block_function(node) {
+    if node.kind != 'Anonymous' {
+      return false
+    }
+
+    var body = node.fields.declaration.fields.body
+
+    if body.kind != 'Block' {
+      return false
+    }
+
+    return !_code(body.fields.statements).is_empty() or
+        !self.src.quiet(body.start + 1, body.end - 1)
   }
 
   # Whether a dictionary entry is written as the shorthand `name`: it was
@@ -1193,11 +1473,11 @@ class Layout {
       return true
     }
 
-    return key.kind == 'Literal'
-      and !_QUOTES.contains(self.src.text[key.start])
-      and value.kind == 'Identifier'
-      and value.fields.name == key.fields.value
-      and self.src.quiet(key.end, value.end)
+    return key.kind == 'Literal' and
+        !_QUOTES.contains(self.src.text[key.start]) and
+        value.kind == 'Identifier' and
+        value.fields.name == key.fields.value and
+        self.src.quiet(key.end, value.end)
   }
 
   # One item of a bracketed list.
@@ -1212,7 +1492,9 @@ class Layout {
   }
 
   # A dictionary entry, `key: value`. `name: name` with the key written
-  # as a bare name is written as the shorthand `name`.
+  # as a bare name is written as the shorthand `name`. A value made of
+  # operators moves to a line of its own after the `:` when the entry
+  # does not fit, its operands lined up under one another there.
   _entry(entry) {
     var key = entry.key
     var value = entry.value
@@ -1232,13 +1514,20 @@ class Layout {
     self.src.skip(colon.end)
 
     var gap = self.src.take(value.start)
-    var value_doc = self._expr(value)
 
-    if gap.is_broken() {
-      return [key_doc, before, ':', indent([self._break(gap, ' '), value_doc])]
+    if _level(value) > 0 {
+      var operators = self._operators(value, false)
+
+      return group([
+        key_doc,
+        before,
+        ':',
+        self._loose(gap),
+        continued([LINE, operators]),
+      ])
     }
 
-    return [key_doc, before, ':', self._loose(gap), ' ', value_doc]
+    return [key_doc, before, ':', self._loose(gap), ' ', self._expr(value)]
   }
 
   # Expressions
@@ -1251,7 +1540,7 @@ class Layout {
     using node.kind {
       when 'Unary' return self._unary(node)
       when 'Binary', 'Logical', 'Circuit' {
-        return self._operators(node)
+        return self._operators(node, true)
       }
       when 'Condition' return self._conditional(node)
       when 'Grouping' return self._grouping(node)
@@ -1292,49 +1581,25 @@ class Layout {
     self.src.skip(operator.end)
 
     # `- -x` written together would read as a decrement.
-    var apart = operator.kind == 'Minus'
-      and operand.kind == 'Unary'
-      and operand.fields.op == 'Minus'
+    var apart = operator.kind == 'Minus' and
+        operand.kind == 'Unary' and
+        operand.fields.op == 'Minus'
 
     return [lead, operator.text, apart ? ' ' : '', self._expr(operand)]
   }
 
-  # A run of operators of one level. Written on one line, it stays there
-  # when it fits and otherwise breaks at every one of its operators.
-  # Broken by the author, it keeps their breaks and breaks elsewhere only
-  # as the width needs.
-  #
-  # The operator leads the line it continues. A run holding a `-` is the
-  # exception: a line opening with `-` is a new statement, so every
-  # operator in it trails its line instead. Where the author broke after
-  # an operator, the run follows them.
-  _operators(node) {
+  # A run of operators of one level, on one line when it fits and
+  # otherwise broken after every one of its operators. The operands
+  # after the first sit two levels in when `indented`, and line up with
+  # the first when not, as they do on a line of their own after a `:`.
+  _operators(node, indented: bool) {
     var operands = _operands(node)
     var count = operands.length()
-    var operators = []
-    var before = []
-    var after = []
+    var parts = [self._expr(operands[0])]
     var index = 0
 
     while index < count - 1 {
       var token = self.src.next(operands[index].end)
-
-      operators.append(token)
-      before.append(self.src.breaks(operands[index].end, token.start))
-      after.append(self.src.breaks(token.end, operands[index + 1].start))
-      index += 1
-    }
-
-    var authored = before.contains(true) or after.contains(true)
-    var trails = after.contains(true)
-      or operators.some(@(token) => token.kind == 'Minus')
-    var contents = [[self._expr(operands[0])]]
-    var separators = []
-
-    index = 0
-
-    for token in operators {
-      var leading = before[index] or (!after[index] and !trails)
       var gap_before = self.src.take(token.start)
 
       self.src.skip(token.end)
@@ -1342,91 +1607,77 @@ class Layout {
       var gap_after = self.src.take(operands[index + 1].start)
       var right = self._expr(operands[index + 1])
 
-      if leading {
-        separators.append(self._break(gap_before, LINE))
-        contents.append([token.text, self._loose(gap_after), ' ', right])
-      } else {
-        contents.last().append([self._loose(gap_before), ' ', token.text])
-        separators.append(self._break(gap_after, LINE))
-        contents.append([right])
-      }
-
+      parts.append([
+        self._loose(gap_before),
+        ' ',
+        token.text,
+        self._break(gap_after, LINE),
+        right,
+      ])
       index += 1
     }
 
-    var parts = [contents[0]]
-
-    index = 0
-
-    for separator in separators {
-      parts.append(separator)
-      parts.append(contents[index + 1])
-      index += 1
-    }
-
-    if authored {
-      return indent(fill(parts))
-    }
-
-    return group(indent(parts))
+    return group(indented ? continued(parts) : parts)
   }
 
-  # `condition ? then : otherwise`, broken before the `?` and the `:`
-  # when it does not fit, or wherever the author broke it.
+  # `condition ? then : otherwise`, on one line when it fits and
+  # otherwise broken before the `?` and the `:`, each branch two levels
+  # in. A conditional in the last branch joins the chain, so a run of
+  # them reads as a list of cases.
   _conditional(node) {
-    var f = node.fields
-    var question = self.src.next(f.condition.end)
-    var colon = self.src.next(f.then.end)
-    var marks = [question, colon]
-    var sides = [[f.condition, f.then], [f.then, f.otherwise]]
-    var authored = false
+    var parts = [self._expr(node.fields.condition)]
+    var current = node
 
-    for pair in sides {
-      if self.src.breaks(pair[0].end, pair[1].start) {
-        authored = true
+    while true {
+      var f = current.fields
+      var question = self.src.next(f.condition.end)
+      var gap_before = self.src.take(question.start)
+
+      self.src.skip(question.end)
+
+      var gap_after = self.src.take(f.then.start)
+      var then = self._expr(f.then)
+
+      parts.append([
+        self._break(gap_before, LINE),
+        '?',
+        self._loose(gap_after),
+        ' ',
+        nest(then),
+      ])
+
+      var colon = self.src.next(f.then.end)
+      var gap_colon = self.src.take(colon.start)
+
+      self.src.skip(colon.end)
+
+      var otherwise = f.otherwise
+      var gap_otherwise = self.src.take(otherwise.start)
+      var chained = otherwise.kind == 'Condition'
+      var branch = chained
+          ? self._expr(otherwise.fields.condition)
+          : self._expr(otherwise)
+
+      parts.append([
+        self._break(gap_colon, LINE),
+        ':',
+        self._loose(gap_otherwise),
+        ' ',
+        nest(branch),
+      ])
+
+      if !chained {
+        break
       }
+
+      current = otherwise
     }
 
-    var contents = [[self._expr(f.condition)]]
-    var separators = []
-    var index = 0
-
-    for token in marks {
-      var next = sides[index][1]
-      var broke_before = self.src.breaks(sides[index][0].end, token.start)
-      var broke_after = self.src.breaks(token.end, next.start)
-      var gap_before = self.src.take(token.start)
-
-      self.src.skip(token.end)
-
-      var gap_after = self.src.take(next.start)
-      var right = self._expr(next)
-
-      if broke_after and !broke_before {
-        contents.last().append([self._loose(gap_before), ' ', token.text])
-        separators.append(self._break(gap_after, LINE))
-        contents.append([right])
-      } else {
-        separators.append(self._break(gap_before, LINE))
-        contents.append([token.text, self._loose(gap_after), ' ', right])
-      }
-
-      index += 1
-    }
-
-    var parts = [
-      contents[0], separators[0], contents[1], separators[1], contents[2],
-    ]
-
-    if authored {
-      return indent(fill(parts))
-    }
-
-    return group(indent(parts))
+    return group(continued(parts))
   }
 
-  # An expression in parentheses. Its insides break as they would
-  # anywhere; the parentheses keep the breaks the author gave them.
+  # An expression in parentheses, its insides laid out as they would be
+  # anywhere.
   _grouping(node) {
     var lead = self._flush(node.start)
     var inner = node.fields.inner
@@ -1439,18 +1690,13 @@ class Layout {
 
     self.src.skip(node.end)
 
-    if !opening.is_broken() and !closing.is_broken() {
-      return [
-        lead, '(', self._loose(opening), inner_doc, self._loose(closing), ')',
-      ]
-    }
-
     return [
       lead,
-      base([
-        '(', nest([self._break(opening, ''), inner_doc]),
-        self._break(closing, ''), ')',
-      ]),
+      '(',
+      self._loose(opening),
+      inner_doc,
+      self._loose(closing),
+      ')',
     ]
   }
 
@@ -1463,98 +1709,214 @@ class Layout {
     self.src.skip(dots.end)
 
     return [
-      lower, before, '..', self._flush(f.upper.start), self._expr(f.upper),
+      lower,
+      before,
+      '..',
+      self._flush(f.upper.start),
+      self._expr(f.upper),
     ]
   }
 
-  # A chain of calls, property reads and subscripts on one value. With
-  # two or more method calls in it, it breaks before each call's `.`,
-  # one call to a line, and the reads before the first call stay with
-  # the value they start from. A `.` the author put at the start of a
-  # line stays there.
+  # A chain of calls, property reads and subscripts on one value: the
+  # value it starts from, then each `.name` with the arguments and
+  # subscripts that follow it. A call on a capitalized name, `Color.of(x)`,
+  # stays part of the value.
+  #
+  # It stays on one line when it fits. Otherwise, the value it starts
+  # from opens out like a block when it is a call or a collection and
+  # the rest of the chain fits after its closing bracket. Failing that,
+  # when every call before the last takes no arguments, or the last
+  # takes a function or collection that opens out on its own, only the
+  # last call's arguments open out. Failing that too, it breaks before
+  # each `.`, two levels in, the property reads it opens with kept
+  # beside the value. A value that is a call or collection of a single
+  # item breaks before its calls before anything else, if that keeps
+  # each of them on its line.
   _chain(node) {
     var backwards = []
     var current = node
 
-    while ['Call', 'Get', 'Index', 'Slice'].contains(current.kind) {
+    while _LINKS.contains(current.kind) {
       backwards.append(current)
       current = current.kind == 'Call'
-        ? current.fields.callee
-        : current.fields.object
+          ? current.fields.callee
+          : current.fields.object
     }
 
-    var links = backwards.reverse()
-    var count = links.length()
-    var calls = 0
+    var nodes = backwards.reverse()
+    var target = [self._expr(current)]
+    var target_node = current
+    var links = []
+    var count = nodes.length()
     var index = 0
 
-    while index < count - 1 {
-      if links[index].kind == 'Get' and links[index + 1].kind == 'Call' {
-        calls += 1
-      }
-
-      index += 1
-    }
-
-    var segments = [[self._expr(current)]]
-    var separators = []
-    var authored = false
-
-    index = 0
-
-    for link in links {
-      var calling = calls >= 2
-        and link.kind == 'Get'
-        and index + 1 < count
-        and links[index + 1].kind == 'Call'
+    while index < count {
+      var link = nodes[index]
+      var next = index + 1 < count ? nodes[index + 1] : nil
+      var called = next != nil and next.kind == 'Call'
 
       if link.kind == 'Get' {
-        var object = link.fields.object
-        var dot = self.src.next(object.end)
-        var broke = self.src.breaks(object.end, link.fields.name_span.start)
+        var dot = self.src.next(link.fields.object.end)
         var gap = self.src.take(dot.start)
 
         self.src.skip(dot.end)
 
-        var name = [self._flush(link.fields.name_span.start), link.fields.name]
+        var name = [
+          '.',
+          self._flush(link.fields.name_span.start),
+          link.fields.name,
+        ]
 
         self.src.skip(link.fields.name_span.end)
 
-        if calling or broke {
-          authored = authored or broke
-          separators.append(self._break(gap, calling ? SOFTLINE : ''))
-          segments.append(['.', name])
+        var qualified = links.is_empty() and
+            called and
+            target_node.kind == 'Identifier' and
+            (_capitalized(target_node.fields.name) or
+                _capitalized(link.fields.name))
+
+        if qualified {
+          target.append([self._loose(gap), name])
         } else {
-          segments.last().append([self._loose(gap), '.', name])
+          links.append(_Link(gap, name))
         }
       } else if link.kind == 'Call' {
-        segments.last().append(self._arguments(link))
+        var arguments = self._arguments(link)
+        var last = links.is_empty() ? nil : links.last()
+
+        if last != nil and last.kind == 'property' and last.after.is_empty() {
+          var listed = link.fields.arguments
+
+          last.arguments = arguments
+          last.kind = listed.is_empty() ? 'empty' : 'call'
+
+          if self._block_index(listed) >= 0 {
+            last.kind = 'block'
+          }
+        } else if last != nil {
+          last.after.append(arguments)
+        } else {
+          target.append(arguments)
+        }
+      } else if links.is_empty() {
+        target.append(self._subscript(link))
       } else {
-        segments.last().append(self._subscript(link))
+        links.last().after.append(self._subscript(link))
+      }
+
+      target_node = links.is_empty() ? link : target_node
+      index += 1
+    }
+
+    if links.is_empty() {
+      return target
+    }
+
+    return self._chain_layouts(target, target_node, links)
+  }
+
+  # The layouts of a chain, from `target`, the value it starts from, and
+  # its `links`, most compact first.
+  _chain_layouts(target, target_node, links: list) {
+    var count = links.length()
+    var properties = 0
+
+    while properties < count and links[properties].kind == 'property' {
+      properties += 1
+    }
+
+    var unsplittable = properties
+
+    while unsplittable < count and !links[unsplittable].splits() {
+      unsplittable += 1
+    }
+
+    var last = count - 1
+
+    if !links[last].splits() and count > 1 and links[last - 1].kind == 'block' {
+      last = count - 2
+    }
+
+    var block = -1
+
+    if unsplittable == last and links[last].splits() {
+      block = last
+    } else if links[last].kind == 'block' {
+      block = last
+    }
+
+    var flat = links.map(@(link) => [self._loose(link.lead), link.doc(false)])
+    var layouts = []
+
+    if flat_width(flat) >= 0 {
+      layouts.append([target, flat])
+    }
+
+    var after_properties = nil
+
+    if properties > 0 and properties < count {
+      after_properties = self._split_chain(target, links, properties)
+    }
+
+    var split = self._split_chain(target, links, 0)
+
+    if _single(target_node) and flat_width(target) >= 0 {
+      layouts.append(whole(after_properties == nil ? split : after_properties))
+    }
+
+    if _opens_out(target_node) and flat_width(target) >= 0 {
+      layouts.append(whole([expanded(target), flat]))
+    }
+
+    if block >= 0 {
+      var trailing = [target]
+      var others = []
+      var index = 0
+
+      for link in links {
+        trailing.append([self._loose(link.lead), link.doc(index == block)])
+
+        if index == block {
+          others.append([self._loose(link.lead), link.name, link.after])
+        } else {
+          others.append(flat[index])
+        }
+
+        index += 1
+      }
+
+      if flat_width(others) >= 0 {
+        layouts.append(trailing)
+      }
+    }
+
+    if after_properties != nil {
+      layouts.append(after_properties)
+    }
+
+    layouts.append(split)
+
+    return first_fit(layouts)
+  }
+
+  # A chain broken before each of its links from the one at `from` on,
+  # the links before it kept on the line of the value.
+  _split_chain(target, links: list, from: number) {
+    var kept = [target]
+    var broken = []
+    var index = 0
+
+    for link in links {
+      if index < from {
+        kept.append([self._loose(link.lead), link.doc(false)])
+      } else {
+        broken.append([self._break(link.lead, SOFTLINE), link.doc(false)])
       }
 
       index += 1
     }
 
-    if segments.length() == 1 {
-      return segments[0]
-    }
-
-    var parts = [segments[0]]
-
-    index = 0
-
-    for separator in separators {
-      parts.append(separator)
-      parts.append(segments[index + 1])
-      index += 1
-    }
-
-    if calls >= 2 and !authored {
-      return group(indent(parts))
-    }
-
-    return indent(fill(parts))
+    return [kept, broken_group(continued(broken))]
   }
 
   _arguments(call) {
@@ -1562,8 +1924,15 @@ class Layout {
     var open = self.src.next(callee.end)
 
     return self._bracket(
-      '(', ')', open.start, call.end - 1, call.fields.arguments, false, true,
+      '(',
+      ')',
+      open.start,
+      call.end - 1,
+      call.fields.arguments,
+      false,
+      true,
       'expr',
+      'arguments',
     )
   }
 
@@ -1584,17 +1953,15 @@ class Layout {
 
       self.src.skip(link.end)
 
-      return [
-        out, nest([self._break(opening, ''), index_doc]),
-        self._break(closing, ''), ']',
-      ]
+      return [out, self._loose(opening), index_doc, self._loose(closing), ']']
     }
 
     var parts = []
 
     if !_implicit(f.lower) {
       parts.append([
-        self._break(self.src.take(f.lower.start), ''), self._expr(f.lower),
+        self._loose(self.src.take(f.lower.start)),
+        self._expr(f.lower),
       ])
     }
 
@@ -1607,14 +1974,14 @@ class Layout {
       var gap = self.src.take(f.upper.start)
       var spacer = _implicit(f.lower) ? '' : ' '
 
-      parts.append([self._break(gap, spacer), self._expr(f.upper)])
+      parts.append([self._loose(gap), spacer, self._expr(f.upper)])
     }
 
     var closing = self.src.take(close)
 
     self.src.skip(link.end)
 
-    return [out, nest(parts), self._break(closing, ''), ']']
+    return [out, parts, self._loose(closing), ']']
   }
 
   _set(node) {
@@ -1634,17 +2001,28 @@ class Layout {
 
     self.src.skip(equal.end)
 
-    var lead = gap.is_broken()
-      ? indent([self._break(gap, ''), '.'])
-      : [self._loose(gap), '.']
-
-    return [object, lead, name, before, ' = ', self._expr(f.value)]
+    return [
+      object,
+      self._loose(gap),
+      '.',
+      name,
+      before,
+      ' = ',
+      self._expr(f.value),
+    ]
   }
 
   _list(node) {
     return self._bracket(
-      '[', ']', node.start, node.end - 1, node.fields.items, false, true,
+      '[',
+      ']',
+      node.start,
+      node.end - 1,
+      node.fields.items,
+      false,
+      true,
       'expr',
+      'collection',
     )
   }
 
@@ -1662,12 +2040,20 @@ class Layout {
     }
 
     return self._bracket(
-      '{', '}', node.start, node.end - 1, entries, true, true, 'entry',
+      '{',
+      '}',
+      node.start,
+      node.end - 1,
+      entries,
+      true,
+      true,
+      'entry',
+      'collection',
     )
   }
 
   # `target = value` and its compound forms. Nothing breaks after the
-  # operator unless the author broke it there.
+  # operator, which the language does not allow.
   _assign(node) {
     var f = node.fields
     var target = self._expr(f.target)
@@ -1678,13 +2064,6 @@ class Layout {
 
     var gap = self.src.take(f.value.start)
     var value = self._expr(f.value)
-
-    if gap.is_broken() {
-      return [
-        target, before, ' ', operator.text,
-        indent([self._break(gap, ' '), value]),
-      ]
-    }
 
     return [target, before, ' ', operator.text, self._loose(gap), ' ', value]
   }
@@ -1734,6 +2113,6 @@ class Layout {
 
     out.append([tight ? '' : ' ', self._block(body)])
 
-    return [lead, base(out)]
+    return [lead, out]
   }
 }

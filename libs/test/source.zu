@@ -57,7 +57,7 @@ class Frame {
    */
   to_string() {
     return '${short_path(self.file)}:${self.line}' +
-      (self.name == '' ? '' : ' in ${self.name}')
+        (self.name == '' ? '' : ' in ${self.name}')
   }
 }
 

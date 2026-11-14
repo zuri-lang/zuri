@@ -47,7 +47,13 @@ import zuri
 
 import .errors { TemplateSyntaxError }
 import .values {
-  compare, invoke, is_blank, stringify, truthy, type_name, unwrap,
+  compare,
+  invoke,
+  is_blank,
+  stringify,
+  truthy,
+  type_name,
+  unwrap,
 }
 
 /**
@@ -66,8 +72,26 @@ var LONG_OPERATORS = ['==', '!=', '<=', '>=', '&&', '||', '??', '..']
  * Operators made of a single character.
  */
 var SHORT_OPERATORS = [
-  '?', ':', '.', ',', '(', ')', '[', ']', '{', '}',
-  '|', '=', '+', '-', '*', '/', '%', '<', '>', '!',
+  '?',
+  ':',
+  '.',
+  ',',
+  '(',
+  ')',
+  '[',
+  ']',
+  '{',
+  '}',
+  '|',
+  '=',
+  '+',
+  '-',
+  '*',
+  '/',
+  '%',
+  '<',
+  '>',
+  '!',
 ]
 
 # --------------------------------------------------------------------
@@ -813,9 +837,7 @@ def _arithmetic(scope, operator: string, a, b) {
     # a name against a name is an ordinary thing for a template to ask.
     if !_numeric(left) or !_numeric(right) {
       if !is_string(left) or !is_string(right) {
-        scope.fail(
-          'cannot order ${type_name(a)} against ${type_name(b)}',
-        )
+        scope.fail('cannot order ${type_name(a)} against ${type_name(b)}')
       }
     }
 
@@ -1016,7 +1038,9 @@ def tokenize(source: string, path: string, line: number, column: number) {
 
     raise TemplateSyntaxError(
       'unexpected "${character}" in expression "${source}"',
-      path, line, column,
+      path,
+      line,
+      column,
     )
   }
 
@@ -1037,8 +1061,14 @@ def tokenize(source: string, path: string, line: number, column: number) {
  * @returns list
  * @throws TemplateSyntaxError
  */
-def _scan_string(characters: list, at: number, source: string, path: string,
-  line: number, column: number) {
+def _scan_string(
+  characters: list,
+  at: number,
+  source: string,
+  path: string,
+  line: number,
+  column: number,
+) {
 
   var quote = characters[at]
   var out = []
@@ -1063,7 +1093,9 @@ def _scan_string(characters: list, at: number, source: string, path: string,
 
   raise TemplateSyntaxError(
     'unterminated string in expression "${source}"',
-    path, line, column,
+    path,
+    line,
+    column,
   )
 }
 
@@ -1116,8 +1148,10 @@ def _scan_number(characters: list, at: number) {
     # Only the first dot belongs to the number. A second one is a member
     # lookup on the result, as in `1.5.to_string`, which is nonsense but
     # is the parser's business to reject rather than the lexer's.
-    if character == '.' and !seen_dot and index + 1 < characters.length() and
-      characters[index + 1].match('/[0-9]/') != false {
+    if character == '.' and
+        !seen_dot and
+        index + 1 < characters.length() and
+        characters[index + 1].match('/[0-9]/') != false {
       seen_dot = true
       out.append(character)
       index++
@@ -1143,7 +1177,7 @@ def _scan_name(characters: list, at: number) {
   var index = at
 
   while index < characters.length() and
-    characters[index].match('/[A-Za-z0-9_]/') != false {
+      characters[index].match('/[A-Za-z0-9_]/') != false {
     out.append(characters[index])
     index++
   }
@@ -1579,7 +1613,9 @@ class Parser {
       }
 
       if token.value.starts_with('_') {
-        self.fail('"${token.value}" is private and cannot be read from a template')
+        self.fail(
+          '"${token.value}" is private and cannot be read from a template',
+        )
       }
 
       return Variable(token.value)
@@ -1841,7 +1877,9 @@ class Parser {
   fail(reason: string) {
     raise TemplateSyntaxError(
       '${reason} in expression "${self.source}"',
-      self.path, self.line, self.column,
+      self.path,
+      self.line,
+      self.column,
     )
   }
 }

@@ -157,7 +157,9 @@ class Channel {
       capacity = 0
     }
     if capacity < 0 {
-      raise ValueError('Channel() expects capacity to be non-negative, got ${capacity}')
+      raise ValueError(
+        'Channel() expects capacity to be non-negative, got ${capacity}',
+      )
     }
     self._ptr = _isolate.channel_new(capacity)
   }
@@ -192,7 +194,9 @@ class Channel {
       raise IsolateTimeoutError('send() timed out after ${timeout} seconds')
     }
     if status == 'cancelled' {
-      raise IsolateCancelledError('send() was interrupted: the calling isolate was cancelled')
+      raise IsolateCancelledError(
+        'send() was interrupted: the calling isolate was cancelled',
+      )
     }
   }
 
@@ -225,7 +229,9 @@ class Channel {
       raise IsolateTimeoutError('recv() timed out after ${timeout} seconds')
     }
     if r[0] == 'cancelled' {
-      raise IsolateCancelledError('recv() was interrupted: the calling isolate was cancelled')
+      raise IsolateCancelledError(
+        'recv() was interrupted: the calling isolate was cancelled',
+      )
     }
     return r[1]
   }
@@ -371,7 +377,9 @@ def select(channels: list, timeout: ?number) {
     raise IsolateTimeoutError('select() timed out after ${timeout} seconds')
   }
   if r[1] == 'cancelled' {
-    raise IsolateCancelledError('select() was interrupted: the calling isolate was cancelled')
+    raise IsolateCancelledError(
+      'select() was interrupted: the calling isolate was cancelled',
+    )
   }
   return [channels[r[0]], r[2]]
 }

@@ -345,9 +345,11 @@ def plus(a, b) {
 }
 
 var ops = {
-  plus: plus,
+  plus,
   minus: @(a, b) => a - b,
-  times: @(a, b) { return a * b },
+  times: @(a, b) {
+    return a * b
+  },
 }
 ```
 
@@ -378,7 +380,7 @@ def plus(a, b) {
   return a + b
 }
 
-var ops = { plus: plus, minus: @(a, b) => a - b }
+var ops = { plus, minus: @(a, b) => a - b }
 
 var chosen = ops.plus
 

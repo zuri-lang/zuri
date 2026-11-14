@@ -95,7 +95,9 @@ class PostgresDdl < DdlAdapter {
    */
   change_column(connection, table: string, column) {
     if column.is_generated {
-      raise QueryError('an id() column cannot be changed; ${column.name} is one')
+      raise QueryError(
+        'an id() column cannot be changed; ${column.name} is one',
+      )
     }
 
     var name = self.quote(column.name)
@@ -109,7 +111,9 @@ class PostgresDdl < DdlAdapter {
     ]
 
     if column.has_default or column.is_current {
-      actions.append('alter column ${name} set default ${self.default_sql(column)}')
+      actions.append(
+        'alter column ${name} set default ${self.default_sql(column)}',
+      )
     }
 
     var target = self.table_name(table)
@@ -117,8 +121,8 @@ class PostgresDdl < DdlAdapter {
 
     if column.foreign != nil {
       statements.append(
-        'alter table ${target} add '
-          + self.foreign_key_sql(table, column.foreign),
+        'alter table ${target} add ' +
+            self.foreign_key_sql(table, column.foreign),
       )
     }
 
@@ -140,9 +144,9 @@ class PostgresDdl < DdlAdapter {
     )
 
     if name == nil {
-      raise QueryError(
-        '${table} has no primary key to drop', { driver: self.driver.name() },
-      )
+      raise QueryError('${table} has no primary key to drop', {
+        driver: self.driver.name(),
+      })
     }
 
     return ['alter table ${target} drop constraint ${self.quote(name)}']
@@ -165,15 +169,15 @@ class PostgresDdl < DdlAdapter {
     catch {
       result = body()
     } as error {
-      connection.fetch_value(
-        'select pg_advisory_unlock(hashtext(?))', [name], nil,
-      )
+      connection.fetch_value('select pg_advisory_unlock(hashtext(?))', [
+        name,
+      ], nil)
       raise error
     }
 
-    connection.fetch_value(
-      'select pg_advisory_unlock(hashtext(?))', [name], nil,
-    )
+    connection.fetch_value('select pg_advisory_unlock(hashtext(?))', [
+      name,
+    ], nil)
 
     return result
   }

@@ -72,13 +72,7 @@ var _ci = false
 
 var _stores = []
 
-var _stats = {
-  matched: 0,
-  written: 0,
-  updated: 0,
-  obsolete: 0,
-  removed: 0,
-}
+var _stats = { matched: 0, written: 0, updated: 0, obsolete: 0, removed: 0 }
 
 /**
  * Every snapshot recorded for one test file, and the file they live
@@ -430,11 +424,5 @@ def summary() {
  */
 def reset() {
   _stores = []
-  _stats = {
-    matched: 0,
-    written: 0,
-    updated: 0,
-    obsolete: 0,
-    removed: 0,
-  }
+  _stats = { matched: 0, written: 0, updated: 0, obsolete: 0, removed: 0 }
 }

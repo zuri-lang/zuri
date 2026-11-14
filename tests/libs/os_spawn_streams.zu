@@ -9,11 +9,11 @@ import os.process { spawn }
 var helper = os.join_paths(os.dir_name(__file__), 'os_spawn_streams_helper.zu')
 var started = time()
 
-var child = spawn(os.exe_path, ['run', helper], {
-  stdin: 'null',
-  stdout: 'pipe',
-  stderr: 'pipe',
-})
+var child = spawn(
+  os.exe_path,
+  ['run', helper],
+  { stdin: 'null', stdout: 'pipe', stderr: 'pipe' },
+)
 
 child.wait()
 
@@ -21,7 +21,7 @@ var said = child.read_stdout().to_string()
 var complained = child.read_stderr().to_string()
 
 assert said.contains('started a program that outlives this one'),
-  'the helper did not run: ${said}'
+    'the helper did not run: ${said}'
 assert complained.trim() == '', 'the helper wrote to stderr: ${complained}'
 
 # The grandchild sleeps for ten seconds, so a read that waited for it

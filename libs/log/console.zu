@@ -56,9 +56,9 @@ class ConsoleTransport < Transport {
     if self._use_colors {
       var color = self._color_for(level)
       if color != nil {
-        message = level == LogLevel.Critical ?
-          colors.text(colors.text(message, colors.style.bold), color) :
-          colors.text(message, color)
+        message = level == LogLevel.Critical
+            ? colors.text(colors.text(message, colors.style.bold), color)
+            : colors.text(message, color)
       }
     }
 

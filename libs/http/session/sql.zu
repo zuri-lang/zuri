@@ -91,8 +91,8 @@ class SqlStore < SessionStore {
     if !_is_identifier(self._table) {
       raise SessionError(
         "'${self._table}' is not a usable table name; it has to be " +
-          'letters, digits and underscores, starting with a letter or an ' +
-          'underscore',
+            'letters, digits and underscores, starting with a letter or an ' +
+            'underscore',
       )
     }
   }
@@ -144,7 +144,8 @@ class SqlStore < SessionStore {
   read(key: string) {
     var row = self._run(@(database) {
       return database.fetch_one(
-        'select payload, expires_at from ${self._table} where id = ?', [key],
+        'select payload, expires_at from ${self._table} where id = ?',
+        [key],
       )
     })
 
@@ -170,8 +171,8 @@ class SqlStore < SessionStore {
       if _CONFLICT_ENGINES.contains(engine) {
         database.exec(
           'insert into ${self._table} (id, payload, expires_at) ' +
-            'values (?, ?, ?) on conflict (id) do update set ' +
-            'payload = excluded.payload, expires_at = excluded.expires_at',
+              'values (?, ?, ?) on conflict (id) do update set ' +
+              'payload = excluded.payload, expires_at = excluded.expires_at',
           [key, payload, expiry],
         )
 
@@ -181,8 +182,8 @@ class SqlStore < SessionStore {
       if _DUPLICATE_ENGINES.contains(engine) {
         database.exec(
           'insert into ${self._table} (id, payload, expires_at) ' +
-            'values (?, ?, ?) on duplicate key update ' +
-            'payload = values(payload), expires_at = values(expires_at)',
+              'values (?, ?, ?) on duplicate key update ' +
+              'payload = values(payload), expires_at = values(expires_at)',
           [key, payload, expiry],
         )
 
@@ -200,7 +201,7 @@ class SqlStore < SessionStore {
       if changed.rows_affected == 0 {
         database.exec(
           'insert into ${self._table} (id, payload, expires_at) ' +
-            'values (?, ?, ?)',
+              'values (?, ?, ?)',
           [key, payload, expiry],
         )
       }
@@ -228,9 +229,9 @@ class SqlStore < SessionStore {
 
   gc(now: number) {
     var removed = self._run(@(database) {
-      return database.exec(
-        'delete from ${self._table} where expires_at <= ?', [now.floor()],
-      )
+      return database.exec('delete from ${self._table} where expires_at <= ?', [
+        now.floor(),
+      ])
     })
 
     return removed.rows_affected

@@ -53,10 +53,7 @@ def describe(statement) {
     # name.
     var type = index < declared.length() ? declared[index] : nil
 
-    columns.append({
-      name,
-      type: type == nil ? nil : type.lower(),
-    })
+    columns.append({ name, type: type == nil ? nil : type.lower() })
   }
 
   var conversions = conversions_for(declared)
@@ -85,8 +82,8 @@ def bind_all(statement, values: list, query: string, expected: number) {
   if values.length() != expected {
     raise QueryError(
       'this statement binds ${expected} parameter' +
-        '${expected == 1 ? "" : "s"} and ${values.length()} ' +
-        '${values.length() == 1 ? "was" : "were"} given',
+          '${expected == 1 ? "" : "s"} and ${values.length()} ' +
+          '${values.length() == 1 ? "was" : "were"} given',
       { driver: 'sqlite', query },
     )
   }
@@ -165,10 +162,7 @@ class SqliteStatement < DriverStatement {
 
     _sqlite.reset(self._statement)
 
-    return {
-      rows_affected: affected,
-      last_insert_id: inserted,
-    }
+    return { rows_affected: affected, last_insert_id: inserted }
   }
 
   /**
@@ -208,10 +202,7 @@ class SqliteStatement < DriverStatement {
       }
     }
 
-    return {
-      columns: self._columns,
-      rows,
-    }
+    return { columns: self._columns, rows }
   }
 
   /**
@@ -299,10 +290,10 @@ class SqliteStatement < DriverStatement {
   # Raises unless the statement is in a state to be run.
   _ready() {
     if self._closed {
-      raise ClosedError(
-        'this prepared statement was closed',
-        { driver: 'sqlite', query: self._query },
-      )
+      raise ClosedError('this prepared statement was closed', {
+        driver: 'sqlite',
+        query: self._query,
+      })
     }
 
     if self._connection.is_closed() {
@@ -315,7 +306,7 @@ class SqliteStatement < DriverStatement {
     if self._lent and _sqlite.stmt_busy(self._statement) {
       raise QueryError(
         'a cursor is still reading this prepared statement; close it ' +
-          'before running the statement again',
+            'before running the statement again',
         { driver: 'sqlite', query: self._query },
       )
     }

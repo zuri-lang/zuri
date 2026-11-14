@@ -11,7 +11,8 @@
  * and describes itself in its doc block, and `zuri --help` lists it by
  * those two tags and nothing else.
  *
- * Run it on its own, or let `reference.zu` run it for you:
+ * Run it on its own, or let `site.zu` run it before it generates the
+ * standard library reference:
  *
  * ```
  * zuri run docs/tools/audit.zu
@@ -156,12 +157,14 @@ def check_source(path: string, source: string) {
 
   for block in _doc_blocks(source) {
     if block.body == nil {
-      findings.append(Finding(
-        path,
-        block.line,
-        'doc block is never closed',
-        'no matching */, so the rest of the file is inside the comment'
-      ))
+      findings.append(
+        Finding(
+          path,
+          block.line,
+          'doc block is never closed',
+          'no matching */, so the rest of the file is inside the comment',
+        ),
+      )
       continue
     }
 
@@ -171,12 +174,14 @@ def check_source(path: string, source: string) {
     # swallows the block's own tags, and once rendered it swallows every
     # heading after it on the page.
     if fences % 2 != 0 {
-      findings.append(Finding(
-        path,
-        block.line,
-        'unbalanced code fence (${fences} markers)',
-        _first_line(block.body)
-      ))
+      findings.append(
+        Finding(
+          path,
+          block.line,
+          'unbalanced code fence (${fences} markers)',
+          _first_line(block.body),
+        ),
+      )
 
       # With a fence unaccounted for there is no telling where one
       # example ends and the next begins, so checking them is pointless
@@ -200,12 +205,14 @@ def check_source(path: string, source: string) {
       catch {
         zuri.parse(fence.source)
       } as error {
-        findings.append(Finding(
-          path,
-          block.line + fence.line,
-          'example does not parse',
-          ' '.join(error.message.lines().map(@(line) => line.trim())).trim()
-        ))
+        findings.append(
+          Finding(
+            path,
+            block.line + fence.line,
+            'example does not parse',
+            ' '.join(error.message.lines().map(@(line) => line.trim())).trim(),
+          ),
+        )
       }
     }
   }
@@ -287,12 +294,14 @@ def check_command(path: string, name: string, source: string) {
   var blocks = _doc_blocks(source)
 
   if blocks.is_empty() or blocks[0].body == nil {
-    findings.append(Finding(
-      path,
-      1,
-      'command has no doc block',
-      'zuri --help reads @command and @description from it'
-    ))
+    findings.append(
+      Finding(
+        path,
+        1,
+        'command has no doc block',
+        'zuri --help reads @command and @description from it',
+      ),
+    )
 
     return findings
   }
@@ -302,16 +311,34 @@ def check_command(path: string, name: string, source: string) {
   var described = block.all('description')
 
   if declared.is_empty() {
-    findings.append(Finding(path, blocks[0].line, 'command does not name itself',
-      'add "@command ${name}" to the doc block'))
+    findings.append(
+      Finding(
+        path,
+        blocks[0].line,
+        'command does not name itself',
+        'add "@command ${name}" to the doc block',
+      ),
+    )
   } else if declared[0].text.trim() != name {
-    findings.append(Finding(path, blocks[0].line, 'command names itself wrongly',
-      '@command says "${declared[0].text.trim()}" but this file answers to "${name}"'))
+    findings.append(
+      Finding(
+        path,
+        blocks[0].line,
+        'command names itself wrongly',
+        '@command says "${declared[0].text.trim()}" but this file answers to "${name}"',
+      ),
+    )
   }
 
   if described.is_empty() or described[0].text.trim() == '' {
-    findings.append(Finding(path, blocks[0].line, 'command has no description',
-      'add "@description <one line>", which is what zuri --help lists'))
+    findings.append(
+      Finding(
+        path,
+        blocks[0].line,
+        'command has no description',
+        'add "@description <one line>", which is what zuri --help lists',
+      ),
+    )
   }
 
   return findings

@@ -40,17 +40,17 @@ def _remove(files: list, root: string, dry_run: bool) {
   if !dry_run and os.dir_exists(root) {
     # Deepest first, so a directory is looked at after what it held.
     var directories = fsx
-      .walk(root)
-      .filter(@(entry) => entry.kind == 'dir')
-      .reverse()
+        .walk(root)
+        .filter(@(entry) => entry.kind == 'dir')
+        .reverse()
 
     for entry in directories {
       var full = os.join_paths(root, entry.path)
 
       if os
-        .read_dir(full)
-        .filter(@(name) => name != '.' and name != '..')
-        .is_empty() {
+          .read_dir(full)
+          .filter(@(name) => name != '.' and name != '..')
+          .is_empty() {
         os.remove_dir(full)
       }
     }
@@ -136,16 +136,20 @@ def main() {
   } else {
     fsx.ensure_dir(paths.cache_dir())
     lock_module.holding(
-      os.join_paths(paths.cache_dir(), 'lock'), shared, @(pid) {
-        echo ui.muted('Waiting for another zuri command (process ${pid}) to finish downloading')
+      os.join_paths(paths.cache_dir(), 'lock'),
+      shared,
+      @(pid) {
+        echo ui.muted(
+          'Waiting for another zuri command (process ${pid}) to finish downloading',
+        )
       },
     )
   }
 
   if chosen.libs {
     var project = parsed.options.get('global', false) == true
-      ? paths.global_project()
-      : cli.require_project('clean')
+        ? paths.global_project()
+        : cli.require_project('clean')
 
     var cleaned = _clean_libs(project, dry_run)
 

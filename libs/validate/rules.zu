@@ -1560,9 +1560,9 @@ class Confirmed < Rule {
   }
 
   validate(value) {
-    var confirmation_key = self.name.ends_with('_confirmation') ?
-      self.name[,-13] :
-      self.name + '_confirmation'
+    var confirmation_key = self.name.ends_with('_confirmation')
+        ? self.name[,-13]
+        : self.name + '_confirmation'
 
     return value == self._data.get(confirmation_key, nil)
   }
@@ -1995,9 +1995,9 @@ class Each < Rule {
   }
 
   error() {
-    return self._error.length() > 0 ?
-      self._error :
-      'The ${self.name} field contains an invalid item.'
+    return self._error.length() > 0
+        ? self._error
+        : 'The ${self.name} field contains an invalid item.'
   }
 }
 

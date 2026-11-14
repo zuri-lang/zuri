@@ -7,7 +7,7 @@ import os
 isolate.configure(4)
 
 assert isolate.started_count() == 0,
-  'a pool nothing has used yet must have started no threads'
+    'a pool nothing has used yet must have started no threads'
 
 # Isolates run one after another reuse the one thread.
 iter var i = 0; i < 5; i++ {
@@ -15,7 +15,7 @@ iter var i = 0; i < 5; i++ {
 }
 
 assert isolate.started_count() == 1,
-  'isolates that never overlap must share one thread, started ${isolate.started_count()}'
+    'isolates that never overlap must share one thread, started ${isolate.started_count()}'
 
 def hold(gate) {
   return gate.recv()
@@ -38,7 +38,7 @@ iter var i = 0; i < 3; i++ {
 
 settle(3)
 assert isolate.started_count() == 3,
-  'three isolates waiting at once must have three threads, started ${isolate.started_count()}'
+    'three isolates waiting at once must have three threads, started ${isolate.started_count()}'
 
 # Six at once on a pool of four get four threads, and two wait in line.
 iter var i = 0; i < 3; i++ {
@@ -47,7 +47,7 @@ iter var i = 0; i < 3; i++ {
 
 settle(4)
 assert isolate.started_count() == 4,
-  'the pool must never start more threads than its size'
+    'the pool must never start more threads than its size'
 assert isolate.queued_count() == 2, 'what does not fit must wait in the queue'
 
 iter var i = 0; i < 6; i++ {
@@ -62,6 +62,6 @@ for task in held {
 
 assert total == 15, 'every held isolate must still run to the end'
 assert isolate.started_count() == 4,
-  'running the queue down must not start more threads'
+    'running the queue down must not start more threads'
 
 echo 'isolate pool growth passed'

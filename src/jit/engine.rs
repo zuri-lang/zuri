@@ -396,19 +396,6 @@ impl JitEngine {
     bytes: &[u8],
     relocs: &[ModuleReloc],
   ) -> Result<EntryFn, String> {
-    if crate::jit::log_asm_enabled() {
-      let dir = std::path::Path::new("tmp/jitasm");
-      let _ = std::fs::create_dir_all(dir);
-      let label = match self.asm_labels.get(&func_id) {
-        Some(l) => l.clone(),
-        None => format!("fn{}", func_id.as_u32()),
-      };
-      let _ = std::fs::write(dir.join(format!("{label}.bin")), bytes);
-      eprintln!(
-        "[jit] asm for '{label}' -> tmp/jitasm/{label}.bin ({} bytes)",
-        bytes.len()
-      );
-    }
     self
       .module
       .define_function_bytes(func_id, alignment, bytes, relocs)
@@ -419,6 +406,21 @@ impl JitEngine {
       .map_err(|e| format!("failed to finalize: {e}"))?;
 
     let code_ptr = self.module.get_finalized_function(func_id);
+    // The address lets a sampling profiler's raw addresses be matched to
+    // the function and an offset in its file.
+    if crate::jit::log_asm_enabled() {
+      let dir = std::path::Path::new("tmp/jitasm");
+      let _ = std::fs::create_dir_all(dir);
+      let label = match self.asm_labels.get(&func_id) {
+        Some(l) => l.clone(),
+        None => format!("fn{}", func_id.as_u32()),
+      };
+      let _ = std::fs::write(dir.join(format!("{label}.bin")), bytes);
+      eprintln!(
+        "[jit] asm for '{label}' at {code_ptr:p} -> tmp/jitasm/{label}.bin ({} bytes)",
+        bytes.len()
+      );
+    }
     // SAFETY: `code_ptr` was just produced by compiling a function with
     // exactly the signature `EntryFn` describes (I64, I64, I64, I32 ->
     // I64, matching `build_ir`'s `sig`), for the host's native calling

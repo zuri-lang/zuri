@@ -57,25 +57,27 @@ var call_text = '{"jsonrpc": "2.0", "id": 7, "method": "add", "params": [1, 2]}'
 var call = rpc.decode(call_text)
 assert instance_of(call, rpc.Request), 'a message with an id is a request'
 assert call.method == 'add' and call.id == 7 and call.params == [1, 2],
-  'with its parts'
+    'with its parts'
 
 var note = rpc.decode('{"jsonrpc": "2.0", "method": "tick"}')
 assert instance_of(note, rpc.Notification),
-  'a message without an id is a notification'
+    'a message without an id is a notification'
 assert note.params == nil, 'which may carry no params'
 
 var null_id = rpc.decode('{"jsonrpc": "2.0", "id": null, "method": "x"}')
 assert instance_of(null_id, rpc.Request) and null_id.id == nil,
-  'a null id is still a request'
+    'a null id is still a request'
 
 var answer = rpc.decode('{"jsonrpc": "2.0", "id": 7, "result": 3}')
 assert instance_of(answer, rpc.Response) and !answer.is_error(),
-  'a result is a response'
+    'a result is a response'
 assert answer.result == 3, 'carrying the result'
 
-var failure = rpc.decode('{"jsonrpc": "2.0", "id": 7, "error": {"code": -32601, "message": "no"}}')
+var failure = rpc.decode(
+  '{"jsonrpc": "2.0", "id": 7, "error": {"code": -32601, "message": "no"}}',
+)
 assert failure.is_error() and failure.error.code == -32601,
-  'an error is a failed response'
+    'an error is a failed response'
 ok('decode() reads requests, notifications and responses')
 
 var invalid = [
@@ -94,38 +96,48 @@ var invalid = [
 for text in invalid {
   var error = raises(@() => rpc.decode(text), rpc.RpcError)
   assert error != nil and error.code == rpc.INVALID_REQUEST,
-    '${text} is not a message'
+      '${text} is not a message'
 }
 
 var unparsed = raises(@() => rpc.decode('{not json'), rpc.RpcError)
 assert unparsed.code == rpc.PARSE_ERROR,
-  'text that is not JSON is a parse error'
+    'text that is not JSON is a parse error'
 ok('decode() refuses everything JSON-RPC does not allow')
 
 var batch_text_in = '[{"jsonrpc": "2.0", "method": "a"}, 5, ' +
-  '{"jsonrpc": "2.0", "id": 2, "method": "b"}]'
+    '{"jsonrpc": "2.0", "id": 2, "method": "b"}]'
 var batch = rpc.decode(batch_text_in)
 assert batch.length() == 3, 'a batch reads each entry'
 assert instance_of(batch[0], rpc.Notification), 'keeping each message'
 assert instance_of(batch[1], rpc.RpcError),
-  'and an error for each entry that is not one'
+    'and an error for each entry that is not one'
 assert instance_of(batch[2], rpc.Request), 'in order'
 ok('decode() reads a batch entry by entry')
 
 var request_text = rpc.encode(rpc.Request('add', [2, 3], 1))
-assert json.decode(request_text)
-  == { jsonrpc: '2.0', id: 1, method: 'add', params: [2, 3] },
-  'a request encodes as JSON-RPC sends it'
+assert json.decode(request_text) ==
+    {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'add',
+      params: [2, 3],
+    },
+    'a request encodes as JSON-RPC sends it'
 var bare = json.decode(rpc.encode(rpc.Notification('ping', nil)))
 assert raises(@() => rpc.Request('add', 'two', 1), ValueError) != nil,
-  'a request is never built with params JSON-RPC cannot carry'
+    'a request is never built with params JSON-RPC cannot carry'
 assert !bare.contains('params') and !bare.contains('id'),
-  'nothing absent is sent'
-var failed = json.decode(rpc.encode(rpc.Response.failure(
-  4, rpc.RpcError(-1, 'bad', { at: 2 }),
-)))
-assert failed.error == { code: -1, message: 'bad', data: { at: 2 } },
-  'an error sends its data'
+    'nothing absent is sent'
+var failed = json.decode(
+  rpc.encode(rpc.Response.failure(4, rpc.RpcError(-1, 'bad', { at: 2 }))),
+)
+assert failed.error ==
+    {
+      code: -1,
+      message: 'bad',
+      data: { at: 2 },
+    },
+    'an error sends its data'
 ok('encode() writes every message as JSON-RPC sends it')
 
 # ---------------------------------------------------------------------------
@@ -134,7 +146,7 @@ ok('encode() writes every message as JSON-RPC sends it')
 var framing = rpc.HeaderFraming()
 var framed = framing.frame('{"a":"é😀"}')
 assert framed.to_string().starts_with('Content-Length: 14\r\n\r\n'),
-  'the length counts the 14 bytes of the 10 characters'
+    'the length counts the 14 bytes of the 10 characters'
 
 var stream = framed + framing.frame('{"b":2}')
 var pieces = []
@@ -142,7 +154,7 @@ iter var i = 0; i < stream.length(); i++ {
   pieces.extend(framing.feed(stream[i, i + 1]))
 }
 assert pieces.map(@(p) => p.to_string()) == ['{"a":"é😀"}', '{"b":2}'],
-  'fed a byte at a time, every message comes out whole'
+    'fed a byte at a time, every message comes out whole'
 assert framing.pending() == 0, 'leaving nothing behind'
 
 var together = framing.feed(stream)
@@ -150,7 +162,7 @@ assert together.length() == 2, 'two messages in one piece both come out'
 
 var extra = 'content-length: 2\r\nContent-Type: application/vscode-jsonrpc; charset=utf-8\r\n\r\n{}'
 assert framing.feed(extra.to_bytes()).length() == 1,
-  'header names are read without regard to case'
+    'header names are read without regard to case'
 ok('HeaderFraming finds every message however the stream is split')
 
 var broken = [
@@ -163,7 +175,8 @@ var broken = [
 
 for text in broken {
   var error = raises(
-    @() => rpc.HeaderFraming().feed(text.to_bytes()), rpc.RpcFramingError,
+    @() => rpc.HeaderFraming().feed(text.to_bytes()),
+    rpc.RpcFramingError,
   )
   assert error != nil, '${text} is not a framed message'
 }
@@ -172,12 +185,12 @@ var small = rpc.HeaderFraming().set_max_size(10)
 assert small.max_size() == 10, 'the limit can be set'
 var too_long = 'Content-Length: 11\r\n\r\n'.to_bytes()
 assert raises(@() => small.feed(too_long), rpc.RpcFramingError) != nil,
-  'a message over the limit is refused before it arrives'
+    'a message over the limit is refused before it arrives'
 
 var endless = 'X: '.to_bytes() + bytes(9000)
-assert raises(@() => rpc.HeaderFraming().feed(endless), rpc.RpcFramingError)
-  != nil,
-  'a header block with no end is refused'
+assert raises(@() => rpc.HeaderFraming().feed(endless), rpc.RpcFramingError) !=
+    nil,
+    'a header block with no end is refused'
 ok('HeaderFraming refuses what cannot be read')
 
 # ---------------------------------------------------------------------------
@@ -186,16 +199,19 @@ ok('HeaderFraming refuses what cannot be read')
 var lines = rpc.LineFraming()
 var first = lines.feed('{"a":1}\r\n\n{"b"'.to_bytes())
 assert first.map(@(l) => l.to_string()) == ['{"a":1}'],
-  'a line ending in \\r\\n is one message'
+    'a line ending in \\r\\n is one message'
 assert lines.pending() == 4, 'an unfinished line is held'
 assert lines.feed(':2}\n'.to_bytes())[0].to_string() == '{"b":2}',
-  'and finished by the next piece'
+    'and finished by the next piece'
 assert lines.frame('{}').to_string() == '{}\n', 'a message is sent as a line'
 
 var short_lines = rpc.LineFraming().set_max_size(4)
-assert raises(@() => short_lines.feed('12345'.to_bytes()), rpc.RpcFramingError)
-  != nil,
-  'a line over the limit is refused'
+assert raises(
+      @() => short_lines.feed('12345'.to_bytes()),
+      rpc.RpcFramingError,
+    ) !=
+    nil,
+    'a line over the limit is refused'
 ok('LineFraming reads one message to a line')
 
 # ---------------------------------------------------------------------------
@@ -210,106 +226,112 @@ def serve_test_api(transport) {
   var server = rpc.endpoint(transport)
 
   server
-    .on_request('add', @(params) => params[0] + params[1])
-    .on_request('greet', @(params) => 'Hello, ${params.name}!')
-    .on_request('refuse', @(params) {
-      raise rpc.RpcError(-32001, 'refused', { reason: params[0] })
-    })
-    .on_request('crash', @(params) {
-      raise ValueError('it broke')
-    })
-    .on_notification('note', @(params) {
-      seen.append(params)
-    })
-    .on_request('notes', @(params) => seen)
-    .on_request('later', @(params, context) {
-      waiting.append(context.defer())
-    })
-    .on_notification('release', @(params) {
-      for context in waiting {
-        context.reply(params)
-      }
+      .on_request('add', @(params) => params[0] + params[1])
+      .on_request('greet', @(params) => 'Hello, ${params.name}!')
+      .on_request('refuse', @(params) {
+        raise rpc.RpcError(-32001, 'refused', { reason: params[0] })
+      })
+      .on_request('crash', @(params) {
+        raise ValueError('it broke')
+      })
+      .on_notification('note', @(params) {
+        seen.append(params)
+      })
+      .on_request('notes', @(params) => seen)
+      .on_request('later', @(params, context) {
+        waiting.append(context.defer())
+      })
+      .on_notification('release', @(params) {
+        for context in waiting {
+          context.reply(params)
+        }
 
-      waiting = []
-    })
-    .on_request('later_refused', @(params, context) {
-      context.defer().fail(rpc.RpcError(-32002, 'not today'))
-    })
-    .on_request('deferred_crash', @(params, context) {
-      context.defer()
-      raise ValueError('broke after deferring')
-    })
-    .on_request('reply_early', @(params, context) {
-      catch {
-        context.reply(1)
-      } as error {
-        return error.message
-      }
-    })
-    .on_unhandled(@(params, context) {
-      if context.is_notification() {
-        fallen_back.append(context.method)
-        return
-      }
+        waiting = []
+      })
+      .on_request('later_refused', @(params, context) {
+        context.defer().fail(rpc.RpcError(-32002, 'not today'))
+      })
+      .on_request('deferred_crash', @(params, context) {
+        context.defer()
+        raise ValueError('broke after deferring')
+      })
+      .on_request('reply_early', @(params, context) {
+        catch {
+          context.reply(1)
+        } as error {
+          return error.message
+        }
+      })
+      .on_unhandled(@(params, context) {
+        if context.is_notification() {
+          fallen_back.append(context.method)
+          return
+        }
 
-      if context.method.starts_with('echo.') {
-        return [context.method, params]
-      }
+        if context.method.starts_with('echo.') {
+          return [context.method, params]
+        }
 
-      if context.method == 'fallen_back' {
-        return fallen_back
-      }
+        if context.method == 'fallen_back' {
+          return fallen_back
+        }
 
-      raise rpc.RpcError(
-        rpc.METHOD_NOT_FOUND, 'Method not found: ${context.method}',
-      )
-    })
-    .on_request('ask', @(params, context) {
-      return context.endpoint.request('question', params) + 1
-    })
-    .on_error(@(error, value) {
-      server.notify('server_error', [error.message])
-    })
-    .serve()
+        raise rpc.RpcError(
+          rpc.METHOD_NOT_FOUND,
+          'Method not found: ${context.method}',
+        )
+      })
+      .on_request('ask', @(params, context) {
+        return context.endpoint.request('question', params) + 1
+      })
+      .on_error(@(error, value) {
+        server.notify('server_error', [error.message])
+      })
+      .serve()
 }
 
 var ends = rpc.pipe()
 var server_task = isolate.spawn(serve_test_api, ends[1])
 var errors = []
-var client = rpc.endpoint(ends[0])
-  .on_request('question', @(params) => params[0] * 10)
-  .on_notification('server_error', @(params) {
-    errors.append(params[0])
-  })
+var client = rpc
+    .endpoint(ends[0])
+    .on_request('question', @(params) => params[0] * 10)
+    .on_notification('server_error', @(params) {
+      errors.append(params[0])
+    })
 
 assert client.request('add', [2, 3]) == 5, 'a request is answered'
 assert client.request('greet', { name: 'Zuri' }) == 'Hello, Zuri!',
-  'with params by name too'
+    'with params by name too'
 
 var missing = raises(@() => client.request('nothing', nil), rpc.RpcError)
 assert missing.code == rpc.METHOD_NOT_FOUND,
-  'a method with no handler is not found'
+    'a method with no handler is not found'
 
 var refused = raises(@() => client.request('refuse', ['policy']), rpc.RpcError)
 assert refused.code == -32001 and refused.message == 'refused',
-  'an RpcError goes back as it is'
+    'an RpcError goes back as it is'
 assert refused.data == { reason: 'policy' }, 'data included'
 
 var crashed = raises(@() => client.request('crash', nil), rpc.RpcError)
 assert crashed.code == rpc.INTERNAL_ERROR and crashed.message == 'it broke',
-  'any other error is an internal error carrying its message'
+    'any other error is an internal error carrying its message'
 ok('requests are answered with results and errors')
 
 client.notify('note', ['one'])
 client.notify('note', ['two'])
-assert client.request('notes', nil) == [['one'], ['two']],
-  'notifications reach their handler in order'
+assert client.request('notes', nil) ==
+    [
+      ['one'],
+      ['two'],
+    ],
+    'notifications reach their handler in order'
 assert errors == ['it broke'],
-  'and the server was told of the crash through on_error'
+    'and the server was told of the crash through on_error'
 ok('notifications are delivered and errors reported')
 
 assert client.request('ask', [4]) == 41,
-  'a handler can ask the caller something before answering'
+    'a handler can ask the caller something before answering'
 ok('either side can call the other in the middle of a request')
 
 # A deferred request is answered by a later message.
@@ -324,60 +346,86 @@ while answered.is_empty() {
   client.dispatch(inbox.recv(PATIENCE))
 }
 
-assert answered == [['done']],
-  'a deferred request is answered when its reply is sent'
+assert answered ==
+    [
+      ['done'],
+    ],
+    'a deferred request is answered when its reply is sent'
 
 var refused_later = raises(
-  @() => client.request('later_refused', nil), rpc.RpcError,
+  @() => client.request('later_refused', nil),
+  rpc.RpcError,
 )
 assert refused_later.code == -32002, 'a deferred request can fail'
 
 var crashed_later = raises(
-  @() => client.request('deferred_crash', nil), rpc.RpcError,
+  @() => client.request('deferred_crash', nil),
+  rpc.RpcError,
 )
 assert crashed_later.code == rpc.INTERNAL_ERROR,
-  'a handler that raises after deferring fails it'
+    'a handler that raises after deferring fails it'
 
 var early = client.request('reply_early', nil)
 assert early == 'only a deferred request is answered through its context',
-  'a request that was not deferred cannot be answered through its context'
+    'a request that was not deferred cannot be answered through its context'
 ok('send_request() calls back with a deferred answer')
 
-assert client.request('echo.twice', [2]) == ['echo.twice', [2]],
-  'a method with no handler reaches the fallback'
+assert client.request('echo.twice', [2]) ==
+    [
+      'echo.twice',
+      [2],
+    ],
+    'a method with no handler reaches the fallback'
 client.notify('stray.note', nil)
 assert client.request('fallen_back', nil) == ['stray.note'],
-  'and so does a notification'
+    'and so does a notification'
 
 var still_missing = raises(
-  @() => client.request('nothing.at.all', nil), rpc.RpcError,
+  @() => client.request('nothing.at.all', nil),
+  rpc.RpcError,
 )
 assert still_missing.code == rpc.METHOD_NOT_FOUND,
-  'the fallback can refuse a method'
+    'the fallback can refuse a method'
 
 var reserved = raises(@() => client.request('rpc.echo', nil), rpc.RpcError)
 assert reserved.code == rpc.METHOD_NOT_FOUND,
-  'reserved names never reach the fallback'
+    'reserved names never reach the fallback'
 ok('on_unhandled() catches what no handler does')
 
 var batch_answers = client.request_batch([
-  ['add', [1, 2]],
-  ['refuse', ['batch']],
-  ['greet', { name: 'Batch' }],
+  [
+    'add',
+    [1, 2],
+  ],
+  [
+    'refuse',
+    ['batch'],
+  ],
+  [
+    'greet',
+    { name: 'Batch' },
+  ],
 ])
 assert batch_answers[0] == 3 and batch_answers[2] == 'Hello, Batch!',
-  'a batch is answered in the order it was sent'
-assert instance_of(batch_answers[1], rpc.RpcError)
-  and batch_answers[1].code == -32001,
-  'with each failed call as its error'
+    'a batch is answered in the order it was sent'
+assert instance_of(batch_answers[1], rpc.RpcError) and
+    batch_answers[1].code == -32001,
+    'with each failed call as its error'
 assert raises(@() => client.request_batch([]), ValueError) != nil,
-  'an empty batch is refused'
-assert raises(@() => client.request_batch([['add']]), ValueError) != nil,
-  'and so is a call that is not a pair'
+    'an empty batch is refused'
+assert raises(
+      @() => client.request_batch([
+        ['add'],
+      ]),
+      ValueError,
+    ) !=
+    nil,
+    'and so is a call that is not a pair'
 ok('request_batch() sends a batch and collects every answer')
 
 var timeout = raises(
-  @() => client.request('later', nil, 0.2), rpc.RpcTimeoutError,
+  @() => client.request('later', nil, 0.2),
+  rpc.RpcTimeoutError,
 )
 assert timeout != nil, 'a listening endpoint gives up after its timeout'
 client.notify('release', ['late'])
@@ -389,18 +437,18 @@ client.on_trace(@(direction, text) {
 })
 client.request('add', [1, 1])
 assert traced.contains('out') and traced.contains('in'),
-  'every message is traced both ways'
+    'every message is traced both ways'
 ok('on_trace() sees the conversation')
 
-assert raises(@() => client.on_request('rpc.discover', @() => 1), ValueError)
-  != nil,
-  'rpc. names are reserved'
+assert raises(@() => client.on_request('rpc.discover', @() => 1), ValueError) !=
+    nil,
+    'rpc. names are reserved'
 ok('reserved method names are refused')
 
 client.close()
 assert client.is_closed(), 'a closed endpoint says so'
 assert raises(@() => client.notify('note', ['x']), rpc.RpcClosedError) != nil,
-  'and sends nothing more'
+    'and sends nothing more'
 server_task.join(PATIENCE)
 ok('closing one end ends the other')
 
@@ -427,38 +475,40 @@ def answer_raw(sent) {
 
 var parse_reply = answer_raw('{nonsense')
 assert parse_reply.id == nil and parse_reply.error.code == rpc.PARSE_ERROR,
-  'text that is not JSON is answered with a parse error and a null id'
+    'text that is not JSON is answered with a parse error and a null id'
 
 var version_reply = answer_raw('{"jsonrpc": "1.0", "id": 9, "method": "add"}')
-assert version_reply.id == 9
-  and version_reply.error.code == rpc.INVALID_REQUEST,
-  'an invalid request is answered with its own id'
+assert version_reply.id == 9 and
+    version_reply.error.code == rpc.INVALID_REQUEST,
+    'an invalid request is answered with its own id'
 
 var empty_reply = answer_raw('[]')
 assert empty_reply.error.code == rpc.INVALID_REQUEST,
-  'an empty batch is invalid'
+    'an empty batch is invalid'
 
 var batch_text = '[{"jsonrpc": "2.0", "id": 1, "method": "add", "params": [1, 2]}, ' +
-  '{"jsonrpc": "2.0", "method": "note", "params": ["x"]}, 7]'
+    '{"jsonrpc": "2.0", "method": "note", "params": ["x"]}, 7]'
 var batch_reply = answer_raw(batch_text)
 assert is_list(batch_reply) and batch_reply.length() == 2,
-  'a batch is answered as a batch'
+    'a batch is answered as a batch'
 assert batch_reply[0].result == 3, 'each request answered in order'
 assert batch_reply[1].error.code == rpc.INVALID_REQUEST,
-  'each bad entry answered on its own'
+    'each bad entry answered on its own'
 
 # Read as U+FFFD, the 0xff would make this a valid request.
-var unreadable = '{"jsonrpc": "2.0", "id": 5, "method": "greet", "params": {"name": "'.to_bytes() +
-  bytes([0xff]) + '"}}'.to_bytes()
+var unreadable = '{"jsonrpc": "2.0", "id": 5, "method": "greet", "params": {"name": "'
+        .to_bytes() +
+    bytes([0xff]) +
+    '"}}'.to_bytes()
 var unreadable_reply = answer_raw(unreadable)
-assert unreadable_reply.id == nil
-  and unreadable_reply.error.code == rpc.PARSE_ERROR,
-  'a message that is not UTF-8 is answered with a parse error'
+assert unreadable_reply.id == nil and
+    unreadable_reply.error.code == rpc.PARSE_ERROR,
+    'a message that is not UTF-8 is answered with a parse error'
 
 var replacement_text = '{"jsonrpc": "2.0", "id": 3, "method": "greet", ' +
-  '"params": {"name": "\ufffd"}}'
+    '"params": {"name": "\ufffd"}}'
 assert answer_raw(replacement_text).result == 'Hello, \ufffd!',
-  'while U+FFFD itself is valid UTF-8'
+    'while U+FFFD itself is valid UTF-8'
 ok('the wire carries exactly what JSON-RPC requires')
 
 var raw = rpc.pipe()
@@ -469,13 +519,13 @@ raw[1].write(rpc.HeaderFraming().frame('{"jsonrpc": "2.0", "method": "tick"}'))
 
 var decoded_item = listened.recv(PATIENCE)
 assert decoded_item.kind == 'message' and decoded_item.value.method == 'tick',
-  'listen() decodes each message before handing it over'
+    'listen() decodes each message before handing it over'
 
 raw[1].write(rpc.HeaderFraming().frame(unreadable))
 
 var unreadable_item = listened.recv(PATIENCE)
 assert unreadable_item.kind == 'unreadable' and unreadable_item.text == nil,
-  'and hands over no text for a message that is not UTF-8'
+    'and hands over no text for a message that is not UTF-8'
 
 listener.dispatch(unreadable_item)
 
@@ -486,7 +536,7 @@ while raw_replies.is_empty() {
 }
 
 assert json.decode(raw_replies[0].to_string()).error.code == rpc.PARSE_ERROR,
-  'which dispatch() answers with a parse error'
+    'which dispatch() answers with a parse error'
 
 listener.close()
 raw[1].close()
@@ -496,62 +546,66 @@ ok('a listening endpoint refuses text that is not UTF-8')
 # Services, answering one exchange at a time
 # ---------------------------------------------------------------------------
 var calculator = rpc.Service()
-  .on_request('add', @(params) => params[0] + params[1])
-  .on_request('source', @(params, context) => context.request)
-  .on_request('later', @(params, context) => context.defer())
+    .on_request('add', @(params) => params[0] + params[1])
+    .on_request('source', @(params, context) => context.request)
+    .on_request('later', @(params, context) => context.defer())
 
 var sum_text = '{"jsonrpc": "2.0", "id": 1, "method": "add", "params": [2, 3]}'
 assert calculator.answer(sum_text) == '{"jsonrpc":"2.0","id":1,"result":5}',
-  'a service answers a request with its JSON text'
-assert calculator.answer(sum_text.to_bytes())
-  == '{"jsonrpc":"2.0","id":1,"result":5}',
-  'and the bytes of one'
-assert calculator.answer('{"jsonrpc": "2.0", "method": "add", "params": [2, 3]}') == nil,
-  'a notification has no answer'
+    'a service answers a request with its JSON text'
+assert calculator.answer(sum_text.to_bytes()) ==
+    '{"jsonrpc":"2.0","id":1,"result":5}',
+    'and the bytes of one'
+assert calculator.answer(
+      '{"jsonrpc": "2.0", "method": "add", "params": [2, 3]}',
+    ) ==
+    nil,
+    'a notification has no answer'
 
 var source_text = '{"jsonrpc": "2.0", "id": 2, "method": "source"}'
-assert json.decode(calculator.answer(source_text, 'the exchange')).result
-  == 'the exchange',
-  'every handler is given what the message arrived in'
+assert json.decode(calculator.answer(source_text, 'the exchange')).result ==
+    'the exchange',
+    'every handler is given what the message arrived in'
 
-var deferred = json.decode(calculator.answer('{"jsonrpc": "2.0", "id": 3, "method": "later"}'))
+var deferred = json.decode(
+  calculator.answer('{"jsonrpc": "2.0", "id": 3, "method": "later"}'),
+)
 assert deferred.error.code == rpc.INTERNAL_ERROR,
-  'a request answered in its own exchange cannot be deferred'
+    'a request answered in its own exchange cannot be deferred'
 
 var unreadable_answer = json.decode(calculator.answer(bytes([0x7b, 0xff])))
-assert unreadable_answer.error.code == rpc.PARSE_ERROR
-  and unreadable_answer.id == nil,
-  'bytes that are not UTF-8 are a parse error'
+assert unreadable_answer.error.code == rpc.PARSE_ERROR and
+    unreadable_answer.id == nil,
+    'bytes that are not UTF-8 are a parse error'
 assert raises(@() => calculator.answer(42), TypeError) != nil,
-  'a message is text or bytes'
+    'a message is text or bytes'
 ok('a Service answers each message it is given')
 
 assert calculator.batch_limit() == rpc.DEFAULT_BATCH_LIMIT,
-  'batches are limited by default'
+    'batches are limited by default'
 
 var three = '[' + ', '.join([sum_text, sum_text, sum_text]) + ']'
 var over = json.decode(calculator.set_batch_limit(2).answer(three))
 assert over.id == nil and over.error.code == rpc.INVALID_REQUEST,
-  'a batch over the limit is refused whole'
+    'a batch over the limit is refused whole'
 assert json.decode(calculator.set_batch_limit(nil).answer(three)).length() == 3,
-  'and a service without a limit takes any batch'
+    'and a service without a limit takes any batch'
 assert raises(@() => calculator.set_batch_limit(0), ValueError) != nil,
-  'a limit is at least 1'
+    'a limit is at least 1'
 ok('set_batch_limit() bounds the work one message can ask for')
 
 var whole = rpc.MessageFraming()
 assert whole.feed('{"a":1}'.to_bytes())[0].to_string() == '{"a":1}',
-  'each piece is one message'
+    'each piece is one message'
 assert whole.feed(bytes(0)).is_empty() and whole.pending() == 0,
-  'and nothing is held back'
+    'and nothing is held back'
 assert whole.frame('{"b":2}').to_string() == '{"b":2}', 'framing adds nothing'
-assert raises(@() => rpc
-  .MessageFraming()
-  .set_max_size(2)
-  .feed('{}{}'.to_bytes()),
-  rpc.RpcFramingError)
-  != nil,
-  'a message over the limit is refused'
+assert raises(
+      @() => rpc.MessageFraming().set_max_size(2).feed('{}{}'.to_bytes()),
+      rpc.RpcFramingError,
+    ) !=
+    nil,
+    'a message over the limit is refused'
 ok('MessageFraming takes each read as one whole message')
 
 # ---------------------------------------------------------------------------
@@ -561,66 +615,73 @@ var http_ready = isolate.channel(1)
 var http_task = isolate.spawn(rpc_servers.http_server, http_ready)
 var http_base = 'http://127.0.0.1:${http_ready.recv(PATIENCE)}'
 
-var remote_calculator = rpc.HttpClient(
-  '${http_base}/rpc', { headers: { 'X-Caller': 'tests' } },
-)
+var remote_calculator = rpc.HttpClient('${http_base}/rpc', {
+  headers: { 'X-Caller': 'tests' },
+})
 
 assert remote_calculator.request('add', [2, 3]) == 5,
-  'a request over HTTP is answered'
+    'a request over HTTP is answered'
 assert remote_calculator.request('caller', nil) == 'tests',
-  'with the client headers on the HTTP request handlers see'
+    'with the client headers on the HTTP request handlers see'
 assert remote_calculator.notify('add', [1, 1]) == nil,
-  'a notification has no answer'
+    'a notification has no answer'
 
 var over_http = remote_calculator.request_batch([
-  ['add', [1, 2]],
+  [
+    'add',
+    [1, 2],
+  ],
   ['missing', nil],
-  ['add', [3, 4]],
+  [
+    'add',
+    [3, 4],
+  ],
 ])
 assert over_http[0] == 3 and over_http[2] == 7,
-  'a batch over HTTP is answered in order'
+    'a batch over HTTP is answered in order'
 assert over_http[1].code == rpc.METHOD_NOT_FOUND,
-  'with each failure in its place'
+    'with each failure in its place'
 
 var refused_defer = raises(
-  @() => remote_calculator.request('later', nil), rpc.RpcError,
+  @() => remote_calculator.request('later', nil),
+  rpc.RpcError,
 )
 assert refused_defer.code == rpc.INTERNAL_ERROR,
-  'an HTTP request cannot be deferred'
+    'an HTTP request cannot be deferred'
 ok('HttpClient calls a Service behind an http route')
 
 var locked_client = rpc.HttpClient('${http_base}/locked')
 var locked = raises(@() => locked_client.request('add', [1]), rpc.RpcHttpError)
 assert locked.status == 401 and locked.body == 'no\n',
-  'a status with no answer raises with it'
+    'a status with no answer raises with it'
 
 var legacy = raises(
   @() => rpc.HttpClient('${http_base}/legacy').request('add', [1]),
   rpc.RpcError,
 )
 assert legacy.code == -32601,
-  'a JSON-RPC error on another status is read as the answer'
+    'a JSON-RPC error on another status is read as the answer'
 
 var wrong_method = http.get('${http_base}/rpc')
-assert wrong_method.status == 405
-  and wrong_method.headers.get('allow', '') == 'POST',
-  'anything but POST is refused'
+assert wrong_method.status == 405 and
+    wrong_method.headers.get('allow', '') == 'POST',
+    'anything but POST is refused'
 
-var plain_text = http.post(
-  '${http_base}/rpc', '{}', { headers: { 'Content-Type': 'text/plain' } },
-)
+var plain_text = http.post('${http_base}/rpc', '{}', {
+  headers: { 'Content-Type': 'text/plain' },
+})
 assert plain_text.status == 415, 'a body that is not JSON is refused'
 
 var latin1 = { 'Content-Type': 'application/json; charset=latin1' }
 assert http.post('${http_base}/rpc', '{}', { headers: latin1 }).status == 415,
-  'and so is JSON that is not UTF-8'
+    'and so is JSON that is not UTF-8'
 
 var silent_text = '{"jsonrpc": "2.0", "method": "add", "params": [1, 1]}'
 var silent = http.post('${http_base}/rpc', silent_text, {
   headers: { 'Content-Type': 'application/json' },
 })
 assert silent.status == 204 and silent.body.length() == 0,
-  'nothing to answer is a 204'
+    'nothing to answer is a 204'
 ok('the HTTP side speaks the statuses JSON-RPC clients expect')
 
 http_task.cancel()
@@ -633,13 +694,19 @@ var ws_task = isolate.spawn(rpc_servers.websocket_server, ws_ready)
 var ws_port = ws_ready.recv(PATIENCE)
 
 var shop = rpc
-  .endpoint(rpc.websocket(websocket.connect('ws://127.0.0.1:${ws_port}/ws')))
-  .on_request('price_of', @(params) => params[0] == 'tea' ? 3 : 5)
+    .endpoint(rpc.websocket(websocket.connect('ws://127.0.0.1:${ws_port}/ws')))
+    .on_request('price_of', @(params) => params[0] == 'tea' ? 3 : 5)
 
 assert shop.request('total', { item: 'tea', count: 4 }) == 12,
-  'either side calls the other over a WebSocket'
-assert shop.request_batch([['total', { item: 'cake', count: 2 }]]) == [10],
-  'batches included'
+    'either side calls the other over a WebSocket'
+assert shop.request_batch([
+      [
+        'total',
+        { item: 'cake', count: 2 },
+      ],
+    ]) ==
+    [10],
+    'batches included'
 shop.close()
 ws_task.cancel()
 ok('an Endpoint talks over a WebSocket, one message to a frame')
@@ -651,9 +718,10 @@ def line_client(address) {
   var stream = net.TcpStream()
   stream.connect(address)
 
-  return rpc.endpoint(rpc.socket(stream))
-    .set_framing(rpc.LineFraming())
-    .on_request('double', @(params) => params[0] * 2)
+  return rpc
+      .endpoint(rpc.socket(stream))
+      .set_framing(rpc.LineFraming())
+      .on_request('double', @(params) => params[0] * 2)
 }
 
 var tcp_ready = isolate.channel(2)
@@ -665,16 +733,26 @@ var first_client = line_client(tcp_address)
 var second_client = line_client(tcp_address)
 
 assert second_client.request('add', [40, 2]) == 42,
-  'two connections are served at once'
+    'two connections are served at once'
 assert first_client.request('ask_back', [10]) == 21,
-  'and each can be called back by the server'
-assert first_client.request_batch([['add', [1, 1]], ['add', [2, 2]]]) == [2, 4],
-  'batches included'
+    'and each can be called back by the server'
+assert first_client.request_batch([
+      [
+        'add',
+        [1, 1],
+      ],
+      [
+        'add',
+        [2, 2],
+      ],
+    ]) ==
+    [2, 4],
+    'batches included'
 
 first_client.close()
 second_client.close()
 assert tcp_ready.recv(PATIENCE) == 'done',
-  'serve() returns once its last connection closes'
+    'serve() returns once its last connection closes'
 tcp_task.join(PATIENCE)
 ok('serve() gives every TCP connection an endpoint of its own')
 
@@ -685,14 +763,14 @@ if unix.is_supported() {
   var unix_task = isolate.spawn(rpc_servers.run_serve, unix_ready, unix_options)
 
   assert unix_ready.recv(PATIENCE) == socket_path,
-    'a Unix domain socket is reported by its path'
+      'a Unix domain socket is reported by its path'
 
   var local = net.UnixStream()
   local.connect(socket_path)
 
   var local_client = rpc.endpoint(rpc.socket(local))
   assert local_client.request('add', [5, 6]) == 11,
-    'and served like any other connection'
+      'and served like any other connection'
 
   local_client.close()
   assert unix_ready.recv(PATIENCE) == 'done', 'until it closes'
@@ -752,11 +830,11 @@ trust.add_ca_pem(ca_cert)
 var tls_stream = net.TcpStream()
 tls_stream.connect(tls_address)
 
-var secure_client = rpc.endpoint(rpc.socket(tls.TlsStream.connect(
-  tls_stream, trust, 'localhost',
-)))
+var secure_client = rpc.endpoint(
+  rpc.socket(tls.TlsStream.connect(tls_stream, trust, 'localhost')),
+)
 assert secure_client.request('secure', nil) == 'over TLS',
-  'serve() puts its connections behind TLS'
+    'serve() puts its connections behind TLS'
 secure_client.close()
 assert tls_ready.recv(PATIENCE) == 'done', 'and ends with them'
 tls_task.join(PATIENCE)
@@ -767,10 +845,11 @@ assert stop_ready.recv(PATIENCE) == 'stopped', 'a stopped server returns'
 stop_task.join(PATIENCE)
 
 assert raises(
-  @() => rpc.serve(rpc_servers.serve_setup, { framing: 'xml' }), ValueError,
-)
-  != nil,
-  'an unknown framing is refused'
+      @() => rpc.serve(rpc_servers.serve_setup, { framing: 'xml' }),
+      ValueError,
+    ) !=
+    nil,
+    'an unknown framing is refused'
 ok('serve() serves TLS and stops when told to')
 
 # ---------------------------------------------------------------------------
@@ -778,16 +857,18 @@ ok('serve() serves TLS and stops when told to')
 # ---------------------------------------------------------------------------
 var server_script = os.join_paths(os.dir_name(__file__), '_rpc_stdio_server.zu')
 var child = os.spawn(
-  os.args[0], ['run', server_script], { stdin: 'pipe', stdout: 'pipe' },
+  os.args[0],
+  ['run', server_script],
+  { stdin: 'pipe', stdout: 'pipe' },
 )
 var remote = rpc.endpoint(rpc.process(child))
 
 assert remote.request('echo', { text: 'hé' }) == { text: 'hé' },
-  'a child answers over its stdio'
+    'a child answers over its stdio'
 assert raises(@() => remote.listen(), ValueError) != nil,
-  'a child is read where it was spawned'
+    'a child is read where it was spawned'
 assert remote.request('stop', nil) == 'stopping',
-  'and keeps answering until it stops'
+    'and keeps answering until it stops'
 remote.close()
 assert child.wait(5000) == 0, 'the child ends cleanly'
 ok('ProcessTransport and StdioTransport talk across processes')

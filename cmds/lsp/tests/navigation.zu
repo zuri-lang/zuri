@@ -49,7 +49,9 @@ def ask_scratch(source: string, method: string, marker: string, extra) {
 
   var answer = client.request(method, params)
 
-  client.notify('textDocument/didClose', { textDocument: { uri: address } })
+  client.notify('textDocument/didClose', {
+    textDocument: { uri: address },
+  })
 
   return answer
 }
@@ -57,9 +59,9 @@ def ask_scratch(source: string, method: string, marker: string, extra) {
 # A function whose parameter may be either of two classes that both
 # declare `distance`.
 var UNION = 'import .shapes { Point, Circle }\n\n' +
-  'def gap(shape: Point|Circle) {\n' +
-  '  return shape.distance(shape)\n' +
-  '}\n'
+    'def gap(shape: Point|Circle) {\n' +
+    '  return shape.distance(shape)\n' +
+    '}\n'
 
 # Where a location points, as `file:line:character`.
 def place(location: dict) {
@@ -69,7 +71,9 @@ def place(location: dict) {
 }
 
 before_all(@{
-  client = Client(FIXTURE, { diagnostics: { delay: 0 } })
+  client = Client(FIXTURE, {
+    diagnostics: { delay: 0 },
+  })
   client.initialize(nil)
   client.wait_indexed()
   main_uri = client.open(MAIN, nil)
@@ -100,9 +104,8 @@ describe('definitions', @{
   })
 
   it('goes from an import path to its module', @{
-    expect(ask(
-      'textDocument/definition', 'import .geo', 0,
-    ).map(place)).to_equal(['index.zu:0:0'])
+    expect(ask('textDocument/definition', 'import .geo', 0).map(place))
+        .to_equal(['index.zu:0:0'])
   })
 
   it('goes from a built-in to its stub', @{
@@ -124,7 +127,9 @@ describe('definitions', @{
       position: position(client.texts[shapes], '  distance', 0),
     })
 
-    client.notify('textDocument/didClose', { textDocument: { uri: shapes } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: shapes },
+    })
     expect(found.map(place)).to_equal(['shapes.zu:63:2'])
   })
 
@@ -139,20 +144,30 @@ describe('references', @{
   it(
     'finds every use across the workspace, the declaration included when asked',
     @{
-      var including = { context: { includeDeclaration: true } }
+      var including = {
+        context: { includeDeclaration: true },
+      }
       var found = ask('textDocument/references', 'here.distance', 0, including)
       var places = found.map(place).sort()
 
       expect(places).to_equal([
-        'checks.zu:5:23', 'main.zu:7:10', 'shapes.zu:31:2', 'shapes.zu:64:18',
+        'checks.zu:5:23',
+        'main.zu:7:10',
+        'shapes.zu:31:2',
+        'shapes.zu:64:18',
       ])
     },
   )
 
   it('counts a use through a union for each declaration it reaches', @{
-    var asked = { context: { includeDeclaration: false } }
+    var asked = {
+      context: { includeDeclaration: false },
+    }
     var found = ask_scratch(
-      UNION, 'textDocument/references', 'shape.dist', asked,
+      UNION,
+      'textDocument/references',
+      'shape.dist',
+      asked,
     )
 
     expect(found.map(place)).to_contain('scratch.zu:3:15')
@@ -163,7 +178,13 @@ describe('references', @{
 
     var kinds = found.map(@(h) => [h.range.start.line, h.kind])
 
-    expect(kinds).to_equal([[4, 3], [7, 2], [8, 2], [10, 2]])
+    expect(kinds)
+        .to_equal([
+          [4, 3],
+          [7, 2],
+          [8, 2],
+          [10, 2],
+        ])
   })
 
   it('finds a module by every import of it', @{
@@ -174,10 +195,11 @@ describe('references', @{
       context: { includeDeclaration: false },
     })
 
-    client.notify('textDocument/didClose', { textDocument: { uri: area } })
-    expect(found
-      .map(place)
-      .sort()).to_equal(['area.zu:0:9', 'checks.zu:1:8', 'main.zu:1:8'])
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: area },
+    })
+    expect(found.map(place).sort())
+        .to_equal(['area.zu:0:9', 'checks.zu:1:8', 'main.zu:1:8'])
   })
 })
 
@@ -209,18 +231,20 @@ describe('rename', @{
   })
 
   it('leaves a use through a union as it is, and says so', @{
-    var edit = ask_scratch(
-      UNION, 'textDocument/rename', 'shape.dist', { newName: 'span' },
-    )
+    var edit = ask_scratch(UNION, 'textDocument/rename', 'shape.dist', {
+      newName: 'span',
+    })
     var files = edit.documentChanges.map(
       @(change) => change.textDocument.uri.split('/').last(),
     )
 
     expect(files).not.to_contain('scratch.zu')
-    expect(client.notifications.some(@(n) {
-      return n.method == 'window/showMessage'
-        and n.params.message.contains('may be of several types')
-    })).to_be_true()
+    expect(
+      client.notifications.some(@(n) {
+        return n.method == 'window/showMessage' and
+            n.params.message.contains('may be of several types')
+      }),
+    ).to_be_true()
   })
 
   it('keeps the key of a { name } entry', @{
@@ -234,19 +258,23 @@ describe('rename', @{
     expect(renamed).to_contain('json.encode({ x: there.x })')
   })
 
-  it_each([
-    ['class', "'class' is a keyword"],
-    ['2fast', "'2fast' is not a name"],
-    ['ring', "'ring' is already declared where 'here' is used"],
-  ], 'refuses $0', @(name, reason) {
-    catch {
-      ask('textDocument/rename', 'var here', 0, { newName: name })
-      expect('no error').to_equal(reason)
-    } as error {
-      expect(error.code).to_equal(-32803)
-      expect(error.message).to_contain(reason)
-    }
-  })
+  it_each(
+    [
+      ['class', "'class' is a keyword"],
+      ['2fast', "'2fast' is not a name"],
+      ['ring', "'ring' is already declared where 'here' is used"],
+    ],
+    'refuses $0',
+    @(name, reason) {
+      catch {
+        ask('textDocument/rename', 'var here', 0, { newName: name })
+        expect('no error').to_equal(reason)
+      } as error {
+        expect(error.code).to_equal(-32803)
+        expect(error.message).to_contain(reason)
+      }
+    },
+  )
 
   it('refuses what the standard library declares', @{
     catch {
@@ -259,20 +287,23 @@ describe('rename', @{
 
   it('moves the relative imports of a moved module', @{
     var edit = client.request('workspace/willRenameFiles', {
-      files: [{ oldUri: uri(SHAPES), newUri: uri(MOVED) }],
+      files: [
+        { oldUri: uri(SHAPES), newUri: uri(MOVED) },
+      ],
     })
     var by_file = {}
 
     for change in edit.documentChanges {
-      by_file[change.textDocument.uri
-        .split('/')
-        .last()] = change.edits.map(@(e) => e.newText)
+      by_file[change.textDocument.uri.split('/').last()] = change.edits.map(
+        @(e) => e.newText,
+      )
     }
 
-    expect(by_file).to_equal({
-      'area.zu': ['.shapes'],
-      'checks.zu': ['.geometry.shapes'],
-      'main.zu': ['.geometry.shapes'],
-    })
+    expect(by_file)
+        .to_equal({
+          'area.zu': ['.shapes'],
+          'checks.zu': ['.geometry.shapes'],
+          'main.zu': ['.geometry.shapes'],
+        })
   })
 })

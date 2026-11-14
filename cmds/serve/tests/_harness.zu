@@ -86,7 +86,8 @@ class World {
   /**
    * Starts `zuri serve`, and waits until it answers.
    *
-   * @param ?list extra: more flags for it.
+   * @param ?list extra: more flags for it, in which `{port}` stands for
+   *    the port it listens on.
    */
   start(extra: ?list) {
     var port = self._free_port()
@@ -94,12 +95,20 @@ class World {
     self.url = 'http://127.0.0.1:${port}'
 
     var flags = [
-      'serve', '--storage', os.join_paths(self.root, 'nyssa'), '--port',
-      port.to_string(), '--workers', '2', '--public-url', self.url,
+      'serve',
+      '--storage',
+      os.join_paths(self.root, 'nyssa'),
+      '--port',
+      port.to_string(),
+      '--workers',
+      '2',
+      '--public-url',
+      self.url,
     ]
 
     if extra != nil {
-      flags = flags + extra
+      flags = flags +
+          extra.map(@(flag) => flag.replace('{port}', port.to_string(), false))
     }
 
     self.server = spawn(os.exe_path, flags, {
@@ -119,7 +128,9 @@ class World {
 
         self.server = nil
 
-        raise Error('zuri serve exited before it answered on ${self.url}:\n${said}')
+        raise Error(
+          'zuri serve exited before it answered on ${self.url}:\n${said}',
+        )
       }
 
       catch {
@@ -215,10 +226,11 @@ class World {
       password: 'a long enough password',
     }).as_dict()
 
-    var login = self.zuri([
-      'account', 'login', '--registry', self.url, '--token-stdin',
-    ],
-      cwd, created.token.token)
+    var login = self.zuri(
+      ['account', 'login', '--registry', self.url, '--token-stdin'],
+      cwd,
+      created.token.token,
+    )
 
     if login.status != 0 {
       raise Error('signing in failed: ${login.all}')
@@ -246,7 +258,12 @@ class World {
     # Each project is a repository of its own with everything
     # committed, which is how publish expects to find one.
     var words = [
-      'init', name, '--yes', '--vcs', 'git', '--description',
+      'init',
+      name,
+      '--yes',
+      '--vcs',
+      'git',
+      '--description',
       'The ${name} package',
     ]
 
@@ -282,7 +299,8 @@ def commit(dir: string) {
   }
 
   for words in [
-    ['add', '-A'], ['commit', '-q', '--allow-empty', '-m', 'snapshot'],
+    ['add', '-A'],
+    ['commit', '-q', '--allow-empty', '-m', 'snapshot'],
   ] {
     var child = spawn('git', words, {
       cwd: dir,

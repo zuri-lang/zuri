@@ -99,15 +99,15 @@ big integer referring to another table's `id()`, with its foreign key.
 The modifiers:
 
 ```zuri,ignore
-table.string('slug', 120).nullable()          # may hold null
-table.integer('views').default_value(0)       # a default
-table.json('settings').default_value({})      # a default of any JSON type
-table.text('code').default_value(sql.raw("lower('X')"))  # an expression
-table.datetime('seen_at').use_current()       # the moment of the insert
-table.string('email', 254).unique()           # a unique index of its own
-table.string('city', 80).index()              # an index of its own
-table.string('code', 10).primary()            # the primary key
-table.string('username', 40).exact()         # compared byte for byte
+table.string('slug', 120).nullable() # may hold null
+table.integer('views').default_value(0) # a default
+table.json('settings').default_value({}) # a default of any JSON type
+table.text('code').default_value(sql.raw("lower('X')")) # an expression
+table.datetime('seen_at').use_current() # the moment of the insert
+table.string('email', 254).unique() # a unique index of its own
+table.string('city', 80).index() # an index of its own
+table.string('code', 10).primary() # the primary key
+table.string('username', 40).exact() # compared byte for byte
 table.uuid('owner_id').references('users', 'id').on_delete('set null')
 ```
 
@@ -160,8 +160,9 @@ columns is declared on the table:
 table.primary(['order_id', 'line'])
 table.unique(['author_id', 'slug'])
 table.index(['published', 'created_at'])
-table.foreign(['order_id', 'line'], 'order_lines', ['order_id', 'line'])
-  .on_delete('cascade')
+table
+    .foreign(['order_id', 'line'], 'order_lines', ['order_id', 'line'])
+    .on_delete('cascade')
 ```
 
 Indexes, unique indexes and foreign keys are named for their table and
@@ -316,8 +317,7 @@ catch {
 
     raise Error('changed my mind')
   })
-} as _error {
-}
+} as _error {}
 
 echo db.schema.column_names('posts')
 

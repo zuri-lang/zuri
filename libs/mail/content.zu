@@ -103,8 +103,11 @@ def _skip_to_parameter(text: string, from: number) {
   while index < text.length() {
     var character = text[index]
 
-    if character == ';' or character == ' ' or character == '\t'
-      or character == '\r' or character == '\n' {
+    if character == ';' or
+        character == ' ' or
+        character == '\t' or
+        character == '\r' or
+        character == '\n' {
       index++
       continue
     }

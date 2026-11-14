@@ -106,9 +106,9 @@ class Listener {
     self._open()
 
     var values = payload == nil ? [channel] : [channel, payload]
-    var sql = payload == nil ?
-      'select pg_notify($1, null)' :
-      'select pg_notify($1, $2)'
+    var sql = payload == nil
+        ? 'select pg_notify($1, null)'
+        : 'select pg_notify($1, $2)'
 
     self._connection.select(sql, values)
   }
@@ -173,8 +173,7 @@ class Listener {
       if !self._connection.is_closed() {
         self._connection.run_simple('unlisten *')
       }
-    } as _error {
-    }
+    } as _error {}
 
     self._channels = []
   }
@@ -187,8 +186,8 @@ class Listener {
 
   to_string() {
     return '<Listener ${self._channels.length()} channel' +
-      '${self._channels.length() == 1 ? "" : "s"}' +
-      '${self._closed ? ", closed" : ""}>'
+        '${self._channels.length() == 1 ? "" : "s"}' +
+        '${self._closed ? ", closed" : ""}>'
   }
 
   @to_string() {

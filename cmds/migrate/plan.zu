@@ -24,28 +24,40 @@ def parser() {
   parser.description = 'Applies, rolls back and reports database migrations.'
   parser.epilog = 'With no subcommand, every pending migration is applied.'
 
-  parser.add_option('database',
+  parser.add_option(
+    'database',
     'The connection string; DATABASE_URL, from the environment or .env, by default',
-    { short_name: 'd', type: args.STRING, metavar: 'url' })
-  parser.add_option('dir',
+    { short_name: 'd', type: args.STRING, metavar: 'url' },
+  )
+  parser.add_option(
+    'dir',
     'The directory of migrations; migrations in the project by default',
-    { type: args.STRING, metavar: 'path' })
-  parser.add_option('table',
+    { type: args.STRING, metavar: 'path' },
+  )
+  parser.add_option(
+    'table',
     'The table recording migrations; ${DEFAULT_TABLE} by default',
-    { type: args.STRING, metavar: 'name' })
-  parser.add_option('steps',
-    'With up or down, how many migrations at most',
-    { short_name: 's', type: args.INT, metavar: 'count' })
-  parser.add_option('to',
+    { type: args.STRING, metavar: 'name' },
+  )
+  parser.add_option('steps', 'With up or down, how many migrations at most', {
+    short_name: 's',
+    type: args.INT,
+    metavar: 'count',
+  })
+  parser.add_option(
+    'to',
     'With up, the last migration to apply; with down, the one to leave latest',
-    { type: args.STRING, metavar: 'name' })
+    { type: args.STRING, metavar: 'name' },
+  )
 
   parser.add_command('up', 'Applies pending migrations')
   parser.add_command('status', 'Lists every migration and whether it has run')
   parser.add_command('down', 'Rolls back the latest batch, or --steps, or --to')
   parser.add_command('reset', 'Rolls back every migration')
-  parser.add_command('new', 'Writes a new, empty migration for each <name>',
-    { type: args.LIST, metavar: 'name' })
+  parser.add_command('new', 'Writes a new, empty migration for each <name>', {
+    type: args.LIST,
+    metavar: 'name',
+  })
 
   return parser
 }
@@ -92,7 +104,7 @@ def settings(parsed) {
       if !is_name(name) {
         raise UsageError(
           '"${name}" is not a migration name; use letters, digits and ' +
-            'underscores, such as create_posts',
+              'underscores, such as create_posts',
         )
       }
     }
@@ -101,8 +113,8 @@ def settings(parsed) {
   var directory = options.get('dir', nil)
 
   directory = directory == nil
-    ? os.join_paths(base, DEFAULT_DIRECTORY)
-    : os.abs_path(directory)
+      ? os.join_paths(base, DEFAULT_DIRECTORY)
+      : os.abs_path(directory)
 
   var database = options.get('database', nil)
 
@@ -114,7 +126,7 @@ def settings(parsed) {
     if database == nil or database.trim().is_empty() {
       raise UsageError(
         'there is no database to migrate; pass --database, or set DATABASE_URL ' +
-          'in the environment or in ${os.join_paths(base, ".env")}',
+            'in the environment or in ${os.join_paths(base, ".env")}',
       )
     }
   }

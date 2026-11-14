@@ -30,12 +30,16 @@ def _check_runs(runtime: string, version: string) {
   var said = ''
 
   catch {
-    var child = spawn(runtime, ['--version'], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      stdin: 'null',
-      env: { NO_COLOR: '1' },
-    })
+    var child = spawn(
+      runtime,
+      ['--version'],
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        stdin: 'null',
+        env: { NO_COLOR: '1' },
+      },
+    )
 
     var status = child.wait(30000)
 
@@ -68,7 +72,9 @@ def main() {
   var target = os.target
   var wanted = given.get('version', 'latest')
   var release = releases.find(
-    wanted, target, given.get('prerelease', false) == true,
+    wanted,
+    target,
+    given.get('prerelease', false) == true,
   )
   var direction = plan.direction(current, release.version)
 
@@ -98,13 +104,14 @@ def main() {
 
   if direction == 'older' and given.get('allow-downgrade', false) != true {
     raise UsageError(
-      '${release.version} is older than this installation (${current}); pass allow-downgrade '
-        + 'to install it anyway',
+      '${release.version} is older than this installation (${current}); pass allow-downgrade ' +
+          'to install it anyway',
     )
   }
 
   var installation = plan.installation(
-    os.exe_path, os.get_env('ZURI_ROOT', nil),
+    os.exe_path,
+    os.get_env('ZURI_ROOT', nil),
   )
   var root = installation.root
 
@@ -121,16 +128,21 @@ def main() {
     echo 'Downloading zuri ${release.version} for ${target}'
 
     var archive_path = os.join_paths(
-      staging, releases.asset_name(release.version, target),
+      staging,
+      releases.asset_name(release.version, target),
     )
 
     releases.download(release, target, archive_path)
 
     var staged = releases.unpack(
-      archive_path, os.join_paths(staging, 'unpacked'), release.version, target,
+      archive_path,
+      os.join_paths(staging, 'unpacked'),
+      release.version,
+      target,
     )
     var staged_runtime = os.join_paths(
-      staged, os.platform == 'windows' ? 'zuri.exe' : 'zuri',
+      staged,
+      os.platform == 'windows' ? 'zuri.exe' : 'zuri',
     )
 
     if os.platform != 'windows' {

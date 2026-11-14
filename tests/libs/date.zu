@@ -178,7 +178,8 @@ check('maximum seconds', d_max.seconds, 59)
 # week_day and year_day are derived on construction
 var d5 = date.Date(2021, 5, 11)
 check(
-  'week_day derived on construction', d5.week_day >= 0 and d5.week_day <= 7,
+  'week_day derived on construction',
+  d5.week_day >= 0 and d5.week_day <= 7,
   true,
 )
 check('year_day derived on construction', d5.year_day > 0, true)
@@ -267,8 +268,18 @@ check('400 is leap', date.Date(400).is_leap(), true)
 section('6. days_in_month()')
 
 var months_days = [
-  [1, 31], [2, 28], [3, 31], [4, 30], [5, 31], [6, 30],
-  [7, 31], [8, 31], [9, 30], [10, 31], [11, 30], [12, 31],
+  [1, 31],
+  [2, 28],
+  [3, 31],
+  [4, 30],
+  [5, 31],
+  [6, 30],
+  [7, 31],
+  [8, 31],
+  [9, 30],
+  [10, 31],
+  [11, 30],
+  [12, 31],
 ]
 for pair in months_days {
   var m = pair[0]
@@ -294,8 +305,11 @@ check('2024-01-01 is Monday (1)', date.Date(2024, 1, 1).weekday(), 1)
 check('2024-02-29 is Thursday (4)', date.Date(2024, 2, 29).weekday(), 4)
 check('1970-01-01 is Thursday (4)', date.Date(1970, 1, 1).weekday(), 4)
 check('2001-09-11 is Tuesday (2)', date.Date(2001, 9, 11).weekday(), 2)
-check('week_day property matches method',
-  date.Date(2021, 5, 11).week_day, date.Date(2021, 5, 11).weekday())
+check(
+  'week_day property matches method',
+  date.Date(2021, 5, 11).week_day,
+  date.Date(2021, 5, 11).weekday(),
+)
 
 # ===========================================================================
 # 8. week_number()
@@ -320,7 +334,8 @@ section('9. days_before_month()')
 
 var d_may = date.Date(2021, 5, 11)
 check(
-  'days_before_month(7) from May 11 to Jul 1 is 51', d_may.days_before_month(7),
+  'days_before_month(7) from May 11 to Jul 1 is 51',
+  d_may.days_before_month(7),
   51,
 )
 
@@ -330,14 +345,23 @@ check('days_before_month(3) is negative from May', dbm_back < 0, true)
 check('days_before_month(3) from May 11 to Mar 1 is -71', dbm_back, -71)
 
 # Same month, day 1: zero
-check('days_before_month(self.month) with day 1 is 0',
-  date.Date(2021, 5, 1).days_before_month(5), 0)
+check(
+  'days_before_month(self.month) with day 1 is 0',
+  date.Date(2021, 5, 1).days_before_month(5),
+  0,
+)
 
 # Leap year: crossing February must count 29 days, not 28
-check('days_before_month across Feb in a leap year',
-  date.Date(2024, 1, 1).days_before_month(3), 60) # Jan(31) + Feb(29)
-check('days_before_month across Feb in a non-leap year',
-  date.Date(2023, 1, 1).days_before_month(3), 59) # Jan(31) + Feb(28)
+check(
+  'days_before_month across Feb in a leap year',
+  date.Date(2024, 1, 1).days_before_month(3),
+  60,
+) # Jan(31) + Feb(29)
+check(
+  'days_before_month across Feb in a non-leap year',
+  date.Date(2023, 1, 1).days_before_month(3),
+  59,
+) # Jan(31) + Feb(28)
 
 raises('days_before_month needs valid month', @() {
   d_may.days_before_month(13)
@@ -355,19 +379,32 @@ section('10. days_before_year()')
 var d_2021 = date.Date(2021, 5, 11)
 check(
   'days_before_year(2024) from 2021-05-11 is 965',
-  d_2021.days_before_year(2024), 965,
+  d_2021.days_before_year(2024),
+  965,
 )
-check('days_before_year(2022) < days_before_year(2024)',
-  d_2021.days_before_year(2022) < d_2021.days_before_year(2024), true)
+check(
+  'days_before_year(2022) < days_before_year(2024)',
+  d_2021.days_before_year(2022) < d_2021.days_before_year(2024),
+  true,
+)
 
 # A past or the same year now returns a signed count instead of raising --
 # the ordinal-subtraction formula handles it correctly with no special case.
-check('days_before_year rejects nothing for a past year, returns negative',
-  d_2021.days_before_year(2020) < 0, true)
-check('days_before_year(self.year) is negative (this date is not Jan 1)',
-  d_2021.days_before_year(2021) < 0, true)
-check('days_before_year(2021) for a Jan-1 date is 0',
-  date.Date(2021, 1, 1).days_before_year(2021), 0)
+check(
+  'days_before_year rejects nothing for a past year, returns negative',
+  d_2021.days_before_year(2020) < 0,
+  true,
+)
+check(
+  'days_before_year(self.year) is negative (this date is not Jan 1)',
+  d_2021.days_before_year(2021) < 0,
+  true,
+)
+check(
+  'days_before_year(2021) for a Jan-1 date is 0',
+  date.Date(2021, 1, 1).days_before_year(2021),
+  0,
+)
 
 raises('days_before_year rejects out-of-range', @() {
   d_2021.days_before_year(10000)
@@ -447,9 +484,18 @@ check('31st suffix', date.Date(2021, 1, 31).format('S'), 'st')
 
 # Full month names
 var months_full = [
-  [1, 'January'], [2, 'February'], [3, 'March'], [4, 'April'],
-  [5, 'May'], [6, 'June'], [7, 'July'], [8, 'August'],
-  [9, 'September'], [10, 'October'], [11, 'November'], [12, 'December'],
+  [1, 'January'],
+  [2, 'February'],
+  [3, 'March'],
+  [4, 'April'],
+  [5, 'May'],
+  [6, 'June'],
+  [7, 'July'],
+  [8, 'August'],
+  [9, 'September'],
+  [10, 'October'],
+  [11, 'November'],
+  [12, 'December'],
 ]
 for pair in months_full {
   check('F month ${pair[0]}', date.Date(2021, pair[0]).format('F'), pair[1])
@@ -457,9 +503,18 @@ for pair in months_full {
 
 # Short month names
 var months_short = [
-  [1, 'Jan'], [2, 'Feb'], [3, 'Mar'], [4, 'Apr'],
-  [5, 'May'], [6, 'Jun'], [7, 'Jul'], [8, 'Aug'],
-  [9, 'Sep'], [10, 'Oct'], [11, 'Nov'], [12, 'Dec'],
+  [1, 'Jan'],
+  [2, 'Feb'],
+  [3, 'Mar'],
+  [4, 'Apr'],
+  [5, 'May'],
+  [6, 'Jun'],
+  [7, 'Jul'],
+  [8, 'Aug'],
+  [9, 'Sep'],
+  [10, 'Oct'],
+  [11, 'Nov'],
+  [12, 'Dec'],
 ]
 for pair in months_short {
   check('M month ${pair[0]}', date.Date(2021, pair[0]).format('M'), pair[1])
@@ -470,7 +525,9 @@ check('Y-m-d format', ref.format('Y-m-d'), '2021-05-11')
 check('d/m/Y format', ref.format('d/m/Y'), '11/05/2021')
 check('H:i:s format', ref.format('H:i:s'), '13:43:11')
 check(
-  'F d, Y g:i A compound', ref.format('F d, Y g:i A'), 'May 11, 2021 1:43 PM',
+  'F d, Y g:i A compound',
+  ref.format('F d, Y g:i A'),
+  'May 11, 2021 1:43 PM',
 )
 
 # ===========================================================================
@@ -484,7 +541,9 @@ var ref2 = date.Date(2021, 5, 17, 1, 39, 8)
 var fmt_escaped = ref2.format('l jS \o\\f F Y h:i:s A')
 check('backslash escape literal "o"', fmt_escaped.contains('of'), true)
 check(
-  'backslash escape preserves weekday', fmt_escaped.contains('Monday'), true,
+  'backslash escape preserves weekday',
+  fmt_escaped.contains('Monday'),
+  true,
 )
 check('backslash escape preserves month', fmt_escaped.contains('May'), true)
 
@@ -512,7 +571,9 @@ check('c is the whole ISO 8601 date', iso_str, '2021-05-11T13:43:11+00:00')
 
 var rfc_str = ref.format('r')
 check(
-  'r is the whole RFC 2822 date', rfc_str, 'Tue, 11 May 2021 13:43:11 +0000',
+  'r is the whole RFC 2822 date',
+  rfc_str,
+  'Tue, 11 May 2021 13:43:11 +0000',
 )
 
 # ===========================================================================
@@ -545,15 +606,19 @@ var epoch = date.Date(1970, 1, 1, 0, 0, 0, 0, gmt_offset)
 # unix_time uses mktime (local) so we just check to_time() for the pure calc
 var epoch_time = epoch.to_time()
 # The exact value depends on timezone but should be close to 0 (within a day)
-check('to_time() epoch within ±86400 of 0',
-  epoch_time >= -86400 and epoch_time <= 86400, true)
+check(
+  'to_time() epoch within ±86400 of 0',
+  epoch_time >= -86400 and epoch_time <= 86400,
+  true,
+)
 
 # Known Unix timestamp: 2021-05-11 13:43:11 UTC = 1620740591
 var known = date.Date(2021, 5, 11, 13, 43, 11, 0, gmt_offset)
 var known_t = known.to_time()
 check(
   'to_time() 2021-05-11 order of magnitude',
-  known_t > 1600000000 and known_t < 1700000000, true,
+  known_t > 1600000000 and known_t < 1700000000,
+  true,
 )
 
 # to_time() is monotonically increasing
@@ -574,7 +639,9 @@ check('unix_time() and to_time() differ by less than a day', diff < 86400, true)
 section('16. http()')
 
 check(
-  'http() is the whole HTTP date', ref.http(), 'Tue, 11 May 2021 13:43:11 GMT',
+  'http() is the whole HTTP date',
+  ref.http(),
+  'Tue, 11 May 2021 13:43:11 GMT',
 )
 check('http() ends with GMT', ref.http().ends_with('GMT'), true)
 
@@ -648,18 +715,23 @@ check('from_time(-1) year_day', before.year_day, 365)
 
 var boundary = date.from_time(-86400)
 check(
-  'from_time(-86400) date', boundary.format('Y-m-d H:i:s'),
+  'from_time(-86400) date',
+  boundary.format('Y-m-d H:i:s'),
   '1969-12-31 00:00:00',
 )
 check('from_time(-86400) hour is a plain zero', boundary.hour.to_string(), '0')
 
 var early = date.from_time(-3470817660) # 1860-01-06 11:59:00 UTC
 check(
-  'from_time(-3470817660) date', early.format('Y-m-d H:i:s'),
+  'from_time(-3470817660) date',
+  early.format('Y-m-d H:i:s'),
   '1860-01-06 11:59:00',
 )
-check('from_time(-2208988800) date',
-  date.from_time(-2208988800).format('Y-m-d H:i:s'), '1900-01-01 00:00:00')
+check(
+  'from_time(-2208988800) date',
+  date.from_time(-2208988800).format('Y-m-d H:i:s'),
+  '1900-01-01 00:00:00',
+)
 
 # ===========================================================================
 # 19. from_time(): millisecond and microsecond inputs
@@ -740,14 +812,20 @@ section('22. mktime()')
 var mkt = date.mktime(2021, 2, 12, 13, 43, 11, false)
 check('mktime() returns number', is_number(mkt), true)
 # The documented example value: allow ±1 for timezone variation
-check('mktime() 2021-02-12 order of magnitude',
-  mkt > 1600000000 and mkt < 1700000000, true)
+check(
+  'mktime() 2021-02-12 order of magnitude',
+  mkt > 1600000000 and mkt < 1700000000,
+  true,
+)
 
 # mktime and to_time() for the same date should agree closely
 var mk_d = date.Date(2021, 5, 11, 13, 43, 11)
 var mk_val = date.mktime(2021, 5, 11, 13, 43, 11, false)
-check('mktime matches to_time within a day',
-  (mk_d.to_time() - mk_val).abs() < 86400, true)
+check(
+  'mktime matches to_time within a day',
+  (mk_d.to_time() - mk_val).abs() < 86400,
+  true,
+)
 
 # ===========================================================================
 # 23. parse(): ISO 8601 extended (date only)
@@ -815,12 +893,14 @@ check('ISO fractional hour still correct', p8.hour, 14)
 var p9 = date.parse('2024-06-15T14:30:00.123Z')
 check('ISO 3-digit fractional', p9.microseconds, 123000)
 check(
-  'ISO 1-digit fractional', date.parse('2024-06-15T14:30:00.5Z').microseconds,
+  'ISO 1-digit fractional',
+  date.parse('2024-06-15T14:30:00.5Z').microseconds,
   500000,
 )
 check(
   'ISO leading-zero fraction',
-  date.parse('2024-06-15 14:30:00.000005').microseconds, 5,
+  date.parse('2024-06-15 14:30:00.000005').microseconds,
+  5,
 )
 
 # Digits finer than a microsecond are read over, and the offset after
@@ -835,11 +915,13 @@ check('format u pads to six digits', p9f.format('u'), '000005')
 check('format v pads to three digits', p9f.format('v'), '000')
 check(
   'padded fraction round-trips',
-  date.parse(p9f.format('Y-m-d\\TH:i:s.uP')).microseconds, 5,
+  date.parse(p9f.format('Y-m-d\\TH:i:s.uP')).microseconds,
+  5,
 )
 check(
   'parse_format u reads a fraction',
-  date.parse_format('14:30:00.25', 'H:i:s.u').microseconds, 250000,
+  date.parse_format('14:30:00.25', 'H:i:s.u').microseconds,
+  250000,
 )
 
 # GMT named timezone
@@ -1295,18 +1377,36 @@ for orig in originals {
   for fmt in fmts {
     var formatted = orig.format(fmt)
     var reparsed = date.parse_format(formatted, fmt)
-    check('round-trip ${fmt} year  for ${orig.year}-${orig.month}-${orig.day}',
-      reparsed.year, orig.year)
-    check('round-trip ${fmt} month for ${orig.year}-${orig.month}-${orig.day}',
-      reparsed.month, orig.month)
-    check('round-trip ${fmt} day   for ${orig.year}-${orig.month}-${orig.day}',
-      reparsed.day, orig.day)
-    check('round-trip ${fmt} hour  for ${orig.year}-${orig.month}-${orig.day}',
-      reparsed.hour, orig.hour)
-    check('round-trip ${fmt} min   for ${orig.year}-${orig.month}-${orig.day}',
-      reparsed.minute, orig.minute)
-    check('round-trip ${fmt} sec   for ${orig.year}-${orig.month}-${orig.day}',
-      reparsed.seconds, orig.seconds)
+    check(
+      'round-trip ${fmt} year  for ${orig.year}-${orig.month}-${orig.day}',
+      reparsed.year,
+      orig.year,
+    )
+    check(
+      'round-trip ${fmt} month for ${orig.year}-${orig.month}-${orig.day}',
+      reparsed.month,
+      orig.month,
+    )
+    check(
+      'round-trip ${fmt} day   for ${orig.year}-${orig.month}-${orig.day}',
+      reparsed.day,
+      orig.day,
+    )
+    check(
+      'round-trip ${fmt} hour  for ${orig.year}-${orig.month}-${orig.day}',
+      reparsed.hour,
+      orig.hour,
+    )
+    check(
+      'round-trip ${fmt} min   for ${orig.year}-${orig.month}-${orig.day}',
+      reparsed.minute,
+      orig.minute,
+    )
+    check(
+      'round-trip ${fmt} sec   for ${orig.year}-${orig.month}-${orig.day}',
+      reparsed.seconds,
+      orig.seconds,
+    )
   }
 }
 
@@ -1393,14 +1493,26 @@ section('41. Regressions: leap-year year_day / format(y, O, P) / gmt_offset')
 
 # year_day and format('z') must count the leap day once the date is past
 # February in a leap year (previously silently used the fixed 28-day table).
-check('year_day 2024-03-01 (leap, after Feb) accounts for Feb 29',
-  date.Date(2024, 3, 1).year_day, 61)
-check('year_day 2023-03-01 (non-leap) unaffected',
-  date.Date(2023, 3, 1).year_day, 60)
-check('format(z) 2024-03-01 matches year_day',
-  date.Date(2024, 3, 1).format('z'), '61')
-check('week_number() after Feb in a leap year no longer drifts',
-  date.Date(2024, 3, 1).week_number() >= 1, true)
+check(
+  'year_day 2024-03-01 (leap, after Feb) accounts for Feb 29',
+  date.Date(2024, 3, 1).year_day,
+  61,
+)
+check(
+  'year_day 2023-03-01 (non-leap) unaffected',
+  date.Date(2023, 3, 1).year_day,
+  60,
+)
+check(
+  'format(z) 2024-03-01 matches year_day',
+  date.Date(2024, 3, 1).format('z'),
+  '61',
+)
+check(
+  'week_number() after Feb in a leap year no longer drifts',
+  date.Date(2024, 3, 1).week_number() >= 1,
+  true,
+)
 
 # format('y') must not crash for a year under 1000, and must still
 # zero-pad correctly.
@@ -1425,8 +1537,11 @@ check('format(P) +00:00 unaffected', plus000.format('P'), '+00:00')
 
 # The dead "fractional gmt_offset means hours" special case is gone --
 # gmt_offset is always taken directly, in seconds, like every other field.
-check('gmt_offset stored as given, no fractional reinterpretation',
-  date.Date(2021, 1, 1, 0, 0, 0, 0, 5.5).gmt_offset, 5.5)
+check(
+  'gmt_offset stored as given, no fractional reinterpretation',
+  date.Date(2021, 1, 1, 0, 0, 0, 0, 5.5).gmt_offset,
+  5.5,
+)
 
 section('41b. Regressions: from_time() far-future round-trip')
 
@@ -1441,18 +1556,25 @@ def roundtrip_ok(y, m, d) {
 }
 
 check(
-  'roundtrip 2100-02-28 (century, non-leap)', roundtrip_ok(2100, 2, 28), true,
-)
-check(
-  'roundtrip 2100-03-01 (century, non-leap)', roundtrip_ok(2100, 3, 1), true,
-)
-check('roundtrip 2400-02-29 (century, leap)', roundtrip_ok(2400, 2, 29), true)
-check(
-  'roundtrip 2400-03-01 (past a far-future leap day)', roundtrip_ok(2400, 3, 1),
+  'roundtrip 2100-02-28 (century, non-leap)',
+  roundtrip_ok(2100, 2, 28),
   true,
 )
 check(
-  'roundtrip 9999-12-31 (MAX_YEAR boundary)', roundtrip_ok(9999, 12, 31), true,
+  'roundtrip 2100-03-01 (century, non-leap)',
+  roundtrip_ok(2100, 3, 1),
+  true,
+)
+check('roundtrip 2400-02-29 (century, leap)', roundtrip_ok(2400, 2, 29), true)
+check(
+  'roundtrip 2400-03-01 (past a far-future leap day)',
+  roundtrip_ok(2400, 3, 1),
+  true,
+)
+check(
+  'roundtrip 9999-12-31 (MAX_YEAR boundary)',
+  roundtrip_ok(9999, 12, 31),
+  true,
 )
 check('roundtrip 1-1-1 (MIN_YEAR boundary)', roundtrip_ok(1, 1, 1), true)
 
@@ -1468,10 +1590,16 @@ section('42. to_ordinal()')
 
 check('to_ordinal 0001-01-01 is day 1', date.Date(1, 1, 1).to_ordinal(), 1)
 check('to_ordinal 2021-05-11', date.Date(2021, 5, 11).to_ordinal(), 737921)
-check('to_ordinal increases by 1 per day',
-  date.Date(2024, 3, 1).to_ordinal() - date.Date(2024, 2, 29).to_ordinal(), 1)
-check('to_ordinal across a leap day counts it',
-  date.Date(2024, 3, 1).to_ordinal() - date.Date(2024, 1, 1).to_ordinal(), 60)
+check(
+  'to_ordinal increases by 1 per day',
+  date.Date(2024, 3, 1).to_ordinal() - date.Date(2024, 2, 29).to_ordinal(),
+  1,
+)
+check(
+  'to_ordinal across a leap day counts it',
+  date.Date(2024, 3, 1).to_ordinal() - date.Date(2024, 1, 1).to_ordinal(),
+  60,
+)
 
 # ===========================================================================
 # 43. Comparison operators and equals()
@@ -1489,18 +1617,34 @@ check('early >= early.clone()', early >= early.clone(), true)
 check('early <= late', early <= late, true)
 check('late >= early', late >= early, true)
 
-check('equals() true for the same instant',
-  early.equals(date.Date(2020, 1, 1)), true)
+check(
+  'equals() true for the same instant',
+  early.equals(date.Date(2020, 1, 1)),
+  true,
+)
 check('equals() false for a different instant', early.equals(late), false)
 check('equals() false for a non-Date value', early.equals(42), false)
-check('equals() true across different gmt_offset but same instant',
-  date.Date(2024, 1, 1, 10, 0, 0, 0, 0).equals(
-    date.Date(2024, 1, 1, 15, 30, 0, 0, 19800)), true)
+check(
+  'equals() true across different gmt_offset but same instant',
+  date.Date(
+    2024,
+    1,
+    1,
+    10,
+    0,
+    0,
+    0,
+    0,
+  ).equals(date.Date(2024, 1, 1, 15, 30, 0, 0, 19800)),
+  true,
+)
 check('== true for the same instant', early == date.Date(2020, 1, 1), true)
-check('== true across different gmt_offset but same instant',
-  date.Date(2024, 1, 1, 10, 0, 0, 0, 0)
-    == date.Date(2024, 1, 1, 15, 30, 0, 0, 19800),
-  true)
+check(
+  '== true across different gmt_offset but same instant',
+  date.Date(2024, 1, 1, 10, 0, 0, 0, 0) ==
+      date.Date(2024, 1, 1, 15, 30, 0, 0, 19800),
+  true,
+)
 check('!= true for a different instant', early != late, true)
 check('== false for a string', early == '2020-01-01', false)
 
@@ -1536,17 +1680,28 @@ var base_dt = date.Date(2024, 1, 1, 0, 0, 0)
 
 check('add_seconds(90)', base_dt.add_seconds(90).format('H:i:s'), '00:01:30')
 check('add_minutes(90)', base_dt.add_minutes(90).format('H:i:s'), '01:30:00')
-check('add_hours(25) rolls into the next day',
-  base_dt.add_hours(25).format('Y-m-d H:i:s'), '2024-01-02 01:00:00')
+check(
+  'add_hours(25) rolls into the next day',
+  base_dt.add_hours(25).format('Y-m-d H:i:s'),
+  '2024-01-02 01:00:00',
+)
 check('add_days(1)', base_dt.add_days(1).format('Y-m-d'), '2024-01-02')
-check('add_days(-1) rolls back a year boundary correctly',
-  base_dt.add_days(-1).format('Y-m-d'), '2023-12-31')
-check('add_days(60) crosses Feb 29 in a leap year',
-  date.Date(2024, 1, 1).add_days(60).format('Y-m-d'), '2024-03-01')
+check(
+  'add_days(-1) rolls back a year boundary correctly',
+  base_dt.add_days(-1).format('Y-m-d'),
+  '2023-12-31',
+)
+check(
+  'add_days(60) crosses Feb 29 in a leap year',
+  date.Date(2024, 1, 1).add_days(60).format('Y-m-d'),
+  '2024-03-01',
+)
 
 # Immutability: self is never modified.
 check(
-  'add_seconds() does not mutate self', base_dt.format('Y-m-d'), '2024-01-01',
+  'add_seconds() does not mutate self',
+  base_dt.format('Y-m-d'),
+  '2024-01-01',
 )
 
 # gmt_offset/zone are preserved across the shift.
@@ -1566,37 +1721,61 @@ raises('add_seconds() rejects a non-number', @() {
 section('47. add_months()/add_years()')
 
 check(
-  'add_months(1) simple', date.Date(2024, 3, 15).add_months(1).format('Y-m-d'),
+  'add_months(1) simple',
+  date.Date(2024, 3, 15).add_months(1).format('Y-m-d'),
   '2024-04-15',
 )
 check(
   'add_months(-1) simple',
-  date.Date(2024, 3, 15).add_months(-1).format('Y-m-d'), '2024-02-15',
+  date.Date(2024, 3, 15).add_months(-1).format('Y-m-d'),
+  '2024-02-15',
 )
 
 # Clamping: Jan 31 + 1 month has no Feb 31, so it clamps to the last
 # valid day of February for that year.
-check('add_months(1) clamps Jan 31 to Feb 29 in a leap year',
-  date.Date(2024, 1, 31).add_months(1).format('Y-m-d'), '2024-02-29')
-check('add_months(1) clamps Jan 31 to Feb 28 in a non-leap year',
-  date.Date(2023, 1, 31).add_months(1).format('Y-m-d'), '2023-02-28')
+check(
+  'add_months(1) clamps Jan 31 to Feb 29 in a leap year',
+  date.Date(2024, 1, 31).add_months(1).format('Y-m-d'),
+  '2024-02-29',
+)
+check(
+  'add_months(1) clamps Jan 31 to Feb 28 in a non-leap year',
+  date.Date(2023, 1, 31).add_months(1).format('Y-m-d'),
+  '2023-02-28',
+)
 
 # Year rollover, both directions.
-check('add_months(12) rolls the year forward',
-  date.Date(2024, 6, 15).add_months(12).format('Y-m-d'), '2025-06-15')
-check('add_months(-1) from January rolls the year back',
-  date.Date(2024, 1, 1).add_months(-1).format('Y-m-d'), '2023-12-01')
-check('add_months(13) rolls over and still clamps',
-  date.Date(2024, 1, 31).add_months(13).format('Y-m-d'), '2025-02-28')
+check(
+  'add_months(12) rolls the year forward',
+  date.Date(2024, 6, 15).add_months(12).format('Y-m-d'),
+  '2025-06-15',
+)
+check(
+  'add_months(-1) from January rolls the year back',
+  date.Date(2024, 1, 1).add_months(-1).format('Y-m-d'),
+  '2023-12-01',
+)
+check(
+  'add_months(13) rolls over and still clamps',
+  date.Date(2024, 1, 31).add_months(13).format('Y-m-d'),
+  '2025-02-28',
+)
 
 check(
-  'add_years(1) simple', date.Date(2023, 6, 15).add_years(1).format('Y-m-d'),
+  'add_years(1) simple',
+  date.Date(2023, 6, 15).add_years(1).format('Y-m-d'),
   '2024-06-15',
 )
-check('add_years(1) clamps Feb 29 to Feb 28 in a non-leap target year',
-  date.Date(2024, 2, 29).add_years(1).format('Y-m-d'), '2025-02-28')
-check('add_years(4) keeps Feb 29 when the target year is also leap',
-  date.Date(2024, 2, 29).add_years(4).format('Y-m-d'), '2028-02-29')
+check(
+  'add_years(1) clamps Feb 29 to Feb 28 in a non-leap target year',
+  date.Date(2024, 2, 29).add_years(1).format('Y-m-d'),
+  '2025-02-28',
+)
+check(
+  'add_years(4) keeps Feb 29 when the target year is also leap',
+  date.Date(2024, 2, 29).add_years(4).format('Y-m-d'),
+  '2028-02-29',
+)
 
 raises('add_months() rejects a non-number', @() {
   date.Date(2024, 1, 1).add_months('x')
@@ -1616,17 +1795,29 @@ section('47b. clock-built dates and sub-second arithmetic')
 
 var now = date()
 
-check('date() agrees with time() on the instant it represents',
-  (now.to_time() - time()).abs() < 2, true)
+check(
+  'date() agrees with time() on the instant it represents',
+  (now.to_time() - time()).abs() < 2,
+  true,
+)
 
 var now_explicit = date.Date(now.year, now.month, now.day)
 
-check('a clock-built date and a hand-built one agree on year_day',
-  now.year_day, now_explicit.year_day)
-check('and therefore on to_ordinal()',
-  now.to_ordinal(), now_explicit.to_ordinal())
-check('year_day is 1-based, matching to_ordinal()\'s own contract',
-  date.Date(2024, 1, 1).year_day, 1)
+check(
+  'a clock-built date and a hand-built one agree on year_day',
+  now.year_day,
+  now_explicit.year_day,
+)
+check(
+  'and therefore on to_ordinal()',
+  now.to_ordinal(),
+  now_explicit.to_ordinal(),
+)
+check(
+  'year_day is 1-based, matching to_ordinal()\'s own contract',
+  date.Date(2024, 1, 1).year_day,
+  1,
+)
 
 # The arithmetic invariant. Whatever the fields say, shifting by n
 # seconds has to move the instant by exactly n seconds.
@@ -1634,26 +1825,51 @@ def shifts_by(label, moved, base, expected_delta) {
   check(label, moved.to_time() - base.to_time(), expected_delta)
 }
 
-shifts_by('add_seconds() on a clock date moves the instant exactly',
-  now.add_seconds(90), now, 90)
-shifts_by('add_minutes() on a clock date moves the instant exactly',
-  now.add_minutes(5), now, 300)
-shifts_by('add_hours() on a clock date moves the instant exactly',
-  now.add_hours(20), now, 72000)
-shifts_by('add_days() on a clock date moves the instant exactly',
-  now.add_days(1), now, 86400)
-shifts_by('a negative shift moves the instant backwards exactly',
-  now.add_hours(-20), now, -72000)
+shifts_by(
+  'add_seconds() on a clock date moves the instant exactly',
+  now.add_seconds(90),
+  now,
+  90,
+)
+shifts_by(
+  'add_minutes() on a clock date moves the instant exactly',
+  now.add_minutes(5),
+  now,
+  300,
+)
+shifts_by(
+  'add_hours() on a clock date moves the instant exactly',
+  now.add_hours(20),
+  now,
+  72000,
+)
+shifts_by(
+  'add_days() on a clock date moves the instant exactly',
+  now.add_days(1),
+  now,
+  86400,
+)
+shifts_by(
+  'a negative shift moves the instant backwards exactly',
+  now.add_hours(-20),
+  now,
+  -72000,
+)
 
 # A clock date carries microseconds, which used to make every one of
 # these raise from the Date constructor.
-check('add_hours() keeps the sub-second part rather than dropping it',
-  now.add_hours(1).microseconds, now.microseconds)
-check('add_days() keeps it too',
-  now.add_days(1).microseconds, now.microseconds)
+check(
+  'add_hours() keeps the sub-second part rather than dropping it',
+  now.add_hours(1).microseconds,
+  now.microseconds,
+)
+check('add_days() keeps it too', now.add_days(1).microseconds, now.microseconds)
 
-check('a shifted clock date keeps its gmt_offset', now.add_hours(20).gmt_offset,
-  now.gmt_offset)
+check(
+  'a shifted clock date keeps its gmt_offset',
+  now.add_hours(20).gmt_offset,
+  now.gmt_offset,
+)
 check('and its zone', now.add_hours(20).zone, now.zone)
 
 # ---------------------------------------------------------------------------
@@ -1661,16 +1877,27 @@ check('and its zone', now.add_hours(20).zone, now.zone)
 # ---------------------------------------------------------------------------
 var micro = date.Date(2026, 8, 31, 21, 40, 45, 783019)
 
-check('a date with microseconds survives add_hours() across a month end',
-  micro.add_hours(20).format('Y-m-d H:i:s'), '2026-09-01 17:40:45')
-check('and keeps its microseconds',
-  micro.add_hours(20).microseconds, 783019)
-check('add_hours() across a month end, three hours in',
-  micro.add_hours(3).format('Y-m-d H:i:s'), '2026-09-01 00:40:45')
-check('add_days() across a month end',
-  micro.add_days(1).format('Y-m-d H:i:s'), '2026-09-01 21:40:45')
-check('add_hours() backwards across a month end',
-  micro.add_hours(-22).format('Y-m-d H:i:s'), '2026-08-30 23:40:45')
+check(
+  'a date with microseconds survives add_hours() across a month end',
+  micro.add_hours(20).format('Y-m-d H:i:s'),
+  '2026-09-01 17:40:45',
+)
+check('and keeps its microseconds', micro.add_hours(20).microseconds, 783019)
+check(
+  'add_hours() across a month end, three hours in',
+  micro.add_hours(3).format('Y-m-d H:i:s'),
+  '2026-09-01 00:40:45',
+)
+check(
+  'add_days() across a month end',
+  micro.add_days(1).format('Y-m-d H:i:s'),
+  '2026-09-01 21:40:45',
+)
+check(
+  'add_hours() backwards across a month end',
+  micro.add_hours(-22).format('Y-m-d H:i:s'),
+  '2026-08-30 23:40:45',
+)
 
 # The same date, but read as a local wall clock rather than UTC: this is
 # what `date()` produces, and what the shipped bug actually broke.
@@ -1678,29 +1905,55 @@ var local_micro = date.Date(2026, 8, 31, 21, 40, 45, 783019)
 local_micro.gmt_offset = 3600
 local_micro.zone = 'WAT'
 
-check('an offset date shifts its wall clock, not its offset',
-  local_micro.add_hours(20).format('Y-m-d H:i:s'), '2026-09-01 17:40:45')
-check('an offset date keeps its offset across a shift',
-  local_micro.add_hours(20).gmt_offset, 3600)
+check(
+  'an offset date shifts its wall clock, not its offset',
+  local_micro.add_hours(20).format('Y-m-d H:i:s'),
+  '2026-09-01 17:40:45',
+)
+check(
+  'an offset date keeps its offset across a shift',
+  local_micro.add_hours(20).gmt_offset,
+  3600,
+)
 
 # ---------------------------------------------------------------------------
 # from_time() has to accept exactly what to_time() produces.
 # ---------------------------------------------------------------------------
-check('from_time() round-trips a fractional timestamp',
+check(
+  'from_time() round-trips a fractional timestamp',
   date.from_time(micro.to_time()).format('Y-m-d H:i:s'),
-  '2026-08-31 21:40:45')
-check('and recovers the microseconds from the fraction',
-  date.from_time(micro.to_time()).microseconds, 783019)
-check('from_time() still round-trips a whole-second timestamp',
-  date.from_time(1788212445).format('Y-m-d H:i:s'), '2026-08-31 21:40:45')
-check('from_time() reads a millisecond timestamp',
-  date.from_time(1788212445783).format('Y-m-d H:i:s'), '2026-08-31 21:40:45')
-check('and its milliseconds land in microseconds',
-  date.from_time(1788212445783).microseconds, 783000)
-check('from_time() reads a microsecond timestamp',
-  date.from_time(1788212445783019).format('Y-m-d H:i:s'), '2026-08-31 21:40:45')
-check('and keeps the full microsecond precision',
-  date.from_time(1788212445783019).microseconds, 783019)
+  '2026-08-31 21:40:45',
+)
+check(
+  'and recovers the microseconds from the fraction',
+  date.from_time(micro.to_time()).microseconds,
+  783019,
+)
+check(
+  'from_time() still round-trips a whole-second timestamp',
+  date.from_time(1788212445).format('Y-m-d H:i:s'),
+  '2026-08-31 21:40:45',
+)
+check(
+  'from_time() reads a millisecond timestamp',
+  date.from_time(1788212445783).format('Y-m-d H:i:s'),
+  '2026-08-31 21:40:45',
+)
+check(
+  'and its milliseconds land in microseconds',
+  date.from_time(1788212445783).microseconds,
+  783000,
+)
+check(
+  'from_time() reads a microsecond timestamp',
+  date.from_time(1788212445783019).format('Y-m-d H:i:s'),
+  '2026-08-31 21:40:45',
+)
+check(
+  'and keeps the full microsecond precision',
+  date.from_time(1788212445783019).microseconds,
+  783019,
+)
 
 # ---------------------------------------------------------------------------
 # A sweep, so a future off-by-one anywhere in the chain has to survive
@@ -1722,8 +1975,11 @@ iter var i = 0; i < 400; i++ {
   }
 }
 
-check('add_days() holds the exact instant and sub-second part over 400 days',
-  drift, 0)
+check(
+  'add_days() holds the exact instant and sub-second part over 400 days',
+  drift,
+  0,
+)
 
 var hour_drift = 0
 
@@ -1733,8 +1989,11 @@ iter var i = -200; i <= 200; i++ {
   }
 }
 
-check('add_hours() holds the exact instant across 400 hours either way',
-  hour_drift, 0)
+check(
+  'add_hours() holds the exact instant across 400 hours either way',
+  hour_drift,
+  0,
+)
 
 # ===========================================================================
 # 48. to_offset()
@@ -1751,8 +2010,11 @@ check('to_offset() preserves the absolute instant', utc_dt.equals(ist_dt), true)
 check('to_offset() does not mutate self', utc_dt.gmt_offset, 0)
 
 var no_zone_change = utc_dt.to_offset(3600)
-check('to_offset() without a zone arg keeps the original zone label',
-  no_zone_change.zone, utc_dt.zone)
+check(
+  'to_offset() without a zone arg keeps the original zone label',
+  no_zone_change.zone,
+  utc_dt.zone,
+)
 
 raises('to_offset() rejects a non-number', @() {
   utc_dt.to_offset('x')

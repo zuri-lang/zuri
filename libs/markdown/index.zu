@@ -1,0 +1,740 @@
+/**
+ * @module markdown
+ *
+ * Markdown to HTML, following [CommonMark](https://spec.commonmark.org/0.31.2/)
+ * and [GitHub Flavored Markdown](https://github.github.com/gfm/), with
+ * the extensions Pandoc made familiar: tables of contents,
+ * abbreviations, definition lists, attributes, footnotes, math and
+ * more.
+ *
+ * ```zuri
+ * import markdown
+ *
+ * echo markdown.render('# Hello\n\nSome *emphasis* and a [link](https://example.com).')
+ * ```
+ *
+ * ```html
+ * <h1>Hello</h1>
+ * <p>Some <em>emphasis</em> and a <a href="https://example.com">link</a>.</p>
+ * ```
+ *
+ * Every string is a valid document, so neither parsing nor rendering
+ * ever fails on the Markdown itself. Text that does not make one
+ * construct is text.
+ *
+ * ---
+ *
+ * ### Flavours
+ *
+ * `markdown()` takes a dictionary of options and returns a `Markdown`
+ * that parses and renders with them. Build one and keep it; the module's
+ * own `render()` and `parse()` take the same options for a one-off.
+ *
+ * ```zuri
+ * import markdown
+ *
+ * var md = markdown({ preset: 'extended', html: true })
+ *
+ * echo md.render(file('README.md').read())
+ * ```
+ *
+ * `preset` picks where the other options start from:
+ *
+ * | Preset | What it turns on |
+ * | --- | --- |
+ * | `'commonmark'` | Nothing beyond the CommonMark specification. |
+ * | `'gfm'` | The default. GitHub's tables, strikethrough, autolinks, task lists, footnotes, tag filter, alerts and emoji. |
+ * | `'extended'` | GFM and every extension below but `metadata`, with heading identifiers and smart punctuation. |
+ *
+ * Any option named alongside the preset overrides it, so
+ * `{ preset: 'commonmark', tables: true }` is CommonMark with tables.
+ *
+ * ---
+ *
+ * ### Raw HTML and links
+ *
+ * Markdown is most often written by someone other than the person
+ * running the site, so the defaults assume it cannot be trusted:
+ *
+ * - Raw HTML is shown as text rather than passed through. Set `html`
+ *   for Markdown you wrote yourself.
+ * - A link or image whose destination uses `javascript:`, `vbscript:`,
+ *   `file:` or a `data:` URL other than an image gets an empty one.
+ *   Set `unsafe_links` to keep them.
+ * - An attribute written as `{key=value}` whose name is not on a short
+ *   safe list becomes `data-key`, so `{onclick=...}` cannot run script.
+ *   `html` lifts this too.
+ *
+ * With `html` on and the `gfm` preset, GFM's tag filter still defuses
+ * `<script>`, `<style>`, `<iframe>`, `<textarea>`, `<title>`, `<xmp>`,
+ * `<noembed>`, `<noframes>` and `<plaintext>`. Turn `tag_filter` off to
+ * allow them.
+ *
+ * ---
+ *
+ * ### Options
+ *
+ * | Option | Default | Effect |
+ * | --- | --- | --- |
+ * | `preset` | `'gfm'` | Where every other option starts from. |
+ * | `html` | `false` | Pass raw HTML through. |
+ * | `unsafe_links` | `false` | Keep `javascript:` and similar destinations. |
+ * | `breaks` | `false` | Render every line ending in a paragraph as `<br />`, as GitHub does in comments. |
+ * | `smart` | `false` | Curly quotes, `--` and `---` as dashes, `...` as an ellipsis. |
+ * | `tables` | GFM | Pipe tables. |
+ * | `strikethrough` | GFM | `~~struck~~`. |
+ * | `autolinks` | GFM | Bare `www.`, `http://` and email addresses become links. |
+ * | `task_lists` | GFM | `- [ ]` and `- [x]` items. |
+ * | `footnotes` | GFM | `[^1]` references, `[^1]: ...` footnotes, and Pandoc's `^[inline]` notes. |
+ * | `tag_filter` | GFM | Defuse the tags listed above in raw HTML. |
+ * | `alerts` | GFM | `> [!NOTE]` and the other GitHub alerts. |
+ * | `emoji` | GFM | `:tada:` and the other GitHub shortcodes. |
+ * | `heading_ids` | `false` | Give every heading an `id`: `true` or `'github'` for GitHub's, `'pandoc'` for Pandoc's, or a function from the heading's text to an id. |
+ * | `id_prefix` | `''` | Put in front of every generated heading id. |
+ * | `toc` | `false` | Replace a paragraph of `[TOC]` with a table of contents. Turns on `heading_ids`. |
+ * | `toc_levels` | `[1, 6]` | The lowest and highest heading levels the contents list. |
+ * | `attributes` | `false` | `{#id .class key=value}` after headings, code, links, images and fenced code, and `[text]{.class}` spans. |
+ * | `abbreviations` | `false` | `*[HTML]: HyperText Markup Language` definitions. |
+ * | `definition_lists` | `false` | Terms with `: definition` lines under them. |
+ * | `superscript` | `false` | `2^10^`. |
+ * | `subscript` | `false` | `H~2~O`. |
+ * | `mark` | `false` | `==highlighted==`. |
+ * | `math` | `false` | `$inline$`, `$$display$$` and ```` ```math ```` blocks. |
+ * | `divs` | `false` | `::: name` fenced divs. |
+ * | `line_blocks` | `false` | Lines starting with `| ` kept as written. |
+ * | `metadata` | `false` | YAML front matter between `---` lines, read into the document's `metadata`. |
+ * | `highlight` | `nil` | A function given each code block's text and language, returning its markup or `nil`. |
+ * | `renderer` | `HtmlRenderer` | The class that turns the tree into HTML. |
+ *
+ * ---
+ *
+ * ### The extensions
+ *
+ * ```markdown
+ * ---
+ * title: Field notes
+ * ---
+ *
+ * [TOC]
+ *
+ * ## Results {#results .highlight}
+ *
+ * Water is H~2~O and 2^10^ is 1024. ==Remember this.==
+ *
+ * The HTML spec is long.[^1]
+ *
+ * *[HTML]: HyperText Markup Language
+ * [^1]: Very long.
+ *
+ * Term
+ * : Its definition.
+ *
+ * ::: warning
+ * A fenced div, with the class `warning`.
+ * :::
+ *
+ * | The limerick packs laughs anatomical
+ * | In space that is quite economical.
+ *
+ * Euler: $e^{i\pi} + 1 = 0$
+ * ```
+ *
+ * Math is written for MathJax or KaTeX to typeset: inline math becomes
+ * `<span class="math inline">\(...\)</span>` and display math
+ * `<span class="math display">\[...\]</span>`.
+ *
+ * ---
+ *
+ * ### The tree
+ *
+ * `parse()` returns the document as a tree of `Node`s, which is where
+ * to look when the HTML is not the point: collecting headings,
+ * checking links, pulling out the first paragraph for a summary.
+ *
+ * ```zuri
+ * import markdown
+ *
+ * var doc = markdown.parse('# Title\n\nSee [the docs](/docs) and [the spec](/spec).')
+ *
+ * for link in doc.find_all('link') {
+ *   echo link.destination
+ * }
+ * ```
+ *
+ * `use()` adds a transform, a function that gets each document after it
+ * is parsed and may change it before it is rendered:
+ *
+ * ```zuri
+ * import markdown
+ *
+ * var md = markdown().use(@(doc) {
+ *   for heading in doc.find_all('heading') {
+ *     heading.level = (heading.level + 1).min(6)
+ *   }
+ * })
+ *
+ * echo md.render('# Becomes an h2')
+ * ```
+ *
+ * `markdown.renderer` explains how to change the HTML a node becomes.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import @.node { Node }
+import @.renderer { HtmlRenderer }
+import @.errors { MarkdownError, MetadataError }
+
+import ._block { BlockParser }
+import ._inline { InlineParser }
+import ._slug
+
+var _DEFAULTS = {
+  html: false,
+  unsafe_links: false,
+  breaks: false,
+  smart: false,
+  tables: false,
+  strikethrough: false,
+  autolinks: false,
+  task_lists: false,
+  footnotes: false,
+  tag_filter: false,
+  alerts: false,
+  emoji: false,
+  heading_ids: false,
+  id_prefix: '',
+  toc: false,
+  toc_levels: [1, 6],
+  attributes: false,
+  abbreviations: false,
+  definition_lists: false,
+  superscript: false,
+  subscript: false,
+  mark: false,
+  math: false,
+  divs: false,
+  line_blocks: false,
+  metadata: false,
+  highlight: nil,
+  renderer: nil,
+}
+
+var _GFM = [
+  'tables',
+  'strikethrough',
+  'autolinks',
+  'task_lists',
+  'footnotes',
+  'tag_filter',
+  'alerts',
+  'emoji',
+]
+
+var _EXTENDED = [
+  'smart',
+  'toc',
+  'attributes',
+  'abbreviations',
+  'definition_lists',
+  'superscript',
+  'subscript',
+  'mark',
+  'math',
+  'divs',
+  'line_blocks',
+]
+
+# The options _given_ asks for, every one of them present, after the
+# preset they start from.
+def _resolve(given: ?dict) {
+  if given == nil {
+    given = {}
+  }
+
+  var preset = given.get('preset', 'gfm')
+  var options = _DEFAULTS.clone()
+
+  options.set('toc_levels', [1, 6])
+
+  using preset {
+    when 'commonmark' {}
+    when 'gfm' {
+      for name in _GFM {
+        options.set(name, true)
+      }
+    }
+    when 'extended' {
+      for name in _GFM {
+        options.set(name, true)
+      }
+
+      for name in _EXTENDED {
+        options.set(name, true)
+      }
+
+      options.set('heading_ids', 'github')
+    }
+    default {
+      raise ValueError(
+        "unknown markdown preset '${preset}': expected 'commonmark', 'gfm' or 'extended'",
+      )
+    }
+  }
+
+  for name, value in given {
+    if name == 'preset' {
+      continue
+    }
+
+    if !_DEFAULTS.contains(name) {
+      raise ValueError("unknown markdown option '${name}'")
+    }
+
+    using name {
+      when 'heading_ids' {
+        if !is_bool(value) and
+            value != 'github' and
+            value != 'pandoc' and
+            !is_callable(value) {
+          raise ValueError(
+            "markdown option 'heading_ids' must be a bool, 'github', 'pandoc' or a function",
+          )
+        }
+      }
+      when 'id_prefix' {
+        if !is_string(value) {
+          raise ValueError("markdown option 'id_prefix' must be a string")
+        }
+      }
+      when 'toc_levels' {
+        if !is_list(value) or
+            value.length() != 2 or
+            !is_number(value[0]) or
+            !is_number(value[1]) {
+          raise ValueError(
+            "markdown option 'toc_levels' must be a list of two heading levels",
+          )
+        }
+      }
+      when 'highlight' {
+        if value != nil and !is_callable(value) {
+          raise ValueError("markdown option 'highlight' must be a function")
+        }
+      }
+      when 'renderer' {
+        if value != nil and !is_class(value) {
+          raise ValueError("markdown option 'renderer' must be a class")
+        }
+      }
+      default {
+        if !is_bool(value) {
+          raise ValueError("markdown option '${name}' must be true or false")
+        }
+      }
+    }
+
+    options.set(name, value)
+  }
+
+  if options.heading_ids == true {
+    options.set('heading_ids', 'github')
+  }
+
+  if options.toc and options.heading_ids == false {
+    options.set('heading_ids', 'github')
+  }
+
+  return options
+}
+
+# Parses the inline text of every block beneath _node_ that holds some.
+def _parse_inlines(node: Node, inline) {
+  for child in node.children {
+    using child.type {
+      when 'paragraph', 'heading', 'table_cell', 'term', 'line' {
+        inline.parse(child)
+      }
+      when 'code_block', 'html_block', 'math_block', 'thematic_break', 'toc' {}
+      default {
+        _parse_inlines(child, inline)
+      }
+    }
+  }
+}
+
+# Gives every heading without an id one made from its text, numbered
+# when it would repeat one already used.
+def _assign_ids(doc: Node, options: dict) {
+  var headings = doc.find_all('heading')
+  var used = {}
+  var style = options.heading_ids
+  var prefix = options.id_prefix
+
+  for heading in headings {
+    var explicit = heading.attributes.get('id')
+
+    if explicit != nil {
+      used.set(explicit, true)
+    }
+  }
+
+  for heading in headings {
+    if heading.attributes.contains('id') {
+      continue
+    }
+
+    var text = heading.text_content()
+    var base = is_callable(style) ? style(text) : slug(text, style)
+
+    if base == nil or base.is_empty() {
+      base = 'section'
+    }
+
+    var id = prefix + base
+    var count = 1
+
+    while used.contains(id) {
+      id = '${prefix}${base}-${count}'
+      count++
+    }
+
+    used.set(id, true)
+    heading.attributes.set('id', id)
+  }
+}
+
+# Turns a flat run of headings into a nested list of entries.
+def _toc_entries(headings: list, start: number, end: number) {
+  var entries = []
+  var i = start
+
+  while i < end {
+    var heading = headings[i]
+    var next = i + 1
+
+    while next < end and headings[next].level > heading.level {
+      next++
+    }
+
+    entries.append({
+      level: heading.level,
+      text: heading.text_content(),
+      id: heading.attributes.get('id'),
+      children: _toc_entries(headings, i + 1, next),
+    })
+
+    i = next
+  }
+
+  return entries
+}
+
+/**
+ * Parses and renders Markdown with one set of options.
+ *
+ * Make one with `markdown()`. A `Markdown` keeps no state between
+ * documents, so one can serve a whole program.
+ *
+ * @printable
+ */
+class Markdown {
+
+  /**
+   * Every option, as resolved from the ones given and their preset.
+   *
+   * @type dict
+   */
+  var options = {}
+
+  var _transforms = []
+
+  /**
+   * @param ?dict options: see the module's page for every option.
+   * @throws ValueError When an option is unknown or has the wrong type
+   * @constructor
+   */
+  @new(options: ?dict) {
+    self.options = _resolve(options)
+    self._transforms = []
+  }
+
+  /**
+   * Adds _transform_, a function that is given each document after it
+   * is parsed and may change it. Transforms run in the order they were
+   * added. Returns this same `Markdown`.
+   *
+   * ```zuri
+   * import markdown
+   *
+   * # Every link opens in a new tab.
+   * var md = markdown().use(@(doc) {
+   *   for link in doc.find_all('link') {
+   *     link.attributes.set('target', '_blank')
+   *   }
+   * })
+   * ```
+   *
+   * @param function transform
+   * @returns Markdown
+   */
+  use(transform: function) {
+    self._transforms.append(transform)
+
+    return self
+  }
+
+  /**
+   * _source_ parsed into a tree of nodes, with the transforms applied.
+   *
+   * @param string source
+   * @returns Node: a node of type `document`.
+   * @throws MetadataError When `metadata` is on and the front matter is
+   *    not a YAML mapping
+   */
+  parse(source: string) {
+    var inline = InlineParser(self.options)
+    var blocks = BlockParser(self.options, inline)
+    var doc = blocks.parse(source)
+
+    inline.refmap = blocks.refmap
+    inline.footnotes = blocks.footnotes
+    inline.abbreviations = blocks.abbreviations
+    _parse_inlines(doc, inline)
+
+    if self.options.heading_ids != false {
+      _assign_ids(doc, self.options)
+    }
+
+    for transform in self._transforms {
+      transform(doc)
+    }
+
+    return doc
+  }
+
+  /**
+   * _source_ as HTML.
+   *
+   * @param string source
+   * @returns string
+   * @throws MetadataError When `metadata` is on and the front matter is
+   *    not a YAML mapping
+   */
+  render(source: string) {
+    return self.to_html(self.parse(source))
+  }
+
+  /**
+   * _source_ as HTML without the paragraph around it, for a line of
+   * Markdown going somewhere a block cannot, such as a title or a table
+   * cell. Block syntax is not recognised: `# x` stays `# x`.
+   *
+   * ```zuri
+   * import markdown
+   *
+   * echo markdown().render_inline('A *short* title')
+   * # A <em>short</em> title
+   * ```
+   *
+   * @param string source
+   * @returns string
+   */
+  render_inline(source: string) {
+    var inline = InlineParser(self.options)
+    var holder = Node('paragraph')
+
+    holder.literal = source
+    inline.parse(holder)
+
+    var doc = Node('document')
+
+    for child in holder.children {
+      child.parent_node = doc
+      doc.children.append(child)
+    }
+
+    return self.to_html(doc)
+  }
+
+  /**
+   * _node_ and everything beneath it as HTML, through the `renderer`
+   * option's class.
+   *
+   * @param Node node
+   * @returns string
+   */
+  to_html(node: Node) {
+    var renderer = self.options.renderer == nil
+        ? HtmlRenderer
+        : self.options.renderer
+
+    return renderer(self.options).render(node)
+  }
+
+  /**
+   * The headings of _doc_ as a table of contents: a list of
+   * dictionaries with `level`, `text`, `id` and `children`, the
+   * headings beneath each one nested in its `children`. Only the levels
+   * the `toc_levels` option names are included. An `id` is `nil` unless
+   * `heading_ids` or `toc` is on.
+   *
+   * ```zuri
+   * import markdown
+   *
+   * var md = markdown({ heading_ids: true })
+   * var doc = md.parse('# Guide\n\n## Install\n\n## Use')
+   *
+   * for entry in md.toc(doc)[0].children {
+   *   echo '${entry.text} -> #${entry.id}'
+   * }
+   * ```
+   *
+   * @param Node doc
+   * @returns list[dict]
+   */
+  toc(doc: Node) {
+    var levels = self.options.toc_levels
+    var headings = []
+
+    for heading in doc.find_all('heading') {
+      if heading.level >= levels[0] and heading.level <= levels[1] {
+        headings.append(heading)
+      }
+    }
+
+    return _toc_entries(headings, 0, headings.length())
+  }
+
+  @to_string() {
+    return '<Markdown>'
+  }
+}
+
+/**
+ * A new `Markdown` with _options_, as described on the module's page.
+ *
+ * ```zuri
+ * import markdown
+ *
+ * var md = markdown({ html: true, heading_ids: true })
+ * echo md.render('# Guide')
+ * # <h1 id="guide">Guide</h1>
+ * ```
+ *
+ * @param ?dict options
+ * @returns Markdown
+ * @throws ValueError When an option is unknown or has the wrong type
+ * @default
+ */
+def markdown(options: ?dict) {
+  return Markdown(options)
+}
+
+var _shared = Markdown()
+
+def _with(options: ?dict) {
+  return options == nil ? _shared : Markdown(options)
+}
+
+/**
+ * _source_ as HTML, with _options_ or the defaults.
+ *
+ * Building a `Markdown` with `markdown()` and keeping it saves resolving
+ * the same options for every document.
+ *
+ * @param string source
+ * @param ?dict options
+ * @returns string
+ * @throws ValueError When an option is unknown or has the wrong type
+ */
+def render(source: string, options: ?dict) {
+  return _with(options).render(source)
+}
+
+/**
+ * _source_ parsed into a tree, with _options_ or the defaults.
+ *
+ * @param string source
+ * @param ?dict options
+ * @returns Node
+ * @throws ValueError When an option is unknown or has the wrong type
+ */
+def parse(source: string, options: ?dict) {
+  return _with(options).parse(source)
+}
+
+/**
+ * _source_ as HTML without a paragraph around it, with _options_ or the
+ * defaults. See `Markdown.render_inline()`.
+ *
+ * @param string source
+ * @param ?dict options
+ * @returns string
+ */
+def render_inline(source: string, options: ?dict) {
+  return _with(options).render_inline(source)
+}
+
+/**
+ * The identifier a heading reading _text_ is given, without the
+ * numbering that keeps repeated ones apart. _style_ is `'github'`, the
+ * default, or `'pandoc'`.
+ *
+ * ```zuri
+ * import markdown
+ *
+ * echo markdown.slug('Hello, World!')            # hello-world
+ * echo markdown.slug('3. Results', 'pandoc')     # results
+ * ```
+ *
+ * @param string text
+ * @param ?string style
+ * @returns string
+ * @throws ValueError When _style_ is neither `'github'` nor `'pandoc'`
+ */
+def slug(text: string, style: ?string) {
+  if style == nil or style == 'github' {
+    return _slug.github(text)
+  }
+
+  if style == 'pandoc' {
+    return _slug.pandoc(text)
+  }
+
+  raise ValueError(
+    "unknown slug style '${style}': expected 'github' or 'pandoc'",
+  )
+}
+
+var _ESCAPED = '\\`*_{}[]<>()#+-.!|~^=$:&"\''
+
+/**
+ * _text_ with a backslash before every character that could make it
+ * mean something to Markdown, so it renders as exactly the text it is.
+ * Line breaks and indentation are kept.
+ *
+ * ```zuri
+ * import markdown
+ *
+ * var name = '*not* a [link]'
+ * echo markdown.render('Hello, ${markdown.escape(name)}')
+ * # <p>Hello, *not* a [link]</p>
+ * ```
+ *
+ * @param string text
+ * @returns string
+ */
+def escape(text: string) {
+  var out = []
+
+  for c in text {
+    if _ESCAPED.contains(c) {
+      out.append('\\')
+    }
+
+    out.append(c)
+  }
+
+  return ''.join(out)
+}

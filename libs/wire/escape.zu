@@ -59,9 +59,22 @@ var CONTEXT_STYLE = 'style'
  * and are checked entry by entry.
  */
 var URL_ATTRIBUTES = [
-  'action', 'background', 'cite', 'classid', 'codebase', 'data',
-  'formaction', 'href', 'icon', 'longdesc', 'manifest', 'poster',
-  'profile', 'src', 'usemap', 'xlink:href',
+  'action',
+  'background',
+  'cite',
+  'classid',
+  'codebase',
+  'data',
+  'formaction',
+  'href',
+  'icon',
+  'longdesc',
+  'manifest',
+  'poster',
+  'profile',
+  'src',
+  'usemap',
+  'xlink:href',
 ]
 
 /**
@@ -84,8 +97,22 @@ var URL_LIST_ATTRIBUTES = ['ping', 'srcset']
  * handlers being the usual reason.
  */
 var DEFAULT_URL_SCHEMES = [
-  'http', 'https', 'mailto', 'tel', 'sms', 'ftp', 'ftps', 'geo',
-  'callto', 'bitcoin', 'magnet', 'news', 'nntp', 'sip', 'sips', 'xmpp',
+  'http',
+  'https',
+  'mailto',
+  'tel',
+  'sms',
+  'ftp',
+  'ftps',
+  'geo',
+  'callto',
+  'bitcoin',
+  'magnet',
+  'news',
+  'nntp',
+  'sip',
+  'sips',
+  'xmpp',
 ]
 
 /**

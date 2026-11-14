@@ -59,16 +59,33 @@ var BELONGS_TO_MANY = 'belongs_to_many'
  * is built from a row.
  */
 var HOOKS = [
-  'before_validate', 'after_validate', 'before_save', 'after_save',
-  'before_create', 'after_create', 'before_update', 'after_update',
-  'before_delete', 'after_delete', 'after_load', 'validate',
+  'before_validate',
+  'after_validate',
+  'before_save',
+  'after_save',
+  'before_create',
+  'after_create',
+  'before_update',
+  'after_update',
+  'before_delete',
+  'after_delete',
+  'after_load',
+  'validate',
 ]
 
 # The hooks whose code has to run in the same transaction as the write.
 var _WRITE_HOOKS = [
-  'before_validate', 'after_validate', 'before_save', 'after_save',
-  'before_create', 'after_create', 'before_update', 'after_update',
-  'before_delete', 'after_delete', 'validate',
+  'before_validate',
+  'after_validate',
+  'before_save',
+  'after_save',
+  'before_create',
+  'after_create',
+  'before_update',
+  'after_update',
+  'before_delete',
+  'after_delete',
+  'validate',
 ]
 
 /**
@@ -554,7 +571,8 @@ class Definition {
     var other = zuri.reflect.class_info(model).name
 
     association.through = settings.get(
-      'through', join_table_for(self.name, other),
+      'through',
+      join_table_for(self.name, other),
     )
     association.foreign_key = settings.get('foreign_key', key_for(self.name))
     association.other_key = settings.get('other_key', key_for(other))
@@ -604,7 +622,7 @@ class Definition {
       if !fields.contains(name) {
         raise ModelError(
           '${self.name} declares the association ${name} but has no field called ' +
-            '${name} to load it into; add var ${name} to the class',
+              '${name} to load it into; add var ${name} to the class',
           nil,
         )
       }
@@ -615,8 +633,8 @@ class Definition {
     }
 
     self.columns = fields.filter(@(field) {
-      return !self.associations.contains(field)
-        and !self.transient_fields.contains(field)
+      return !self.associations.contains(field) and
+          !self.transient_fields.contains(field)
     })
 
     self._must_be_column(self.primary, 'the primary key')
@@ -676,7 +694,7 @@ class Definition {
     }
 
     self.transactional = !self.uniques.is_empty() or
-      _WRITE_HOOKS.filter(@(hook) => self.hooks[hook]).length() > 0
+        _WRITE_HOOKS.filter(@(hook) => self.hooks[hook]).length() > 0
   }
 
   /**
@@ -706,9 +724,7 @@ class Definition {
         var value = row[column]
         var kind = self.casts.get(column, nil)
 
-        setprop(
-          record, column, kind == nil ? value : cast(kind, value),
-        )
+        setprop(record, column, kind == nil ? value : cast(kind, value))
       }
     }
 
@@ -791,7 +807,8 @@ class Definition {
   _must_have(fields, field, what) {
     if !fields.contains(field) {
       raise ModelError(
-        '${what} of ${self.name}, ${field}, is not a field of the class', nil,
+        '${what} of ${self.name}, ${field}, is not a field of the class',
+        nil,
       )
     }
   }
@@ -800,7 +817,7 @@ class Definition {
     if !self.columns.contains(column) {
       raise ModelError(
         '${what} of ${self.name}, ${column}, is not one of its columns: ' +
-          '${", ".join(self.columns)}',
+            '${", ".join(self.columns)}',
         nil,
       )
     }
@@ -853,7 +870,8 @@ def definition_of(model) {
 
   if !is_class(model) {
     raise ModelError(
-      'a model is a class extending Model, not a ${typeof(model)}', nil,
+      'a model is a class extending Model, not a ${typeof(model)}',
+      nil,
     )
   }
 
@@ -861,7 +879,8 @@ def definition_of(model) {
 
   if !instance_of(model(), _BASE) {
     raise ModelError(
-      '${info.name} is not a model: it does not extend Model', nil,
+      '${info.name} is not a model: it does not extend Model',
+      nil,
     )
   }
 

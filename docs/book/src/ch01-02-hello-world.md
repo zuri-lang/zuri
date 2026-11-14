@@ -255,17 +255,31 @@ layout into a full application.
 `zuri fmt` lays out Zuri source in one house style: two spaces to a
 level, one statement to a line, an explicit block wherever one belongs,
 spacing the way a reader expects it, and lines past eighty columns broken
-where the expression holds together least. Line breaks you made yourself
-are kept, so a list you laid out one entry to a line stays that way.
+where the expression holds together least. Where a line breaks follows
+the rules of the Dart formatter: a list of arguments or items stays on
+one line when it fits and otherwise takes one item to a line, a list or
+dictionary holding another one always opens out, as `rooms` does below,
+and a single function or collection among a call's arguments opens out
+on its own, as in `each(items, @{`. The layout comes from the code alone, so
+where you broke a line inside an expression makes no difference, though
+the blank lines you left between statements stay.
 
 Here is a file written in a hurry:
 
 <span class="filename">Filename: rooms.zu</span>
 
 ```zuri
-def area(width,height){return width*height}
-var rooms=[ [3,4],[5,6] ]
-for room in rooms { echo area(room[0],room[1]) }
+def area(width, height) {
+  return width * height
+}
+
+var rooms = [
+  [3, 4],
+  [5, 6],
+]
+for room in rooms {
+  echo area(room[0], room[1])
+}
 ```
 
 ```console
@@ -281,7 +295,10 @@ def area(width, height) {
   return width * height
 }
 
-var rooms = [[3, 4], [5, 6]]
+var rooms = [
+  [3, 4],
+  [5, 6],
+]
 for room in rooms {
   echo area(room[0], room[1])
 }

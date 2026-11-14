@@ -290,7 +290,7 @@ class DdlAdapter {
 
     raise QueryError(
       'a default is nil, a bool, a number, a string, a sql.Decimal, a list ' +
-        'or a dictionary, not ${typeof(value)}; write anything else with sql.raw()',
+          'or a dictionary, not ${typeof(value)}; write anything else with sql.raw()',
     )
   }
 
@@ -303,8 +303,8 @@ class DdlAdapter {
    */
   foreign_key_sql(table: string, key) {
     var sql = 'constraint ${self.quote(key.name_on(table))} foreign key ' +
-      '(${self._list(key.columns)}) references ${self.table_name(key.table)} ' +
-      '(${self._list(key.references)})'
+        '(${self._list(key.columns)}) references ${self.table_name(key.table)} ' +
+        '(${self._list(key.references)})'
 
     if key.on_delete_action != nil {
       sql += ' on delete ' + key.on_delete_action
@@ -328,14 +328,17 @@ class DdlAdapter {
    * @returns string
    */
   index_sql(
-    table: string, kind: string, name: string, columns: list,
+    table: string,
+    kind: string,
+    name: string,
+    columns: list,
     if_not_exists: bool,
   ) {
     var unique = kind == 'unique' ? 'unique ' : ''
     var guard = if_not_exists ? 'if not exists ' : ''
 
     return 'create ${unique}index ${guard}${self.quote(name)} on ' +
-      '${self.table_name(table)} (${self._list(columns)})'
+        '${self.table_name(table)} (${self._list(columns)})'
   }
 
   /**
@@ -417,13 +420,15 @@ class DdlAdapter {
     }
 
     if columns.is_empty() {
-      raise QueryError('a table needs at least one column, and ${table} was given none')
+      raise QueryError(
+        'a table needs at least one column, and ${table} was given none',
+      )
     }
 
     if generated != nil and !primary.is_empty() {
       raise QueryError(
         '${table} has two primary keys: the id() column ${generated} and ' +
-          '(${", ".join(primary)})',
+            '(${", ".join(primary)})',
       )
     }
 
@@ -437,13 +442,17 @@ class DdlAdapter {
       self.check_index(table, index.columns, blueprint.columns())
 
       if self.inline_indexes() {
-        constraints.append(self.inline_index_sql(
-          index.kind, index.name, index.columns,
-        ))
+        constraints.append(
+          self.inline_index_sql(index.kind, index.name, index.columns),
+        )
       } else {
         after.append(
           self.index_sql(
-            table, index.kind, index.name, index.columns, if_not_exists,
+            table,
+            index.kind,
+            index.name,
+            index.columns,
+            if_not_exists,
           ),
         )
       }
@@ -452,7 +461,9 @@ class DdlAdapter {
     var guard = if_not_exists ? 'if not exists ' : ''
     var items = columns + constraints
     var create = 'create table ${guard}${self.table_name(table)} (\n  ' +
-      ',\n  '.join(items) + '\n)' + self.table_suffix()
+        ',\n  '.join(items) +
+        '\n)' +
+        self.table_suffix()
 
     return [create] + after
   }
@@ -464,8 +475,7 @@ class DdlAdapter {
    * @param Column column
    * @throws NotSupportedError where the engine cannot.
    */
-  check_column(column) {
-  }
+  check_column(column) {}
 
   /**
    * Checks the engine can index `columns` of `table`, given the
@@ -476,8 +486,7 @@ class DdlAdapter {
    * @param list[Column] described
    * @throws NotSupportedError where the engine cannot.
    */
-  check_index(table: string, columns: list, described: list) {
-  }
+  check_index(table: string, columns: list, described: list) {}
 
   /**
    * Creates the table `blueprint` describes.
@@ -533,10 +542,9 @@ class DdlAdapter {
             var own = self._own_index(table, kind, column)
 
             self.check_index(table, own.columns, [column])
-            self.run(
-              connection,
-              [self.index_sql(table, kind, own.name, own.columns, false)],
-            )
+            self.run(connection, [
+              self.index_sql(table, kind, own.name, own.columns, false),
+            ])
           }
         }
       }
@@ -549,25 +557,30 @@ class DdlAdapter {
         self.check_index(table, operation.columns, [])
         self.run(connection, [
           self.index_sql(
-            table, operation.kind, operation.name, operation.columns, false,
+            table,
+            operation.kind,
+            operation.name,
+            operation.columns,
+            false,
           ),
         ])
       }
       when 'foreign' {
         self.run(connection, [
-          'alter table ${target} add '
-            + self.foreign_key_sql(table, operation.key),
+          'alter table ${target} add ' +
+              self.foreign_key_sql(table, operation.key),
         ])
       }
       when 'rename_column' {
         self.run(connection, [
           'alter table ${target} rename column ${self.quote(operation.from)} to ' +
-            self.quote(operation.to),
+              self.quote(operation.to),
         ])
       }
       when 'drop_column' {
         self.run(
-          connection, self.drop_column(connection, table, operation.name),
+          connection,
+          self.drop_column(connection, table, operation.name),
         )
       }
       when 'drop_index', 'drop_unique' {
@@ -575,7 +588,8 @@ class DdlAdapter {
       }
       when 'drop_foreign' {
         self.run(
-          connection, self.drop_foreign(connection, table, operation.name),
+          connection,
+          self.drop_foreign(connection, table, operation.name),
         )
       }
       when 'drop_primary' {
@@ -598,16 +612,20 @@ class DdlAdapter {
    */
   add_column(connection, table: string, column) {
     var target = self.table_name(table)
-    var statements = ['alter table ${target} add column ${self.column_definition(column)}']
+    var statements = [
+      'alter table ${target} add column ${self.column_definition(column)}',
+    ]
 
     if column.is_primary and !column.is_generated {
-      statements.append('alter table ${target} add primary key (${self.quote(column.name)})')
+      statements.append(
+        'alter table ${target} add primary key (${self.quote(column.name)})',
+      )
     }
 
     if column.foreign != nil {
       statements.append(
-        'alter table ${target} add '
-          + self.foreign_key_sql(table, column.foreign),
+        'alter table ${target} add ' +
+            self.foreign_key_sql(table, column.foreign),
       )
     }
 
@@ -637,7 +655,9 @@ class DdlAdapter {
    * @returns list[string]
    */
   drop_column(connection, table: string, name: string) {
-    return ['alter table ${self.table_name(table)} drop column ${self.quote(name)}']
+    return [
+      'alter table ${self.table_name(table)} drop column ${self.quote(name)}',
+    ]
   }
 
   /**
@@ -661,7 +681,9 @@ class DdlAdapter {
    * @returns list[string]
    */
   drop_foreign(connection, table: string, name: string) {
-    return ['alter table ${self.table_name(table)} drop constraint ${self.quote(name)}']
+    return [
+      'alter table ${self.table_name(table)} drop constraint ${self.quote(name)}',
+    ]
   }
 
   /**

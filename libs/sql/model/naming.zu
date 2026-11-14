@@ -30,12 +30,14 @@ def snake(name: string) {
     var ch = name[i]
 
     if _UPPER.contains(ch) {
-      var after_lower = i > 0
-        and !_UPPER.contains(name[i - 1])
-        and name[i - 1] != '_'
-      var before_lower = i > 0 and i + 1 < length and
-        _UPPER.contains(name[i - 1]) and
-        !_UPPER.contains(name[i + 1]) and name[i + 1] != '_'
+      var after_lower = i > 0 and
+          !_UPPER.contains(name[i - 1]) and
+          name[i - 1] != '_'
+      var before_lower = i > 0 and
+          i + 1 < length and
+          _UPPER.contains(name[i - 1]) and
+          !_UPPER.contains(name[i + 1]) and
+          name[i + 1] != '_'
 
       if after_lower or before_lower {
         out.append('_')
@@ -59,13 +61,17 @@ def snake(name: string) {
  * @returns string
  */
 def plural(word: string) {
-  if word.ends_with('s') or word.ends_with('x') or word.ends_with('z') or
-    word.ends_with('ch') or word.ends_with('sh') {
+  if word.ends_with('s') or
+      word.ends_with('x') or
+      word.ends_with('z') or
+      word.ends_with('ch') or
+      word.ends_with('sh') {
     return word + 'es'
   }
 
-  if word.ends_with('y') and word.length() > 1 and
-    !_VOWELS.contains(word[word.length() - 2]) {
+  if word.ends_with('y') and
+      word.length() > 1 and
+      !_VOWELS.contains(word[word.length() - 2]) {
     return word[0, word.length() - 1] + 'ies'
   }
 

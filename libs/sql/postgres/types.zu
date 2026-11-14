@@ -181,8 +181,10 @@ def read_int32(buffer, at: number) {
  * @returns number
  */
 def read_uint32(buffer, at: number) {
-  return (buffer[at] * 16777216) + (buffer[at + 1] << 16) +
-    (buffer[at + 2] << 8) + buffer[at + 3]
+  return (buffer[at] * 16777216) +
+      (buffer[at + 1] << 16) +
+      (buffer[at + 2] << 8) +
+      buffer[at + 3]
 }
 
 /**
@@ -442,8 +444,8 @@ def encode_numeric(value) {
     index += 4
   }
 
-  while fraction_groups.length() > 0
-    and fraction_groups[fraction_groups.length() - 1] == 0 {
+  while fraction_groups.length() > 0 and
+      fraction_groups[fraction_groups.length() - 1] == 0 {
     fraction_groups.pop()
   }
 
@@ -464,9 +466,9 @@ def encode_numeric(value) {
   }
 
   var out = write_int16(digits.length()) +
-    write_int16(weight) +
-    write_int16(negative ? _NEGATIVE : 0) +
-    write_int16(display_scale)
+      write_int16(weight) +
+      write_int16(negative ? _NEGATIVE : 0) +
+      write_int16(display_scale)
 
   for digit in digits {
     out.extend(write_int16(digit))
@@ -494,21 +496,31 @@ def date_from_micros(micros: number) {
   var shifted = days + _DAYS_FROM_MARCH_ZERO
   var era = (shifted / 146097).floor()
   var of_era = shifted - era * 146097
-  var year_of_era = (
-    (of_era - (of_era / 1460).floor() + (of_era / 36524).floor() -
-      (of_era / 146096).floor()) / 365
-  ).floor()
-  var of_year = of_era - (365 * year_of_era + (year_of_era / 4).floor() -
-    (year_of_era / 100).floor())
+  var year_of_era = ((of_era -
+          (of_era / 1460).floor() +
+          (of_era / 36524).floor() -
+          (of_era / 146096).floor()) /
+      365)
+      .floor()
+  var of_year = of_era -
+      (365 * year_of_era +
+          (year_of_era / 4).floor() -
+          (year_of_era / 100).floor())
   var march_month = ((5 * of_year + 2) / 153).floor()
   var day = of_year - ((153 * march_month + 2) / 5).floor() + 1
   var month = march_month < 10 ? march_month + 3 : march_month - 9
   var year = year_of_era + era * 400 + (month <= 2 ? 1 : 0)
 
   return date.Date(
-    year, month, day,
-    (clock / 3600).floor(), ((clock % 3600) / 60).floor(), clock % 60,
-    remainder, 0, false,
+    year,
+    month,
+    day,
+    (clock / 3600).floor(),
+    ((clock % 3600) / 60).floor(),
+    clock % 60,
+    remainder,
+    0,
+    false,
   )
 }
 
@@ -718,10 +730,7 @@ def decode_macaddr(buffer, _oid) {
 }
 
 def decode_point(buffer, _oid) {
-  return {
-    x: float8_at(buffer, 0),
-    y: float8_at(buffer, 8),
-  }
+  return { x: float8_at(buffer, 0), y: float8_at(buffer, 8) }
 }
 
 def decode_lseg(buffer, _oid) {
@@ -770,7 +779,7 @@ def encode_int8(value) {
     if value < _INT8_LOW or value > _INT8_HIGH {
       raise QueryError(
         '${value.to_string()} is out of range for an int8, which holds ' +
-          '${_INT8_LOW.to_string()} to ${_INT8_HIGH.to_string()}',
+            '${_INT8_LOW.to_string()} to ${_INT8_HIGH.to_string()}',
       )
     }
 
@@ -876,8 +885,11 @@ def encode_array(value, element_oid, registry) {
     raise QueryError('an array parameter takes a list, not ${typeof(value)}')
   }
 
-  var out = write_int32(1) + write_int32(0) + write_int32(element_oid) +
-    write_int32(value.length()) + write_int32(1)
+  var out = write_int32(1) +
+      write_int32(0) +
+      write_int32(element_oid) +
+      write_int32(value.length()) +
+      write_int32(1)
 
   for item in value {
     if item == nil {
@@ -982,8 +994,8 @@ def _ranged(value, what, low, limit) {
   if number < low or number >= limit {
     raise QueryError(
       '${value.to_string()} is out of range for ${what}, which holds ' +
-        '${low.to_bigint().to_string()} to ' +
-        '${(limit.to_bigint() - 1n).to_string()}',
+          '${low.to_bigint().to_string()} to ' +
+          '${(limit.to_bigint() - 1n).to_string()}',
     )
   }
 
@@ -1312,8 +1324,17 @@ class TypeRegistry {
     self.register(OIDS.Float8, decode_float8, encode_float8)
     self.register(OIDS.Numeric, decode_numeric_value, encode_numeric)
 
-    for oid in [OIDS.Text, OIDS.Varchar, OIDS.BpChar, OIDS.Char,
-      OIDS.Name, OIDS.Xml, OIDS.Unknown, OIDS.Bit, OIDS.Varbit] {
+    for oid in [
+      OIDS.Text,
+      OIDS.Varchar,
+      OIDS.BpChar,
+      OIDS.Char,
+      OIDS.Name,
+      OIDS.Xml,
+      OIDS.Unknown,
+      OIDS.Bit,
+      OIDS.Varbit,
+    ] {
       self.register(oid, decode_text, encode_text)
     }
 
@@ -1352,8 +1373,17 @@ class TypeRegistry {
     self._readers.set(OIDS.Timestamp, _timestamp_at)
     self._readers.set(OIDS.Timestamptz, _timestamp_at)
 
-    for oid in [OIDS.Text, OIDS.Varchar, OIDS.BpChar, OIDS.Char,
-      OIDS.Name, OIDS.Xml, OIDS.Unknown, OIDS.Bit, OIDS.Varbit] {
+    for oid in [
+      OIDS.Text,
+      OIDS.Varchar,
+      OIDS.BpChar,
+      OIDS.Char,
+      OIDS.Name,
+      OIDS.Xml,
+      OIDS.Unknown,
+      OIDS.Bit,
+      OIDS.Varbit,
+    ] {
       self._readers.set(oid, _text_at)
     }
   }

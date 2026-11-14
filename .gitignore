@@ -1,8 +1,6 @@
 /target
 sample.zu
 /tests/generated
-/docs/book/theme
-/docs/reference/theme
 
 # Patched crates, built from vendor/patches by `cargo patch-crates`.
 /vendor/crates

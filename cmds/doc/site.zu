@@ -1,0 +1,953 @@
+/**
+ * Builds documentation into a site: a directory of plain files that any web
+ * server, or a browser opening them from disk, can show as they are.
+ *
+ * ```text
+ * index.html            the first chapter
+ * <chapter>.html        one page for each chapter, beside its source
+ * print.html            every chapter on one page, for printing
+ * 404.html              the page a missing address is answered with
+ * search-index.js       what the search box looks through
+ * sitemap.xml           every page, when [site] url is set
+ * assets/               the stylesheet, the script and the fonts
+ * ```
+ *
+ * Everything in the source directory that is not Markdown, such as
+ * images, is copied across beside the pages.
+ *
+ * Each page is written through `theme/page.html`, a Wire template.
+ * Documentation with a `theme` directory of its own beside its
+ * `doc.toml` can replace that template, the stylesheet `doc.css` and
+ * the script `doc.js`, each by putting a file of the same name there.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import hash
+import json
+import os
+import wire
+
+import .._shared.errors { UsageError }
+import .._shared.fsx
+import .documentation { Documentation, Chapter, root_of }
+import .config { Config }
+import .highlight.spans { escape }
+import .render { Page, Renderer, escape_attribute, inline_html, print_id }
+
+/** The directory holding the theme the command ships with. */
+var THEME = os.join_paths(os.dir_name(__file__), 'theme')
+
+# The file that marks a directory as a site this command built, so it
+# can be cleared and built again without asking.
+var _MARKER = '.zuri-doc'
+
+# The colour each part takes, in turn.
+var _ACCENTS = ['gold', 'red', 'teal', 'purple']
+
+var _CHEVRON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>'
+
+/**
+ * The colour of the part numbered _index_, counting from 1, with the
+ * chapters before any part taking the first.
+ *
+ * @param number index
+ * @returns string
+ */
+def accent_of(index: number) {
+  return _ACCENTS[(index.max(1) - 1) % _ACCENTS.length()]
+}
+
+/**
+ * Whether _address_ stands on its own rather than being relative to the
+ * root of the site.
+ *
+ * @param string address
+ * @returns bool
+ */
+def is_absolute(address: string) {
+  return address.starts_with('/') or
+      address.starts_with('#') or
+      address.match('/^[A-Za-z][A-Za-z0-9+.-]*:/') != false
+}
+
+# _address_ as a page at _root_ reaches it.
+def _from_root(address: string, root: string) {
+  return is_absolute(address) ? address : root + address
+}
+
+/**
+ * What a build did.
+ */
+class Report {
+
+  /** How many pages were written. @type number */
+  var pages = 0
+
+  /** What looked wrong, one line each. @type list[string] */
+  var warnings = []
+
+  /** How long it took, in seconds. @type number */
+  var seconds = 0
+
+  @new() {
+    self.warnings = []
+  }
+}
+
+/**
+ * The documentation and the site built from it.
+ */
+class Site {
+
+  /** @type Config */
+  var config
+
+  /** @type Documentation */
+  var docs
+
+  /** Whether pages reload when the documentation changes. @type bool */
+  var live = false
+
+  /**
+   * The links into other documentation built into the same site, which
+   * only that documentation can check: `{ where, link }` each, where the
+   * link is, as a warning would name it, and the link as the renderer
+   * recorded it. `build()` fills it in.
+   *
+   * @type list[dict]
+   */
+  var across = []
+
+  # The rendered pages, by path.
+  var _pages = {}
+
+  # The ids on each page, by path, worked out when first asked for.
+  var _ids = {}
+
+  var _view
+  var _version = ''
+  var _renderer
+
+  /**
+   * @param Documentation docs
+   * @param ?bool live: Default `false`. Whether pages reload themselves
+   *    when `zuri doc serve` sees the documentation change.
+   */
+  @new(docs: Documentation, live: ?bool) {
+    self.docs = docs
+    self.config = docs.config
+    self.live = live == true
+    self.across = []
+    self._pages = {}
+    self._ids = {}
+  }
+
+  /**
+   * Whether the site has a page at _path_, once it is built.
+   *
+   * @param string path
+   * @returns bool
+   */
+  has_page(path: string) {
+    return self._pages.contains(path)
+  }
+
+  /**
+   * Whether the documentation's source directory holds _path_, a file
+   * or a directory.
+   *
+   * @param string path: relative to the source directory, with `/`.
+   * @returns bool
+   */
+  has_file(path: string) {
+    var full = os.join_paths(self.config.source, path)
+
+    return file(full).exists() or os.dir_exists(full)
+  }
+
+  /**
+   * Whether the page at _path_ has an element with the id _id_, once
+   * the site is built.
+   *
+   * @param string path
+   * @param string id
+   * @returns bool
+   */
+  has_id(path: string, id: string) {
+    var known = self._ids.get(path)
+
+    if known == nil {
+      known = {}
+
+      var page = self._pages.get(path)
+
+      if page != nil {
+        for found in page.html.matches('/\sid="([^"]+)"/').get(1, []) {
+          known.set(found, true)
+        }
+      }
+
+      self._ids.set(path, known)
+    }
+
+    return known.contains(id)
+  }
+
+  /**
+   * Every link and image leading out of the documentation to an `http`
+   * or `https` address, once the site is built: `{ where, url }` each,
+   * where it is, as a warning names it, and its address.
+   *
+   * @returns list[dict]
+   */
+  externals() {
+    return self._renderer.externals.map(
+      @(link) => {
+        where: '${_shown(self.config, link.from)}:${link.line}',
+        url: link.url,
+      },
+    )
+  }
+
+  /**
+   * Writes the whole site into the output directory, replacing what a
+   * previous build left there.
+   *
+   * @returns Report
+   * @throws UsageError When the output directory holds something other
+   *    than a site, or a page cannot be rendered
+   */
+  build() {
+    var started = time()
+    var report = Report()
+    var output = self.config.output
+
+    self._renderer = Renderer(self.docs)
+    self._view = self._template_view()
+    self._version = self._asset_version()
+    _prepare(self.config)
+
+    self._copy_sources()
+    self._write_assets()
+
+    for chapter in self.docs.chapters {
+      self._pages.set(chapter.path, self._renderer.render(chapter))
+    }
+
+    for chapter in self.docs.chapters {
+      self._write(chapter.path, self._chapter_page(chapter, chapter.path))
+      report.pages++
+    }
+
+    var first = self.docs.first()
+
+    if first != nil and !self._pages.contains('index.html') {
+      if first.path.contains('/') {
+        self._write('index.html', _redirect_page(first.path, self.config.url))
+      } else {
+        self._write('index.html', self._chapter_page(first, 'index.html'))
+      }
+
+      report.pages++
+    }
+
+    if self.config.print and first != nil {
+      self._write('print.html', self._print_page())
+      report.pages++
+    }
+
+    self._write('404.html', self._missing_page())
+    report.pages++
+
+    if self.config.search {
+      self._write('search-index.js', self._search_index())
+    }
+
+    for from, to in self.config.redirects {
+      var path = from.ends_with('/') or from.is_empty()
+          ? from + 'index.html'
+          : from
+
+      self._write(path, _redirect_page(_from_root(to, root_of(path)), nil))
+    }
+
+    if self.config.url != nil {
+      self._write('sitemap.xml', self._sitemap())
+    }
+
+    if self.config.cname != nil {
+      self._write('CNAME', self.config.cname + '\n')
+    }
+
+    # GitHub Pages would otherwise leave out anything named with a
+    # leading underscore.
+    self._write('.nojekyll', '')
+    self._write(
+      _MARKER,
+      'This directory is written by zuri doc, and replaced by every build.\n',
+    )
+
+    report.warnings = self._check_links()
+    report.seconds = time() - started
+
+    return report
+  }
+
+  # The Wire instance pages are rendered with: the documentation's own theme
+  # when it has a page template, the one shipped here otherwise.
+  _template_view() {
+    var view = wire()
+    var theme = self.config.theme_dir
+
+    # A template runs code, so documentation built in a sandbox gets the
+    # built-in one, whatever its theme holds.
+    if self.config.sandbox != nil {
+      theme = nil
+    }
+
+    if theme != nil and file(os.join_paths(theme, 'page.html')).exists() {
+      view.set_root(theme)
+    } else {
+      view.set_root(THEME)
+    }
+
+    return view
+  }
+
+  # The theme file _name_: the documentation's own copy when it has one.
+  _theme_file(name: string) {
+    var theme = self.config.theme_dir
+
+    if theme != nil {
+      var own = os.join_paths(theme, name)
+
+      if file(own).exists() {
+        return own
+      }
+    }
+
+    return os.join_paths(THEME, name)
+  }
+
+  # A short fingerprint of the stylesheet and script, so a browser
+  # fetches them again whenever they change.
+  _asset_version() {
+    var text = fsx.read_text(self._theme_file('doc.css')) +
+        fsx.read_text(self._theme_file('doc.js'))
+
+    return hash.md5(text)[0, 10]
+  }
+
+  # Writes _contents_ to _path_ under the output directory, and nowhere
+  # else.
+  _write(path: string, contents: string) {
+    var full = os.join_paths(self.config.output, path)
+
+    if !os.path_contains(self.config.output, full) {
+      raise UsageError('${path} would be written outside the site')
+    }
+
+    fsx.ensure_dir(os.dir_name(full))
+    file(full, 'w').write(contents)
+  }
+
+  # Copies everything in the source directory that is not a page.
+  _copy_sources() {
+    var source = self.config.source
+
+    for entry in fsx.walk(source) {
+      var name = os.base_name(entry.path)
+
+      if entry.kind != 'file' or
+          name.starts_with('.') or
+          name.lower().ends_with('.md') {
+        continue
+      }
+
+      if entry.path.split('/').some(@(part) => part.starts_with('.')) {
+        continue
+      }
+
+      var target = os.join_paths(self.config.output, entry.path)
+
+      fsx.ensure_dir(os.dir_name(target))
+      file(os.join_paths(source, entry.path)).copy(target)
+    }
+  }
+
+  # The stylesheet, the script, the fonts, and the documentation's own logo,
+  # favicon, stylesheets and scripts.
+  _write_assets() {
+    var assets = os.join_paths(self.config.output, 'assets')
+
+    fsx.ensure_dir(assets)
+    file(self._theme_file('doc.css')).copy(os.join_paths(assets, 'doc.css'))
+    file(self._theme_file('doc.js')).copy(os.join_paths(assets, 'doc.js'))
+    fsx.copy_tree(os.join_paths(THEME, 'fonts'), os.join_paths(assets, 'fonts'))
+
+    if self.config.favicon == nil {
+      file(os.join_paths(THEME, 'favicon.svg'))
+          .copy(os.join_paths(assets, 'favicon.svg'))
+    }
+
+    for path in _own_assets(self.config) {
+      if !file(path).exists() {
+        raise UsageError(
+          '${path} is named in doc.toml, but there is no such file',
+        )
+      }
+
+      file(path).copy(os.join_paths(assets, os.base_name(path)))
+    }
+  }
+
+  # How a chapter reads in the contents: its number and its title.
+  _title_html(chapter: Chapter) {
+    if chapter.toc_html != nil {
+      return chapter.toc_html
+    }
+
+    var title = chapter.entry.node == nil
+        ? escape(chapter.title)
+        : inline_html(chapter.entry.node)
+    var number = chapter.number == nil
+        ? ''
+        : '<span class="toc-number">${chapter.label()}</span>'
+    var html = '${number}<span class="toc-title">${title}</span>'
+
+    chapter.toc_html = html
+
+    return html
+  }
+
+  # One chapter in the contents, with its sections inside it.
+  _toc_item(chapter: Chapter, active: ?Chapter, root: string) {
+    var classes = ['toc-item']
+    var children = chapter.children
+    var fold = self.config.fold
+    var open = !children.is_empty() and
+        (fold == nil or chapter.depth + 1 < fold or _contains(chapter, active))
+
+    if !chapter.has_page() {
+      classes.append('toc-draft')
+    }
+
+    if open {
+      classes.append('open')
+    }
+
+    var out = ['<li class="${' '.join(classes)}"><div class="toc-row">']
+    var title = self._title_html(chapter)
+
+    if chapter.has_page() {
+      var current = chapter == active ? ' aria-current="page"' : ''
+
+      out.append(
+        '<a class="toc-link" href="${escape_attribute(root + chapter.path)}"${current}>${title}</a>',
+      )
+    } else {
+      out.append('<span class="toc-link">${title}</span>')
+    }
+
+    if !children.is_empty() {
+      out.append(
+        '<button class="toc-fold" type="button" aria-expanded="${open}" aria-label="Sections of ${escape_attribute(chapter.title)}">${_CHEVRON}</button>',
+      )
+    }
+
+    out.append('</div>')
+
+    if !children.is_empty() {
+      out.append('<ol>')
+
+      for child in children {
+        out.append(self._toc_item(child, active, root))
+      }
+
+      out.append('</ol>')
+    }
+
+    out.append('</li>')
+
+    return ''.join(out)
+  }
+
+  # The whole contents, as a page at _root_ shows them with _active_ as
+  # the page being read.
+  _sidebar(active: ?Chapter, root: string) {
+    var out = ['<nav class="toc">']
+    var items = []
+    var heading = nil
+    var accent = accent_of(0)
+    var part_index = 0
+
+    var flush = @{
+      if heading != nil or !items.is_empty() {
+        out.append('<div class="toc-group" data-accent="${accent}">')
+
+        if heading != nil {
+          out.append('<p class="toc-part">${heading}</p>')
+        }
+
+        out.append('<ol>${"".join(items)}</ol></div>')
+      }
+
+      items = []
+      heading = nil
+    }
+
+    for item in self.docs.contents {
+      if instance_of(item, Chapter) {
+        items.append(self._toc_item(item, active, root))
+      } else if item.kind == 'part' {
+        flush()
+        part_index++
+        accent = accent_of(part_index)
+        heading = item.node == nil ? escape(item.title) : inline_html(item.node)
+      } else {
+        flush()
+        out.append('<div class="toc-separator" role="separator"></div>')
+      }
+    }
+
+    flush()
+    out.append('</nav>')
+
+    return ''.join(out)
+  }
+
+  # The values every page's template is given.
+  _common(root: string) {
+    var config = self.config
+    var repository = nil
+
+    if config.repository != nil {
+      var github = config.repository.contains('github.com')
+
+      repository = {
+        url: config.repository,
+        label: github ? 'The repository on GitHub' : 'The source repository',
+        github,
+      }
+    }
+
+    var links = config.links.map(
+      @(link) => {
+        url: _from_root(link.url, root),
+        label: link.label,
+        current: link.get('current', false) == true,
+      },
+    )
+    var assets = root + 'assets/'
+
+    return {
+      language: config.language,
+      theme: config.theme,
+      site_title: config.title,
+      description: config.description.is_empty() ? nil : config.description,
+      root,
+      assets,
+      version: self._version,
+      favicon:
+          assets +
+          (config.favicon == nil
+              ? 'favicon.svg'
+              : os.base_name(config.favicon)),
+      logo: config.logo == nil ? nil : assets + os.base_name(config.logo),
+      home: config.home == nil
+          ? nil
+          : {
+              url: _from_root(config.home.url, root),
+              label: config.home.label,
+            },
+      links: links.is_empty() ? nil : links,
+      repository,
+      search: config.search,
+      print: config.print,
+      live: self.live,
+      math: config.markdown.get('math', false) == true,
+      stylesheets: config.css.map(@(path) => assets + os.base_name(path)),
+      scripts: config.js.map(@(path) => assets + os.base_name(path)),
+      accent: accent_of(0),
+      kicker: nil,
+      outline: nil,
+      edit_url: nil,
+      previous: nil,
+      next: nil,
+      canonical: nil,
+      base: nil,
+    }
+  }
+
+  # A page's title in the browser.
+  _page_title(name: string) {
+    var whole = self.config.title
+
+    return name == whole or name.is_empty() ? whole : '${name} · ${whole}'
+  }
+
+  # How a neighbouring chapter is shown at the foot of a page.
+  _turn(chapter: ?Chapter, root: string) {
+    if chapter == nil {
+      return nil
+    }
+
+    return {
+      url: root + chapter.path,
+      title: chapter.title,
+      number: chapter.number == nil ? nil : chapter.label(),
+    }
+  }
+
+  # The line above a chapter's title: its part and its number.
+  _kicker(chapter: Chapter) {
+    var parts = []
+
+    if chapter.number != nil {
+      parts.append(
+        chapter.depth == 0 ? 'Chapter ${chapter.label()}' : chapter.label(),
+      )
+    }
+
+    if chapter.part != nil {
+      parts.append(chapter.part.title)
+    }
+
+    return parts.is_empty() ? nil : ' · '.join(parts)
+  }
+
+  # The page for _chapter_, written at _path_.
+  _chapter_page(chapter: Chapter, path: string) {
+    var root = root_of(path)
+    var page = self._pages.get(chapter.path)
+    var values = self._common(root)
+    var position = chapter.position
+    var chapters = self.docs.chapters
+    var config = self.config
+
+    values.set('kind', 'chapter')
+    values.set(
+      'title',
+      self._page_title(
+        chapter.page_title == nil ? chapter.title : chapter.page_title,
+      ),
+    )
+    values.set('accent', accent_of(chapter.part_index))
+    values.set('kicker', self._kicker(chapter))
+    values.set('content', page.html)
+    values.set('outline', page.outline.is_empty() ? nil : page.outline)
+    values.set('sidebar', self._sidebar(chapter, root))
+    values.set(
+      'previous',
+      self._turn(position > 0 ? chapters[position - 1] : nil, root),
+    )
+    values.set(
+      'next',
+      self._turn(
+        position + 1 < chapters.length() ? chapters[position + 1] : nil,
+        root,
+      ),
+    )
+
+    if config.edit != nil {
+      values.set(
+        'edit_url',
+        config.edit.replace('{path}', chapter.source, false),
+      )
+    }
+
+    if config.url != nil {
+      values.set(
+        'canonical',
+        config.url + (chapter.position == 0 ? '' : chapter.path),
+      )
+    }
+
+    return self._view.render('page', values)
+  }
+
+  # Every chapter on one page.
+  _print_page() {
+    var values = self._common('')
+    var sections = []
+
+    for chapter in self.docs.chapters {
+      var kicker = self._kicker(chapter)
+      var top = kicker == nil
+          ? ''
+          : '<p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>${escape(kicker)}</p>'
+
+      sections.append(
+        '<section class="print-chapter" id="${print_id(chapter.path)}" data-accent="${accent_of(chapter.part_index)}">${top}' +
+            self._renderer.render_for_print(chapter) +
+            '</section>',
+      )
+    }
+
+    values.set('kind', 'print')
+    values.set('title', self.config.title)
+    values.set('content', ''.join(sections))
+    values.set('sidebar', self._sidebar(nil, ''))
+
+    return self._view.render('page', values)
+  }
+
+  # Where the page a missing address is answered with finds the rest of
+  # the site, since a server can answer with it at any depth: the root
+  # of the local server while serving, and otherwise the path of the
+  # site's address. Without an address it works from the top of the
+  # site only.
+  _base() {
+    if self.live {
+      return '/'
+    }
+
+    var address = self.config.url
+
+    if address == nil {
+      return nil
+    }
+
+    var scheme = address.index_of('://')
+    var slash = address.index_of('/', scheme < 0 ? 0 : scheme + 3)
+
+    return slash < 0 ? '/' : address[slash,]
+  }
+
+  # The page a missing address is answered with.
+  _missing_page() {
+    var values = self._common('')
+
+    values.set('kind', 'missing')
+    values.set('title', self._page_title('Not found'))
+    values.set('base', self._base())
+    values.set('sidebar', self._sidebar(nil, ''))
+    values.set(
+      'content',
+      '<p class="missing-code">404</p><h1>There is no page here</h1>' +
+          '<p>The address may be mistyped, or the page may have moved since it was linked to. ' +
+          'Try searching, or start again from <a href="index.html">the first page</a>.</p>',
+    )
+
+    return self._view.render('page', values)
+  }
+
+  # What the search box looks through: every page, and every section of
+  # each page with its text.
+  _search_index() {
+    var pages = []
+    var sections = []
+
+    for chapter in self.docs.chapters {
+      var page = self._pages.get(chapter.path)
+      var where = []
+
+      if chapter.part != nil {
+        where.append(chapter.part.title)
+      }
+
+      where.append(
+        chapter.number == nil
+            ? chapter.title
+            : '${chapter.label()} ${chapter.title}',
+      )
+
+      var index = pages.length()
+
+      pages.append([chapter.path, chapter.title, ' › '.join(where)])
+
+      for section in page.sections {
+        if section.title.is_empty() and section.text.is_empty() {
+          continue
+        }
+
+        sections.append([index, section.id, section.title, section.text])
+      }
+    }
+
+    var data = json.encode({ pages, sections })
+
+    return 'window.zuriDocIndex = ${data};\n'
+  }
+
+  # Every page's address, for search engines.
+  _sitemap() {
+    var out = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
+
+    for chapter in self.docs.chapters {
+      var address = self.config.url +
+          (chapter.position == 0 ? '' : chapter.path)
+
+      out.append('  <url><loc>${escape(address)}</loc></url>')
+    }
+
+    out.append('</urlset>')
+
+    return '\n'.join(out) + '\n'
+  }
+
+  # Every link inside the documentation that leads nowhere, as a line each.
+  _check_links() {
+    var warnings = []
+    var config = self.config
+
+    for link in self._renderer.links {
+      var where = '${_shown(config, link.from)}:${link.line}'
+
+      if link.get('site') != nil {
+        self.across.append({ where, link })
+        continue
+      }
+
+      if link.get('file') != nil {
+        var target = link.file
+
+        if !target.starts_with('..') and !self.has_file(target) {
+          warnings.append(
+            '${where}: links to ${target}, which is not in the documentation',
+          )
+        }
+
+        continue
+      }
+
+      if !self.has_page(link.page) {
+        warnings.append(
+          '${where}: links to ${link.source}, which SUMMARY.md does not list',
+        )
+        continue
+      }
+
+      if !link.fragment.is_empty() and !self.has_id(link.page, link.fragment) {
+        warnings.append(
+          '${where}: ${link.source} has no heading or id #${link.fragment}',
+        )
+      }
+    }
+
+    return warnings
+  }
+}
+
+# Whether _chapter_ is _active_ or holds it among its sections.
+def _contains(chapter: Chapter, active: ?Chapter) {
+  var at = active
+
+  while at != nil {
+    if at == chapter {
+      return true
+    }
+
+    at = at.owner
+  }
+
+  return false
+}
+
+# A source path as a warning names it: relative to where the command
+# was run.
+def _shown(config: Config, source: string) {
+  return os.relative_path(os.cwd(), os.join_paths(config.source, source))
+}
+
+# Every file the documentation adds to the assets directory itself.
+def _own_assets(config: Config) {
+  var paths = []
+
+  if config.logo != nil {
+    paths.append(config.logo)
+  }
+
+  if config.favicon != nil {
+    paths.append(config.favicon)
+  }
+
+  paths.extend(config.css)
+  paths.extend(config.js)
+
+  return paths
+}
+
+# A page that sends the browser on to _target_ at once.
+def _redirect_page(target: string, canonical: ?string) {
+  var address = escape_attribute(target)
+
+  return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' +
+      '<title>Moved</title>\n<meta http-equiv="refresh" content="0; url=${address}">\n' +
+      '<link rel="canonical" href="${canonical == nil ? address : escape_attribute(canonical)}">\n' +
+      '<script>location.replace(${json.encode(target)} + location.hash);</script>\n' +
+      '</head>\n<body>\n<p>This page has moved to <a href="${address}">${escape(target)}</a>.</p>\n' +
+      '</body>\n</html>\n'
+}
+
+/**
+ * Empties the output directory for a new build, making it first if it
+ * is not there.
+ *
+ * A directory this command built is emptied without question, as is a
+ * site some other tool built, which is recognised by its `index.html`.
+ * Anything else is refused, so that a mistake in `doc.toml` cannot clear
+ * a directory of work.
+ *
+ * @param Config config
+ * @throws UsageError When the directory holds something other than a
+ *    site, or the documentation itself
+ */
+def _prepare(config: Config) {
+  var output = config.output
+
+  if !os.dir_exists(output) {
+    fsx.ensure_dir(output)
+    return
+  }
+
+  var names = os
+      .read_dir(output)
+      .filter(@(name) => name != '.' and name != '..')
+
+  if names.is_empty() {
+    return
+  }
+
+  var holds = @(path) => path == output or
+      path.starts_with(output + os.path_separator)
+
+  if holds(config.root) or holds(config.source) {
+    raise UsageError(
+      'the output directory ${output} holds the documentation itself; set [documentation] output elsewhere',
+    )
+  }
+
+  if !names.contains(_MARKER) and !names.contains('index.html') {
+    raise UsageError(
+      '${output} holds files that are not a site zuri doc built; empty it, or set [documentation] output elsewhere',
+    )
+  }
+
+  for name in names {
+    fsx.remove(os.join_paths(output, name))
+  }
+}
+
+/**
+ * Removes a site the documentation at _config_ built, if there is one.
+ *
+ * @param Config config
+ * @returns bool: whether there was anything to remove.
+ * @throws UsageError When the output directory holds something other
+ *    than a site
+ */
+def clean(config: Config) {
+  if !os.dir_exists(config.output) {
+    return false
+  }
+
+  _prepare(config)
+  os.remove_dir(config.output, true)
+
+  return true
+}

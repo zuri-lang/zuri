@@ -388,7 +388,10 @@ import os
 
 import @.values { Safe, safe, is_safe, stringify, truthy }
 import @.errors {
-  WireError, TemplateNotFoundError, TemplateSyntaxError, RenderError,
+  WireError,
+  TemplateNotFoundError,
+  TemplateSyntaxError,
+  RenderError,
 }
 
 import @.constants
@@ -936,7 +939,7 @@ class Wire {
       }
 
       if cached.fingerprint != nil and
-        cached.fingerprint == self._loader().fingerprint(full) {
+          cached.fingerprint == self._loader().fingerprint(full) {
         return cached.template
       }
     }
@@ -1002,10 +1005,7 @@ class Wire {
    * @returns dict
    */
   _options() {
-    return {
-      compact: self._compact,
-      comments: self._comments,
-    }
+    return { compact: self._compact, comments: self._comments }
   }
 
   /**
@@ -1025,7 +1025,7 @@ class Wire {
     if name.starts_with('_') {
       raise ArgumentError(
         'a ${kind} name cannot start with an underscore, since a template ' +
-          'cannot read one',
+            'cannot read one',
       )
     }
   }

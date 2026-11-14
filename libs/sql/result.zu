@@ -201,7 +201,7 @@ class ResultSet {
       if column < 0 or column >= self.columns.length() {
         raise QueryError(
           'column ${column} is out of range for a result with ' +
-            '${self.columns.length()} columns',
+              '${self.columns.length()} columns',
         )
       }
 
@@ -216,15 +216,15 @@ class ResultSet {
 
     raise QueryError(
       'this result has no column named ${column}; it has ' +
-        '${', '.join(self.column_names())}',
+          '${', '.join(self.column_names())}',
     )
   }
 
   to_string() {
     return '<ResultSet ${self.rows.length()} row' +
-      '${self.rows.length() == 1 ? "" : "s"}, ' +
-      '${self.columns.length()} column' +
-      '${self.columns.length() == 1 ? "" : "s"}>'
+        '${self.rows.length() == 1 ? "" : "s"}, ' +
+        '${self.columns.length()} column' +
+        '${self.columns.length() == 1 ? "" : "s"}>'
   }
 
   @key(previous) {
@@ -286,7 +286,7 @@ class ExecResult {
     var id = self.last_insert_id != nil ? ', id ${self.last_insert_id}' : ''
 
     return '<ExecResult ${self.rows_affected} row' +
-      '${self.rows_affected == 1 ? "" : "s"} affected${id}>'
+        '${self.rows_affected == 1 ? "" : "s"} affected${id}>'
   }
 
   @to_string() {

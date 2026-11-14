@@ -232,14 +232,14 @@ def _codepoint_to_str(cp) {
 
   if cp < 0x10000 {
     return (0xe0 | (cp >> 12)).chr() +
-      (0x80 | ((cp >> 6) & 0x3f)).chr() +
-      (0x80 | (cp & 0x3f)).chr()
+        (0x80 | ((cp >> 6) & 0x3f)).chr() +
+        (0x80 | (cp & 0x3f)).chr()
   }
 
   return (0xf0 | (cp >> 18)).chr() +
-    (0x80 | ((cp >> 12) & 0x3f)).chr() +
-    (0x80 | ((cp >> 6) & 0x3f)).chr() +
-    (0x80 | (cp & 0x3f)).chr()
+      (0x80 | ((cp >> 12) & 0x3f)).chr() +
+      (0x80 | ((cp >> 6) & 0x3f)).chr() +
+      (0x80 | (cp & 0x3f)).chr()
 }
 
 # Core Schema scalar type resolution.
@@ -282,8 +282,12 @@ def _resolve_scalar(s) {
   }
 
   # Float: infinity
-  if s == '.inf' or s == '.Inf' or s == '.INF' or
-    s == '+.inf' or s == '+.Inf' or s == '+.INF' {
+  if s == '.inf' or
+      s == '.Inf' or
+      s == '.INF' or
+      s == '+.inf' or
+      s == '+.Inf' or
+      s == '+.INF' {
     return math.Infinity
   }
   if s == '-.inf' or s == '-.Inf' or s == '-.INF' {
@@ -326,8 +330,12 @@ def _apply_tag(tag, raw) {
     if raw.match('/^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$/') {
       return raw.to_number()
     }
-    if raw == '.inf' or raw == '.Inf' or raw == '.INF' or
-      raw == '+.inf' or raw == '+.Inf' or raw == '+.INF' {
+    if raw == '.inf' or
+        raw == '.Inf' or
+        raw == '.INF' or
+        raw == '+.inf' or
+        raw == '+.Inf' or
+        raw == '+.INF' {
       return math.Infinity
     }
     if raw == '-.inf' or raw == '-.Inf' or raw == '-.INF' {
@@ -442,8 +450,8 @@ class _Scanner {
 
   # Skip spaces and tabs (not newlines).
   skip_spaces() {
-    while self._pos < self.len and (self.src[self._pos] == ' ' or
-      self.src[self._pos] == '\t') {
+    while self._pos < self.len and
+        (self.src[self._pos] == ' ' or self.src[self._pos] == '\t') {
       self.advance()
     }
   }
@@ -616,8 +624,8 @@ class _Parser {
         # Directive line: consume to end of line.
         self._parse_directive()
       } else if ch == '-' and
-        self._sc.peek(1) == '-' and
-        self._sc.peek(2) == '-' {
+          self._sc.peek(1) == '-' and
+          self._sc.peek(2) == '-' {
         # '---' document-start marker.
         self._sc.skip(3)
         self._sc.skip_inline_ws()
@@ -639,14 +647,14 @@ class _Parser {
       if ch == '\n' {
         self._sc.advance()
       } else if ch == '.' and
-        self._sc.peek(1) == '.' and
-        self._sc.peek(2) == '.' {
+          self._sc.peek(1) == '.' and
+          self._sc.peek(2) == '.' {
         self._sc.skip(3)
         self._sc.skip_inline_ws()
         self._sc.consume_newline()
       } else if ch == '-' and
-        self._sc.peek(1) == '-' and
-        self._sc.peek(2) == '-' {
+          self._sc.peek(1) == '-' and
+          self._sc.peek(2) == '-' {
         # Next document starts here: stop suffix skipping.
         break
       } else {
@@ -665,9 +673,9 @@ class _Parser {
 
     if name == 'YAML' {
       var version = ''
-      while !self._sc.at_end()
-        and !_is_ws(self._sc.peek())
-        and self._sc.peek() != '\n' {
+      while !self._sc.at_end() and
+          !_is_ws(self._sc.peek()) and
+          self._sc.peek() != '\n' {
         version += self._sc.advance()
       }
       if !version.match('/^[0-9]+\.[0-9]+$/') {
@@ -681,9 +689,9 @@ class _Parser {
       var major = version.split('.')[0].to_number()
       if major != 1 {
         self._error(
-          'unsupported YAML version '
-            + version
-            + ' (this parser implements 1.2.2)',
+          'unsupported YAML version ' +
+              version +
+              ' (this parser implements 1.2.2)',
         )
       }
     }
@@ -703,14 +711,10 @@ class _Parser {
     }
 
     var ch = self._sc.peek()
-    if ch == '.' and
-      self._sc.peek(1) == '.' and
-      self._sc.peek(2) == '.' {
+    if ch == '.' and self._sc.peek(1) == '.' and self._sc.peek(2) == '.' {
       return nil
     }
-    if ch == '-' and
-      self._sc.peek(1) == '-' and
-      self._sc.peek(2) == '-' {
+    if ch == '-' and self._sc.peek(1) == '-' and self._sc.peek(2) == '-' {
       return nil
     }
 
@@ -878,8 +882,8 @@ class _Parser {
           }
         } else if ch == '\n' {
           return false
-        } else if ch == '#'
-          and (i == self._sc.pos() or src[i - 1] == ' ' or src[i - 1] == '\t') {
+        } else if ch == '#' and
+            (i == self._sc.pos() or src[i - 1] == ' ' or src[i - 1] == '\t') {
           # A '#' preceded by whitespace (or right at the start of
           # this scan) starts a comment, the same rule
           # _parse_plain_scalar() itself uses: nothing past this
@@ -1168,14 +1172,10 @@ class _Parser {
 
         # Check for document markers or block indicators on the next line.
         var nx = self._sc.peek()
-        if nx == '-' and
-          self._sc.peek(1) == '-' and
-          self._sc.peek(2) == '-' {
+        if nx == '-' and self._sc.peek(1) == '-' and self._sc.peek(2) == '-' {
           break
         }
-        if nx == '.' and
-          self._sc.peek(1) == '.' and
-          self._sc.peek(2) == '.' {
+        if nx == '.' and self._sc.peek(1) == '.' and self._sc.peek(2) == '.' {
           break
         }
         if nx == '' {
@@ -1200,8 +1200,8 @@ class _Parser {
       }
 
       # Comment: '#' preceded by whitespace ends a plain scalar.
-      if ch == '#'
-        and (result.length() == 0 or result[result.length() - 1] == ' ') {
+      if ch == '#' and
+          (result.length() == 0 or result[result.length() - 1] == ' ') {
         break
       }
 
@@ -1370,8 +1370,7 @@ class _Parser {
       # Folded: newlines between non-blank lines fold to spaces;
       # blank lines produce a literal newline; leading newline before first
       # non-blank line is preserved.
-      var keep_blanks = chomp != _CHOMP_KEEP,
-        len = lines.length()
+      var keep_blanks = chomp != _CHOMP_KEEP, len = lines.length()
 
       iter var i = 0; i < len; i++ {
         var ln = lines[i]
@@ -1502,13 +1501,13 @@ class _Parser {
 
       # Document markers end the mapping.
       if self._sc.peek() == '-' and
-        self._sc.peek(1) == '-' and
-        self._sc.peek(2) == '-' {
+          self._sc.peek(1) == '-' and
+          self._sc.peek(2) == '-' {
         break
       }
       if self._sc.peek() == '.' and
-        self._sc.peek(1) == '.' and
-        self._sc.peek(2) == '.' {
+          self._sc.peek(1) == '.' and
+          self._sc.peek(2) == '.' {
         break
       }
 
@@ -1517,7 +1516,7 @@ class _Parser {
 
       # Complex key: '? key\n: value'
       if self._sc.peek() == '?' and
-        (_is_ws(self._sc.peek(1)) or self._sc.peek(1) == '\n') {
+          (_is_ws(self._sc.peek(1)) or self._sc.peek(1) == '\n') {
         self._sc.advance() # '?'
         self._sc.skip_spaces()
         if self._sc.peek() == '\n' {
@@ -1895,7 +1894,9 @@ class _Emitter {
     if self._rendering.contains(node_id) {
       raise YamlError(
         'cannot dump a cyclic structure (a value refers back to one of its own ancestors)',
-        nil, nil, nil,
+        nil,
+        nil,
+        nil,
       )
     }
 
@@ -1912,9 +1913,9 @@ class _Emitter {
     }
 
     self._rendering[node_id] = true
-    var result = is_list(value) ?
-      self._emit_sequence(value, depth, false) :
-      self._emit_mapping(value, depth, false)
+    var result = is_list(value)
+        ? self._emit_sequence(value, depth, false)
+        : self._emit_mapping(value, depth, false)
     self._rendering.remove(node_id)
 
     return { prefix, body: result.body, is_flow: result.is_flow }
@@ -2001,16 +2002,18 @@ class _Emitter {
       }
 
       var content_lines = content.split('\n')
-      return '|'
-        + chomp_indicator
-        + '\n'
-        + pad
-        + ('\n' + pad).join(content_lines)
+      return '|' +
+          chomp_indicator +
+          '\n' +
+          pad +
+          ('\n' + pad).join(content_lines)
     }
 
     # Prefer single-quoted when no backslashes or control chars are present.
-    if !s.contains('\\') and !s.contains('\n') and
-      !s.contains('\r') and !s.contains('\t') {
+    if !s.contains('\\') and
+        !s.contains('\n') and
+        !s.contains('\r') and
+        !s.contains('\t') {
       # Single-quoted: escape embedded single quotes by doubling.
       var escaped = s.replace("/'/g", "''")
       if !escaped.contains('\n') {
@@ -2054,9 +2057,18 @@ class _Emitter {
       return true
     }
 
-    if first == ':' or first == '#' or first == '&' or first == '*' or
-      first == '?' or first == '|' or first == '>' or first == '\'' or
-      first == '"' or first == '%' or first == '@' or first == '`' {
+    if first == ':' or
+        first == '#' or
+        first == '&' or
+        first == '*' or
+        first == '?' or
+        first == '|' or
+        first == '>' or
+        first == '\'' or
+        first == '"' or
+        first == '%' or
+        first == '@' or
+        first == '`' {
       return true
     }
     if first == '{' or first == '}' or first == '[' or first == ']' {
@@ -2266,9 +2278,9 @@ def _int_to_hex2(n) {
 
 def _strip_bom_and_normalise(text) {
   if text.length() >= 3 and
-    text[0].ord() == 0xef and
-    text[1].ord() == 0xbb and
-    text[2].ord() == 0xbf {
+      text[0].ord() == 0xef and
+      text[1].ord() == 0xbb and
+      text[2].ord() == 0xbf {
     text = text[3, text.length()]
   }
   return text

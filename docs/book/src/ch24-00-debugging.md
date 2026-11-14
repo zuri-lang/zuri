@@ -62,10 +62,22 @@ def show(label, work) {
 }
 
 show('name never declared', @() => undeclared_name)
-show('key not in dict', @() { var d = { a: 1 }; return d['b'] })
-show('field not on class', @() { var c = Config(); c.nope = 1 })
-show('property not on class', @() { var c = Config(); return c.missing })
-show('method on nil', @() { var x = nil; return x.f() })
+show('key not in dict', @() {
+  var d = { a: 1 }
+  return d['b']
+})
+show('field not on class', @() {
+  var c = Config()
+  c.nope = 1
+})
+show('property not on class', @() {
+  var c = Config()
+  return c.missing
+})
+show('method on nil', @() {
+  var x = nil
+  return x.f()
+})
 show('operator on nil', @() => nil + 1)
 show('index past the end', @() => [1][9])
 show('wrong argument type', @() => needs_string(5))
@@ -172,7 +184,10 @@ import json
 var request = {
   method: 'POST',
   headers: { accept: 'application/json' },
-  body: { title: 'write chapter 19', tags: ['docs', 'zuri'] },
+  body: {
+    title: 'write chapter 19',
+    tags: ['docs', 'zuri'],
+  },
 }
 
 echo json.encode(request, false)

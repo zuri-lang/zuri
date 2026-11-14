@@ -24,8 +24,11 @@
  */
 
 import ..driver {
-  DriverConnection, READ_COMMITTED, REPEATABLE_READ,
-  SERIALIZABLE, READ_UNCOMMITTED,
+  DriverConnection,
+  READ_COMMITTED,
+  REPEATABLE_READ,
+  SERIALIZABLE,
+  READ_UNCOMMITTED,
 }
 import ..errors { ClosedError, NotSupportedError, TransactionError }
 import .cursor { PostgresCursor }
@@ -160,15 +163,11 @@ class PostgresConnection < DriverConnection {
 
     # The columns are the compiled ones unless the server described
     # the result afresh, and those were described when compiled.
-    var columns = id(result.columns) == id(compiled.columns) ?
-      compiled.described :
-      describe_columns(result.columns)
+    var columns = id(result.columns) == id(compiled.columns)
+        ? compiled.described
+        : describe_columns(result.columns)
 
-    return {
-      columns,
-      rows: result.rows,
-      command: result.tag,
-    }
+    return { columns, rows: result.rows, command: result.tag }
   }
 
   /**
@@ -185,12 +184,16 @@ class PostgresConnection < DriverConnection {
 
     var compiled = self._compile(sql)
 
-    return self._start_cursor({
-      name: compiled.name,
-      parameters: compiled.parameters,
-      columns: compiled.columns,
-      sql,
-    }, values, options)
+    return self._start_cursor(
+      {
+        name: compiled.name,
+        parameters: compiled.parameters,
+        columns: compiled.columns,
+        sql,
+      },
+      values,
+      options,
+    )
   }
 
   /**
@@ -313,7 +316,7 @@ class PostgresConnection < DriverConnection {
   last_insert_id() {
     raise NotSupportedError(
       'postgres does not report a last insert id; an insert asks for ' +
-        'one with a RETURNING clause, which Connection.insert() adds',
+          'one with a RETURNING clause, which Connection.insert() adds',
       { driver: 'postgres' },
     )
   }
@@ -443,8 +446,7 @@ class PostgresConnection < DriverConnection {
 
     catch {
       self._protocol.close_statement(name)
-    } as _error {
-    }
+    } as _error {}
   }
 
   /**
@@ -460,12 +462,16 @@ class PostgresConnection < DriverConnection {
   open_cursor_for(statement, values: list, options: dict) {
     self._open()
 
-    return self._start_cursor({
-      name: statement.name(),
-      parameters: statement.parameters(),
-      columns: statement.raw_columns(),
-      sql: statement.sql(),
-    }, values, options)
+    return self._start_cursor(
+      {
+        name: statement.name(),
+        parameters: statement.parameters(),
+        columns: statement.raw_columns(),
+        sql: statement.sql(),
+      },
+      values,
+      options,
+    )
   }
 
   /**
@@ -520,8 +526,7 @@ class PostgresConnection < DriverConnection {
       if owned {
         catch {
           self.rollback()
-        } as _ignored {
-        }
+        } as _ignored {}
       }
 
       raise error
@@ -598,26 +603,24 @@ class PostgresConnection < DriverConnection {
       }
     }
 
-    raise NotSupportedError(
-      'postgres has no ${isolation} isolation level',
-      { driver: 'postgres' },
-    )
+    raise NotSupportedError('postgres has no ${isolation} isolation level', {
+      driver: 'postgres',
+    })
   }
 
   _assert_in_transaction(what) {
     if !self.in_transaction() {
-      raise TransactionError(
-        'there is no open transaction to ${what}',
-        { driver: 'postgres' },
-      )
+      raise TransactionError('there is no open transaction to ${what}', {
+        driver: 'postgres',
+      })
     }
   }
 
   _open() {
     if self.is_closed() {
-      raise ClosedError(
-        'this postgres connection was closed', { driver: 'postgres' },
-      )
+      raise ClosedError('this postgres connection was closed', {
+        driver: 'postgres',
+      })
     }
   }
 
@@ -626,7 +629,7 @@ class PostgresConnection < DriverConnection {
     var database = self._options.get('database', '')
 
     return '<PostgresConnection ${where}/${database}' +
-      '${self._closed ? " (closed)" : ""}>'
+        '${self._closed ? " (closed)" : ""}>'
   }
 
   @to_string() {

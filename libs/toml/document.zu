@@ -208,8 +208,10 @@ def spell_multiline_string(text: string) {
 
     # A run of three or more quotes has to be broken up, and escaping
     # the first of each three is the least invasive way to do it.
-    if ch == '"' and i + 2 < text.length() and text[i + 1] == '"' and
-      text[i + 2] == '"' {
+    if ch == '"' and
+        i + 2 < text.length() and
+        text[i + 1] == '"' and
+        text[i + 2] == '"' {
       out += '\\"'
       i++
       continue
@@ -515,9 +517,14 @@ class Entry {
    * @returns string
    */
   to_string() {
-    return self.prefix + self.key_raw + self.pre_eq + '=' +
-      self.value.prefix + self.value.to_string() + self.value.suffix +
-      self.newline
+    return self.prefix +
+        self.key_raw +
+        self.pre_eq +
+        '=' +
+        self.value.prefix +
+        self.value.to_string() +
+        self.value.suffix +
+        self.newline
   }
 
   @to_string() {
@@ -607,8 +614,12 @@ class Table {
 
     if self.header_raw != nil {
       var brackets = self.is_aot_element ? ['[[', ']]'] : ['[', ']']
-      out += self.prefix + brackets[0] + self.header_raw + brackets[1] +
-        self.suffix + self.newline
+      out += self.prefix +
+          brackets[0] +
+          self.header_raw +
+          brackets[1] +
+          self.suffix +
+          self.newline
     }
 
     for entry in self.entries {
@@ -736,8 +747,7 @@ class Table {
     # the rest reaching into an inline table or an array.
     for entry in self.entries {
       if _is_prefix(entry.path, parts) {
-        return _descend(entry.value.to_value(),
-          parts[entry.path.length(),])
+        return _descend(entry.value.to_value(), parts[entry.path.length(),])
       }
     }
 
@@ -1075,8 +1085,10 @@ def _spell(value, path, seen) {
   if is_number(value) {
     # NaN and the infinities have no integer spelling, and neither has
     # a fractional number, so everything else is a float.
-    if value == value and value != (1 / 0) and value != (-1 / 0) and
-      value == value.floor() {
+    if value == value and
+        value != (1 / 0) and
+        value != (-1 / 0) and
+        value == value.floor() {
       return Value('integer', value, spell_integer(value))
     }
 
@@ -1119,9 +1131,16 @@ def _spell(value, path, seen) {
 def _spell_date(value) {
   var minutes = (value.gmt_offset / 60).floor()
 
-  return DateTime(value.year, value.month, value.day, value.hour,
-    value.minute, value.seconds, value.microseconds * 1000,
-    minutes).to_string()
+  return DateTime(
+    value.year,
+    value.month,
+    value.day,
+    value.hour,
+    value.minute,
+    value.seconds,
+    value.microseconds * 1000,
+    minutes,
+  ).to_string()
 }
 
 def _spell_array(items, path, seen) {
@@ -1165,7 +1184,8 @@ def _spell_inline(source, path, seen) {
   for name, item in source {
     if !is_string(name) {
       raise EncodeError(
-        'a TOML key must be a string, got ${typeof(name)}', path,
+        'a TOML key must be a string, got ${typeof(name)}',
+        path,
       )
     }
 
@@ -1570,8 +1590,8 @@ def _block_prefix(document) {
   }
 
   var previous = document.order.length() > 0
-    ? document.order[document.order.length() - 1]
-    : document.root
+      ? document.order[document.order.length() - 1]
+      : document.root
 
   _close_last_line(document, previous)
 
@@ -1617,7 +1637,7 @@ def _locate_in(document, start, parts, create) {
     if instance_of(child, ArrayOfTables) {
       raise EditError(
         "'${'.'.join(parts[0, i + 1])}' is an array of tables; reach an " +
-          'element through array_of_tables()',
+            'element through array_of_tables()',
         '.'.join(parts),
       )
     }
@@ -1674,9 +1694,9 @@ def _set(document, start, parts, value) {
     if _is_prefix(entry.path, path) {
       raise EditError(
         entry.value.kind == 'inline-table'
-          ? "'${_join_path(entry.path)}' is an inline table, which TOML " +
-            'seals once written; replace the whole value instead'
-          : "'${_join_path(entry.path)}' is a value and cannot hold a key",
+            ? "'${_join_path(entry.path)}' is an inline table, which TOML " +
+                  'seals once written; replace the whole value instead'
+            : "'${_join_path(entry.path)}' is a value and cannot hold a key",
         '.'.join(parts),
       )
     }
@@ -1781,9 +1801,7 @@ def _rebuild_prefix(prefix, text, newline) {
 
   kept.append(indent)
 
-  return newline == '\r\n'
-    ? '\r\n'.join(kept)
-    : '\n'.join(kept)
+  return newline == '\r\n' ? '\r\n'.join(kept) : '\n'.join(kept)
 }
 
 # Finds or creates the array of tables at `parts`.

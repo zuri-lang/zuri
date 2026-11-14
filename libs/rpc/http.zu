@@ -36,7 +36,9 @@ import .message as messages
 # the two that earlier drafts of JSON-RPC over HTTP named, which some
 # clients still send.
 const _MEDIA_TYPES = [
-  'application/json', 'application/json-rpc', 'application/jsonrequest',
+  'application/json',
+  'application/json-rpc',
+  'application/jsonrequest',
 ]
 
 # What is wrong with a request's `Content-Type`, or `nil` when it is
@@ -242,7 +244,8 @@ class HttpClient {
 
     if answer.id != id {
       raise RpcError(
-        INVALID_REQUEST, 'the server answered #${answer.id} to request #${id}',
+        INVALID_REQUEST,
+        'the server answered #${answer.id} to request #${id}',
       )
     }
 
@@ -369,7 +372,8 @@ class HttpClient {
     if reply.status == 200 {
       if text == nil {
         raise RpcError(
-          PARSE_ERROR, 'Parse error: the answer is not valid UTF-8',
+          PARSE_ERROR,
+          'Parse error: the answer is not valid UTF-8',
         )
       }
 
@@ -382,9 +386,9 @@ class HttpClient {
 
     # Some servers carry a JSON-RPC error on another status. When the
     # body is an answer, it is the answer.
-    if text != nil
-      and reply.media_type() == 'application/json'
-      and !text.trim().is_empty() {
+    if text != nil and
+        reply.media_type() == 'application/json' and
+        !text.trim().is_empty() {
       catch {
         return messages.decode(text)
       } as error {

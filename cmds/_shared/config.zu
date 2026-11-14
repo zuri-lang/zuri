@@ -108,8 +108,8 @@ def registries(manifest) {
     merged.set('default', chosen)
   } else {
     raise ConfigError(
-      "${REGISTRY_VARIABLE} is '${chosen}', which is neither an address nor a registry alias "
-        + 'your configuration or the project defines',
+      "${REGISTRY_VARIABLE} is '${chosen}', which is neither an address nor a registry alias " +
+          'your configuration or the project defines',
     )
   }
 

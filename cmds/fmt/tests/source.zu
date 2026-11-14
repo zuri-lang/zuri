@@ -53,12 +53,10 @@ describe('taking gaps', @{
     var src = Source('a # same\n# next\nb')
     var trailing = src.take_trailing(1)
 
-    expect(trailing.comments.map(
-      @(entry) => entry.token.text,
-    )).to_equal(['# same'])
-    expect(src
-      .take(16).comments
-      .map(@(entry) => entry.token.text)).to_equal(['# next'])
+    expect(trailing.comments.map(@(entry) => entry.token.text))
+        .to_equal(['# same'])
+    expect(src.take(16).comments.map(@(entry) => entry.token.text))
+        .to_equal(['# next'])
   })
 
   it('reads a doc block in the middle of a line as no break', @{

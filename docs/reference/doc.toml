@@ -1,0 +1,121 @@
+# The Zuri Standard Library, built with `zuri doc`.
+#
+# Nothing about this documentation is kept in the repository but this
+# file. The pages are generated from the doc blocks in `libs/` on every
+# build, so a page and the doc block it came from cannot disagree, and
+# both the Markdown and the site are build output under `target/`.
+
+[documentation]
+title = "The Zuri Standard Library"
+description = "Every module Zuri ships with, generated from the library's own doc blocks."
+authors = ["The Zuri Project"]
+language = "en"
+source = "../../target/reference/src"
+output = "../../target/reference/html"
+
+# The pages are generated, so there is no "suggest an edit" link: the
+# next generator run would overwrite the file it pointed at. The doc
+# block in `libs/` is what anyone should be editing.
+[site]
+url = "https://zuri-lang.github.io/zuri/reference/"
+repository = "https://github.com/zuri-lang/zuri"
+logo = "../site/zuri-butterfly.svg"
+favicon = "../site/zuri-butterfly.svg"
+fold = 1
+numbers = false
+
+[site.home]
+url = "../"
+label = "Zuri"
+
+[[site.links]]
+label = "The Book"
+url = "../book/"
+
+# The pages come from the doc blocks in `libs/`. What no doc block can
+# say is which modules belong together, so the groups are written here,
+# and a module added to `libs/` without a group is a warning, which the
+# strict build CI runs turns into a failure.
+[reference]
+modules = "../../libs"
+intro = "intro.md"
+
+[[reference.groups]]
+title = "Text and Markup"
+description = "Parsing, building and colouring text meant to be read."
+modules = ["html", "markdown", "wire", "url", "mime", "colors"]
+
+[[reference.groups]]
+title = "Data Formats"
+description = "Reading and writing the formats other programs speak."
+modules = ["json", "yaml", "toml", "csv", "base64", "struct"]
+
+[[reference.groups]]
+title = "Numbers and Collections"
+description = "Arithmetic, and the containers the built-in types do not cover."
+modules = ["math", "array", "set"]
+
+[[reference.groups]]
+title = "Dates and Times"
+description = "Calendar arithmetic, formatting, and the timezone database."
+modules = ["date"]
+
+[[reference.groups]]
+title = "The Machine"
+description = "The filesystem, other processes, the terminal, the command line, and the configuration around them."
+modules = ["os", "env", "io", "args", "log", "stat"]
+
+[[reference.groups]]
+title = "Testing"
+description = "Suites, matchers, test doubles, snapshots, and the reports they produce."
+modules = ["test"]
+
+[[reference.groups]]
+title = "Networking"
+description = "Sockets, addresses, and a complete HTTP stack and JSON-RPC on top of them."
+modules = ["net", "http", "rpc"]
+
+[[reference.groups]]
+title = "Security and Identity"
+description = "Hashing, signing, password storage, tokens and input validation."
+modules = ["crypto", "hash", "bcrypt", "jwt", "uuid", "validate"]
+
+[[reference.groups]]
+title = "Compression and Archives"
+description = "Every codec and container format the runtime ships with."
+modules = ["compress"]
+
+[[reference.groups]]
+title = "Concurrency"
+description = "Real OS threads, with separate heaps and message passing between them."
+modules = ["isolate"]
+
+[[reference.groups]]
+title = "Images"
+description = "Decoding, drawing, filtering and encoding raster images."
+modules = ["imagine"]
+
+[[reference.groups]]
+title = "Databases"
+description = "One contract every relational database answers, the adapters that answer it, and the schema changes, migrations and models built on top."
+modules = ["sql"]
+
+[[reference.groups]]
+title = "Mail"
+description = "Messages, the three protocols that move them, and the servers at the far end."
+modules = ["mail"]
+
+[[reference.groups]]
+title = "Interoperability"
+description = "Calling C and Rust libraries, being called back by them, and linking static ones."
+modules = ["ffi"]
+
+[[reference.groups]]
+title = "Types and Conversion"
+description = "Checked coercion between types, named constants, and conversions between bases and encodings."
+modules = ["types", "enum", "convert"]
+
+[[reference.groups]]
+title = "Metaprogramming"
+description = "Lexing, parsing and compiling Zuri source, and reflecting on live functions, classes and modules."
+modules = ["zuri"]

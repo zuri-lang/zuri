@@ -80,7 +80,9 @@ class MySqlCursor < DriverCursor {
     }
 
     var batch = self._connection.fetch_batch(
-      self._statement, self._raw_columns, self._batch,
+      self._statement,
+      self._raw_columns,
+      self._batch,
     )
 
     self._rows = batch.rows

@@ -17,8 +17,12 @@
 import .body
 import .cookies { CookieJar }
 import .errors {
-  ConnectionError, HttpError, ProtocolError, TimeoutError,
-  TooManyRedirectsError, UnsupportedProtocolError,
+  ConnectionError,
+  HttpError,
+  ProtocolError,
+  TimeoutError,
+  TooManyRedirectsError,
+  UnsupportedProtocolError,
 }
 import .h1
 import .h2
@@ -392,7 +396,11 @@ class HttpClient {
       request.method = request.method.upper()
       request.set_target(_origin_form(parsed, options.get('query', nil)))
       request.headers = self._request_headers(
-        parsed, options, payload, request.method, _origin_of(parsed) == origin,
+        parsed,
+        options,
+        payload,
+        request.method,
+        _origin_of(parsed) == origin,
       )
 
       var attempt = 0
@@ -440,8 +448,8 @@ class HttpClient {
         var unheard = carrier[3] and transport.bytes_read() == read_before
 
         var retriable = instance_of(error, ConnectionError) and
-          (request.is_idempotent() or unheard) and
-          attempt < (self.max_retries > 0 ? self.max_retries : 1)
+            (request.is_idempotent() or unheard) and
+            attempt < (self.max_retries > 0 ? self.max_retries : 1)
 
         if !retriable {
           raise error
@@ -471,7 +479,9 @@ class HttpClient {
 
       redirects++
       if redirects > limit {
-        raise TooManyRedirectsError('more than ${limit} redirects from ${location}')
+        raise TooManyRedirectsError(
+          'more than ${limit} redirects from ${location}',
+        )
       }
 
       current = parsed.resolve(next.trim()).to_string()
@@ -545,7 +555,12 @@ class HttpClient {
 
     response.certificate = carrier[2].peer_certificate()
 
-    if options.get('decode_content', self.decode_content) {
+    # A response with no body has nothing to decode, whatever its coding
+    # header says: the header describes the body a GET would have had.
+    var bodiless = request.method == 'HEAD' or
+        status.is_bodiless(response.status)
+
+    if !bodiless and options.get('decode_content', self.decode_content) {
       var encoding = response.headers.get('content-encoding', nil)
 
       if encoding != nil and !encoding.trim().is_empty() {
@@ -584,7 +599,9 @@ class HttpClient {
     var scheme = parsed.scheme == nil ? '' : parsed.scheme.lower()
 
     if scheme != 'http' and scheme != 'https' {
-      raise UnsupportedProtocolError('cannot make an HTTP request to ${scheme}: URLs')
+      raise UnsupportedProtocolError(
+        'cannot make an HTTP request to ${scheme}: URLs',
+      )
     }
 
     if parsed.host == nil or parsed.host.is_empty() {
@@ -703,8 +720,8 @@ class HttpClient {
 
     if address == nil and self.trust_env {
       var names = parsed.scheme == 'https'
-        ? ['HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy']
-        : ['HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy']
+          ? ['HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+          : ['HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy']
 
       for name in names {
         var value = os.get_env(name, '')
@@ -795,7 +812,9 @@ class HttpClient {
       var carrier = entry[0]
 
       var alive = time() - entry[1] < _IDLE_TIMEOUT and
-        (carrier[0] == 'h2' ? carrier[1].is_usable() : !carrier[1].is_closed())
+          (carrier[0] == 'h2'
+              ? carrier[1].is_usable()
+              : !carrier[1].is_closed())
 
       if alive {
         # The connection was opened for another request, which may
@@ -832,8 +851,8 @@ class HttpClient {
     }
 
     var connection = proxy != nil
-      ? stream.tunnel(proxy, parsed.host, _port_of(parsed), settings)
-      : stream.connect(parsed.host, _port_of(parsed), settings)
+        ? stream.tunnel(proxy, parsed.host, _port_of(parsed), settings)
+        : stream.connect(parsed.host, _port_of(parsed), settings)
 
     # ALPN settled this during the handshake, so there is nothing to
     # negotiate here and no extra round trip to pay for it.
@@ -918,8 +937,9 @@ class HttpClient {
     var carrier = held[0]
     var reader = response.body_reader
 
-    var reusable = carrier[0] == 'h1' and reader != nil and
-      reader.drain(self.max_body_size)
+    var reusable = carrier[0] == 'h1' and
+        reader != nil and
+        reader.drain(self.max_body_size)
 
     if !reusable {
       self._discard(carrier)
@@ -1160,7 +1180,9 @@ def _authorization(auth) {
   }
 
   if !is_list(auth) or auth.length() < 2 {
-    raise HttpError("auth must be ['basic', user, password] or ['bearer', token]")
+    raise HttpError(
+      "auth must be ['basic', user, password] or ['bearer', token]",
+    )
   }
 
   var scheme = auth[0].lower()

@@ -70,15 +70,17 @@ echo '════════════════════════�
 # ---------------------------------------------------------------------------
 for alg in [jwt.HS256, jwt.HS384, jwt.HS512] {
   var tok = jwt.sign({ user_id: 42 }, 'my-secret', { algorithm: alg })
-  var payload = jwt.verify(tok, 'my-secret', { algorithms: [alg] })
+  var payload = jwt.verify(tok, 'my-secret', {
+    algorithms: [alg],
+  })
   assert payload['user_id'] == 42,
-    '${alg} sign/verify must round-trip the payload'
+      '${alg} sign/verify must round-trip the payload'
 }
 ok('HS256/HS384/HS512 sign() and verify() round-trip correctly')
 
 var hs_tok = jwt.sign({ a: 1 }, 'right-secret', { algorithm: jwt.HS256 })
 assert raises_type(@() => jwt.verify(hs_tok, 'wrong-secret'), 'SignatureError'),
-  'verify() must raise SignatureError for a wrong HMAC secret'
+    'verify() must raise SignatureError for a wrong HMAC secret'
 ok('HMAC verification rejects a wrong secret')
 
 # ---------------------------------------------------------------------------
@@ -87,7 +89,9 @@ ok('HMAC verification rejects a wrong secret')
 var rsa_kp = crypto.rsa.generate(2048)
 for alg in [jwt.PS256, jwt.PS384, jwt.PS512] {
   var tok = jwt.sign({ a: 1 }, rsa_kp.private_pem, { algorithm: alg })
-  var payload = jwt.verify(tok, rsa_kp.public_pem, { algorithms: [alg] })
+  var payload = jwt.verify(tok, rsa_kp.public_pem, {
+    algorithms: [alg],
+  })
   assert payload['a'] == 1, '${alg} sign/verify must round-trip the payload'
 }
 ok('PS256/PS384/PS512 sign() and verify() round-trip correctly')
@@ -98,31 +102,37 @@ ok('PS256/PS384/PS512 sign() and verify() round-trip correctly')
 # ---------------------------------------------------------------------------
 var p256_kp = crypto.ecdsa.generate('P-256')
 var es256_tok = jwt.sign(
-  { b: 2 }, p256_kp.private_pem, { algorithm: jwt.ES256 },
+  { b: 2 },
+  p256_kp.private_pem,
+  { algorithm: jwt.ES256 },
 )
-var es256_payload = jwt.verify(
-  es256_tok, p256_kp.public_pem, { algorithms: [jwt.ES256] },
-)
+var es256_payload = jwt.verify(es256_tok, p256_kp.public_pem, {
+  algorithms: [jwt.ES256],
+})
 assert es256_payload['b'] == 2, 'ES256 sign/verify must round-trip the payload'
 
 var p384_kp = crypto.ecdsa.generate('P-384')
 var es384_tok = jwt.sign(
-  { c: 3 }, p384_kp.private_pem, { algorithm: jwt.ES384 },
+  { c: 3 },
+  p384_kp.private_pem,
+  { algorithm: jwt.ES384 },
 )
-var es384_payload = jwt.verify(
-  es384_tok, p384_kp.public_pem, { algorithms: [jwt.ES384] },
-)
+var es384_payload = jwt.verify(es384_tok, p384_kp.public_pem, {
+  algorithms: [jwt.ES384],
+})
 assert es384_payload['c'] == 3, 'ES384 sign/verify must round-trip the payload'
-ok('ES256 and ES384 sign() and verify() round-trip correctly (both DER<->raw coordinate lengths)')
+ok(
+  'ES256 and ES384 sign() and verify() round-trip correctly (both DER<->raw coordinate lengths)',
+)
 
 # ---------------------------------------------------------------------------
 # EdDSA (Ed25519): new algorithm support
 # ---------------------------------------------------------------------------
 var ed_kp = crypto.ed25519.generate()
 var ed_tok = jwt.sign({ d: 4 }, ed_kp.private_pem, { algorithm: jwt.EDDSA })
-var ed_payload = jwt.verify(
-  ed_tok, ed_kp.public_pem, { algorithms: [jwt.EDDSA] },
-)
+var ed_payload = jwt.verify(ed_tok, ed_kp.public_pem, {
+  algorithms: [jwt.EDDSA],
+})
 assert ed_payload['d'] == 4, 'EdDSA sign/verify must round-trip the payload'
 ok('EdDSA sign() and verify() round-trip correctly')
 
@@ -130,15 +140,16 @@ ok('EdDSA sign() and verify() round-trip correctly')
 # none algorithm
 # ---------------------------------------------------------------------------
 assert raises_type(
-  @() => jwt.sign({ a: 1 }, '', { algorithm: jwt.NONE }), 'AlgorithmError',
+  @() => jwt.sign({ a: 1 }, '', { algorithm: jwt.NONE }),
+  'AlgorithmError',
 ),
-  'sign() must reject the none algorithm without allow_none: true'
+    'sign() must reject the none algorithm without allow_none: true'
 var none_tok = jwt.sign({ a: 1 }, '', { algorithm: jwt.NONE, allow_none: true })
 var none_payload = jwt.verify(none_tok, '', { allow_none: true })
 assert none_payload['a'] == 1,
-  'verify() must accept a none-algorithm token when allow_none is set'
+    'verify() must accept a none-algorithm token when allow_none is set'
 assert raises_type(@() => jwt.verify(none_tok, ''), 'AlgorithmError'),
-  'verify() must reject a none-algorithm token by default'
+    'verify() must reject a none-algorithm token by default'
 ok('the none algorithm requires explicit opt-in on both sign() and verify()')
 
 # ---------------------------------------------------------------------------
@@ -147,20 +158,22 @@ ok('the none algorithm requires explicit opt-in on both sign() and verify()')
 # call with "undefined global 'jwt'"
 # ---------------------------------------------------------------------------
 var signer = jwt.Signer('shared-secret', { algorithm: jwt.HS256 })
-var verifier = jwt.Verifier('shared-secret', { algorithms: [jwt.HS256] })
+var verifier = jwt.Verifier('shared-secret', {
+  algorithms: [jwt.HS256],
+})
 
 var signed = signer.sign({ role: 'admin' })
 var verified = verifier.verify(signed)
 assert verified['role'] == 'admin',
-  'Signer.sign() and Verifier.verify() must round-trip'
+    'Signer.sign() and Verifier.verify() must round-trip'
 assert verifier.decode(signed).payload['role'] == 'admin',
-  'Verifier.decode() must work without crashing'
+    'Verifier.decode() must work without crashing'
 ok('Verifier and Signer no longer crash via the self-import bug')
 
 assert !raises(@() => jwt.Verifier('secret', nil)),
-  'Verifier() must not crash when options is omitted'
+    'Verifier() must not crash when options is omitted'
 assert !raises(@() => jwt.Signer('secret', nil)),
-  'Signer() must not crash when options is omitted'
+    'Signer() must not crash when options is omitted'
 ok('Verifier()/Signer() constructors tolerate omitted options')
 
 # ---------------------------------------------------------------------------
@@ -169,79 +182,92 @@ ok('Verifier()/Signer() constructors tolerate omitted options')
 var iat_tok = jwt.sign({ a: 1 }, 'secret', { algorithm: jwt.HS256 })
 var iat_payload = jwt.decode(iat_tok).payload
 assert iat_payload['iat'] == iat_payload['iat'].floor(),
-  'sign() must emit an integer iat, not a float epoch value'
+    'sign() must emit an integer iat, not a float epoch value'
 ok('sign() emits integer NumericDate claims')
 
 # ---------------------------------------------------------------------------
 # Temporal claim validation
 # ---------------------------------------------------------------------------
 var exp_tok = jwt.sign(
-  { a: 1 }, 'secret', { algorithm: jwt.HS256, expires_in: -10 },
+  { a: 1 },
+  'secret',
+  { algorithm: jwt.HS256, expires_in: -10 },
 )
 assert raises_type(@() => jwt.verify(exp_tok, 'secret'), 'TokenExpiredError'),
-  'verify() must reject an already-expired token'
+    'verify() must reject an already-expired token'
 var exp_ok = jwt.verify(exp_tok, 'secret', { ignore_expiration: true })
 assert exp_ok['a'] == 1, 'ignore_expiration must skip the exp check'
 ok('exp validation rejects an expired token, and ignore_expiration bypasses it')
 
 var nbf_tok = jwt.sign(
-  { a: 1 }, 'secret', { algorithm: jwt.HS256, not_before: 3600 },
+  { a: 1 },
+  'secret',
+  { algorithm: jwt.HS256, not_before: 3600 },
 )
 assert raises_type(@() => jwt.verify(nbf_tok, 'secret'), 'TokenExpiredError'),
-  'verify() must reject a not-yet-valid token'
+    'verify() must reject a not-yet-valid token'
 ok('nbf validation rejects a token that is not yet valid')
 
 var future_iat_tok = jwt.encode(
-  { alg: 'HS256', typ: 'JWT' }, { iat: time() + 100000 }, 'secret',
+  { alg: 'HS256', typ: 'JWT' },
+  { iat: time() + 100000 },
+  'secret',
 )
 assert raises_type(
-  @() => jwt.verify(future_iat_tok, 'secret'), 'TokenExpiredError',
+  @() => jwt.verify(future_iat_tok, 'secret'),
+  'TokenExpiredError',
 ),
-  'verify() must reject a token whose iat is in the future (2026-08-29 fix, documented but never implemented before)'
+    'verify() must reject a token whose iat is in the future (2026-08-29 fix, documented but never implemented before)'
 ok('iat-in-the-future validation is implemented and rejects such a token')
 
 var tolerant_tok = jwt.sign(
-  { a: 1 }, 'secret', { algorithm: jwt.HS256, expires_in: -2 },
+  { a: 1 },
+  'secret',
+  { algorithm: jwt.HS256, expires_in: -2 },
 )
 var tolerant = jwt.verify(tolerant_tok, 'secret', { clock_tolerance: 10 })
 assert tolerant['a'] == 1,
-  'clock_tolerance must extend the grace window past exp'
+    'clock_tolerance must extend the grace window past exp'
 ok('clock_tolerance is honored for exp')
 
 # ---------------------------------------------------------------------------
 # audience (2026-08-29 fix: was spelled "auraisence" everywhere)
 # ---------------------------------------------------------------------------
 var aud_tok = jwt.sign(
-  { a: 1 }, 'secret', { algorithm: jwt.HS256, audience: 'api.example.com' },
+  { a: 1 },
+  'secret',
+  { algorithm: jwt.HS256, audience: 'api.example.com' },
 )
 var aud_payload = jwt.verify(aud_tok, 'secret', { audience: 'api.example.com' })
 assert aud_payload['aud'] == 'api.example.com',
-  'the audience option must set and be readable as the aud claim'
+    'the audience option must set and be readable as the aud claim'
 assert raises_type(
   @() => jwt.verify(aud_tok, 'secret', { audience: 'wrong.example.com' }),
   'ClaimError',
 ),
-  'verify() must reject a token whose aud does not match the expected audience'
+    'verify() must reject a token whose aud does not match the expected audience'
 ok('the audience option (renamed from the auraisence typo) works correctly')
 
 # ---------------------------------------------------------------------------
 # issuer / subject
 # ---------------------------------------------------------------------------
-var full_tok = jwt.sign({ a: 1 }, 'secret', {
-  algorithm: jwt.HS256,
+var full_tok = jwt.sign(
+  { a: 1 },
+  'secret',
+  { algorithm: jwt.HS256, issuer: 'auth.example.com', subject: 'user-1' },
+)
+var full_payload = jwt.verify(full_tok, 'secret', {
   issuer: 'auth.example.com',
   subject: 'user-1',
 })
-var full_payload = jwt.verify(
-  full_tok, 'secret', { issuer: 'auth.example.com', subject: 'user-1' },
-)
-assert full_payload['iss'] == 'auth.example.com'
-  and full_payload['sub'] == 'user-1',
-  'issuer/subject options must set and be verified correctly'
+assert full_payload['iss'] == 'auth.example.com' and
+    full_payload['sub'] == 'user-1',
+    'issuer/subject options must set and be verified correctly'
 assert raises_type(
-  @() => jwt.verify(full_tok, 'secret', { issuer: 'wrong' }), 'ClaimError',
+  @() => jwt.verify(full_tok, 'secret', { issuer: 'wrong' }),
+  'ClaimError',
 ),
-  'verify() must reject a mismatched issuer'
+    'verify() must reject a mismatched issuer'
 ok('issuer and subject claim validation works')
 
 # ---------------------------------------------------------------------------
@@ -251,50 +277,63 @@ var bad_alg_header = b64u(json.encode({ alg: 123, typ: 'JWT' }))
 var bad_payload = b64u('{}')
 var forged_alg = bad_alg_header + '.' + bad_payload + '.fakesig'
 assert raises_type(
-  @() => jwt.verify(forged_alg, 'secret'), 'MalformedTokenError',
+  @() => jwt.verify(forged_alg, 'secret'),
+  'MalformedTokenError',
 ),
-  'verify() must not crash on a non-string alg header, and must reject it cleanly'
+    'verify() must not crash on a non-string alg header, and must reject it cleanly'
 ok('a non-string alg header is rejected cleanly, not a raw TypeError crash')
 
 var bad_aud_tok = jwt.encode(
-  { alg: 'HS256', typ: 'JWT' }, { aud: 12345 }, 'secret',
+  { alg: 'HS256', typ: 'JWT' },
+  { aud: 12345 },
+  'secret',
 )
 assert raises_type(
-  @() => jwt.verify(bad_aud_tok, 'secret', { audience: 'x' }), 'ClaimError',
+  @() => jwt.verify(bad_aud_tok, 'secret', { audience: 'x' }),
+  'ClaimError',
 ),
-  'verify() must not crash on a non-string/non-list aud claim'
-ok('a non-string/non-list aud claim is rejected cleanly, not a raw TypeError crash')
+    'verify() must not crash on a non-string/non-list aud claim'
+ok(
+  'a non-string/non-list aud claim is rejected cleanly, not a raw TypeError crash',
+)
 
 var bad_exp_tok = jwt.encode(
-  { alg: 'HS256', typ: 'JWT' }, { exp: 'not-a-number' }, 'secret',
+  { alg: 'HS256', typ: 'JWT' },
+  { exp: 'not-a-number' },
+  'secret',
 )
 assert raises_type(@() => jwt.is_expired(bad_exp_tok), 'ClaimError'),
-  'is_expired() must not crash on a non-numeric exp claim'
+    'is_expired() must not crash on a non-numeric exp claim'
 assert raises_type(@() => jwt.expires_in(bad_exp_tok), 'ClaimError'),
-  'expires_in() must not crash on a non-numeric exp claim'
-ok('is_expired()/expires_in() reject a non-numeric exp claim cleanly instead of crashing')
+    'expires_in() must not crash on a non-numeric exp claim'
+ok(
+  'is_expired()/expires_in() reject a non-numeric exp claim cleanly instead of crashing',
+)
 
 # Token.get()/@to_index() (2026-08-29 fix): raised the nonexistent
 # "Argument_error" class, found independently while splitting the file
 var tok_for_index = jwt.decode(jwt.sign({ a: 1 }, 'secret'))
 assert raises_type(@() => tok_for_index.get(42), 'TypeError'),
-  'Token.get() must raise a real TypeError for a non-string key, not crash on an undefined class name'
+    'Token.get() must raise a real TypeError for a non-string key, not crash on an undefined class name'
 assert raises_type(@() => tok_for_index[42], 'TypeError'),
-  'Token @to_index must raise a real TypeError for a non-string key'
+    'Token @to_index must raise a real TypeError for a non-string key'
 ok('Token.get()/@to_index() reject a non-string key with a real TypeError')
 
 # ---------------------------------------------------------------------------
 # Token.is_expired() leeway from a Verifier
 # ---------------------------------------------------------------------------
 var leeway_tok = jwt.sign(
-  { a: 1 }, 'secret', { algorithm: jwt.HS256, expires_in: -5 },
+  { a: 1 },
+  'secret',
+  { algorithm: jwt.HS256, expires_in: -5 },
 )
-var tolerant_verifier = jwt.Verifier(
-  'secret', { clock_tolerance: 30, complete: true },
-)
+var tolerant_verifier = jwt.Verifier('secret', {
+  clock_tolerance: 30,
+  complete: true,
+})
 var leeway_token = tolerant_verifier.verify(leeway_tok)
 assert leeway_token.is_expired() == false,
-  'Token.is_expired() must honor the leeway the token was actually verified with'
+    'Token.is_expired() must honor the leeway the token was actually verified with'
 ok('Token.is_expired() carries the clock_tolerance leeway from verification')
 
 # ---------------------------------------------------------------------------
@@ -316,29 +355,38 @@ var x = point[1, 33]
 var y = point[33, 65]
 
 var jwks = jwt.Jwks({
-  keys: [{ kty: 'EC', crv: 'P-256', kid: 'key-1', x: b64u(x), y: b64u(y) }],
+  keys: [
+    { kty: 'EC', crv: 'P-256', kid: 'key-1', x: b64u(x), y: b64u(y) },
+  ],
 })
 
-var jwks_tok = jwt.sign({ sub: 'user1' }, jwk_kp.private_pem, {
-  algorithm: jwt.ES256,
-  header: { kid: 'key-1' },
-})
-var jwks_payload = jwt.verify_with_jwks(
-  jwks_tok, jwks, { algorithms: [jwt.ES256] },
+var jwks_tok = jwt.sign(
+  { sub: 'user1' },
+  jwk_kp.private_pem,
+  {
+    algorithm: jwt.ES256,
+    header: { kid: 'key-1' },
+  },
 )
+var jwks_payload = jwt.verify_with_jwks(jwks_tok, jwks, {
+  algorithms: [jwt.ES256],
+})
 assert jwks_payload['sub'] == 'user1',
-  'verify_with_jwks() must resolve the key by kid and verify correctly'
+    'verify_with_jwks() must resolve the key by kid and verify correctly'
 ok('Jwks/verify_with_jwks resolves a token by kid and verifies it')
 
 assert raises_type(@() => jwks.find('missing-kid'), 'AlgorithmError'),
-  'Jwks.find() must raise AlgorithmError for an unknown kid'
+    'Jwks.find() must raise AlgorithmError for an unknown kid'
 var no_kid_tok = jwt.sign(
-  { sub: 'x' }, jwk_kp.private_pem, { algorithm: jwt.ES256 },
+  { sub: 'x' },
+  jwk_kp.private_pem,
+  { algorithm: jwt.ES256 },
 )
 assert raises_type(
-  @() => jwt.verify_with_jwks(no_kid_tok, jwks, {}), 'AlgorithmError',
+  @() => jwt.verify_with_jwks(no_kid_tok, jwks, {}),
+  'AlgorithmError',
 ),
-  'verify_with_jwks() must raise AlgorithmError for a token with no kid header'
+    'verify_with_jwks() must raise AlgorithmError for a token with no kid header'
 ok('Jwks/verify_with_jwks fail cleanly for an unknown or missing kid')
 
 # ===========================================================================

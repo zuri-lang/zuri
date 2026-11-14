@@ -102,10 +102,21 @@ var CANONICALISATIONS = ['simple', 'relaxed']
  * @type list
  */
 var DEFAULT_HEADERS = [
-  'From', 'Sender', 'Reply-To', 'Subject', 'Date', 'To', 'Cc',
-  'Message-ID', 'MIME-Version', 'Content-Type',
-  'Content-Transfer-Encoding', 'Content-ID', 'Content-Description',
-  'In-Reply-To', 'References',
+  'From',
+  'Sender',
+  'Reply-To',
+  'Subject',
+  'Date',
+  'To',
+  'Cc',
+  'Message-ID',
+  'MIME-Version',
+  'Content-Type',
+  'Content-Transfer-Encoding',
+  'Content-ID',
+  'Content-Description',
+  'In-Reply-To',
+  'References',
 ]
 
 # The twelve bytes that turn a bare Ed25519 public key into the
@@ -145,8 +156,10 @@ def canonicalise_body(raw, method: string) {
   while index < data.length() {
     var value = data[index]
 
-    if value == 0x0a or (value == 0x0d and index + 1 < data.length()
-      and data[index + 1] == 0x0a) {
+    if value == 0x0a or
+        (value == 0x0d and
+            index + 1 < data.length() and
+            data[index + 1] == 0x0a) {
       # Only `relaxed` drops the whitespace at the end of a line.
       # `simple` covers the bytes as they are, which is the whole
       # difference between the two.
@@ -215,9 +228,9 @@ def _drop_trailing_wsp(out) {
 }
 
 def _drop_trailing_breaks(out) {
-  while out.length() >= 2
-    and out[out.length() - 1] == 0x0a
-    and out[out.length() - 2] == 0x0d {
+  while out.length() >= 2 and
+      out[out.length() - 1] == 0x0a and
+      out[out.length() - 2] == 0x0d {
     out.pop()
     out.pop()
   }
@@ -283,7 +296,8 @@ def _read_tags(value: string) {
     }
 
     tags[name] = _squeeze(
-      raw, name == 'b' or name == 'bh' or name == 'h' or name == 'z',
+      raw,
+      name == 'b' or name == 'bh' or name == 'h' or name == 'z',
     )
   }
 
@@ -346,8 +360,8 @@ class Signature {
 
     self.header_canonicalisation = slash > -1 ? canon[0, slash] : canon
     self.body_canonicalisation = slash > -1
-      ? canon[slash + 1, canon.length()]
-      : 'simple'
+        ? canon[slash + 1, canon.length()]
+        : 'simple'
 
     self.headers = []
 
@@ -562,8 +576,10 @@ def _body_source(message) {
   var index = 0
 
   while index + 3 < raw.length() {
-    if raw[index] == 0x0d and raw[index + 1] == 0x0a
-      and raw[index + 2] == 0x0d and raw[index + 3] == 0x0a {
+    if raw[index] == 0x0d and
+        raw[index + 1] == 0x0a and
+        raw[index + 2] == 0x0d and
+        raw[index + 3] == 0x0a {
       return raw[index + 4, raw.length()]
     }
 
@@ -597,7 +613,10 @@ def _instance_pool(entries: list) {
 # the order listed, then the signature's own header with its `b=`
 # emptied and no line break after it.
 def _signed_headers(
-  pool: dict, names: list, signature_value: string, method: string,
+  pool: dict,
+  names: list,
+  signature_value: string,
+  method: string,
 ) {
   var parts = []
 
@@ -611,11 +630,13 @@ def _signed_headers(
     parts.append(canonicalise_header(name, pool[key].pop(), method) + '\r\n')
   }
 
-  parts.append(canonicalise_header(
-    'DKIM-Signature',
-    _blank_signature(signature_value),
-    method,
-  ))
+  parts.append(
+    canonicalise_header(
+      'DKIM-Signature',
+      _blank_signature(signature_value),
+      method,
+    ),
+  )
 
   return ''.join(parts)
 }
@@ -687,11 +708,11 @@ class Signer {
 
     self.header_canonicalisation = slash > -1 ? canon[0, slash] : canon
     self.body_canonicalisation = slash > -1
-      ? canon[slash + 1, canon.length()]
-      : 'simple'
+        ? canon[slash + 1, canon.length()]
+        : 'simple'
 
-    if !CANONICALISATIONS.contains(self.header_canonicalisation)
-      or !CANONICALISATIONS.contains(self.body_canonicalisation) {
+    if !CANONICALISATIONS.contains(self.header_canonicalisation) or
+        !CANONICALISATIONS.contains(self.body_canonicalisation) {
       raise DkimError('unknown canonicalisation ${canon}')
     }
 
@@ -718,7 +739,8 @@ class Signer {
   sign(message) {
     var digest = _digest_of(self.algorithm)
     var body = canonicalise_body(
-      _body_source(message), self.body_canonicalisation,
+      _body_source(message),
+      self.body_canonicalisation,
     )
     var body_hash = base64.encode(hash.sha256(body, true))
     var pool = _instance_pool(_header_source(message))
@@ -771,9 +793,9 @@ class Signer {
     var raw = nil
 
     catch {
-      raw = self.algorithm.starts_with('ed25519') ?
-        crypto.ed25519.sign(self._key, block.to_bytes()) :
-        crypto.rsa.sign(self._key, block.to_bytes(), digest, 'pkcs1')
+      raw = self.algorithm.starts_with('ed25519')
+          ? crypto.ed25519.sign(self._key, block.to_bytes())
+          : crypto.rsa.sign(self._key, block.to_bytes(), digest, 'pkcs1')
     } as error {
       raise DkimError('could not sign: ${error.message}')
     }
@@ -873,12 +895,14 @@ def _check(message, value: string, lookup) {
 
   if !ALGORITHMS.contains(signature.algorithm) {
     return Result(
-      signature, false, 'unsupported algorithm ${signature.algorithm}',
+      signature,
+      false,
+      'unsupported algorithm ${signature.algorithm}',
     )
   }
 
-  if !CANONICALISATIONS.contains(signature.header_canonicalisation)
-    or !CANONICALISATIONS.contains(signature.body_canonicalisation) {
+  if !CANONICALISATIONS.contains(signature.header_canonicalisation) or
+      !CANONICALISATIONS.contains(signature.body_canonicalisation) {
     return Result(signature, false, 'unsupported canonicalisation')
   }
 
@@ -909,8 +933,8 @@ def _check(message, value: string, lookup) {
   }
 
   var entries = _header_source(message).filter(@(entry) {
-    return entry.name.lower() != 'dkim-signature'
-      or entry.value.trim() != value.trim()
+    return entry.name.lower() != 'dkim-signature' or
+        entry.value.trim() != value.trim()
   })
 
   var block = _signed_headers(
@@ -939,19 +963,27 @@ def _check(message, value: string, lookup) {
   var ok = false
 
   catch {
-    ok = signature.algorithm.starts_with('ed25519') ?
-      crypto.ed25519.verify(key, block.to_bytes(), raw) :
-      crypto.rsa.verify(
-        key, block.to_bytes(), raw, _digest_of(signature.algorithm), 'pkcs1',
-      )
+    ok = signature.algorithm.starts_with('ed25519')
+        ? crypto.ed25519.verify(key, block.to_bytes(), raw)
+        : crypto.rsa.verify(
+            key,
+            block.to_bytes(),
+            raw,
+            _digest_of(signature.algorithm),
+            'pkcs1',
+          )
   } as error {
     return Result(
-      signature, false, 'could not check the signature: ${error.message}',
+      signature,
+      false,
+      'could not check the signature: ${error.message}',
     )
   }
 
   return Result(
-    signature, ok, ok ? nil : 'the headers do not match the signature',
+    signature,
+    ok,
+    ok ? nil : 'the headers do not match the signature',
   )
 }
 

@@ -27,8 +27,13 @@ const _NOT_SHIPPED = ['tests', 'target', 'tmp', 'vendor']
 
 # The diagnostics that say code will fail when it runs.
 const CHECKED = [
-  'undefined-name', 'unknown-member', 'missing-member', 'undeclared-field',
-  'module-not-found', 'argument-type', 'missing-argument',
+  'undefined-name',
+  'unknown-member',
+  'missing-member',
+  'undeclared-field',
+  'module-not-found',
+  'argument-type',
+  'missing-argument',
 ]
 
 var ROOT = os.abs_path(os.join_paths(os.dir_name(__file__), '..', '..', '..'))
@@ -111,8 +116,8 @@ class Corpus {
     }
 
     return diagnostics
-      .compute(self, path)
-      .filter(@(d) => CHECKED.contains(d.code))
+        .compute(self, path)
+        .filter(@(d) => CHECKED.contains(d.code))
   }
 }
 
@@ -120,14 +125,15 @@ class Corpus {
 # native module and never runs, except the prelude's, which is the
 # prelude itself.
 def files_under(directory: string) {
-  return os.read_dir(directory, true)
-    .filter(@(name) => name.ends_with('.zu'))
-    .filter(
-      @(name) => !name.ends_with('.stub.zu')
-        or name.ends_with('_prelude.stub.zu'),
-    )
-    .map(@(name) => os.join_paths(directory, name))
-    .sort()
+  return os
+      .read_dir(directory, true)
+      .filter(@(name) => name.ends_with('.zu'))
+      .filter(
+        @(name) => !name.ends_with('.stub.zu') or
+            name.ends_with('_prelude.stub.zu'),
+      )
+      .map(@(name) => os.join_paths(directory, name))
+      .sort()
 }
 
 # The spans of the function literals in `source`.
@@ -164,7 +170,10 @@ def function_literals(source: string) {
 # that checks with `raises()` or `to_raise()`, passes only when the
 # runtime rejects the argument.
 def asserted_to_raise(
-  diagnostic: dict, source: string, offsets, literals: list,
+  diagnostic: dict,
+  source: string,
+  offsets,
+  literals: list,
 ) {
   if !['argument-type', 'missing-argument'].contains(diagnostic.code) {
     return false
@@ -194,8 +203,8 @@ def runtime_text(diagnostic: dict) {
       return "undefined global '${name}'"
     }
     when 'unknown-member',
-      'undeclared-field',
-      'missing-member' return "'${name}'"
+        'undeclared-field',
+        'missing-member' return "'${name}'"
     when 'module-not-found' return 'could not be found'
     default {
       return diagnostic.message
@@ -210,9 +219,9 @@ var fixtures = []
 for name in os.read_dir(ROOT) {
   var directory = os.join_paths(ROOT, name)
 
-  if !name.starts_with('.')
-    and !_NOT_SHIPPED.contains(name)
-    and os.is_dir(directory) {
+  if !name.starts_with('.') and
+      !_NOT_SHIPPED.contains(name) and
+      os.is_dir(directory) {
     shipped.extend(files_under(directory))
   }
 }
@@ -249,7 +258,9 @@ describe('shipped code', @{
       for diagnostic in reported {
         var line = diagnostic.range.start.line + 1
 
-        found.append('${path[ROOT.length() + 1, path.length()]}:${line}: ${diagnostic.message}')
+        found.append(
+          '${path[ROOT.length() + 1, path.length()]}:${line}: ${diagnostic.message}',
+        )
       }
     }
 
@@ -280,9 +291,11 @@ describe('test fixtures', @{
         for diagnostic in reported {
           var raised = expected.contains(runtime_text(diagnostic))
 
-          if !raised
-            and !asserted_to_raise(diagnostic, source, offsets, literals) {
-            found.append('${short}:${diagnostic.range.start.line + 1}: ${diagnostic.message}')
+          if !raised and
+              !asserted_to_raise(diagnostic, source, offsets, literals) {
+            found.append(
+              '${short}:${diagnostic.range.start.line + 1}: ${diagnostic.message}',
+            )
           }
 
           if diagnostic.code == 'undefined-name' {
@@ -290,11 +303,15 @@ describe('test fixtures', @{
           }
         }
 
-        var raised = expected.matches("/undefined global '([A-Za-z_][A-Za-z0-9_]*)'/")
+        var raised = expected.matches(
+          "/undefined global '([A-Za-z_][A-Za-z0-9_]*)'/",
+        )
 
         for name in raised.get(1, []) {
           if !names.contains(name) {
-            found.append("${short}: the runtime raised undefined global '${name}', not reported")
+            found.append(
+              "${short}: the runtime raised undefined global '${name}', not reported",
+            )
           }
         }
       }

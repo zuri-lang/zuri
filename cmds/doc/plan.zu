@@ -1,0 +1,310 @@
+/**
+ * What `zuri doc` was asked to do, and which documentation it was asked
+ * to do it to, worked out before anything is read or written.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+import os
+import toml
+
+import .._shared.errors { UsageError }
+import .._shared.paths
+import .config { FILE_NAME }
+
+/** The port `serve` listens on unless told otherwise. */
+var DEFAULT_PORT = 3000
+
+/** The address `serve` listens on unless told otherwise. */
+var DEFAULT_HOST = '127.0.0.1'
+
+/** Where `generate` writes a reference, inside the project. */
+var REFERENCE_DIR = os.join_paths('docs', 'reference')
+
+# _path_ as given on the command line, made absolute against _base_.
+def _absolute(path: string, base: string) {
+  return os.abs_path(paths.is_absolute(path) ? path : os.join_paths(base, path))
+}
+
+/**
+ * The command's parser.
+ *
+ * @returns args.Parser
+ */
+def parser() {
+  var parser = args.Parser('zuri doc', false)
+
+  parser.description = 'Builds a documentation site from pages written in Markdown, ' +
+      'or from the doc blocks in a project.'
+  parser.epilog = 'With no command, the documentation is built. It is the directory holding ' +
+      'doc.toml: the one named, the current directory, or docs or docs/reference in ' +
+      'the project. generate writes to docs/reference unless told otherwise, and ' +
+      'build and serve generate a reference again before building it.'
+
+  parser.add_command('build', 'Builds the site')
+  parser.add_command(
+    'serve',
+    'Builds and serves the site, rebuilding it as the documentation changes',
+  )
+  parser.add_command('init', 'Starts new documentation')
+  parser.add_command(
+    'generate',
+    "Writes an API reference from the project's doc blocks",
+  )
+  parser.add_command('clean', 'Removes the built site')
+
+  parser.add_index('dir', 'The documentation: a directory holding doc.toml', {
+    metavar: 'dir',
+  })
+
+  parser.add_option(
+    'out',
+    'Writes the site here instead of where doc.toml says',
+    { short_name: 'o', type: args.STRING, metavar: 'dir' },
+  )
+  parser.add_option('open', 'Opens the site in a browser once it is built', nil)
+  parser.add_option(
+    'strict',
+    'With build or generate, fails over a warning, such as a link inside the ' +
+        'documentation that leads nowhere',
+    nil,
+  )
+  parser.add_option(
+    'external',
+    'With build, also asks for every http and https address the documentation ' +
+        'links to, and warns about each that does not answer',
+    nil,
+  )
+  parser.add_option(
+    'port',
+    'With serve, the port to listen on; ${DEFAULT_PORT} by default',
+    { short_name: 'p', type: args.INT, metavar: 'port' },
+  )
+  parser.add_option(
+    'host',
+    'With serve, the address to listen on; ${DEFAULT_HOST}, this machine only, by default',
+    { type: args.STRING, metavar: 'address' },
+  )
+  parser.add_option(
+    'title',
+    "With init or generate, the new documentation's title",
+    { type: args.STRING, metavar: 'text' },
+  )
+
+  return parser
+}
+
+/**
+ * The documentation's directory: _given_ when one was named, which
+ * may also be the path of its `doc.toml`; otherwise _cwd_ when it
+ * holds a `doc.toml`; otherwise the `docs` directory of the project
+ * _cwd_ is in, or failing that its `docs/reference`.
+ *
+ * @param ?string given
+ * @param string cwd
+ * @returns string
+ * @throws UsageError When none of those holds a `doc.toml`
+ */
+def find_documentation(given: ?string, cwd: string) {
+  if given != nil {
+    var path = _absolute(given, cwd)
+
+    if os.base_name(path) == FILE_NAME and file(path).exists() {
+      return os.dir_name(path)
+    }
+
+    if file(os.join_paths(path, FILE_NAME)).exists() {
+      return path
+    }
+
+    raise UsageError(
+      'there is no ${FILE_NAME} in ${given}; `zuri doc init ${given}` starts documentation there',
+    )
+  }
+
+  if file(os.join_paths(cwd, FILE_NAME)).exists() {
+    return cwd
+  }
+
+  var project = paths.find_root(cwd)
+
+  if project != nil {
+    for docs in [
+      os.join_paths(project, 'docs'),
+      os.join_paths(project, REFERENCE_DIR),
+    ] {
+      if file(os.join_paths(docs, FILE_NAME)).exists() {
+        return docs
+      }
+    }
+  }
+
+  raise UsageError(
+    'there is no ${FILE_NAME} here; `zuri doc init` starts documentation, ' +
+        'and `zuri doc generate` an API reference',
+  )
+}
+
+# Whether the `doc.toml` in _directory_ has a `[reference]` table. One
+# that cannot be read is left for the build to report.
+def _is_reference(directory: string) {
+  catch {
+    var data = toml.parse(file(os.join_paths(directory, FILE_NAME)).read())
+
+    return data.contains('reference')
+  } as error {
+    return false
+  }
+}
+
+/**
+ * Where `generate` writes a reference: _given_ when one was named;
+ * otherwise _cwd_ when its `doc.toml` asks for a reference; otherwise
+ * `docs/reference` in the project _cwd_ is in.
+ *
+ * @param ?string given
+ * @param string cwd
+ * @returns string
+ * @throws UsageError When the directory holds documentation written by
+ *    hand, or there is no project to document
+ */
+def reference_target(given: ?string, cwd: string) {
+  var target = nil
+
+  if given != nil {
+    target = _absolute(given, cwd)
+
+    if os.base_name(target) == FILE_NAME and file(target).exists() {
+      target = os.dir_name(target)
+    }
+  } else if file(os.join_paths(cwd, FILE_NAME)).exists() and
+      _is_reference(cwd) {
+    target = cwd
+  } else {
+    var project = paths.find_root(cwd)
+
+    if project == nil {
+      raise UsageError(
+        'there is no project here to document; generate runs inside one, ' +
+            'beside its project.toml',
+      )
+    }
+
+    target = os.join_paths(project, REFERENCE_DIR)
+  }
+
+  if file(os.join_paths(target, FILE_NAME)).exists() and
+      !_is_reference(target) {
+    raise UsageError(
+      '${target} holds documentation written by hand; generate writes an API ' +
+          'reference of its own, as `zuri doc generate ${REFERENCE_DIR}`',
+    )
+  }
+
+  return target
+}
+
+/**
+ * Where `init` puts new documentation: _given_ when one was named,
+ * otherwise the `docs` directory of the project _cwd_ is in, otherwise
+ * _cwd_.
+ *
+ * @param ?string given
+ * @param string cwd
+ * @returns string
+ */
+def init_target(given: ?string, cwd: string) {
+  if given != nil {
+    return _absolute(given, cwd)
+  }
+
+  var project = paths.find_root(cwd)
+
+  return project == nil ? cwd : os.join_paths(project, 'docs')
+}
+
+/**
+ * The title new documentation in _target_ is given when none was
+ * asked for: the name of the project it documents, or else its
+ * directory's name.
+ *
+ * @param string target
+ * @returns string
+ */
+def default_title(target: string) {
+  var project = paths.find_root(target)
+
+  if project != nil {
+    catch {
+      var manifest = toml.parse(
+        file(os.join_paths(project, 'project.toml')).read(),
+      )
+      var name = manifest.get('project', {}).get('name')
+
+      if is_string(name) and !name.is_empty() {
+        return name
+      }
+    } as error {}
+  }
+
+  var name = os.base_name(target)
+
+  return name == 'docs' and project != nil ? os.base_name(project) : name
+}
+
+/**
+ * The settings for a parse of the command line.
+ *
+ * @param args.Result parsed
+ * @param ?string cwd: Default the working directory.
+ * @returns dict: `{ command, dir, out, open, strict, external, port,
+ *    host, title }`, `dir` being the directory named on the command line or
+ *    `nil`, and `out` an absolute path or `nil`.
+ * @throws UsageError For options that do not go with the command
+ */
+def settings(parsed, cwd: ?string) {
+  var base = cwd == nil ? os.cwd() : cwd
+  var command = parsed.command == nil ? 'build' : parsed.command.name
+  var options = parsed.options
+  var indexes = parsed.indexes
+  var given = indexes.is_empty() ? nil : indexes[0]
+
+  var only = {
+    strict: ['build', 'generate'],
+    external: ['build'],
+    port: ['serve'],
+    host: ['serve'],
+    open: ['build', 'serve'],
+    out: ['build', 'serve', 'clean'],
+    title: ['init', 'generate'],
+  }
+
+  for name, commands in only {
+    if options.get(name) != nil and !commands.contains(command) {
+      raise UsageError(
+        '--${name} goes with ${" or ".join(commands)}, not ${command}',
+      )
+    }
+  }
+
+  var port = options.get('port', DEFAULT_PORT)
+
+  if port < 0 or port > 65535 {
+    raise UsageError('--port is a number from 0 to 65535, not ${port}')
+  }
+
+  var out = options.get('out')
+
+  return {
+    command,
+    dir: given,
+    out: out == nil ? nil : _absolute(out, base),
+    open: options.get('open', false) == true,
+    strict: options.get('strict', false) == true,
+    external: options.get('external', false) == true,
+    port,
+    host: options.get('host', DEFAULT_HOST),
+    title: options.get('title'),
+  }
+}

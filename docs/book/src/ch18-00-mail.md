@@ -76,11 +76,12 @@ Most examples below build on one message. This is it:
 ```zuri
 import mail
 
-var note = mail.message()
-  .set_from('Ada Lovelace <ada@example.com>')
-  .add_to('Grace Hopper <grace@example.com>')
-  .set_subject('On Engines')
-  .set_text('The analytical engine weaves algebraic patterns.')
+var note = mail
+    .message()
+    .set_from('Ada Lovelace <ada@example.com>')
+    .add_to('Grace Hopper <grace@example.com>')
+    .set_subject('On Engines')
+    .set_text('The analytical engine weaves algebraic patterns.')
 
 echo note.subject()
 echo note.sender().name
@@ -129,11 +130,12 @@ time, and each call hands the message back, so they read as one:
 ```zuri
 import mail
 
-var note = mail.message()
-  .set_from('ada@example.com')
-  .add_to('grace@example.com')
-  .set_subject('On Engines')
-  .set_text('The analytical engine weaves algebraic patterns.')
+var note = mail
+    .message()
+    .set_from('ada@example.com')
+    .add_to('grace@example.com')
+    .set_subject('On Engines')
+    .set_text('The analytical engine weaves algebraic patterns.')
 
 echo note.content_type().mime_type()
 ```
@@ -154,10 +156,11 @@ Every address setter takes text, an `Address`, or a list of either:
 ```zuri
 import mail
 
-var note = mail.message()
-  .set_from('Ada Lovelace <ada@example.com>')
-  .add_to(['grace@example.com', 'Charles Babbage <charles@example.com>'])
-  .add_cc('archive@example.com')
+var note = mail
+    .message()
+    .set_from('Ada Lovelace <ada@example.com>')
+    .add_to(['grace@example.com', 'Charles Babbage <charles@example.com>'])
+    .add_cc('archive@example.com')
 
 echo note.to().map(@(person) => person.address)
 echo note.to()[1].name
@@ -214,7 +217,7 @@ comments and groups that RFC 5322 allows and nobody remembers:
 import mail
 
 var people = mail.parse_address_list(
-  'Ada <ada@example.com> (the author), Engineers: grace@example.com, charles@example.com;'
+  'Ada <ada@example.com> (the author), Engineers: grace@example.com, charles@example.com;',
 )
 
 echo people.map(@(person) => person.address)
@@ -239,12 +242,13 @@ can display:
 ```zuri
 import mail
 
-var note = mail.message()
-  .set_from('ada@example.com')
-  .add_to('grace@example.com')
-  .set_subject('On Engines')
-  .set_text('The engine weaves algebraic patterns.')
-  .set_html('<p>The engine weaves <em>algebraic patterns</em>.</p>')
+var note = mail
+    .message()
+    .set_from('ada@example.com')
+    .add_to('grace@example.com')
+    .set_subject('On Engines')
+    .set_text('The engine weaves algebraic patterns.')
+    .set_html('<p>The engine weaves <em>algebraic patterns</em>.</p>')
 
 echo note.content_type().mime_type()
 echo note.parts().map(@(part) => part.content_type().mime_type())
@@ -271,13 +275,15 @@ and handed to `attach()`:
 ```zuri
 import mail
 
-var note = mail.message()
-  .set_from('ada@example.com')
-  .add_to('grace@example.com')
-  .set_subject('The figures')
-  .set_text('Attached.')
-  .attach(mail.attachment('name,total\nengines,41\n')
-    .set_filename('figures.csv'))
+var note = mail
+    .message()
+    .set_from('ada@example.com')
+    .add_to('grace@example.com')
+    .set_subject('The figures')
+    .set_text('Attached.')
+    .attach(
+      mail.attachment('name,total\nengines,41\n').set_filename('figures.csv'),
+    )
 
 echo note.content_type().mime_type()
 echo note.attachments().map(@(part) => part.filename())
@@ -322,13 +328,14 @@ other file and referred to by an identifier:
 ```zuri
 import mail
 
-var note = mail.message()
-  .set_from('ada@example.com')
-  .add_to('grace@example.com')
-  .set_subject('The logo')
+var note = mail
+    .message()
+    .set_from('ada@example.com')
+    .add_to('grace@example.com')
+    .set_subject('The logo')
 
 var source = note.embed(
-  mail.attachment(bytes([137, 80, 78, 71])).set_filename('logo.png')
+  mail.attachment(bytes([137, 80, 78, 71])).set_filename('logo.png'),
 )
 
 note.set_html('<p>Our mark: <img src="${source}"></p>')
@@ -356,11 +363,12 @@ Anything the setters do not cover goes through `set_header()`:
 ```zuri
 import mail
 
-var note = mail.message()
-  .set_from('ada@example.com')
-  .add_to('grace@example.com')
-  .set_header('X-Priority', '1')
-  .set_header('List-Unsubscribe', '<https://example.com/unsubscribe>')
+var note = mail
+    .message()
+    .set_from('ada@example.com')
+    .add_to('grace@example.com')
+    .set_header('X-Priority', '1')
+    .set_header('List-Unsubscribe', '<https://example.com/unsubscribe>')
 
 echo note.headers.get('X-Priority', nil)
 ```
@@ -385,19 +393,21 @@ right is what puts it in the same conversation in a mail client:
 ```zuri
 import mail
 
-var original = mail.message()
-  .set_from('ada@example.com')
-  .add_to('grace@example.com')
-  .set_subject('On Engines')
-  .set_message_id('<first@example.com>')
+var original = mail
+    .message()
+    .set_from('ada@example.com')
+    .add_to('grace@example.com')
+    .set_subject('On Engines')
+    .set_message_id('<first@example.com>')
 
-var reply = mail.message()
-  .set_from('grace@example.com')
-  .add_to(original.sender())
-  .set_subject('Re: ${original.subject()}')
-  .set_in_reply_to(original.message_id())
-  .set_references(original.references() + [original.message_id()])
-  .set_text('Quite so.')
+var reply = mail
+    .message()
+    .set_from('grace@example.com')
+    .add_to(original.sender())
+    .set_subject('Re: ${original.subject()}')
+    .set_in_reply_to(original.message_id())
+    .set_references(original.references() + [original.message_id()])
+    .set_text('Quite so.')
 
 echo reply.headers.get('In-Reply-To', nil)
 echo reply.references()
@@ -420,12 +430,12 @@ starting a new one.
 import mail
 
 var note = mail.parse(
-  'From: Ada Lovelace <ada@example.com>\r\n'
-  + 'To: grace@example.com\r\n'
-  + 'Subject: =?utf-8?Q?On_Engines_and_Gr=C3=BC=C3=9Fe?=\r\n'
-  + 'Content-Type: text/plain; charset=utf-8\r\n'
-  + '\r\n'
-  + 'The engine weaves algebraic patterns.'
+  'From: Ada Lovelace <ada@example.com>\r\n' +
+      'To: grace@example.com\r\n' +
+      'Subject: =?utf-8?Q?On_Engines_and_Gr=C3=BC=C3=9Fe?=\r\n' +
+      'Content-Type: text/plain; charset=utf-8\r\n' +
+      '\r\n' +
+      'The engine weaves algebraic patterns.',
 )
 
 echo note.sender().name
@@ -453,12 +463,13 @@ reading a standalone one are the same code.
 ```zuri
 import mail
 
-var note = mail.message()
-  .set_from('ada@example.com')
-  .add_to('grace@example.com')
-  .set_text('plain')
-  .set_html('<p>html</p>')
-  .attach(mail.attachment('some,data\n').set_filename('figures.csv'))
+var note = mail
+    .message()
+    .set_from('ada@example.com')
+    .add_to('grace@example.com')
+    .set_text('plain')
+    .set_html('<p>html</p>')
+    .attach(mail.attachment('some,data\n').set_filename('figures.csv'))
 
 for part in note.walk() {
   echo part.content_type().mime_type()
@@ -483,12 +494,15 @@ Most programs want the text, wherever it happens to be:
 ```zuri
 import mail
 
-var note = mail.parse(mail.message()
-  .set_from('ada@example.com')
-  .add_to('grace@example.com')
-  .set_text('the plain version')
-  .set_html('<p>the html version</p>')
-  .to_bytes())
+var note = mail.parse(
+  mail
+      .message()
+      .set_from('ada@example.com')
+      .add_to('grace@example.com')
+      .set_text('the plain version')
+      .set_html('<p>the html version</p>')
+      .to_bytes(),
+)
 
 echo note.text_body()
 echo note.html_body()
@@ -509,13 +523,17 @@ that carries a filename without saying either way, is left out.
 ```zuri
 import mail
 
-var note = mail.parse(mail.message()
-  .set_from('ada@example.com')
-  .add_to('grace@example.com')
-  .set_text('Attached.')
-  .attach(mail.attachment('name,total\nengines,41')
-    .set_filename('figures.csv'))
-  .to_bytes())
+var note = mail.parse(
+  mail
+      .message()
+      .set_from('ada@example.com')
+      .add_to('grace@example.com')
+      .set_text('Attached.')
+      .attach(
+        mail.attachment('name,total\nengines,41').set_filename('figures.csv'),
+      )
+      .to_bytes(),
+)
 
 for part in note.attachments() {
   echo '${part.filename()} (${part.content_type().mime_type()})'
@@ -586,12 +604,16 @@ again:
 ```zuri,ignore
 import mail
 
-mail.send('smtp://mail.example.com', mail.message()
-  .set_from('reports@example.com')
-  .add_to('ada@example.com')
-  .set_subject('Quarterly report')
-  .set_text('The numbers are in.'),
-  { username: 'reports', password: secret })
+mail.send(
+  'smtp://mail.example.com',
+  mail
+      .message()
+      .set_from('reports@example.com')
+      .add_to('ada@example.com')
+      .set_subject('Quarterly report')
+      .set_text('The numbers are in.'),
+  { username: 'reports', password: secret },
+)
 ```
 
 That is the whole of sending mail for a program that sends one at a
@@ -639,7 +661,9 @@ otherwise: the sender from `From`, the recipients from `To`, `Cc` and
 
 ```zuri,ignore
 server.send(note, { from: 'bounces@example.com' })
-server.send(note, { to: ['someone@example.com'] })
+server.send(note, {
+  to: ['someone@example.com'],
+})
 ```
 
 The first is what a mailing list does: the message says who wrote it,
@@ -890,8 +914,8 @@ for part in structure.walk() {
 and `fetch_message()` the common case of asking for all of it:
 
 ```zuri,ignore
-inbox.fetch_message(uid, true, false)   # leaves it unread
-inbox.fetch_message(uid, true, true)    # marks it read
+inbox.fetch_message(uid, true, false) # leaves it unread
+inbox.fetch_message(uid, true, true) # marks it read
 ```
 
 Reading a message does not mark it read unless you say so. A program
@@ -1171,12 +1195,19 @@ import mail.imap { MemoryStore }
 var store = MemoryStore(['INBOX', 'Archive'])
 
 store.add_account('ada', 'secret')
-store.append('ada', 'INBOX', mail.message()
-  .set_from('grace@example.com')
-  .add_to('ada@example.com')
-  .set_subject('On Bugs')
-  .set_text('Found one.')
-  .to_bytes(), nil, nil)
+store.append(
+  'ada',
+  'INBOX',
+  mail
+      .message()
+      .set_from('grace@example.com')
+      .add_to('ada@example.com')
+      .set_subject('On Bugs')
+      .set_text('Found one.')
+      .to_bytes(),
+  nil,
+  nil,
+)
 
 echo store.mailboxes('ada')
 echo store.messages('ada', 'INBOX').length()

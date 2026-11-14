@@ -1,0 +1,150 @@
+# Tests for building documentation from files nobody building it wrote:
+# nothing it names, includes or runs may come from outside its package.
+
+import os
+import os.tempfile { create_temp_dir }
+import test { * }
+
+import ..build { build }
+import ..config { confine, load, parse }
+
+var DIR = nil
+var PACKAGE = nil
+
+def put(path: string, text: string) {
+  var full = os.join_paths(DIR, path)
+
+  os.create_dir(os.dir_name(full), 0c755, true)
+  file(full, 'w').write(text)
+}
+
+def refusal(work: function) {
+  var message = nil
+
+  catch {
+    work()
+  } as error {
+    message = error.message
+  }
+
+  expect(message).not.to_be_nil()
+
+  return message
+}
+
+# A package with documentation in `docs`, beside a file that is not the
+# package's.
+def write_package(settings: ?string) {
+  put('secret.txt', 'not the package\'s')
+  put('package/project.toml', '[project]\nname = "kit"\n')
+  put(
+    'package/docs/doc.toml',
+    '[documentation]\ntitle = "Kit"\n' + (settings == nil ? '' : settings),
+  )
+  put('package/docs/src/SUMMARY.md', '# Summary\n\n[Guide](guide.md)\n')
+  put('package/docs/src/guide.md', '# Guide\n')
+}
+
+def docs() {
+  return load(os.join_paths(PACKAGE, 'docs'))
+}
+
+before_each(@{
+  DIR = os.real_path(create_temp_dir('zuri-doc-sandbox-'))
+  PACKAGE = os.join_paths(DIR, 'package')
+})
+
+after_each(@{
+  os.remove_dir(DIR, true)
+})
+
+describe('confine', @{
+  it('takes documentation whose files are all in the package', @{
+    write_package('[site]\nlogo = "logo.svg"\n')
+
+    var settings = docs()
+
+    confine(settings, PACKAGE)
+    expect(settings.sandbox).to_be(PACKAGE)
+  })
+
+  it('refuses a file named from outside the package', @{
+    write_package('[site]\nlogo = "../../secret.txt"\n')
+
+    expect(
+      refusal(@{
+        confine(docs(), PACKAGE)
+      }),
+    ).to_contain('[site] logo is outside the package')
+  })
+
+  it('refuses modules to document from outside the package', @{
+    write_package('[reference]\nmodules = "../.."\n')
+
+    expect(
+      refusal(@{
+        confine(docs(), PACKAGE)
+      }),
+    ).to_contain('[reference] modules is outside the package')
+  })
+})
+
+describe('a confined build', @{
+  it('includes files from inside the package', @{
+    write_package(nil)
+    put(
+      'package/docs/src/guide.md',
+      '# Guide\n\n```\n{{#include ../../project.toml}}\n```\n',
+    )
+
+    var settings = docs()
+
+    confine(settings, PACKAGE)
+    build(settings)
+
+    expect(file(os.join_paths(PACKAGE, 'docs', 'site', 'guide.html')).read())
+        .to_contain('name = "kit"')
+  })
+
+  it('refuses to include a file from outside the package', @{
+    write_package(nil)
+    put(
+      'package/docs/src/guide.md',
+      '# Guide\n\n{{#include ../../../secret.txt}}\n',
+    )
+
+    var settings = docs()
+
+    confine(settings, PACKAGE)
+
+    expect(
+      refusal(@{
+        build(settings)
+      }),
+    ).to_contain('cannot include ../../../secret.txt; it is outside the package')
+  })
+
+  it('uses the built-in page template, whatever the theme holds', @{
+    write_package(nil)
+    put('package/docs/theme/page.html', '<p>{{ site_title }} OWN TEMPLATE</p>')
+
+    var settings = docs()
+
+    confine(settings, PACKAGE)
+    build(settings)
+
+    expect(
+      file(os.join_paths(PACKAGE, 'docs', 'site', 'guide.html')).read(),
+    ).not.to_contain('OWN TEMPLATE')
+  })
+})
+
+describe('redirects', @{
+  it('refuse an old address that climbs out of the site', @{
+    expect(
+      refusal(@{
+        parse('[redirects]\n"../../evil.html" = "guide.html"\n', DIR)
+      }),
+    ).to_contain('climbs out of the site')
+  })
+})

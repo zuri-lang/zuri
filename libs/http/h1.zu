@@ -168,7 +168,10 @@ def request_from_head(connection, parsed) {
   }
 
   request.body_reader = body.reader_for(
-    connection, request.headers, true, false,
+    connection,
+    request.headers,
+    true,
+    false,
   )
 
   return request
@@ -307,7 +310,8 @@ def write_response(connection, request, response, options: ?dict) {
   # a clock, and caches need it to compute freshness at all.
   response.headers.set_default('Date', util.format_date())
   response.headers.set_default(
-    'Server', options.get('server_name', SERVER_NAME),
+    'Server',
+    options.get('server_name', SERVER_NAME),
   )
 
   var streaming = false
@@ -325,9 +329,9 @@ def write_response(connection, request, response, options: ?dict) {
       known_length = source[3]
     }
 
-    if method == 'HEAD'
-      and known_length != nil
-      and !response.headers.contains('content-length') {
+    if method == 'HEAD' and
+        known_length != nil and
+        !response.headers.contains('content-length') {
       response.headers.set('Content-Length', known_length)
     }
 
@@ -636,8 +640,9 @@ def read_response(connection, request, options: ?dict) {
 
   response.request_method = method
 
-  var bodiless = method == 'HEAD' or status.is_bodiless(response.status) or
-    response.status == 101
+  var bodiless = method == 'HEAD' or
+      status.is_bodiless(response.status) or
+      response.status == 101
 
   # A 2xx answer to CONNECT establishes a tunnel; everything after the
   # head is tunnelled bytes, not a body.
@@ -655,7 +660,9 @@ def read_response(connection, request, options: ?dict) {
 
   response.body = reader.read_all(_limit(options, 'max_body_size'))
 
-  if options.get('decode_content', true) {
+  # A response with no body has nothing to decode, whatever its coding
+  # header says: the header describes the body a GET would have had.
+  if !bodiless and options.get('decode_content', true) {
     var encoding = response.headers.get('content-encoding', nil)
 
     if encoding != nil and !encoding.trim().is_empty() {

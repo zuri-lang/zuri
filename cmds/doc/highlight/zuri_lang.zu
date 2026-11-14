@@ -1,0 +1,388 @@
+/**
+ * Zuri, and transcripts of the REPL.
+ *
+ * Zuri is coloured from the tokens Zuri's own lexer reads, so what is
+ * shown as a keyword, a string or a number is exactly what the language
+ * reads as one. A fragment that does not lex in full is still coloured:
+ * the lexer reports what it could not read as an error token and goes
+ * on, and that text is shown plain.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import zuri
+
+import .spans { render, span }
+
+# The functions every program can call without an import.
+var _BUILTINS = {
+  bytes: true,
+  delprop: true,
+  file: true,
+  getprop: true,
+  hasprop: true,
+  id: true,
+  instance_of: true,
+  is_bigint: true,
+  is_bool: true,
+  is_bytes: true,
+  is_callable: true,
+  is_class: true,
+  is_dict: true,
+  is_file: true,
+  is_function: true,
+  is_instance: true,
+  is_int: true,
+  is_iterable: true,
+  is_list: true,
+  is_number: true,
+  is_object: true,
+  is_string: true,
+  print: true,
+  rand: true,
+  setprop: true,
+  sum: true,
+  time: true,
+  typeof: true,
+}
+
+# Keyword tokens that are values rather than syntax.
+var _VALUES = {
+  True: 'lit',
+  False: 'lit',
+  Nil: 'lit',
+  Self_: 'self',
+  Parent: 'self',
+}
+
+# Characters an operator is made of. A token made only of these is one.
+var _OPERATOR = '+-*/%=<>!&|^~?:'
+
+# Whether every character of _text_ is an operator character.
+def _is_operator(text: string) {
+  if text.is_empty() {
+    return false
+  }
+
+  for c in text {
+    if !_OPERATOR.contains(c) {
+      return false
+    }
+  }
+
+  return true
+}
+
+# Whether _text_ is written as a constant: capitals, digits and
+# underscores, with at least two letters.
+def _is_constant(text: string) {
+  return text.length() > 1 and text.upper() == text and text.lower() != text
+}
+
+# The kind of the identifier at `tokens[i]`, judged by what is around it.
+def _identifier(tokens: list, i: number, text: string) {
+  var before = i > 0 ? tokens[i - 1].kind : ''
+  var after = i + 1 < tokens.length() ? tokens[i + 1].kind : ''
+
+  if before == 'Def' {
+    return 'def'
+  }
+
+  if before == 'Class' {
+    return 'type'
+  }
+
+  if before == 'Dot' {
+    return after == 'Lparen' ? 'fn' : 'prop'
+  }
+
+  if _BUILTINS.contains(text) {
+    return 'bi'
+  }
+
+  if after == 'Lparen' {
+    return text[0].is_upper() ? 'type' : 'fn'
+  }
+
+  if _is_constant(text) {
+    return 'const'
+  }
+
+  if text[0].is_upper() {
+    return 'type'
+  }
+
+  return nil
+}
+
+# A comment, with the `@tags` of a doc block picked out.
+def _comment(pieces: list, text: string) {
+  if !text.starts_with('/**') {
+    pieces.append(['com', text])
+    return
+  }
+
+  var at = 0
+  var i = 0
+  var length = text.length()
+
+  while i < length {
+    if text[i] == '@' and
+        i + 1 < length and
+        text[i + 1].is_lower() and
+        (i == 0 or text[i - 1].is_space()) {
+      var end = i + 1
+
+      while end < length and (text[end].is_alnum() or text[end] == '_') {
+        end++
+      }
+
+      pieces.append(['com', text[at, i]])
+      pieces.append(['doctag', text[i, end]])
+      at = end
+      i = end
+      continue
+    }
+
+    i++
+  }
+
+  pieces.append(['com', text[at, length]])
+}
+
+# A string token. Interpolation splits one string into several tokens:
+# the piece before `${` ends with its `$`, and the piece after the
+# expression starts with its `}`. Those delimiters are marked apart from
+# the string around them.
+def _string(pieces: list, kind: string, text: string) {
+  var start = 0
+  var end = text.length()
+  var opens = kind == 'Interpolation'
+
+  if text.starts_with('}') {
+    pieces.append(['subst', '}'])
+    start = 1
+  }
+
+  if opens and end > start and text[end - 1] == '$' {
+    end--
+  }
+
+  pieces.append(['str', text[start, end]])
+
+  if opens and end < text.length() {
+    pieces.append(['subst', '$'])
+  }
+}
+
+/**
+ * _source_ as a list of `[kind, text]` pairs that together spell it out
+ * exactly. The kind is `nil` for text shown plain.
+ *
+ * @param string source
+ * @returns list
+ */
+def pieces(source: string) {
+  var tokens = zuri.tokenize(source)
+  var out = []
+  var at = 0
+  var count = tokens.length()
+
+  iter var i = 0; i < count; i++ {
+    var token = tokens[i]
+    var kind = token.kind
+
+    if kind == 'Eof' {
+      break
+    }
+
+    if token.start > at {
+      var gap = source[at, token.start]
+
+      # The `{` of `${` is not part of any token.
+      if i > 0 and
+          tokens[i - 1].kind == 'Interpolation' and
+          gap.starts_with('{') {
+        out.append(['subst', '{'])
+        out.append([nil, gap[1,]])
+      } else {
+        out.append([nil, gap])
+      }
+    }
+
+    var text = source[token.start, token.end]
+
+    using kind {
+      when 'Literal', 'Interpolation' {
+        _string(out, kind, text)
+      }
+      when 'Integer', 'Double', 'BigNumber' {
+        out.append(['num', text])
+      }
+      when 'Comment', 'DocBlock' {
+        _comment(out, text)
+      }
+      when 'Decorator', 'At' {
+        out.append(['meta', text])
+      }
+      when 'Identifier' {
+        out.append([_identifier(tokens, i, text), text])
+      }
+      when 'Newline', 'Error' {
+        out.append([nil, text])
+      }
+      default {
+        var value = _VALUES.get(kind)
+
+        if value != nil {
+          out.append([value, text])
+        } else if text[0].is_lower() {
+          out.append(['kw', text])
+        } else if _is_operator(text) {
+          out.append(['op', text])
+        } else {
+          out.append([nil, text])
+        }
+      }
+    }
+
+    at = token.end
+  }
+
+  if at < source.length() {
+    out.append([nil, source[at,]])
+  }
+
+  return out
+}
+
+/**
+ * _source_, a Zuri program or fragment, as highlighted markup.
+ *
+ * @param string source
+ * @returns string
+ */
+def highlight(source: string) {
+  return render(pieces(source))
+}
+
+# Where a REPL prompt at the start of _line_ ends, or 0 for a line with
+# none. `%>` asks for input and `..` continues it.
+def _prompt_end(line: string) {
+  var i = 0
+
+  while i < line.length() and (line[i] == ' ' or line[i] == '\t') {
+    i++
+  }
+
+  var mark = line[i, i + 2 > line.length() ? line.length() : i + 2]
+
+  if mark != '%>' and mark != '..' {
+    return 0
+  }
+
+  i += 2
+
+  if i < line.length() and line[i] == ' ' {
+    i++
+  }
+
+  return i
+}
+
+/**
+ * The kind of a line a program printed: `err` for an error being
+ * reported, `com` for the trace and source excerpt beneath one, and
+ * _plain_ for anything else.
+ *
+ * @param string line
+ * @param ?string plain
+ * @returns ?string
+ */
+def output_kind(line: string, plain: ?string) {
+  var text = line.trim()
+
+  if text.starts_with('Unhandled ') or
+      text.starts_with('Uncaught ') or
+      text.starts_with('Error: ') {
+    return 'err'
+  }
+
+  if text.starts_with('Stack trace') or
+      text.starts_with('at ') or
+      text.starts_with('--> ') or
+      line.match('/^\s*>?\s*\d+ \|/') != false {
+    return 'com'
+  }
+
+  return plain
+}
+
+/**
+ * A REPL transcript as highlighted markup. A line opening with the `%>`
+ * prompt, and the `..` lines continuing it, are Zuri the reader typed,
+ * coloured as one piece so a string or comment running across them
+ * stays whole. Every other line is what the REPL printed back.
+ *
+ * @param string source
+ * @returns string
+ */
+def highlight_repl(source: string) {
+  var lines = source.split('\n')
+  var out = []
+  var i = 0
+
+  while i < lines.length() {
+    var cut = _prompt_end(lines[i])
+
+    if cut == 0 or lines[i].trim().starts_with('..') {
+      if !out.is_empty() {
+        out.append('\n')
+      }
+
+      out.append(span(output_kind(lines[i], 'out'), lines[i]))
+      i++
+      continue
+    }
+
+    # One input: this prompt and the continuation lines after it.
+    var prompts = [lines[i][0, cut]]
+    var code = [lines[i][cut,]]
+
+    i++
+
+    while i < lines.length() and
+        _prompt_end(lines[i]) > 0 and
+        lines[i].trim().starts_with('..') {
+      var more = _prompt_end(lines[i])
+
+      prompts.append(lines[i][0, more])
+      code.append(lines[i][more,])
+      i++
+    }
+
+    if !out.is_empty() {
+      out.append('\n')
+    }
+
+    var line = 0
+
+    out.append(span('prompt', prompts[0]))
+
+    for piece in pieces('\n'.join(code)) {
+      var parts = piece[1].split('\n')
+
+      iter var p = 0; p < parts.length(); p++ {
+        if p > 0 {
+          line++
+          out.append('\n')
+          out.append(span('prompt', prompts[line]))
+        }
+
+        out.append(span(piece[0], parts[p]))
+      }
+    }
+  }
+
+  return ''.join(out)
+}

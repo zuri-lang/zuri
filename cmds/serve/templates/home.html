@@ -55,7 +55,7 @@
       <section x-if="keywords">
         <h2>Popular keywords</h2>
         <p class="keywords-cloud">
-          <a x-for="keywords" x-value="word" class="tag" href="/search?q={{ word.name|url_encode }}">{{ word.name }}<small>{{ word.count }}</small></a>
+          <a x-for="keywords" x-value="word" class="tag" href="/search?q={{ word.name|url_encode(false) }}">{{ word.name }}<small>{{ word.count }}</small></a>
         </p>
       </section>
 

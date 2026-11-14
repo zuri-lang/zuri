@@ -126,7 +126,11 @@ def parser() {
 
   p.description = 'Greets whoever is named, as often as asked.'
   p.add_index('name', 'Who to greet', { required: true })
-  p.add_option('times', 'How many greetings', { short_name: 't', type: args.INT, value: 1 })
+  p.add_option('times', 'How many greetings', {
+    short_name: 't',
+    type: args.INT,
+    value: 1,
+  })
 
   return p
 }
@@ -183,14 +187,14 @@ var source = file(os.join_paths(commands, 'greet.zu'), 'w')
 
 source.write(
   '/**\n' +
-  ' * @command greet\n' +
-  ' * @description Greets whoever is named.\n' +
-  ' */\n' +
-  'import args\n' +
-  'var parser = args.Parser("greet", false)\n' +
-  'parser.description = "Greets whoever is named."\n' +
-  'parser.add_index("name", "Who to greet", { value: "world" })\n' +
-  'echo "Hello, " + parser.parse().indexes[0] + "!"\n'
+      ' * @command greet\n' +
+      ' * @description Greets whoever is named.\n' +
+      ' */\n' +
+      'import args\n' +
+      'var parser = args.Parser("greet", false)\n' +
+      'parser.description = "Greets whoever is named."\n' +
+      'parser.add_index("name", "Who to greet", { value: "world" })\n' +
+      'echo "Hello, " + parser.parse().indexes[0] + "!"\n',
 )
 source.close()
 

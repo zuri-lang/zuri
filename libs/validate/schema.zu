@@ -268,7 +268,7 @@ class Schema {
       if !instance_of(value, Validator) {
         raise ValueError(
           'Schema ruleset values must be Validator instances; ' +
-            'got ${typeof(value)} for key "${key}"',
+              'got ${typeof(value)} for key "${key}"',
         )
       }
     }
@@ -321,9 +321,7 @@ class Schema {
             var item_key = '${base_key}.${i}'
             var item_value = list_val[i]
 
-            var label = validator.get_label() ?
-              validator.get_label() :
-              item_key
+            var label = validator.get_label() ? validator.get_label() : item_key
 
             if validator.is_sometimes() and _is_blank(item_value) {
               continue
@@ -336,9 +334,7 @@ class Schema {
           }
         } else {
           # Base list absent: treat as absent field; required() catches it.
-          var label = validator.get_label() ?
-            validator.get_label() :
-            base_key
+          var label = validator.get_label() ? validator.get_label() : base_key
 
           if validator.is_sometimes() {
             continue
@@ -360,8 +356,8 @@ class Schema {
       var label = validator.get_label() ? validator.get_label() : field_key
 
       # `sometimes`: skip entirely when absent.
-      if validator.is_sometimes()
-        and (!field_present or _is_blank(field_value)) {
+      if validator.is_sometimes() and
+          (!field_present or _is_blank(field_value)) {
         continue
       }
 
@@ -371,10 +367,7 @@ class Schema {
       }
     }
 
-    return {
-      valid: errors.is_empty(),
-      errors,
-    }
+    return { valid: errors.is_empty(), errors }
   }
 
   /**

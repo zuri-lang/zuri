@@ -46,19 +46,19 @@ var text = 'The quick brown fox jumps over the lazy dog. ' * 30
 var compressed = bzip2.compress(text)
 assert typeof(compressed) == 'bytes', 'compress() must return bytes'
 assert compressed.length() < text.length(),
-  'compressing 30x repeated text must actually shrink it'
+    'compressing 30x repeated text must actually shrink it'
 assert compressed[,3].to_string() == 'BZh',
-  'compressed output must start with the real bzip2 magic header "BZh"'
+    'compressed output must start with the real bzip2 magic header "BZh"'
 ok('compress() produces real, smaller-than-input bzip2 output')
 
 assert bzip2.decompress(compressed).to_string() == text,
-  'decompress() must recover the exact original text'
+    'decompress() must recover the exact original text'
 ok('decompress() recovers the exact original content')
 
 assert bzip2.compress('', 9).length() > 0,
-  'compressing an empty string must not crash, and still produce a valid (small) stream'
+    'compressing an empty string must not crash, and still produce a valid (small) stream'
 assert bzip2.decompress(bzip2.compress('')).to_string() == '',
-  'an empty string must round-trip to itself'
+    'an empty string must round-trip to itself'
 ok('empty input round-trips correctly')
 
 # ---------------------------------------------------------------------------
@@ -67,9 +67,9 @@ ok('empty input round-trips correctly')
 var fast = bzip2.compress(text, 1)
 var best = bzip2.compress(text, 9)
 assert bzip2.decompress(fast).to_string() == text,
-  'level 1 output must still decompress correctly'
+    'level 1 output must still decompress correctly'
 assert bzip2.decompress(best).to_string() == text,
-  'level 9 output must still decompress correctly'
+    'level 9 output must still decompress correctly'
 ok('compress() honors an explicit compression level and still round-trips')
 
 # ---------------------------------------------------------------------------
@@ -81,38 +81,39 @@ enc.write('streaming ')
 enc.write('bzip2 world')
 var stream_compressed = enc.finish()
 assert enc.finished(),
-  'finished() must be true once finish() has completed the stream'
+    'finished() must be true once finish() has completed the stream'
 assert enc.total_in() == 'hello streaming bzip2 world'.length(),
-  'total_in() must count every byte written across all write() calls'
+    'total_in() must count every byte written across all write() calls'
 ok('Bzip2Encoder accumulates multiple write() calls before finish()')
 
 assert raises(@() {
   enc.write('more')
-}), 'writing to an already-finished encoder must raise, not silently accept it'
+}),
+    'writing to an already-finished encoder must raise, not silently accept it'
 ok('Bzip2Encoder rejects a write() after finish()')
 
 var dec = bzip2.Bzip2Decoder(stream_compressed)
 var first_chunk = dec.read(5)
 assert first_chunk.to_string() == 'hello',
-  'read(length) must return exactly that many decompressed bytes'
+    'read(length) must return exactly that many decompressed bytes'
 assert !dec.finished(),
-  'the decoder must not report finished after only a partial read'
+    'the decoder must not report finished after only a partial read'
 var rest = dec.read_all()
 assert rest.to_string() == ' streaming bzip2 world',
-  'read_all() must return everything remaining after the partial read'
+    'read_all() must return everything remaining after the partial read'
 assert dec.finished(),
-  'finished() must be true once the stream is fully consumed'
+    'finished() must be true once the stream is fully consumed'
 ok('Bzip2Decoder supports a partial read() followed by read_all()')
 
 var dec2 = bzip2.Bzip2Decoder(stream_compressed)
 assert dec2.read_as_string() == 'hello streaming bzip2 world',
-  'read_as_string() must decode the whole stream as a string in one call'
+    'read_as_string() must decode the whole stream as a string in one call'
 ok('Bzip2Decoder.read_as_string()')
 
 assert raises(@() {
   bzip2.Bzip2Decoder(dec2.read(1)).read_as_string()
 }),
-  'a decoder given non-bzip2 data (a single already-consumed byte) must raise, not silently return garbage'
+    'a decoder given non-bzip2 data (a single already-consumed byte) must raise, not silently return garbage'
 ok('Bzip2Decoder rejects malformed input')
 
 # ---------------------------------------------------------------------------
@@ -122,11 +123,11 @@ var enc2 = bzip2.Bzip2Encoder()
 enc2.write('first frame')
 var frame1 = enc2.reset()
 assert bzip2.decompress(frame1).to_string() == 'first frame',
-  'reset() must return the completed first frame'
+    'reset() must return the completed first frame'
 enc2.write('second frame')
 var frame2 = enc2.finish()
 assert bzip2.decompress(frame2).to_string() == 'second frame',
-  'the encoder must be fully usable again after reset()'
+    'the encoder must be fully usable again after reset()'
 ok('Bzip2Encoder.reset() finishes the current frame and starts a fresh one')
 
 # ---------------------------------------------------------------------------
@@ -140,37 +141,37 @@ w.puts('world')
 w.close()
 
 assert file(bz_path, 'rb').exists(),
-  'BzFile must actually create the underlying file on disk'
+    'BzFile must actually create the underlying file on disk'
 
 var r = bzip2.BzFile(bz_path, 'rb')
 assert r.gets(5).to_string() == 'hello',
-  'BzFile.gets(length) must return exactly that many decompressed bytes'
+    'BzFile.gets(length) must return exactly that many decompressed bytes'
 assert r.gets().to_string() == ' bzfile world',
-  'BzFile.gets() with no length must read to the end'
+    'BzFile.gets() with no length must read to the end'
 r.close()
 ok('BzFile write-then-read round trip through a real file on disk')
 
 var r2 = bzip2.BzFile(bz_path, 'rb')
 assert r2.read().to_string() == 'hello bzfile world',
-  'BzFile.read() with no length must read the whole file'
+    'BzFile.read() with no length must read the whole file'
 ok('BzFile.read() (auto-managing variant) reads the whole file in one call')
 
 var r3 = bzip2.BzFile(bz_path, 'rb')
 r3.seek(6, 0)
 assert r3.gets().to_string() == 'bzfile world',
-  'BzFile.seek(6, SEEK_SET) must position the reader at decompressed offset 6'
+    'BzFile.seek(6, SEEK_SET) must position the reader at decompressed offset 6'
 r3.seek(-5, 1)
 assert r3.tell() == 'hello bzfile '.length(),
-  'a relative SEEK_CUR seek must be relative to the current decompressed position'
+    'a relative SEEK_CUR seek must be relative to the current decompressed position'
 r3.close()
 ok('BzFile.seek()/tell() operate on the decompressed byte stream')
 
 var copy = bzip2.BzFile(bz_path, 'rb')
 var original_copy = copy.copy()
 assert original_copy.gets(5).to_string() == 'hello',
-  'copy() must produce an independently readable BzFile from the same path'
+    'copy() must produce an independently readable BzFile from the same path'
 assert copy.gets(5).to_string() == 'hello',
-  'reading from the copy must not have advanced the original\'s own position'
+    'reading from the copy must not have advanced the original\'s own position'
 copy.close()
 original_copy.close()
 ok('BzFile.copy() is independent of the original, not aliased')

@@ -107,7 +107,8 @@ pub struct Feedback {
   pub young_budget: u64,
   /// The loop headers that get a way in from a frame already running;
   /// `None` gives every loop one. Each entry costs a copy of the loops
-  /// around it, so the baseline tier asks only for the loop it is in.
+  /// around it, so a compile a running loop asks for builds only the
+  /// ways in that frames are waiting at.
   pub entries: Option<Vec<usize>>,
 }
 
@@ -2729,10 +2730,16 @@ impl<'a> Builder<'a> {
     // its speculation, nothing is built in either: a callee's guards
     // failing would keep it deoptimizing with no recompile left to fix it.
     let root = &self.func_feedback;
+    // A recursive function is built into itself once, so each call that
+    // is still made does the work of two levels. Not one that constructs
+    // instances: each of those is preceded by a safepoint writing out
+    // every register of both levels, which costs more than the call saved.
+    let recursive = self.inlining.contains(&callee.proto);
     let fits = !root.sites_off
       && !root.fields_off
       && self.inlining.len() <= MAX_INLINE_DEPTH
-      && !self.inlining.contains(&callee.proto)
+      && self.inlining.iter().filter(|&&p| p == callee.proto).count() < 2
+      && !(recursive && !callee.feedback.constructs.is_empty())
       && code.len() <= MAX_INLINE_OPS
       && self.inlined_ops + code.len() <= MAX_INLINED_TOTAL
       && !proto.variadic

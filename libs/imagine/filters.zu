@@ -52,12 +52,7 @@ var MATRIX_LUMA = [0.213, 0.715, 0.072]
  * @returns list
  */
 def identity_matrix() {
-  return [
-    1, 0, 0, 0, 0,
-    0, 1, 0, 0, 0,
-    0, 0, 1, 0, 0,
-    0, 0, 0, 1, 0,
-  ]
+  return [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0]
 }
 
 /**
@@ -71,12 +66,7 @@ def grayscale_matrix() {
   var g = LUMA[1]
   var b = LUMA[2]
 
-  return [
-    r, g, b, 0, 0,
-    r, g, b, 0, 0,
-    r, g, b, 0, 0,
-    0, 0, 0, 1, 0,
-  ]
+  return [r, g, b, 0, 0, r, g, b, 0, 0, r, g, b, 0, 0, 0, 0, 0, 1, 0]
 }
 
 /**
@@ -90,10 +80,8 @@ def grayscale_matrix() {
  */
 def sepia_matrix() {
   return [
-    0.393, 0.769, 0.189, 0, 0,
-    0.349, 0.686, 0.168, 0, 0,
-    0.272, 0.534, 0.131, 0, 0,
-    0, 0, 0, 1, 0,
+    0.393, 0.769, 0.189, 0, 0, 0.349, 0.686, 0.168, 0, 0, 0.272, 0.534, 0.131,
+    0, 0, 0, 0, 0, 1, 0,
   ]
 }
 
@@ -115,10 +103,26 @@ def saturation_matrix(amount: number) {
   var inverse = 1 - amount
 
   return [
-    r + amount * (1 - r), g * inverse, b * inverse, 0, 0,
-    r * inverse, g + amount * (1 - g), b * inverse, 0, 0,
-    r * inverse, g * inverse, b + amount * (1 - b), 0, 0,
-    0, 0, 0, 1, 0,
+    r + amount * (1 - r),
+    g * inverse,
+    b * inverse,
+    0,
+    0,
+    r * inverse,
+    g + amount * (1 - g),
+    b * inverse,
+    0,
+    0,
+    r * inverse,
+    g * inverse,
+    b + amount * (1 - b),
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
   ]
 }
 
@@ -142,19 +146,26 @@ def hue_rotate_matrix(degrees: number) {
     0.213 + c * 0.787 - s * 0.213,
     0.715 - c * 0.715 - s * 0.715,
     0.072 - c * 0.072 + s * 0.928,
-    0, 0,
+    0,
+    0,
 
     0.213 - c * 0.213 + s * 0.143,
     0.715 + c * 0.285 + s * 0.140,
     0.072 - c * 0.072 - s * 0.283,
-    0, 0,
+    0,
+    0,
 
     0.213 - c * 0.213 - s * 0.787,
     0.715 - c * 0.715 + s * 0.715,
     0.072 + c * 0.928 + s * 0.072,
-    0, 0,
+    0,
+    0,
 
-    0, 0, 0, 1, 0,
+    0,
+    0,
+    0,
+    1,
+    0,
   ]
 }
 
@@ -184,10 +195,26 @@ def duotone_matrix(shadow, highlight) {
   var db = (high.b - low.b) / 255
 
   return [
-    r * dr, g * dr, b * dr, 0, low.r,
-    r * dg, g * dg, b * dg, 0, low.g,
-    r * db, g * db, b * db, 0, low.b,
-    0, 0, 0, 1, 0,
+    r * dr,
+    g * dr,
+    b * dr,
+    0,
+    low.r,
+    r * dg,
+    g * dg,
+    b * dg,
+    0,
+    low.g,
+    r * db,
+    g * db,
+    b * db,
+    0,
+    low.b,
+    0,
+    0,
+    0,
+    1,
+    0,
   ]
 }
 
@@ -407,7 +434,9 @@ def scale_lut(factor: number) {
  */
 def levels_lut(black: number, white: number, gamma: ?number) {
   if white <= black {
-    raise ImageError('the white point (${white}) must be above the black point (${black})')
+    raise ImageError(
+      'the white point (${white}) must be above the black point (${black})',
+    )
   }
 
   var span = white - black
@@ -441,11 +470,7 @@ def levels_lut(black: number, white: number, gamma: ?number) {
 def sharpen_kernel(strength) {
   var amount = strength == nil ? 1 : strength
 
-  return [
-    0, -amount, 0,
-    -amount, 1 + 4 * amount, -amount,
-    0, -amount, 0,
-  ]
+  return [0, -amount, 0, -amount, 1 + 4 * amount, -amount, 0, -amount, 0]
 }
 
 /**
@@ -458,11 +483,7 @@ def sharpen_kernel(strength) {
  * @returns list
  */
 def box_blur_kernel() {
-  return [
-    1, 1, 1,
-    1, 1, 1,
-    1, 1, 1,
-  ]
+  return [1, 1, 1, 1, 1, 1, 1, 1, 1]
 }
 
 /**
@@ -474,11 +495,7 @@ def box_blur_kernel() {
  * @returns list
  */
 def emboss_kernel() {
-  return [
-    -2, -1, 0,
-    -1, 1, 1,
-    0, 1, 2,
-  ]
+  return [-2, -1, 0, -1, 1, 1, 0, 1, 2]
 }
 
 /**
@@ -490,11 +507,7 @@ def emboss_kernel() {
  * @returns list
  */
 def edge_kernel() {
-  return [
-    -1, -1, -1,
-    -1, 8, -1,
-    -1, -1, -1,
-  ]
+  return [-1, -1, -1, -1, 8, -1, -1, -1, -1]
 }
 
 /**
@@ -503,11 +516,7 @@ def edge_kernel() {
  * @returns list
  */
 def mean_removal_kernel() {
-  return [
-    -1, -1, -1,
-    -1, 9, -1,
-    -1, -1, -1,
-  ]
+  return [-1, -1, -1, -1, 9, -1, -1, -1, -1]
 }
 
 /**
@@ -521,11 +530,7 @@ def mean_removal_kernel() {
 def smooth_kernel(weight) {
   var centre = weight == nil ? 8 : weight
 
-  return [
-    1, 1, 1,
-    1, centre, 1,
-    1, 1, 1,
-  ]
+  return [1, 1, 1, 1, centre, 1, 1, 1, 1]
 }
 
 /**

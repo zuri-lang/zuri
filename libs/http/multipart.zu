@@ -117,8 +117,11 @@ class UploadedFile {
       var c = base[i]
       var code = c.ord()
       var allowed = (code >= 48 and code <= 57) or
-        (code >= 65 and code <= 90) or
-        (code >= 97 and code <= 122) or c == '.' or c == '-' or c == '_'
+          (code >= 65 and code <= 90) or
+          (code >= 97 and code <= 122) or
+          c == '.' or
+          c == '-' or
+          c == '_'
 
       out += allowed ? c : '_'
     }
@@ -264,8 +267,8 @@ def parse(body, boundary: string, options: ?dict) {
   # The first delimiter may sit at the very start of the body, or be
   # preceded by a preamble that RFC 2046 §5.1.1 says to ignore.
   var cursor
-  if body.length() >= delimiter.length()
-    and body[0, delimiter.length()] == delimiter {
+  if body.length() >= delimiter.length() and
+      body[0, delimiter.length()] == delimiter {
     cursor = delimiter.length()
   } else {
     var first = util.find_bytes(body, separator, 0)
@@ -280,9 +283,9 @@ def parse(body, boundary: string, options: ?dict) {
   while true {
     # After a delimiter comes either `--` (the close delimiter) or the
     # transport padding and CRLF that begin the next part.
-    if cursor + 2 <= body.length()
-      and body[cursor] == 45
-      and body[cursor + 1] == 45 {
+    if cursor + 2 <= body.length() and
+        body[cursor] == 45 and
+        body[cursor + 1] == 45 {
       break
     }
 
@@ -350,7 +353,9 @@ def _read_part(result, body, start, end, max_file_size) {
   if filename != nil {
     if max_file_size != nil and content.length() > max_file_size {
       content.dispose()
-      raise TooLargeError('uploaded file ${name} exceeds ${max_file_size} bytes')
+      raise TooLargeError(
+        'uploaded file ${name} exceeds ${max_file_size} bytes',
+      )
     }
 
     var uploaded = UploadedFile(
@@ -464,7 +469,8 @@ class MultipartBuilder {
     head += '\r\nContent-Type: ${content_type or "application/octet-stream"}\r\n\r\n'
 
     self._parts.append([
-      head, is_string(content) ? content.to_bytes() : content,
+      head,
+      is_string(content) ? content.to_bytes() : content,
     ])
 
     return self

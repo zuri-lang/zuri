@@ -106,7 +106,13 @@
 import @.errors { TomlError, ParseError, EncodeError, EditError }
 import @.values { DateTime, LocalDateTime, LocalDate, LocalTime, Float }
 import @.document {
-  Document, Table, ArrayOfTables, Entry, Value, Array, InlineTable,
+  Document,
+  Table,
+  ArrayOfTables,
+  Entry,
+  Value,
+  Array,
+  InlineTable,
 }
 
 import .parser

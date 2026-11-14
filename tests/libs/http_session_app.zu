@@ -46,10 +46,12 @@ def _run(server, port_channel) {
 def session_server(port_channel, directory) {
   var server = http.HttpServer(0, '127.0.0.1')
 
-  server.use(http.session({
-    store: http.session.FileStore(directory),
-    secret: 'a secret the test and the server agree on',
-  }))
+  server.use(
+    http.session({
+      store: http.session.FileStore(directory),
+      secret: 'a secret the test and the server agree on',
+    }),
+  )
 
   server.get('/', @(request, response) {
     response.text('anonymous')

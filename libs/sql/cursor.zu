@@ -203,7 +203,7 @@ class Cursor {
 
   to_string() {
     return '<Cursor ${self._read} row${self._read == 1 ? "" : "s"} read' +
-      '${self.is_closed() ? ", closed" : ""}>'
+        '${self.is_closed() ? ", closed" : ""}>'
   }
 
   /**

@@ -47,7 +47,10 @@ Three lines of declaration and a call:
 import args
 
 var parser = args.Parser('greet')
-parser.add_option('name', 'Who to greet', { short_name: 'n', type: args.STRING })
+parser.add_option('name', 'Who to greet', {
+  short_name: 'n',
+  type: args.STRING,
+})
 
 var parsed = parser.parse(['--name', 'Ada'])
 
@@ -100,7 +103,10 @@ so is everything else:
 import args
 
 var parser = args.Parser('tool')
-parser.add_option('output', 'Where to write', { short_name: 'o', type: args.STRING })
+parser.add_option('output', 'Where to write', {
+  short_name: 'o',
+  type: args.STRING,
+})
 parser.add_option('force', 'Overwrite without asking', { short_name: 'f' })
 
 echo parser.parse(['-o', 'out.csv', '-f']).options
@@ -122,7 +128,10 @@ import args
 
 def parser() {
   var p = args.Parser('tool')
-  p.add_option('output', 'Where to write', { short_name: 'o', type: args.STRING })
+  p.add_option('output', 'Where to write', {
+    short_name: 'o',
+    type: args.STRING,
+  })
   return p
 }
 
@@ -210,7 +219,11 @@ and `off` all mean false.
 import args
 
 var parser = args.Parser('tool')
-parser.add_option('count', 'How many', { short_name: 'c', type: args.INT, value: 1 })
+parser.add_option('count', 'How many', {
+  short_name: 'c',
+  type: args.INT,
+  value: 1,
+})
 parser.add_option('verbose', 'Say more', { short_name: 'v' })
 
 echo parser.parse([]).options
@@ -375,8 +388,11 @@ var parser = args.Parser('notes')
 parser.add_option('verbose', 'Say more', { short_name: 'v' })
 
 parser.add_command('list', 'Show every note')
-parser.add_command('remove', 'Delete a note').
-  add_option('force', 'Do not ask first', { short_name: 'f' })
+parser.add_command('remove', 'Delete a note').add_option(
+  'force',
+  'Do not ask first',
+  { short_name: 'f' },
+)
 
 echo parser.parse(['-v', 'list'])
 echo parser.parse(['remove', '-f'])
@@ -407,10 +423,9 @@ message:
 import args
 
 var parser = args.Parser('notes')
-parser.add_command('add', 'Write a note', {
-  type: args.STRING,
-  metavar: 'text',
-}).add_option('pin', 'Keep it at the top', { short_name: 'p' })
+parser
+    .add_command('add', 'Write a note', { type: args.STRING, metavar: 'text' })
+    .add_option('pin', 'Keep it at the top', { short_name: 'p' })
 
 echo parser.parse(['add', 'buy milk', '-p'])
 ```
@@ -434,14 +449,16 @@ import args
 
 var parser = args.Parser('notes')
 
-parser.add_command('add', 'Write a note', {
-  type: args.STRING,
-  metavar: 'text',
-  action: @(options, value) {
-    var prefix = options.contains('pin') ? '[pinned] ' : ''
-    echo prefix + value
-  },
-}).add_option('pin', 'Keep it at the top', { short_name: 'p' })
+parser
+    .add_command('add', 'Write a note', {
+      type: args.STRING,
+      metavar: 'text',
+      action: @(options, value) {
+        var prefix = options.contains('pin') ? '[pinned] ' : ''
+        echo prefix + value
+      },
+    })
+    .add_option('pin', 'Keep it at the top', { short_name: 'p' })
 
 parser.parse(['add', 'buy milk', '-p'])
 ```
@@ -570,8 +587,15 @@ parser.set_terminal_width(68)
 parser.description = 'Greet somebody, once or several times.'
 parser.epilog = 'Set NO_COLOR to turn off colour.'
 
-parser.add_option('name', 'Who to greet', { short_name: 'n', type: args.STRING })
-parser.add_option('count', 'How many times', { short_name: 'c', type: args.INT, value: 1 })
+parser.add_option('name', 'Who to greet', {
+  short_name: 'n',
+  type: args.STRING,
+})
+parser.add_option('count', 'How many times', {
+  short_name: 'c',
+  type: args.INT,
+  value: 1,
+})
 parser.add_index('output', 'Where to write the greeting')
 
 parser.add_command('history', 'Show past greetings')
@@ -650,8 +674,15 @@ import args
 
 def build() {
   var parser = args.Parser('greet')
-  parser.add_option('name', 'Who to greet', { short_name: 'n', type: args.STRING })
-  parser.add_option('count', 'How many times', { short_name: 'c', type: args.INT, value: 1 })
+  parser.add_option('name', 'Who to greet', {
+    short_name: 'n',
+    type: args.STRING,
+  })
+  parser.add_option('count', 'How many times', {
+    short_name: 'c',
+    type: args.INT,
+    value: 1,
+  })
   return parser
 }
 

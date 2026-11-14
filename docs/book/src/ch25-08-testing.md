@@ -68,9 +68,15 @@ describe('Task', @{
   describe('construction', @{
 
     it('needs a title', @{
-      expect(@{ Task(nil) }).to_raise_instance_of(TaskError)
-      expect(@{ Task('') }).to_raise_instance_of(TaskError)
-      expect(@{ Task('   ') }).to_raise_instance_of(TaskError)
+      expect(@{
+        Task(nil)
+      }).to_raise_instance_of(TaskError)
+      expect(@{
+        Task('')
+      }).to_raise_instance_of(TaskError)
+      expect(@{
+        Task('   ')
+      }).to_raise_instance_of(TaskError)
     })
 
     it('says which field was wrong', @{
@@ -82,8 +88,12 @@ describe('Task', @{
     })
 
     it('refuses a title over 120 characters', @{
-      expect(@{ Task('x' * 121) }).to_raise_instance_of(TaskError)
-      expect(@{ Task('x' * 120) }).to_not_raise()
+      expect(@{
+        Task('x' * 121)
+      }).to_raise_instance_of(TaskError)
+      expect(@{
+        Task('x' * 120)
+      }).to_not_raise()
     })
 
     it('defaults everything but the title', @{
@@ -101,7 +111,6 @@ describe('Task', @{
 
       expect([first.id, second.id]).to_be_sorted()
     })
-
   })
 
   describe('update()', @{
@@ -127,23 +136,28 @@ describe('Task', @{
     it('refuses a column the board does not have', @{
       var task = Task('Write the tests')
 
-      expect(@{ task.update({ column: 'sideways' }) }).to_raise_instance_of(TaskError)
+      expect(@{
+        task.update({ column: 'sideways' })
+      }).to_raise_instance_of(TaskError)
       expect(task.column).to_be('todo')
     })
-
   })
 
   describe('round-tripping', @{
 
     it('rebuilds a task from what it stored', @{
-      var original = Task('Write the tests', { notes: 'a note', column: 'doing' })
+      var original = Task('Write the tests', {
+        notes: 'a note',
+        column: 'doing',
+      })
 
       expect(from_dict(original.to_dict())).to_equal(original)
     })
 
     it('rejects a stored record that broke a rule', @{
-      expect(@{ from_dict({ id: 'x', title: '', column: 'todo' }) })
-        .to_raise_instance_of(TaskError)
+      expect(@{
+        from_dict({ id: 'x', title: '', column: 'todo' })
+      }).to_raise_instance_of(TaskError)
     })
 
     it('survives a record written before a field existed', @{
@@ -152,9 +166,7 @@ describe('Task', @{
       expect(task.column).to_be('todo')
       expect(task.notes).to_be('')
     })
-
   })
-
 })
 ```
 
@@ -226,7 +238,9 @@ describe('Board', @{
   })
 
   it('raises for an id it does not have', @{
-    expect(@{ board.get('no-such-id') }).to_raise_instance_of(NotFoundError)
+    expect(@{
+      board.get('no-such-id')
+    }).to_raise_instance_of(NotFoundError)
   })
 
   it('filters by column', @{
@@ -252,9 +266,10 @@ describe('Board', @{
     board.remove(created.id)
 
     expect(board.all()).to_be_empty()
-    expect(@{ board.get(created.id) }).to_raise_instance_of(NotFoundError)
+    expect(@{
+      board.get(created.id)
+    }).to_raise_instance_of(NotFoundError)
   })
-
 })
 ```
 
@@ -393,19 +408,26 @@ describe('the JSON API', @{
   })
 
   it('answers 201 when it creates a task', @{
-    var response = call('POST /api/tasks', { body: { title: 'Write the tests' } })
+    var response = call('POST /api/tasks', {
+      body: { title: 'Write the tests' },
+    })
 
     expect(response.status).to_be(201)
-    expect(response.body).to_match_object({ title: 'Write the tests', column: 'todo' })
+    expect(response.body)
+        .to_match_object({ title: 'Write the tests', column: 'todo' })
     expect(board.all()).to_have_length(1)
   })
 
   it('lets the model reject a bad body', @{
-    expect(@{ call('POST /api/tasks', { body: {} }) }).to_raise_with_message('title')
+    expect(@{
+      call('POST /api/tasks', { body: {} })
+    }).to_raise_with_message('title')
   })
 
   it('treats a missing body as an empty one', @{
-    expect(@{ call('POST /api/tasks', {}) }).to_raise_with_message('title')
+    expect(@{
+      call('POST /api/tasks', {})
+    }).to_raise_with_message('title')
   })
 
   it('lists everything, with a summary', @{
@@ -420,13 +442,19 @@ describe('the JSON API', @{
   it('filters by column when asked', @{
     board.add('one')
 
-    expect(call('GET /api/tasks', { query: { column: 'done' } }).body.tasks).to_be_empty()
+    expect(
+      call('GET /api/tasks', {
+        query: { column: 'done' },
+      }).body.tasks,
+    ).to_be_empty()
   })
 
   it('sends the view, not the stored task', @{
     var created = board.add('Write the tests')
 
-    var response = call('GET /api/tasks/:id', { params: { id: created.id } })
+    var response = call('GET /api/tasks/:id', {
+      params: { id: created.id },
+    })
 
     expect(response.body).to_have_keys(['created_on', 'is_done'])
   })
@@ -442,7 +470,6 @@ describe('the JSON API', @{
     expect(board.get(created.id).column).to_be('doing')
     expect(board.get(created.id).id).to_be(created.id)
   })
-
 })
 ```
 

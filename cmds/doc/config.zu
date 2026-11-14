@@ -1,0 +1,612 @@
+/**
+ * A documentation site's settings: its `doc.toml`, read, checked and
+ * filled in with defaults.
+ *
+ * Every path in the file is relative to the directory holding it. A key
+ * the file does not know, or a value of the wrong type, is refused with
+ * the key named, rather than ignored, so a misspelt setting is noticed
+ * the first time the site is built.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+import toml
+
+import .._shared.errors { UsageError }
+import .._shared.paths
+
+/** The name of the settings file. */
+var FILE_NAME = 'doc.toml'
+
+# Every key each table may hold, and the type its value must have.
+var _DOCUMENTATION = {
+  title: 'string',
+  description: 'string',
+  authors: 'list',
+  language: 'string',
+  source: 'string',
+  output: 'string',
+  'create-missing': 'bool',
+}
+
+var _SITE = {
+  url: 'string',
+  label: 'string',
+  repository: 'string',
+  edit: 'string',
+  logo: 'string',
+  favicon: 'string',
+  theme: 'string',
+  fold: 'number|bool',
+  numbers: 'bool',
+  search: 'bool',
+  print: 'bool',
+  css: 'list',
+  js: 'list',
+  cname: 'string',
+  home: 'dict',
+  links: 'list',
+}
+
+var _REFERENCE = {
+  modules: 'string',
+  package: 'string',
+  exclude: 'list',
+  intro: 'string',
+  groups: 'list',
+}
+
+var _TABLES = ['documentation', 'site', 'reference', 'markdown', 'redirects']
+
+# Markdown options the site decides for itself and documentation cannot
+# change.
+var _RESERVED = ['renderer', 'highlight', 'toc', 'metadata']
+
+var _THEMES = ['system', 'light', 'dark']
+
+/**
+ * A documentation site's settings.
+ */
+class Config {
+
+  /** The directory holding `doc.toml`. @type string */
+  var root
+
+  /** The title. @type string */
+  var title = ''
+
+  /** One sentence describing the documentation. @type string */
+  var description = ''
+
+  /** @type list[string] */
+  var authors = []
+
+  /** The language it is written in, as a BCP 47 tag. @type string */
+  var language = 'en'
+
+  /** The directory of Markdown pages and `SUMMARY.md`. @type string */
+  var source
+
+  /** The directory the site is written into. @type string */
+  var output
+
+  /** Whether a chapter `SUMMARY.md` lists without a file is created. @type bool */
+  var create_missing = false
+
+  /** Where the site is published, ending in `/`, or `nil`. @type ?string */
+  var url
+
+  /** The source repository's address, or `nil`. @type ?string */
+  var repository
+
+  /** An address for editing a page, with `{path}` in it, or `nil`. @type ?string */
+  var edit
+
+  /** The logo's absolute path, or `nil`. @type ?string */
+  var logo
+
+  /** The favicon's absolute path, or `nil`. @type ?string */
+  var favicon
+
+  /** `'system'`, `'light'` or `'dark'`. @type string */
+  var theme = 'system'
+
+  /**
+   * How many levels of the contents start open. `nil` opens every level.
+   * @type ?number
+   */
+  var fold
+
+  /** Whether chapters are numbered. @type bool */
+  var numbers = true
+
+  /** Whether the site can be searched. @type bool */
+  var search = true
+
+  /** Whether the site has a page with every chapter on it, for printing. @type bool */
+  var print = true
+
+  /** Absolute paths of stylesheets added to every page. @type list[string] */
+  var css = []
+
+  /** Absolute paths of scripts added to every page. @type list[string] */
+  var js = []
+
+  /** The custom domain GitHub Pages serves the site at, or `nil`. @type ?string */
+  var cname
+
+  /** A link out to the site above this one: `{ url, label }`, or `nil`. @type ?dict */
+  var home
+
+  /** Links shown in the top bar: `{ url, label }` each. @type list[dict] */
+  var links = []
+
+  /** Options for the `markdown` module. @type dict */
+  var markdown = {}
+
+  /** Old page paths to the addresses they now redirect to. @type dict */
+  var redirects = {}
+
+  /** The theme directory beside `doc.toml`, when it has one. @type ?string */
+  var theme_dir
+
+  /**
+   * What the links at the top of every page call it when it is built
+   * together with other documentation, or `nil` for the usual name.
+   *
+   * @type ?string
+   */
+  var label
+
+  /**
+   * The directories beside its pages that hold documentation of their
+   * own, built into the site with it. `load()` finds them.
+   *
+   * @type list[string]
+   */
+  var members = []
+
+  /**
+   * The other documentation built into the same site, which a link can
+   * lead into: `{ source, prefix, index }` each, its directory of pages,
+   * the path from this site's front page to its own, and where it is
+   * among the sites built together. `build()` in `build.zu` sets it.
+   *
+   * @type list[dict]
+   */
+  var siblings = []
+
+  /**
+   * The directory everything the documentation reads must be inside,
+   * when it is built from files nobody building it wrote, as a package
+   * repository builds a published package's guide, or `nil`. Its own
+   * page template is then left unused too, since a template runs code.
+   * `confine()` sets it.
+   *
+   * @type ?string
+   */
+  var sandbox
+
+  /**
+   * How the pages are generated from doc blocks, or `nil` when they are
+   * written by hand: `{ modules, package, exclude, intro, groups }`,
+   * `modules` and `intro` being absolute paths or `nil`, `package` a
+   * name or `nil`, `exclude` a list of patterns, and `groups` a list of
+   * `{ title, description, modules }`.
+   *
+   * @type ?dict
+   */
+  var reference
+
+  @new(root: string) {
+    self.root = root
+    self.source = os.join_paths(root, 'src')
+    self.output = os.join_paths(root, 'site')
+    self.authors = []
+    self.css = []
+    self.js = []
+    self.links = []
+    self.markdown = {}
+    self.redirects = {}
+    self.members = []
+    self.siblings = []
+  }
+
+  /**
+   * _path_ from the settings file, made absolute against the directory
+   * holding it.
+   *
+   * @param string path
+   * @returns string
+   */
+  resolve(path: string) {
+    if paths.is_absolute(path) {
+      return os.abs_path(path)
+    }
+
+    return os.abs_path(os.join_paths(self.root, path))
+  }
+
+  @to_string() {
+    return '<Config ${self.title}>'
+  }
+}
+
+# Whether _value_ has one of the types in _types_, written as `a|b`.
+def _has_type(value, types: string) {
+  for type in types.split('|') {
+    using type {
+      when 'string' {
+        if is_string(value) {
+          return true
+        }
+      }
+      when 'bool' {
+        if is_bool(value) {
+          return true
+        }
+      }
+      when 'number' {
+        if is_number(value) {
+          return true
+        }
+      }
+      when 'list' {
+        if is_list(value) {
+          return true
+        }
+      }
+      when 'dict' {
+        if is_dict(value) {
+          return true
+        }
+      }
+    }
+  }
+
+  return false
+}
+
+# Checks every key of _table_ against _known_.
+def _check(table: dict, known: dict, name: string) {
+  for key, value in table {
+    var type = known.get(key)
+
+    if type == nil {
+      raise UsageError(
+        "${FILE_NAME}: [${name}] has no setting '${key}'; it takes " +
+            ', '.join(known.keys()),
+      )
+    }
+
+    if !_has_type(value, type) {
+      raise UsageError(
+        "${FILE_NAME}: [${name}] ${key} must be ${type.replace('|', ' or ')}",
+      )
+    }
+  }
+}
+
+# A list setting whose every entry must be a string.
+def _strings(value: list, name: string) {
+  for item in value {
+    if !is_string(item) {
+      raise UsageError('${FILE_NAME}: ${name} must be a list of strings')
+    }
+  }
+
+  return value
+}
+
+# A `{ url, label }` link.
+def _link(value, name: string) {
+  if !is_dict(value) or !is_string(value.get('url')) {
+    raise UsageError('${FILE_NAME}: ${name} needs a url')
+  }
+
+  for key in value.keys() {
+    if key != 'url' and key != 'label' {
+      raise UsageError(
+        "${FILE_NAME}: ${name} has no setting '${key}'; it takes url, label",
+      )
+    }
+  }
+
+  var label = value.get('label', value.url)
+
+  if !is_string(label) {
+    raise UsageError('${FILE_NAME}: ${name} label must be a string')
+  }
+
+  return { url: value.url, label }
+}
+
+# The `[reference]` table, checked, with its paths made absolute.
+def _reference(table: dict, config: Config) {
+  _check(table, _REFERENCE, 'reference')
+
+  var groups = []
+
+  for group in table.get('groups', []) {
+    if !is_dict(group) or !is_string(group.get('title')) {
+      raise UsageError('${FILE_NAME}: each of [reference] groups needs a title')
+    }
+
+    for key in group.keys() {
+      if !['title', 'description', 'modules'].contains(key) {
+        raise UsageError(
+          "${FILE_NAME}: [reference] groups have no setting '${key}'; they take title, description, modules",
+        )
+      }
+    }
+
+    var description = group.get('description')
+
+    if description != nil and !is_string(description) {
+      raise UsageError(
+        '${FILE_NAME}: the description of [reference] group ${group.title} must be a string',
+      )
+    }
+
+    groups.append({
+      title: group.title,
+      description,
+      modules: _strings(
+        group.get('modules', []),
+        '[reference] group ${group.title} modules',
+      ),
+    })
+  }
+
+  var modules = table.get('modules')
+  var intro = table.get('intro')
+
+  return {
+    modules: modules == nil ? nil : config.resolve(modules),
+    package: table.get('package'),
+    exclude: _strings(table.get('exclude', []), '[reference] exclude'),
+    intro: intro == nil ? nil : config.resolve(intro),
+    groups,
+  }
+}
+
+/**
+ * The settings in _text_, the contents of the `doc.toml` in _root_.
+ *
+ * @param string text
+ * @param string root
+ * @returns Config
+ * @throws UsageError When the file is not valid TOML, or holds a key or
+ *    value it should not
+ */
+def parse(text: string, root: string) {
+  var data
+
+  catch {
+    data = toml.parse(text)
+  } as error {
+    raise UsageError('${FILE_NAME}: ${error.message}')
+  }
+
+  var config = Config(root)
+
+  for key, value in data {
+    if !_TABLES.contains(key) {
+      raise UsageError(
+        "${FILE_NAME}: there is no [${key}] table; it takes " +
+            ', '.join(_TABLES),
+      )
+    }
+
+    if !is_dict(value) {
+      raise UsageError('${FILE_NAME}: ${key} must be a table')
+    }
+  }
+
+  var documentation = data.get('documentation', {})
+  var site = data.get('site', {})
+
+  _check(documentation, _DOCUMENTATION, 'documentation')
+  _check(site, _SITE, 'site')
+
+  config.title = documentation.get('title', os.base_name(root))
+  config.description = documentation.get('description', '')
+  config.authors = _strings(documentation.get('authors', []), 'authors')
+  config.language = documentation.get('language', 'en')
+  config.source = config.resolve(documentation.get('source', 'src'))
+  config.output = config.resolve(documentation.get('output', 'site'))
+  config.create_missing = documentation.get('create-missing', false)
+
+  if config.output == config.source or
+      config.source.starts_with(config.output + os.path_separator) {
+    raise UsageError(
+      '${FILE_NAME}: the output directory would hold the pages it is built from',
+    )
+  }
+
+  var url = site.get('url')
+
+  if url != nil {
+    config.url = url.ends_with('/') ? url : url + '/'
+  }
+
+  config.repository = site.get('repository')
+  config.label = site.get('label')
+  config.edit = site.get('edit')
+  config.cname = site.get('cname')
+
+  if site.get('logo') != nil {
+    config.logo = config.resolve(site.logo)
+  }
+
+  if site.get('favicon') != nil {
+    config.favicon = config.resolve(site.favicon)
+  }
+
+  config.theme = site.get('theme', 'system')
+
+  if !_THEMES.contains(config.theme) {
+    raise UsageError(
+      "${FILE_NAME}: [site] theme must be 'system', 'light' or 'dark', not '${config.theme}'",
+    )
+  }
+
+  var fold = site.get('fold', false)
+
+  if fold == true {
+    config.fold = 1
+  } else if is_number(fold) {
+    if fold < 1 or !is_int(fold) {
+      raise UsageError(
+        '${FILE_NAME}: [site] fold must be a whole number from 1, or false',
+      )
+    }
+
+    config.fold = fold
+  }
+
+  if data.contains('reference') {
+    config.reference = _reference(data.reference, config)
+  }
+
+  # Module names read best without numbers, so a reference has none
+  # unless it asks.
+  config.numbers = site.get('numbers', config.reference == nil)
+  config.search = site.get('search', true)
+  config.print = site.get('print', true)
+  config.css = _strings(
+    site.get('css', []),
+    'css',
+  ).map(@(path) => config.resolve(path))
+  config.js = _strings(
+    site.get('js', []),
+    'js',
+  ).map(@(path) => config.resolve(path))
+
+  if site.get('home') != nil {
+    config.home = _link(site.home, '[site.home]')
+  }
+
+  for link in site.get('links', []) {
+    config.links.append(_link(link, '[[site.links]]'))
+  }
+
+  var options = data.get('markdown', {})
+
+  for key in options.keys() {
+    if _RESERVED.contains(key) {
+      raise UsageError(
+        "${FILE_NAME}: [markdown] ${key} is decided by zuri doc and cannot be set",
+      )
+    }
+  }
+
+  config.markdown = options
+
+  for from, to in data.get('redirects', {}) {
+    if !is_string(to) {
+      raise UsageError('${FILE_NAME}: [redirects] "${from}" must be an address')
+    }
+
+    var page = from.ltrim('/')
+
+    # An old address is a page of this site; one that climbs out of it
+    # would be written somewhere else.
+    if page.replace('\\', '/', false).split('/').contains('..') {
+      raise UsageError(
+        '${FILE_NAME}: [redirects] "${from}" climbs out of the site',
+      )
+    }
+
+    config.redirects.set(page, to)
+  }
+
+  var theme_dir = os.join_paths(root, 'theme')
+
+  if os.dir_exists(theme_dir) {
+    config.theme_dir = theme_dir
+  }
+
+  return config
+}
+
+/**
+ * The settings in the `doc.toml` inside _root_, with the documentation
+ * inside it found: each directory directly in _root_ that holds a
+ * `doc.toml` of its own, other than the pages, the site and the theme.
+ *
+ * @param string root
+ * @returns Config
+ * @throws UsageError When there is no such file, or it is not valid
+ */
+def load(root: string) {
+  var path = os.join_paths(root, FILE_NAME)
+
+  if !file(path).exists() {
+    raise UsageError('no ${FILE_NAME} in ${root}')
+  }
+
+  var config = parse(file(path).read(), os.abs_path(root))
+  var taken = [config.source, config.output, config.theme_dir]
+
+  for name in os.read_dir(config.root) {
+    var full = os.join_paths(config.root, name)
+
+    if name.starts_with('.') or
+        name.starts_with('_') or
+        taken.contains(full) or
+        !os.dir_exists(full) {
+      continue
+    }
+
+    if file(os.join_paths(full, FILE_NAME)).exists() {
+      config.members.append(full)
+    }
+  }
+
+  config.members.sort()
+
+  return config
+}
+
+/**
+ * Keeps _settings_ to the directory _root_: every file its `doc.toml`
+ * names must be inside it, as must every file a page includes, and its
+ * own page template is not used. This is for building documentation
+ * from files nobody building it wrote.
+ *
+ * @param Config settings
+ * @param string root
+ * @throws UsageError Naming the first setting that reaches outside
+ *    _root_
+ */
+def confine(settings: Config, root: string) {
+  var named = [
+    ['the documentation itself', settings.root],
+    ['[documentation] source', settings.source],
+    ['[site] logo', settings.logo],
+    ['[site] favicon', settings.favicon],
+  ]
+
+  for path in settings.css {
+    named.append(['[site] css', path])
+  }
+
+  for path in settings.js {
+    named.append(['[site] js', path])
+  }
+
+  if settings.reference != nil {
+    named.append(['[reference] modules', settings.reference.modules])
+    named.append(['[reference] intro', settings.reference.intro])
+  }
+
+  for entry in named {
+    if entry[1] != nil and !os.path_contains(root, entry[1]) {
+      raise UsageError('${FILE_NAME}: ${entry[0]} is outside the package')
+    }
+  }
+
+  settings.sandbox = root
+}

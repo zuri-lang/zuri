@@ -10,17 +10,24 @@
  */
 
 import crypto
+import io
 import json
 import os
 import toml
+import url
 
 import .._shared.archive
 import .._shared.fsx
 import .._shared.manifest as manifest_module
 import .._shared.names
+import .._shared.paths
 import .._shared.semver
+import ..doc.build as doc_build
+import ..doc.config as doc_config
+import ..doc.reference
 import .auth
 import .context { iso, latest_of }
+import .markup
 
 /** The longest README kept with a version: 512 KiB. */
 var MAX_README = 524288
@@ -89,9 +96,12 @@ def _published_dependencies(nyssa, found) {
 
   for dependency in found.dependencies(false, nyssa.stdlib) {
     if dependency.kind != 'registry' {
-      raise ServiceError(422, 'unpublishable_dependency',
-        '${dependency.name} is a ${dependency.kind} dependency; a published package can only '
-          + 'depend on packages from a registry')
+      raise ServiceError(
+        422,
+        'unpublishable_dependency',
+        '${dependency.name} is a ${dependency.kind} dependency; a published package can only ' +
+            'depend on packages from a registry',
+      )
     }
 
     var address = nil
@@ -108,11 +118,14 @@ def _published_dependencies(nyssa, found) {
       }
     }
 
-    if address == nil
-      and nyssa.db.package_by_name(names.normalized(dependency.name)) == nil {
-      raise ServiceError(422, 'unknown_dependency',
-        "${dependency.name} is not published here; publish it first, or name the registry "
-          + 'it comes from')
+    if address == nil and
+        nyssa.db.package_by_name(names.normalized(dependency.name)) == nil {
+      raise ServiceError(
+        422,
+        'unknown_dependency',
+        "${dependency.name} is not published here; publish it first, or name the registry " +
+            'it comes from',
+      )
     }
 
     var entry = { name: dependency.name, range: dependency.range }
@@ -141,22 +154,31 @@ def _published_dependencies(nyssa, found) {
  */
 def publish(nyssa, token: dict, data: bytes, metadata: dict, address: string) {
   if data.length() > nyssa.settings.max_archive_size {
-    raise ServiceError(413, 'too_large',
-      'the archive is ${data.length()} bytes; this repository accepts at most '
-        + '${nyssa.settings.max_archive_size}')
+    raise ServiceError(
+      413,
+      'too_large',
+      'the archive is ${data.length()} bytes; this repository accepts at most ' +
+          '${nyssa.settings.max_archive_size}',
+    )
   }
 
   if nyssa.mail_enabled() and token.email_verified != 1 {
-    raise ServiceError(403, 'email_unconfirmed',
-      'confirm your email address before publishing; the link was sent when the account '
-        + 'was created')
+    raise ServiceError(
+      403,
+      'email_unconfirmed',
+      'confirm your email address before publishing; the link was sent when the account ' +
+          'was created',
+    )
   }
 
   var checksum = archive.checksum(data)
 
   if metadata.get('checksum', nil) != checksum {
-    raise ServiceError(400, 'checksum_mismatch',
-      'the archive does not match the checksum it was sent with; it was damaged on the way')
+    raise ServiceError(
+      400,
+      'checksum_mismatch',
+      'the archive does not match the checksum it was sent with; it was damaged on the way',
+    )
   }
 
   # The archive is read from disk by the same code that installs it,
@@ -187,7 +209,9 @@ def publish(nyssa, token: dict, data: bytes, metadata: dict, address: string) {
 
   if !files.contains('project.toml') {
     raise ServiceError(
-      422, 'bad_archive', 'the archive holds no project.toml at its root',
+      422,
+      'bad_archive',
+      'the archive holds no project.toml at its root',
     )
   }
 
@@ -195,7 +219,8 @@ def publish(nyssa, token: dict, data: bytes, metadata: dict, address: string) {
 
   catch {
     found = manifest_module.parse(
-      files.get('project.toml').to_string(), 'project.toml',
+      files.get('project.toml').to_string(),
+      'project.toml',
     )
   } as error {
     raise ServiceError(422, 'bad_manifest', error.message)
@@ -206,7 +231,9 @@ def publish(nyssa, token: dict, data: bytes, metadata: dict, address: string) {
 
   if name == nil or version == nil {
     raise ServiceError(
-      422, 'bad_manifest', 'project.toml must state a name and a version',
+      422,
+      'bad_manifest',
+      'project.toml must state a name and a version',
     )
   }
 
@@ -218,24 +245,31 @@ def publish(nyssa, token: dict, data: bytes, metadata: dict, address: string) {
 
   if !semver.is_valid(version) {
     raise ServiceError(
-      422, 'bad_version', "'${version}' is not a valid version",
+      422,
+      'bad_version',
+      "'${version}' is not a valid version",
     )
   }
 
   version = semver.parse(version).to_string()
 
-  if metadata.get('name', nil) != name
-    or metadata.get('version', nil) != version {
-    raise ServiceError(422, 'metadata_mismatch',
-      'the upload says ${metadata.get("name", "?")} ${metadata.get("version", "?")}, and '
-        + 'its project.toml says ${name} ${version}')
+  if metadata.get('name', nil) != name or
+      metadata.get('version', nil) != version {
+    raise ServiceError(
+      422,
+      'metadata_mismatch',
+      'the upload says ${metadata.get("name", "?")} ${metadata.get("version", "?")}, and ' +
+          'its project.toml says ${name} ${version}',
+    )
   }
 
   var description = found.text('description')
 
   if description == nil or description.trim().is_empty() {
     raise ServiceError(
-      422, 'missing_description', 'project.toml must describe the package',
+      422,
+      'missing_description',
+      'project.toml must describe the package',
     )
   }
 
@@ -260,12 +294,12 @@ def publish(nyssa, token: dict, data: bytes, metadata: dict, address: string) {
   }
 
   var readme_name = found.text('readme') == nil
-    ? 'README.md'
-    : found.text('readme')
+      ? 'README.md'
+      : found.text('readme')
   var readme = nil
 
-  if files.contains(readme_name)
-    and files.get(readme_name).length() <= MAX_README {
+  if files.contains(readme_name) and
+      files.get(readme_name).length() <= MAX_README {
     catch {
       readme = files.get(readme_name).to_string()
     } as error {
@@ -276,7 +310,7 @@ def publish(nyssa, token: dict, data: bytes, metadata: dict, address: string) {
   var key = names.normalized(name)
   var version_key = _version_key(version)
 
-  return nyssa.db.transaction(@{
+  var published = nyssa.db.transaction(@{
     var package = nyssa.db.package_by_name(key)
 
     if package == nil {
@@ -286,23 +320,31 @@ def publish(nyssa, token: dict, data: bytes, metadata: dict, address: string) {
       package = nyssa.db.package_by_name(key)
     } else {
       if package.name != name {
-        raise ServiceError(409, 'name_taken',
-          "this package is published as '${package.name}'; publish under that spelling")
+        raise ServiceError(
+          409,
+          'name_taken',
+          "this package is published as '${package.name}'; publish under that spelling",
+        )
       }
 
       if !nyssa.db.is_owner(package.id, token.publisher_id) {
         raise ServiceError(
-          403, 'not_owner', 'you are not an owner of ${package.name}',
+          403,
+          'not_owner',
+          'you are not an owner of ${package.name}',
         )
       }
 
       var existing = nyssa.db.version_of(package.id, version_key)
 
       if existing != nil {
-        raise ServiceError(409, 'version_exists',
-          '${name} ${existing.version} is already published, and a published version never '
-            + 'changes; publish a new version',
-          { checksum: existing.checksum })
+        raise ServiceError(
+          409,
+          'version_exists',
+          '${name} ${existing.version} is already published, and a published version never ' +
+              'changes; publish a new version',
+          { checksum: existing.checksum },
+        )
       }
     }
 
@@ -323,13 +365,27 @@ def publish(nyssa, token: dict, data: bytes, metadata: dict, address: string) {
 
     _refresh_package(nyssa, package.id, found)
 
-    nyssa.db.audit(
-      token.publisher_id, 'publish', '${name} ${version}', { checksum },
-      address,
-    )
+    nyssa.db.audit(token.publisher_id, 'publish', '${name} ${version}', {
+      checksum,
+    }, address)
 
     return { name, version, checksum }
   })
+
+  # The reference is written from the archive already in hand. A version
+  # is published whether or not its doc blocks can be read; one that
+  # fails here is tried again when its reference is first asked for.
+  catch {
+    var package = nyssa.db.package_by_name(key)
+    var row = nyssa.db.version_of(package.id, version_key)
+
+    _document(nyssa, name, row, files)
+    build_guide(nyssa, name, row, files)
+  } as error {
+    _not_documented(name, version, error)
+  }
+
+  return published
 }
 
 # Brings a package's own row up to date with its versions.
@@ -395,14 +451,20 @@ def _manifest_text(row: dict) {
  * @returns dict
  */
 def yank(
-  nyssa, publisher_id: number, name: string, version: string, undo: bool,
+  nyssa,
+  publisher_id: number,
+  name: string,
+  version: string,
+  undo: bool,
   address: string,
 ) {
   var package = _owned(nyssa, publisher_id, name)
 
   if !semver.is_valid(version) {
     raise ServiceError(
-      400, 'bad_version', "'${version}' is not a valid version",
+      400,
+      'bad_version',
+      "'${version}' is not a valid version",
     )
   }
 
@@ -410,7 +472,9 @@ def yank(
 
   if row == nil {
     raise ServiceError(
-      404, 'not_found', '${package.name} has no version ${version}',
+      404,
+      'not_found',
+      '${package.name} has no version ${version}',
     )
   }
 
@@ -427,7 +491,11 @@ def yank(
     var action = undo ? 'unyank' : 'yank'
 
     nyssa.db.audit(
-      publisher_id, action, '${package.name} ${row.version}', nil, address,
+      publisher_id,
+      action,
+      '${package.name} ${row.version}',
+      nil,
+      address,
     )
   })
 
@@ -446,9 +514,9 @@ def yank(
 def is_admin(nyssa, publisher_id) {
   var publisher = nyssa.db.publisher_by_id(publisher_id)
 
-  return publisher != nil
-    and publisher.role == 'admin'
-    and publisher.suspended_at == nil
+  return publisher != nil and
+      publisher.role == 'admin' and
+      publisher.suspended_at == nil
 }
 
 # The package, when `publisher_id` owns it or administers the
@@ -458,14 +526,18 @@ def _owned(nyssa, publisher_id: number, name: string) {
 
   if package == nil {
     raise ServiceError(
-      404, 'not_found', "there is no package called '${name}' here",
+      404,
+      'not_found',
+      "there is no package called '${name}' here",
     )
   }
 
-  if !nyssa.db.is_owner(package.id, publisher_id)
-    and !is_admin(nyssa, publisher_id) {
+  if !nyssa.db.is_owner(package.id, publisher_id) and
+      !is_admin(nyssa, publisher_id) {
     raise ServiceError(
-      403, 'not_owner', 'you are not an owner of ${package.name}',
+      403,
+      'not_owner',
+      'you are not an owner of ${package.name}',
     )
   }
 
@@ -484,7 +556,9 @@ def owners(nyssa, name: string) {
 
   if package == nil {
     raise ServiceError(
-      404, 'not_found', "there is no package called '${name}' here",
+      404,
+      'not_found',
+      "there is no package called '${name}' here",
     )
   }
 
@@ -502,22 +576,27 @@ def owners(nyssa, name: string) {
  * @returns list[string]: the owners now.
  */
 def add_owner(
-  nyssa, publisher_id: number, name: string, username: string, address: string,
+  nyssa,
+  publisher_id: number,
+  name: string,
+  username: string,
+  address: string,
 ) {
   var package = _owned(nyssa, publisher_id, name)
   var adding = nyssa.db.publisher_by_name(username)
 
   if adding == nil or adding.suspended_at != nil {
     raise ServiceError(
-      404, 'not_found', "there is no publisher called '${username}' here",
+      404,
+      'not_found',
+      "there is no publisher called '${username}' here",
     )
   }
 
   nyssa.db.add_owner(package.id, adding.id)
-  nyssa.db.audit(
-    publisher_id, 'add_owner', package.name, { owner: adding.username },
-    address,
-  )
+  nyssa.db.audit(publisher_id, 'add_owner', package.name, {
+    owner: adding.username,
+  }, address)
 
   return nyssa.db.owners_of(package.id)
 }
@@ -533,27 +612,35 @@ def add_owner(
  * @returns list[string]
  */
 def remove_owner(
-  nyssa, publisher_id: number, name: string, username: string, address: string,
+  nyssa,
+  publisher_id: number,
+  name: string,
+  username: string,
+  address: string,
 ) {
   var package = _owned(nyssa, publisher_id, name)
   var removing = nyssa.db.publisher_by_name(username)
 
   if removing == nil or !nyssa.db.is_owner(package.id, removing.id) {
     raise ServiceError(
-      404, 'not_found', '${username} is not an owner of ${package.name}',
+      404,
+      'not_found',
+      '${username} is not an owner of ${package.name}',
     )
   }
 
   if nyssa.db.owners_of(package.id).length() <= 1 {
-    raise ServiceError(409, 'last_owner',
-      '${username} is the only owner of ${package.name}; add another owner first')
+    raise ServiceError(
+      409,
+      'last_owner',
+      '${username} is the only owner of ${package.name}; add another owner first',
+    )
   }
 
   nyssa.db.remove_owner(package.id, removing.id)
-  nyssa.db.audit(
-    publisher_id, 'remove_owner', package.name, { owner: removing.username },
-    address,
-  )
+  nyssa.db.audit(publisher_id, 'remove_owner', package.name, {
+    owner: removing.username,
+  }, address)
 
   return nyssa.db.owners_of(package.id)
 }
@@ -571,7 +658,9 @@ def remove_owner(
 def create_account(nyssa, details: dict, address: string, by_admin: ?bool) {
   if by_admin != true and nyssa.settings.signup != 'open' {
     raise ServiceError(
-      403, 'signup_closed', 'this repository is not taking new accounts',
+      403,
+      'signup_closed',
+      'this repository is not taking new accounts',
     )
   }
 
@@ -580,13 +669,16 @@ def create_account(nyssa, details: dict, address: string, by_admin: ?bool) {
   var password = details.get('password', '').to_string()
 
   if !is_dict(username.match(_USERNAME)) {
-    raise ServiceError(422, 'bad_username',
-      'a username is 3 to 40 lowercase letters, digits, hyphens and underscores, beginning '
-        + 'with a letter and ending with a letter or digit')
+    raise ServiceError(
+      422,
+      'bad_username',
+      'a username is 3 to 40 lowercase letters, digits, hyphens and underscores, beginning ' +
+          'with a letter and ending with a letter or digit',
+    )
   }
 
-  if names.RESERVED.contains(username)
-    or ['admin', 'root', 'api', 'www'].contains(username) {
+  if names.RESERVED.contains(username) or
+      ['admin', 'root', 'api', 'www'].contains(username) {
     raise ServiceError(422, 'bad_username', "'${username}' is reserved")
   }
 
@@ -602,13 +694,17 @@ def create_account(nyssa, details: dict, address: string, by_admin: ?bool) {
 
   if nyssa.db.publisher_by_name(username) != nil {
     raise ServiceError(
-      409, 'username_taken', "the username '${username}' is taken",
+      409,
+      'username_taken',
+      "the username '${username}' is taken",
     )
   }
 
   if nyssa.db.publisher_by_email(email) != nil {
     raise ServiceError(
-      409, 'email_taken', 'that email address already has an account',
+      409,
+      'email_taken',
+      'that email address already has an account',
     )
   }
 
@@ -650,12 +746,18 @@ def send_confirmation(nyssa, publisher_id: number, email: string) {
   var code = fsx.hex(crypto.random_bytes(24))
 
   nyssa.db.create_code(
-    auth.digest(code), publisher_id, 'confirm', time().floor() + 86400,
+    auth.digest(code),
+    publisher_id,
+    'confirm',
+    time().floor() + 86400,
   )
-  nyssa.send_mail(email, 'confirm your email address',
-    'Confirm this address for your ${nyssa.settings.name} account by opening:\n\n'
-      + '${nyssa.settings.public_url}/confirm/${code}\n\n'
-      + 'The link works for a day. If you did not create an account, ignore this message.\n')
+  nyssa.send_mail(
+    email,
+    'confirm your email address',
+    'Confirm this address for your ${nyssa.settings.name} account by opening:\n\n' +
+        '${nyssa.settings.public_url}/confirm/${code}\n\n' +
+        'The link works for a day. If you did not create an account, ignore this message.\n',
+  )
 }
 
 /**
@@ -674,14 +776,17 @@ def sign_in(nyssa, username: string, password: string, address: string) {
   var account_key = 'user:' + username.lower()
   var address_key = 'address:' + address
 
-  var held = nyssa.db.failures(account_key, auth.FAILURE_WINDOW)
-    >= auth.MAX_FAILURES
-    or nyssa.db.failures(address_key, auth.FAILURE_WINDOW)
-      >= auth.MAX_FAILURES * 4
+  var held = nyssa.db.failures(account_key, auth.FAILURE_WINDOW) >=
+          auth.MAX_FAILURES or
+      nyssa.db.failures(address_key, auth.FAILURE_WINDOW) >=
+          auth.MAX_FAILURES * 4
 
   if held {
-    raise ServiceError(429, 'too_many_attempts',
-      'too many failed sign-ins; wait ${auth.FAILURE_WINDOW // 60} minutes and try again')
+    raise ServiceError(
+      429,
+      'too_many_attempts',
+      'too many failed sign-ins; wait ${auth.FAILURE_WINDOW // 60} minutes and try again',
+    )
   }
 
   var publisher = nyssa.db.publisher_by_name(username)
@@ -698,7 +803,9 @@ def sign_in(nyssa, username: string, password: string, address: string) {
     nyssa.db.record_failure(address_key, auth.FAILURE_WINDOW)
 
     raise ServiceError(
-      401, 'invalid_credentials', 'the username or the password is wrong',
+      401,
+      'invalid_credentials',
+      'the username or the password is wrong',
     )
   }
 
@@ -724,7 +831,11 @@ def sign_in(nyssa, username: string, password: string, address: string) {
  *    in the clear, which is never available again.
  */
 def create_token(
-  nyssa, publisher_id: number, name: ?string, scopes, days: ?number,
+  nyssa,
+  publisher_id: number,
+  name: ?string,
+  scopes,
+  days: ?number,
 ) {
   var label = name == nil ? 'zuri' : name.trim()
 
@@ -744,7 +855,9 @@ def create_token(
 
   if !is_number(lifetime) or lifetime < 1 or lifetime > MAX_TOKEN_DAYS {
     raise ServiceError(
-      422, 'bad_expiry', 'a token lasts 1 to ${MAX_TOKEN_DAYS} days',
+      422,
+      'bad_expiry',
+      'a token lasts 1 to ${MAX_TOKEN_DAYS} days',
     )
   }
 
@@ -802,23 +915,32 @@ def tokens(nyssa, publisher_id: number) {
  * @returns string: the new recovery key.
  */
 def recover(
-  nyssa, username: string, key: string, password: string, address: string,
+  nyssa,
+  username: string,
+  key: string,
+  password: string,
+  address: string,
 ) {
   var account_key = 'recover:' + username.lower()
 
   if nyssa.db.failures(account_key, auth.FAILURE_WINDOW) >= auth.MAX_FAILURES {
-    raise ServiceError(429, 'too_many_attempts',
-      'too many failed attempts; wait ${auth.FAILURE_WINDOW // 60} minutes and try again')
+    raise ServiceError(
+      429,
+      'too_many_attempts',
+      'too many failed attempts; wait ${auth.FAILURE_WINDOW // 60} minutes and try again',
+    )
   }
 
   var publisher = nyssa.db.publisher_by_name(username)
 
-  if publisher == nil
-    or !auth.same(publisher.recovery_digest, auth.recovery_digest(key)) {
+  if publisher == nil or
+      !auth.same(publisher.recovery_digest, auth.recovery_digest(key)) {
     nyssa.db.record_failure(account_key, auth.FAILURE_WINDOW)
 
     raise ServiceError(
-      401, 'invalid_credentials', 'the username or the recovery key is wrong',
+      401,
+      'invalid_credentials',
+      'the username or the recovery key is wrong',
     )
   }
 
@@ -851,11 +973,17 @@ def recover(
  * @param string address
  */
 def change_password(
-  nyssa, publisher: dict, current: string, password: string, address: string,
+  nyssa,
+  publisher: dict,
+  current: string,
+  password: string,
+  address: string,
 ) {
   if !auth.check_password(publisher.password_hash, current) {
     raise ServiceError(
-      401, 'invalid_credentials', 'the current password is wrong',
+      401,
+      'invalid_credentials',
+      'the current password is wrong',
     )
   }
 
@@ -867,7 +995,11 @@ def change_password(
 
   nyssa.db.set_password(publisher.id, auth.hash_password(password))
   nyssa.db.audit(
-    publisher.id, 'change_password', publisher.username, nil, address,
+    publisher.id,
+    'change_password',
+    publisher.username,
+    nil,
+    address,
   )
 }
 
@@ -880,8 +1012,11 @@ def change_password(
  */
 def request_reset(nyssa, email: string) {
   if !nyssa.mail_enabled() {
-    raise ServiceError(503, 'mail_disabled',
-      'this repository does not send mail; recover the account with its recovery key')
+    raise ServiceError(
+      503,
+      'mail_disabled',
+      'this repository does not send mail; recover the account with its recovery key',
+    )
   }
 
   var publisher = nyssa.db.publisher_by_email(email.trim())
@@ -893,12 +1028,18 @@ def request_reset(nyssa, email: string) {
   var code = fsx.hex(crypto.random_bytes(24))
 
   nyssa.db.create_code(
-    auth.digest(code), publisher.id, 'reset', time().floor() + CODE_LIFETIME,
+    auth.digest(code),
+    publisher.id,
+    'reset',
+    time().floor() + CODE_LIFETIME,
   )
-  nyssa.send_mail(publisher.email, 'reset your password',
-    'Someone asked to reset the password for ${publisher.username}. To choose a new one, '
-      + 'open:\n\n${nyssa.settings.public_url}/reset/${code}\n\n'
-      + 'The link works for an hour. If it was not you, ignore this message.\n')
+  nyssa.send_mail(
+    publisher.email,
+    'reset your password',
+    'Someone asked to reset the password for ${publisher.username}. To choose a new one, ' +
+        'open:\n\n${nyssa.settings.public_url}/reset/${code}\n\n' +
+        'The link works for an hour. If it was not you, ignore this message.\n',
+  )
 }
 
 /**
@@ -914,7 +1055,9 @@ def complete_reset(nyssa, code: string, password: string, address: string) {
 
   if publisher_id == nil {
     raise ServiceError(
-      410, 'expired', 'that link has expired or has already been used',
+      410,
+      'expired',
+      'that link has expired or has already been used',
     )
   }
 
@@ -928,7 +1071,11 @@ def complete_reset(nyssa, code: string, password: string, address: string) {
   nyssa.db.set_password(publisher.id, auth.hash_password(password))
   nyssa.db.revoke_all_tokens(publisher.id)
   nyssa.db.audit(
-    publisher.id, 'reset_password', publisher.username, nil, address,
+    publisher.id,
+    'reset_password',
+    publisher.username,
+    nil,
+    address,
   )
 }
 
@@ -993,4 +1140,496 @@ def index(nyssa, name: string) {
   })
 
   return { name: package.name, versions }
+}
+
+# How many archives each worker keeps read, for showing their files.
+var _KEPT = 8
+
+# The archives read most recently, by checksum, newest last.
+var _archives = {}
+
+/**
+ * The files of a published version, read from its archive: each path,
+ * written with `/`, to what it holds. Empty when the archive is not
+ * here. The last few read are kept, since a reader looking through a
+ * package's source asks for one file after another.
+ *
+ * @param nyssa
+ * @param dict version: the version's row.
+ * @returns dict
+ */
+def files_of(nyssa, version: dict) {
+  var kept = _archives.get(version.checksum, nil)
+
+  if kept != nil {
+    return kept
+  }
+
+  var path = nyssa.blobs.path_of(version.checksum)
+  var files = {}
+
+  if path == nil or !file(path).exists() {
+    return files
+  }
+
+  archive.read(path, @(entry, contents) {
+    if entry.kind == 'file' {
+      files.set(entry.path, contents)
+    }
+  })
+
+  if _archives.length() >= _KEPT {
+    _archives.remove(_archives.keys()[0])
+  }
+
+  _archives.set(version.checksum, files)
+
+  return files
+}
+
+# Which pages the repository has written: the generator's version, and
+# what it asks of the generator, such as links to the source, so that a
+# change to either has the pages written again.
+var _WRITER = reference.GENERATOR * 100 + 3
+
+/**
+ * The address of a package's source file, at _line_ when one is given:
+ * the version's page with its Source tab open on the file.
+ *
+ * @param string name: the package's name.
+ * @param string version
+ * @param string path: the file's path in the package, with `/`.
+ * @param ?number line
+ * @returns string
+ */
+def source_address(name: string, version: string, path: string, line: ?number) {
+  var address = '/packages/${name}/${version}?tab=source&file=${url.encode(path, false, false)}'
+
+  return line == nil or line < 1 ? address : '${address}#L${line}'
+}
+
+# Writes the API reference of _version_, a row, of the package called
+# _name_, from _files_, the version's archive read into memory.
+def _document(nyssa, name: string, version: dict, files: dict) {
+  # Names in the standard library can only be linked to once its
+  # reference is written, which the repository does in the background
+  # as it starts. A reference written before then is marked, and
+  # written again once it can link to it.
+  var linked = nyssa.db.std_ready(runtime_key())
+  var dependencies = _registry_dependencies(version)
+  var result = reference.document(
+    files.keys(),
+    @(path) => files.get(path).to_string(),
+    names.import_name(name),
+    {
+      source: @(module, line) => source_address(
+        name,
+        version.version,
+        module.path,
+        line,
+      ),
+      resolve: @(path) => _address_elsewhere(nyssa, path, dependencies),
+    },
+  )
+
+  nyssa.db.transaction(@{
+    nyssa.db.save_docs(
+      version.id,
+      {
+        generator: linked ? _WRITER : -_WRITER,
+        names: result.coverage.names,
+        documented: result.coverage.documented,
+        modules: result.pages.map(
+          @(page) => {
+            slug: page.slug,
+            name: page.name,
+            summary: page.summary,
+          },
+        ),
+        warnings: result.warnings,
+      },
+      result.pages,
+      result.symbols,
+    )
+  })
+}
+
+/**
+ * Writes the API reference of the newest version of every package
+ * that has none, or one an earlier writer wrote, so that searching
+ * finds every package's names without each reference being opened
+ * first. It runs in the background when the repository starts.
+ *
+ * @param nyssa
+ * @returns number: how many references were written.
+ */
+def refresh_documentation(nyssa) {
+  var written = 0
+
+  for version in nyssa.db.versions_needing_docs(_WRITER) {
+    catch {
+      _document(nyssa, version.package, version, files_of(nyssa, version))
+      written++
+    } as error {
+      _not_documented(version.package, version.version, error)
+    }
+  }
+
+  return written
+}
+
+/**
+ * The documented names matching _query_ in the newest version of each
+ * package, each with the address of the place it is documented. A
+ * query of more than one word, or nothing, finds none.
+ *
+ * @param nyssa
+ * @param string query: a name, as `forecast` or `forecast()`, or a path,
+ *    as `weather_kit.forecast` or `app.forecast`.
+ * @param ?number limit: Default 10.
+ * @returns list[dict]: `{ path, kind, summary, package, url }` each.
+ */
+def search_symbols(nyssa, query: string, limit: ?number) {
+  var word = query.trim().lower()
+  var most = limit == nil ? 10 : limit
+
+  if word.ends_with('()') {
+    word = word[0, word.length() - 2]
+  }
+
+  if word.is_empty() or word.contains(' ') {
+    return []
+  }
+
+  # How closely a name matches: by name, by whole path, by the end of
+  # its path, or only by how its name starts.
+  var rank = @(row) {
+    if row.name_key == word {
+      return 0
+    }
+
+    if row.path_key == word {
+      return 1
+    }
+
+    return row.path_key.ends_with('.' + word) ? 2 : 3
+  }
+
+  var found = []
+
+  for row in nyssa.db.search_std_symbols(runtime_key(), word, most) {
+    found.append({
+      rank: rank(row),
+      path: row.path,
+      kind: row.kind,
+      summary: row.summary,
+      package: nil,
+      url: std_address(row.page, row.anchor),
+    })
+  }
+
+  for row in nyssa.db.search_symbols(word, most) {
+    found.append({
+      rank: rank(row),
+      path: row.path,
+      kind: row.kind,
+      summary: row.summary,
+      package: row.package,
+      url: '/packages/${row.package}?tab=api&module=${row.page}#user-content-${row.anchor}',
+    })
+  }
+
+  # The standard library's names come first among those that match as
+  # closely, since they are what every program has to hand.
+  var ordered = []
+
+  iter var level = 0; level < 4; level++ {
+    for entry in found {
+      if entry.rank == level and ordered.length() < most {
+        ordered.append({
+          path: entry.path,
+          kind: entry.kind,
+          summary: entry.summary.is_empty()
+              ? nil
+              : markup.inline(entry.summary),
+          package: entry.package,
+          url: entry.url,
+        })
+      }
+    }
+  }
+
+  return ordered
+}
+
+var _runtime = nil
+
+/**
+ * Which standard library the repository serves: the runtime's version,
+ * and a digest of its library, so a build of the same version with a
+ * changed library is told apart.
+ *
+ * @returns string
+ */
+def runtime_key() {
+  if _runtime == nil {
+    var digest = fsx
+        .tree_digest(paths.stdlib_dir())
+        .replace('sha256:', '', false)
+
+    _runtime = '${os.version}+${digest[0, 16]}'
+  }
+
+  return _runtime
+}
+
+/**
+ * The address of a page of the standard library's reference, at the
+ * heading _anchor_ names when it names one.
+ *
+ * @param string page: the page's slug.
+ * @param ?string anchor
+ * @returns string
+ */
+def std_address(page: string, anchor: ?string) {
+  return anchor == nil or anchor.is_empty()
+      ? '/std/${page}'
+      : '/std/${page}#user-content-${anchor}'
+}
+
+/**
+ * Writes the reference of the standard library the repository runs on,
+ * unless it is there already. It is written once for each runtime, as
+ * the repository starts, in the background, and takes a few seconds;
+ * only that writes it, so two writers never meet.
+ *
+ * @param nyssa
+ */
+def document_stdlib(nyssa) {
+  var runtime = runtime_key()
+
+  if nyssa.db.std_ready(runtime) {
+    return
+  }
+
+  var root = paths.stdlib_dir()
+  var relatives = fsx
+      .walk(root)
+      .filter(@(entry) => entry.kind == 'file')
+      .map(@(entry) => entry.path)
+  var result = reference.document(
+    relatives,
+    @(path) => fsx.read_text(os.join_paths(root, path)),
+    nil,
+    nil,
+  )
+
+  nyssa.db.save_std(runtime, result.pages, result.index, result.symbols)
+}
+
+# The names of the packages _version_, a row, depends on from this
+# registry, which its doc blocks may name things in.
+def _registry_dependencies(version: dict) {
+  var listed = version.dependencies
+
+  if is_string(listed) {
+    listed = json.decode(listed)
+  }
+
+  return listed
+      .filter(@(dependency) => dependency.get('registry', nil) == nil)
+      .map(@(dependency) => dependency.name)
+}
+
+# Where a name written in braces is documented, when the package's own
+# pages do not: the standard library first, then each package it
+# depends on from this registry, at its newest version.
+def _address_elsewhere(nyssa, path: string, dependencies: list) {
+  var found = nyssa.db.std_lookup(runtime_key(), path)
+
+  if found != nil {
+    return std_address(found.page, found.anchor)
+  }
+
+  for dependency in dependencies {
+    var prefix = names.import_name(dependency)
+
+    if path != prefix and !path.starts_with(prefix + '.') {
+      continue
+    }
+
+    var entry = nyssa.db.package_lookup(names.normalized(dependency), path)
+
+    if entry != nil {
+      var page = '/packages/${entry.package}?tab=api&module=${entry.page}'
+
+      return entry.anchor.is_empty()
+          ? page
+          : '${page}#user-content-${entry.anchor}'
+    }
+  }
+
+  return nil
+}
+
+/**
+ * The API reference of a published version, as `db.docs_of()` gives
+ * it. It is written now when the version has none yet, or has one an
+ * older generator wrote.
+ *
+ * @param nyssa
+ * @param string name: the package's name.
+ * @param dict version: the version's row.
+ * @returns ?dict: `nil` when it cannot be written, as when the archive
+ *    is missing.
+ */
+def docs_for(nyssa, name: string, version: dict) {
+  var docs = nyssa.db.docs_of(version.id)
+
+  if docs != nil and _current(nyssa, docs) {
+    return docs
+  }
+
+  # Two workers asked at once write it twice, and the second write
+  # fails on the first one's rows, which are just as good.
+  catch {
+    _document(nyssa, name, version, files_of(nyssa, version))
+  } as error {
+    docs = nyssa.db.docs_of(version.id)
+
+    if docs == nil or !_current(nyssa, docs) {
+      _not_documented(name, version.version, error)
+    }
+  }
+
+  return nyssa.db.docs_of(version.id)
+}
+
+# Whether a stored reference is as the current writer would write it: by
+# this writer, and linked to the standard library unless its reference
+# is still not there.
+def _current(nyssa, docs: dict) {
+  if docs.generator == _WRITER {
+    return true
+  }
+
+  return docs.generator == -_WRITER and !nyssa.db.std_ready(runtime_key())
+}
+
+# Tells whoever runs the repository that a version's reference could not
+# be written, and why. Nothing a visitor sees depends on it.
+def _not_documented(name: string, version: string, error) {
+  io.stderr.write(
+    'the API reference of ${name} ${version} could not be written: ${typeof(error)}: ${error.message}\n',
+  )
+}
+
+/**
+ * Where the guide of version _version_ of the package called _name_ is
+ * built to, under the storage directory.
+ *
+ * @param nyssa
+ * @param string name
+ * @param string version
+ * @returns string
+ */
+def guide_dir(nyssa, name: string, version: string) {
+  return os.join_paths(
+    nyssa.settings.storage,
+    'guides',
+    names.normalized(name),
+    version,
+  )
+}
+
+/**
+ * The address of a version's guide on the guides host, or `nil` when the
+ * repository serves no guides.
+ *
+ * @param nyssa
+ * @param string name
+ * @param string version
+ * @returns ?string
+ */
+def guide_address(nyssa, name: string, version: string) {
+  var base = nyssa.settings.get('guides_url', nil)
+
+  return base == nil ? nil : '${base}/${name}/${version}/'
+}
+
+/**
+ * Builds the guide a version ships, the documentation `zuri doc` builds
+ * from its `docs` directory, when the repository serves guides. The
+ * guide is built from the version's own files and nothing else: what
+ * its `doc.toml` names and its pages include must be in the package,
+ * and its own page template is not used, since a template runs code.
+ * What became of it is recorded either way, and a guide that cannot be
+ * built is said so to whoever runs the repository.
+ *
+ * @param nyssa
+ * @param string name: the package's name.
+ * @param dict version: the version's row.
+ * @param dict files: the version's archive, read into memory.
+ */
+def build_guide(nyssa, name: string, version: dict, files: dict) {
+  if nyssa.settings.get('guides_url', nil) == nil {
+    return
+  }
+
+  if !files.contains('docs/doc.toml') {
+    nyssa.db.save_guide(version.id, nil, nil)
+    return
+  }
+
+  var scratch = os.join_paths(
+    nyssa.settings.storage,
+    'tmp',
+    'guide-' + fsx.unique(),
+  )
+
+  catch {
+    for path, contents in files {
+      fsx.atomic_write(os.join_paths(scratch, path), contents)
+    }
+
+    var settings = doc_config.load(os.join_paths(scratch, 'docs'))
+
+    doc_config.confine(settings, scratch)
+    settings.output = guide_dir(nyssa, name, version.version)
+    settings.url = guide_address(nyssa, name, version.version)
+    settings.cname = nil
+
+    # A guide built again replaces the one built before.
+    if os.dir_exists(settings.output) {
+      fsx.remove(settings.output)
+    }
+
+    doc_build.build(settings)
+    nyssa.db.save_guide(version.id, settings.title, nil)
+  } as error {
+    nyssa.db.save_guide(version.id, nil, error.message)
+    io.stderr.write(
+      'the guide of ${name} ${version.version} could not be built: ${error.message}\n',
+    )
+  }
+
+  fsx.remove(scratch)
+}
+
+/**
+ * Builds the guide of the newest version of every package that has
+ * nothing recorded of its guide, as when the repository has only just
+ * begun to serve guides. It runs in the background when the repository
+ * starts.
+ *
+ * @param nyssa
+ */
+def refresh_guides(nyssa) {
+  if nyssa.settings.get('guides_url', nil) == nil {
+    return
+  }
+
+  for version in nyssa.db.versions_needing_guides() {
+    build_guide(nyssa, version.package, version, files_of(nyssa, version))
+  }
 }

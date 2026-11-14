@@ -1,0 +1,754 @@
+/**
+ * @module markdown.node
+ *
+ * The tree `markdown.parse()` builds.
+ *
+ * Every node is a `Node`, told apart by its `type`. A node carries
+ * only the fields its type uses and leaves the rest `nil`, so a
+ * heading has a `level`, a link a `destination` and a `title`, and a
+ * paragraph neither.
+ *
+ * ```zuri
+ * import markdown
+ *
+ * var doc = markdown.parse('# Title\n\nSome *emphasis*.')
+ *
+ * doc.walk(@(node) {
+ *   if node.type == 'heading' {
+ *     echo '${node.level}: ${node.text_content()}'
+ *   }
+ * })
+ * ```
+ *
+ * ---
+ *
+ * ### Block types
+ *
+ * | Type | Fields |
+ * | --- | --- |
+ * | `document` | `metadata` |
+ * | `paragraph` | |
+ * | `heading` | `level`, `attributes` |
+ * | `thematic_break` | |
+ * | `block_quote` | |
+ * | `alert` | `kind` |
+ * | `list` | `ordered`, `start`, `delimiter`, `bullet`, `tight` |
+ * | `item` | `checked` |
+ * | `code_block` | `literal`, `info`, `attributes` |
+ * | `html_block` | `literal` |
+ * | `table` | |
+ * | `table_head`, `table_body`, `table_row` | |
+ * | `table_cell` | `align` |
+ * | `footnote_definition` | `label` |
+ * | `definition_list` | |
+ * | `term` | |
+ * | `definition` | `tight` |
+ * | `div` | `attributes` |
+ * | `line_block`, `line` | |
+ * | `math_block` | `literal` |
+ * | `toc` | |
+ *
+ * ### Inline types
+ *
+ * | Type | Fields |
+ * | --- | --- |
+ * | `text` | `literal` |
+ * | `softbreak`, `linebreak` | |
+ * | `code` | `literal`, `attributes` |
+ * | `emphasis`, `strong` | |
+ * | `strikethrough`, `mark` | |
+ * | `superscript`, `subscript` | |
+ * | `link`, `image` | `destination`, `title`, `attributes` |
+ * | `html_inline` | `literal` |
+ * | `footnote_reference` | `label`; an inline note also holds its text as children |
+ * | `span` | `attributes` |
+ * | `math` | `literal`, `display` |
+ * | `abbreviation` | `title` |
+ * | `emoji` | `literal`, `label` |
+ *
+ * `line` and `end_line` hold the source lines a block came from,
+ * counting from 1. Inline nodes leave them `nil`.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+var _BLOCKS = {
+  document: true,
+  paragraph: true,
+  heading: true,
+  thematic_break: true,
+  block_quote: true,
+  alert: true,
+  list: true,
+  item: true,
+  code_block: true,
+  html_block: true,
+  table: true,
+  table_head: true,
+  table_body: true,
+  table_row: true,
+  table_cell: true,
+  footnote_definition: true,
+  definition_list: true,
+  term: true,
+  definition: true,
+  div: true,
+  line_block: true,
+  line: true,
+  math_block: true,
+  toc: true,
+}
+
+/**
+ * One node of a parsed Markdown document.
+ *
+ * Treat `children` as read-only and change the tree through
+ * `append_child()` and the methods beside it, which keep every
+ * child's `parent_node` right.
+ *
+ * @printable
+ */
+class Node {
+
+  /**
+   * What the node is: `'paragraph'`, `'link'`, `'text'` and so on.
+   * The module's page lists every type and the fields it uses.
+   *
+   * @type string
+   */
+  var type = ''
+
+  /**
+   * The node this one belongs to, or `nil` for a document and for a
+   * node that has been detached.
+   *
+   * @type ?Node
+   */
+  var parent_node
+
+  /**
+   * The node's children, in document order.
+   *
+   * @type list
+   */
+  var children = []
+
+  /**
+   * The text of a `text`, `code`, `code_block`, `html_block`,
+   * `html_inline`, `math`, `math_block` or `emoji` node.
+   *
+   * @type ?string
+   */
+  var literal
+
+  /**
+   * A heading's level, from 1 to 6.
+   *
+   * @type ?number
+   */
+  var level
+
+  /**
+   * A fenced code block's info string, the text after the opening
+   * fence, with escapes and entities resolved. An indented code block
+   * has none.
+   *
+   * @type ?string
+   */
+  var info
+
+  /**
+   * Where a link points or an image comes from, percent-encoded.
+   *
+   * @type ?string
+   */
+  var destination
+
+  /**
+   * A link's or image's title, or an abbreviation's expansion. Empty
+   * when the source gave none.
+   *
+   * @type ?string
+   */
+  var title
+
+  /**
+   * Whether a list is numbered.
+   *
+   * @type ?bool
+   */
+  var ordered
+
+  /**
+   * The number an ordered list starts at.
+   *
+   * @type ?number
+   */
+  var start
+
+  /**
+   * What follows an ordered list's numbers: `'.'` or `')'`.
+   *
+   * @type ?string
+   */
+  var delimiter
+
+  /**
+   * The character a bullet list's items start with: `'-'`, `'*'` or
+   * `'+'`.
+   *
+   * @type ?string
+   */
+  var bullet
+
+  /**
+   * Whether a list or a definition is tight. A tight one has no blank
+   * lines between its parts, and its paragraphs are rendered without
+   * `<p>` tags.
+   *
+   * @type ?bool
+   */
+  var tight
+
+  /**
+   * A task list item's state: `true` when checked, `false` when not.
+   * `nil` for an item that is not a task.
+   *
+   * @type ?bool
+   */
+  var checked
+
+  /**
+   * A table cell's alignment: `'left'`, `'center'`, `'right'`, or
+   * `nil` for none.
+   *
+   * @type ?string
+   */
+  var align
+
+  /**
+   * A footnote's label, as written between `[^` and `]`, or an
+   * emoji's shortcode without its colons.
+   *
+   * @type ?string
+   */
+  var label
+
+  /**
+   * An alert's kind: `'note'`, `'tip'`, `'important'`, `'warning'` or
+   * `'caution'`.
+   *
+   * @type ?string
+   */
+  var kind
+
+  /**
+   * Whether a `math` node was written with `$$` and is shown on its
+   * own line rather than in the text.
+   *
+   * @type ?bool
+   */
+  var display
+
+  /**
+   * HTML attributes for the node's element, from a `{#id .class
+   * key=value}` block or a generated heading id. `class` holds every
+   * class, space separated.
+   *
+   * @type dict
+   */
+  var attributes = {}
+
+  /**
+   * The front matter a document opened with, decoded, or `nil` when
+   * it had none.
+   *
+   * @type ?dict
+   */
+  var metadata
+
+  /**
+   * The source line a block starts on, counting from 1.
+   *
+   * @type ?number
+   */
+  var line
+
+  /**
+   * The source line a block ends on, counting from 1.
+   *
+   * @type ?number
+   */
+  var end_line
+
+  /**
+   * @param string type
+   * @constructor
+   */
+  @new(type: string) {
+    self.type = type
+    self.children = []
+    self.attributes = {}
+  }
+
+  /**
+   * Whether the node is a block, such as a paragraph or a list, rather
+   * than something inside one.
+   *
+   * @returns bool
+   */
+  is_block() {
+    return _BLOCKS.contains(self.type)
+  }
+
+  /**
+   * Whether the node sits inside a block's text, such as emphasis or a
+   * link.
+   *
+   * @returns bool
+   */
+  is_inline() {
+    return !_BLOCKS.contains(self.type)
+  }
+
+  /**
+   * The first child, or `nil` when there are none.
+   *
+   * @returns ?Node
+   */
+  first_child() {
+    return self.children.is_empty() ? nil : self.children[0]
+  }
+
+  /**
+   * The last child, or `nil` when there are none.
+   *
+   * @returns ?Node
+   */
+  last_child() {
+    return self.children.is_empty() ? nil : self.children.last()
+  }
+
+  /**
+   * Where this node sits among its parent's children, or `-1` when it
+   * has no parent.
+   *
+   * @returns number
+   */
+  index_in_parent() {
+    if self.parent_node == nil {
+      return -1
+    }
+
+    var siblings = self.parent_node.children
+
+    iter var i = 0; i < siblings.length(); i++ {
+      if siblings[i] == self {
+        return i
+      }
+    }
+
+    return -1
+  }
+
+  /**
+   * The node after this one in its parent, or `nil`.
+   *
+   * @returns ?Node
+   */
+  next_sibling() {
+    var index = self.index_in_parent()
+
+    if index < 0 or index + 1 >= self.parent_node.children.length() {
+      return nil
+    }
+
+    return self.parent_node.children[index + 1]
+  }
+
+  /**
+   * The node before this one in its parent, or `nil`.
+   *
+   * @returns ?Node
+   */
+  previous_sibling() {
+    var index = self.index_in_parent()
+
+    if index <= 0 {
+      return nil
+    }
+
+    return self.parent_node.children[index - 1]
+  }
+
+  /**
+   * Adds _node_ as the last child, taking it from wherever it was.
+   * Returns _node_.
+   *
+   * @param Node node
+   * @returns Node
+   */
+  append_child(node: Node) {
+    node.detach()
+    node.parent_node = self
+    self.children.append(node)
+
+    return node
+  }
+
+  /**
+   * Adds _node_ as the first child, taking it from wherever it was.
+   * Returns _node_.
+   *
+   * @param Node node
+   * @returns Node
+   */
+  prepend_child(node: Node) {
+    node.detach()
+    node.parent_node = self
+    self.children.insert(node, 0)
+
+    return node
+  }
+
+  /**
+   * Adds _node_ as a child just before _reference_, or last when
+   * _reference_ is `nil`. Returns _node_.
+   *
+   * @param Node node
+   * @param ?Node reference: a child of this node.
+   * @returns Node
+   * @throws ValueError When _reference_ is not a child of this node
+   */
+  insert_before(node: Node, reference: ?Node) {
+    if reference == nil {
+      return self.append_child(node)
+    }
+
+    if reference.parent_node != self {
+      raise ValueError('the reference node is not a child of this node')
+    }
+
+    node.detach()
+    node.parent_node = self
+    self.children.insert(node, reference.index_in_parent())
+
+    return node
+  }
+
+  /**
+   * Adds _node_ as a child just after _reference_. Returns _node_.
+   *
+   * @param Node node
+   * @param Node reference: a child of this node.
+   * @returns Node
+   * @throws ValueError When _reference_ is not a child of this node
+   */
+  insert_after(node: Node, reference: Node) {
+    if reference.parent_node != self {
+      raise ValueError('the reference node is not a child of this node')
+    }
+
+    node.detach()
+    node.parent_node = self
+    self.children.insert(node, reference.index_in_parent() + 1)
+
+    return node
+  }
+
+  /**
+   * Puts _node_ where this node is and detaches this one. Returns
+   * _node_.
+   *
+   * @param Node node
+   * @returns Node
+   */
+  replace_with(node: Node) {
+    if self.parent_node == nil {
+      return node
+    }
+
+    var owner = self.parent_node
+
+    node.detach()
+    var index = self.index_in_parent()
+
+    owner.children[index] = node
+    node.parent_node = owner
+    self.parent_node = nil
+
+    return node
+  }
+
+  /**
+   * Takes this node out of its parent. Returns this node.
+   *
+   * @returns Node
+   */
+  detach() {
+    if self.parent_node != nil {
+      var index = self.index_in_parent()
+
+      if index >= 0 {
+        self.parent_node.children.remove_at(index)
+      }
+
+      self.parent_node = nil
+    }
+
+    return self
+  }
+
+  /**
+   * Calls _callback_ with every node beneath this one, in document
+   * order. Returning `false` from it skips that node's children.
+   *
+   * Do not add or remove nodes from inside the callback. Collect them
+   * with `find_all()` and change the tree afterwards.
+   *
+   * @param function callback
+   */
+  walk(callback: function) {
+    for child in self.children {
+      if callback(child) == false {
+        continue
+      }
+
+      child.walk(callback)
+    }
+  }
+
+  /**
+   * Every node beneath this one, in document order.
+   *
+   * @returns list[Node]
+   */
+  descendants() {
+    var out = []
+
+    _collect(self, out, nil)
+
+    return out
+  }
+
+  /**
+   * Every node beneath this one of the given _type_, in document
+   * order.
+   *
+   * @param string type
+   * @returns list[Node]
+   */
+  find_all(type: string) {
+    var out = []
+
+    _collect(self, out, type)
+
+    return out
+  }
+
+  /**
+   * The first node beneath this one of the given _type_, or `nil`.
+   *
+   * @param string type
+   * @returns ?Node
+   */
+  find(type: string) {
+    for child in self.children {
+      if child.type == type {
+        return child
+      }
+
+      var found = child.find(type)
+
+      if found != nil {
+        return found
+      }
+    }
+
+    return nil
+  }
+
+  /**
+   * The text beneath this node with every bit of markup taken away.
+   * Breaks become spaces, and an image counts as its description.
+   *
+   * ```zuri
+   * import markdown
+   *
+   * var doc = markdown.parse('# A *very* `fine` title')
+   * echo doc.first_child().text_content()
+   * # A very fine title
+   * ```
+   *
+   * @returns string
+   */
+  text_content() {
+    var parts = []
+
+    _gather_text(self, parts)
+
+    return ''.join(parts)
+  }
+
+  /**
+   * A copy of this node and everything beneath it, with no parent.
+   *
+   * @returns Node
+   */
+  clone() {
+    var copy = Node(self.type)
+
+    copy.literal = self.literal
+    copy.level = self.level
+    copy.info = self.info
+    copy.destination = self.destination
+    copy.title = self.title
+    copy.ordered = self.ordered
+    copy.start = self.start
+    copy.delimiter = self.delimiter
+    copy.bullet = self.bullet
+    copy.tight = self.tight
+    copy.checked = self.checked
+    copy.align = self.align
+    copy.label = self.label
+    copy.kind = self.kind
+    copy.display = self.display
+    copy.attributes = self.attributes.clone()
+    copy.metadata = self.metadata
+    copy.line = self.line
+    copy.end_line = self.end_line
+
+    for child in self.children {
+      var inner = child.clone()
+
+      inner.parent_node = copy
+      copy.children.append(inner)
+    }
+
+    return copy
+  }
+
+  /**
+   * The tree beneath and including this node as indented text, one
+   * node a line, for reading while working on a transform.
+   *
+   * ```zuri
+   * import markdown
+   *
+   * echo markdown.parse('Hello *there*').dump()
+   * # document
+   * #   paragraph
+   * #     text 'Hello '
+   * #     emphasis
+   * #       text 'there'
+   * ```
+   *
+   * @returns string
+   */
+  dump() {
+    var lines = []
+
+    _dump(self, 0, lines)
+
+    return '\n'.join(lines)
+  }
+
+  /**
+   * The node's type and its main field, such as `heading 2`.
+   *
+   * @returns string
+   */
+  to_string() {
+    return _describe(self)
+  }
+
+  @to_string() {
+    return '<markdown.Node ${_describe(self)}>'
+  }
+}
+
+def _collect(node: Node, out: list, type: ?string) {
+  for child in node.children {
+    if type == nil or child.type == type {
+      out.append(child)
+    }
+
+    _collect(child, out, type)
+  }
+}
+
+def _gather_text(node: Node, parts: list) {
+  for child in node.children {
+    using child.type {
+      when 'text', 'code', 'math', 'emoji' {
+        parts.append(child.literal)
+      }
+      when 'softbreak', 'linebreak' {
+        parts.append(' ')
+      }
+      when 'html_inline', 'html_block', 'footnote_reference' {}
+      default {
+        _gather_text(child, parts)
+      }
+    }
+  }
+}
+
+def _describe(node: Node) {
+  using node.type {
+    when 'heading' {
+      return 'heading ${node.level}'
+    }
+    when 'text', 'code', 'html_inline', 'math', 'emoji' {
+      return '${node.type} ${_quote(node.literal)}'
+    }
+    when 'link', 'image' {
+      return '${node.type} ${_quote(node.destination)}'
+    }
+    when 'list' {
+      return node.ordered
+          ? 'list ordered start=${node.start} tight=${node.tight}'
+          : 'list bullet tight=${node.tight}'
+    }
+    when 'code_block' {
+      return node.info == nil or node.info.is_empty()
+          ? 'code_block'
+          : 'code_block ${_quote(node.info)}'
+    }
+    when 'footnote_reference', 'footnote_definition' {
+      return '${node.type} ${_quote(node.label)}'
+    }
+    when 'table_cell' {
+      return node.align == nil ? 'table_cell' : 'table_cell ${node.align}'
+    }
+    when 'item' {
+      return node.checked == nil ? 'item' : 'item checked=${node.checked}'
+    }
+    when 'alert' {
+      return 'alert ${node.kind}'
+    }
+  }
+
+  return node.type
+}
+
+def _quote(text) {
+  if text == nil {
+    return "''"
+  }
+
+  return "'" +
+      text
+          .replace('\\', '\\\\', false)
+          .replace('\n', '\\n', false)
+          .replace("'", "\\'", false) +
+      "'"
+}
+
+def _dump(node: Node, depth: number, lines: list) {
+  lines.append('  ' * depth + _describe(node))
+
+  for child in node.children {
+    _dump(child, depth + 1, lines)
+  }
+}

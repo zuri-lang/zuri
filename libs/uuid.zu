@@ -112,8 +112,15 @@ def _strip_hyphens(uuid_str) {
 
 # Formats a 32-character raw hex string into the canonical 8-4-4-4-12 form.
 def _format(hex32) {
-  return hex32[0, 8] + '-' + hex32[8, 12] + '-' + hex32[12, 16] +
-    '-' + hex32[16, 20] + '-' + hex32[20, 32]
+  return hex32[0, 8] +
+      '-' +
+      hex32[8, 12] +
+      '-' +
+      hex32[12, 16] +
+      '-' +
+      hex32[16, 20] +
+      '-' +
+      hex32[20, 32]
 }
 
 # Applies RFC 4122/9562 variant bits (10xx xxxx) to byte 8 of a raw 32-char
@@ -124,10 +131,10 @@ def _set_variant(hex32) {
   byte8 = (byte8 & 0x3f) | 0x80 # clear top 2, set '10'
   var hi = (byte8 / 16).floor()
   var lo = byte8 % 16
-  return hex32[0, 16]
-    + '0123456789abcdef'[hi]
-    + '0123456789abcdef'[lo]
-    + hex32[18, 32]
+  return hex32[0, 16] +
+      '0123456789abcdef'[hi] +
+      '0123456789abcdef'[lo] +
+      hex32[18, 32]
 }
 
 # Applies a version nibble (1-8) to byte 6 of a raw 32-char hex string.
@@ -137,10 +144,10 @@ def _set_version(hex32, version) {
   byte6 = (byte6 & 0x0f) | (version * 16)
   var hi = (byte6 / 16).floor()
   var lo = byte6 % 16
-  return hex32[0, 12]
-    + '0123456789abcdef'[hi]
-    + '0123456789abcdef'[lo]
-    + hex32[14, 32]
+  return hex32[0, 12] +
+      '0123456789abcdef'[hi] +
+      '0123456789abcdef'[lo] +
+      hex32[14, 32]
 }
 
 # Computes the number of 100-nanosecond intervals since 1582-10-15 00:00:00 UTC
@@ -188,8 +195,8 @@ def _bigint_to_hex32(n) {
 }
 
 # Shared clock-sequence state for v1/v6 (module-level, reset per process).
-var _v1_clock_seq = convert.bytes_to_decimal(crypto.random_bytes(2))
-  % 16384 # 14-bit random seed
+var _v1_clock_seq = convert.bytes_to_decimal(crypto.random_bytes(2)) %
+    16384 # 14-bit random seed
 var _v1_last_ts = 0
 
 # ---------------------------------------------------------------------------
@@ -416,8 +423,8 @@ class UUID {
     var raw = _strip_hyphens(self.value)
     var result = 0n
     for ch in raw {
-      result = result * 16n
-        + _HEX_DIGIT_BIGINTS[('0123456789abcdef').index_of(ch)]
+      result = result * 16n +
+          _HEX_DIGIT_BIGINTS[('0123456789abcdef').index_of(ch)]
     }
     return result
   }
@@ -536,7 +543,10 @@ def is_valid(str: any) {
   # needs an explicit coercion to give is_valid() the real bool its
   # own contract promises. .matches() (plural) would be the wrong
   # choice here: it always returns a dict, empty or not, never false.
-  return str.match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i') != false
+  return str.match(
+        '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i',
+      ) !=
+      false
 }
 
 /**
@@ -940,9 +950,9 @@ def v8(a: number, b: number, c: number) {
   var c_lo = c % 4294967296
   var byte8 = ((c_hi / 16777216).floor() & 0x3f) | 0x80 # variant
   var c_hi2 = c_hi & 0x00ffffff
-  var field_c = _int_to_hex(byte8, 2)
-    + _int_to_hex(c_hi2, 6)
-    + _int_to_hex(c_lo, 8)
+  var field_c = _int_to_hex(byte8, 2) +
+      _int_to_hex(c_hi2, 6) +
+      _int_to_hex(c_lo, 8)
 
   # raw: field_a(12) + '8' + field_b(3) + field_c(16)
   var raw = field_a + '8' + field_b + field_c

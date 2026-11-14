@@ -553,7 +553,7 @@ more than one argument.
 | `line_breaks` | An alias for `nl2br`. |
 | `strip_tags` | Removes every HTML tag, keeping only the text — a real parse, not a pattern match. |
 | `slug` | Lower-cased, hyphen-separated, safe for a URL segment. |
-| `url_encode` | Percent-encodes for use inside a URL. |
+| `url_encode(reserved?)` | Percent-encodes for use inside a URL, as `url.encode()` does. Reserved characters such as `/`, `&` and `#` are kept unless `reserved` is `false`, which one value in a query needs: `?q={{ query\|url_encode(false) }}`. |
 | `json` | Encodes as JSON text. |
 | `json_script(id?)` | Wraps the value's JSON encoding in a `<script type="application/json">`, optionally with an `id`, ready to be read back by a script on the page. Returns markup. |
 

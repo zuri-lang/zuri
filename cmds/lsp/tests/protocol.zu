@@ -25,7 +25,9 @@ def answer_to(id: int, messages: list) {
 }
 
 before_all(@{
-  client = Client(FIXTURE, { diagnostics: { delay: 0 } })
+  client = Client(FIXTURE, {
+    diagnostics: { delay: 0 },
+  })
   client.initialize(nil)
   client.wait_indexed()
 })
@@ -43,7 +45,11 @@ describe('cancellation', @{
         method: 'workspace/symbol',
         params: { query: 'a' },
       },
-      { jsonrpc: '2.0', method: '$/cancelRequest', params: { id: 9001 } },
+      {
+        jsonrpc: '2.0',
+        method: '$/cancelRequest',
+        params: { id: 9001 },
+      },
     ])
 
     expect(answer.error.code).to_equal(-32800)
@@ -67,13 +73,17 @@ describe('cancellation', @{
         method: 'textDocument/didChange',
         params: {
           textDocument: { uri: address, version: 2 },
-          contentChanges: [{ text: 'var a = 2\necho a\n' }],
+          contentChanges: [
+            { text: 'var a = 2\necho a\n' },
+          ],
         },
       },
     ])
 
     expect(answer.error.code).to_equal(-32801)
-    client.notify('textDocument/didClose', { textDocument: { uri: address } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: address },
+    })
   })
 })
 
@@ -86,15 +96,14 @@ describe('malformed input', @{
     )
     client.ping()
 
-    expect(client
-      .request('workspace/symbol', { query: 'Point' })
-      .length()).to_be_greater_than(0)
+    expect(client.request('workspace/symbol', { query: 'Point' }).length())
+        .to_be_greater_than(0)
   })
 
   it('answers a request it cannot read as invalid', @{
-    var answer = answer_to(
-      9003, [{ jsonrpc: '1.0', id: 9003, method: 'workspace/symbol' }],
-    )
+    var answer = answer_to(9003, [
+      { jsonrpc: '1.0', id: 9003, method: 'workspace/symbol' },
+    ])
 
     expect(answer.error.code).to_equal(-32600)
   })
@@ -103,17 +112,16 @@ describe('malformed input', @{
     'answers a request with parameters it cannot use as an internal error, and carries on',
     @{
       catch {
-        client.request(
-          'textDocument/hover', { textDocument: { uri: uri(SCRATCH) } },
-        )
+        client.request('textDocument/hover', {
+          textDocument: { uri: uri(SCRATCH) },
+        })
         expect('no error').to_equal('an error')
       } as error {
         expect(instance_of(error, rpc.RpcError)).to_be_true()
       }
 
-      expect(client
-        .request('workspace/symbol', { query: 'Circle' })
-        .length()).to_be_greater_than(0)
+      expect(client.request('workspace/symbol', { query: 'Circle' }).length())
+          .to_be_greater_than(0)
     },
   )
 
@@ -123,18 +131,21 @@ describe('malformed input', @{
         uri: uri(os.join_paths(FIXTURE, 'nowhere.zu')),
         version: 2,
       },
-      contentChanges: [{ text: 'x' }],
+      contentChanges: [
+        { text: 'x' },
+      ],
     })
 
-    expect(client
-      .request('workspace/symbol', { query: 'origin' })
-      .length()).to_equal(1)
+    expect(client.request('workspace/symbol', { query: 'origin' }).length())
+        .to_equal(1)
   })
 })
 
 describe('settings', @{
   it('asks for them when it starts and follows them as they change', @{
-    var settled = Client(FIXTURE, { inlayHints: { parameterNames: 'none' } })
+    var settled = Client(FIXTURE, {
+      inlayHints: { parameterNames: 'none' },
+    })
 
     settled.initialize(nil)
     settled.wait_indexed()
@@ -144,12 +155,17 @@ describe('settings', @{
       start: { line: 0, character: 0 },
       end: { line: 12, character: 0 },
     }
-    var asked = { textDocument: { uri: main }, range: whole }
+    var asked = {
+      textDocument: { uri: main },
+      range: whole,
+    }
     var hints = settled.request('textDocument/inlayHint', asked)
 
     expect(hints).to_equal([])
 
-    settled.settings = { inlayHints: { parameterNames: 'all' } }
+    settled.settings = {
+      inlayHints: { parameterNames: 'all' },
+    }
     settled.notify('workspace/didChangeConfiguration', { settings: nil })
     var pulled = @() => settled.requests.filter(
       @(r) => r.method == 'workspace/configuration',
@@ -164,7 +180,9 @@ describe('settings', @{
   })
 
   it('leaves files the settings exclude out of the workspace', @{
-    var excluding = Client(FIXTURE, { exclude: ['geometry/**'] })
+    var excluding = Client(FIXTURE, {
+      exclude: ['geometry/**'],
+    })
 
     excluding.initialize(nil)
     excluding.wait_indexed()

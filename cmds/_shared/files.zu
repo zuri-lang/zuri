@@ -36,9 +36,21 @@ var _ALWAYS_OUT_ANYWHERE = ['.git', '.zuri']
 var _ALWAYS_OUT_AT_ROOT = ['tmp', 'project.lock']
 
 var _SECRETS = [
-  '.env', '.env.*', '*.pem', '*.key', '*.p12', '*.pfx', '*.keystore',
-  'id_rsa', 'id_rsa.*', 'id_ecdsa', 'id_ecdsa.*', 'id_ed25519', 'id_ed25519.*',
-  '.netrc', 'credentials.toml',
+  '.env',
+  '.env.*',
+  '*.pem',
+  '*.key',
+  '*.p12',
+  '*.pfx',
+  '*.keystore',
+  'id_rsa',
+  'id_rsa.*',
+  'id_ecdsa',
+  'id_ecdsa.*',
+  'id_ed25519',
+  'id_ed25519.*',
+  '.netrc',
+  'credentials.toml',
 ]
 
 /**
@@ -193,17 +205,30 @@ def in_git_tree(root: string) {
 
 # What git tracks, or would, under `root`, relative to it.
 def _git_candidates(root: string) {
-  var child = spawn('git', [
-    '-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard',
-    '--', '.',
-  ], { stdout: 'pipe', stderr: 'pipe', stdin: 'null' })
+  var child = spawn(
+    'git',
+    [
+      '-C',
+      root,
+      'ls-files',
+      '-z',
+      '--cached',
+      '--others',
+      '--exclude-standard',
+      '--',
+      '.',
+    ],
+    { stdout: 'pipe', stderr: 'pipe', stdin: 'null' },
+  )
 
   var status = child.wait()
   var listing = child.read_stdout().to_string()
   var problem = child.read_stderr().to_string()
 
   if status != 0 {
-    raise CommandError('could not list the files git knows under ${root}: ${problem}')
+    raise CommandError(
+      'could not list the files git knows under ${root}: ${problem}',
+    )
   }
 
   var found = []
@@ -258,8 +283,8 @@ def select(root: string, options: ?dict) {
   var skip = options.get('skip', [])
 
   var candidates = options.get('use_git', true) != false and in_git_tree(root)
-    ? _git_candidates(root)
-    : _walked_candidates(root)
+      ? _git_candidates(root)
+      : _walked_candidates(root)
 
   var files = []
   var secrets = []

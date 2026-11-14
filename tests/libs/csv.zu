@@ -70,10 +70,15 @@ def test_writer_header_and_dicts() {
 }
 
 def test_stringify() {
-  assert csv.stringify([["Alice", 30], ["Bob", 25]]) == "Alice,30\r\nBob,25\r\n"
+  assert csv.stringify([
+        ["Alice", 30],
+        ["Bob", 25],
+      ]) ==
+      "Alice,30\r\nBob,25\r\n"
 
   var from_dicts = csv.stringify([
-    { name: "Alice", age: 30 }, { name: "Bob", age: 25 },
+    { name: "Alice", age: 30 },
+    { name: "Bob", age: 25 },
   ])
   assert from_dicts == "name,age\r\nAlice,30\r\nBob,25\r\n", from_dicts
 
@@ -90,7 +95,11 @@ def test_format_record() {
 def test_parse() {
   var data = "a,b,c\nd,e,f"
   var rows = csv.parse(data)
-  assert rows == [["a", "b", "c"], ["d", "e", "f"]]
+  assert rows ==
+      [
+        ["a", "b", "c"],
+        ["d", "e", "f"],
+      ]
   echo "test_parse passed"
 }
 
@@ -110,12 +119,18 @@ def test_sniff_dialect() {
   # No candidate delimiter appears consistently anywhere in this
   # sample, so sniff_dialect() must fall back to the first candidate
   # (a plain comma) rather than raise or pick one at random.
-  var no_delimiter = csv.sniff_dialect("just one column\nanother line\nthird line")
+  var no_delimiter = csv.sniff_dialect(
+    "just one column\nanother line\nthird line",
+  )
   assert no_delimiter.delimiter == ','
 
   # The detected dialect must actually be usable for real parsing.
   var rows = csv.parse("a;b\n1;2", semicolon)
-  assert rows == [["a", "b"], ["1", "2"]]
+  assert rows ==
+      [
+        ["a", "b"],
+        ["1", "2"],
+      ]
 
   echo "test_sniff_dialect passed"
 }

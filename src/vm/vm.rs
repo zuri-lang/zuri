@@ -84,15 +84,17 @@ struct CalleeGathering<'v> {
 
 impl CalleeGathering<'_> {
   /// Whether `callee` is worth gathering feedback for, to build it into
-  /// its caller: small, a plain function, not already on the way down
-  /// and within the budget. The IR builder has the final say.
+  /// its caller: small, a plain function, on the way down no more than
+  /// once already (a recursive function is built into itself once) and
+  /// within the budget. The IR builder has the final say.
   fn admits(&self, callee: &ObjFunction) -> bool {
     let len = callee.chunk.code.len();
+    let at = callee as *const ObjFunction as usize;
     !callee.variadic
       && callee.upvalues.is_empty()
       && len <= crate::jit::ir::build::MAX_INLINE_OPS
       && len <= self.budget
-      && !self.path.contains(&(callee as *const ObjFunction as usize))
+      && self.path.iter().filter(|&&p| p == at).count() < 2
   }
 
   /// Runs `f` for `callee`'s own calls, one level further down.
@@ -1680,10 +1682,7 @@ impl VM {
     // everything the frame reaches.
     let new_base = self.frames.last().map(Self::frame_top).unwrap_or(0);
     let needed = new_base + proto.num_registers as usize;
-    if self.registers.len() < needed {
-      self.registers.resize(needed, Value::nil());
-      self.sync_regs_ptr_cache();
-    }
+    self.ensure_registers(needed);
 
     for i in 0..required as usize {
       self.registers[new_base + i] = args.get(i).copied().unwrap_or(Value::nil());
@@ -2539,8 +2538,10 @@ impl VM {
   /// nothing but copy each parameter into a field. Accepts only the exact
   /// shape `@new(x, y, z) { self.x = x; self.y = y; self.z = z }` compiles
   /// to; a run of `SetField` from parameter registers, then `LoadNil` +
-  /// `Return`. Anything else (computed value, branch, call, double write)
-  /// returns `None`, since a syntactic match is the only way to be certain.
+  /// `Return`. A `self.f = nil` among them is accepted for a field with no
+  /// literal default, since a new instance holds nil there already.
+  /// Anything else (computed value, branch, call, double write) returns
+  /// `None`, since a syntactic match is the only way to be certain.
   fn simple_ctor_param_slots(ctor: &ObjFunction, class: &ObjClass) -> Option<Vec<u16>> {
     let code = &ctor.chunk.code;
     if ctor.variadic || code.len() < 2 {
@@ -2551,6 +2552,15 @@ impl VM {
     let params = (ctor.arity as usize).checked_sub(1)?;
     // slots[i] is where parameter i is stored.
     let mut slots: Vec<Option<u16>> = vec![None; params];
+    // Fields set to nil, which a new instance already holds there.
+    let mut nil_slots: Vec<u16> = Vec::new();
+    let slot_of = |name_const: u16| -> Option<u16> {
+      let name = ctor.chunk.constants.get(name_const as usize)?;
+      if !name.is_string() {
+        return None;
+      }
+      class.field_slots.get(name.as_str()).copied()
+    };
 
     let mut ip = 0;
     while ip < code.len() {
@@ -2563,30 +2573,49 @@ impl VM {
           if src == 0 || (src as usize) > params {
             return None;
           }
-          let name = ctor.chunk.constants.get(name_const as usize)?;
-          if !name.is_string() {
-            return None;
-          }
-          let slot = *class.field_slots.get(name.as_str())?;
+          let slot = slot_of(name_const)?;
           let param = src as usize - 1;
           // One store per parameter, no field written twice; either
           // would make the slot assignment ambiguous.
-          if slots[param].is_some() || slots.iter().any(|s| *s == Some(slot)) {
+          if slots[param].is_some()
+            || slots.iter().any(|s| *s == Some(slot))
+            || nil_slots.contains(&slot)
+          {
             return None;
           }
           slots[param] = Some(slot);
           ip += 1;
         },
-        Instr::LoadNil { dst } => {
-          // Must be the trailing `LoadNil` + `Return` pair and nothing
-          // more.
-          if ip + 2 != code.len() {
-            return None;
-          }
+        Instr::LoadNil { dst } if ip + 2 == code.len() => {
+          // The trailing `LoadNil` + `Return` pair and nothing more.
           return match code[ip + 1] {
             Instr::Return { src } if src == dst => slots.into_iter().collect::<Option<Vec<u16>>>(),
             _ => None,
           };
+        },
+        Instr::LoadNil { dst } => {
+          // `self.f = nil` through a scratch register, for a field no
+          // default fills, so it is nil from the start.
+          let Some(&Instr::SetField {
+            obj: 0,
+            name_const,
+            src,
+          }) = code.get(ip + 1)
+          else {
+            return None;
+          };
+          if src != dst || (dst as usize) <= params {
+            return None;
+          }
+          let slot = slot_of(name_const)?;
+          if class.defaults.iter().any(|&(s, _)| s == slot)
+            || slots.iter().any(|s| *s == Some(slot))
+            || nil_slots.contains(&slot)
+          {
+            return None;
+          }
+          nil_slots.push(slot);
+          ip += 2;
         },
         _ => return None,
       }
@@ -2718,10 +2747,9 @@ impl VM {
     proto_value: Value,
     optimize: Option<Vec<usize>>,
   ) {
-    let direct = crate::jit::tier2_direct();
     let asked = optimize.is_some();
-    let entries = optimize.filter(|_| !direct);
-    let optimize = asked || direct;
+    let entries = optimize;
+    let optimize = asked || crate::jit::tier2_direct();
     let (speculative_params, speculative_regs, speculative_lists, speculative_ints) =
       if self.no_jit_specialization {
         (None, None, None, None)
@@ -4687,10 +4715,15 @@ impl VM {
     }
   }
 
-  /// Grows the register file to at least `needed` registers.
+  /// Grows the register file to at least `needed` registers, and to
+  /// twice its length at least, the way its buffer grows. A call checks
+  /// the length before pushing its frame and takes the slow path when it
+  /// falls short, so a recursion deeper than any before it then falls
+  /// short at only a few of its levels rather than at every one.
   pub(crate) fn ensure_registers(&mut self, needed: usize) {
     if self.registers.len() < needed {
-      self.registers.resize(needed, Value::nil());
+      let len = needed.max(self.registers.len() * 2);
+      self.registers.resize(len, Value::nil());
       self.sync_regs_ptr_cache();
     }
   }
@@ -4841,10 +4874,7 @@ impl VM {
       proto.arity
     };
     let needed = new_base + proto.num_registers as usize;
-    if self.registers.len() < needed {
-      self.registers.resize(needed, Value::nil());
-      self.sync_regs_ptr_cache();
-    }
+    self.ensure_registers(needed);
     for i in num_args..required {
       self.registers[new_base + i as usize] = Value::nil();
     }
@@ -5113,10 +5143,7 @@ impl VM {
     // where the call site itself wrote.
     let new_base = base + func_reg as usize + 1;
     let needed = new_base + proto.num_registers as usize;
-    if self.registers.len() < needed {
-      self.registers.resize(needed, Value::nil());
-      self.sync_regs_ptr_cache();
-    }
+    self.ensure_registers(needed);
     for i in (0..num_args as usize).rev() {
       self.registers[new_base + i + 1] = self.registers[new_base + i];
     }
@@ -5172,10 +5199,7 @@ impl VM {
     // root it needs to be.
     let new_base = base + func_reg as usize;
     let needed = new_base + proto.num_registers as usize;
-    if self.registers.len() < needed {
-      self.registers.resize(needed, Value::nil());
-      self.sync_regs_ptr_cache();
-    }
+    self.ensure_registers(needed);
     self.registers[new_base] = instance;
 
     self.setup_closure_call(ctor, proto, new_base, num_args + 1, dst);

@@ -40,10 +40,36 @@ const INLINE = 'refactor.inline'
 # The kinds of node that are statements or declarations rather than
 # expressions.
 const _STATEMENTS = [
-  'Expression', 'Echo', 'Raise', 'Return', 'Var', 'VarList', 'Block', 'If',
-  'While', 'DoWhile', 'For', 'Iter', 'Using', 'When', 'Catch', 'Assert',
-  'Import', 'Continue', 'Break', 'Decl', 'Stmt', 'Function', 'Class',
-  'Property', 'Method', 'Comment', 'DocBlock', 'Argument', 'TypeHint', 'None',
+  'Expression',
+  'Echo',
+  'Raise',
+  'Return',
+  'Var',
+  'VarList',
+  'Block',
+  'If',
+  'While',
+  'DoWhile',
+  'For',
+  'Iter',
+  'Using',
+  'When',
+  'Catch',
+  'Assert',
+  'Import',
+  'Continue',
+  'Break',
+  'Decl',
+  'Stmt',
+  'Function',
+  'Class',
+  'Property',
+  'Method',
+  'Comment',
+  'DocBlock',
+  'Argument',
+  'TypeHint',
+  'None',
 ]
 
 # Expressions that change something when they run.
@@ -52,9 +78,23 @@ const _EFFECTS = ['Call', 'Assign', 'CompoundAssign', 'Update', 'Set']
 # Expressions that never need parentheses around them where another
 # expression is.
 const _ATOMIC = [
-  'Identifier', 'Nil', 'Bool', 'Integer', 'Float', 'BigNumber', 'Literal',
-  'Interpolation', 'Call', 'Get', 'Index', 'Slice', 'List', 'Dict',
-  'Grouping', 'Self', 'Parent',
+  'Identifier',
+  'Nil',
+  'Bool',
+  'Integer',
+  'Float',
+  'BigNumber',
+  'Literal',
+  'Interpolation',
+  'Call',
+  'Get',
+  'Index',
+  'Slice',
+  'List',
+  'Dict',
+  'Grouping',
+  'Self',
+  'Parent',
 ]
 
 # The loops.
@@ -167,8 +207,8 @@ class Subject {
    */
   uses_of(index: int) {
     return self
-      .refs_in(0, self.text.length())
-      .filter(@(ref) => ref.target == index)
+        .refs_in(0, self.text.length())
+        .filter(@(ref) => ref.target == index)
   }
 
   /**
@@ -192,9 +232,9 @@ class Subject {
     var name = common.is_identifier(wanted) ? wanted : 'value'
     var count = 1
 
-    while taken.contains(name)
-      or used.contains(name)
-      or builtins.global(name) != nil {
+    while taken.contains(name) or
+        used.contains(name) or
+        builtins.global(name) != nil {
       count++
       name = '${wanted}${count}'
     }
@@ -358,8 +398,8 @@ def extract_variable(subject) {
   var expression = path[at]
   var kind = expression.kind
 
-  if _STATEMENTS.contains(kind)
-    or ['Identifier', 'Self', 'Parent', 'Anonymous'].contains(kind) {
+  if _STATEMENTS.contains(kind) or
+      ['Identifier', 'Self', 'Parent', 'Anonymous'].contains(kind) {
     return found
   }
 
@@ -496,12 +536,12 @@ def _copies(subject, location: dict, expression) {
 
   iter var i = location.index; i < location.list.length(); i++ {
     for node in _all(location.list[i]) {
-      var same = node.kind == expression.kind
-        and node.end - node.start == text.length()
+      var same = node.kind == expression.kind and
+          node.end - node.start == text.length()
 
-      if same
-        and subject.source(node) == text
-        and !_in_function(location.list[i], node) {
+      if same and
+          subject.source(node) == text and
+          !_in_function(location.list[i], node) {
         found.append(node)
       }
     }
@@ -518,8 +558,8 @@ def _copies(subject, location: dict, expression) {
   # Each copy must read the very declarations the first does.
   for copy in found {
     var copy_reads = subject
-      .refs_in(copy.start, copy.end)
-      .map(@(ref) => ref.target)
+        .refs_in(copy.start, copy.end)
+        .map(@(ref) => ref.target)
 
     if copy_reads != targets {
       return []
@@ -551,9 +591,9 @@ def _copies(subject, location: dict, expression) {
 # whose body runs at some other time.
 def _in_function(statement, node) {
   for inner in _all(statement) {
-    if _FUNCTIONS.contains(inner.kind)
-      and inner != node
-      and _holds(inner, node) {
+    if _FUNCTIONS.contains(inner.kind) and
+        inner != node and
+        _holds(inner, node) {
       return true
     }
   }
@@ -609,9 +649,8 @@ def extract_function(subject) {
   var uses_self = false
 
   for statement in statements {
-    if _all(statement).some(
-      @(node) => node.kind == 'Self' or node.kind == 'Parent',
-    ) {
+    if _all(statement)
+        .some(@(node) => node.kind == 'Self' or node.kind == 'Parent') {
       uses_self = true
     }
   }
@@ -672,7 +711,9 @@ def extract_function(subject) {
     for item in flow.returns {
       var keyword = item.declared ? 'var ' : ''
 
-      call_lines.append('${indent}${keyword}${item.name} = ${holder}.${item.name}')
+      call_lines.append(
+        '${indent}${keyword}${item.name} = ${holder}.${item.name}',
+      )
     }
   }
 
@@ -693,14 +734,18 @@ def extract_function(subject) {
     var top = _top_level_node(subject, start)
     var function_text = 'def ${name}(${params}) {\n${body}${returning}}'
 
-    if top == nil
-      or (top.start == start and top.end >= end)
-      or selection.top_level {
+    if top == nil or
+        (top.start == start and top.end >= end) or
+        selection.top_level {
       # Statements at the top of the file: the new function goes just
       # above them; a module function is visible from anywhere in it.
-      edits.append(subject.edit(
-        replace_start, replace_end, '${function_text}\n\n${replacement}',
-      ))
+      edits.append(
+        subject.edit(
+          replace_start,
+          replace_end,
+          '${function_text}\n\n${replacement}',
+        ),
+      )
     } else {
       var after = subject.lines.line_end(subject.lines.line_of(top.end))
 
@@ -710,10 +755,12 @@ def extract_function(subject) {
   }
 
   var title = method == nil
-    ? "Extract into function '${name}'"
-    : "Extract into method '${name}'"
+      ? "Extract into function '${name}'"
+      : "Extract into method '${name}'"
 
-  return [{ title, edits: _by_key(subject, edits) }]
+  return [
+    { title, edits: _by_key(subject, edits) },
+  ]
 }
 
 # The whole statements of one block the selection covers, or `nil`.
@@ -725,7 +772,9 @@ def _selected_statements(subject) {
     return nil
   }
 
-  var lists = [{ list: subject.nodes, top_level: true }]
+  var lists = [
+    { list: subject.nodes, top_level: true },
+  ]
 
   for node in common.path_to(subject.nodes, start) {
     if node.kind == 'Block' {
@@ -877,9 +926,9 @@ def _data_flow(subject, start: int, end: int) {
   for symbol in summary.symbols {
     var inside = symbol.name_start >= start and symbol.name_end <= end
 
-    if inside
-      and symbol.get('owner', nil) == nil
-      and symbol.kind != 'parameter' {
+    if inside and
+        symbol.get('owner', nil) == nil and
+        symbol.kind != 'parameter' {
       var declared_here = !_inside_nested_function(subject, symbol, start, end)
 
       if declared_here and _read_after(subject, index, start, end, loops) {
@@ -896,8 +945,8 @@ def _data_flow(subject, start: int, end: int) {
 # Whether the declaration `index` is written between two offsets.
 def _written_in(subject, index: int, start: int, end: int) {
   return subject
-    .refs_in(start, end)
-    .some(@(ref) => ref.target == index and ref.flags & WRITE != 0)
+      .refs_in(start, end)
+      .some(@(ref) => ref.target == index and ref.flags & WRITE != 0)
 }
 
 # Whether `symbol` is declared in a function nested within the
@@ -1050,9 +1099,9 @@ def inline_variable(subject) {
   var summary = subject.summary
   var symbol = summary.symbols[index]
 
-  if symbol.writes > 0
-    or symbol.get('loop', false)
-    or symbol.get('caught', false) {
+  if symbol.writes > 0 or
+      symbol.get('loop', false) or
+      symbol.get('caught', false) {
     return []
   }
 
@@ -1097,17 +1146,21 @@ def inline_variable(subject) {
 
   edits.append(delete_statement(subject, declaration.statement))
 
-  return [{
-    title: "Inline variable '${symbol.name}'",
-    edits: _by_key(subject, edits),
-  }]
+  return [
+    {
+      title: "Inline variable '${symbol.name}'",
+      edits: _by_key(subject, edits),
+    },
+  ]
 }
 
 # The declaration of one of `kinds` that a name within the selection
 # declares or uses, as a symbol index.
 def _named_declaration(subject, kinds: list) {
   for occurrence in _occurrences_in(
-    subject, subject.start, subject.end.max(subject.start),
+    subject,
+    subject.start,
+    subject.end.max(subject.start),
   ) {
     var index = nil
 
@@ -1254,8 +1307,8 @@ def _value_holds(subject, value, statement, uses: list) {
     }
 
     for use in uses {
-      if common.visible_names(summary, use.start).get(read.name, nil)
-        != read.target {
+      if common.visible_names(summary, use.start).get(read.name, nil) !=
+          read.target {
         return false
       }
     }
@@ -1334,8 +1387,8 @@ def delete_statement(subject, statement) {
 
   if before.trim().is_empty() and after.trim().is_empty() {
     var next = last + 1 < subject.lines.line_count()
-      ? subject.lines.line_start(last + 1)
-      : line_end
+        ? subject.lines.line_start(last + 1)
+        : line_end
 
     return subject.edit(line_start, next, '')
   }
@@ -1401,9 +1454,9 @@ def inline_function(subject) {
 
     found.append({
       title: "Inline this call of '${symbol.name}'",
-      edits: _by_key(
-        subject, [subject.edit(call.start, call.end, at_cursor.replacement)],
-      ),
+      edits: _by_key(subject, [
+        subject.edit(call.start, call.end, at_cursor.replacement),
+      ]),
     })
   }
 
@@ -1457,8 +1510,8 @@ def _single_return(subject, symbol: dict) {
   while depth >= 0 {
     var node = path[depth]
 
-    if (node.kind == 'Function' or node.kind == 'Method')
-      and node.start == symbol.start {
+    if (node.kind == 'Function' or node.kind == 'Method') and
+        node.start == symbol.start {
       var body = node.fields.body
 
       if body == nil or body.kind != 'Block' {
@@ -1489,8 +1542,8 @@ def _declaration_node(subject, symbol: dict) {
   var path = common.path_to(subject.nodes, symbol.name_start)
 
   for node in path {
-    if node.start == symbol.start
-      and ['Function', 'Method', 'Decl'].contains(node.kind) {
+    if node.start == symbol.start and
+        ['Function', 'Method', 'Decl'].contains(node.kind) {
       return node
     }
   }
@@ -1511,12 +1564,10 @@ def _calls_of(subject, index: int, symbol: dict) {
     if !direct {
       var callee = linker.resolve(call.callee)
 
-      direct = callee != nil
-        and callee.t == 'function'
-        and callee.path == subject.key
-        and (
-          callee.index == index
-        )
+      direct = callee != nil and
+          callee.t == 'function' and
+          callee.path == subject.key and
+          (callee.index == index)
     }
 
     if !direct {
@@ -1573,8 +1624,8 @@ def _only_called(subject, index: int, symbol: dict) {
 
       var other = linker.summary(path)
 
-      if other != nil
-        and other.members.some(@(access) => access.name == symbol.name) {
+      if other != nil and
+          other.members.some(@(access) => access.name == symbol.name) {
         return false
       }
     }
@@ -1588,17 +1639,16 @@ def _only_called(subject, index: int, symbol: dict) {
 def _inlined(subject, index: int, symbol: dict, body, call: dict) {
   var summary = subject.summary
   var params = symbol.get('params', [])
-  var uses_self = _all(body).some(
-    @(node) => node.kind == 'Self' or node.kind == 'Parent',
-  )
+  var uses_self = _all(body)
+      .some(@(node) => node.kind == 'Self' or node.kind == 'Parent')
 
   if symbol.kind == 'method' {
     if uses_self and call.receiver != 'self' {
       return nil
     }
 
-    if _all(body).some(@(node) => node.kind == 'Parent')
-      and call.receiver != 'self' {
+    if _all(body).some(@(node) => node.kind == 'Parent') and
+        call.receiver != 'self' {
       return nil
     }
   }
@@ -1627,8 +1677,8 @@ def _inlined(subject, index: int, symbol: dict, body, call: dict) {
 
     # Any other name must mean the same thing where the call is.
     if ref.target >= 0 {
-      if common.visible_names(summary, call.start).get(ref.name, nil)
-        != ref.target {
+      if common.visible_names(summary, call.start).get(ref.name, nil) !=
+          ref.target {
         return nil
       }
     } else if common.visible_names(summary, call.start).contains(ref.name) {
@@ -1670,7 +1720,10 @@ def _inlined(subject, index: int, symbol: dict, body, call: dict) {
       var use_path = common.path_to([body], uses[0].start)
 
       if !_moves_before(
-        use_path, 0, use_path.length() - 1, use_path[use_path.length() - 1],
+        use_path,
+        0,
+        use_path.length() - 1,
+        use_path[use_path.length() - 1],
       ) {
         return nil
       }
@@ -1699,8 +1752,8 @@ def _inlined(subject, index: int, symbol: dict, body, call: dict) {
     var replacement = substitutions.get(ref.name, 'nil')
 
     text += ref.flags & SHORTHAND != 0
-      ? '${ref.name}: ${replacement}'
-      : replacement
+        ? '${ref.name}: ${replacement}'
+        : replacement
     at = ref.end
   }
 

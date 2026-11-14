@@ -37,7 +37,11 @@ def test_exec_and_query() {
   assert result.first().name == 'one'
   assert result.column('name') == ['one', 'two']
   assert result.column_names() == ['id', 'name']
-  assert result.tuples() == [[1, 'one'], [2, 'two']]
+  assert result.tuples() ==
+      [
+        [1, 'one'],
+        [2, 'two'],
+      ]
 
   # Iterating a result walks its rows.
   var seen = []
@@ -48,8 +52,8 @@ def test_exec_and_query() {
 
   assert db.fetch_one('select name from t where id = ?', [2]).name == 'two'
   assert db.fetch_value('select count(*) from t', nil, 0) == 2
-  assert db.fetch_column('select name from t order by id', nil, nil)
-    == ['one', 'two']
+  assert db.fetch_column('select name from t order by id', nil, nil) ==
+      ['one', 'two']
   assert db.fetch_all('select id from t', nil).length() == 2
 
   # An empty result gives back the fallback rather than raising.
@@ -65,13 +69,18 @@ def test_declared_types() {
 
   db.exec(
     'create table t (n integer, r real, s text, b blob, ok boolean, ' +
-      'at datetime, j json)',
+        'at datetime, j json)',
     nil,
   )
 
   db.exec('insert into t values (?, ?, ?, ?, ?, ?, ?)', [
-    42, 3.5, 'text', bytes([1, 2]), true,
-    '2026-09-16T10:00:00.000000+00:00', '{"a":1}',
+    42,
+    3.5,
+    'text',
+    bytes([1, 2]),
+    true,
+    '2026-09-16T10:00:00.000000+00:00',
+    '{"a":1}',
   ])
 
   var row = db.fetch_one('select * from t', nil)
@@ -103,24 +112,16 @@ def test_timestamps_in_time_order() {
 
   # Eight in the morning UTC, written two hours ahead, and nine UTC
   # written as it is. Text that kept each offset would put nine first.
-  db.insert('t', {
-    name: 'eight',
-    at: date.parse('2026-10-13T10:00:00+02:00'),
-  })
+  db.insert('t', { name: 'eight', at: date.parse('2026-10-13T10:00:00+02:00') })
 
-  db.insert('t', {
-    name: 'nine',
-    at: date.parse('2026-10-13T09:00:00+00:00'),
-  })
+  db.insert('t', { name: 'nine', at: date.parse('2026-10-13T09:00:00+00:00') })
 
   var ordered = db.fetch_column('select name from t order by at', nil, nil)
   assert ordered == ['eight', 'nine']
 
-  var earlier = db.fetch_column(
-    'select name from t where at < ?',
-    [date.parse('2026-10-13T08:30:00+00:00')],
-    nil,
-  )
+  var earlier = db.fetch_column('select name from t where at < ?', [
+    date.parse('2026-10-13T08:30:00+00:00'),
+  ], nil)
   assert earlier == ['eight']
 
   # The moment survives the trip, and comes back in UTC.
@@ -172,7 +173,8 @@ def test_parameters() {
 def test_errors() {
   var db = sql.open(':memory:')
   db.exec(
-    'create table t (id integer primary key, name text not null unique)', nil,
+    'create table t (id integer primary key, name text not null unique)',
+    nil,
   )
   db.exec("insert into t (name) values ('taken')", nil)
 
@@ -239,13 +241,15 @@ def test_capabilities() {
 def test_exec_script() {
   var db = sql.open(':memory:')
 
-  db.exec_script("
+  db.exec_script(
+    "
     create table a (id integer primary key);
     create table b (id integer primary key);
     insert into a values (1);
     -- a comment holding a ; does not split anything
     insert into a values (2);
-  ")
+  ",
+  )
 
   assert db.schema.tables(nil) == ['a', 'b']
   assert db.count('a', nil) == 2
@@ -277,7 +281,7 @@ def test_schema_change_under_statements() {
   }
 
   assert prepared.columns().map(@(column) => column.name) ==
-    ['id', 'name', 'made']
+      ['id', 'name', 'made']
 
   prepared.close()
   db.close()

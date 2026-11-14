@@ -266,7 +266,7 @@ def compare(a, b) {
   }
 
   var numeric = (is_number(left) or is_bigint(left)) and
-    (is_number(right) or is_bigint(right))
+      (is_number(right) or is_bigint(right))
 
   if numeric {
     if left < right {
@@ -402,29 +402,47 @@ def invoke(target, arguments: list) {
 
   if count == 5 {
     return target(
-      arguments[0], arguments[1], arguments[2], arguments[3],
+      arguments[0],
+      arguments[1],
+      arguments[2],
+      arguments[3],
       arguments[4],
     )
   }
 
   if count == 6 {
     return target(
-      arguments[0], arguments[1], arguments[2], arguments[3],
-      arguments[4], arguments[5],
+      arguments[0],
+      arguments[1],
+      arguments[2],
+      arguments[3],
+      arguments[4],
+      arguments[5],
     )
   }
 
   if count == 7 {
     return target(
-      arguments[0], arguments[1], arguments[2], arguments[3],
-      arguments[4], arguments[5], arguments[6],
+      arguments[0],
+      arguments[1],
+      arguments[2],
+      arguments[3],
+      arguments[4],
+      arguments[5],
+      arguments[6],
     )
   }
 
   if count == 8 {
     return target(
-      arguments[0], arguments[1], arguments[2], arguments[3],
-      arguments[4], arguments[5], arguments[6], arguments[7],
+      arguments[0],
+      arguments[1],
+      arguments[2],
+      arguments[3],
+      arguments[4],
+      arguments[5],
+      arguments[6],
+      arguments[7],
     )
   }
 

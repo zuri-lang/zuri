@@ -83,16 +83,14 @@ var NEEDS_TLS = ['PLAIN', 'LOGIN', 'XOAUTH2', 'OAUTHBEARER']
 # The characters RFC 4013 maps to a space, and the ones it deletes.
 # Both lists are the ones that matter to a password typed by a person.
 var _TO_SPACE = [
-  0x00a0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005,
-  0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x200b, 0x202f, 0x205f,
-  0x3000,
+  0x00a0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006,
+  0x2007, 0x2008, 0x2009, 0x200a, 0x200b, 0x202f, 0x205f, 0x3000,
 ]
 
 var _DELETED = [
-  0x00ad, 0x034f, 0x1806, 0x180b, 0x180c, 0x180d, 0x200c, 0x200d,
-  0x2060, 0xfe00, 0xfe01, 0xfe02, 0xfe03, 0xfe04, 0xfe05, 0xfe06,
-  0xfe07, 0xfe08, 0xfe09, 0xfe0a, 0xfe0b, 0xfe0c, 0xfe0d, 0xfe0e,
-  0xfe0f, 0xfeff,
+  0x00ad, 0x034f, 0x1806, 0x180b, 0x180c, 0x180d, 0x200c, 0x200d, 0x2060,
+  0xfe00, 0xfe01, 0xfe02, 0xfe03, 0xfe04, 0xfe05, 0xfe06, 0xfe07, 0xfe08,
+  0xfe09, 0xfe0a, 0xfe0b, 0xfe0c, 0xfe0d, 0xfe0e, 0xfe0f, 0xfeff,
 ]
 
 /**
@@ -128,12 +126,13 @@ def prepare(text: string) {
     # Control characters, the surrogate range, the private use areas
     # and the non-characters have no business in a credential, and a
     # server that saw them would not agree with us about what they are.
-    if code < 0x20 or code == 0x7f
-      or (code >= 0x80 and code <= 0x9f)
-      or (code >= 0xd800 and code <= 0xdfff)
-      or (code >= 0xe000 and code <= 0xf8ff)
-      or (code >= 0xfdd0 and code <= 0xfdef)
-      or (code & 0xfffe) == 0xfffe {
+    if code < 0x20 or
+        code == 0x7f or
+        (code >= 0x80 and code <= 0x9f) or
+        (code >= 0xd800 and code <= 0xdfff) or
+        (code >= 0xe000 and code <= 0xf8ff) or
+        (code >= 0xfdd0 and code <= 0xfdef) or
+        (code & 0xfffe) == 0xfffe {
       raise AuthenticationError('a credential cannot contain this character')
     }
 
@@ -522,9 +521,9 @@ def _scram_hash(digest: string, data) {
 }
 
 def _scram_hmac(digest: string, key, data) {
-  return digest == 'sha1' ?
-    hash.hmac(hash.sha1, key, data, true) :
-    hash.hmac(hash.sha256, key, data, true)
+  return digest == 'sha1'
+      ? hash.hmac(hash.sha1, key, data, true)
+      : hash.hmac(hash.sha256, key, data, true)
 }
 
 # A comma or an equals sign inside a username would be read as
@@ -570,8 +569,13 @@ class Scram < Mechanism {
    *    wants; passing one is for reproducing a known exchange.
    * @throws AuthenticationError if `digest` is neither.
    */
-  @new(username: string, password: string, digest: ?string,
-    authorize_as: ?string, nonce: ?string) {
+  @new(
+    username: string,
+    password: string,
+    digest: ?string,
+    authorize_as: ?string,
+    nonce: ?string,
+  ) {
     self.digest = digest == nil ? 'sha256' : digest.lower()
 
     if !_SCRAM_DIGESTS.contains(self.digest) {
@@ -595,9 +599,9 @@ class Scram < Mechanism {
   # The header that says what channel binding this client wants, which
   # is none, and which account it is acting as.
   _gs2() {
-    return self.authorize_as == '' ?
-      'n,,' :
-      'n,a=${_escape_name(self.authorize_as)},'
+    return self.authorize_as == ''
+        ? 'n,,'
+        : 'n,a=${_escape_name(self.authorize_as)},'
   }
 
   start() {
@@ -641,7 +645,12 @@ class Scram < Mechanism {
     var salt = base64.decode(fields.s)
     var size = _SCRAM_DIGESTS[self.digest].size
     var salted = hash.pbkdf2(
-      self.digest, self.password, salt, iterations, size, true,
+      self.digest,
+      self.password,
+      salt,
+      iterations,
+      size,
+      true,
     )
     var client_key = _scram_hmac(self.digest, salted, 'Client Key')
     var stored_key = _scram_hash(self.digest, client_key)
@@ -650,12 +659,13 @@ class Scram < Mechanism {
     var signature = _scram_hmac(self.digest, stored_key, message)
     var server_key = _scram_hmac(self.digest, salted, 'Server Key')
 
-    self._server_signature = base64.encode(_scram_hmac(
-      self.digest, server_key, message,
-    ))
+    self._server_signature = base64.encode(
+      _scram_hmac(self.digest, server_key, message),
+    )
     self._stage = 2
 
-    return '${without_proof},p=${base64.encode(_xor(client_key, signature))}'.to_bytes()
+    return '${without_proof},p=${base64.encode(_xor(client_key, signature))}'
+        .to_bytes()
   }
 
   _finish(text: string) {

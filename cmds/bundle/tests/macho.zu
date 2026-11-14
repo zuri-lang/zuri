@@ -51,8 +51,8 @@ def expect_signed(data: bytes, identifier: string) {
 
   var at = slots.get('0')
   var directory = struct.unpack(
-    'N:magic/N:length/N:version/N:flags/N:hash_offset/N:ident_offset/N:special/N:code'
-      + '/N:limit/C:hash_size/C:hash_type/C:platform/C:page',
+    'N:magic/N:length/N:version/N:flags/N:hash_offset/N:ident_offset/N:special/N:code' +
+        '/N:limit/C:hash_size/C:hash_type/C:platform/C:page',
     blob,
     at,
   )
@@ -66,8 +66,8 @@ def expect_signed(data: bytes, identifier: string) {
 
   var name_at = at + directory.ident_offset
 
-  expect(blob[name_at, name_at
-    + identifier.length()].to_string()).to_equal(identifier)
+  expect(blob[name_at, name_at + identifier.length()].to_string())
+      .to_equal(identifier)
   expect(blob[name_at + identifier.length()]).to_equal(0)
 
   var pages = ((signature.dataoff + 4095) / 4096).floor()
@@ -77,8 +77,8 @@ def expect_signed(data: bytes, identifier: string) {
   iter var page = 0; page < pages; page++ {
     var start = page * 4096
     var stop = start + 4096 < signature.dataoff
-      ? start + 4096
-      : signature.dataoff
+        ? start + 4096
+        : signature.dataoff
     var slot = at + directory.hash_offset + page * 32
 
     expect(blob[slot, slot + 32]).to_equal(hash.sha256(data[start, stop], true))
@@ -114,9 +114,8 @@ describe('embed', @{
     # Nothing in the file lies outside the image any more.
     expect(linkedit.fileoff + linkedit.filesize).to_equal(data.length())
     expect(linkedit.vmsize >= linkedit.filesize).to_be_true()
-    expect(
-      found.get('symtab').stroff + found.get('symtab').strsize,
-    ).to_equal(end)
+    expect(found.get('symtab').stroff + found.get('symtab').strsize)
+        .to_equal(end)
 
     expect_signed(data, 'greeter')
   })
@@ -127,8 +126,8 @@ describe('embed', @{
     var stroff = commands(runtime).get('symtab').stroff
 
     expect(data[1024, TEXT_SIZE]).to_equal(runtime[1024, TEXT_SIZE])
-    expect(data[stroff, stroff
-      + STRINGS.length()].to_string()).to_equal(STRINGS)
+    expect(data[stroff, stroff + STRINGS.length()].to_string())
+        .to_equal(STRINGS)
   })
 
   it('adds a signature to an unsigned runtime with room for one', @{
@@ -163,25 +162,34 @@ describe('embed', @{
   it('names what it will not work with', @{
     var universal = struct.pack('NN', 0xcafebabe, 2) + bytes(64)
 
-    expect(failure(@{
-      macho.embed(universal, payload(), 'greeter')
-    })).to_contain('universal binary')
+    expect(
+      failure(@{
+        macho.embed(universal, payload(), 'greeter')
+      }),
+    ).to_contain('universal binary')
 
-    expect(failure(@{
-      macho.embed(bytes(64), payload(), 'greeter')
-    })).to_contain('not a 64-bit macOS executable')
+    expect(
+      failure(@{
+        macho.embed(bytes(64), payload(), 'greeter')
+      }),
+    ).to_contain('not a 64-bit macOS executable')
 
     # Something after the string table, which the payload would cover.
     var runtime = executable(false, 1024)
 
     runtime.extend(bytes(64))
     struct.pack_into(
-      'P', runtime, 32 + 152 + 8 + 40, runtime.length() - TEXT_SIZE,
+      'P',
+      runtime,
+      32 + 152 + 8 + 40,
+      runtime.length() - TEXT_SIZE,
     )
 
-    expect(failure(@{
-      macho.embed(runtime, payload(), 'greeter')
-    })).to_contain('after its string table')
+    expect(
+      failure(@{
+        macho.embed(runtime, payload(), 'greeter')
+      }),
+    ).to_contain('after its string table')
   })
 
   it('tells a Mach-O executable from anything else', @{

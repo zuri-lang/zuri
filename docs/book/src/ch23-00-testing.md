@@ -25,16 +25,21 @@ describe('subtotal', @{
   })
 
   it('multiplies price by quantity', @{
-    expect(subtotal([{ price: 250, quantity: 3 }])).to_be(750)
+    expect(
+      subtotal([
+        { price: 250, quantity: 3 },
+      ]),
+    ).to_be(750)
   })
 
   it('adds every line together', @{
-    expect(subtotal([
-      { price: 250, quantity: 3 },
-      { price: 100, quantity: 1 },
-    ])).to_be(850)
+    expect(
+      subtotal([
+        { price: 250, quantity: 3 },
+        { price: 100, quantity: 1 },
+      ]),
+    ).to_be(850)
   })
-
 })
 ```
 
@@ -170,16 +175,16 @@ Expected status (404) to be 200
 bytes by their contents, so it is the right matcher for most things:
 
 ```zuri,ignore
-expect([1, 2]).to_be([1, 2])          # passes
-expect({ a: 1 }).to_be({ a: 1 })      # passes
+expect([1, 2]).to_be([1, 2]) # passes
+expect({ a: 1 }).to_be({ a: 1 }) # passes
 ```
 
 It compares two **instances** by identity, though, unless their class
 defines `@eq`, because that is what `==` does:
 
 ```zuri,ignore
-expect(Point(1, 2)).to_be(Point(1, 2))      # fails without @eq: two objects
-expect(Point(1, 2)).to_equal(Point(1, 2))   # passes: same contents
+expect(Point(1, 2)).to_be(Point(1, 2)) # fails without @eq: two objects
+expect(Point(1, 2)).to_equal(Point(1, 2)) # passes: same contents
 ```
 
 `to_equal` is the structural one. It walks an instance field by field,
@@ -219,8 +224,12 @@ expect(0.1 + 0.2).to_be_close_to(0.3)
 to be the one to call it:
 
 ```zuri,ignore
-expect(@{ parse('') }).to_raise_instance_of(ValueError)
-expect(@{ parse('{}') }).to_not_raise()
+expect(@{
+  parse('')
+}).to_raise_instance_of(ValueError)
+expect(@{
+  parse('{}')
+}).to_not_raise()
 ```
 
 **`to_have_property`** walks a dotted path through dictionaries,
@@ -234,7 +243,9 @@ expect(payload).to_have_property('data.items.0.id', 7)
 **`to_satisfy`** is the escape hatch when nothing else fits:
 
 ```zuri,ignore
-expect(port).to_satisfy(@(n) { return n % 2 == 0 }, 'to be an even port')
+expect(port).to_satisfy(@(n) {
+  return n % 2 == 0
+}, 'to be an even port')
 ```
 
 ### Failing on Purpose
@@ -293,7 +304,6 @@ describe('Session', @{
     store.rows.append('a')
     expect(store.rows).to_have_length(1)
   })
-
 })
 ```
 
@@ -374,13 +384,17 @@ def slug(title) {
   return title.lower().replace('/[^a-z0-9]+/', '-').trim('-')
 }
 
-it_each([
-  ['Hello World', 'hello-world'],
-  ['  Spaced  Out  ', 'spaced-out'],
-  ['Zuri 1.0!', 'zuri-1-0'],
-], 'turns $0 into $1', @(title, expected) {
-  expect(slug(title)).to_be(expected)
-})
+it_each(
+  [
+    ['Hello World', 'hello-world'],
+    ['  Spaced  Out  ', 'spaced-out'],
+    ['Zuri 1.0!', 'zuri-1-0'],
+  ],
+  'turns $0 into $1',
+  @(title, expected) {
+    expect(slug(title)).to_be(expected)
+  },
+)
 ```
 
 ```console
@@ -444,10 +458,11 @@ describe('retry', @{
     var operation = mock()
     operation.raises(Error('connection reset'))
 
-    expect(@{ retry(operation.fn, 3) }).to_raise_with_message('connection reset')
+    expect(@{
+      retry(operation.fn, 3)
+    }).to_raise_with_message('connection reset')
     expect(operation).to_have_been_called_times(3)
   })
-
 })
 ```
 
@@ -476,12 +491,18 @@ records and stands in for it:
 import test { * }
 
 def checkout(cart, gateway) {
-  var total = cart.reduce(@(sum, line) { return sum + line }, 0)
+  var total = cart.reduce(@(sum, line) {
+    return sum + line
+  }, 0)
   return gateway['charge'](total)
 }
 
 it('charges the cart total once', @{
-  var gateway = { charge: @(amount) { return 'live-charge' } }
+  var gateway = {
+    charge: @(amount) {
+      return 'live-charge'
+    },
+  }
   var charge = spy_on(gateway, 'charge')
   charge.returns('receipt-1')
 
@@ -512,12 +533,18 @@ def invoice(customer, lines) {
   return {
     customer,
     lines,
-    total: lines.reduce(@(sum, line) { return sum + line.amount }, 0),
+    total: lines.reduce(@(sum, line) {
+      return sum + line.amount
+    }, 0),
   }
 }
 
 it('builds the document', @{
-  expect(invoice('Ada', [{ label: 'Design', amount: 4200 }])).to_match_snapshot()
+  expect(
+    invoice('Ada', [
+      { label: 'Design', amount: 4200 },
+    ]),
+  ).to_match_snapshot()
 })
 ```
 
@@ -595,14 +622,20 @@ at asserts nothing.
 ## Testing What Something Prints
 
 ```zuri,ignore
-expect(@{ greet('Ada') }).to_print('Hello, Ada')
-expect(@{ quiet_mode() }).to_print_nothing()
+expect(@{
+  greet('Ada')
+}).to_print('Hello, Ada')
+expect(@{
+  quiet_mode()
+}).to_print_nothing()
 ```
 
 Or take the output and assert on it yourself:
 
 ```zuri,ignore
-var printed = capture_output(@{ report(rows) })
+var printed = capture_output(@{
+  report(rows)
+})
 expect(printed.lines()).to_have_length(4)
 ```
 
@@ -801,8 +834,12 @@ class Quiet < Reporter {
 }
 
 describe('a suite', @{
-  it('passes quietly', @{ expect(1).to_be(1) })
-  it('fails loudly', @{ expect(1).to_be(2) })
+  it('passes quietly', @{
+    expect(1).to_be(1)
+  })
+  it('fails loudly', @{
+    expect(1).to_be(2)
+  })
 })
 
 run({ reporter: Quiet(), exit: false })

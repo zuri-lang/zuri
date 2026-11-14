@@ -2284,6 +2284,11 @@ mod command_suites {
   }
 
   #[test]
+  fn doc() {
+    suite("doc");
+  }
+
+  #[test]
   fn bundle() {
     suite("bundle");
   }

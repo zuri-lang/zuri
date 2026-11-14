@@ -1,0 +1,420 @@
+# The API reference a repository writes for every version it is sent:
+# generated when the version is published, from the doc blocks in its
+# own archive, and shown on the package's page.
+
+import http
+import os
+import test { * }
+
+import ._harness { World, commit, write }
+import ..db { Database }
+
+var world = World('documentation')
+var KIT = nil
+
+# A package whose root lifts everything in `app`, and exposes `radar`
+# as a namespace.
+var APP = '/**
+ * @module app
+ *
+ * Forecasts for anywhere.
+ */
+
+/**
+ * The forecast for _place_, as a {Report}. Reads its key with
+ * {os.get_env}.
+ *
+ * @param string place: where to look.
+ * @returns Report
+ */
+def forecast(place: string) {
+  return Report(place)
+}
+
+/**
+ * One forecast. {forecast()} makes them.
+ */
+class Report {
+
+  /** Where it is for. @type string */
+  var place
+
+  @new(place: string) {
+    self.place = place
+  }
+
+  /**
+   * It, said aloud.
+   *
+   * @returns string
+   */
+  say() {
+    return \'Rain in \' + self.place
+  }
+}
+
+def undocumented() {}
+'
+
+var RADAR = '/**
+ * @module radar
+ *
+ * What the radar sees.
+ */
+
+/** The latest sweep. */
+def sweep() {}
+'
+
+def page(path: string) {
+  return http.get(world.url + path).as_text()
+}
+
+before_all(@{
+  world.start()
+
+  # The standard library's reference is written as the repository
+  # starts. The packages published below link to it once it is there.
+  var deadline = time() + 120
+
+  while !page('/std').contains('<h1>The standard library</h1>') {
+    if time() > deadline {
+      raise Error("the standard library's reference was not written")
+    }
+
+    os.sleep(0.2)
+  }
+  world.account('ada', world.dir('signin'))
+
+  KIT = world.project('weather-kit')
+
+  write(
+    KIT,
+    'index.zu',
+    '/**\n * Weather, as a package.\n */\n\nimport @.app { * }\nimport @.radar\n',
+  )
+  write(KIT, 'app/index.zu', APP)
+  write(KIT, 'radar.zu', RADAR)
+  write(KIT, 'notes/rain & sun.txt', 'Mostly sun.\n')
+  commit(KIT)
+
+  var published = world.zuri(['publish', '--registry', world.url], KIT)
+
+  if published.status != 0 {
+    raise Error('publishing failed: ${published.all}')
+  }
+})
+
+after_all(@{
+  world.finish()
+})
+
+# The repository's own database, for looking behind the site.
+def database() {
+  return Database('sqlite://' + os.join_paths(world.root, 'nyssa', 'nyssa.db'))
+}
+
+describe('the API tab', @{
+  it('is written when the version is published', @{
+    var db = database()
+    var rows = db.connection.fetch_all('select * from version_docs', {})
+    var pages = db.connection.fetch_value(
+      'select count(*) from doc_pages',
+      {},
+      0,
+    )
+
+    db.close()
+
+    expect(rows.length()).to_be(1)
+    expect(pages).to_be(3)
+  })
+
+  it('lists every module of the version', @{
+    var shown = page('/packages/weather-kit?tab=api')
+
+    expect(shown).to_contain('aria-current="page">API</a>')
+    expect(shown).to_contain('>weather_kit</a>')
+    expect(shown).to_contain('>weather_kit.app</a>')
+    expect(shown).to_contain('>weather_kit.radar</a>')
+  })
+
+  it("opens on the package's own page, listing its whole surface", @{
+    var shown = page('/packages/weather-kit?tab=api')
+
+    expect(shown).to_contain('Weather, as a package.')
+    expect(shown).to_contain(
+      'href="/packages/weather-kit?tab=api&amp;module=weather_kit-app#user-content-forecast"',
+    )
+  })
+
+  it('shows the page of the module asked for', @{
+    var shown = page('/packages/weather-kit?tab=api&module=weather_kit-app')
+
+    expect(shown).to_contain('id="user-content-forecast"')
+    expect(shown)
+        .to_contain('weather_kit</span>.<span class="id">forecast</span>')
+    expect(shown).to_contain('id="user-content-reportsay"')
+  })
+
+  it('links a name written in braces to where it is documented', @{
+    var shown = page('/packages/weather-kit?tab=api&module=weather_kit-app')
+
+    expect(shown)
+        .to_contain('<a href="#user-content-report"><code>Report</code></a>')
+    expect(
+      shown,
+    ).to_contain('<a href="#user-content-forecast"><code>forecast()</code></a>')
+  })
+
+  it('shows the first module for one it does not have', @{
+    expect(page('/packages/weather-kit?tab=api&module=nothing'))
+        .to_contain('Weather, as a package.')
+  })
+
+  it('is there for a version asked for by number', @{
+    expect(page('/packages/weather-kit/0.1.0?tab=api&module=weather_kit-radar'))
+        .to_contain('The latest sweep.')
+  })
+
+  it('is written again when an older generator wrote it', @{
+    var db = database()
+
+    db.connection.update('version_docs', { generator: 0 }, {})
+    db.connection.delete('doc_pages', {})
+    db.close()
+
+    expect(page('/packages/weather-kit?tab=api&module=weather_kit-radar'))
+        .to_contain('The latest sweep.')
+  })
+})
+
+# The line of _text_ that holds _wanted_, counting from one.
+def line_of(text: string, wanted: string) {
+  var lines = text.split('\n')
+
+  iter var i = 0; i < lines.length(); i++ {
+    if lines[i].contains(wanted) {
+      return i + 1
+    }
+  }
+
+  return -1
+}
+
+describe('the Source tab', @{
+  it('lists every file of the version', @{
+    var shown = page('/packages/weather-kit?tab=source')
+
+    expect(shown).to_contain('aria-current="page">Source</a>')
+    expect(shown)
+        .to_contain('?tab=source&amp;file=app%2Findex.zu">app/index.zu</a>')
+    expect(shown).to_contain('>project.toml</a>')
+    expect(shown).to_contain('>radar.zu</a>')
+  })
+
+  it('shows a file a line at a time, numbered, with Zuri coloured', @{
+    var shown = page('/packages/weather-kit?tab=source&file=app/index.zu')
+    var line = line_of(APP, 'def forecast(')
+
+    expect(shown).to_contain('<tr id="L${line}">')
+    expect(shown).to_contain('<a href="#L${line}">${line}</a>')
+    expect(
+      shown,
+    ).to_contain('<span class="kw">def</span> <span class="id">forecast</span>')
+  })
+
+  it('shows any other text as it is', @{
+    expect(page('/packages/weather-kit?tab=source&file=project.toml'))
+        .to_contain('name = "weather-kit"')
+  })
+
+  it('reaches a file whose name would end a query value', @{
+    var listed = page('/packages/weather-kit?tab=source')
+
+    expect(listed).to_contain('?tab=source&amp;file=notes%2Frain+%26+sun.txt"')
+    expect(
+      page('/packages/weather-kit?tab=source&file=notes%2Frain+%26+sun.txt'),
+    ).to_contain('Mostly sun.')
+  })
+
+  it('says so when the version has no such file', @{
+    expect(page('/packages/weather-kit?tab=source&file=../../etc/passwd'))
+        .to_contain('This version has no file called ../../etc/passwd.')
+  })
+
+  it("is where a name's Source link on its API page leads", @{
+    var shown = page('/packages/weather-kit?tab=api&module=weather_kit-app')
+    var line = line_of(APP, 'def forecast(')
+
+    expect(shown).to_contain(
+      'href="/packages/weather-kit/0.1.0?tab=source&amp;file=app%2Findex.zu#L${line}">Source</a>',
+    )
+  })
+})
+
+describe('searching for a name', @{
+  it('finds the name and where it is documented', @{
+    var found = page('/search?q=forecast')
+
+    expect(found).to_contain(
+      '<a href="/packages/weather-kit?tab=api&amp;module=weather_kit-app#user-content-forecast"><code>weather_kit.forecast</code></a>',
+    )
+    expect(
+      found,
+    ).to_contain('The forecast for <em>place</em>, as a <code>Report</code>.')
+  })
+
+  it('takes a name in any case, and with its parentheses', @{
+    expect(page('/search?q=REPORT'))
+        .to_contain('<code>weather_kit.Report</code>')
+    expect(page('/search?q=forecast()'))
+        .to_contain('<code>weather_kit.forecast</code>')
+  })
+
+  it('takes the end of a path', @{
+    expect(page('/search?q=radar.sweep'))
+        .to_contain('<code>weather_kit.radar.sweep</code>')
+  })
+
+  it('looks for no name in a query of several words', @{
+    expect(page('/search?q=forecast+report')).not
+        .to_contain('id="names-heading"')
+  })
+})
+
+describe('how much is documented', @{
+  it("is on every version's page, and the API tab", @{
+    expect(page('/packages/weather-kit')).to_contain(
+      '<dt>Documented</dt><dd><a href="/packages/weather-kit?tab=api">71%</a> of 7 names</dd>',
+    )
+    expect(page('/packages/weather-kit?tab=api'))
+        .to_contain('5 of 7 public names have a doc block.')
+  })
+
+  it('is said by a dry run of publish, with the names that have none', @{
+    var shown = world.zuri([
+      'publish',
+      '--registry',
+      world.url,
+      '--dry-run',
+    ], KIT)
+
+    expect(shown.out).to_contain('Documented: 5 of 7 public names (71%)')
+    expect(shown.out).to_contain(
+      'without a doc block: weather_kit.undocumented, weather_kit.Report()',
+    )
+  })
+})
+
+describe('the standard library', @{
+  it('has a page listing its modules', @{
+    var shown = page('/std')
+
+    expect(shown).to_contain('<h1>The standard library</h1>')
+    expect(shown).to_contain('<a href="/std/os"><code>os</code></a>')
+    expect(shown).to_contain('>os.env</a>')
+  })
+
+  it("has a page for each module, linking to the others' headings", @{
+    var shown = page('/std/os')
+
+    expect(shown).to_contain('href="/std/os-env#user-content-get_env"')
+    expect(page('/std/os-env')).to_contain('id="user-content-get_env"')
+  })
+
+  it('says so when it has no such module', @{
+    expect(page('/std/nothing'))
+        .to_contain('The standard library has no module called')
+  })
+
+  it('is linked to by a reference written before it was there', @{
+    var db = database()
+
+    db.connection.exec('update version_docs set generator = -generator', [])
+    db.close()
+
+    expect(page('/packages/weather-kit?tab=api&module=weather_kit-app'))
+        .to_contain('<a href="/std/os-env#user-content-get_env">')
+  })
+
+  it("is where a package's name for something in it leads", @{
+    expect(page('/packages/weather-kit?tab=api&module=weather_kit-app'))
+        .to_contain(
+          '<a href="/std/os-env#user-content-get_env"><code>os.get_env</code></a>',
+        )
+  })
+
+  it("is searched for names, before the packages' own", @{
+    var found = page('/search?q=get_env')
+
+    expect(found).to_contain(
+      '<a href="/std/os-env#user-content-get_env"><code>os.get_env</code></a>',
+    )
+    expect(found).to_contain('in <a href="/std">the standard library</a>')
+    expect(found).not.to_contain('Nothing has been published yet.')
+  })
+})
+
+describe('a package depending on another', @{
+  it("links a name written in braces to the other's API", @{
+    var dir = world.project('radar-kit')
+    var added = world.zuri([
+      'install',
+      'weather-kit',
+      '--registry',
+      world.url,
+    ], dir)
+
+    expect(added.status).to_equal(0)
+
+    write(
+      dir,
+      'app/index.zu',
+      '/**\n * @module app\n *\n * Radar, built on {weather_kit.forecast()} and {weather_kit.radar}.\n */\n\n/** Scans. */\ndef scan() {}\n',
+    )
+    commit(dir)
+
+    var published = world.zuri(['publish', '--registry', world.url], dir)
+
+    expect(published.status).to_equal(0)
+
+    var shown = page('/packages/radar-kit?tab=api&module=radar_kit-app')
+
+    expect(shown).to_contain(
+      '<a href="/packages/weather-kit?tab=api&amp;module=weather_kit-app#user-content-forecast"><code>weather_kit.forecast()</code></a>',
+    )
+    expect(shown).to_contain(
+      '<a href="/packages/weather-kit?tab=api&amp;module=weather_kit-radar"><code>weather_kit.radar</code></a>',
+    )
+  })
+})
+
+# Last, since starting the repository again moves it to a new address.
+describe('starting again', @{
+  it('finds names whose reference was written before they were kept', @{
+    var db = database()
+
+    db.connection.delete('symbols', {})
+    db.connection.update('version_docs', { generator: 0 }, {})
+    db.close()
+
+    expect(page('/search?q=sweep')).not.to_contain('weather_kit.radar.sweep')
+
+    world.stop()
+    world.start()
+
+    var deadline = time() + 30
+    var found = false
+
+    while !found and time() < deadline {
+      found = page('/search?q=sweep').contains('weather_kit.radar.sweep')
+
+      if !found {
+        os.sleep(0.2)
+      }
+    }
+
+    expect(found).to_be_true()
+  })
+})

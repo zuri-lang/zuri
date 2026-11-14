@@ -7,10 +7,12 @@ import ffi
 import os
 
 def fixture() {
-  var header = file(os.join_paths(
-    os.dir_name(__file__), 'ffi_fixture', 'fixture.h',
-  )).read()
-  var lib = ffi.open('ffifixture', { paths: [os.get_env('ZURI_FFI_FIXTURES')] })
+  var header = file(
+    os.join_paths(os.dir_name(__file__), 'ffi_fixture', 'fixture.h'),
+  ).read()
+  var lib = ffi.open('ffifixture', {
+    paths: [os.get_env('ZURI_FFI_FIXTURES')],
+  })
   return ffi.declare(header).bind(lib)
 }
 
@@ -23,7 +25,9 @@ def noop() {}
 def panic_in_callback() {
   var fx = fixture()
   catch {
-    fx.fx_apply(@(x) { _isolate.debug_panic() }, 9)
+    fx.fx_apply(@(x) {
+      _isolate.debug_panic()
+    }, 9)
   } as error {
     return 'a panic reached the program as an error'
   }
@@ -40,7 +44,9 @@ def panic_in_compiled_callback() {
 
   var fx = fixture()
   catch {
-    fx.fx_apply(@(x) { call_it(_isolate.debug_panic) }, 9)
+    fx.fx_apply(@(x) {
+      call_it(_isolate.debug_panic)
+    }, 9)
   } as error {
     return 'a panic reached the program as an error'
   }

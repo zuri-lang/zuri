@@ -32,29 +32,37 @@ def parser() {
 
   parser.description = 'Updates packages to the newest versions their ranges allow.'
 
-  parser.add_index('packages', 'Only these; every package when none is named',
-    { type: args.LIST, metavar: 'package' })
-  parser.add_option('latest',
+  parser.add_index('packages', 'Only these; every package when none is named', {
+    type: args.LIST,
+    metavar: 'package',
+  })
+  parser.add_option(
+    'latest',
     'Move each range in project.toml to the newest release there is',
-    { short_name: 'L' })
-  parser.add_option(
-    'dry-run', 'Show what is out of date and change nothing',
-    { short_name: 'n' },
+    { short_name: 'L' },
   )
+  parser.add_option('dry-run', 'Show what is out of date and change nothing', {
+    short_name: 'n',
+  })
   parser.add_option(
-    'check', 'Like dry-run, and exit 1 when anything is out of date', nil,
+    'check',
+    'Like dry-run, and exit 1 when anything is out of date',
+    nil,
   )
-  parser.add_option(
-    'global', 'Update the packages installed for this user',
-    { short_name: 'g' },
-  )
+  parser.add_option('global', 'Update the packages installed for this user', {
+    short_name: 'g',
+  })
   parser.add_option('offline', 'Use only what is already downloaded', nil)
   parser.add_option('no-hooks', 'Run no install scripts at all', nil)
-  parser.add_option('allow-hooks',
-    'Let these packages run their scripts this time',
-    { type: args.LIST, metavar: 'package' })
   parser.add_option(
-    'insecure', 'Allow a token to cross plain http to another machine', nil,
+    'allow-hooks',
+    'Let these packages run their scripts this time',
+    { type: args.LIST, metavar: 'package' },
+  )
+  parser.add_option(
+    'insecure',
+    'Allow a token to cross plain http to another machine',
+    nil,
   )
   parser.add_option('quiet', 'Print only the result', { short_name: 'q' })
   cli.add_json_option(parser)
@@ -68,8 +76,8 @@ def _newest(index: dict) {
   var usable = []
 
   for entry in index.get('versions', []) {
-    if entry.get('yanked', false)
-      or semver.parse(entry.version).is_prerelease() {
+    if entry.get('yanked', false) or
+        semver.parse(entry.version).is_prerelease() {
       continue
     }
 
@@ -96,19 +104,23 @@ def main() {
   var options = cli.sync_options(parsed, {
     dry_run,
     unlock: only.is_empty()
-      ? true
-      : only.map(@(name) => names.normalized(name)),
+        ? true
+        : only.map(@(name) => names.normalized(name)),
   })
 
   var workspace = cli.workspace(
-    'update', given.get('global', false) == true, options,
+    'update',
+    given.get('global', false) == true,
+    options,
   )
   var declared = workspace.manifest.dependencies()
 
   for name in only {
-    if !workspace.lock.has(name)
-      and workspace.manifest.dependency(name) == nil {
-      raise UsageError("'${name}' is not a dependency of ${workspace.display_name()}")
+    if !workspace.lock.has(name) and
+        workspace.manifest.dependency(name) == nil {
+      raise UsageError(
+        "'${name}' is not a dependency of ${workspace.display_name()}",
+      )
     }
   }
 
@@ -116,9 +128,10 @@ def main() {
 
   if given.get('latest', false) == true {
     for dependency in declared {
-      var chosen = only.is_empty() or only.some(@(name) {
-        return names.normalized(name) == names.normalized(dependency.name)
-      })
+      var chosen = only.is_empty() or
+          only.some(@(name) {
+            return names.normalized(name) == names.normalized(dependency.name)
+          })
 
       if !chosen or dependency.kind != 'registry' {
         continue
@@ -137,8 +150,8 @@ def main() {
         breaking.append('${dependency.name} ${locked.version} -> ${newest}')
       }
 
-      dependency.range = (dependency.range.starts_with('=') ? '=' : '^')
-        + newest
+      dependency.range = (dependency.range.starts_with('=') ? '=' : '^') +
+          newest
       workspace.manifest.add_dependency(dependency)
     }
   }
@@ -155,9 +168,9 @@ def main() {
     var known = provider.entries.get(names.normalized(entry.name), nil)
 
     if known != nil {
-      var releases = known
-        .keys()
-        .filter(@(v) => !semver.parse(v).is_prerelease())
+      var releases = known.keys().filter(
+        @(v) => !semver.parse(v).is_prerelease(),
+      )
 
       newest = releases.is_empty() ? nil : semver.sorted(releases).last()
     }
@@ -181,12 +194,18 @@ def main() {
     } else if outdated.is_empty() and behind.is_empty() {
       echo 'Everything is up to date.'
     } else {
-      var table = [[ui.heading('package'), ui.heading('current'),
-        ui.heading('wanted'), ui.heading('latest')]]
+      var table = [
+        [
+          ui.heading('package'),
+          ui.heading('current'),
+          ui.heading('wanted'),
+          ui.heading('latest'),
+        ],
+      ]
 
       for row in rows {
-        if row.current == row.wanted
-          and (row.latest == nil or row.latest == row.wanted) {
+        if row.current == row.wanted and
+            (row.latest == nil or row.latest == row.wanted) {
           continue
         }
 
@@ -198,8 +217,12 @@ def main() {
           latest = ui.warn(latest + ' (breaking)')
         }
 
-        table.append([row.name, row.current == nil ? 'none' : row.current,
-          ui.accent(row.wanted), latest])
+        table.append([
+          row.name,
+          row.current == nil ? 'none' : row.current,
+          ui.accent(row.wanted),
+          latest,
+        ])
       }
 
       ui.say(ui.table(table))
@@ -213,12 +236,16 @@ def main() {
   }
 
   for change in breaking {
-    ui.complain(ui.warn('warning: ${change} is a new major version, which may break callers'))
+    ui.complain(
+      ui.warn(
+        'warning: ${change} is a new major version, which may break callers',
+      ),
+    )
   }
 
-  cli.report(sync.apply(
-    workspace, lock, provider, given.get('latest', false) == true,
-  ))
+  cli.report(
+    sync.apply(workspace, lock, provider, given.get('latest', false) == true),
+  )
 }
 
 run('update', main)

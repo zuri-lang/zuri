@@ -39,7 +39,10 @@ import ..crud { Raw }
 import ..ddl { DdlAdapter }
 import ..driver { SERIALIZABLE }
 import ..errors {
-  ForeignKeyViolation, NotNullViolation, NotSupportedError, QueryError,
+  ForeignKeyViolation,
+  NotNullViolation,
+  NotSupportedError,
+  QueryError,
 }
 
 /**
@@ -115,7 +118,7 @@ class SqliteDdl < DdlAdapter {
    */
   current_default(column) {
     return "(strftime('%Y-%m-%dT%H:%M:%S', 'now') || " +
-      "substr(strftime('%f', 'now'), 3) || '000+00:00')"
+        "substr(strftime('%f', 'now'), 3) || '000+00:00')"
   }
 
   /**
@@ -126,7 +129,7 @@ class SqliteDdl < DdlAdapter {
     if column.kind == 'decimal' and column.precision > MAX_DECIMAL_PRECISION {
       raise NotSupportedError(
         'SQLite holds a decimal as a double, which keeps ${MAX_DECIMAL_PRECISION} ' +
-          'significant digits exactly, and ${column.name} asks for ${column.precision}',
+            'significant digits exactly, and ${column.name} asks for ${column.precision}',
         { driver: self.driver.name() },
       )
     }
@@ -152,13 +155,14 @@ class SqliteDdl < DdlAdapter {
         if column.is_change {
           self._rebuild(connection, table, @(definition) {
             definition.replace_column(
-              column.name, self.column_definition(column),
+              column.name,
+              self.column_definition(column),
             )
 
             if column.foreign != nil {
-              definition.add_constraint(self.foreign_key_sql(
-                table, column.foreign,
-              ))
+              definition.add_constraint(
+                self.foreign_key_sql(table, column.foreign),
+              )
             }
           })
         } else if self._adds_in_place(column) {
@@ -175,13 +179,15 @@ class SqliteDdl < DdlAdapter {
               definition.add_column(column.name, self.column_definition(column))
 
               if column.is_primary and !column.is_generated {
-                definition.add_constraint('primary key (${self.quote(column.name)})')
+                definition.add_constraint(
+                  'primary key (${self.quote(column.name)})',
+                )
               }
 
               if column.foreign != nil {
-                definition.add_constraint(self.foreign_key_sql(
-                  table, column.foreign,
-                ))
+                definition.add_constraint(
+                  self.foreign_key_sql(table, column.foreign),
+                )
               }
             })
           } as error {
@@ -191,7 +197,7 @@ class SqliteDdl < DdlAdapter {
             if instance_of(error, NotNullViolation) and !column.is_generated {
               raise NotNullViolation(
                 '${column.name} is required and has no default, so it cannot be ' +
-                  'added to ${table} while ${table} has rows',
+                    'added to ${table} while ${table} has rows',
                 { driver: self.driver.name() },
               )
             }
@@ -205,17 +211,18 @@ class SqliteDdl < DdlAdapter {
         for kind, asked in wanted {
           if asked {
             var name = self._own_name(table, kind, column)
-            self.run(
-              connection,
-              [self.index_sql(table, kind, name, [column.name], false)],
-            )
+            self.run(connection, [
+              self.index_sql(table, kind, name, [column.name], false),
+            ])
           }
         }
       }
       when 'primary' {
         self._rebuild(connection, table, @(definition) {
           definition.refuse_second_primary(table)
-          definition.add_constraint('primary key (${self._list(operation.columns)})')
+          definition.add_constraint(
+            'primary key (${self._list(operation.columns)})',
+          )
         })
       }
       when 'foreign' {
@@ -267,7 +274,7 @@ class SqliteDdl < DdlAdapter {
           if key.references_table == place.name {
             raise QueryError(
               '${table} cannot be dropped while ${other} refers to it through a ' +
-                'foreign key; drop that key or ${other} first',
+                  'foreign key; drop that key or ${other} first',
               { driver: self.driver.name() },
             )
           }
@@ -366,9 +373,9 @@ class SqliteDdl < DdlAdapter {
     if connection.fetch_value('pragma foreign_keys', nil, 0) == 1 {
       raise NotSupportedError(
         'SQLite builds ${table} again to make this change, which it can only ' +
-          'do with foreign keys switched off, and inside this transaction they ' +
-          'are on; make the change outside a transaction, or in a migration, ' +
-          'which both switch them off around it',
+            'do with foreign keys switched off, and inside this transaction they ' +
+            'are on; make the change outside a transaction, or in a migration, ' +
+            'which both switch them off around it',
         { driver: self.driver.name() },
       )
     }
@@ -376,13 +383,14 @@ class SqliteDdl < DdlAdapter {
     var master = self._master(place)
     var original = connection.fetch_value(
       "select sql from ${master} where type = 'table' and name = ?",
-      [place.name], nil,
+      [place.name],
+      nil,
     )
 
     if original == nil {
-      raise QueryError(
-        'there is no table called ${table}', { driver: self.driver.name() },
-      )
+      raise QueryError('there is no table called ${table}', {
+        driver: self.driver.name(),
+      })
     }
 
     var definition = TableDefinition.parse(original)
@@ -392,8 +400,8 @@ class SqliteDdl < DdlAdapter {
 
     var after = definition.column_names()
     var shared = after
-      .filter(@(name) => before.contains(name))
-      .map(@(name) => self.quote(name))
+        .filter(@(name) => before.contains(name))
+        .map(@(name) => self.quote(name))
 
     # Indexes on a column that is going are dropped with it; the rest,
     # and every trigger, are put back once the table is.
@@ -408,24 +416,26 @@ class SqliteDdl < DdlAdapter {
       }
     }
 
-    var extras = connection.fetch_all(
-      "select type, name, sql from ${master} where tbl_name = ? and type in " +
-        "('index', 'trigger') and sql is not null order by type, name",
-      [place.name],
-    ).filter(@(row) => row.type == 'trigger' or kept.contains(row.name))
+    var extras = connection
+        .fetch_all(
+          "select type, name, sql from ${master} where tbl_name = ? and type in " +
+              "('index', 'trigger') and sql is not null order by type, name",
+          [place.name],
+        )
+        .filter(@(row) => row.type == 'trigger' or kept.contains(row.name))
 
     var sequence = self._sequence(connection, place)
     var building = _BUILDING + place.name
     var building_table = place.schema == nil
-      ? building
-      : '${place.schema}.${building}'
+        ? building
+        : '${place.schema}.${building}'
     var legacy = connection.fetch_value('pragma legacy_alter_table', nil, 0)
     var columns = ', '.join(shared)
 
     var statements = [
       definition.render(self.table_name(building_table)),
       'insert into ${self.table_name(building_table)} (${columns}) ' +
-        'select ${columns} from ${self.table_name(table)}',
+          'select ${columns} from ${self.table_name(table)}',
       'drop table ${self.table_name(table)}',
 
       # A rename normally rewrites every view and trigger that names
@@ -453,7 +463,7 @@ class SqliteDdl < DdlAdapter {
   _sequence(connection, place) {
     var exists = connection.fetch_value(
       "select count(*) from ${self._master(place)} " +
-        "where type = 'table' and name = 'sqlite_sequence'",
+          "where type = 'table' and name = 'sqlite_sequence'",
       nil,
       0,
     )
@@ -464,7 +474,8 @@ class SqliteDdl < DdlAdapter {
 
     return connection.fetch_value(
       'select seq from ${self._sequence_table(place)} where name = ?',
-      [place.name], nil,
+      [place.name],
+      nil,
     )
   }
 
@@ -495,8 +506,8 @@ class SqliteDdl < DdlAdapter {
 
     raise ForeignKeyViolation(
       'a row of ${first["table"]} refers to a row of ${first["parent"]} that is not ' +
-        'there' +
-        (more > 0 ? ', and ${more} more like it' : ''),
+          'there' +
+          (more > 0 ? ', and ${more} more like it' : ''),
       { driver: self.driver.name() },
     )
   }
@@ -604,8 +615,8 @@ class TableDefinition {
    */
   column_names() {
     return self.items
-      .filter(@(item) => item.column != nil)
-      .map(@(item) => item.column)
+        .filter(@(item) => item.column != nil)
+        .map(@(item) => item.column)
   }
 
   /**
@@ -671,7 +682,9 @@ class TableDefinition {
     }
 
     if self.column_names().length() == 1 {
-      raise QueryError('${name} is the only column of ${table}, and a table needs one')
+      raise QueryError(
+        '${name} is the only column of ${table}, and a table needs one',
+      )
     }
 
     self.items = self.items.filter(@(item) {
@@ -768,7 +781,9 @@ class TableDefinition {
       }
 
       if item.column != nil and _follows(words, 'primary', 'key') {
-        raise QueryError('${table} already has a primary key, on ${item.column}')
+        raise QueryError(
+          '${table} already has a primary key, on ${item.column}',
+        )
       }
     }
   }
@@ -883,7 +898,8 @@ def _tokens(sql) {
 }
 
 def _is_word(ch) {
-  return 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$'.contains(ch)
+  return 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$'
+      .contains(ch)
 }
 
 # A quoted name without its quotes.
@@ -925,16 +941,16 @@ def _column_of(text) {
 # The lower cased words of an item, outside strings.
 def _words_of(text) {
   return _tokens(text)
-    .filter(@(token) => token.kind == 'word')
-    .map(@(token) => token.text.lower())
+      .filter(@(token) => token.kind == 'word')
+      .map(@(token) => token.text.lower())
 }
 
 # Whether `second` comes straight after `first` among `words`.
 def _follows(words, first, second) {
   for index, word in words {
-    if word == first
-      and index + 1 < words.length()
-      and words[index + 1] == second {
+    if word == first and
+        index + 1 < words.length() and
+        words[index + 1] == second {
       return true
     }
   }
@@ -946,9 +962,9 @@ def _follows(words, first, second) {
 def _constraint_name(text) {
   var tokens = _tokens(text)
 
-  if tokens.length() > 1
-    and tokens[0].kind == 'word'
-    and tokens[0].text.lower() == 'constraint' {
+  if tokens.length() > 1 and
+      tokens[0].kind == 'word' and
+      tokens[0].text.lower() == 'constraint' {
     return _unquote(tokens[1].text)
   }
 
@@ -968,16 +984,16 @@ def _body_tokens(text) {
 
 def _is_foreign(text) {
   var tokens = _body_tokens(text)
-  return !tokens.is_empty()
-    and tokens[0].kind == 'word'
-    and tokens[0].text.lower() == 'foreign'
+  return !tokens.is_empty() and
+      tokens[0].kind == 'word' and
+      tokens[0].text.lower() == 'foreign'
 }
 
 def _is_primary(text) {
   var tokens = _body_tokens(text)
-  return !tokens.is_empty()
-    and tokens[0].kind == 'word'
-    and tokens[0].text.lower() == 'primary'
+  return !tokens.is_empty() and
+      tokens[0].kind == 'word' and
+      tokens[0].text.lower() == 'primary'
 }
 
 # The columns in the first parentheses of a key or unique constraint.
@@ -1019,8 +1035,8 @@ def _constraint_names(text) {
 
   if tokens[0].kind == 'word' and tokens[0].text.lower() == 'check' {
     return tokens
-      .filter(@(token) => token.kind == 'word' or token.kind == 'name')
-      .map(@(token) => _unquote(token.text))
+        .filter(@(token) => token.kind == 'word' or token.kind == 'name')
+        .map(@(token) => _unquote(token.text))
   }
 
   return _key_columns(text)
@@ -1046,15 +1062,15 @@ def _strip_clause(text, clause) {
 
   var start = tokens[at].start
 
-  if at >= 2
-    and tokens[at - 2].kind == 'word'
-    and tokens[at - 2].text.lower() == 'constraint' {
+  if at >= 2 and
+      tokens[at - 2].kind == 'word' and
+      tokens[at - 2].text.lower() == 'constraint' {
     start = tokens[at - 2].start
   }
 
   var end = clause == 'references'
-    ? _references_end(tokens, at)
-    : _primary_end(tokens, at)
+      ? _references_end(tokens, at)
+      : _primary_end(tokens, at)
   var stop = end < tokens.length() ? tokens[end].start : text.length()
 
   return (text[0, start].trim() + ' ' + text[stop,].trim()).trim()
@@ -1081,9 +1097,9 @@ def _references_end(tokens, at) {
       i += action == 'set' or action == 'no' ? 4 : 3
     } else if word == 'match' {
       i += 2
-    } else if word == 'not'
-      and i + 1 < tokens.length()
-      and tokens[i + 1].text.lower() == 'deferrable' {
+    } else if word == 'not' and
+        i + 1 < tokens.length() and
+        tokens[i + 1].text.lower() == 'deferrable' {
       i += 2
     } else if word == 'deferrable' {
       i++

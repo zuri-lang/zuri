@@ -304,8 +304,8 @@ class SocketAddrV6 {
       return false
     }
     return self._port == other.port() and
-      self._scope_id == other.scope_id() and
-      self._ip.equals(other.ip())
+        self._scope_id == other.scope_id() and
+        self._ip.equals(other.ip())
   }
 
   /**

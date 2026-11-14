@@ -19,8 +19,18 @@ import crypto
 
 var _DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 var _MONTH_NAMES = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ]
 
 var _HEX_DIGITS = '0123456789abcdef'
@@ -125,16 +135,106 @@ def _civil_from_days(days) {
 }
 
 var _PAD2_TABLE = [
-  '00', '01', '02', '03', '04', '05', '06', '07', '08', '09',
-  '10', '11', '12', '13', '14', '15', '16', '17', '18', '19',
-  '20', '21', '22', '23', '24', '25', '26', '27', '28', '29',
-  '30', '31', '32', '33', '34', '35', '36', '37', '38', '39',
-  '40', '41', '42', '43', '44', '45', '46', '47', '48', '49',
-  '50', '51', '52', '53', '54', '55', '56', '57', '58', '59',
-  '60', '61', '62', '63', '64', '65', '66', '67', '68', '69',
-  '70', '71', '72', '73', '74', '75', '76', '77', '78', '79',
-  '80', '81', '82', '83', '84', '85', '86', '87', '88', '89',
-  '90', '91', '92', '93', '94', '95', '96', '97', '98', '99',
+  '00',
+  '01',
+  '02',
+  '03',
+  '04',
+  '05',
+  '06',
+  '07',
+  '08',
+  '09',
+  '10',
+  '11',
+  '12',
+  '13',
+  '14',
+  '15',
+  '16',
+  '17',
+  '18',
+  '19',
+  '20',
+  '21',
+  '22',
+  '23',
+  '24',
+  '25',
+  '26',
+  '27',
+  '28',
+  '29',
+  '30',
+  '31',
+  '32',
+  '33',
+  '34',
+  '35',
+  '36',
+  '37',
+  '38',
+  '39',
+  '40',
+  '41',
+  '42',
+  '43',
+  '44',
+  '45',
+  '46',
+  '47',
+  '48',
+  '49',
+  '50',
+  '51',
+  '52',
+  '53',
+  '54',
+  '55',
+  '56',
+  '57',
+  '58',
+  '59',
+  '60',
+  '61',
+  '62',
+  '63',
+  '64',
+  '65',
+  '66',
+  '67',
+  '68',
+  '69',
+  '70',
+  '71',
+  '72',
+  '73',
+  '74',
+  '75',
+  '76',
+  '77',
+  '78',
+  '79',
+  '80',
+  '81',
+  '82',
+  '83',
+  '84',
+  '85',
+  '86',
+  '87',
+  '88',
+  '89',
+  '90',
+  '91',
+  '92',
+  '93',
+  '94',
+  '95',
+  '96',
+  '97',
+  '98',
+  '99',
 ]
 
 def _pad2(n) {
@@ -160,7 +260,7 @@ def _format_date_calc(timestamp) {
   var second = rest % 60
 
   return '${_DAY_NAMES[weekday]}, ${_pad2(civil[2])} ${_MONTH_NAMES[civil[1] - 1]} ' +
-    '${civil[0]} ${_pad2(hour)}:${_pad2(minute)}:${_pad2(second)} GMT'
+      '${civil[0]} ${_pad2(hour)}:${_pad2(minute)}:${_pad2(second)} GMT'
 }
 
 /**
@@ -249,9 +349,9 @@ def parse_date(text: string) {
   # Collapse the run of spaces asctime uses to pad a single-digit day.
   var fields = []
   for field in value
-    .replace('  ', ' ', false)
-    .replace(',', ' ', false)
-    .split(' ') {
+      .replace('  ', ' ', false)
+      .replace(',', ' ', false)
+      .split(' ') {
     if field {
       fields.append(field)
     }
@@ -624,8 +724,9 @@ def normalize_path(path: string) {
   # Already rooted, with no empty, '.' or '..' segment to collapse:
   # taking it apart and putting it back would hand over exactly what
   # came in, and this runs on every request a server answers.
-  if path.starts_with('/') and path.index_of('//') == -1
-    and path.index_of('/.') == -1 {
+  if path.starts_with('/') and
+      path.index_of('//') == -1 and
+      path.index_of('/.') == -1 {
     return path
   }
 
@@ -796,8 +897,10 @@ def is_valid_method(value) {
   iter var i = 0; i < value.length(); i++ {
     var c = value[i].ord()
 
-    var is_token = (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or
-      (c >= 97 and c <= 122) or "!#$%&'*+-.^_`|~".index_of(value[i]) > -1
+    var is_token = (c >= 48 and c <= 57) or
+        (c >= 65 and c <= 90) or
+        (c >= 97 and c <= 122) or
+        "!#$%&'*+-.^_`|~".index_of(value[i]) > -1
 
     if !is_token {
       return false

@@ -100,8 +100,9 @@
 # Tooling
 
 - [Editor Support](ch29-00-editors.md)
+- [Documenting a Project](ch30-00-documentation.md)
 
-# Appendices
+# Appendices {.unnumbered}
 
 - [A - Keywords](appendix-01-keywords.md)
 - [B - Operators and Precedence](appendix-02-operators.md)

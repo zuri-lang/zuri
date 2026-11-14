@@ -19,9 +19,10 @@ def make_tree(root: string) {
 
   file(os.join_paths(root, 'index.zu'), 'w').write('import @.app { * }\n')
   file(os.join_paths(root, 'app', 'index.zu'), 'w').write('def main() {\n}\n')
-  file(os.join_paths(root, 'app', 'deep', 'data.bin'), 'wb').write(bytes([
-    0, 1, 2, 255,
-  ]))
+  file(
+    os.join_paths(root, 'app', 'deep', 'data.bin'),
+    'wb',
+  ).write(bytes([0, 1, 2, 255]))
 
   var tool = os.join_paths(root, 'app', 'tool.zu')
 
@@ -94,14 +95,15 @@ describe('pack', @{
     }
 
     var second = pack(
-      root, files.reverse(), os.join_paths(SCRATCH, 'two.tar.gz'),
+      root,
+      files.reverse(),
+      os.join_paths(SCRATCH, 'two.tar.gz'),
     )
 
     expect(second.checksum).to_equal(first.checksum)
     expect(first.checksum).to_start_with('sha256:')
-    expect(checksum(
-      os.join_paths(SCRATCH, 'one.tar.gz'), true,
-    )).to_equal(first.checksum)
+    expect(checksum(os.join_paths(SCRATCH, 'one.tar.gz'), true))
+        .to_equal(first.checksum)
   })
 
   it('unpacks to the tree it was packed from', @{
@@ -184,14 +186,17 @@ describe('extract', @{
 
   it('refuses entries that leave the destination, and writes nothing', @{
     var cases = [
-      '../escaped.zu', 'app/../../escaped.zu', '/etc/escaped.zu',
+      '../escaped.zu',
+      'app/../../escaped.zu',
+      '/etc/escaped.zu',
       './../escaped.zu',
     ]
 
     for index, name in cases {
-      var archive = hostile(
-        'escape${index}', [{ path: 'fine.zu', data: 'ok' }, { path: name }],
-      )
+      var archive = hostile('escape${index}', [
+        { path: 'fine.zu', data: 'ok' },
+        { path: name },
+      ])
       var out = os.join_paths(SCRATCH, 'out${index}')
 
       expect(@{
@@ -205,9 +210,9 @@ describe('extract', @{
 
   it('refuses links and devices', @{
     for type in [1, 2, 3, 4, 6] {
-      var archive = hostile(
-        'type${type}', [{ path: 'thing', type, link: '/etc/passwd' }],
-      )
+      var archive = hostile('type${type}', [
+        { path: 'thing', type, link: '/etc/passwd' },
+      ])
 
       expect(@{
         read(archive)
@@ -217,12 +222,19 @@ describe('extract', @{
 
   it('refuses names that unpack differently on some machine', @{
     var names = [
-      'a\\b.zu', 'CON.zu', 'dir/nul', 'trailing.', 'space ', 'what?.zu',
+      'a\\b.zu',
+      'CON.zu',
+      'dir/nul',
+      'trailing.',
+      'space ',
+      'what?.zu',
       'a//b.zu',
     ]
 
     for index, name in names {
-      var archive = hostile('portable${index}', [{ path: name, data: 'x' }])
+      var archive = hostile('portable${index}', [
+        { path: name, data: 'x' },
+      ])
 
       expect(@{
         read(archive)
@@ -231,9 +243,10 @@ describe('extract', @{
   })
 
   it('refuses the same path twice, whatever its case', @{
-    var archive = hostile(
-      'twice', [{ path: 'App.zu', data: '1' }, { path: 'app.zu', data: '2' }],
-    )
+    var archive = hostile('twice', [
+      { path: 'App.zu', data: '1' },
+      { path: 'app.zu', data: '2' },
+    ])
 
     expect(@{
       read(archive)
@@ -251,7 +264,9 @@ describe('extract', @{
   })
 
   it('refuses to unpack over something already there', @{
-    var archive = hostile('fine', [{ path: 'fine.zu', data: 'ok' }])
+    var archive = hostile('fine', [
+      { path: 'fine.zu', data: 'ok' },
+    ])
     var out = os.join_paths(SCRATCH, 'taken')
 
     fsx.ensure_dir(out)
@@ -265,7 +280,11 @@ describe('extract', @{
 describe('unsafe_reason', @{
   it('accepts ordinary relative paths', @{
     for path in [
-      'index.zu', 'app/index.zu', 'app/deep/data.bin', '.hidden', 'a.b.c',
+      'index.zu',
+      'app/index.zu',
+      'app/deep/data.bin',
+      '.hidden',
+      'a.b.c',
     ] {
       expect(unsafe_reason(path)).to_be_nil()
     }

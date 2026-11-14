@@ -13,8 +13,10 @@ import .._shared.cli
 import .._shared.errors { UsageError }
 import .._shared.files
 import .._shared.manifest as manifest_module
+import .._shared.fsx
 import .._shared.names
 import .._shared.semver
+import ..doc.reference
 
 # A license written as an SPDX expression: identifiers joined by AND,
 # OR and WITH, optionally in parentheses. Enough to tell `MIT` and
@@ -33,11 +35,15 @@ def parser() {
   parser.epilog = 'Run it from anywhere inside the project. A published version never changes.'
 
   cli.add_registry_option(parser)
-  parser.add_option('dry-run',
-    'Show exactly what would be published and publish nothing',
-    { short_name: 'n' })
   parser.add_option(
-    'allow-dirty', 'Publish even when git has uncommitted changes', nil,
+    'dry-run',
+    'Show exactly what would be published and publish nothing',
+    { short_name: 'n' },
+  )
+  parser.add_option(
+    'allow-dirty',
+    'Publish even when git has uncommitted changes',
+    nil,
   )
   parser.add_option('quiet', 'Print nothing but a failure', { short_name: 'q' })
   cli.add_json_option(parser)
@@ -68,7 +74,12 @@ def _uncommitted(root: string) {
   }
 
   var listing = _git_output(root, [
-    'status', '--porcelain', '-z', '--untracked-files=all', '--', '.',
+    'status',
+    '--porcelain',
+    '-z',
+    '--untracked-files=all',
+    '--',
+    '.',
   ])
 
   # git names paths from the top of the work tree. Where the project
@@ -151,23 +162,29 @@ def prepare(root: string, options: ?dict) {
   var description = found.text('description')
 
   if description == nil or description.trim().is_empty() {
-    problems.append('project.toml has no description; say in one line what the package does')
+    problems.append(
+      'project.toml has no description; say in one line what the package does',
+    )
   }
 
   var license = found.text('license')
 
   if license == nil or license.trim().is_empty() {
-    warnings.append('project.toml states no license, so nobody may safely use the package')
+    warnings.append(
+      'project.toml states no license, so nobody may safely use the package',
+    )
   } else if !is_dict(license.trim().match(_SPDX)) {
-    warnings.append("'${license}' does not read as an SPDX license identifier, such as MIT")
+    warnings.append(
+      "'${license}' does not read as an SPDX license identifier, such as MIT",
+    )
   }
 
   catch {
     for dependency in found.dependencies(false) {
       if dependency.kind != 'registry' {
         problems.append(
-          '${dependency.name} is a ${dependency.kind} dependency; a published package can only '
-            + 'depend on packages from a registry',
+          '${dependency.name} is a ${dependency.kind} dependency; a published package can only ' +
+              'depend on packages from a registry',
         )
       }
     }
@@ -182,14 +199,16 @@ def prepare(root: string, options: ?dict) {
   })
 
   if !selected.files.contains(readme) {
-    warnings.append('there is no ${readme}, which is what the registry shows as the package page')
+    warnings.append(
+      'there is no ${readme}, which is what the registry shows as the package page',
+    )
   }
 
   if !selected.secrets.is_empty() {
     problems.append(
-      'these look like they hold secrets and were left out, so nothing was published: '
-        + ', '.join(selected.secrets)
-        + '; if they are meant to go, name them in [project] include',
+      'these look like they hold secrets and were left out, so nothing was published: ' +
+          ', '.join(selected.secrets) +
+          '; if they are meant to go, name them in [project] include',
     )
   }
 
@@ -204,29 +223,51 @@ def prepare(root: string, options: ?dict) {
   }
 
   if options.get('allow_dirty', false) != true {
-    var dirty = _uncommitted(root).filter(
-      @(path) => selected.files.contains(path),
-    )
+    var dirty = _uncommitted(root)
+        .filter(@(path) => selected.files.contains(path))
 
     if !dirty.is_empty() {
       var shown = dirty.length() > 5
-        ? dirty[0, 5] + ['and ${dirty.length() - 5} more']
-        : dirty
+          ? dirty[0, 5] + ['and ${dirty.length() - 5} more']
+          : dirty
 
       problems.append(
-        'these have changes git has not committed: ' + ', '.join(shown)
-          + '; commit them so the published version is one you can find again, or pass '
-          + 'allow-dirty',
+        'these have changes git has not committed: ' +
+            ', '.join(shown) +
+            '; commit them so the published version is one you can find again, or pass ' +
+            'allow-dirty',
       )
     }
   }
 
   if !problems.is_empty() {
     raise UsageError(
-      'the package cannot be published:\n'
-        + '\n'.join(problems.map(@(p) => '  - ' + p)),
+      'the package cannot be published:\n' +
+          '\n'.join(problems.map(@(p) => '  - ' + p)),
     )
   }
 
   return { manifest: found, name, version, files: selected.files, warnings }
+}
+
+/**
+ * How much of the package's public surface has a doc block, counted the
+ * way the registry counts it for each version's page.
+ *
+ * @param string root: the project's root.
+ * @param dict prepared: what `prepare()` gave, for its files and name.
+ * @returns ?dict: `{ names, documented, missing }`, `missing` holding the
+ *    paths of the names with no doc block, or `nil` when the package's
+ *    files cannot be read for it.
+ */
+def coverage(root: string, prepared: dict) {
+  catch {
+    return reference.survey(
+      prepared.files,
+      @(path) => fsx.read_text(os.join_paths(root, path)),
+      names.import_name(prepared.name),
+    )
+  } as error {
+    return nil
+  }
 }

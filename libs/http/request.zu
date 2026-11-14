@@ -310,7 +310,7 @@ class HttpRequest {
     if current == nil {
       raise SessionError(
         'this request has no session; register http.session() as ' +
-          'middleware on the server',
+            'middleware on the server',
       )
     }
 
@@ -634,7 +634,7 @@ class HttpRequest {
     if !is_instance(schema) {
       raise TypeError(
         'validate() expects a schema built by validate.schema(), ' +
-          'got ${typeof(schema)}',
+            'got ${typeof(schema)}',
       )
     }
 

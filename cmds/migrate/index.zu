@@ -75,7 +75,7 @@ def _status(migrator) {
     echo ''
     echo ui.warn(
       '${ui.count(changed, "migration")} changed since ${changed == 1 ? "it" : "they"} ran; ' +
-        'the database has what ran then, not what the file says now.',
+          'the database has what ran then, not what the file says now.',
     )
   }
 
@@ -83,7 +83,7 @@ def _status(migrator) {
     echo ''
     echo ui.warn(
       '${ui.count(missing, "migration")} ran that ${missing == 1 ? "has" : "have"} ' +
-        'no file in ${_shown(migrator.directory)}.',
+          'no file in ${_shown(migrator.directory)}.',
     )
   }
 }
@@ -102,9 +102,10 @@ def main() {
   var db = sql.open(settings.database)
 
   catch {
-    var migrator = Migrator(
-      db, { directory: settings.directory, table: settings.table },
-    )
+    var migrator = Migrator(db, {
+      directory: settings.directory,
+      table: settings.table,
+    })
     var limits = {}
 
     if settings.steps != nil {
@@ -128,14 +129,15 @@ def main() {
       }
       when 'down', 'reset' {
         var undone = settings.command == 'down'
-          ? migrator.down(limits)
-          : migrator.reset()
+            ? migrator.down(limits)
+            : migrator.reset()
 
         if undone.is_empty() {
           echo 'Nothing to roll back.'
         } else {
           _list(
-            'Rolled back ${ui.count(undone.length(), "migration")}:', undone,
+            'Rolled back ${ui.count(undone.length(), "migration")}:',
+            undone,
           )
         }
       }

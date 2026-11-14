@@ -39,7 +39,7 @@ echo '════════════════════════�
 # ---------------------------------------------------------------------------
 assert os.pid() > 0, 'pid() must return a positive process id'
 assert os.pid() == os.pid(),
-  'pid() must be stable across calls within the same process'
+    'pid() must be stable across calls within the same process'
 ok('pid() returns a stable, positive process id')
 
 assert os.ppid() >= 0, 'ppid() must return a non-negative value'
@@ -50,14 +50,14 @@ ok('ppid() returns a non-negative value')
 # ---------------------------------------------------------------------------
 var result = os.exec('echo', 'hello from exec')
 assert result.exit_code == 0,
-  'exec() of a successful command must report exit_code 0'
+    'exec() of a successful command must report exit_code 0'
 assert line(result.output) == 'hello from exec',
-  'exec() must capture the command\'s stdout'
+    'exec() must capture the command\'s stdout'
 ok('exec() runs a command and captures its exit code and output')
 
 var failed = os.exec('exit', '7')
 assert failed.exit_code == 7,
-  'exec() must report a non-zero exit code accurately'
+    'exec() must report a non-zero exit code accurately'
 ok('exec() reports a non-zero exit code for a failing command')
 
 # ---------------------------------------------------------------------------
@@ -82,9 +82,11 @@ def child(name, body) {
 
 var p1 = os.spawn(interpreter, child('emit', 'echo \'spawned output\'\n'))
 assert line(p1.read_stdout().to_string()) == 'spawned output',
-  'Process.read_stdout() must return what the child wrote to stdout'
+    'Process.read_stdout() must return what the child wrote to stdout'
 assert p1.wait() == 0, 'Process.wait() must return the child\'s exit code'
-ok('spawn() runs a command and read_stdout()/wait() report its output and exit code')
+ok(
+  'spawn() runs a command and read_stdout()/wait() report its output and exit code',
+)
 
 # ---------------------------------------------------------------------------
 # spawn(): piped stdin
@@ -97,24 +99,29 @@ var p2 = os.spawn(
 p2.write_stdin('line one\nline two\n')
 p2.close_stdin()
 assert p2.read_stdout().to_string() == 'line one\nline two\n',
-  'a piped child must echo back exactly what was written to its stdin'
+    'a piped child must echo back exactly what was written to its stdin'
 assert p2.wait() == 0
-ok('spawn() with stdin: \'pipe\' lets the caller write to the child and read its output')
+ok(
+  'spawn() with stdin: \'pipe\' lets the caller write to the child and read its output',
+)
 
 # ---------------------------------------------------------------------------
 # spawn(): separate stdout/stderr streams
 # ---------------------------------------------------------------------------
-var p3 = os.spawn(interpreter, child(
-  'both_streams',
-  'import io\necho \'to-stdout\'\nio.stderr.write(\'to-stderr\\n\')\n',
-))
+var p3 = os.spawn(
+  interpreter,
+  child(
+    'both_streams',
+    'import io\necho \'to-stdout\'\nio.stderr.write(\'to-stderr\\n\')\n',
+  ),
+)
 var out3 = line(p3.read_stdout().to_string())
 var err3 = line(p3.read_stderr().to_string())
 p3.wait()
 assert out3 == 'to-stdout',
-  'read_stdout() must not include anything written to stderr'
+    'read_stdout() must not include anything written to stderr'
 assert err3 == 'to-stderr',
-  'read_stderr() must not include anything written to stdout'
+    'read_stderr() must not include anything written to stdout'
 ok('spawn() keeps stdout and stderr as independent streams')
 
 # ---------------------------------------------------------------------------
@@ -123,10 +130,13 @@ ok('spawn() keeps stdout and stderr as independent streams')
 # More output than a pipe holds, written line by line, so the last of it
 # is still on its way when the child exits. A read after wait() has to
 # return all of it rather than what happened to have arrived.
-var p8 = os.spawn(interpreter, child(
-  'many_lines',
-  'import io\niter var i = 0; i < 20000; i++ {\n  echo i\n  io.stderr.write(\'e\')\n}\n',
-))
+var p8 = os.spawn(
+  interpreter,
+  child(
+    'many_lines',
+    'import io\niter var i = 0; i < 20000; i++ {\n  echo i\n  io.stderr.write(\'e\')\n}\n',
+  ),
+)
 assert p8.wait() == 0
 var many = p8.read_stdout().to_string()
 var expected = ''
@@ -134,17 +144,17 @@ iter var i = 0; i < 20000; i++ {
   expected += '${i}\n'
 }
 assert many == expected,
-  'read_stdout() after wait() must return everything the child wrote'
+    'read_stdout() after wait() must return everything the child wrote'
 assert p8.read_stderr().to_string().length() == 20000,
-  'read_stderr() after wait() must return everything the child wrote'
+    'read_stderr() after wait() must return everything the child wrote'
 ok('read_stdout() and read_stderr() after wait() return the whole output')
 
 var p9 = os.spawn(interpreter, child('letters', 'echo \'abcdefghijklmnop\'\n'))
 assert p9.wait() == 0
 assert p9.read_stdout(10).to_string() == 'abcdefghij',
-  'read_stdout(length) after wait() must return that many bytes when the child wrote them'
+    'read_stdout(length) after wait() must return that many bytes when the child wrote them'
 assert p9.read_stdout().to_string() == 'klmnop\n',
-  'the rest must follow on the next read'
+    'the rest must follow on the next read'
 ok('read_stdout(length) after wait() returns exactly that many bytes')
 
 # ---------------------------------------------------------------------------
@@ -164,20 +174,23 @@ p4.wait()
 # was given; on a platform whose temporary directory sits behind a
 # symlink, the two spell the same directory differently.
 assert os.real_path(cwd_out) == os.real_path(elsewhere),
-  'spawn() with a cwd option must run the child in that directory'
+    'spawn() with a cwd option must run the child in that directory'
 ok('spawn() options.cwd changes the child\'s working directory')
 
 var p5 = os.spawn(
   interpreter,
   child(
-    'report_env', 'import os\necho os.get_env(\'ZURI_TEST_SPAWN_VAR\', \'\')\n',
+    'report_env',
+    'import os\necho os.get_env(\'ZURI_TEST_SPAWN_VAR\', \'\')\n',
   ),
-  { env: { ZURI_TEST_SPAWN_VAR: 'from-env-option' } },
+  {
+    env: { ZURI_TEST_SPAWN_VAR: 'from-env-option' },
+  },
 )
 var env_out = line(p5.read_stdout().to_string())
 p5.wait()
 assert env_out == 'from-env-option',
-  'spawn() with an env option must set that variable in the child'
+    'spawn() with an env option must set that variable in the child'
 ok('spawn() options.env sets an extra environment variable for the child')
 
 os.remove_dir(elsewhere, true)
@@ -186,14 +199,15 @@ os.remove_dir(elsewhere, true)
 # spawn(): try_wait() and exit code for a still-running vs finished child
 # ---------------------------------------------------------------------------
 var p6 = os.spawn(
-  interpreter, child('slow_exit', 'import os\nos.sleep(0.2)\nos.exit(3)\n'),
+  interpreter,
+  child('slow_exit', 'import os\nos.sleep(0.2)\nos.exit(3)\n'),
 )
 assert p6.try_wait() == nil,
-  'try_wait() must return nil for a child that has not exited yet'
+    'try_wait() must return nil for a child that has not exited yet'
 assert p6.wait() == 3,
-  'wait() must block until the child exits and report its real exit code'
+    'wait() must block until the child exits and report its real exit code'
 assert p6.try_wait() == 3,
-  'try_wait() after the child has exited must report the same exit code'
+    'try_wait() after the child has exited must report the same exit code'
 ok('try_wait() distinguishes a still-running child from a finished one')
 
 # ---------------------------------------------------------------------------
@@ -201,7 +215,7 @@ ok('try_wait() distinguishes a still-running child from a finished one')
 # ---------------------------------------------------------------------------
 var p7 = os.spawn(interpreter, child('long_sleep', 'import os\nos.sleep(30)\n'))
 assert p7.try_wait() == nil,
-  'the sleep child must still be running right after spawn()'
+    'the sleep child must still be running right after spawn()'
 p7.kill()
 var killed_code = p7.wait()
 assert killed_code != 0, 'a killed child must not report a clean (0) exit code'
@@ -212,7 +226,7 @@ ok('Process.kill() terminates a still-running child')
 # harmless signal
 # ---------------------------------------------------------------------------
 assert os.kill(os.pid(), 0) == true,
-  'kill() with signal 0 must succeed against this process\'s own pid without actually sending anything'
+    'kill() with signal 0 must succeed against this process\'s own pid without actually sending anything'
 ok('kill() with signal 0 can probe that a process exists without disturbing it')
 
 var probed = true
@@ -225,7 +239,7 @@ catch {
 }
 
 assert !probed,
-  'probing a pid that names no process must raise rather than report success'
+    'probing a pid that names no process must raise rather than report success'
 ok('kill() with signal 0 reports a process that is not there')
 
 # ---------------------------------------------------------------------------
@@ -251,13 +265,14 @@ if os.platform != 'windows' {
     spins++
   }
   assert signaled,
-    'a registered on_signal() callback must run once the signal actually arrives'
+      'a registered on_signal() callback must run once the signal actually arrives'
   ok('on_signal() delivers a callback when the process receives the signal')
 } else {
   assert os.on_signal('INT', @() {
-    return true
-  }) == true,
-    'on_signal() must still register a handler on a platform that cannot deliver to a pid'
+        return true
+      }) ==
+      true,
+      'on_signal() must still register a handler on a platform that cannot deliver to a pid'
   ok('on_signal() registers a handler')
 }
 

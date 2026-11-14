@@ -102,10 +102,10 @@ import env
 
 var values = env.parse(
   'BARE=  plain text  \n' +
-  'COMMENTED=value # not part of it\n' +
-  'PASSWORD=hunter#2\n' +
-  "RAW='no \\n escape, no expansion'\n" +
-  'COOKED="caf\\u00e9"\n'
+      'COMMENTED=value # not part of it\n' +
+      'PASSWORD=hunter#2\n' +
+      "RAW='no \\n escape, no expansion'\n" +
+      'COOKED="caf\\u00e9"\n',
 )
 
 for name, value in values {
@@ -173,10 +173,10 @@ import os
 
 os.set_env('DATABASE_URL', 'postgres://production/app', true)
 
-file('.env.demo', 'w').write(
-  'DATABASE_URL=postgres://localhost/app\n' +
-  'CACHE_TTL=300\n'
-)
+file(
+  '.env.demo',
+  'w',
+).write('DATABASE_URL=postgres://localhost/app\n' + 'CACHE_TTL=300\n')
 
 var result = env.load('.env.demo')
 
@@ -249,8 +249,7 @@ PUBLIC_URL=http://${HOST}:${PORT:-8080}
 import env
 
 file('.env.demo', 'w').write(
-  'HOST=localhost\n' +
-  'PUBLIC_URL=http://$' + '{HOST}:$' + '{PORT:-8080}\n'
+  'HOST=localhost\n' + 'PUBLIC_URL=http://$' + '{HOST}:$' + '{PORT:-8080}\n',
 )
 
 var loaded = env.load('.env.demo')
@@ -332,10 +331,10 @@ import env
 
 file('.env.demo', 'w').write(
   'PORT=8080\n' +
-  'DEBUG=yes\n' +
-  'REQUEST_TIMEOUT=2.5\n' +
-  'CORS_ORIGINS= https://a.example , https://b.example \n' +
-  'SENTRY_DSN=\n'
+      'DEBUG=yes\n' +
+      'REQUEST_TIMEOUT=2.5\n' +
+      'CORS_ORIGINS= https://a.example , https://b.example \n' +
+      'SENTRY_DSN=\n',
 )
 
 env.load('.env.demo')
@@ -402,11 +401,12 @@ import env
 file('.env.demo', 'w').write('HOST=localhost\nPORT=8080\n')
 file('.env.local.demo', 'w').write('HOST=127.0.0.1\n')
 
-var result = env.loader()
-  .path('.env.demo')
-  .path('.env.local.demo')
-  .path('.env.missing.demo')
-  .read()
+var result = env
+    .loader()
+    .path('.env.demo')
+    .path('.env.local.demo')
+    .path('.env.missing.demo')
+    .read()
 
 echo result.values
 echo result.files
@@ -431,10 +431,7 @@ over the network or out of a secret store goes through exactly the same
 parsing, expansion and precedence as a file on disk:
 
 ```zuri,ignore
-env.loader()
-  .path('.env')
-  .source(vault.fetch('app/production'))
-  .load()
+env.loader().path('.env').source(vault.fetch('app/production')).load()
 ```
 
 ### Demanding the File
@@ -466,12 +463,14 @@ secrets where every value should be taken exactly as written.
 ```zuri
 import env
 
-print(env.stringify({
-  HOST: '127.0.0.1',
-  PORT: 8080,
-  GREETING: 'hello there',
-  DEBUG: false,
-}))
+print(
+  env.stringify({
+    HOST: '127.0.0.1',
+    PORT: 8080,
+    GREETING: 'hello there',
+    DEBUG: false,
+  }),
+)
 ```
 
 ```console

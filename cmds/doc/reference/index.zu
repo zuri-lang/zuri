@@ -1,0 +1,428 @@
+/**
+ * API reference generated from a project's doc blocks.
+ *
+ * Every page comes from a doc block in the code, read with the `zuri`
+ * module's own parser, so the reference cannot drift from what the code
+ * says. The pages are written to the documentation's source directory,
+ * which belongs to the generator: it is emptied and written again on
+ * every run, so a module deleted or renamed leaves no page behind.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+
+import ...._shared.errors { UsageError }
+import ...._shared.files
+import ...._shared.fsx
+import ...._shared.manifest
+import ...._shared.names
+import ...._shared.paths
+import ..config { Config }
+
+import .contents
+import .model
+import .pages
+
+/** The file that marks a source directory as the generator's own. */
+var MARKER = '.zuri-doc-generated'
+
+/**
+ * Bumped whenever the pages the generator writes change, so a store of
+ * them, such as a package repository's, knows to write them again.
+ */
+var GENERATOR = 1
+
+# Directories at the top of a project that hold no modules of its own.
+var _NOT_MODULES = ['tests', 'docs', 'examples', 'benchmarks', 'cmds']
+
+/**
+ * What one run of the generator did.
+ */
+class Report {
+
+  /** How many module pages were written. @type number */
+  var pages = 0
+
+  /** How many names those pages document. @type number */
+  var names = 0
+
+  /** What needs looking at, as a line each. @type list[string] */
+  var warnings = []
+
+  @new() {
+    self.warnings = []
+  }
+}
+
+/**
+ * Where a reference's modules come from: `{ root, package, title,
+ * description, include, exclude }`, `root` being the directory they are
+ * in and `package` the name they are imported under, or `nil`. The rest
+ * come from the project's `project.toml`, when `root` is a project.
+ *
+ * @param Config config
+ * @returns dict
+ * @throws UsageError When `[reference]` names no modules and the
+ *    documentation is not inside a project
+ */
+def source_of(config: Config) {
+  var settings = config.reference
+  var root = settings.modules == nil
+      ? paths.find_root(config.root)
+      : settings.modules
+
+  if root == nil {
+    raise UsageError(
+      '${config.root} is not inside a project; set [reference] modules to the directory to document',
+    )
+  }
+
+  if !os.dir_exists(root) {
+    raise UsageError('[reference] modules is ${root}, which is not a directory')
+  }
+
+  if config.sandbox != nil and !os.path_contains(config.sandbox, root) {
+    raise UsageError('the modules of [reference] are outside the package')
+  }
+
+  var found = {
+    root,
+    package: nil,
+    title: nil,
+    description: nil,
+    include: [],
+    exclude: [],
+  }
+  var manifest_path = os.join_paths(root, paths.MANIFEST)
+
+  if file(manifest_path).exists() {
+    var project = manifest.load(manifest_path)
+    var name = project.name()
+
+    found.title = name
+    found.description = project.text('description')
+    found.include = project.list('include')
+    found.exclude = project.list('exclude')
+
+    if name != nil {
+      found.package = names.import_name(name)
+    }
+  }
+
+  if settings.package != nil {
+    found.package = settings.package.is_empty() ? nil : settings.package
+  }
+
+  return found
+}
+
+# The files under _source_'s root that may be modules, relative to it
+# and written with `/`.
+def _candidates(source: dict, config: Config) {
+  var selected = files.select(source.root, {
+    include: source.include,
+    exclude: source.exclude + config.reference.exclude,
+  })
+  var own = [config.root, config.source, config.output].map(
+    @(path) => os.relative_path(source.root, path).replace('\\', '/', false),
+  )
+
+  return selected.files.filter(@(path) {
+    if _NOT_MODULES.contains(path.split('/')[0]) {
+      return false
+    }
+
+    # The documentation's own files, when it sits among the modules.
+    for inside in own {
+      if !inside.starts_with('..') and
+          (path == inside or path.starts_with(inside + '/')) {
+        return false
+      }
+    }
+
+    return true
+  })
+}
+
+# Empties the source directory for a new run, refusing one that holds
+# pages someone wrote.
+def _prepare(directory: string) {
+  if !os.dir_exists(directory) {
+    fsx.ensure_dir(directory)
+    return
+  }
+
+  var entries = os
+      .read_dir(directory)
+      .filter(@(name) => name != '.' and name != '..')
+
+  if entries.is_empty() {
+    return
+  }
+
+  if !entries.contains(MARKER) {
+    raise UsageError(
+      '${directory} holds pages zuri doc generate did not write; empty it, or set [documentation] source elsewhere',
+    )
+  }
+
+  for name in entries {
+    fsx.remove(os.join_paths(directory, name))
+  }
+}
+
+/**
+ * Writes the reference at _config_: a page for every public module, a
+ * front page, and the `SUMMARY.md` that lists them, all in its source
+ * directory.
+ *
+ * @param Config config: settings with a `[reference]` table.
+ * @returns Report
+ * @throws UsageError When there are no modules to document, or the
+ *    source directory holds pages the generator did not write
+ */
+def generate(config: Config) {
+  var report = Report()
+  var source = source_of(config)
+  var roots = model.read_all(
+    source.root,
+    _candidates(source, config),
+    source.package,
+    report.warnings,
+  )
+
+  if roots.is_empty() {
+    raise UsageError(
+      'there are no public modules in ${source.root} to document',
+    )
+  }
+
+  var groups = config.reference.groups
+  var sections = contents.parts(roots, groups, report.warnings)
+  var index = pages.build_index(roots)
+  var out = config.source
+
+  _prepare(out)
+
+  for root in roots {
+    for module in root.tree() {
+      file(
+        os.join_paths(out, '${module.slug()}.md'),
+        'w',
+      ).write(pages.page(module, index))
+
+      report.pages++
+      report.names += module.members().length()
+
+      for klass in module.classes {
+        report.names += klass.methods.length() + klass.static_methods.length()
+      }
+    }
+  }
+
+  var intro = config.reference.intro
+  var description = config.description.is_empty()
+      ? source.description
+      : config.description
+
+  file(os.join_paths(out, 'index.md'), 'w').write(
+    contents.landing(
+      config.title,
+      intro == nil ? description : fsx.read_text(intro),
+      sections,
+    ),
+  )
+  file(
+    os.join_paths(out, 'SUMMARY.md'),
+    'w',
+  ).write(contents.summary(config.title, sections, groups))
+  file(
+    os.join_paths(out, MARKER),
+    'w',
+  ).write('zuri doc generate writes this directory, and empties it first.\n')
+
+  return report
+}
+
+# Whether a doc block says anything: prose, or a tag.
+def _documented(block) {
+  return block.tags.length() > 0 or
+      block.body.some(@(line) => !line.trim().is_empty())
+}
+
+/**
+ * How much of the public surface under _roots_ has a doc block: every
+ * function, constant and class, and every field, method and constructor
+ * of a class.
+ *
+ * @param list roots
+ * @returns dict: `{ names, documented, missing }`, the count of public
+ *    names, how many are documented, and the paths of those that are
+ *    not.
+ */
+def coverage(roots: list) {
+  var names = 0
+  var documented = 0
+  var missing = []
+
+  def count(path: string, block) {
+    names++
+
+    if _documented(block) {
+      documented++
+    } else {
+      missing.append(path)
+    }
+  }
+
+  for root in roots {
+    for module in root.tree() {
+      for member in module.constants + module.functions {
+        count(member.path, member.block)
+      }
+
+      for klass in module.classes {
+        count(klass.path, klass.block)
+
+        if klass.constructor != nil {
+          count('${klass.path}()', klass.constructor.block)
+        }
+
+        for member in klass.fields +
+            klass.statics +
+            klass.methods +
+            klass.static_methods {
+          count(member.path, member.block)
+        }
+      }
+    }
+  }
+
+  return { names, documented, missing }
+}
+
+/**
+ * Every public name under _roots_ that has a heading of its own, for
+ * searching: `{ path, name, kind, page, anchor, summary }` each, `page`
+ * being the slug of the page it is on and `kind` one of `function`,
+ * `constant`, `class` and `method`.
+ *
+ * @param list roots
+ * @returns list[dict]
+ */
+def symbols(roots: list) {
+  var found = []
+
+  def add(member, kind: string, page: string, anchor: string) {
+    found.append({
+      path: member.path,
+      name: member.name,
+      kind,
+      page,
+      anchor,
+      summary: member.block.summary(),
+    })
+  }
+
+  for root in roots {
+    for module in root.tree() {
+      var page = module.slug()
+
+      for member in module.constants {
+        add(member, 'constant', page, pages.anchor(member.name))
+      }
+
+      for member in module.functions {
+        add(member, 'function', page, pages.anchor(member.name))
+      }
+
+      for klass in module.classes {
+        add(klass, 'class', page, pages.anchor(klass.name))
+
+        for method in klass.methods + klass.static_methods {
+          add(
+            method,
+            'method',
+            page,
+            pages.anchor('${klass.name}.${method.name}'),
+          )
+        }
+      }
+    }
+  }
+
+  return found
+}
+
+/**
+ * The reference for a set of files held anywhere: in a directory, or in
+ * an archive read into memory. This is what `generate()` does, without
+ * writing anything, for a caller that keeps the pages itself.
+ *
+ * @param list relatives: every file's path, written with `/`; those
+ *    that are not public modules are passed over, as are the
+ *    directories at the top that hold no modules of the project's own.
+ * @param function text_of: a path to the text of that file.
+ * @param ?string package: the name the modules are imported under, or
+ *    `nil` when each one is imported by its own name.
+ * @param ?dict options: as `pages.page()` takes them, for source links
+ *    and names documented elsewhere.
+ * @returns dict: `{ roots, pages, index, symbols, coverage, warnings }`,
+ *    `pages` holding `{ slug, name, summary, markdown }` for each module,
+ *    in the order of the contents, and `index` mapping every path a page
+ *    documents to `{ page, anchor }`.
+ */
+def document(
+  relatives: list,
+  text_of: function,
+  package: ?string,
+  options: ?dict,
+) {
+  var warnings = []
+  var candidates = relatives.filter(
+    @(path) => !_NOT_MODULES.contains(path.split('/')[0]),
+  )
+  var roots = model.read_sources(candidates, text_of, package, warnings)
+  var index = pages.build_index(roots)
+  var written = []
+
+  for root in roots {
+    for module in root.tree() {
+      written.append({
+        slug: module.slug(),
+        name: module.name,
+        summary: module.overview.summary(),
+        markdown: pages.page(module, index, options),
+      })
+    }
+  }
+
+  return {
+    roots,
+    pages: written,
+    index,
+    symbols: symbols(roots),
+    coverage: coverage(roots),
+    warnings,
+  }
+}
+
+/**
+ * How much of the public surface of the modules among _relatives_ has
+ * a doc block, counted as `document()` counts it, without writing any
+ * pages.
+ *
+ * @param list relatives: every file's path, written with `/`.
+ * @param function text_of: a path to the text of that file.
+ * @param ?string package: the name the modules are imported under.
+ * @returns dict: `{ names, documented, missing }`, as `coverage()`
+ *    gives it.
+ */
+def survey(relatives: list, text_of: function, package: ?string) {
+  var candidates = relatives.filter(
+    @(path) => !_NOT_MODULES.contains(path.split('/')[0]),
+  )
+
+  return coverage(model.read_sources(candidates, text_of, package, []))
+}

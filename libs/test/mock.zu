@@ -129,8 +129,8 @@ class Mock {
     self.calls = []
     self._queue = []
     self._behaviour = implementation != nil
-      ? { kind: 'call', value: implementation }
-      : nil
+        ? { kind: 'call', value: implementation }
+        : nil
 
     if is_dict(replacing) {
       self._target = replacing.target
@@ -150,9 +150,9 @@ class Mock {
     var call = Call(args)
     self.calls.append(call)
 
-    var behaviour = self._queue.is_empty() ?
-      self._behaviour :
-      self._queue.shift()
+    var behaviour = self._queue.is_empty()
+        ? self._behaviour
+        : self._queue.shift()
 
     if behaviour == nil {
       return nil
@@ -425,7 +425,9 @@ def spy_on(target, key: string) {
   }
 
   if !_has(target, key) {
-    raise TestSetupError("spy_on() found no '${key}' on the given ${is_dict(target) ? 'dict' : typeof(target)}")
+    raise TestSetupError(
+      "spy_on() found no '${key}' on the given ${is_dict(target) ? 'dict' : typeof(target)}",
+    )
   }
 
   var original = _read(target, key)

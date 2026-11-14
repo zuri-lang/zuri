@@ -350,7 +350,9 @@ class Color {
 
     if is_list(value) {
       if value.length() < 3 or value.length() > 4 {
-        raise ImageError('a colour list needs 3 or 4 channels, got ${value.length()}')
+        raise ImageError(
+          'a colour list needs 3 or 4 channels, got ${value.length()}',
+        )
       }
 
       return Color(
@@ -783,8 +785,10 @@ class Color {
       return false
     }
 
-    return self.r == other.r and self.g == other.g and
-      self.b == other.b and self.a == other.a
+    return self.r == other.r and
+        self.g == other.g and
+        self.b == other.b and
+        self.a == other.a
   }
 
   /**

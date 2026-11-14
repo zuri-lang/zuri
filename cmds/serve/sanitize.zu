@@ -13,6 +13,12 @@
  * - Elements on `REMOVED`, and everything inside them, are dropped.
  * - Any other element is dropped and what it held is kept, so an
  *   unknown wrapper costs its wrapping and nothing else.
+ * - An `id`, and the `name` of an old-style anchor, are kept with
+ *   `user-content-` in front, as GitHub keeps them, so a README cannot
+ *   take an id the page itself uses. A link to a place on the page,
+ *   such as a footnote, points at the prefixed id.
+ * - A checkbox is kept, disabled, so a task list shows what is done
+ *   and nobody can tick it. Every other kind of `input` is dropped.
  * - A link or an image may only point at `http`, `https` or `mailto`,
  *   or at a relative address. Links to other sites are marked
  *   `nofollow ugc noopener` so a README cannot borrow the site's
@@ -78,15 +84,48 @@ var ALLOWED = {
 
 /** The elements dropped along with everything inside them. */
 var REMOVED = [
-  'script', 'style', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet',
-  'form', 'input', 'button', 'textarea', 'select', 'option', 'noscript',
-  'template', 'svg', 'math', 'link', 'meta', 'base', 'title', 'head', 'audio',
-  'video', 'source', 'track', 'canvas', 'portal', 'dialog',
+  'script',
+  'style',
+  'iframe',
+  'frame',
+  'frameset',
+  'object',
+  'embed',
+  'applet',
+  'form',
+  'button',
+  'textarea',
+  'select',
+  'option',
+  'noscript',
+  'template',
+  'svg',
+  'math',
+  'link',
+  'meta',
+  'base',
+  'title',
+  'head',
+  'audio',
+  'video',
+  'source',
+  'track',
+  'canvas',
+  'portal',
+  'dialog',
 ]
 
 var _VOID = ['br', 'hr', 'img']
 
 var _URL_ATTRIBUTES = ['href', 'src']
+
+/** What the ids a README gives its own elements are kept under. */
+var ID_PREFIX = 'user-content-'
+
+# _id_ as the page keeps it: under `ID_PREFIX`, written once.
+def _own(id: string) {
+  return id.starts_with(ID_PREFIX) ? id : ID_PREFIX + id
+}
 
 /**
  * Whether `value` is a safe place for a link or an image to point.
@@ -124,9 +163,9 @@ def safe_url(value: string) {
 def _external(href: string) {
   var lower = href.trim().lower()
 
-  return lower.starts_with('http://')
-    or lower.starts_with('https://')
-    or lower.starts_with('//')
+  return lower.starts_with('http://') or
+      lower.starts_with('https://') or
+      lower.starts_with('//')
 }
 
 def _write(node, out: list) {
@@ -141,6 +180,20 @@ def _write(node, out: list) {
   }
 
   var tag = node.tag_name.lower()
+
+  if tag == 'input' {
+    var type = node.get_attribute('type')
+
+    if type != nil and type.trim().lower() == 'checkbox' {
+      out.append(
+        node.has_attribute('checked')
+            ? '<input type="checkbox" checked disabled>'
+            : '<input type="checkbox" disabled>',
+      )
+    }
+
+    return
+  }
 
   if REMOVED.contains(tag) {
     return
@@ -159,15 +212,26 @@ def _write(node, out: list) {
 
   for name in node.attribute_names() {
     var lower = name.lower()
+    var value = node.get_attribute(name)
+
+    if lower == 'id' or (tag == 'a' and lower == 'name') {
+      if !value.trim().is_empty() {
+        parts.append(' ${lower}="${html.escape_attribute(_own(value))}"')
+      }
+
+      continue
+    }
 
     if !kept.contains(lower) {
       continue
     }
 
-    var value = node.get_attribute(name)
-
     if _URL_ATTRIBUTES.contains(lower) and !safe_url(value) {
       continue
+    }
+
+    if lower == 'href' and value.starts_with('#') and value.length() > 1 {
+      value = '#' + _own(value[1,])
     }
 
     if lower == 'class' and !is_dict(value.match('/^[a-zA-Z0-9_ -]*$/')) {
@@ -177,9 +241,9 @@ def _write(node, out: list) {
     parts.append(' ${lower}="${html.escape_attribute(value)}"')
   }
 
-  if tag == 'a'
-    and node.has_attribute('href')
-    and _external(node.get_attribute('href')) {
+  if tag == 'a' and
+      node.has_attribute('href') and
+      _external(node.get_attribute('href')) {
     parts.append(' rel="nofollow ugc noopener"')
   }
 

@@ -99,10 +99,7 @@ def offers_scram(payload) {
 def client_first(client_nonce: string) {
   var bare = 'n=,r=${client_nonce}'
 
-  return {
-    bare,
-    full: 'n,,${bare}',
-  }
+  return { bare, full: 'n,,${bare}' }
 }
 
 /**
@@ -123,8 +120,12 @@ def client_first(client_nonce: string) {
  * @throws AuthenticationError if the server's reply is malformed or
  *    its nonce does not extend the client's.
  */
-def client_proof(password: string, client_nonce: string,
-  client_first_bare: string, server_first: string) {
+def client_proof(
+  password: string,
+  client_nonce: string,
+  client_first_bare: string,
+  server_first: string,
+) {
   var parts = parse_scram(server_first)
   var server_nonce = parts.get('r', '')
   var salt = parts.get('s', '')
@@ -148,7 +149,12 @@ def client_proof(password: string, client_nonce: string,
 
   var rounds = iterations.to_number()
   var salted = hash.pbkdf2(
-    'sha256', password, base64.decode(salt), rounds, 32, true,
+    'sha256',
+    password,
+    base64.decode(salt),
+    rounds,
+    32,
+    true,
   )
 
   var client_key = hash.hmac_sha256(salted, 'Client Key', true)

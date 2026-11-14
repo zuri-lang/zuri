@@ -236,9 +236,9 @@ def _message_of(error) {
 }
 
 def _stacktrace_of(error) {
-  if is_instance(error)
-    and reflect.has_prop(error, 'stacktrace')
-    and is_list(error.stacktrace) {
+  if is_instance(error) and
+      reflect.has_prop(error, 'stacktrace') and
+      is_list(error.stacktrace) {
     return error.stacktrace
   }
 
@@ -326,9 +326,9 @@ def _matches_filter(test, pattern) {
 
   var name = test.full_name()
 
-  if pattern.length() > 1
-    and pattern.starts_with('/')
-    and pattern.ends_with('/') {
+  if pattern.length() > 1 and
+      pattern.starts_with('/') and
+      pattern.ends_with('/') {
     return is_dict(name.match(pattern))
   }
 
@@ -338,9 +338,10 @@ def _matches_filter(test, pattern) {
 def _matches_tags(test, wanted, unwanted) {
   var tags = test.tags()
 
-  if is_list(unwanted) and unwanted.some(@(tag) {
-    return tags.contains(tag)
-  }) {
+  if is_list(unwanted) and
+      unwanted.some(@(tag) {
+        return tags.contains(tag)
+      }) {
     return false
   }
 
@@ -558,8 +559,8 @@ def _failure_from(error) {
   }
 
   var kind = is_instance(error) and typeof(error) == 'TestSetupError'
-    ? 'setup'
-    : 'error'
+      ? 'setup'
+      : 'error'
   var failure = Failure(kind, _error_headline(error))
   failure.stacktrace = _stacktrace_of(error)
 
@@ -701,20 +702,24 @@ def _run_case(state, test, suite) {
 
   if expects_failure {
     if outcome.failure == nil {
-      failures.append(Failure(
-        'assertion',
-        'Expected this test to fail, because it is marked failing, but it passed',
-      ))
+      failures.append(
+        Failure(
+          'assertion',
+          'Expected this test to fail, because it is marked failing, but it passed',
+        ),
+      )
     }
   } else if outcome.failure != nil {
     failures.append(outcome.failure)
   }
 
   if failures.is_empty() and budget > 0 and outcome.elapsed > budget {
-    failures.append(Failure(
-      'timeout',
-      'Took ${format.duration(outcome.elapsed)}, over its ${format.duration(budget)} budget',
-    ))
+    failures.append(
+      Failure(
+        'timeout',
+        'Took ${format.duration(outcome.elapsed)}, over its ${format.duration(budget)} budget',
+      ),
+    )
   }
 
   var after = _run_hooks(_hooks_along(suite, 'after_each'), 'after_each')
@@ -907,9 +912,9 @@ def run(options: ?dict) {
   snapshot.set_updating(resolved.update_snapshots)
   snapshot.set_strict(resolved.ci)
 
-  var reporter = is_instance(resolved.reporter) ?
-    resolved.reporter :
-    reporters.create(resolved.reporter, resolved)
+  var reporter = is_instance(resolved.reporter)
+      ? resolved.reporter
+      : reporters.create(resolved.reporter, resolved)
 
   var decisions = _plan(resolved)
   var summary = Summary()

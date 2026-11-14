@@ -267,7 +267,12 @@ import .runner
 
 import @.error { AssertionError, TestSetupError }
 import @.expect {
-  Expect, expect, fail, assertions, has_assertions, capture_output,
+  Expect,
+  expect,
+  fail,
+  assertions,
+  has_assertions,
+  capture_output,
 }
 import @.mock { Mock, mock, spy_on }
 import @.reporter { Reporter }
@@ -430,14 +435,16 @@ def it_each(table: list, name: string, body: function, options: ?dict) {
   for row in _rows_of(table) {
     var values = row
 
-    declared.append(runner.it(
-      _fill(name, values, number),
-      @{
-        return body.apply(values)
-      },
-      options,
-      nil,
-    ))
+    declared.append(
+      runner.it(
+        _fill(name, values, number),
+        @{
+          return body.apply(values)
+        },
+        options,
+        nil,
+      ),
+    )
 
     number++
   }
@@ -475,13 +482,11 @@ def describe_each(table: list, name: string, body: function) {
   for row in _rows_of(table) {
     var values = row
 
-    declared.append(runner.describe(
-      _fill(name, values, number),
-      @{
+    declared.append(
+      runner.describe(_fill(name, values, number), @{
         return body.apply(values)
-      },
-      'normal',
-    ))
+      }, 'normal'),
+    )
 
     number++
   }

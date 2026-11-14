@@ -1,6 +1,6 @@
 # Tests for the document constructors, and for measuring a document laid
-# out on one line, which is how a `when` arm decides whether its body
-# stays beside it.
+# out on one line, which is how a group and a `when` arm decide whether
+# they stay on one line.
 
 import test { * }
 
@@ -11,10 +11,16 @@ describe('flat_width', @{
     expect(flat_width(['ab', LINE, 'cd', SOFTLINE, 'e'])).to_be(6)
   })
 
-  it('reads through groups, indents and fills', @{
-    var inner = group(indent(['a', LINE, fill(['b', LINE, 'c'])]))
+  it('reads through groups, nests and fills', @{
+    var inner = group(
+      continued([
+        'a',
+        LINE,
+        fill(['b', LINE, 'c']),
+      ]),
+    )
 
-    expect(flat_width(base(nest(inner)))).to_be(5)
+    expect(flat_width(nest(free(inner)))).to_be(5)
   })
 
   it('takes the flat side of an if_break and the first choice', @{
@@ -22,11 +28,25 @@ describe('flat_width', @{
     expect(flat_width(choose(60, 'abc', 'abcdef'))).to_be(3)
   })
 
+  it('measures a first_fit by its first layout', @{
+    expect(flat_width(first_fit(['ab', broken_group('abcd')]))).to_be(2)
+    expect(
+      flat_width(
+        first_fit([
+          [HARDLINE, 'a'],
+          'ab',
+        ]),
+      ),
+    ).to_be(-1)
+  })
+
   # A line that always breaks, a group that never fits and text that
-  # spans lines all mean the document has no one-line form at all.
+  # spans lines all mean the document has no one-line form at all, and
+  # neither does a group holding one.
   it('has no width for anything that cannot sit on one line', @{
     expect(flat_width(['a', HARDLINE, 'b'])).to_be(-1)
     expect(flat_width(broken_group('a'))).to_be(-1)
+    expect(flat_width(group(['a', broken_group('b')]))).to_be(-1)
     expect(flat_width('a\nb')).to_be(-1)
     expect(flat_width(comment('/*\n */', 0))).to_be(-1)
   })
@@ -40,5 +60,41 @@ describe('the constructors', @{
   it('marks only a broken group as broken', @{
     expect(group('a').broken).to_be(false)
     expect(broken_group('a').broken).to_be(true)
+  })
+
+  it('gives a lone layout back as it is rather than a choice of one', @{
+    expect(first_fit(['a'])).to_be('a')
+  })
+
+  it('nests a continued line two levels', @{
+    var inner = continued('a')
+
+    expect(inner.t).to_be('nest')
+    expect(inner.doc.t).to_be('nest')
+  })
+})
+
+describe('expanded', @{
+  it('breaks the last group at the top of what it is given', @{
+    var first = group('a')
+    var last = group('b')
+    var opened = expanded(['(', first, last])
+
+    expect(opened[1]).to_be(first)
+    expect(opened[2].broken).to_be(true)
+    expect(opened[2].doc).to_be('b')
+  })
+
+  it('takes the last layout of a first_fit', @{
+    var split = broken_group('b')
+
+    expect(expanded(first_fit(['a', split]))).to_be(split)
+  })
+
+  it('leaves what holds no group as it is', @{
+    var parts = ['a', LINE, 'b']
+
+    expect(expanded(parts)).to_be(parts)
+    expect(expanded('a')).to_be('a')
   })
 })

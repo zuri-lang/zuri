@@ -44,6 +44,10 @@ make the same bytes and the same checksum.
 `--dry-run` lists every file with its size, the archive's size and its
 checksum, and sends nothing.
 
+Both say how many of the package's public names have a doc block, the
+way the registry counts them for the version's page, and name the first
+few that have none.
+
 ## Flags
 
 | Flag | What it does |

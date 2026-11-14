@@ -414,7 +414,9 @@ class WebSocket {
         }
         opcode = frame_opcode
       } else if frame_opcode != OPCODE_CONTINUATION {
-        raise ProtocolError('a new message began before the previous one finished')
+        raise ProtocolError(
+          'a new message began before the previous one finished',
+        )
       }
 
       payload.extend(data)
@@ -449,7 +451,9 @@ class WebSocket {
     # No extension was negotiated, so a reserved bit that is set means
     # the peer is speaking something this endpoint did not agree to.
     if reserved != 0 {
-      raise ProtocolError('a reserved frame bit is set without a negotiated extension')
+      raise ProtocolError(
+        'a reserved frame bit is set without a negotiated extension',
+      )
     }
 
     if opcode >= 8 and length > 125 {
@@ -486,8 +490,8 @@ class WebSocket {
     if self.is_client == masked {
       raise ProtocolError(
         masked
-          ? 'a server may not mask a frame'
-          : 'a client must mask every frame',
+            ? 'a server may not mask a frame'
+            : 'a client must mask every frame',
       )
     }
 
@@ -601,10 +605,10 @@ def accept_key(key: string) {
  */
 def is_handshake(request) {
   return request.method == 'GET' and
-    request.headers.contains_token('connection', 'upgrade') and
-    request.headers.contains_token('upgrade', 'websocket') and
-    request.headers.get('sec-websocket-version', '') == '13' and
-    request.headers.contains('sec-websocket-key')
+      request.headers.contains_token('connection', 'upgrade') and
+      request.headers.contains_token('upgrade', 'websocket') and
+      request.headers.get('sec-websocket-version', '') == '13' and
+      request.headers.contains('sec-websocket-key')
 }
 
 /**
@@ -666,9 +670,9 @@ def accept(request, response, options: ?dict) {
   }
 
   var head = 'HTTP/1.1 101 Switching Protocols\r\n' +
-    'Upgrade: websocket\r\n' +
-    'Connection: Upgrade\r\n' +
-    'Sec-WebSocket-Accept: ${accept_key(key)}\r\n'
+      'Upgrade: websocket\r\n' +
+      'Connection: Upgrade\r\n' +
+      'Sec-WebSocket-Accept: ${accept_key(key)}\r\n'
 
   if chosen != nil {
     head += 'Sec-WebSocket-Protocol: ${chosen}\r\n'
@@ -742,16 +746,16 @@ def connect(target: string, options: ?dict) {
     path += '?${parsed.query}'
   }
 
-  var authority = (port == (secure ? 443 : 80)) ?
-    parsed.host :
-    '${parsed.host}:${port}'
+  var authority = (port == (secure ? 443 : 80))
+      ? parsed.host
+      : '${parsed.host}:${port}'
 
   var head = 'GET ${path} HTTP/1.1\r\n' +
-    'Host: ${authority}\r\n' +
-    'Upgrade: websocket\r\n' +
-    'Connection: Upgrade\r\n' +
-    'Sec-WebSocket-Key: ${key}\r\n' +
-    'Sec-WebSocket-Version: 13\r\n'
+      'Host: ${authority}\r\n' +
+      'Upgrade: websocket\r\n' +
+      'Connection: Upgrade\r\n' +
+      'Sec-WebSocket-Key: ${key}\r\n' +
+      'Sec-WebSocket-Version: 13\r\n'
 
   var protocols = settings.get('protocols', nil)
   if protocols != nil and protocols.length() > 0 {
@@ -772,7 +776,9 @@ def connect(target: string, options: ?dict) {
 
   if status_line == nil or !status_line.starts_with('HTTP/1.1 101') {
     connection.close()
-    raise HttpError('the server refused the WebSocket upgrade: ${status_line or "no response"}')
+    raise HttpError(
+      'the server refused the WebSocket upgrade: ${status_line or "no response"}',
+    )
   }
 
   var fields = Headers()
@@ -804,7 +810,9 @@ def connect(target: string, options: ?dict) {
   }
 
   var socket = WebSocket(
-    connection, true, fields.get('sec-websocket-protocol', nil),
+    connection,
+    true,
+    fields.get('sec-websocket-protocol', nil),
   )
 
   var limit = settings.get('max_message_size', nil)

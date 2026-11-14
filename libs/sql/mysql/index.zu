@@ -43,8 +43,13 @@
  */
 
 import @.driver {
-  MariaDbDriver, MySqlDriver, DRIVER, MARIADB_DRIVER, DEFAULT_PORT,
-  MAX_PARAMETERS, SSL_MODES,
+  MariaDbDriver,
+  MySqlDriver,
+  DRIVER,
+  MARIADB_DRIVER,
+  DEFAULT_PORT,
+  MAX_PARAMETERS,
+  SSL_MODES,
 }
 import @.connection { MySqlConnection }
 import @.statement { MySqlStatement }

@@ -23,7 +23,7 @@ def test_scalar_functions() {
   # A function used across a whole column, which is the point of
   # running it inside the engine rather than over the result.
   assert db.fetch_column('select shout(word) from t order by word', nil, nil) ==
-    ['ALPHA!', 'BEE!', 'GAMMA!']
+      ['ALPHA!', 'BEE!', 'GAMMA!']
 
   # Any number of arguments.
   engine.create_function('joined', -1, @(...parts) {
@@ -89,14 +89,15 @@ def test_aggregates() {
   assert db.fetch_value('select longest(word) from t', nil, nil) == 'bbb'
 
   var grouped = db.fetch_all(
-    'select grp, longest(word) as w from t group by grp order by grp', nil,
+    'select grp, longest(word) as w from t group by grp order by grp',
+    nil,
   )
   assert grouped[0].w == 'bbb'
   assert grouped[1].w == 'cc'
 
   # A group with no rows never steps, so the accumulator is still nil.
-  assert db.fetch_value('select longest(word) from t where 0', nil, 'none')
-    == nil
+  assert db.fetch_value('select longest(word) from t where 0', nil, 'none') ==
+      nil
 
   db.close()
   echo 'test_aggregates passed'
@@ -111,9 +112,11 @@ def test_collations() {
   db.native().create_collation('bylen', @(a, b) => a.length() - b.length())
 
   assert db.fetch_column(
-    'select word from t order by word collate bylen', nil, nil,
-  ) ==
-    ['fig', 'pear', 'banana']
+        'select word from t order by word collate bylen',
+        nil,
+        nil,
+      ) ==
+      ['fig', 'pear', 'banana']
 
   db.close()
   echo 'test_collations passed'
@@ -159,8 +162,7 @@ def test_hooks() {
       tx.exec('insert into t (n) values (5)', nil)
       raise Error('stop')
     }, nil)
-  } as _error {
-  }
+  } as _error {}
 
   engine.on_commit(nil)
   engine.on_rollback(nil)

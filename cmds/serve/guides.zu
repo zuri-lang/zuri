@@ -1,0 +1,137 @@
+/**
+ * The guides packages ship, served on a host of their own.
+ *
+ * A guide is a package's own HTML and scripts, so it is served only on
+ * the guides host the repository is given, never on the repository's
+ * own: there, its scripts run in an origin that holds nothing of the
+ * repository's, no session cookie and no page a signed-in visitor
+ * sees. A request for the guides host is answered here, before the
+ * repository's own middleware sees it, so none of that sets a cookie
+ * on it either.
+ *
+ * `/<package>/<version>/` is a version's guide, and `/<package>/` the
+ * guide of its newest version.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+
+import .._shared.names
+import .plan { host_of }
+import .service
+
+# Sent with everything the guides host answers. A guide may run what
+# scripts it likes, in its own origin, but it may not be framed by
+# another page.
+var _HEADERS = {
+  'Content-Security-Policy': "frame-ancestors 'none'",
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+}
+
+/**
+ * Middleware that answers every request addressed to the guides host,
+ * and passes every other on.
+ *
+ * @param nyssa
+ * @returns function
+ */
+def middleware(nyssa) {
+  var guides_url = nyssa.settings.get('guides_url', nil)
+  var host = guides_url == nil ? nil : host_of(guides_url)
+
+  return @(request, response, next) {
+    var asked = request.host()
+
+    if host == nil or asked == nil or asked.lower() != host {
+      next()
+      return
+    }
+
+    for name, value in _HEADERS {
+      response.headers.set(name, value)
+    }
+
+    _serve(nyssa, request, response)
+  }
+}
+
+def _missing(response, text: string) {
+  response.text(text, 404)
+}
+
+# Answers one request on the guides host.
+def _serve(nyssa, request, response) {
+  var parts = request.path.split('/').filter(@(part) => !part.is_empty())
+
+  if parts.is_empty() {
+    response.redirect(nyssa.settings.public_url)
+    return
+  }
+
+  var package = nyssa.db.package_by_name(names.normalized(parts[0]))
+
+  if package == nil {
+    _missing(response, 'There is no package called ${parts[0]}.')
+    return
+  }
+
+  if parts.length() == 1 {
+    if package.latest == nil {
+      _missing(response, '${package.name} has no version to read.')
+    } else {
+      response.redirect('/${package.name}/${package.latest}/')
+    }
+
+    return
+  }
+
+  var version = nyssa.db
+      .versions_of(package.id)
+      .find(@(row) => row.version == parts[1])
+
+  if version == nil {
+    _missing(response, '${package.name} has no version ${parts[1]}.')
+    return
+  }
+
+  var guide = nyssa.db.guide_of(version.id)
+
+  if guide == nil or guide.title == nil {
+    _missing(response, '${package.name} ${version.version} has no guide.')
+    return
+  }
+
+  var root = service.guide_dir(nyssa, package.name, version.version)
+  var full = os.join_paths(root, '/'.join(parts[2,]))
+
+  if !os.path_contains(root, full) {
+    _missing(response, 'There is no such page.')
+    return
+  }
+
+  if os.dir_exists(full) {
+    if !request.path.ends_with('/') {
+      response.redirect(request.path + '/')
+      return
+    }
+
+    full = os.join_paths(full, 'index.html')
+  }
+
+  if !file(full).exists() {
+    var lost = os.join_paths(root, '404.html')
+
+    if file(lost).exists() {
+      response.file(lost)
+      response.status = 404
+    } else {
+      _missing(response, 'There is no such page.')
+    }
+
+    return
+  }
+
+  response.file(full)
+}

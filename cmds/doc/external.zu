@@ -1,0 +1,164 @@
+/**
+ * Checking the links that lead out of documentation: that each address
+ * answers, and answers with something other than an error.
+ *
+ * Each address is asked for once, however many pages link to it, with
+ * a `HEAD` request, and with a `GET` when a server will not answer
+ * `HEAD` properly; a `GET` reads no more of the body than it has to.
+ * Redirects are followed, and an address that cannot be reached at all
+ * is tried once more. The addresses are shared between a few
+ * isolates, so a slow server holds up only the ones behind it.
+ *
+ * An answer of `429 Too Many Requests` counts as an answer: the address
+ * is there, and the server only wants fewer requests.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import http
+import isolate
+import os
+
+/** How many addresses are asked for at once, at most. */
+var WORKERS = 8
+
+/** How long one request may take to connect, and then to answer. */
+var TIMEOUT = 15000
+
+# Answers a server may give to `HEAD` that say nothing about `GET`.
+var _RETRY_WITH_GET = [403, 404, 405, 501]
+
+# Why _address_ is broken, or `nil` when it answers.
+def _ask(client, address: string) {
+  var options = {
+    connect_timeout: TIMEOUT,
+    timeout: TIMEOUT,
+    headers: { 'User-Agent': 'zuri-doc link check' },
+  }
+
+  var problem = nil
+
+  # A request that could not connect at all is tried once more after a
+  # pause, since a lookup or a connection can fail for a moment without
+  # the address being gone.
+  iter var attempt = 0; attempt < 2; attempt++ {
+    if attempt > 0 {
+      os.sleep(1)
+    }
+
+    catch {
+      var response = client.head(address, options)
+
+      if _RETRY_WITH_GET.contains(response.status) {
+        var streamed = options.clone()
+
+        streamed.set('stream', true)
+        response = client.get(address, streamed)
+        client.finish(response)
+      }
+
+      if response.status >= 400 and response.status != 429 {
+        return 'answered ${response.status}'
+      }
+
+      return nil
+    } as error {
+      problem = error.message
+    }
+  }
+
+  return 'could not be reached: ${problem}'
+}
+
+# What is wrong with each of _addresses_, by address, for those that are
+# broken. Runs in an isolate of its own.
+def _ask_all(addresses: list) {
+  var client = http.client(nil, nil)
+  var broken = {}
+
+  for address in addresses {
+    var reason = _ask(client, address)
+
+    if reason != nil {
+      broken.set(address, reason)
+    }
+  }
+
+  return broken
+}
+
+# _address_ as it is asked for: without its fragment, which the server
+# never sees.
+def _requested(address: string) {
+  var hash = address.index_of('#')
+
+  return hash < 0 ? address : address[0, hash]
+}
+
+/**
+ * Whether _address_ is one this checks: an `http` or `https` address.
+ *
+ * @param string address
+ * @returns bool
+ */
+def is_checked(address: string) {
+  var lower = address.lower()
+
+  return lower.starts_with('http://') or lower.starts_with('https://')
+}
+
+/**
+ * Asks for every address _links_ lead to, and says which are broken.
+ *
+ * @param list links: dicts with a `url` each, the address the link
+ *    leads to, and whatever else the caller wants back with it.
+ * @returns list[dict]: `{ link, reason }` for each link whose address
+ *    is broken, in the order the links came, with the reason written to
+ *    follow the address, as in `answered 404`.
+ */
+def check(links: list) {
+  var addresses = []
+
+  for link in links {
+    var address = _requested(link.url)
+
+    if !addresses.contains(address) {
+      addresses.append(address)
+    }
+  }
+
+  if addresses.is_empty() {
+    return []
+  }
+
+  var count = WORKERS.min(addresses.length())
+  var shares = []
+
+  iter var i = 0; i < count; i++ {
+    shares.append([])
+  }
+
+  iter var i = 0; i < addresses.length(); i++ {
+    shares[i % count].append(addresses[i])
+  }
+
+  var broken = {}
+
+  for worker in shares.map(@(share) => isolate.spawn(_ask_all, share)) {
+    for address, reason in worker.join() {
+      broken.set(address, reason)
+    }
+  }
+
+  var found = []
+
+  for link in links {
+    var reason = broken.get(_requested(link.url), nil)
+
+    if reason != nil {
+      found.append({ link, reason })
+    }
+  }
+
+  return found
+}

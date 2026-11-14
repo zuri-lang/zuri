@@ -18,22 +18,26 @@ def exercise(db) {
 
   db.exec_script(
     'create table portable_authors (' +
-      '  id ' + serial_type(db) + ' primary key,' +
-      '  name varchar(100) not null unique' +
-      ')',
+        '  id ' +
+        serial_type(db) +
+        ' primary key,' +
+        '  name varchar(100) not null unique' +
+        ')',
   )
 
   db.exec_script(
     'create table portable_posts (' +
-      '  id ' + serial_type(db) + ' primary key,' +
-      '  author_id integer not null,' +
-      '  title varchar(200) not null,' +
-      '  views integer not null default 0,' +
-      # Declared at table level rather than on the column: MySQL parses a
-      # column level REFERENCES and then ignores it, so the key would
-      # simply not exist there.
-      '  foreign key (author_id) references portable_authors (id)' +
-      ')',
+        '  id ' +
+        serial_type(db) +
+        ' primary key,' +
+        '  author_id integer not null,' +
+        '  title varchar(200) not null,' +
+        '  views integer not null default 0,' +
+        # Declared at table level rather than on the column: MySQL parses a
+        # column level REFERENCES and then ignores it, so the key would
+        # simply not exist there.
+        '  foreign key (author_id) references portable_authors (id)' +
+        ')',
   )
 
   # Inserting and getting an id back, which each engine does its own
@@ -54,37 +58,49 @@ def exercise(db) {
   # Counting, with equality, with a list, and with an empty list.
   assert db.count('portable_posts', nil) == 3
   assert db.count('portable_posts', { author_id: ada }) == 2
-  assert db.count('portable_posts', { author_id: [ada, grace] }) == 3
+  assert db.count('portable_posts', {
+        author_id: [ada, grace],
+      }) ==
+      3
   assert db.count('portable_posts', { author_id: [] }) == 0
 
   # Positional and named parameters, in the one spelling both engines
   # are given.
-  assert db.fetch_value(
-    'select title from portable_posts where views = ?', [42], nil,
-  ) == 'On Bugs'
+  assert db.fetch_value('select title from portable_posts where views = ?', [
+        42,
+      ], nil) ==
+      'On Bugs'
 
   assert db.fetch_value(
-    'select title from portable_posts where views = :views',
-    { views: 3 },
-    nil,
-  ) == 'On Looms'
+        'select title from portable_posts where views = :views',
+        { views: 3 },
+        nil,
+      ) ==
+      'On Looms'
 
   # Selecting, ordering and limiting.
-  var found = db.find('portable_posts', { author_id: ada }, {
-    columns: ['title'],
-    order: ['views desc'],
-    limit: 1,
-  })
+  var found = db.find(
+    'portable_posts',
+    { author_id: ada },
+    {
+      columns: ['title'],
+      order: ['views desc'],
+      limit: 1,
+    },
+  )
   assert found.column('title') == ['On Engines']
 
   # Updating with a fragment that reads the column it writes.
   var quoted = db.driver().quote_identifier('views')
   db.update(
-    'portable_posts', { views: sql.raw('${quoted} + 1') }, { views: 42 },
+    'portable_posts',
+    { views: sql.raw('${quoted} + 1') },
+    { views: 42 },
   )
-  assert db.fetch_value(
-    'select views from portable_posts where title = ?', ['On Bugs'], nil,
-  ) == 43
+  assert db.fetch_value('select views from portable_posts where title = ?', [
+        'On Bugs',
+      ], nil) ==
+      43
 
   assert db.delete('portable_posts', { title: 'On Looms' }) == 1
   assert db.count('portable_posts', nil) == 2
@@ -100,8 +116,7 @@ def exercise(db) {
       tx.insert('portable_posts', { author_id: ada, title: 'Dropped' }, nil)
       raise Error('stop')
     }, nil)
-  } as _error {
-  }
+  } as _error {}
   assert db.count('portable_posts', nil) == 3
 
   db.transaction(@(outer) {
@@ -112,12 +127,13 @@ def exercise(db) {
         inner.insert('portable_posts', { author_id: ada, title: 'Inner' }, nil)
         raise Error('stop')
       }, nil)
-    } as _error {
-    }
+    } as _error {}
   }, nil)
 
   var titles = db.fetch_column(
-    'select title from portable_posts order by title', nil, nil,
+    'select title from portable_posts order by title',
+    nil,
+    nil,
   )
   assert titles.contains('Outer')
   assert !titles.contains('Inner')
@@ -125,7 +141,9 @@ def exercise(db) {
   # Streaming, which is a portal on one engine and the engine's own
   # row-at-a-time behaviour on the other.
   var cursor = db.stream(
-    'select title from portable_posts order by title', nil, { batch: 2 },
+    'select title from portable_posts order by title',
+    nil,
+    { batch: 2 },
   )
   var streamed = []
   for row in cursor {
@@ -171,7 +189,7 @@ def exercise(db) {
   # Introspection, in the one shape both engines answer in.
   assert db.schema.has_table('portable_posts', nil)
   assert db.schema.column_names('portable_posts', nil) ==
-    ['id', 'author_id', 'title', 'views']
+      ['id', 'author_id', 'title', 'views']
   assert db.schema.primary_key('portable_posts', nil) == 'id'
 
   var keys = db.schema.foreign_keys('portable_posts', nil)

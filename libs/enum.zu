@@ -73,7 +73,9 @@ def enum(source, allow_duplicates) {
   if allow_duplicates == nil {
     allow_duplicates = false
   } else if !is_bool(allow_duplicates) {
-    raise TypeError('allow_duplicates must be a boolean, ${typeof(allow_duplicates)} given')
+    raise TypeError(
+      'allow_duplicates must be a boolean, ${typeof(allow_duplicates)} given',
+    )
   }
 
   var result = {}
@@ -82,7 +84,9 @@ def enum(source, allow_duplicates) {
     var i = 0
     for item in source {
       if !is_string(item) {
-        raise TypeError('enum() list items must be strings, ${typeof(item)} given')
+        raise TypeError(
+          'enum() list items must be strings, ${typeof(item)} given',
+        )
       }
       if result.contains(item) {
         raise Error('duplicate enumeration key "${item}"')
@@ -95,7 +99,9 @@ def enum(source, allow_duplicates) {
 
     for key, value in source {
       if !is_string(key) {
-        raise TypeError('enum() dictionary keys must be strings, ${typeof(key)} given')
+        raise TypeError(
+          'enum() dictionary keys must be strings, ${typeof(key)} given',
+        )
       }
       if !is_number(value) and !is_string(value) {
         raise TypeError(
@@ -113,7 +119,9 @@ def enum(source, allow_duplicates) {
       result[key] = value
     }
   } else {
-    raise TypeError('enum() expects a list or dictionary, ${typeof(source)} given')
+    raise TypeError(
+      'enum() expects a list or dictionary, ${typeof(source)} given',
+    )
   }
 
   return result

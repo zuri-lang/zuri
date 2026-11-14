@@ -13,8 +13,12 @@ thing.
 expression after it.
 
 ```zuri
-var block_long = def(x) { return x * x }
-var block_short = @(x) { return x * x }
+var block_long = def(x) {
+  return x * x
+}
+var block_short = @(x) {
+  return x * x
+}
 
 var arrow_long = def(x) => x * x
 var arrow_short = @(x) => x * x
@@ -30,13 +34,21 @@ When there are **no parameters**, the empty parentheses may be dropped as
 well:
 
 ```zuri
-var a = @() { return 1 }
+var a = @() {
+  return 1
+}
 var b = @() => 2
-var c = def() { return 3 }
+var c = def() {
+  return 3
+}
 var d = def() => 4
 var e = @ => 5
-var f = @{ return 6 }
-var g = def { return 7 }
+var f = @{
+  return 6
+}
+var g = def {
+  return 7
+}
 var h = def => 8
 
 echo [a(), b(), c(), d(), e(), f(), g(), h()]
@@ -147,7 +159,9 @@ A closure captures the variable, not a snapshot of its value:
 ```zuri
 def demo() {
   var total = 0
-  var add = @(n) { total += n }
+  var add = @(n) {
+    total += n
+  }
 
   add(5)
   add(10)

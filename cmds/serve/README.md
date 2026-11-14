@@ -28,6 +28,7 @@ Every setting is a flag, a `NYSSA_` environment variable, or a line in
 | `-d, --database <url>` | `NYSSA_DATABASE` | SQLite in the storage directory |
 | `--signup <mode>` | `NYSSA_SIGNUP` | `open`; `closed` for a private repository |
 | `--max-archive-size <bytes>` | `NYSSA_MAX_ARCHIVE_SIZE` | `10485760` |
+| `--guides-url <url>` | `NYSSA_GUIDES_URL` | none; packages' guides are neither built nor served |
 | `--trust-proxy` | `NYSSA_TRUST_PROXY` | off |
 | `--read-only` | `NYSSA_READ_ONLY` | off |
 | `--tls-cert <file>` | `NYSSA_TLS_CERT` | none |
@@ -70,6 +71,10 @@ schema up to date. A password in a connection string belongs in
 - An archive is checked before it is stored: its checksum, its size,
   every path in it, and that its `project.toml` agrees with the name
   and version it was published as.
+- A package's guide is built from its own files alone, never with its
+  own page template, and served only on the guides host, which must not
+  be the repository's, so its scripts never run beside the repository's
+  pages or its session.
 - Listening beyond this machine without a certificate prints a
   warning, since passwords and tokens would cross the network in the
   clear. Give it a certificate, or put it behind a proxy that

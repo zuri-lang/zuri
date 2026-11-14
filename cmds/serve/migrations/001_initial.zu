@@ -110,8 +110,15 @@ def up(db: Transaction|Connection) {
 
 def down(db: Transaction|Connection) {
   for table in [
-    'one_time_codes', 'login_failures', 'audit_log', 'downloads_daily',
-    'versions', 'owners', 'packages', 'tokens', 'publishers',
+    'one_time_codes',
+    'login_failures',
+    'audit_log',
+    'downloads_daily',
+    'versions',
+    'owners',
+    'packages',
+    'tokens',
+    'publishers',
   ] {
     db.schema.drop_table(table)
   }

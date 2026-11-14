@@ -25,9 +25,8 @@ describe('fsx', @{
     fsx.atomic_write(path, 'second', 0c600)
 
     expect(fsx.read_text(path)).to_equal('second')
-    expect(os
-      .read_dir(os.dir_name(path))
-      .filter(@(n) => n.ends_with('.tmp'))).to_be_empty()
+    expect(os.read_dir(os.dir_name(path)).filter(@(n) => n.ends_with('.tmp')))
+        .to_be_empty()
 
     # Windows has no permission bits beyond read-only.
     if os.platform != 'windows' {

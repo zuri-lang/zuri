@@ -215,7 +215,11 @@ def add(bookmarks) {
   bookmarks.append({
     title,
     url,
-    tags: tags.is_empty() ? [] : tags.split(',').map(@(t) { return t.trim() }),
+    tags: tags.is_empty()
+        ? []
+        : tags.split(',').map(@(t) {
+            return t.trim()
+          }),
   })
 
   save(bookmarks)
@@ -294,7 +298,9 @@ def find(bookmarks) {
     if bookmark.title.lower().contains(needle) {
       return true
     }
-    return bookmark.tags.some(@(tag) { return tag.lower() == needle })
+    return bookmark.tags.some(@(tag) {
+      return tag.lower() == needle
+    })
   })
 
   if hits.is_empty() {
@@ -354,7 +360,10 @@ def main() {
   echo 'Bookmark keeper. ${bookmarks.length()} saved.'
 
   while true {
-    var command = io.readline('\n(a)dd (l)ist (f)ind (r)emove (q)uit > ').trim().lower()
+    var command = io
+        .readline('\n(a)dd (l)ist (f)ind (r)emove (q)uit > ')
+        .trim()
+        .lower()
 
     using command {
       when 'a' add(bookmarks)
@@ -429,7 +438,11 @@ def add(bookmarks) {
   bookmarks.append({
     title,
     url,
-    tags: tags.is_empty() ? [] : tags.split(',').map(@(t) { return t.trim() }),
+    tags: tags.is_empty()
+        ? []
+        : tags.split(',').map(@(t) {
+            return t.trim()
+          }),
   })
 
   save(bookmarks)
@@ -463,7 +476,9 @@ def find(bookmarks) {
     if bookmark.title.lower().contains(needle) {
       return true
     }
-    return bookmark.tags.some(@(tag) { return tag.lower() == needle })
+    return bookmark.tags.some(@(tag) {
+      return tag.lower() == needle
+    })
   })
 
   if hits.is_empty() {
@@ -503,7 +518,10 @@ def main() {
   echo 'Bookmark keeper. ${bookmarks.length()} saved.'
 
   while true {
-    var command = io.readline('\n(a)dd (l)ist (f)ind (r)emove (q)uit > ').trim().lower()
+    var command = io
+        .readline('\n(a)dd (l)ist (f)ind (r)emove (q)uit > ')
+        .trim()
+        .lower()
 
     using command {
       when 'a' add(bookmarks)

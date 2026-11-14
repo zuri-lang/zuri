@@ -22,7 +22,11 @@ import .canvas { Canvas }
 import .color { Color, TRANSPARENT }
 import .constants { * }
 import .errors {
-  BoundsError, DecodeError, EncodeError, FormatError, ImageError,
+  BoundsError,
+  DecodeError,
+  EncodeError,
+  FormatError,
+  ImageError,
 }
 import .filters
 import .formats
@@ -172,8 +176,8 @@ class Image < Canvas {
 
     # TGA and a few others carry no magic number, so sniffing cannot
     # place them. The file name is the only remaining evidence.
-    if (!is_dict(options) or options.get('format') == nil)
-      and formats.detect(data) == nil {
+    if (!is_dict(options) or options.get('format') == nil) and
+        formats.detect(data) == nil {
       var guessed = formats.from_extension(handle.path())
 
       if guessed != nil {
@@ -224,7 +228,10 @@ class Image < Canvas {
     }
 
     var image = Image.from_pixels(
-      decoded.width, decoded.height, decoded.pixels, decoded.format,
+      decoded.width,
+      decoded.height,
+      decoded.pixels,
+      decoded.format,
     )
 
     var orient = is_dict(options) ? options.get('orient', true) : true
@@ -372,9 +379,12 @@ class Image < Canvas {
    * everything about this one that is not the pixels themselves.
    */
   _derive(pixels, width, height) {
-    return Image.from_pixels(width, height, pixels, self._format)
-      .antialias(self._antialias)
-      .thickness(self._thickness)
+    return Image.from_pixels(
+      width,
+      height,
+      pixels,
+      self._format,
+    ).antialias(self._antialias).thickness(self._thickness)
   }
 
   /**
@@ -412,7 +422,11 @@ class Image < Canvas {
     }
 
     var resampled = _imagine.resize(
-      self._pixels, self._width, self._height, w, h,
+      self._pixels,
+      self._width,
+      self._height,
+      w,
+      h,
       filter == nil ? LANCZOS : filter,
     )
 
@@ -543,8 +557,8 @@ class Image < Canvas {
     var filter = is_dict(options) ? options.get('filter') : nil
     var anchor = is_dict(options) ? options.get('anchor', CENTER) : CENTER
     var background = is_dict(options)
-      ? options.get('background', TRANSPARENT)
-      : TRANSPARENT
+        ? options.get('background', TRANSPARENT)
+        : TRANSPARENT
 
     var scaled = self.fit(w, h, filter)
     var canvas = Image(w, h, background)
@@ -584,7 +598,13 @@ class Image < Canvas {
     }
 
     var cropped = _imagine.crop(
-      self._pixels, self._width, self._height, left, top, w, h,
+      self._pixels,
+      self._width,
+      self._height,
+      left,
+      top,
+      w,
+      h,
     )
 
     return self._derive(cropped, w, h)
@@ -609,13 +629,17 @@ class Image < Canvas {
     var tolerance = is_dict(options) ? options.get('tolerance', 0) : 0
     var reference = is_dict(options) ? options.get('background') : nil
 
-    var seed = reference == nil ?
-      self.get_pixel(0, 0) :
-      Color.parse(reference)
+    var seed = reference == nil ? self.get_pixel(0, 0) : Color.parse(reference)
 
     var box = _content_bounds(
-      self._pixels, self._width, self._height,
-      seed.r, seed.g, seed.b, seed.a, tolerance,
+      self._pixels,
+      self._width,
+      self._height,
+      seed.r,
+      seed.g,
+      seed.b,
+      seed.a,
+      tolerance,
     )
 
     if box[1] < 0 {
@@ -648,7 +672,10 @@ class Image < Canvas {
     padded.draw_image(self, l, t)
 
     return Image.from_pixels(
-      padded.width(), padded.height(), padded.pixels(), self._format,
+      padded.width(),
+      padded.height(),
+      padded.pixels(),
+      self._format,
     )
   }
 
@@ -668,7 +695,11 @@ class Image < Canvas {
     var fill = background == nil ? TRANSPARENT : Color.parse(background)
 
     var rotated = _imagine.rotate(
-      self._pixels, self._width, self._height, degrees, fill.to_packed(),
+      self._pixels,
+      self._width,
+      self._height,
+      degrees,
+      fill.to_packed(),
     )
 
     return self._derive(rotated.pixels, rotated.width, rotated.height)
@@ -711,13 +742,19 @@ class Image < Canvas {
   flip(mode) {
     var direction = mode == nil ? FLIP_HORIZONTAL : mode
 
-    if direction != FLIP_HORIZONTAL and direction != FLIP_VERTICAL and
-      direction != FLIP_BOTH {
-      raise ImageError('flip mode must be FLIP_HORIZONTAL, FLIP_VERTICAL or FLIP_BOTH')
+    if direction != FLIP_HORIZONTAL and
+        direction != FLIP_VERTICAL and
+        direction != FLIP_BOTH {
+      raise ImageError(
+        'flip mode must be FLIP_HORIZONTAL, FLIP_VERTICAL or FLIP_BOTH',
+      )
     }
 
     var flipped = _imagine.flip(
-      self._pixels, self._width, self._height, direction,
+      self._pixels,
+      self._width,
+      self._height,
+      direction,
     )
 
     return self._derive(flipped, self._width, self._height)
@@ -1015,10 +1052,26 @@ class Image < Canvas {
     var keep = 1 - mix
 
     return self.apply_matrix([
-      keep, 0, 0, 0, paint.r * mix,
-      0, keep, 0, 0, paint.g * mix,
-      0, 0, keep, 0, paint.b * mix,
-      0, 0, 0, 1, 0,
+      keep,
+      0,
+      0,
+      0,
+      paint.r * mix,
+      0,
+      keep,
+      0,
+      0,
+      paint.g * mix,
+      0,
+      0,
+      keep,
+      0,
+      paint.b * mix,
+      0,
+      0,
+      0,
+      1,
+      0,
     ])
   }
 
@@ -1052,7 +1105,9 @@ class Image < Canvas {
    */
   quantize(colors, dither) {
     _imagine.quantize(
-      self._pixels, self._width, self._height,
+      self._pixels,
+      self._width,
+      self._height,
       colors == nil ? 256 : colors,
       dither == true,
     )
@@ -1115,10 +1170,18 @@ class Image < Canvas {
     var edge = is_dict(options) ? options.get('edge', EDGE_CLAMP) : EDGE_CLAMP
     var keep_alpha = is_dict(options) ? options.get('keep_alpha', false) : false
 
-    return self._replace(_imagine.convolve(
-      self._pixels, self._width, self._height,
-      kernel, divisor, offset, edge, keep_alpha == true,
-    ))
+    return self._replace(
+      _imagine.convolve(
+        self._pixels,
+        self._width,
+        self._height,
+        kernel,
+        divisor,
+        offset,
+        edge,
+        keep_alpha == true,
+      ),
+    )
   }
 
   /**
@@ -1138,7 +1201,10 @@ class Image < Canvas {
   blur(radius) {
     return self._replace(
       _imagine.blur(
-        self._pixels, self._width, self._height, radius == nil ? 2 : radius,
+        self._pixels,
+        self._width,
+        self._height,
+        radius == nil ? 2 : radius,
       ),
     )
   }
@@ -1186,9 +1252,10 @@ class Image < Canvas {
    * @returns self
    */
   edges() {
-    return self.convolve(
-      filters.edge_kernel(), { divisor: 1, keep_alpha: true },
-    )
+    return self.convolve(filters.edge_kernel(), {
+      divisor: 1,
+      keep_alpha: true,
+    })
   }
 
   /**
@@ -1223,8 +1290,12 @@ class Image < Canvas {
     iter var by = 0; by < height; by += block {
       iter var bx = 0; bx < width; bx += block {
         _average_block(
-          self._pixels, width,
-          bx, by, (bx + block).min(width), (by + block).min(height),
+          self._pixels,
+          width,
+          bx,
+          by,
+          (bx + block).min(width),
+          (by + block).min(height),
         )
       }
     }
@@ -1259,8 +1330,8 @@ class Image < Canvas {
   draw_image(source: Image, x, y, options) {
     var opacity = is_dict(options) ? options.get('opacity', 1) : 1
     var blend = is_dict(options)
-      ? options.get('blend', BLEND_NORMAL)
-      : BLEND_NORMAL
+        ? options.get('blend', BLEND_NORMAL)
+        : BLEND_NORMAL
 
     # Compositing an image onto itself needs a snapshot of the source,
     # or reads would see pixels this call has already written.
@@ -1271,10 +1342,16 @@ class Image < Canvas {
     }
 
     _imagine.composite(
-      self._pixels, self._width, self._height,
-      pixels, source.width(), source.height(),
-      x == nil ? 0 : x, y == nil ? 0 : y,
-      opacity, blend,
+      self._pixels,
+      self._width,
+      self._height,
+      pixels,
+      source.width(),
+      source.height(),
+      x == nil ? 0 : x,
+      y == nil ? 0 : y,
+      opacity,
+      blend,
     )
 
     return self
@@ -1306,7 +1383,10 @@ class Image < Canvas {
     )
 
     return self.draw_image(
-      source, offset[0] + margin, offset[1] + margin, options,
+      source,
+      offset[0] + margin,
+      offset[1] + margin,
+      options,
     )
   }
 
@@ -1351,8 +1431,8 @@ class Image < Canvas {
    */
   flatten(background) {
     var under = background == nil
-      ? Color(255, 255, 255)
-      : Color.parse(background)
+        ? Color(255, 255, 255)
+        : Color.parse(background)
 
     _flatten_buffer(self._pixels, under.r, under.g, under.b)
     return self
@@ -1511,11 +1591,9 @@ class Image < Canvas {
       }
 
       var parts = keys[best].split(',')
-      found.append(Color(
-        parts[0].to_number(),
-        parts[1].to_number(),
-        parts[2].to_number(),
-      ))
+      found.append(
+        Color(parts[0].to_number(), parts[1].to_number(), parts[2].to_number()),
+      )
 
       keys.remove_at(best)
     }
@@ -1603,20 +1681,25 @@ class Image < Canvas {
 
     var rendered = font.render(content, options)
     var from_baseline = is_dict(options)
-      ? options.get('baseline', false)
-      : false
+        ? options.get('baseline', false)
+        : false
 
     # render_text() pads the mask so glyphs that overhang their box
     # are not clipped; the baseline it reports is inside that padding,
     # so drawing at `y` means offsetting by it.
-    var top = from_baseline == true ?
-      y - rendered.baseline :
-      y - (rendered.baseline - font.metrics().ascent)
+    var top = from_baseline == true
+        ? y - rendered.baseline
+        : y - (rendered.baseline - font.metrics().ascent)
 
     var left = x - (rendered.baseline - font.metrics().ascent)
 
     return self.draw_mask(
-      rendered.coverage, rendered.width, rendered.height, left, top, color,
+      rendered.coverage,
+      rendered.width,
+      rendered.height,
+      left,
+      top,
+      color,
     )
   }
 
@@ -1670,7 +1753,12 @@ class Image < Canvas {
     )
 
     return self.text(
-      offset[0] + margin, offset[1] + margin, text, font, color, options,
+      offset[0] + margin,
+      offset[1] + margin,
+      text,
+      font,
+      color,
+      options,
     )
   }
 
@@ -1710,7 +1798,10 @@ class Image < Canvas {
       var threshold = is_dict(options) ? options.get('threshold') : nil
 
       return formats.encode_wbmp(
-        self._pixels, self._width, self._height, threshold,
+        self._pixels,
+        self._width,
+        self._height,
+        threshold,
       )
     }
 
@@ -1724,7 +1815,11 @@ class Image < Canvas {
 
     catch {
       return _imagine.encode(
-        self._pixels, self._width, self._height, target, settings,
+        self._pixels,
+        self._width,
+        self._height,
+        target,
+        settings,
       )
     } as e {
       raise EncodeError(e.message)
@@ -1753,7 +1848,7 @@ class Image < Canvas {
     if target == nil {
       raise FormatError(
         "cannot tell what format to write '${path}' as; " +
-          'give it a known extension, or pass a format option',
+            'give it a known extension, or pass a format option',
       )
     }
 
@@ -1906,7 +2001,10 @@ class Image < Canvas {
    */
   to_wbmp(threshold) {
     return formats.encode_wbmp(
-      self._pixels, self._width, self._height, threshold,
+      self._pixels,
+      self._width,
+      self._height,
+      threshold,
     )
   }
 
@@ -2142,7 +2240,11 @@ def _average_block(
  * Tallies every visible pixel into four 256-entry buckets.
  */
 def _count_values(
-  pixels: bytes, red: list, green: list, blue: list, luma: list,
+  pixels: bytes,
+  red: list,
+  green: list,
+  blue: list,
+  luma: list,
 ) {
   var total = pixels.length()
 
@@ -2210,9 +2312,9 @@ def _score_difference(mine: bytes, theirs: bytes) {
     }
 
     var delta = (mine[at] - theirs[at]).abs() +
-      (mine[at + 1] - theirs[at + 1]).abs() +
-      (mine[at + 2] - theirs[at + 2]).abs() +
-      (mine[at + 3] - theirs[at + 3]).abs()
+        (mine[at + 1] - theirs[at + 1]).abs() +
+        (mine[at + 2] - theirs[at + 2]).abs() +
+        (mine[at + 3] - theirs[at + 3]).abs()
 
     sum += delta * alpha
     weight += alpha

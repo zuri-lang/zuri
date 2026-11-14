@@ -39,14 +39,9 @@ def _class_of(token) {
   return nil
 }
 
-/**
- * `source` as highlighted markup, or `nil` when it does not lex, in
- * which case the caller shows it plain.
- *
- * @param string source
- * @returns ?string
- */
-def zuri_code(source: string) {
+# `source` as `{ text, kind }` pieces, `kind` being the class a piece is
+# coloured with or `nil`, or `nil` when it does not lex.
+def _pieces(source: string) {
   var tokens
 
   catch {
@@ -55,7 +50,7 @@ def zuri_code(source: string) {
     return nil
   }
 
-  var out = []
+  var pieces = []
   var at = 0
 
   for token in tokens {
@@ -69,19 +64,81 @@ def zuri_code(source: string) {
 
     # Whatever the lexer skipped between tokens, spaces mostly.
     if token.start > at {
-      out.append(html.escape_text(source[at, token.start]))
+      pieces.append({ text: source[at, token.start], kind: nil })
     }
 
-    var text = html.escape_text(source[token.start, token.end])
-    var kind = _class_of(token)
-
-    out.append(kind == nil ? text : '<span class="${kind}">${text}</span>')
+    pieces.append({
+      text: source[token.start, token.end],
+      kind: _class_of(token),
+    })
     at = token.end
   }
 
   if at < source.length() {
-    out.append(html.escape_text(source[at,]))
+    pieces.append({ text: source[at,], kind: nil })
   }
 
-  return ''.join(out)
+  return pieces
+}
+
+# One piece of text as markup, in a span when it is coloured.
+def _markup(text: string, kind) {
+  var escaped = html.escape_text(text)
+
+  return kind == nil or text.is_empty()
+      ? escaped
+      : '<span class="${kind}">${escaped}</span>'
+}
+
+/**
+ * `source` as highlighted markup, or `nil` when it does not lex, in
+ * which case the caller shows it plain.
+ *
+ * @param string source
+ * @returns ?string
+ */
+def zuri_code(source: string) {
+  var pieces = _pieces(source)
+
+  if pieces == nil {
+    return nil
+  }
+
+  return ''.join(pieces.map(@(piece) => _markup(piece.text, piece.kind)))
+}
+
+/**
+ * `source` as highlighted markup one line at a time, so each line can
+ * be numbered, or `nil` when it does not lex. A token that runs over
+ * several lines, such as a string or a comment, is coloured on each.
+ *
+ * @param string source
+ * @returns ?list[string]
+ */
+def zuri_lines(source: string) {
+  var pieces = _pieces(source)
+
+  if pieces == nil {
+    return nil
+  }
+
+  var lines = []
+  var current = ''
+
+  for piece in pieces {
+    var parts = piece.text.split('\n')
+
+    iter var i = 0; i < parts.length(); i++ {
+      if i > 0 {
+        lines.append(current)
+        current = ''
+      }
+
+      current += _markup(parts[i], piece.kind)
+    }
+  }
+
+  lines.append(current)
+
+  return lines
 }

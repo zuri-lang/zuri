@@ -68,10 +68,10 @@ def _type_word(text) {
   }
 
   var word = text
-    .trim()
-    .replace('/^[\{\?]+/', '')
-    .replace('/[\}]+$/', '')
-    .trim()
+      .trim()
+      .replace('/^[\{\?]+/', '')
+      .replace('/[\}]+$/', '')
+      .trim()
   var choices = word.split('|').map(@(part) => part.trim()).filter(@(part) {
     return part != 'nil' and part != 'null' and !part.is_empty()
   })
@@ -242,9 +242,9 @@ class Linker {
 
     var summary = self.summary(ref.path)
 
-    if summary == nil
-      or ref.index < 0
-      or ref.index >= summary.symbols.length() {
+    if summary == nil or
+        ref.index < 0 or
+        ref.index >= summary.symbols.length() {
       return nil
     }
 
@@ -479,8 +479,8 @@ class Linker {
     var global = self.builtins.global(name)
 
     return global == nil
-      ? nil
-      : { path: global.summary.path, index: global.index }
+        ? nil
+        : { path: global.summary.path, index: global.index }
   }
 
   # --------------------------------------------------------------
@@ -536,9 +536,10 @@ class Linker {
         }
       }
       when 'symbol' {
-        return self._symbol_type(
-          { path: type.module, index: type.index }, depth + 1,
-        )
+        return self._symbol_type({
+          path: type.module,
+          index: type.index,
+        }, depth + 1)
       }
       when 'global' {
         var global = self.builtins.global(type.name)
@@ -547,9 +548,10 @@ class Linker {
           return nil
         }
 
-        return self._symbol_type(
-          { path: global.summary.path, index: global.index }, depth + 1,
-        )
+        return self._symbol_type({
+          path: global.summary.path,
+          index: global.index,
+        }, depth + 1)
       }
       when 'star' {
         var ref = self.starred(type.module).get(type.name, nil)
@@ -643,8 +645,8 @@ class Linker {
 
         if target.contains('module') {
           return target.module == nil
-            ? nil
-            : { t: 'module', path: target.module }
+              ? nil
+              : { t: 'module', path: target.module }
         }
 
         return self._symbol_type(target, depth + 1)
@@ -655,9 +657,9 @@ class Linker {
         # A field's type read from what it is set to holds until some
         # other code sets it to something else, which any code holding
         # an instance can; it is never proof.
-        if resolved != nil
-          and symbol.get('loose_type', false)
-          and !resolved.get('loose', false) {
+        if resolved != nil and
+            symbol.get('loose_type', false) and
+            !resolved.get('loose', false) {
           var loosened = resolved.clone()
 
           loosened.loose = true
@@ -736,8 +738,8 @@ class Linker {
     if result == nil {
       var summary = self.summary(callee.path)
       var found = summary == nil
-        ? nil
-        : summary.returns.get('${callee.index}', nil)
+          ? nil
+          : summary.returns.get('${callee.index}', nil)
       var agreed = nil
       var first = true
 
@@ -838,9 +840,9 @@ class Linker {
   superclass(ref) {
     var symbol = self.symbol(ref)
 
-    if symbol == nil
-      or symbol.get('extension', false)
-      or symbol.get('superclass', nil) == nil {
+    if symbol == nil or
+        symbol.get('extension', false) or
+        symbol.get('superclass', nil) == nil {
       return nil
     }
 
@@ -1071,7 +1073,9 @@ class Linker {
 
         if stub != nil {
           self._class_members(
-            { path: stub.summary.path, index: stub.index }, false, add,
+            { path: stub.summary.path, index: stub.index },
+            false,
+            add,
           )
         }
       }
@@ -1096,7 +1100,9 @@ class Linker {
 
         if stub != nil {
           self._class_members(
-            { path: stub.summary.path, index: stub.index }, false, add,
+            { path: stub.summary.path, index: stub.index },
+            false,
+            add,
           )
         }
       }
@@ -1109,7 +1115,9 @@ class Linker {
 
     if value != nil and owner.t != 'class' {
       self._class_members(
-        { path: value.summary.path, index: value.index }, false, add,
+        { path: value.summary.path, index: value.index },
+        false,
+        add,
       )
     }
 
@@ -1137,8 +1145,8 @@ class Linker {
       }
 
       var via = statics
-        ? 'static'
-        : (member.kind == 'field' ? 'field' : 'method')
+          ? 'static'
+          : (member.kind == 'field' ? 'field' : 'method')
 
       add(member.name, { path: ref.path, index }, via)
     }

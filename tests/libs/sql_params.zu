@@ -6,9 +6,9 @@ import sql.params { * }
 import sql.errors { QueryError }
 
 def test_positional() {
-  var numbered = translate(
-    'select * from t where a = ? and b = ?', [1, 2], NUMBERED,
-  )
+  var numbered = translate('select * from t where a = ? and b = ?', [
+    1, 2,
+  ], NUMBERED)
   assert numbered.sql == 'select * from t where a = $1 and b = $2'
   assert numbered.values == [1, 2]
 
@@ -73,9 +73,9 @@ def test_not_placeholders() {
 
 def test_escape() {
   # `?` is a JSON operator in PostgreSQL, so a literal one is doubled.
-  var escaped = translate(
-    'select data ?? $1 from t where id = ?', [7], NUMBERED,
-  )
+  var escaped = translate('select data ?? $1 from t where id = ?', [
+    7,
+  ], NUMBERED)
   assert escaped.sql == 'select data ? $1 from t where id = $1'
   assert escaped.values == [7]
 
@@ -146,9 +146,9 @@ def test_scan() {
 
 def test_split_statements() {
   var script = "create table a (id integer);\n" +
-    "insert into a values (1);\n" +
-    "-- a comment with ; in it\n" +
-    "insert into a values (';');\n"
+      "insert into a values (1);\n" +
+      "-- a comment with ; in it\n" +
+      "insert into a values (';');\n"
 
   var statements = split_statements(script)
 
@@ -168,11 +168,11 @@ def test_split_bodies() {
   # are part of the trigger.
   var trigger = split_statements(
     "create table log (what text);\n" +
-      "create trigger noted after insert on posts begin\n" +
-      "  insert into log values (new.title);\n" +
-      "  update counts set n = n + 1;\n" +
-      "end;\n" +
-      "insert into log values ('after');",
+        "create trigger noted after insert on posts begin\n" +
+        "  insert into log values (new.title);\n" +
+        "  update counts set n = n + 1;\n" +
+        "end;\n" +
+        "insert into log values ('after');",
   )
 
   assert trigger.length() == 3
@@ -184,34 +184,41 @@ def test_split_bodies() {
   # end the body, while a CASE expression's END does close its CASE.
   var routine = split_statements(
     'create trigger t before insert on x for each row begin ' +
-      'if new.a < 0 then set new.a = 0; end if; ' +
-      'while new.b > 9 do set new.b = new.b - 1; end while; ' +
-      'set new.c = case when new.d then 1 else 0 end; ' +
-      'end; select 1',
+        'if new.a < 0 then set new.a = 0; end if; ' +
+        'while new.b > 9 do set new.b = new.b - 1; end while; ' +
+        'set new.c = case when new.d then 1 else 0 end; ' +
+        'end; select 1',
   )
 
   assert routine.length() == 2
   assert routine[1] == 'select 1'
 
   assert split_statements(
-    'create function f() returns int language sql begin atomic ' +
-      'select 1; select 2; end; select 3',
-  ).length() == 2
+        'create function f() returns int language sql begin atomic ' +
+            'select 1; select 2; end; select 3',
+      )
+          .length() ==
+      2
 
   # BEGIN on its own is a transaction, not a body.
-  assert split_statements('BEGIN; insert into x values (1); COMMIT;').length()
-    == 3
+  assert split_statements('BEGIN; insert into x values (1); COMMIT;')
+          .length() ==
+      3
 
   # Neither do keywords inside strings count.
-  var quoted = split_statements("create trigger t after delete on x begin select 'end;'; end; select 1")
+  var quoted = split_statements(
+    "create trigger t after delete on x begin select 'end;'; end; select 1",
+  )
 
   assert quoted.length() == 2
   assert quoted[0].ends_with('end')
 
   # In any case.
   assert split_statements(
-    'CREATE TEMPORARY TRIGGER t AFTER DELETE ON x BEGIN DELETE FROM y; END; SELECT 1',
-  ).length() == 2
+        'CREATE TEMPORARY TRIGGER t AFTER DELETE ON x BEGIN DELETE FROM y; END; SELECT 1',
+      )
+          .length() ==
+      2
 
   echo 'test_split_bodies passed'
 }

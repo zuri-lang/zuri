@@ -103,8 +103,9 @@ class SqliteSchema < SchemaAdapter {
   primary_key_columns(table: string, schema) {
     # The pragma reports each key column's place within the key, which
     # for a composite key is not the table's column order.
-    var key = self._pragma('table_info', table, schema)
-      .filter(@(row) => row[5] != 0)
+    var key = self
+        ._pragma('table_info', table, schema)
+        .filter(@(row) => row[5] != 0)
 
     key.sort(@(a, b) => a[5] - b[5])
 
@@ -199,17 +200,15 @@ class SqliteSchema < SchemaAdapter {
 
   # Lists the objects of one kind from the right database's catalogue.
   _names(kind, schema) {
-    var database = schema == nil ?
-      nil :
-      self._connection.driver.quote_identifier(schema)
+    var database = schema == nil
+        ? nil
+        : self._connection.driver.quote_identifier(schema)
 
-    var master = database == nil ?
-      'sqlite_master' :
-      '${database}.sqlite_master'
+    var master = database == nil ? 'sqlite_master' : '${database}.sqlite_master'
 
     var rows = self._connection.select(
       'select name from ${master} where type = ?1 and name not like ' +
-        "'sqlite_%' order by name",
+          "'sqlite_%' order by name",
       [kind],
     ).rows
 

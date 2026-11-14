@@ -169,8 +169,12 @@ def from_json(text) {
  * @throws QueryError for a value with no storable form.
  */
 def flatten(value) {
-  if value == nil or is_bool(value) or is_number(value)
-    or is_bigint(value) or is_string(value) or is_bytes(value) {
+  if value == nil or
+      is_bool(value) or
+      is_number(value) or
+      is_bigint(value) or
+      is_string(value) or
+      is_bytes(value) {
     return value
   }
 
@@ -192,8 +196,8 @@ def flatten(value) {
 
   raise QueryError(
     'a ${typeof(value)} has no database representation; expected nil, ' +
-      'a bool, a number, a bigint, a string, bytes, a date, a time ' +
-      'interval, a sql.Decimal, or a list or dictionary to store as JSON',
+        'a bool, a number, a bigint, a string, bytes, a date, a time ' +
+        'interval, a sql.Decimal, or a list or dictionary to store as JSON',
   )
 }
 
@@ -268,8 +272,10 @@ class Time {
    * @returns number Fractional where there are microseconds.
    */
   total_seconds() {
-    var total = self.hours * 3600 + self.minutes * 60 + self.seconds +
-      self.microseconds / 1000000
+    var total = self.hours * 3600 +
+        self.minutes * 60 +
+        self.seconds +
+        self.microseconds / 1000000
 
     return self.negative ? -total : total
   }
@@ -291,8 +297,10 @@ class Time {
    * @returns bool
    */
   is_zero() {
-    return self.hours == 0 and self.minutes == 0 and self.seconds == 0
-      and self.microseconds == 0
+    return self.hours == 0 and
+        self.minutes == 0 and
+        self.seconds == 0 and
+        self.microseconds == 0
   }
 
   /**
@@ -347,8 +355,8 @@ class Time {
   to_string() {
     var sign = self.is_negative() ? '-' : ''
     var text = '${sign}${self.hours.to_string().lpad(2, '0')}:' +
-      '${self.minutes.to_string().lpad(2, '0')}:' +
-      '${self.seconds.to_string().lpad(2, '0')}'
+        '${self.minutes.to_string().lpad(2, '0')}:' +
+        '${self.seconds.to_string().lpad(2, '0')}'
 
     if self.microseconds != 0 {
       text += '.${self.microseconds.to_string().lpad(6, '0')}'

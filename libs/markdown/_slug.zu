@@ -1,0 +1,82 @@
+/**
+ * Heading identifiers, made the way GitHub and Pandoc make them, so a
+ * link written for a page on either still finds its heading here.
+ */
+
+import ._text { is_ascii_alnum, is_whitespace }
+
+# Whether a character outside ASCII is a letter, a number or a mark,
+# remembered once asked.
+var _word = {}
+
+def _is_word_character(c: string) {
+  if c.ord() < 128 {
+    return is_ascii_alnum(c)
+  }
+
+  var known = _word.get(c)
+
+  if known != nil {
+    return known
+  }
+
+  var found = c.match('/^[\\p{L}\\p{N}\\p{M}]$/u') != false
+
+  _word.set(c, found)
+
+  return found
+}
+
+/**
+ * GitHub's identifier for _text_: lower case, with every space made a
+ * hyphen and everything but letters, numbers, `-` and `_` dropped.
+ */
+def github(text: string) {
+  var out = []
+
+  for c in text.lower() {
+    if c == ' ' {
+      out.append('-')
+    } else if c == '-' or c == '_' or _is_word_character(c) {
+      out.append(c)
+    }
+  }
+
+  return ''.join(out)
+}
+
+/**
+ * Pandoc's identifier for _text_: lower case, with each run of
+ * whitespace made one hyphen, everything but letters, numbers, `_`, `-`
+ * and `.` dropped, and everything before the first letter dropped too.
+ */
+def pandoc(text: string) {
+  var out = []
+  var spaced = false
+
+  for c in text.lower() {
+    if is_whitespace(c) {
+      spaced = true
+
+      continue
+    }
+
+    if c == '-' or c == '_' or c == '.' or _is_word_character(c) {
+      if spaced and !out.is_empty() {
+        out.append('-')
+      }
+
+      spaced = false
+      out.append(c)
+    }
+  }
+
+  var slug = ''.join(out)
+  var i = 0
+
+  while i < slug.length() and !slug[i].is_alpha() {
+    i++
+  }
+
+  return slug[i,]
+}

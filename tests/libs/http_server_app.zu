@@ -193,7 +193,8 @@ def api_server(port_channel, static_root) {
   # different origin as far as credential scoping is concerned.
   server.get('/cross-origin', @(request, response) {
     response.redirect(
-      'http://localhost:${server.address().port()}/saw-auth', 302,
+      'http://localhost:${server.address().port()}/saw-auth',
+      302,
     )
   })
 
@@ -264,10 +265,12 @@ def middleware_server(port_channel) {
 
   server.use(middleware.request_id())
   server.use(middleware.security_headers())
-  server.use(middleware.cors({
-    origins: ['https://app.example.com'],
-    credentials: true,
-  }))
+  server.use(
+    middleware.cors({
+      origins: ['https://app.example.com'],
+      credentials: true,
+    }),
+  )
   server.use(middleware.etag(1))
 
   # Scoped to one prefix so the rest of this server's routes are not
@@ -303,16 +306,21 @@ def middleware_server(port_channel) {
   })
 
   var jwt_guard = middleware.jwt_auth(
-    jwt.Verifier(
-      'test-jwt-secret', { algorithms: ['HS256'], audience: 'zuri-test' },
-    ),
+    jwt.Verifier('test-jwt-secret', {
+      algorithms: ['HS256'],
+      audience: 'zuri-test',
+    }),
   )
 
   var scoped_guard = middleware.jwt_auth(
-    jwt.Verifier(
-      'test-jwt-secret', { algorithms: ['HS256'], audience: 'zuri-test' },
-    ),
-    { scopes: ['items:write'], realm: 'items' },
+    jwt.Verifier('test-jwt-secret', {
+      algorithms: ['HS256'],
+      audience: 'zuri-test',
+    }),
+    {
+      scopes: ['items:write'],
+      realm: 'items',
+    },
   )
 
   # No verifier at all: this must behave as though the middleware were
@@ -386,18 +394,21 @@ def middleware_server(port_channel) {
   server.get('/tokens', @(request, response) {
     response.json({
       good: jwt.sign({ sub: 'ada', aud: 'zuri-test' }, 'test-jwt-secret'),
-      scoped: jwt.sign(
-        { sub: 'ada', aud: 'zuri-test', scope: 'items:read items:write' },
-        'test-jwt-secret',
-      ),
-      narrow: jwt.sign(
-        { sub: 'ada', aud: 'zuri-test', scope: 'items:read' },
-        'test-jwt-secret',
-      ),
-      expired: jwt.sign(
-        { sub: 'ada', aud: 'zuri-test', exp: time() - 60 },
-        'test-jwt-secret',
-      ),
+      scoped: jwt.sign({
+        sub: 'ada',
+        aud: 'zuri-test',
+        scope: 'items:read items:write',
+      }, 'test-jwt-secret'),
+      narrow: jwt.sign({
+        sub: 'ada',
+        aud: 'zuri-test',
+        scope: 'items:read',
+      }, 'test-jwt-secret'),
+      expired: jwt.sign({
+        sub: 'ada',
+        aud: 'zuri-test',
+        exp: time() - 60,
+      }, 'test-jwt-secret'),
       forged: jwt.sign({ sub: 'root', aud: 'zuri-test' }, 'not-the-secret'),
     })
   })
@@ -485,7 +496,9 @@ def websocket_server(port_channel) {
   })
 
   server.get('/ws', @(request, response) {
-    var socket = ws.accept(request, response, { protocols: ['chat', 'echo'] })
+    var socket = ws.accept(request, response, {
+      protocols: ['chat', 'echo'],
+    })
 
     while socket.is_open() {
       var message = socket.receive()
@@ -572,6 +585,38 @@ def pool_server(port_channel, max_connections) {
     port: 0,
     workers: 2,
     max_connections,
+    on_ready: @(address, stop) {
+      port_channel.send(address.to_string())
+    },
+  })
+}
+
+/**
+ * The routes of a worker pool that a request to `/close` shuts down,
+ * through the server its worker was given.
+ *
+ * @param HttpServer server
+ */
+def closing_routes(server) {
+  server.get('/close', @(request, response) {
+    response.json({ closing: true })
+    server.close()
+  })
+}
+
+/**
+ * Runs the multi-isolate server until one of its handlers closes it.
+ * Its `max_connections` is one more than the test makes, so that the
+ * test can still end it with one more connection if closing fails.
+ *
+ * @param Channel port_channel
+ */
+def closing_pool_server(port_channel) {
+  http.serve(closing_routes, {
+    host: '127.0.0.1',
+    port: 0,
+    workers: 2,
+    max_connections: 3,
     on_ready: @(address, stop) {
       port_channel.send(address.to_string())
     },

@@ -183,7 +183,7 @@ class Pool {
 
     raise PoolExhaustedError(
       'all ${self._settings.max} connections are in use; release one ' +
-        'before acquiring another, or raise the pool maximum',
+          'before acquiring another, or raise the pool maximum',
       { driver: self._driver.name() },
     )
   }
@@ -352,8 +352,7 @@ class Pool {
     for entry in self._idle {
       catch {
         entry.connection.close()
-      } as _error {
-      }
+      } as _error {}
     }
 
     self._size -= self._idle.length()
@@ -405,7 +404,8 @@ class Pool {
   _open() {
     var driver_connection = self._driver.connect(self._options)
     var connection = Connection(
-      driver_connection, self._driver.describing(driver_connection),
+      driver_connection,
+      self._driver.describing(driver_connection),
     )
     var now = _now()
 
@@ -418,19 +418,14 @@ class Pool {
       prepare(connection)
     }
 
-    return {
-      connection,
-      opened_at: now,
-      released_at: now,
-    }
+    return { connection, opened_at: now, released_at: now }
   }
 
   _discard(entry) {
     catch {
       entry.connection.detach_from_pool()
       entry.connection.close()
-    } as _error {
-    }
+    } as _error {}
 
     self._size--
 
@@ -501,7 +496,7 @@ class Pool {
     if filled.min > filled.max {
       raise SqlError(
         'a pool cannot keep ${filled.min} connections open when its ' +
-          'maximum is ${filled.max}',
+            'maximum is ${filled.max}',
       )
     }
 
@@ -526,7 +521,7 @@ class Pool {
 
   to_string() {
     return '<Pool ${self._driver.name()} ${self.in_use()}/${self._size} in use' +
-      '${self._closed ? ", closed" : ""}>'
+        '${self._closed ? ", closed" : ""}>'
   }
 
   @to_string() {

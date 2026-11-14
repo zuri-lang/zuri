@@ -248,7 +248,9 @@ class Connection {
 
     return Cursor(
       self._connection.open_cursor(
-        prepared.sql, prepared.values, options or {},
+        prepared.sql,
+        prepared.values,
+        options or {},
       ),
     )
   }
@@ -353,7 +355,7 @@ class Connection {
     if id == nil and !self.supports('last_insert_id') {
       raise NotSupportedError(
         '${self.driver_name()} does not report the id of an inserted ' +
-          'row; name the column to read it from with the returning option',
+            'row; name the column to read it from with the returning option',
         { driver: self.driver_name(), query: built.sql },
       )
     }
@@ -383,8 +385,9 @@ class Connection {
 
     for batch in self._batches(rows) {
       var built = crud.insert_many(self._driver, table, batch)
-      inserted += self._connection.execute(built.sql, built.values)
-        .get('rows_affected', 0)
+      inserted += self._connection
+          .execute(built.sql, built.values)
+          .get('rows_affected', 0)
     }
 
     return inserted
@@ -407,8 +410,9 @@ class Connection {
 
     var built = crud.update(self._driver, table, values, where)
 
-    return self._connection.execute(built.sql, built.values)
-      .get('rows_affected', 0)
+    return self._connection
+        .execute(built.sql, built.values)
+        .get('rows_affected', 0)
   }
 
   /**
@@ -423,8 +427,9 @@ class Connection {
 
     var built = crud.delete(self._driver, table, where)
 
-    return self._connection.execute(built.sql, built.values)
-      .get('rows_affected', 0)
+    return self._connection
+        .execute(built.sql, built.values)
+        .get('rows_affected', 0)
   }
 
   /**
@@ -552,8 +557,7 @@ class Connection {
         # the body, not the one from trying to tidy up after it.
         catch {
           self._connection.rollback()
-        } as _ignored {
-        }
+        } as _ignored {}
       }
 
       raise error
@@ -720,7 +724,7 @@ class Connection {
     if per_batch < 1 {
       raise QueryError(
         'a row of ${per_row} columns binds more parameters than ' +
-          '${self.driver_name()} allows in one statement (${limit})',
+            '${self.driver_name()} allows in one statement (${limit})',
         { driver: self.driver_name() },
       )
     }
@@ -751,7 +755,7 @@ class Connection {
 
   to_string() {
     return '<Connection ${self._driver.name()}' +
-      '${self.is_closed() ? " (closed)" : ""}>'
+        '${self.is_closed() ? " (closed)" : ""}>'
   }
 
   @to_string() {

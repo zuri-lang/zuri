@@ -151,14 +151,16 @@ nothing and buys the most.
 ### Rendering the Board
 
 ```zuri,ignore
-  server.get('/', @(request, response) {
-    response.html(view.render('board.html', {
+server.get('/', @(request, response) {
+  response.html(
+    view.render('board.html', {
       title: 'Task Board',
       tagline: _tagline(board),
       columns: board.columns(),
       error: request.query_param('error', nil),
-    }))
-  })
+    }),
+  )
+})
 ```
 
 One route, one call, no logic. Everything it hands the template is either a
@@ -177,18 +179,18 @@ that message comes back in to be rendered.
 ### Handling a Form
 
 ```zuri,ignore
-  server.post('/tasks', @(request, response) {
-    var form = request.form()
+server.post('/tasks', @(request, response) {
+  var form = request.form()
 
-    catch {
-      board.add(form.get('title', nil), { column: form.get('column', nil) })
-    } as error {
-      response.redirect('/?error=' + _escape(error.message))
-      return
-    }
+  catch {
+    board.add(form.get('title', nil), { column: form.get('column', nil) })
+  } as error {
+    response.redirect('/?error=' + _escape(error.message))
+    return
+  }
 
-    response.redirect('/')
-  })
+  response.redirect('/')
+})
 ```
 
 All three form handlers follow this exact shape, so it is worth reading

@@ -359,8 +359,12 @@ class TlsStream {
    *    certificate isn't trusted or doesn't match `server_name`
    */
   static connect(tcp_stream, config, server_name) {
-    return TlsStream(_net_tls.tls_wrap_client(
-      tcp_stream.native_ptr(), config.native_ptr(), server_name),
+    return TlsStream(
+      _net_tls.tls_wrap_client(
+        tcp_stream.native_ptr(),
+        config.native_ptr(),
+        server_name,
+      ),
     )
   }
 
@@ -384,9 +388,9 @@ class TlsStream {
    *    client didn't present a trusted certificate
    */
   static accept(tcp_stream, config) {
-    return TlsStream(_net_tls.tls_wrap_server(
-      tcp_stream.native_ptr(), config.native_ptr(),
-    ))
+    return TlsStream(
+      _net_tls.tls_wrap_server(tcp_stream.native_ptr(), config.native_ptr()),
+    )
   }
 
   /**
@@ -404,9 +408,9 @@ class TlsStream {
    * @throws Error if `config` has no certificate chain
    */
   static begin_accept(tcp_stream, config) {
-    return TlsStream(_net_tls.tls_begin_server(
-      tcp_stream.native_ptr(), config.native_ptr(),
-    ))
+    return TlsStream(
+      _net_tls.tls_begin_server(tcp_stream.native_ptr(), config.native_ptr()),
+    )
   }
 
   /**

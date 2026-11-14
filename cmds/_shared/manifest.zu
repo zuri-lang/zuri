@@ -258,7 +258,11 @@ def _optional_string(value, key: string, where: string) {
  * @raises ManifestError
  */
 def parse_dependency(
-  name: string, value, dev: bool, where: ?string, stdlib: ?dict,
+  name: string,
+  value,
+  dev: bool,
+  where: ?string,
+  stdlib: ?dict,
 ) {
   var section = dev ? DEV_DEPENDENCIES : DEPENDENCIES
 
@@ -283,14 +287,18 @@ def parse_dependency(
   }
 
   if !is_dict(value) {
-    raise ManifestError('${context}: a dependency is a version range or a table')
+    raise ManifestError(
+      '${context}: a dependency is a version range or a table',
+    )
   }
 
   var known = ['version', 'registry', 'git', 'tag', 'rev', 'branch', 'path']
 
   for key in value.keys() {
     if !known.contains(key) {
-      raise ManifestError("${context}: '${key}' is not something a dependency can say")
+      raise ManifestError(
+        "${context}: '${key}' is not something a dependency can say",
+      )
     }
   }
 
@@ -303,11 +311,15 @@ def parse_dependency(
   var git = _optional_string(value.get('git', nil), 'git', context)
   var path = _optional_string(value.get('path', nil), 'path', context)
   var registry = _optional_string(
-    value.get('registry', nil), 'registry', context,
+    value.get('registry', nil),
+    'registry',
+    context,
   )
 
   if git != nil and path != nil {
-    raise ManifestError('${context}: a dependency comes from git or from a path, not both')
+    raise ManifestError(
+      '${context}: a dependency comes from git or from a path, not both',
+    )
   }
 
   var pins = []
@@ -322,11 +334,15 @@ def parse_dependency(
 
   if git != nil {
     if registry != nil {
-      raise ManifestError('${context}: a git dependency does not come from a registry')
+      raise ManifestError(
+        '${context}: a git dependency does not come from a registry',
+      )
     }
 
     if pins.length() > 1 {
-      raise ManifestError('${context}: pin a git dependency with one of tag, rev or branch')
+      raise ManifestError(
+        '${context}: pin a git dependency with one of tag, rev or branch',
+      )
     }
 
     var ref = pins.is_empty() ? nil : pins[0]
@@ -335,12 +351,16 @@ def parse_dependency(
   }
 
   if !pins.is_empty() {
-    raise ManifestError("${context}: '${pins[0].kind}' only means something with 'git'")
+    raise ManifestError(
+      "${context}: '${pins[0].kind}' only means something with 'git'",
+    )
   }
 
   if path != nil {
     if registry != nil {
-      raise ManifestError('${context}: a path dependency does not come from a registry')
+      raise ManifestError(
+        '${context}: a path dependency does not come from a registry',
+      )
     }
 
     return Dependency({ name, kind: 'path', path, range, dev })
@@ -407,7 +427,9 @@ class Manifest {
    */
   name() {
     return _optional_string(
-      self._project().get('name', nil), 'name', self._where(),
+      self._project().get('name', nil),
+      'name',
+      self._where(),
     )
   }
 
@@ -418,7 +440,9 @@ class Manifest {
    */
   version() {
     return _optional_string(
-      self._project().get('version', nil), 'version', self._where(),
+      self._project().get('version', nil),
+      'version',
+      self._where(),
     )
   }
 
@@ -451,7 +475,9 @@ class Manifest {
     var range = self.text('zuri')
 
     if range != nil and !semver.is_valid_range(range) {
-      raise ManifestError("${self._where()}: zuri = '${range}' is not a valid version range")
+      raise ManifestError(
+        "${self._where()}: zuri = '${range}' is not a valid version range",
+      )
     }
 
     return range
@@ -475,7 +501,9 @@ class Manifest {
 
     var found = []
     var seen = {}
-    var sections = [[DEPENDENCIES, false]]
+    var sections = [
+      [DEPENDENCIES, false],
+    ]
 
     if include_dev != false {
       sections.append([DEV_DEPENDENCIES, true])
@@ -493,15 +521,15 @@ class Manifest {
 
         if seen.contains(key) {
           raise ManifestError(
-            "${self._where()}: '${name}' is declared twice; keep it in one section "
-              + 'under one spelling',
+            "${self._where()}: '${name}' is declared twice; keep it in one section " +
+                'under one spelling',
           )
         }
 
         seen.set(key, true)
-        found.append(parse_dependency(
-          name, value, pair[1], self._where(), stdlib,
-        ))
+        found.append(
+          parse_dependency(name, value, pair[1], self._where(), stdlib),
+        )
       }
     }
 
@@ -539,7 +567,9 @@ class Manifest {
 
     for alias, address in table {
       if !is_string(address) {
-        raise ManifestError("${self._where()}: registry '${alias}' must be an address")
+        raise ManifestError(
+          "${self._where()}: registry '${alias}' must be an address",
+        )
       }
     }
 
@@ -560,7 +590,9 @@ class Manifest {
     }
 
     return _optional_string(
-      table.get(hook, nil), hook, '${self._where()} [hooks]',
+      table.get(hook, nil),
+      hook,
+      '${self._where()} [hooks]',
     )
   }
 
@@ -578,7 +610,9 @@ class Manifest {
     }
 
     var allowed = _string_list(
-      table.get('allow-hooks', nil), 'allow-hooks', self._where(),
+      table.get('allow-hooks', nil),
+      'allow-hooks',
+      self._where(),
     )
 
     return allowed.map(@(name) => names.normalized(name))
@@ -610,9 +644,9 @@ class Manifest {
 
     var section = dependency.dev ? DEV_DEPENDENCIES : DEPENDENCIES
 
-    self.document
-      .table(section)
-      .set([dependency.name], dependency.declaration())
+    self.document.table(section).set([
+      dependency.name,
+    ], dependency.declaration())
     self.data = self.document.to_value()
   }
 
@@ -664,7 +698,9 @@ class Manifest {
     var target = path == nil ? self.path : path
 
     if target == nil {
-      raise ManifestError('this manifest was not read from a file; say where to save it')
+      raise ManifestError(
+        'this manifest was not read from a file; say where to save it',
+      )
     }
 
     fsx.atomic_write(target, self.document.to_string())
@@ -718,8 +754,8 @@ def load_or_create(path: string) {
     return load(path)
   }
 
-  var text = '# The packages installed globally for this user.\n\n'
-    + '[dependencies]\n'
+  var text = '# The packages installed globally for this user.\n\n' +
+      '[dependencies]\n'
 
   return parse(text, path)
 }
@@ -744,8 +780,8 @@ def resolve_registry(alias_or_address: ?string, aliases: dict) {
     address = aliases.get(address)
   } else if !address.contains('://') {
     raise ManifestError(
-      "'${alias_or_address}' is not a registry alias this project or your configuration "
-        + 'defines; add it under [registries] or give its address',
+      "'${alias_or_address}' is not a registry alias this project or your configuration " +
+          'defines; add it under [registries] or give its address',
     )
   }
 

@@ -16,18 +16,23 @@ import http.session.sql { SqlStore }
 
 import .api
 import .context { Nyssa }
+import .guides
 import .plan
 import .web
 
 /** The content security policy every page is sent with. */
-var POLICY = "default-src 'self'; img-src 'self' https: data:; style-src 'self'; "
-  + "script-src 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; "
-  + "base-uri 'none'"
+var POLICY = "default-src 'self'; img-src 'self' https: data:; style-src 'self'; " +
+    "script-src 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; " +
+    "base-uri 'none'"
 
 # The paths where a password or a new account is submitted, which are
 # rate limited per address on top of the per-account limits.
 var _GUARDED = [
-  '/api/v1/tokens', '/api/v1/accounts', '/login', '/signup', '/recover',
+  '/api/v1/tokens',
+  '/api/v1/accounts',
+  '/login',
+  '/signup',
+  '/recover',
   '/reset',
 ]
 
@@ -57,12 +62,17 @@ def setup(server) {
 
   server.use(middleware.request_id())
   server.use(middleware.logger({ trust_proxy: trust }))
+
+  # The guides host is answered before anything below sets a header or
+  # a cookie for the repository's own pages.
+  server.use(guides.middleware(nyssa))
   server.use(middleware.security_headers({ content_security_policy: POLICY }))
 
   server.use(@(request, response, next) {
-    var guarded = request.method == 'POST' and _GUARDED.some(@(path) {
-      return request.path == path or request.path.starts_with(path + '/')
-    })
+    var guarded = request.method == 'POST' and
+        _GUARDED.some(@(path) {
+          return request.path == path or request.path.starts_with(path + '/')
+        })
 
     if guarded {
       limited(request, response, next)
@@ -73,12 +83,14 @@ def setup(server) {
     next()
   })
 
-  server.use(session({
-    store,
-    name: 'nyssa_session',
-    secret: settings.session_secret,
-    secure: settings.public_url.starts_with('https://') ? true : nil,
-  }))
+  server.use(
+    session({
+      store,
+      name: 'nyssa_session',
+      secret: settings.session_secret,
+      secure: settings.public_url.starts_with('https://') ? true : nil,
+    }),
+  )
 
   server.use(web.csrf_guard(nyssa))
 

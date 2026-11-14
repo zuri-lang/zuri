@@ -4,7 +4,12 @@ import test { * }
 
 import ..errors { UsageError }
 import ..names {
-  check_name, import_name, is_identifier, is_valid, normalized, stdlib_names,
+  check_name,
+  import_name,
+  is_identifier,
+  is_valid,
+  normalized,
+  stdlib_names,
 }
 
 describe('import_name', @{
@@ -31,7 +36,15 @@ describe('check_name', @{
 
   it('refuses names that are not lowercase words joined up', @{
     for name in [
-      '', 'Web', '-web', 'web-', '2fa', 'a b', 'web.tools', ' ', 'a\nb',
+      '',
+      'Web',
+      '-web',
+      'web-',
+      '2fa',
+      'a b',
+      'web.tools',
+      ' ',
+      'a\nb',
     ] {
       expect(is_valid(name, {})).to_be_false()
     }

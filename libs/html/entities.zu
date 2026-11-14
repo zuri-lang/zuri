@@ -108,8 +108,8 @@ def is_ascii_alphanumeric(c: string) {
 
   var n = c.ord()
   return (n >= 48 and n <= 57) or
-    (n >= 65 and n <= 90) or
-    (n >= 97 and n <= 122)
+      (n >= 65 and n <= 90) or
+      (n >= 97 and n <= 122)
 }
 
 /**
@@ -140,8 +140,8 @@ def is_ascii_hex_digit(c: string) {
 
   var n = c.ord()
   return (n >= 48 and n <= 57) or
-    (n >= 65 and n <= 70) or
-    (n >= 97 and n <= 102)
+      (n >= 65 and n <= 70) or
+      (n >= 97 and n <= 102)
 }
 
 /**
@@ -205,8 +205,11 @@ def _is_control(code: number) {
   }
 
   # TAB, LF, FF, CR and SPACE are legal; the rest of C0 is not.
-  return !(code == 0x09 or code == 0x0A or
-    code == 0x0C or code == 0x0D or code == 0x20)
+  return !(code == 0x09 or
+      code == 0x0A or
+      code == 0x0C or
+      code == 0x0D or
+      code == 0x20)
 }
 
 /**
@@ -261,8 +264,9 @@ def _longest_match(chars: list, start: number) {
 
   # A reference name is a run of ASCII alphanumerics optionally closed
   # by a semicolon, so there is no point looking any further than that.
-  while stop < limit and stop - start < MAX_NAME_LENGTH and
-    is_ascii_alphanumeric(chars[stop]) {
+  while stop < limit and
+      stop - start < MAX_NAME_LENGTH and
+      is_ascii_alphanumeric(chars[stop]) {
     stop++
   }
 
@@ -493,9 +497,9 @@ def _reverse_table() {
 
     var current = table.get(text, nil)
 
-    if current == nil or name.length() < current.length() or
-      (name.length() == current.length() and
-        name.compare(current) < 0) {
+    if current == nil or
+        name.length() < current.length() or
+        (name.length() == current.length() and name.compare(current) < 0) {
       table[text] = name
     }
   }
@@ -741,7 +745,9 @@ def escape_attribute(value: string) {
  * @returns bool
  */
 def _needs_escape(text: string) {
-  return text.contains('&') or text.contains('<') or
-    text.contains('>') or text.contains('"') or
-    text.contains(NO_BREAK_SPACE)
+  return text.contains('&') or
+      text.contains('<') or
+      text.contains('>') or
+      text.contains('"') or
+      text.contains(NO_BREAK_SPACE)
 }

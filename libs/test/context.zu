@@ -184,8 +184,8 @@ def check(frame) {
     return nil
   }
 
-  if frame.expected_assertions >= 0
-    and frame.assertions != frame.expected_assertions {
+  if frame.expected_assertions >= 0 and
+      frame.assertions != frame.expected_assertions {
     return 'Expected ${frame.expected_assertions} assertions but ${frame.assertions} ran'
   }
 

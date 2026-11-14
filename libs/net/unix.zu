@@ -106,9 +106,7 @@ class UnixStream {
    *    `pair()` produce. A new socket when nil.
    */
   @new(_ptr) {
-    self._ptr = _ptr == nil ?
-      _net_unix.unix_new() :
-      _ptr
+    self._ptr = _ptr == nil ? _net_unix.unix_new() : _ptr
   }
 
   /**
@@ -357,9 +355,7 @@ class UnixStream {
       return '<UnixStream listening on ${self.local_address()}>'
     }
 
-    return self.is_connected() ?
-      '<UnixStream connected>' :
-      '<UnixStream>'
+    return self.is_connected() ? '<UnixStream connected>' : '<UnixStream>'
   }
 
   @to_string() {

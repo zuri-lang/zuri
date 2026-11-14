@@ -77,9 +77,9 @@ returns a new byte stream:
 var b = bytes([10, 20, 30, 40, 50])
 
 echo b[1, 3]
-echo b[, 3]
-echo b[3, ]
-echo b[-2, ]
+echo b[,3]
+echo b[3,]
+echo b[-2,]
 ```
 
 ```console
@@ -375,8 +375,13 @@ string is a sequence of `/`-separated fields, each `CODE[COUNT][:NAME]`.
 ```zuri
 import struct
 
-var header = struct.pack('N:magic/n:version/Z8:name/C:flags',
-  0x5A555249, 1, 'task', 3)
+var header = struct.pack(
+  'N:magic/n:version/Z8:name/C:flags',
+  0x5A555249,
+  1,
+  'task',
+  3,
+)
 
 echo header
 echo header.length()

@@ -73,183 +73,98 @@ fn main() {
   println!("cargo:rerun-if-changed=xtask/src/sync.rs");
 
   check_patched_crates(root);
+  link_unwinder_statically();
   generate_zu_conformance_tests(&manifest_dir);
-  build_docs(&manifest_dir);
 }
 
-/// Renders both books whenever mdBook is installed and either has
-/// actually changed.
-fn build_docs(manifest_dir: &str) {
-  for (name, stamp, generated) in [
-    ("book", "book.stamp", false),
-    ("reference", "reference.stamp", true),
-  ] {
-    build_book(manifest_dir, name, stamp, generated);
-  }
-}
-
-/// Renders one book in `docs/` whenever mdBook is installed and that
-/// book has actually changed.
+/// Links libgcc's unwinder into a dynamically linked musl build, so the
+/// program needs nothing on the machine it runs on but musl itself.
 ///
-/// Two things keep this off the critical path of ordinary work. The
-/// `newest_mtime` check below means a day spent in `src/` never spends
-/// a second rendering markdown, and a machine without mdBook gets one
-/// warning rather than a failed build, because the book reads perfectly
-/// well as the markdown it already is.
-///
-/// The stamp file is needed because this script re-runs on every single
-/// build regardless: `generate_zu_conformance_tests` writes into
-/// `tests/generated` while `tests` is itself a rerun trigger, so Cargo
-/// always sees the directory as dirty. Leaning on `rerun-if-changed`
-/// alone would rebuild the book every time.
-///
-/// Output goes to `target/<name>` (set in each `book.toml`), deliberately not
-/// under `docs/`; writing into a directory this script also watches
-/// would have every build trigger the next one.
-fn build_book(manifest_dir: &str, name: &str, stamp_name: &str, generated: bool) {
-  let book_dir = Path::new(manifest_dir).join("docs").join(name);
-  let manifest = book_dir.join("book.toml");
+/// `.cargo/config.toml` links musl dynamically, since a statically linked
+/// musl program cannot load a shared library and `ffi` has to. The
+/// standard library then asks for its unwinder as `-lgcc_s`, the shared
+/// libgcc, which a bare Alpine does not have. A `libgcc_s.a` holding
+/// libgcc's static unwinder, put first on the search path, answers that
+/// request instead. It is libgcc's unwinder either way, which is the one
+/// `jit::unwind` registers compiled code with on Linux. `-lgcc` goes last
+/// because the unwinder calls helpers in it, such as ARM's atomics.
+fn link_unwinder_statically() {
+  let musl = env::var("CARGO_CFG_TARGET_ENV").is_ok_and(|env| env == "musl");
+  let static_crt = env::var("CARGO_CFG_TARGET_FEATURE")
+    .is_ok_and(|features| features.split(',').any(|feature| feature == "crt-static"));
 
-  // The book keeps its pages beside `book.toml`; the reference's are
-  // generated under `target/`, which is where its `src` setting points.
-  let src_dir = match generated {
-    true => Path::new(manifest_dir)
-      .join("target")
-      .join(name)
-      .join("src"),
-    false => book_dir.join("src"),
-  };
-
-  println!("cargo:rerun-if-changed={}", src_dir.display());
-  println!("cargo:rerun-if-changed={}", manifest.display());
-
-  if !manifest.is_file() {
+  if !musl || static_crt {
     return;
   }
 
-  // Both books declare `theme/zuri-highlight.js` in their `book.toml`;
-  // the file itself has one source in `docs/tools`. Copying it here as
-  // well as in the docs tool keeps a plain `cargo build` able to render
-  // a book that someone has never run `cargo build-docs` on.
-  let highlighter = Path::new(manifest_dir)
-    .join("docs")
-    .join("tools")
-    .join("zuri-highlight.js");
-  let theme = book_dir.join("theme");
+  let target = env::var("TARGET").unwrap_or_default();
+  let names = [
+    format!("CC_{}", target.replace('-', "_")),
+    format!("CC_{target}"),
+    "TARGET_CC".to_string(),
+    "CC".to_string(),
+  ];
 
-  if highlighter.is_file() && fs::create_dir_all(&theme).is_ok() {
-    let _ = fs::copy(&highlighter, theme.join("zuri-highlight.js"));
+  for name in &names {
+    println!("cargo:rerun-if-env-changed={name}");
   }
 
-  println!("cargo:rerun-if-changed={}", highlighter.display());
+  let compiler = names
+    .iter()
+    .find_map(|name| env::var(name).ok())
+    .unwrap_or_else(|| "cc".to_string());
+  let mut words = compiler.split_whitespace();
+  let program = words.next().unwrap_or("cc");
 
-  // The reference's pages are generated rather than committed, so a
-  // fresh clone has none until `cargo build-docs` writes them. Running
-  // the generator from here is not an option: it needs the `zuri`
-  // binary, which this script runs before linking.
-  if !src_dir.join("SUMMARY.md").is_file() {
-    println!("cargo:warning=the {name} has no pages yet; run `cargo build-docs` to generate them");
-    return;
-  }
+  let found = Command::new(program)
+    .args(words)
+    .arg("-print-file-name=libgcc_eh.a")
+    .stderr(Stdio::null())
+    .output()
+    .ok()
+    .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+    .map(std::path::PathBuf::from)
+    .filter(|path| path.is_absolute() && path.is_file());
 
-  let newest = newest_mtime(&src_dir).max(file_mtime(&manifest));
-  let stamp = Path::new(&env::var("OUT_DIR").unwrap()).join(stamp_name);
-  let rendered = match generated {
-    true => Path::new(manifest_dir)
-      .join("target")
-      .join(name)
-      .join("html"),
-    false => Path::new(manifest_dir).join("target").join(name),
-  };
-
-  if rendered.is_dir() && file_mtime(&stamp) >= newest {
-    return;
-  }
-
-  if !mdbook_available() {
+  let Some(unwinder) = found else {
     println!(
-      "cargo:warning=mdbook not found, skipping the {name}. \
-       Install it with `cargo install mdbook`, or read docs/{name}/src directly."
+      "cargo:warning={compiler} has no libgcc_eh.a, so this build needs libgcc's shared library where it runs"
     );
     return;
-  }
-
-  let status = Command::new("mdbook").arg("build").arg(&book_dir).status();
-
-  match status {
-    Ok(status) if status.success() => {
-      // Only stamped on success, so a build that failed for a fixable
-      // reason (a bad `book.toml`, a missing chapter) is retried next
-      // time instead of being remembered as done.
-      let _ = fs::write(&stamp, "");
-    },
-    Ok(status) => println!("cargo:warning=mdbook build exited with {status}"),
-    Err(e) => println!("cargo:warning=could not run mdbook: {e}"),
-  }
-}
-
-/// The most recently modified file anywhere under `dir`, as seconds
-/// since the epoch. Zero for a directory that does not exist, which
-/// makes a missing book look older than any stamp and skip cleanly.
-fn newest_mtime(dir: &Path) -> u64 {
-  let Ok(entries) = fs::read_dir(dir) else {
-    return 0;
   };
 
-  entries
-    .flatten()
-    .map(|entry| {
-      let path = entry.path();
-      if path.is_dir() {
-        newest_mtime(&path)
-      } else {
-        file_mtime(&path)
-      }
-    })
-    .max()
-    .unwrap_or(0)
-}
+  let dir = Path::new(&env::var("OUT_DIR").unwrap()).join("static-unwind");
+  fs::create_dir_all(&dir).expect("Could not create the static unwinder's directory");
+  fs::copy(&unwinder, dir.join("libgcc_s.a")).expect("Could not copy libgcc's static unwinder");
 
-fn file_mtime(path: &Path) -> u64 {
-  fs::metadata(path)
-    .and_then(|m| m.modified())
-    .ok()
-    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-    .map(|d| d.as_secs())
-    .unwrap_or(0)
-}
-
-fn mdbook_available() -> bool {
-  Command::new("mdbook")
-    .arg("--version")
-    .stdout(Stdio::null())
-    .stderr(Stdio::null())
-    .status()
-    .map(|status| status.success())
-    .unwrap_or(false)
+  println!("cargo:rustc-link-search=native={}", dir.display());
+  println!("cargo:rustc-link-arg=-static-libgcc");
+  println!("cargo:rustc-link-arg=-lgcc");
 }
 
 /// The profile directory that holds the built binaries, which is what
 /// the runtime payload is copied beside.
 ///
-/// Derived by walking up from `OUT_DIR`
-/// (`<profile>/build/<pkg>-<hash>/out`) rather than by rebuilding
+/// Derived by walking up from `OUT_DIR` rather than by rebuilding
 /// `target/[{triple}/]{profile}` from parts, so a cross-compiled build's
 /// extra target-triple component is handled without having to detect it.
 /// The directory is recognised by the `build` directory inside it, not
 /// by `PROFILE`: Cargo sets that to `release` or `debug` for the profile
 /// a custom one inherits from, while the directory carries the custom
-/// profile's own name, as `production` does. Falls back to the
-/// conventional relative path if `OUT_DIR` is ever missing or shaped
-/// unexpectedly.
+/// profile's own name, as `production` does. Cargo 1.99 and earlier lay
+/// `OUT_DIR` out as `<profile>/build/<pkg>-<hash>/out` and later ones as
+/// `<profile>/build/<pkg>/<hash>/out`, so the nearest `build` within
+/// three levels is taken. Falls back to the conventional relative path
+/// if `OUT_DIR` is ever missing or shaped unexpectedly.
 fn copy_output_dir(profile: &str) -> std::path::PathBuf {
   if let Some(out_dir) = env::var_os("OUT_DIR") {
-    let path = Path::new(&out_dir);
-    // out -> <pkg>-<hash> -> build -> <profile>
-    if let Some(build_dir) = path.ancestors().nth(2)
-      && build_dir.file_name() == Some(std::ffi::OsStr::new("build"))
-      && let Some(profile_dir) = build_dir.parent()
-    {
+    let build_dir = Path::new(&out_dir)
+      .ancestors()
+      .skip(1)
+      .take(3)
+      .find(|dir| dir.file_name() == Some(std::ffi::OsStr::new("build")));
+
+    if let Some(profile_dir) = build_dir.and_then(Path::parent) {
       return profile_dir.to_path_buf();
     }
   }

@@ -1,0 +1,86 @@
+/**
+ * Turning Markdown into a page: a package's README, and the site's own
+ * help pages.
+ *
+ * The Markdown is read by the standard library's `markdown` module, the
+ * way GitHub reads it: tables, task lists, strikethrough, footnotes,
+ * alerts, emoji shortcodes, addresses made into links, and raw HTML.
+ * Headings get GitHub's ids, so a README's own contents links reach
+ * them. Zuri code blocks are coloured by the language's own lexer.
+ *
+ * Everything it produces is passed through `sanitize.clean()` before
+ * it is returned, so what a README can do to the page it is shown on
+ * does not depend on the renderer getting every corner of Markdown
+ * right.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import markdown
+
+import .highlight
+import .sanitize
+
+# The markup for a code block in _language_, coloured when it is Zuri,
+# or `nil` for the renderer to write it plain. Anything after a comma in
+# the fence, as in `zuri,ignore`, is not part of the language.
+def _colour(code: string, language: string) {
+  var name = language.lower().split(',')[0]
+
+  if name == 'zuri' or name == 'zu' {
+    return highlight.zuri_code(code)
+  }
+
+  return nil
+}
+
+var _OPTIONS = {
+  preset: 'gfm',
+  html: true,
+  # The sanitizer removes these elements outright, where the tag filter
+  # would leave them on the page as text.
+  tag_filter: false,
+  heading_ids: 'github',
+  highlight: _colour,
+}
+
+var _renderer = markdown(_OPTIONS)
+
+/**
+ * _text_, one line of Markdown such as a summary, as safe inline markup.
+ * A name in braces, as a doc block writes `{Report}`, reads as code.
+ *
+ * @param string text
+ * @returns string
+ */
+def inline(text: string) {
+  var marked = text.replace(
+    '/\\{([A-Za-z_][A-Za-z0-9_.]*(\\(\\))?)\\}/',
+    '`$1`',
+  )
+
+  return sanitize.clean(_renderer.render_inline(marked))
+}
+
+/**
+ * _source_ as safe markup.
+ *
+ * @param string source: Markdown.
+ * @param ?function links: given each link's destination, the one to
+ *    write in its place, for pages whose links are written for
+ *    somewhere else.
+ * @returns string
+ */
+def render(source: string, links: ?function) {
+  if links == nil {
+    return sanitize.clean(_renderer.render(source))
+  }
+
+  var renderer = markdown(_OPTIONS).use(@(doc) {
+    for link in doc.find_all('link') {
+      link.destination = links(link.destination)
+    }
+  })
+
+  return sanitize.clean(renderer.render(source))
+}

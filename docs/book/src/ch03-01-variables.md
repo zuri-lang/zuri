@@ -126,10 +126,10 @@ the operator to the variable's current value and stores the result:
 ```zuri
 var n = 5
 
-n += 10     # 15
-n **= 2     # 225
-n //= 7     # 32
-n <<= 1     # 64
+n += 10 # 15
+n **= 2 # 225
+n //= 7 # 32
+n <<= 1 # 64
 
 echo n
 ```

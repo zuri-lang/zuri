@@ -155,9 +155,9 @@ def is_absolute(path: string) {
     return true
   }
 
-  return path.length() > 2
-    and path[1] == ':'
-    and (path[2] == '\\' or path[2] == '/')
+  return path.length() > 2 and
+      path[1] == ':' and
+      (path[2] == '\\' or path[2] == '/')
 }
 
 /**

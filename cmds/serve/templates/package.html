@@ -11,10 +11,13 @@
           <li x-if="owners">by <a x-for="owners" x-value="owner" href="/publishers/{{ owner }}">{{ owner }}{{ loop.last ? '' : ', ' }}</a></li>
         </ul>
         <ul class="tags" x-if="package.keywords">
-          <li x-for="package.keywords" x-value="word"><a class="tag" href="/search?q={{ word|url_encode }}">{{ word }}</a></li>
+          <li x-for="package.keywords" x-value="word"><a class="tag" href="/search?q={{ word|url_encode(false) }}">{{ word }}</a></li>
         </ul>
         <nav class="tabs" aria-label="Package">
           <a href="{{ base }}" x-attr="{ 'aria-current': tab == 'readme' ? 'page' : nil }">Readme</a>
+          <a href="{{ base }}?tab=api" x-attr="{ 'aria-current': tab == 'api' ? 'page' : nil }">API</a>
+          <a href="{{ base }}?tab=source" x-attr="{ 'aria-current': tab == 'source' ? 'page' : nil }">Source</a>
+          <a x-if="guide" href="{{ guide }}" rel="noopener">Guide <span aria-hidden="true">↗</span></a>
           <a href="{{ base }}?tab=versions" x-attr="{ 'aria-current': tab == 'versions' ? 'page' : nil }">Versions<span class="count">{{ versions|length }}</span></a>
           <a href="{{ base }}?tab=dependencies" x-attr="{ 'aria-current': tab == 'dependencies' ? 'page' : nil }">Dependencies<span class="count">{{ dependencies|length }}</span></a>
         </nav>
@@ -48,6 +51,34 @@
                 </tbody>
               </table>
             </div>
+          </template>
+          <template x-elif="tab == 'api'">
+            <div class="api" x-if="api.modules">
+              <nav class="api-modules" aria-label="Modules">
+                <a x-for="api.modules" x-value="module" href="{{ module.url }}" class="depth-{{ module.depth }}" x-attr="{ 'aria-current': module.current ? 'page' : nil }">{{ module.name }}</a>
+              </nav>
+              <div>
+                <p class="coverage" x-if="coverage">{{ coverage.documented }} of {{ coverage.names }} public {{ coverage.names == 1 ? 'name has' : 'names have' }} a doc block.</p>
+                <article class="prose">{{ api.page }}</article>
+              </div>
+            </div>
+            <p class="empty" x-not="api.modules">{{ package.name }} {{ version.version }} has no public modules to document.</p>
+          </template>
+          <template x-elif="tab == 'source'">
+            <template x-if="source.file">
+              <p class="source-path"><a href="{{ base }}?tab=source">All files</a> <span aria-hidden="true">/</span> <code>{{ source.file.path }}</code></p>
+              <p class="empty" x-if="source.file.note">{{ source.file.note }}</p>
+              <div class="code-view" x-if="source.file.lines">
+                <table>
+                  <tbody>
+                    <tr x-for="source.file.lines" x-value="line" id="L{{ line.number }}"><td class="line-number"><a href="#L{{ line.number }}">{{ line.number }}</a></td><td class="line"><code>{{ line.html }}</code></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+            <ul class="source-files" x-else>
+              <li x-for="source.files" x-value="entry"><a href="{{ entry.url }}">{{ entry.path }}</a> <span class="meta">{{ entry.size|filesize }}</span></li>
+            </ul>
           </template>
           <template x-elif="tab == 'dependencies'">
             <div class="table-wrap" x-if="dependencies">
@@ -86,6 +117,7 @@
             <dt>License</dt><dd>{{ package.license ?? 'Not stated' }}</dd>
             <dt>Published</dt><dd>{{ version.published|date('j M Y') }}</dd>
             <dt>Size</dt><dd>{{ version.size|filesize }}</dd>
+            <dt x-if="coverage">Documented</dt><dd x-if="coverage"><a href="{{ base }}?tab=api">{{ coverage.percent }}%</a> of {{ coverage.names }} {{ coverage.names == 1 ? 'name' : 'names' }}</dd>
             <dt x-if="version.zuri">Zuri</dt><dd x-if="version.zuri">{{ version.zuri }}</dd>
             <dt>Downloads</dt><dd>{{ version.downloads|number_format }} of this version</dd>
             <dt>Checksum</dt><dd class="checksum">{{ version.checksum }}</dd>

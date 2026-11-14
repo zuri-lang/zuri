@@ -24,11 +24,13 @@ def parser() {
 
   parser.description = 'Delists a published version of a package from being installable for new projects.'
 
-  parser.add_index('package', 'The version, as name@version',
-    { required: true, metavar: 'name@version' })
-  parser.add_option(
-    'undo', 'Let a yanked version be chosen again', { short_name: 'u' },
-  )
+  parser.add_index('package', 'The version, as name@version', {
+    required: true,
+    metavar: 'name@version',
+  })
+  parser.add_option('undo', 'Let a yanked version be chosen again', {
+    short_name: 'u',
+  })
   cli.add_registry_option(parser)
   cli.add_json_option(parser)
 
@@ -41,7 +43,9 @@ def main() {
   var at = spec.index_of('@')
 
   if at <= 0 {
-    raise UsageError("say which version to yank, as name@version, not '${spec}'")
+    raise UsageError(
+      "say which version to yank, as name@version, not '${spec}'",
+    )
   }
 
   var name = names.check_name(spec[0, at])

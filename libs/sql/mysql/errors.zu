@@ -18,10 +18,20 @@
  */
 
 import ..errors {
-  SqlError, ConnectionError, AuthenticationError, TimeoutError,
-  QueryError, IntegrityError, UniqueViolation, ForeignKeyViolation,
-  NotNullViolation, CheckViolation, TransactionError,
-  SerializationError, DeadlockError, NotSupportedError,
+  SqlError,
+  ConnectionError,
+  AuthenticationError,
+  TimeoutError,
+  QueryError,
+  IntegrityError,
+  UniqueViolation,
+  ForeignKeyViolation,
+  NotNullViolation,
+  CheckViolation,
+  TransactionError,
+  SerializationError,
+  DeadlockError,
+  NotSupportedError,
 }
 
 /**

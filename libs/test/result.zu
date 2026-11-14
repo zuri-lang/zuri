@@ -380,6 +380,6 @@ class Summary {
   /** @returns string */
   to_string() {
     return '${self.passed} passed, ${self.failed} failed, ' +
-      '${self.skipped} skipped, ${self.todo} todo in ${format.duration(self.duration)}'
+        '${self.skipped} skipped, ${self.todo} todo in ${format.duration(self.duration)}'
   }
 }

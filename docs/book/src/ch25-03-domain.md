@@ -270,8 +270,9 @@ _clean_title(title)` with nothing around it.
 def _clean_column(column) {
   if !config.COLUMNS.contains(column) {
     raise TaskError(
-      'unknown column "${column}", expected one of ' + ', '.join(config.COLUMNS),
-      'column'
+      'unknown column "${column}", expected one of ' +
+          ', '.join(config.COLUMNS),
+      'column',
     )
   }
 

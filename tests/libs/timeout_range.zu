@@ -14,7 +14,8 @@ def raises(f) {
   return false
 }
 
-assert raises(@() => os.sleep(1e300)), 'sleep() rejects what it cannot represent'
+assert raises(@() => os.sleep(1e300)),
+    'sleep() rejects what it cannot represent'
 assert raises(@() => os.sleep(1e308 * 10)), 'sleep() rejects infinity'
 
 var t = isolate.spawn(isolate_isolate.square, 3)

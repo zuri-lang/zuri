@@ -157,5 +157,7 @@ def instantiate_rule(entry, field_name) {
     return rule_class(field_name, args[0], args[1], args[2])
   }
 
-  raise Error('validate: rule constructor with more than 3 extra arguments is not supported')
+  raise Error(
+    'validate: rule constructor with more than 3 extra arguments is not supported',
+  )
 }

@@ -45,8 +45,8 @@ def _runtime(target: string, given: ?string) {
     var root = os.abs_path(given)
     var executable = os.join_paths(root, executable_name)
 
-    if !file(executable).exists()
-      or !os.dir_exists(os.join_paths(root, 'libs')) {
+    if !file(executable).exists() or
+        !os.dir_exists(os.join_paths(root, 'libs')) {
       raise UsageError('${root} does not hold a ${target} runtime and its libs')
     }
 
@@ -66,9 +66,9 @@ def _runtime(target: string, given: ?string) {
     }
   } as error {
     raise CommandError(
-      'there is no ${target} runtime for zuri ${os.version}: ${error.message}\n'
-        + 'Build with a released version of zuri, or name an unpacked runtime with the '
-        + 'runtime option.',
+      'there is no ${target} runtime for zuri ${os.version}: ${error.message}\n' +
+          'Build with a released version of zuri, or name an unpacked runtime with the ' +
+          'runtime option.',
     )
   }
 }
@@ -88,9 +88,10 @@ def _production_packages(project) {
 
   if !differences.is_empty() {
     raise UsageError(
-      'project.lock does not match project.toml, so what a bundle would carry is not '
-        + 'settled:\n' + '\n'.join(differences.map(@(line) => '  - ' + line))
-        + '\nRun `zuri install`, then bundle.',
+      'project.lock does not match project.toml, so what a bundle would carry is not ' +
+          'settled:\n' +
+          '\n'.join(differences.map(@(line) => '  - ' + line)) +
+          '\nRun `zuri install`, then bundle.',
     )
   }
 
@@ -105,11 +106,12 @@ def _production_packages(project) {
 
     var record = installed.get(entry.import_name())
 
-    if record == nil or record.get('version', '') != entry.version
-      or !os.dir_exists(project.package_dir(entry.import_name())) {
+    if record == nil or
+        record.get('version', '') != entry.version or
+        !os.dir_exists(project.package_dir(entry.import_name())) {
       raise UsageError(
-        '${entry.name} ${entry.version} is locked but not installed; run `zuri restore` '
-          + 'before bundling',
+        '${entry.name} ${entry.version} is locked but not installed; run `zuri restore` ' +
+            'before bundling',
       )
     }
 
@@ -123,7 +125,10 @@ def _production_packages(project) {
 # standard library, and the application.
 def _contents(target, runtime, project, selected, packages, details) {
   var content = os.join_paths(
-    paths.cache_dir(), 'bundle', fsx.unique(), 'content',
+    paths.cache_dir(),
+    'bundle',
+    fsx.unique(),
+    'content',
   )
 
   fsx.ensure_dir(content)
@@ -141,8 +146,10 @@ def _contents(target, runtime, project, selected, packages, details) {
   }
 
   for import_name in packages {
-    fsx.copy_tree(project.package_dir(import_name),
-      os.join_paths(app, '.zuri', 'libs', import_name))
+    fsx.copy_tree(
+      project.package_dir(import_name),
+      os.join_paths(app, '.zuri', 'libs', import_name),
+    )
   }
 
   return content
@@ -162,11 +169,11 @@ def _sign(path: string) {
     return
   }
 
-  var child = spawn('codesign', ['--force', '--sign', '-', path], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    stdin: 'null',
-  })
+  var child = spawn(
+    'codesign',
+    ['--force', '--sign', '-', path],
+    { stdout: 'pipe', stderr: 'pipe', stdin: 'null' },
+  )
 
   var status = child.wait()
   var said = child.read_stderr().to_string().trim('\n')
@@ -196,8 +203,8 @@ def _build(target, format, runtime, content, destination, details) {
     var executable = fsx.read_bytes(runtime.executable)
     var payload = plan.payload(content)
     var data = plan.is_apple(target)
-      ? macho.embed(executable, payload, details.name)
-      : executable + payload
+        ? macho.embed(executable, payload, details.name)
+        : executable + payload
 
     fsx.atomic_write(destination, data, 0c755)
 
@@ -218,13 +225,16 @@ def _build(target, format, runtime, content, destination, details) {
       file(icon).copy(os.join_paths(resources, 'icon.icns'))
     }
 
-    fsx.atomic_write(os.join_paths(contents, 'Info.plist'), plan.info_plist({
-      name: details.name,
-      display: details.display,
-      identifier: details.identifier,
-      version: details.version,
-      icon: icon != nil,
-    }))
+    fsx.atomic_write(
+      os.join_paths(contents, 'Info.plist'),
+      plan.info_plist({
+        name: details.name,
+        display: details.display,
+        identifier: details.identifier,
+        version: details.version,
+        icon: icon != nil,
+      }),
+    )
 
     _sign(os.join_paths(contents, 'MacOS', details.name))
 
@@ -234,8 +244,8 @@ def _build(target, format, runtime, content, destination, details) {
   # A directory, or an archive of one.
   var base = plan.output_name(details.name, details.version, target, 'dir')
   var tree = format == 'dir'
-    ? destination
-    : os.join_paths(os.dir_name(content), base)
+      ? destination
+      : os.join_paths(os.dir_name(content), base)
 
   fsx.copy_tree(content, tree)
   _place_executable(runtime, os.join_paths(tree, exe_name))
@@ -255,7 +265,9 @@ def _build(target, format, runtime, content, destination, details) {
       var full = os.join_paths(tree, entry.path)
 
       packed.create_file(
-        base + '/' + entry.path, fsx.read_bytes(full), file(full).stats(),
+        base + '/' + entry.path,
+        fsx.read_bytes(full),
+        file(full).stats(),
       )
     }
 
@@ -287,7 +299,9 @@ def main() {
   }
 
   if name == nil {
-    raise UsageError('project.toml states no name to call the program by; pass one with name')
+    raise UsageError(
+      'project.toml states no name to call the program by; pass one with name',
+    )
   }
 
   names.check_name(name, {})
@@ -299,7 +313,9 @@ def main() {
   }
 
   if !file(os.join_paths(project.root, 'index.zu')).exists() {
-    raise UsageError('a bundle starts the program from index.zu, and the project has none')
+    raise UsageError(
+      'a bundle starts the program from index.zu, and the project has none',
+    )
   }
 
   var targets = plan.targets(given.get('target', nil), os.target)
@@ -314,8 +330,8 @@ def main() {
   if format == 'app' {
     if identifier == nil or !plan.valid_identifier(identifier) {
       raise UsageError(
-        'a macOS application needs [bundle] identifier in project.toml, written in reverse '
-          + 'domain form, such as com.example.tool',
+        'a macOS application needs [bundle] identifier in project.toml, written in reverse ' +
+            'domain form, such as com.example.tool',
       )
     }
 
@@ -328,15 +344,15 @@ def main() {
     }
   }
 
-  var output = os.abs_path(given.get(
-    'output', os.join_paths(project.root, 'dist'),
-  ))
+  var output = os.abs_path(
+    given.get('output', os.join_paths(project.root, 'dist')),
+  )
   var skip = []
 
   if os.path_contains(project.root, output) {
-    skip.append(os
-      .relative_path(project.root, output)
-      .replace('\\', '/', false))
+    skip.append(
+      os.relative_path(project.root, output).replace('\\', '/', false),
+    )
   }
 
   var selected = files.select(project.root, {
@@ -352,10 +368,12 @@ def main() {
   }
 
   for held in selected.secrets {
-    ui.complain(ui.warn(
-      'warning: ${held} looks like it holds a secret and was left out; name it in [project] '
-        + 'include to ship it',
-    ))
+    ui.complain(
+      ui.warn(
+        'warning: ${held} looks like it holds a secret and was left out; name it in [project] ' +
+            'include to ship it',
+      ),
+    )
   }
 
   var packages = _production_packages(project)
@@ -366,7 +384,8 @@ def main() {
   for target in targets {
     var runtime = _runtime(target, given.get('runtime', nil))
     var destination = os.join_paths(
-      output, plan.output_name(name, version, target, format),
+      output,
+      plan.output_name(name, version, target, format),
     )
     var details = {
       name,
@@ -381,7 +400,12 @@ def main() {
     _claim(destination, force)
 
     var content = _contents(
-      target, runtime, project, selected.files, packages, details,
+      target,
+      runtime,
+      project,
+      selected.files,
+      packages,
+      details,
     )
 
     catch {
@@ -396,8 +420,8 @@ def main() {
     fsx.remove(os.dir_name(content))
 
     var size = os.dir_exists(destination)
-      ? fsx.tree_size(destination)
-      : file(destination).stats().size
+        ? fsx.tree_size(destination)
+        : file(destination).stats().size
 
     built.append({ target, path: destination, size })
   }

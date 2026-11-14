@@ -1,0 +1,310 @@
+/**
+ * JSON, TOML and INI: the formats data and settings are written in.
+ *
+ * None of them is parsed. Each is scanned for what can be told apart at
+ * a glance (keys, strings, numbers, the literal words, comments and
+ * section headers) so that a fragment, or a file with a mistake in it,
+ * is coloured as far as it goes rather than not at all.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .spans { escape, is_word, line_end, quoted_end, run_end, span, words }
+
+var _JSON_WORDS = words('true false null')
+
+# Whether the next character after _start_ that is not white space is _c_.
+def _followed_by(text: string, start: number, c: string) {
+  var i = start
+
+  while i < text.length() and text[i].is_space() {
+    i++
+  }
+
+  return i < text.length() and text[i] == c
+}
+
+/**
+ * JSON as highlighted markup. A string followed by `:` is a key. The
+ * comments of JSON with comments are recognised as well.
+ *
+ * @param string source
+ * @returns string
+ */
+def highlight_json(source: string) {
+  var out = []
+  var length = source.length()
+  var i = 0
+
+  while i < length {
+    var c = source[i]
+
+    if c == '"' {
+      var end = quoted_end(source, i)
+
+      out.append(
+        span(_followed_by(source, end, ':') ? 'key' : 'str', source[i, end]),
+      )
+      i = end
+      continue
+    }
+
+    if c == '-' or c.is_number() {
+      var end = run_end(
+        source,
+        i + 1,
+        @(x) => x.is_alnum() or x == '.' or x == '+' or x == '-',
+      )
+
+      out.append(span('num', source[i, end]))
+      i = end
+      continue
+    }
+
+    if c.is_alpha() {
+      var end = run_end(source, i, @(x) => x.is_alpha())
+      var word = source[i, end]
+
+      out.append(span(_JSON_WORDS.contains(word) ? 'lit' : nil, word))
+      i = end
+      continue
+    }
+
+    if c == '/' and i + 1 < length and source[i + 1] == '/' {
+      var end = line_end(source, i)
+
+      out.append(span('com', source[i, end]))
+      i = end
+      continue
+    }
+
+    if c == '/' and i + 1 < length and source[i + 1] == '*' {
+      var end = source.index_of('*/', i + 2)
+
+      end = end < 0 ? length : end + 2
+      out.append(span('com', source[i, end]))
+      i = end
+      continue
+    }
+
+    out.append(
+      span(
+        c == '{' or c == '}' or c == '[' or c == ']' or c == ':' or c == ','
+            ? 'punct'
+            : nil,
+        c,
+      ),
+    )
+    i++
+  }
+
+  return ''.join(out)
+}
+
+# A TOML value, or an inline table or array of them, from _start_ to the
+# end of its line. Returns where it stopped, which is past the closing
+# quotes of a multi-line string that runs onto later lines.
+def _toml_value(out: list, text: string, start: number) {
+  var length = text.length()
+  var i = start
+
+  while i < length {
+    var c = text[i]
+
+    if c == '\n' {
+      return i
+    }
+
+    if c == '#' {
+      var end = line_end(text, i)
+
+      out.append(span('com', text[i, end]))
+      return end
+    }
+
+    if c == '"' or c == "'" {
+      var triple = text[i, (i + 3).min(length)]
+      var end
+
+      if triple == '"""' or triple == "'''" {
+        end = text.index_of(triple, i + 3)
+        end = end < 0 ? length : end + 3
+      } else {
+        end = quoted_end(text, i, c == '"')
+      }
+
+      out.append(span('str', text[i, end]))
+      i = end
+      continue
+    }
+
+    if c.is_number() or
+        ((c == '-' or c == '+') and i + 1 < length and text[i + 1].is_alnum()) {
+      # Numbers, and dates and times, which are written with digits,
+      # dashes, colons and a `T` or `Z`.
+      var end = run_end(
+        text,
+        i + 1,
+        @(x) => x.is_alnum() or
+            x == '.' or
+            x == '_' or
+            x == '-' or
+            x == ':' or
+            x == '+',
+      )
+
+      out.append(span('num', text[i, end]))
+      i = end
+      continue
+    }
+
+    if is_word(c) {
+      var end = run_end(text, i, @(x) => is_word(x) or x == '-' or x == '.')
+      var word = text[i, end]
+
+      if word == 'true' or word == 'false' or word == 'inf' or word == 'nan' {
+        out.append(span('lit', word))
+      } else if _followed_by(text, end, '=') {
+        out.append(span('key', word))
+      } else {
+        out.append(escape(word))
+      }
+
+      i = end
+      continue
+    }
+
+    out.append(span(c == '=' ? 'op' : nil, c))
+    i++
+  }
+
+  return i
+}
+
+/**
+ * TOML as highlighted markup.
+ *
+ * @param string source
+ * @returns string
+ */
+def highlight_toml(source: string) {
+  var out = []
+  var length = source.length()
+  var i = 0
+
+  while i < length {
+    var end = line_end(source, i)
+    var line = source[i, end]
+    var text = line.ltrim()
+    var indent = line.length() - text.length()
+
+    out.append(line[0, indent])
+    i += indent
+
+    if text.starts_with('#') {
+      out.append(span('com', text))
+      i = end
+    } else if text.starts_with('[') {
+      var close = text.last_index_of(']')
+      var header = close < 0 ? text : text[0, close + 1]
+
+      out.append(span('sect', header))
+      i += header.length()
+      i = _toml_value(out, source, i)
+    } else if !text.is_empty() {
+      var equals = text.index_of('=')
+
+      if equals > 0 {
+        var key = text[0, equals].rtrim()
+
+        out.append(span('key', key))
+        out.append(text[key.length(), equals])
+        out.append(span('op', '='))
+        i += equals + 1
+      }
+
+      i = _toml_value(out, source, i)
+    }
+
+    # A multi-line string can leave the scan partway along a later
+    # line, and the rest of that line is read as a line of its own.
+    if i < length and source[i] == '\n' {
+      out.append('\n')
+      i++
+    }
+  }
+
+  return ''.join(out)
+}
+
+/**
+ * INI, and the `.env` files written the same way, as highlighted markup:
+ * `[sections]`, `key = value` and `key: value` lines, and comments
+ * opening with `;` or `#`.
+ *
+ * @param string source
+ * @returns string
+ */
+def highlight_ini(source: string) {
+  var out = []
+  var lines = source.split('\n')
+
+  iter var n = 0; n < lines.length(); n++ {
+    if n > 0 {
+      out.append('\n')
+    }
+
+    var line = lines[n]
+    var text = line.ltrim()
+    var indent = line[0, line.length() - text.length()]
+
+    out.append(indent)
+
+    if text.starts_with(';') or text.starts_with('#') {
+      out.append(span('com', text))
+      continue
+    }
+
+    if text.starts_with('[') {
+      out.append(span('sect', text))
+      continue
+    }
+
+    var equals = text.index_of('=')
+    var colon = text.index_of(':')
+    var split = equals < 0 or (colon >= 0 and colon < equals) ? colon : equals
+
+    if split <= 0 {
+      out.append(escape(text))
+      continue
+    }
+
+    var key = text[0, split]
+    var value = text[split + 1,]
+    var bare = value.trim()
+    var kind = 'str'
+
+    if bare == 'true' or
+        bare == 'false' or
+        bare == 'yes' or
+        bare == 'no' or
+        bare == 'on' or
+        bare == 'off' {
+      kind = 'lit'
+    } else if bare.match('/^-?[0-9][0-9_.]*$/') != false {
+      kind = 'num'
+    }
+
+    if key.starts_with('export ') {
+      out.append(span('kw', 'export'))
+      out.append(' ')
+      key = key[7,]
+    }
+
+    out.append(span('key', key))
+    out.append(span('op', text[split]))
+    out.append(span(kind, value))
+  }
+
+  return ''.join(out)
+}

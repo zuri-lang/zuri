@@ -32,7 +32,7 @@ class Member {
     return '${self.name}(${', '.join(self.params)})'
   }
 
-  /** The anchor mdBook generates for this member's heading. */
+  /** The anchor `zuri doc` gives this member's heading. */
   anchor() {
     return self.name
   }

@@ -203,8 +203,8 @@ class Pop3Client {
       }
     }
 
-    if self._options.get('username', nil) != nil
-      or self._options.get('token', nil) != nil {
+    if self._options.get('username', nil) != nil or
+        self._options.get('token', nil) != nil {
       self.login()
     }
 
@@ -327,8 +327,8 @@ class Pop3Client {
 
     if !self._stream.is_secure() {
       raise AuthenticationError(
-        'sending a password here would send it in the clear; '
-          + 'the server offers ${offered.is_empty() ? 'nothing else' : ', '.join(offered)}',
+        'sending a password here would send it in the clear; ' +
+            'the server offers ${offered.is_empty() ? 'nothing else' : ', '.join(offered)}',
       )
     }
 
@@ -339,7 +339,9 @@ class Pop3Client {
     catch {
       self._read_status('PASS')
     } as error {
-      raise AuthenticationError('${self._host} refused the credentials: ${error.message}')
+      raise AuthenticationError(
+        '${self._host} refused the credentials: ${error.message}',
+      )
     }
 
     self.authenticated = true
@@ -355,7 +357,9 @@ class Pop3Client {
     catch {
       self._read_status('APOP')
     } as error {
-      raise AuthenticationError('${self._host} refused the credentials: ${error.message}')
+      raise AuthenticationError(
+        '${self._host} refused the credentials: ${error.message}',
+      )
     }
 
     self.authenticated = true
@@ -373,9 +377,11 @@ class Pop3Client {
   authenticate(mechanism) {
     var initial = mechanism.start()
 
-    self._send(initial == nil ?
-      'AUTH ${mechanism.name()}' :
-      'AUTH ${mechanism.name()} ${_encode(initial)}')
+    self._send(
+      initial == nil
+          ? 'AUTH ${mechanism.name()}'
+          : 'AUTH ${mechanism.name()} ${_encode(initial)}',
+    )
 
     while true {
       var line = self._stream.read_line(nil)
@@ -641,7 +647,9 @@ class Pop3Client {
       raise Pop3Error('${doing} was refused: ${_reason(line)}')
     }
 
-    raise ProtocolError('the server sent something that is not a reply: ${line}')
+    raise ProtocolError(
+      'the server sent something that is not a reply: ${line}',
+    )
   }
 
   # Reads until the line that is a single dot, which is how every
@@ -671,9 +679,9 @@ class Pop3Client {
         return out
       }
 
-      out.extend((line.starts_with('.')
-        ? line[1, line.length()]
-        : line).to_bytes())
+      out.extend(
+        (line.starts_with('.') ? line[1, line.length()] : line).to_bytes(),
+      )
       out.extend('\r\n'.to_bytes())
     }
   }

@@ -266,9 +266,10 @@ class Transport {
       return self.__enabled
     }
 
-    return self.__enabled and self._level <= level and
-      level >= _get_default_level() and
-      level <= self.__max_level
+    return self.__enabled and
+        self._level <= level and
+        level >= _get_default_level() and
+        level <= self.__max_level
   }
 
   /**
@@ -462,8 +463,8 @@ def _write(level, args, context) {
 
       trans.write(
         formatter
-          ? formatter(args, level, trans)
-          : trans.format(args, level, context),
+            ? formatter(args, level, trans)
+            : trans.format(args, level, context),
         level,
       )
     }

@@ -49,7 +49,10 @@ def encode_all(items) {
   return items.map(@(item) => json.encode(item)).length()
 }
 
-echo isolate.spawn(encode_all, [{ a: 1 }, { b: 2 }]).join()
+echo isolate.spawn(encode_all, [
+  { a: 1 },
+  { b: 2 },
+]).join()
 ```
 
 ```console

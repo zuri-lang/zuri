@@ -149,7 +149,7 @@ class Frame {
 
   to_string() {
     return '<Frame type=${self.type} flags=${self.flags} stream=${self.stream_id} ' +
-      'length=${self.payload.length()}>'
+        'length=${self.payload.length()}>'
   }
 
   @to_string() {
@@ -165,8 +165,10 @@ class Frame {
  * @returns number
  */
 def read_u32(data, offset: number) {
-  return (data[offset] << 24) | (data[offset + 1] << 16) |
-    (data[offset + 2] << 8) | data[offset + 3]
+  return (data[offset] << 24) |
+      (data[offset + 1] << 16) |
+      (data[offset + 2] << 8) |
+      data[offset + 3]
 }
 
 /**
@@ -212,9 +214,9 @@ def frame_ready(connection, max_frame_size: number) {
     return false
   }
 
-  var length = (connection.byte_at(0) << 16)
-    | (connection.byte_at(1) << 8)
-    | connection.byte_at(2)
+  var length = (connection.byte_at(0) << 16) |
+      (connection.byte_at(1) << 8) |
+      connection.byte_at(2)
 
   return length > max_frame_size or available >= 9 + length
 }
@@ -245,7 +247,9 @@ def read_frame(connection, max_frame_size: number) {
   header.dispose()
 
   if length > max_frame_size {
-    raise ProtocolError('frame of ${length} bytes exceeds the ${max_frame_size} byte limit')
+    raise ProtocolError(
+      'frame of ${length} bytes exceeds the ${max_frame_size} byte limit',
+    )
   }
 
   var payload = length > 0 ? connection.read_exactly(length) : bytes(0)
@@ -357,7 +361,9 @@ def decode_settings(payload) {
  * @returns bytes
  */
 def encode_goaway(
-  last_stream_id: int, error_code: int, debug_message: ?string,
+  last_stream_id: int,
+  error_code: int,
+  debug_message: ?string,
 ) {
   var out = bytes(0)
 

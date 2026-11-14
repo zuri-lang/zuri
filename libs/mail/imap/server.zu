@@ -41,12 +41,22 @@ import .store { MailStore }
 # What the server says it can do. Everything listed is implemented
 # here; nothing is advertised that is not.
 var BASE_CAPABILITIES = [
-  'IMAP4rev1', 'UNSELECT', 'MOVE', 'IDLE', 'LITERAL+', 'SASL-IR', 'ID',
+  'IMAP4rev1',
+  'UNSELECT',
+  'MOVE',
+  'IDLE',
+  'LITERAL+',
+  'SASL-IR',
+  'ID',
 ]
 
 # The flags a client may set on a message here.
 var ALLOWED_FLAGS = [
-  '\\Seen', '\\Answered', '\\Flagged', '\\Deleted', '\\Draft',
+  '\\Seen',
+  '\\Answered',
+  '\\Flagged',
+  '\\Deleted',
+  '\\Draft',
 ]
 
 var DEFAULT_TIMEOUT = 1800000
@@ -466,7 +476,12 @@ class ImapServer {
       }
 
       var outcome = self._dispatch(
-        connection, session, tag, name, arguments, source,
+        connection,
+        session,
+        tag,
+        name,
+        arguments,
+        source,
       )
 
       if outcome == 'close' {
@@ -476,7 +491,12 @@ class ImapServer {
   }
 
   _dispatch(
-    connection, session, tag: string, name: string, arguments: list, source,
+    connection,
+    session,
+    tag: string,
+    name: string,
+    arguments: list,
+    source,
   ) {
     catch {
       return self._run(connection, session, tag, name, arguments, source)
@@ -499,10 +519,17 @@ class ImapServer {
   }
 
   _run(
-    connection, session, tag: string, name: string, arguments: list, source,
+    connection,
+    session,
+    tag: string,
+    name: string,
+    arguments: list,
+    source,
   ) {
     if name == 'CAPABILITY' {
-      connection.write_line('* CAPABILITY ${' '.join(self._capabilities(session))}')
+      connection.write_line(
+        '* CAPABILITY ${' '.join(self._capabilities(session))}',
+      )
       _reply(connection, tag, 'OK', nil, 'CAPABILITY completed')
 
       return 'ok'
@@ -560,7 +587,9 @@ class ImapServer {
 
     if name == 'RENAME' {
       self.store.rename(
-        session.username, _text(arguments, 0), _text(arguments, 1),
+        session.username,
+        _text(arguments, 0),
+        _text(arguments, 1),
       )
       _reply(connection, tag, 'OK', nil, 'RENAME completed')
 
@@ -706,7 +735,8 @@ class ImapServer {
 
     catch {
       connection.upgrade(
-        tls.TlsStream.accept(connection.transport(), self._tls), true,
+        tls.TlsStream.accept(connection.transport(), self._tls),
+        true,
       )
     } as error {
       self._report(error, session)
@@ -737,7 +767,10 @@ class ImapServer {
 
     if !self.store.authenticate(username, password) {
       _reply(
-        connection, tag, 'NO', 'AUTHENTICATIONFAILED',
+        connection,
+        tag,
+        'NO',
+        'AUTHENTICATIONFAILED',
         'those are not the credentials',
       )
 
@@ -777,9 +810,9 @@ class ImapServer {
     var credentials = nil
 
     catch {
-      credentials = mechanism == 'CRAM-MD5' ?
-        self._cram(connection) :
-        self._plain(connection, mechanism, initial)
+      credentials = mechanism == 'CRAM-MD5'
+          ? self._cram(connection)
+          : self._plain(connection, mechanism, initial)
     } as error {
       if instance_of(error, ConnectionClosed) {
         raise error
@@ -798,7 +831,10 @@ class ImapServer {
 
     if !credentials.ok {
       _reply(
-        connection, tag, 'NO', 'AUTHENTICATIONFAILED',
+        connection,
+        tag,
+        'NO',
+        'AUTHENTICATIONFAILED',
         'those are not the credentials',
       )
 
@@ -865,10 +901,7 @@ class ImapServer {
       return { username, ok: false }
     }
 
-    return {
-      username,
-      ok: digest == hash.hmac_md5(password, challenge, false),
-    }
+    return { username, ok: digest == hash.hmac_md5(password, challenge, false) }
   }
 
   _do_select(connection, session, tag: string, name: string, arguments: list) {
@@ -903,8 +936,12 @@ class ImapServer {
     connection.write_line('* ${messages.length()} EXISTS')
     connection.write_line('* 0 RECENT')
     connection.write_line('* FLAGS (${' '.join(ALLOWED_FLAGS)})')
-    connection.write_line('* OK [PERMANENTFLAGS (${' '.join(ALLOWED_FLAGS)} \\*)] limited')
-    connection.write_line('* OK [UIDVALIDITY ${counters.uidvalidity}] UIDs valid')
+    connection.write_line(
+      '* OK [PERMANENTFLAGS (${' '.join(ALLOWED_FLAGS)} \\*)] limited',
+    )
+    connection.write_line(
+      '* OK [UIDVALIDITY ${counters.uidvalidity}] UIDs valid',
+    )
     connection.write_line('* OK [UIDNEXT ${counters.uidnext}] next UID')
 
     if unseen > 0 {
@@ -932,7 +969,10 @@ class ImapServer {
     session.snapshot = []
 
     _reply(
-      connection, tag, 'OK', nil,
+      connection,
+      tag,
+      'OK',
+      nil,
       '${expunging ? 'CLOSE' : 'UNSELECT'} completed',
     )
 
@@ -978,8 +1018,8 @@ class ImapServer {
     var messages = self.store.messages(session.username, mailbox)
     var counters = self.store.counters(session.username, mailbox)
     var wanted = arguments.length() > 1 and is_list(arguments[1])
-      ? arguments[1]
-      : []
+        ? arguments[1]
+        : []
     var pairs = []
 
     for item in wanted {
@@ -1145,7 +1185,9 @@ class ImapServer {
       }
     }
 
-    connection.write_line('* SEARCH${found.is_empty() ? '' : ' ' + ' '.join(found)}')
+    connection.write_line(
+      '* SEARCH${found.is_empty() ? '' : ' ' + ' '.join(found)}',
+    )
     _reply(connection, tag, 'OK', nil, 'SEARCH completed')
 
     return 'ok'
@@ -1203,7 +1245,9 @@ class ImapServer {
       }
 
       if item == 'INTERNALDATE' {
-        pairs.append('INTERNALDATE "${stored.received.format('d-M-Y H:i:s O')}"')
+        pairs.append(
+          'INTERNALDATE "${stored.received.format('d-M-Y H:i:s O')}"',
+        )
         continue
       }
 
@@ -1229,7 +1273,9 @@ class ImapServer {
         mark_seen = true
       }
 
-      pairs.append('BODY[${section.name}] {${piece.length()}}\r\n${piece.to_string()}')
+      pairs.append(
+        'BODY[${section.name}] {${piece.length()}}\r\n${piece.to_string()}',
+      )
     }
 
     if mark_seen {
@@ -1253,7 +1299,10 @@ class ImapServer {
 
     if arguments.length() < 3 {
       _reply(
-        connection, tag, 'BAD', nil,
+        connection,
+        tag,
+        'BAD',
+        nil,
         'STORE needs a set, an action and some flags',
       )
 
@@ -1264,9 +1313,9 @@ class ImapServer {
     var chosen = _select_ids('${arguments[0]}', messages, by_uid)
     var action = '${arguments[1]}'.upper()
     var silent = action.ends_with('.SILENT')
-    var wanted = is_list(arguments[2]) ?
-      arguments[2].map(@(one) => '${one}') :
-      ['${arguments[2]}']
+    var wanted = is_list(arguments[2])
+        ? arguments[2].map(@(one) => '${one}')
+        : ['${arguments[2]}']
 
     if silent {
       action = action[0, action.length() - 7]
@@ -1276,7 +1325,10 @@ class ImapServer {
       var flags = _apply_flags(entry.message.flags, action, wanted)
 
       self.store.set_flags(
-        session.username, session.mailbox, entry.message.uid, flags,
+        session.username,
+        session.mailbox,
+        entry.message.uid,
+        flags,
       )
       entry.message.flags = flags
 
@@ -1301,7 +1353,11 @@ class ImapServer {
   }
 
   _do_copy(
-    connection, session, tag: string, arguments: list, by_uid: bool,
+    connection,
+    session,
+    tag: string,
+    arguments: list,
+    by_uid: bool,
     moving: bool,
   ) {
     if arguments.length() < 2 {
@@ -1333,7 +1389,11 @@ class ImapServer {
 
     if !moving {
       _reply(
-        connection, tag, 'OK', nil, '${by_uid ? 'UID ' : ''}COPY completed',
+        connection,
+        tag,
+        'OK',
+        nil,
+        '${by_uid ? 'UID ' : ''}COPY completed',
       )
 
       return 'ok'
@@ -1344,9 +1404,9 @@ class ImapServer {
         session.username,
         session.mailbox,
         entry.message.uid,
-        entry.message.flags.contains('\\Deleted') ?
-          entry.message.flags :
-          entry.message.flags + ['\\Deleted'],
+        entry.message.flags.contains('\\Deleted')
+            ? entry.message.flags
+            : entry.message.flags + ['\\Deleted'],
       )
     }
 
@@ -1387,7 +1447,11 @@ class ImapServer {
 }
 
 def _reply(
-  connection, tag: string, status: string, code: ?string, text: string,
+  connection,
+  tag: string,
+  status: string,
+  code: ?string,
+  text: string,
 ) {
   var bracket = code == nil ? '' : '[${code}] '
 
@@ -1539,7 +1603,9 @@ def _select_ids(set_text: string, messages: list, by_uid: bool) {
     var number = by_uid ? messages[index].uid : index + 1
 
     if _in_set(
-      set_text, number, by_uid ? _highest_uid(messages) : messages.length(),
+      set_text,
+      number,
+      by_uid ? _highest_uid(messages) : messages.length(),
     ) {
       chosen.append({ position: index + 1, message: messages[index] })
     }
@@ -1695,7 +1761,9 @@ def _extract(stored, section: string) {
 
   if name.starts_with('HEADER.FIELDS') {
     return _pick_headers(
-      split.headers, section, !name.starts_with('HEADER.FIELDS.NOT'),
+      split.headers,
+      section,
+      !name.starts_with('HEADER.FIELDS.NOT'),
     )
   }
 
@@ -1727,9 +1795,9 @@ def _split_message(raw) {
         return { headers: raw[0, next + 1], body: raw[next + 1, raw.length()] }
       }
 
-      if next + 1 < raw.length()
-        and raw[next] == 0x0d
-        and raw[next + 1] == 0x0a {
+      if next + 1 < raw.length() and
+          raw[next] == 0x0d and
+          raw[next + 1] == 0x0a {
         return { headers: raw[0, next + 2], body: raw[next + 2, raw.length()] }
       }
     }
@@ -1869,18 +1937,20 @@ def _envelope_of(stored) {
   var note = Message(nil, stored.raw)
   var headers = note.headers
 
-  return '(' + ' '.join([
-    _quoted(headers.get('Date', nil)),
-    _quoted(headers.get('Subject', nil)),
-    _address_list(headers, 'From'),
-    _address_list(headers, 'Sender', 'From'),
-    _address_list(headers, 'Reply-To', 'From'),
-    _address_list(headers, 'To'),
-    _address_list(headers, 'Cc'),
-    _address_list(headers, 'Bcc'),
-    _quoted(headers.get('In-Reply-To', nil)),
-    _quoted(headers.get('Message-ID', nil)),
-  ]) + ')'
+  return '(' +
+      ' '.join([
+        _quoted(headers.get('Date', nil)),
+        _quoted(headers.get('Subject', nil)),
+        _address_list(headers, 'From'),
+        _address_list(headers, 'Sender', 'From'),
+        _address_list(headers, 'Reply-To', 'From'),
+        _address_list(headers, 'To'),
+        _address_list(headers, 'Cc'),
+        _address_list(headers, 'Bcc'),
+        _quoted(headers.get('In-Reply-To', nil)),
+        _quoted(headers.get('Message-ID', nil)),
+      ]) +
+      ')'
 }
 
 def _address_list(headers, name: string, fallback) {
@@ -1897,12 +1967,16 @@ def _address_list(headers, name: string, fallback) {
   var written = []
 
   for person in found {
-    written.append('(' + ' '.join([
-      _quoted(person.name == '' ? nil : person.name),
-      'NIL',
-      _quoted(person.local),
-      _quoted(person.domain == '' ? nil : person.domain),
-    ]) + ')')
+    written.append(
+      '(' +
+          ' '.join([
+            _quoted(person.name == '' ? nil : person.name),
+            'NIL',
+            _quoted(person.local),
+            _quoted(person.domain == '' ? nil : person.domain),
+          ]) +
+          ')',
+    )
   }
 
   return '(${' '.join(written)})'
@@ -1913,9 +1987,9 @@ def _quoted(value) {
     return 'NIL'
   }
 
-  return '"'
-    + '${value}'.replace('/\\\\/', '\\\\\\\\').replace('/"/', '\\"')
-    + '"'
+  return '"' +
+      '${value}'.replace('/\\\\/', '\\\\\\\\').replace('/"/', '\\"') +
+      '"'
 }
 
 # The shape of a message, so a client can decide what to fetch without
@@ -1995,11 +2069,19 @@ def _matches_search(stored, position: number, terms: list) {
       continue
     }
 
-    if key == 'SEEN' or key == 'UNSEEN' or key == 'ANSWERED'
-      or key == 'UNANSWERED'
-      or key == 'FLAGGED' or key == 'UNFLAGGED' or key == 'DELETED'
-      or key == 'UNDELETED' or key == 'DRAFT' or key == 'UNDRAFT'
-      or key == 'NEW' or key == 'OLD' or key == 'RECENT' {
+    if key == 'SEEN' or
+        key == 'UNSEEN' or
+        key == 'ANSWERED' or
+        key == 'UNANSWERED' or
+        key == 'FLAGGED' or
+        key == 'UNFLAGGED' or
+        key == 'DELETED' or
+        key == 'UNDELETED' or
+        key == 'DRAFT' or
+        key == 'UNDRAFT' or
+        key == 'NEW' or
+        key == 'OLD' or
+        key == 'RECENT' {
       if !_flag_matches(stored, key) {
         return false
       }
@@ -2054,8 +2136,13 @@ def _matches_search(stored, position: number, terms: list) {
       continue
     }
 
-    if key == 'FROM' or key == 'TO' or key == 'CC' or key == 'BCC'
-      or key == 'SUBJECT' or key == 'BODY' or key == 'TEXT' {
+    if key == 'FROM' or
+        key == 'TO' or
+        key == 'CC' or
+        key == 'BCC' or
+        key == 'SUBJECT' or
+        key == 'BODY' or
+        key == 'TEXT' {
       if index >= terms.length() {
         return false
       }
@@ -2088,9 +2175,13 @@ def _matches_search(stored, position: number, terms: list) {
 def _is_key(term: string) {
   var upper = term.upper()
 
-  return upper == 'ALL' or upper == 'SEEN' or upper == 'UNSEEN'
-    or upper == 'NOT'
-    or upper == 'OR' or upper == 'DELETED' or upper == 'UNDELETED'
+  return upper == 'ALL' or
+      upper == 'SEEN' or
+      upper == 'UNSEEN' or
+      upper == 'NOT' or
+      upper == 'OR' or
+      upper == 'DELETED' or
+      upper == 'UNDELETED'
 }
 
 def _flag_matches(stored, key: string) {
@@ -2155,8 +2246,8 @@ def _contains_text(note, stored, key: string, wanted: string) {
   }
 
   var header = key == 'FROM'
-    ? 'From'
-    : (key == 'TO' ? 'To' : (key == 'CC' ? 'Cc' : 'Bcc'))
+      ? 'From'
+      : (key == 'TO' ? 'To' : (key == 'CC' ? 'Cc' : 'Bcc'))
   var value = note.headers.get(header, nil)
 
   return value != nil and value.lower().index_of(wanted) > -1

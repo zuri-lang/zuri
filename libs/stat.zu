@@ -199,33 +199,54 @@ var SF_NOUNLINK = 0x00100000 # file may not be renamed or deleted
 var SF_SNAPSHOT = 0x00200000 # file is a snapshot file
 
 var _filemode_table = [
-  [[S_IFLNK, "l"],
+  [
+    [S_IFLNK, "l"],
     [
-      S_IFSOCK, "s",
+      S_IFSOCK,
+      "s",
     ], # Must appear before IFREG and IFDIR as IFSOCK == IFREG | IFDIR
     [S_IFREG, "-"],
     [S_IFBLK, "b"],
     [S_IFDIR, "d"],
     [S_IFCHR, "c"],
-    [S_IFIFO, "p"]],
+    [S_IFIFO, "p"],
+  ],
 
-  [[S_IRUSR, "r"]],
-  [[S_IWUSR, "w"]],
-  [[S_IXUSR | S_ISUID, "s"],
+  [
+    [S_IRUSR, "r"],
+  ],
+  [
+    [S_IWUSR, "w"],
+  ],
+  [
+    [S_IXUSR | S_ISUID, "s"],
     [S_ISUID, "S"],
-    [S_IXUSR, "x"]],
+    [S_IXUSR, "x"],
+  ],
 
-  [[S_IRGRP, "r"]],
-  [[S_IWGRP, "w"]],
-  [[S_IXGRP | S_ISGID, "s"],
+  [
+    [S_IRGRP, "r"],
+  ],
+  [
+    [S_IWGRP, "w"],
+  ],
+  [
+    [S_IXGRP | S_ISGID, "s"],
     [S_ISGID, "S"],
-    [S_IXGRP, "x"]],
+    [S_IXGRP, "x"],
+  ],
 
-  [[S_IROTH, "r"]],
-  [[S_IWOTH, "w"]],
-  [[S_IXOTH | S_ISVTX, "t"],
+  [
+    [S_IROTH, "r"],
+  ],
+  [
+    [S_IWOTH, "w"],
+  ],
+  [
+    [S_IXOTH | S_ISVTX, "t"],
     [S_ISVTX, "T"],
-    [S_IXOTH, "x"]],
+    [S_IXOTH, "x"],
+  ],
 ]
 
 /**

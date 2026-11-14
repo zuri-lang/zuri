@@ -34,10 +34,10 @@ def _discover_name(dependency, workspace) {
 
   if dependency.kind == 'path' {
     var root = workspace.project.is_global ? os.cwd() : workspace.project.root
-    var manifest_path = os.join_paths(os.abs_path(os.join_paths(
-      root, dependency.path,
-    )),
-      'project.toml')
+    var manifest_path = os.join_paths(
+      os.abs_path(os.join_paths(root, dependency.path)),
+      'project.toml',
+    )
 
     if !file(manifest_path).exists() {
       raise UsageError('there is no project.toml at ${dependency.path}')
@@ -48,8 +48,9 @@ def _discover_name(dependency, workspace) {
     var commit = git.resolve(dependency.git, dependency.ref)
 
     dependency.name = git
-      .fetch(nil, dependency.git, commit, nil).manifest
-      .name()
+        .fetch(nil, dependency.git, commit, nil)
+        .manifest
+        .name()
   }
 
   if dependency.name == nil {
@@ -88,7 +89,8 @@ def main() {
 
   for dependency in provisional {
     dependency.range = plan.recorded_range(
-      lock.get(dependency.name).version, exact,
+      lock.get(dependency.name).version,
+      exact,
     )
     workspace.manifest.add_dependency(dependency)
   }

@@ -4,15 +4,18 @@
  * Prose arrives hard-wrapped to sit comfortably in a source file and
  * is re-wrapped here at the width the rest of the book uses; that,
  * and the rest of the shared markdown plumbing, lives in
- * `markdown.zu`.
+ * `cmds/doc/reference/text.zu`, which the API reference is written
+ * with too.
  */
 
-import ..markdown { * }
+import .. .. ..cmds.doc.reference.text { * }
 
 # The one-line signature that heads every entry.
 def _signature(member, receiver: string) {
   var returns = member.first_tag('returns')
-  var suffix = returns != nil and returns.type != '' ? ' -> ${returns.type}' : ''
+  var suffix = returns != nil and returns.type != ''
+      ? ' -> ${returns.type}'
+      : ''
   return '${receiver}${member.signature()}${suffix}'
 }
 
@@ -112,7 +115,9 @@ def _index(members: list, heading: string) {
   for member in members {
     var returns = member.first_tag('returns')
     var type = returns == nil ? '' : escape(code(returns.type))
-    out.append('| [`${escape(member.signature())}`](#${member.anchor()}) | ${type} | ${_summary(member)} |')
+    out.append(
+      '| [`${escape(member.signature())}`](#${member.anchor()}) | ${type} | ${_summary(member)} |',
+    )
   }
 
   return out
@@ -183,9 +188,9 @@ def render_type_page(spec, members: list) {
   out.append('')
 
   for line in wrap(
-    'Every method on the built-in `${spec.stub}` type, with its '
-    + 'signature, what it returns, and the cases where it does '
-    + 'something other than the obvious thing.'
+    'Every method on the built-in `${spec.stub}` type, with its ' +
+        'signature, what it returns, and the cases where it does ' +
+        'something other than the obvious thing.',
   ) {
     out.append(line)
   }
@@ -239,9 +244,9 @@ def render_builtins_page(functions: list, variables: list) {
   out.append('')
 
   for line in wrap(
-    'These functions are available in every file with no import. '
-    + 'They are the parts of the language that happen to be spelled '
-    + 'as calls rather than as syntax.'
+    'These functions are available in every file with no import. ' +
+        'They are the parts of the language that happen to be spelled ' +
+        'as calls rather than as syntax.',
   ) {
     out.append(line)
   }
@@ -267,8 +272,8 @@ def render_builtins_page(functions: list, variables: list) {
     out.append('')
 
     for line in wrap(
-      'Every file also has these variables, which describe the file '
-      + 'itself rather than anything it declares.'
+      'Every file also has these variables, which describe the file ' +
+          'itself rather than anything it declares.',
     ) {
       out.append(line)
     }
@@ -297,10 +302,10 @@ def render_index_page(types: list, counts: dict) {
   out.append('')
 
   for line in wrap(
-    'Every method on every built-in type, with its signature, what it '
-    + 'returns, and its edge cases. This is the reference; the chapters '
-    + 'in [Text, Numbers and Collections](ch04-00-collections.md) are '
-    + 'the introduction.'
+    'Every method on every built-in type, with its signature, what it ' +
+        'returns, and its edge cases. This is the reference; the chapters ' +
+        'in [Text, Numbers and Collections](ch04-00-collections.md) are ' +
+        'the introduction.',
   ) {
     out.append(line)
   }
@@ -324,7 +329,9 @@ def render_index_page(types: list, counts: dict) {
   out.append('| --- | --- | --- |')
 
   for spec in types {
-    out.append('| `${spec.stub}` | ${counts[spec.stub]} | [${spec.title}](${spec.page}) |')
+    out.append(
+      '| `${spec.stub}` | ${counts[spec.stub]} | [${spec.title}](${spec.page}) |',
+    )
   }
 
   out.append('')

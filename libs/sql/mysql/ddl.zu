@@ -19,7 +19,10 @@
 
 import ..ddl { DdlAdapter }
 import ..errors {
-  ForeignKeyViolation, NotNullViolation, NotSupportedError, QueryError,
+  ForeignKeyViolation,
+  NotNullViolation,
+  NotSupportedError,
+  QueryError,
 }
 
 # The kinds MySQL holds as text or bytes of any length, which it cannot
@@ -96,10 +99,9 @@ class MySqlDdl < DdlAdapter {
    */
   string_literal(text: string) {
     if text.contains('\\') {
-      var digits = ''.join(text
-        .to_bytes()
-        .to_list()
-        .map(@(byte) => byte.hex().lpad(2, '0')))
+      var digits = ''.join(
+        text.to_bytes().to_list().map(@(byte) => byte.hex().lpad(2, '0')),
+      )
       return "_utf8mb4 X'" + digits + "'"
     }
 
@@ -150,7 +152,7 @@ class MySqlDdl < DdlAdapter {
       if columns.contains(column.name) and _UNBOUNDED.contains(column.kind) {
         raise NotSupportedError(
           'MySQL cannot index ${column.name} of ${table}, a ${column.kind} column, ' +
-            'whole; index a string() column instead',
+              'whole; index a string() column instead',
           { driver: self.driver.name() },
         )
       }
@@ -169,20 +171,22 @@ class MySqlDdl < DdlAdapter {
    *    a table with rows.
    */
   add_column(connection, table: string, column) {
-    var filled = column.is_nullable or column.has_default or
-      column.is_current or
-      column.is_generated
+    var filled = column.is_nullable or
+        column.has_default or
+        column.is_current or
+        column.is_generated
 
     if !filled {
       var rows = connection.fetch_value(
         'select count(*) from (select 1 from ${self.table_name(table)} limit 1) as probe',
-        nil, 0,
+        nil,
+        0,
       )
 
       if rows > 0 {
         raise NotNullViolation(
           '${column.name} is required and has no default, so it cannot be added ' +
-            'to ${table} while ${table} has rows',
+              'to ${table} while ${table} has rows',
           { driver: self.driver.name() },
         )
       }
@@ -199,16 +203,20 @@ class MySqlDdl < DdlAdapter {
    */
   change_column(connection, table: string, column) {
     if column.is_generated {
-      raise QueryError('an id() column cannot be changed; ${column.name} is one')
+      raise QueryError(
+        'an id() column cannot be changed; ${column.name} is one',
+      )
     }
 
     var target = self.table_name(table)
-    var statements = ['alter table ${target} modify column ${self.column_definition(column)}']
+    var statements = [
+      'alter table ${target} modify column ${self.column_definition(column)}',
+    ]
 
     if column.foreign != nil {
       statements.append(
-        'alter table ${target} add '
-          + self.foreign_key_sql(table, column.foreign),
+        'alter table ${target} add ' +
+            self.foreign_key_sql(table, column.foreign),
       )
     }
 
@@ -231,16 +239,16 @@ class MySqlDdl < DdlAdapter {
 
     var keys = connection.fetch_column(
       'select distinct constraint_name from information_schema.key_column_usage ' +
-        'where table_schema = ${place.schema} and table_name = ? and column_name = ? ' +
-        'and referenced_table_name is not null',
+          'where table_schema = ${place.schema} and table_name = ? and column_name = ? ' +
+          'and referenced_table_name is not null',
       place.values + [place.name, name],
       nil,
     )
 
     var indexes = connection.fetch_column(
       'select distinct index_name from information_schema.statistics ' +
-        "where table_schema = ${place.schema} and table_name = ? and column_name = ? " +
-        "and index_name <> 'PRIMARY'",
+          "where table_schema = ${place.schema} and table_name = ? and column_name = ? " +
+          "and index_name <> 'PRIMARY'",
       place.values + [place.name, name],
       nil,
     )
@@ -248,7 +256,9 @@ class MySqlDdl < DdlAdapter {
     var statements = []
 
     for key in keys {
-      statements.append('alter table ${target} drop foreign key ${self.quote(key)}')
+      statements.append(
+        'alter table ${target} drop foreign key ${self.quote(key)}',
+      )
     }
 
     for index in indexes {
@@ -283,11 +293,13 @@ class MySqlDdl < DdlAdapter {
   drop_foreign(connection, table: string, name: string) {
     var place = self._place(table)
     var target = self.table_name(table)
-    var statements = ['alter table ${target} drop foreign key ${self.quote(name)}']
+    var statements = [
+      'alter table ${target} drop foreign key ${self.quote(name)}',
+    ]
 
     var indexed = connection.fetch_value(
       'select count(*) from information_schema.statistics where table_schema = ' +
-        '${place.schema} and table_name = ? and index_name = ?',
+          '${place.schema} and table_name = ? and index_name = ?',
       place.values + [place.name, name],
       0,
     )
@@ -340,10 +352,9 @@ class MySqlDdl < DdlAdapter {
    * @param string to
    */
   rename_table(connection, from: string, to: string) {
-    self.run(
-      connection,
-      ['rename table ${self.table_name(from)} to ${self.table_name(to)}'],
-    )
+    self.run(connection, [
+      'rename table ${self.table_name(from)} to ${self.table_name(to)}',
+    ])
   }
 
   /**
@@ -361,9 +372,10 @@ class MySqlDdl < DdlAdapter {
     var granted = 0
 
     while granted == 0 {
-      granted = connection.fetch_value(
-        'select get_lock(?, ?)', [name, _LOCK_WAIT], nil,
-      )
+      granted = connection.fetch_value('select get_lock(?, ?)', [
+        name,
+        _LOCK_WAIT,
+      ], nil)
     }
 
     if granted != 1 {
@@ -390,7 +402,11 @@ class MySqlDdl < DdlAdapter {
     var parts = table.split('.')
 
     if parts.length() > 1 {
-      return { schema: '?', values: [parts[0]], name: '.'.join(parts[1,]) }
+      return {
+        schema: '?',
+        values: [parts[0]],
+        name: '.'.join(parts[1,]),
+      }
     }
 
     return { schema: 'database()', values: [], name: table }

@@ -17,7 +17,9 @@ def span_text(range: dict) {
 }
 
 before_all(@{
-  client = Client(FIXTURE, { diagnostics: { delay: 0 } })
+  client = Client(FIXTURE, {
+    diagnostics: { delay: 0 },
+  })
   client.initialize(nil)
   client.wait_indexed()
 })
@@ -29,22 +31,33 @@ after_all(@{
 describe('symbols', @{
   it('outlines a file, members under their class', @{
     var shapes = client.open(os.join_paths(FIXTURE, 'shapes.zu'), nil)
-    var found = client.request(
-      'textDocument/documentSymbol', { textDocument: { uri: shapes } },
-    )
+    var found = client.request('textDocument/documentSymbol', {
+      textDocument: { uri: shapes },
+    })
     var outline = found.map(
       @(s) => [s.name, s.kind, s.get('children', []).map(@(c) => c.name)],
     )
 
-    expect(outline).to_equal([
-      ['UNIT', 14, []],
-      ['Point', 5, ['@new', 'x', 'y', 'distance', 'move']],
-      ['Circle', 5, ['@new', 'radius', 'distance']],
-      ['origin', 12, []],
-      ['centre', 12, []],
-    ])
+    expect(outline)
+        .to_equal([
+          ['UNIT', 14, []],
+          [
+            'Point',
+            5,
+            ['@new', 'x', 'y', 'distance', 'move'],
+          ],
+          [
+            'Circle',
+            5,
+            ['@new', 'radius', 'distance'],
+          ],
+          ['origin', 12, []],
+          ['centre', 12, []],
+        ])
     expect(found[4].tags).to_equal([1])
-    client.notify('textDocument/didClose', { textDocument: { uri: shapes } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: shapes },
+    })
   })
 
   it('finds declarations across the workspace by the letters of their name', @{
@@ -54,38 +67,38 @@ describe('symbols', @{
 
     var distances = client.request('workspace/symbol', { query: 'dist' })
 
-    expect(distances
-      .map(@(s) => s.containerName)
-      .sort()).to_equal(['Circle', 'Point'])
+    expect(distances.map(@(s) => s.containerName).sort())
+        .to_equal(['Circle', 'Point'])
   })
 })
 
 describe('folding and selection', @{
   it('folds blocks, classes, doc blocks and runs of imports', @{
     var main = client.open(os.join_paths(FIXTURE, 'main.zu'), nil)
-    var folds = client.request(
-      'textDocument/foldingRange', { textDocument: { uri: main } },
-    )
+    var folds = client.request('textDocument/foldingRange', {
+      textDocument: { uri: main },
+    })
 
     expect(folds).to_contain({ startLine: 0, endLine: 2, kind: 'imports' })
-    client.notify('textDocument/didClose', { textDocument: { uri: main } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: main },
+    })
 
     var shapes = client.open(os.join_paths(FIXTURE, 'shapes.zu'), nil)
-    var shape_folds = client.request(
-      'textDocument/foldingRange', { textDocument: { uri: shapes } },
-    )
+    var shape_folds = client.request('textDocument/foldingRange', {
+      textDocument: { uri: shapes },
+    })
     var comment_folds = shape_folds.filter(
       @(f) => f.get('kind', nil) == 'comment',
     )
 
-    expect(comment_folds[0]).to_equal({
-      startLine: 0,
-      endLine: 4,
-      kind: 'comment',
-    })
+    expect(comment_folds[0])
+        .to_equal({ startLine: 0, endLine: 4, kind: 'comment' })
     # The class's fold ends before its closing brace, which stays in view.
     expect(shape_folds).to_contain({ startLine: 12, endLine: 44 })
-    client.notify('textDocument/didClose', { textDocument: { uri: shapes } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: shapes },
+    })
   })
 
   it('grows a selection outward from the name under the cursor', @{
@@ -105,19 +118,23 @@ describe('folding and selection', @{
 
     expect(spans[0]).to_equal('1:9-1:10')
     expect(spans.last()).to_equal('0:0-3:0')
-    client.notify('textDocument/didClose', { textDocument: { uri: address } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: address },
+    })
   })
 })
 
 describe('links', @{
   it('links each import to the file it loads', @{
     var main = client.open(os.join_paths(FIXTURE, 'main.zu'), nil)
-    var links = client.request(
-      'textDocument/documentLink', { textDocument: { uri: main } },
-    )
+    var links = client.request('textDocument/documentLink', {
+      textDocument: { uri: main },
+    })
     var targets = links.map(@(link) => link.target.split('/').last())
 
     expect(targets).to_equal(['json.stub.zu', 'shapes.zu', 'index.zu'])
-    client.notify('textDocument/didClose', { textDocument: { uri: main } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: main },
+    })
   })
 })

@@ -23,7 +23,8 @@ def publisher(username: string) {
 # A package with a published version, so listings and search see it.
 def listed(name: string, fields: dict) {
   var id = db.create_package({
-    name, name_key: name.lower().replace('-', '_', false),
+    name,
+    name_key: name.lower().replace('-', '_', false),
   })
 
   db.update_package(id, {
@@ -96,8 +97,10 @@ describe('migrations', @{
   it('brings an empty database up to date', @{
     var fresh = Database(os.join_paths(ROOT, 'fresh.db'))
     var shipped = os
-      .read_dir(os.join_paths(os.dir_name(os.dir_name(__file__)), 'migrations'))
-      .filter(@(name) => name.ends_with('.zu'))
+        .read_dir(
+          os.join_paths(os.dir_name(os.dir_name(__file__)), 'migrations'),
+        )
+        .filter(@(name) => name.ends_with('.zu'))
 
     expect(fresh.migrate()).to_equal(shipped.length())
     expect(fresh.migrate()).to_equal(0)
@@ -286,10 +289,14 @@ describe('packages', @{
 
     expect(db.package_by_id(id).downloads).to_equal(6)
     expect(db.version_of(id, '1.0.0').downloads).to_equal(6)
-    expect(db.connection.fetch_value(
-      'select downloads from downloads_daily where version_id = ? and day = ?',
-      [v, '2026-01-02'], nil,
-    )).to_equal(5)
+    expect(
+      db.connection.fetch_value(
+        'select downloads from downloads_daily where version_id = ? and day = ?',
+        [v, '2026-01-02'],
+        nil,
+      ),
+    )
+        .to_equal(5)
 
     var totals = db.statistics()
 
@@ -330,9 +337,8 @@ describe('search', @{
 
   it('treats % and _ as the characters they are', @{
     expect(db.search('%', 'relevance', 20, 0).total).to_equal(1)
-    expect(db.search(
-      '_', 'relevance', 20, 0,
-    ).packages[0].name).to_equal('http-extra')
+    expect(db.search('_', 'relevance', 20, 0).packages[0].name)
+        .to_equal('http-extra')
     expect(db.search('_', 'relevance', 20, 0).total).to_equal(1)
     expect(db.search('!', 'relevance', 20, 0).total).to_equal(0)
   })
@@ -373,7 +379,9 @@ describe('transactions and the audit trail', @{
     db.audit(id, 'publish', 'http-extra@1.0.0', { size: 10 }, '127.0.0.1')
     db.audit(nil, 'sign-in-failed', 'ada', nil, nil)
 
-    var rows = db.connection.find('audit_log', nil, { order: ['id'] }).rows
+    var rows = db.connection.find('audit_log', nil, {
+      order: ['id'],
+    }).rows
 
     expect(rows.length()).to_equal(2)
     expect(rows[0].detail).to_equal('{"size":10}')

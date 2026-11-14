@@ -113,7 +113,7 @@ class TarIOError < Error {}
 class TarIllegalCompressionError < Error {}
 
 var _header_unpack = 'a100:filename/a8:perm/a8:uid/a8:gid/a12:size/a12:mtime/a8:checksum/a1:typeflag' +
-  '/a100:link/a6:magic/a2:version/a32:uname/a32:gname/a8:devmajor/a8:devminor/a155:prefix'
+    '/a100:link/a6:magic/a2:version/a32:uname/a32:gname/a8:devmajor/a8:devminor/a155:prefix'
 
 #--------------------------------------------------------------------------------
 # Helpers
@@ -195,7 +195,9 @@ class Tar {
 
     self._compression_check(type)
     if level < -1 or level > 9 {
-      raise TarIllegalCompressionError('compression level should be between -1 and 9')
+      raise TarIllegalCompressionError(
+        'compression level should be between -1 and 9',
+      )
     }
 
     self._comp_level = level
@@ -310,7 +312,10 @@ class Tar {
    * @return {list[string]}
    */
   extract(
-    outdir: string, strip: ?int|string, exclude: ?string, include: ?string,
+    outdir: string,
+    strip: ?int|string,
+    exclude: ?string,
+    include: ?string,
   ) {
     if !is_string(outdir) {
       raise Error('output directory required as first argument')
@@ -357,8 +362,9 @@ class Tar {
       # cannot be trusted with anything else either.
       var output = os.join_paths(outdir, header.filename)
 
-      if header.filename.starts_with('/') or header.filename.starts_with('\\')
-        or !os.path_contains(outdir, output) {
+      if header.filename.starts_with('/') or
+          header.filename.starts_with('\\') or
+          !os.path_contains(outdir, output) {
         self.close()
         raise TarCorruptedError(
           'entry "${header.filename}" would be written outside "${outdir}"',
@@ -464,7 +470,9 @@ class Tar {
    */
   add_file(path: string, header: ?string|dict) {
     if self._closed {
-      raise TarIOError('archive has been closed and files can no longer be added')
+      raise TarIOError(
+        'archive has been closed and files can no longer be added',
+      )
     }
 
     if header == nil or is_string(header) {
@@ -491,7 +499,9 @@ class Tar {
 
       if read != total {
         self.close()
-        raise TarCorruptedError('The size of ${path} changed while reading, archive corrupted. read ${read} expected ${total}')
+        raise TarCorruptedError(
+          'The size of ${path} changed while reading, archive corrupted. read ${read} expected ${total}',
+        )
       }
     }
 
@@ -517,7 +527,9 @@ class Tar {
    */
   add_data(data: bytes, header: ?string|dict) {
     if self._closed {
-      raise TarIOError('archive has been closed and files can no longer be added')
+      raise TarIOError(
+        'archive has been closed and files can no longer be added',
+      )
     }
 
     if header == nil or is_string(header) {
@@ -606,7 +618,9 @@ class Tar {
 
     if self._comp_type == COMPRESS_GZIP {
       return zlib.compress(
-        self._memory, self._comp_level, zlib.DEFAULT_STRATEGY,
+        self._memory,
+        self._comp_level,
+        zlib.DEFAULT_STRATEGY,
         zlib.MAX_WBITS | 16,
       )
     } else if self._comp_type == COMPRESS_BZIP {
@@ -646,7 +660,9 @@ class Tar {
    * @throws {TarIOError|Error}
    */
   add_directory(
-    directory: string, file_blacklist: ?list, ext_blacklist: ?list,
+    directory: string,
+    file_blacklist: ?list,
+    ext_blacklist: ?list,
   ) {
     directory = directory.replace('/\\\\/', '/')
 
@@ -813,12 +829,12 @@ class Tar {
       raise TarCorruptedError('failed to parse header')
     }
 
-    var result = {
-      checksum: _octdec(header.checksum.trim()),
-    }
+    var result = { checksum: _octdec(header.checksum.trim()) }
 
     if result.checksum != chks {
-      raise TarCorruptedError('header for "${_field(header.filename)}" does not match its checksum')
+      raise TarCorruptedError(
+        'header for "${_field(header.filename)}" does not match its checksum',
+      )
     }
 
     result.filename = _field(header.filename)
@@ -862,8 +878,7 @@ class Tar {
   _strip(filename, is_dir, strip) {
     if is_number(strip) {
       # if strip is an integer we strip this many path components
-      var parts = filename.split('/'),
-        base = is_dir ? '' : parts.pop()
+      var parts = filename.split('/'), base = is_dir ? '' : parts.pop()
 
       filename = '/'.join(parts[strip,])
     } else {
@@ -926,7 +941,13 @@ class Tar {
       if file.length() > 100 or dir.length() > 155 {
         # we're still too large. Let's use GNU longlink
         self._write_raw_file_header(
-          '././@LongLink', 0, 0, 0, name.length(), 0, 'L',
+          '././@LongLink',
+          0,
+          0,
+          0,
+          name.length(),
+          0,
+          'L',
         )
 
         iter var i = 0; i < name.length(); i += 512 {
@@ -952,11 +973,26 @@ class Tar {
     mtime = mtime.oct().to_string().lpad(11)
 
     var first_data = struct.pack(
-      'a100a8a8a8a12A12', name, perm, uid, gid, size, mtime,
+      'a100a8a8a8a12A12',
+      name,
+      perm,
+      uid,
+      gid,
+      size,
+      mtime,
     )
     var last_data = struct.pack(
-      'a1a100a6a2a32a32a8a8a155a12', typeflag, '', 'ustar', '', '', '', '', '',
-      prefix, '',
+      'a1a100a6a2a32a32a8a8a155a12',
+      typeflag,
+      '',
+      'ustar',
+      '',
+      '',
+      '',
+      '',
+      '',
+      prefix,
+      '',
     )
 
     var chks = 0

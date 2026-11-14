@@ -558,7 +558,8 @@ class HttpResponse {
    */
   no_cache() {
     self.headers.set(
-      'Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0',
+      'Cache-Control',
+      'no-store, no-cache, must-revalidate, max-age=0',
     )
     self.headers.set('Pragma', 'no-cache')
     self.headers.set('Expires', '0')
@@ -825,7 +826,7 @@ class HttpResponse {
 
   to_string() {
     return '<HttpResponse ${self.status} ${self.reason_phrase()}, ' +
-      '${self.body.length()} bytes>'
+        '${self.body.length()} bytes>'
   }
 
   to_json() {

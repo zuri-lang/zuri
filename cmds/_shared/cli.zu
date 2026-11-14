@@ -31,7 +31,9 @@ def add_registry_option(parser) {
     { short_name: 'r', type: args.STRING, metavar: 'registry' },
   )
   parser.add_option(
-    'insecure', 'Allow a token to cross plain http to another machine', nil,
+    'insecure',
+    'Allow a token to cross plain http to another machine',
+    nil,
   )
 }
 
@@ -42,7 +44,9 @@ def add_registry_option(parser) {
  */
 def add_json_option(parser) {
   parser.add_option(
-    'json', 'Print the result as JSON, for another program to read', nil,
+    'json',
+    'Print the result as JSON, for another program to read',
+    nil,
   )
 }
 
@@ -58,8 +62,8 @@ def require_project(command: string) {
 
   if found == nil {
     raise UsageError(
-      "there is no project.toml here or above; run 'zuri init' to start a project, or "
-        + 'pass --global to work on the packages installed for your user',
+      "there is no project.toml here or above; run 'zuri init' to start a project, or " +
+          'pass --global to work on the packages installed for your user',
     )
   }
 
@@ -89,7 +93,8 @@ def registry_from(parsed, offline: ?bool) {
   var manifest = local_manifest()
   var aliases = config.registries(manifest)
   var address = manifest_module.resolve_registry(
-    parsed.options.get('registry', nil), aliases,
+    parsed.options.get('registry', nil),
+    aliases,
   )
 
   return Registry(address, {
@@ -133,10 +138,12 @@ def report(outcome) {
   }
 
   for hook in outcome.hooks_skipped {
-    ui.complain(ui.warn(
-      "  ${hook.name}'s ${hook.hook} hook was not run; allow it with "
-        + "[install] allow-hooks = [\"${hook.name}\"] in project.toml",
-    ))
+    ui.complain(
+      ui.warn(
+        "  ${hook.name}'s ${hook.hook} hook was not run; allow it with " +
+            "[install] allow-hooks = [\"${hook.name}\"] in project.toml",
+      ),
+    )
   }
 
   if outcome.recovered > 0 {
@@ -147,7 +154,9 @@ def report(outcome) {
   var summary = []
 
   if changes > 0 {
-    summary.append('${would ? "would install" : "installed"} ${ui.count(changes, "package")}')
+    summary.append(
+      '${would ? "would install" : "installed"} ${ui.count(changes, "package")}',
+    )
   }
 
   if !outcome.removed.is_empty() {
@@ -194,9 +203,11 @@ def sync_options(parsed, extra: ?dict) {
     allow_hooks: given.get('allow-hooks', []),
     force: given.get('force', false) == true,
     dry_run: given.get('dry-run', false) == true,
-    report: given.get('quiet', false) == true ? nil : @(line) {
-      echo ui.muted(line)
-    },
+    report: given.get('quiet', false) == true
+        ? nil
+        : @(line) {
+            echo ui.muted(line)
+          },
   }
 
   if extra != nil {

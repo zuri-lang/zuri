@@ -80,10 +80,14 @@ time:
 ```zuri
 import rpc
 
-var calculator = rpc.Service()
-  .on_request('add', @(params) => params[0] + params[1])
+var calculator = rpc.Service().on_request(
+  'add',
+  @(params) => params[0] + params[1],
+)
 
-echo calculator.answer('{"jsonrpc": "2.0", "id": 1, "method": "add", "params": [2, 3]}')
+echo calculator.answer(
+  '{"jsonrpc": "2.0", "id": 1, "method": "add", "params": [2, 3]}',
+)
 ```
 
 ```console
@@ -226,7 +230,9 @@ An error is an `RpcError`: a `code`, a short `message`, and optional
 ```zuri
 import rpc
 
-var error = rpc.RpcError(rpc.INVALID_PARAMS, 'a name is required', { field: 'name' })
+var error = rpc.RpcError(rpc.INVALID_PARAMS, 'a name is required', {
+  field: 'name',
+})
 
 echo error.code
 echo error.message
@@ -268,7 +274,7 @@ every rule of the specification:
 import rpc
 
 var text = '{"jsonrpc": "2.0", "id": "a7", "method": "subtract", ' +
-  '"params": {"minuend": 42, "subtrahend": 23}}'
+    '"params": {"minuend": 42, "subtrahend": 23}}'
 var call = rpc.decode(text)
 
 echo call
@@ -345,11 +351,13 @@ saying what is wrong with it, ready to be answered.
 ```zuri
 import rpc
 
-var batch = rpc.decode('[' +
-  '{"jsonrpc": "2.0", "id": 1, "method": "sum", "params": [1, 2]},' +
-  '{"jsonrpc": "2.0", "method": "notify_hello"},' +
-  '{"foo": "boo"}' +
-']')
+var batch = rpc.decode(
+  '[' +
+      '{"jsonrpc": "2.0", "id": 1, "method": "sum", "params": [1, 2]},' +
+      '{"jsonrpc": "2.0", "method": "notify_hello"},' +
+      '{"foo": "boo"}' +
+      ']',
+)
 
 for entry in batch {
   if instance_of(entry, rpc.RpcError) {
@@ -386,12 +394,19 @@ result sent back:
 import rpc
 
 var service = rpc.Service()
-  .on_request('add', @(params) => params[0] + params[1])
-  .on_request('whoami', @(params, context) => '${context.method} #${context.id}')
+    .on_request('add', @(params) => params[0] + params[1])
+    .on_request(
+      'whoami',
+      @(params, context) => '${context.method} #${context.id}',
+    )
 
-echo service.answer('{"jsonrpc": "2.0", "id": 1, "method": "add", "params": [2, 3]}')
+echo service.answer(
+  '{"jsonrpc": "2.0", "id": 1, "method": "add", "params": [2, 3]}',
+)
 echo service.answer('{"jsonrpc": "2.0", "id": 2, "method": "whoami"}')
-echo service.answer('{"jsonrpc": "2.0", "id": 3, "method": "mul", "params": [2, 3]}')
+echo service.answer(
+  '{"jsonrpc": "2.0", "id": 3, "method": "mul", "params": [2, 3]}',
+)
 ```
 
 ```console
@@ -423,19 +438,26 @@ is, code, message, data and all. Any other error is sent back as an
 import rpc
 
 var service = rpc.Service()
-  .on_request('divide', @(params) {
-    if params.length() != 2 or params[1] == 0 {
-      raise rpc.RpcError(rpc.INVALID_PARAMS, 'divide takes a number and a non-zero divisor')
-    }
+    .on_request('divide', @(params) {
+      if params.length() != 2 or params[1] == 0 {
+        raise rpc.RpcError(
+          rpc.INVALID_PARAMS,
+          'divide takes a number and a non-zero divisor',
+        )
+      }
 
-    return params[0] / params[1]
-  })
-  .on_request('save', @(params) {
-    raise Error('the disk is full')
-  })
+      return params[0] / params[1]
+    })
+    .on_request('save', @(params) {
+      raise Error('the disk is full')
+    })
 
-echo service.answer('{"jsonrpc": "2.0", "id": 1, "method": "divide", "params": [1, 0]}')
-echo service.answer('{"jsonrpc": "2.0", "id": 2, "method": "save", "params": ["notes"]}')
+echo service.answer(
+  '{"jsonrpc": "2.0", "id": 1, "method": "divide", "params": [1, 0]}',
+)
+echo service.answer(
+  '{"jsonrpc": "2.0", "id": 2, "method": "save", "params": ["notes"]}',
+)
 ```
 
 ```console
@@ -462,12 +484,13 @@ returns is ignored, since nothing is sent back:
 import rpc
 
 var seen = []
-var service = rpc.Service()
-  .on_notification('log', @(params) {
-    seen.append(params.text)
-  })
+var service = rpc.Service().on_notification('log', @(params) {
+  seen.append(params.text)
+})
 
-echo service.answer('{"jsonrpc": "2.0", "method": "log", "params": {"text": "started"}}')
+echo service.answer(
+  '{"jsonrpc": "2.0", "method": "log", "params": {"text": "started"}}',
+)
 echo seen
 ```
 
@@ -490,14 +513,16 @@ handler, and `context.method` says which method it is standing in for:
 ```zuri
 import rpc
 
-var service = rpc.Service()
-  .on_unhandled(@(params, context) {
-    if context.method.starts_with('legacy.') {
-      return 'retired: ${context.method}'
-    }
+var service = rpc.Service().on_unhandled(@(params, context) {
+  if context.method.starts_with('legacy.') {
+    return 'retired: ${context.method}'
+  }
 
-    raise rpc.RpcError(rpc.METHOD_NOT_FOUND, 'Method not found: ${context.method}')
-  })
+  raise rpc.RpcError(
+    rpc.METHOD_NOT_FOUND,
+    'Method not found: ${context.method}',
+  )
+})
 
 echo service.answer('{"jsonrpc": "2.0", "id": 1, "method": "legacy.export"}')
 echo service.answer('{"jsonrpc": "2.0", "id": 2, "method": "export"}')
@@ -523,14 +548,18 @@ notifications has no answer at all:
 ```zuri
 import rpc
 
-var service = rpc.Service()
-  .on_request('add', @(params) => params[0] + params[1])
+var service = rpc.Service().on_request(
+  'add',
+  @(params) => params[0] + params[1],
+)
 
-echo service.answer('[' +
-  '{"jsonrpc": "2.0", "id": 1, "method": "add", "params": [1, 2]},' +
-  '{"jsonrpc": "2.0", "method": "add", "params": [3, 4]},' +
-  '{"jsonrpc": "2.0", "id": 3, "method": "sub"}' +
-']')
+echo service.answer(
+  '[' +
+      '{"jsonrpc": "2.0", "id": 1, "method": "add", "params": [1, 2]},' +
+      '{"jsonrpc": "2.0", "method": "add", "params": [3, 4]},' +
+      '{"jsonrpc": "2.0", "id": 3, "method": "sub"}' +
+      ']',
+)
 ```
 
 ```console
@@ -545,9 +574,7 @@ refused whole, before any of it runs:
 ```zuri
 import rpc
 
-var service = rpc.Service()
-  .set_batch_limit(2)
-  .on_request('ping', @() => 'pong')
+var service = rpc.Service().set_batch_limit(2).on_request('ping', @() => 'pong')
 
 var call = '{"jsonrpc": "2.0", "id": 1, "method": "ping"}'
 
@@ -583,8 +610,10 @@ def serve_calculator(ready) {
   import http
   import rpc
 
-  var calculator = rpc.Service()
-    .on_request('add', @(params) => params[0] + params[1])
+  var calculator = rpc.Service().on_request(
+    'add',
+    @(params) => params[0] + params[1],
+  )
 
   var server = http.server(0, '127.0.0.1')
 
@@ -599,7 +628,16 @@ var server = isolate.spawn(serve_calculator, ready)
 var calculator = rpc.HttpClient('http://127.0.0.1:${ready.recv()}/rpc')
 
 echo calculator.request('add', [2, 3])
-echo calculator.request_batch([['add', [1, 2]], ['add', [3, 4]]])
+echo calculator.request_batch([
+  [
+    'add',
+    [1, 2],
+  ],
+  [
+    'add',
+    [3, 4],
+  ],
+])
 
 server.cancel()
 ```
@@ -617,8 +655,7 @@ import http
 import rpc
 
 def setup(server) {
-  var api = rpc.Service()
-    .on_request('add', @(params) => params[0] + params[1])
+  var api = rpc.Service().on_request('add', @(params) => params[0] + params[1])
 
   server.post('/rpc', rpc.http_handler(api))
 }
@@ -700,10 +737,9 @@ middleware, which refuses a request before the service sees it:
 
 ```zuri,ignore
 def setup(server) {
-  var api = rpc.Service()
-    .on_request('balance', @(params, context) {
-      return accounts.balance(context.request.context.user)
-    })
+  var api = rpc.Service().on_request('balance', @(params, context) {
+    return accounts.balance(context.request.context.user)
+  })
 
   server.use(@(request, response, next) {
     var user = tokens.user_for(request.bearer_token())
@@ -911,12 +947,13 @@ talks to: the parent writes to the child's stdin and reads its stdout.
 import io
 import rpc
 
-rpc.endpoint(rpc.stdio())
-  .on_request('add', @(params) => params[0] + params[1])
-  .on_notification('log', @(params) {
-    io.stderr.write('${params[0]}\n')
-  })
-  .serve()
+rpc
+    .endpoint(rpc.stdio())
+    .on_request('add', @(params) => params[0] + params[1])
+    .on_notification('log', @(params) {
+      io.stderr.write('${params[0]}\n')
+    })
+    .serve()
 ```
 
 Stdout belongs to the protocol. Anything else the program prints there
@@ -947,9 +984,10 @@ var server = isolate.spawn(@(ready) {
 
   var connection = listener.accept()
 
-  rpc.endpoint(rpc.socket(connection))
-    .on_request('add', @(params) => params[0] + params[1])
-    .serve()
+  rpc
+      .endpoint(rpc.socket(connection))
+      .on_request('add', @(params) => params[0] + params[1])
+      .serve()
 
   connection.close()
   listener.close()
@@ -990,13 +1028,14 @@ Spawn it with `stdin` and `stdout` both `'pipe'`:
 import os
 import rpc
 
-var child = os.spawn('zuri', ['run', 'calculator.zu'], {
-  stdin: 'pipe',
-  stdout: 'pipe',
-})
+var child = os.spawn(
+  'zuri',
+  ['run', 'calculator.zu'],
+  { stdin: 'pipe', stdout: 'pipe' },
+)
 var calculator = rpc.endpoint(rpc.process(child))
 
-echo calculator.request('add', [2, 3])  # 5
+echo calculator.request('add', [2, 3]) # 5
 calculator.notify('log', ['added two numbers'])
 
 calculator.close()
@@ -1036,13 +1075,11 @@ def serve_shop(ready) {
   server.get('/ws', @(request, response) {
     var socket = websocket.accept(request, response)
 
-    rpc.endpoint(rpc.websocket(socket))
-      .on_request('total', @(params, context) {
-        var price = context.endpoint.request('price_of', [params.item])
+    rpc.endpoint(rpc.websocket(socket)).on_request('total', @(params, context) {
+      var price = context.endpoint.request('price_of', [params.item])
 
-        return price * params.count
-      })
-      .serve()
+      return price * params.count
+    }).serve()
   })
 
   server.bind()
@@ -1054,8 +1091,9 @@ var ready = isolate.channel(1)
 var shop = isolate.spawn(serve_shop, ready)
 var socket = websocket.connect('ws://127.0.0.1:${ready.recv()}/ws')
 
-var client = rpc.endpoint(rpc.websocket(socket))
-  .on_request('price_of', @(params) => params[0] == 'tea' ? 3 : 5)
+var client = rpc
+    .endpoint(rpc.websocket(socket))
+    .on_request('price_of', @(params) => params[0] == 'tea' ? 3 : 5)
 
 echo client.request('total', { item: 'tea', count: 4 })
 
@@ -1133,9 +1171,10 @@ var ends = rpc.pipe()
 isolate.spawn(@(transport) {
   import rpc
 
-  rpc.endpoint(transport)
-    .on_request('add', @(params) => params[0] + params[1])
-    .serve()
+  rpc
+      .endpoint(transport)
+      .on_request('add', @(params) => params[0] + params[1])
+      .serve()
 }, ends[1])
 
 var counted = Counted(ends[0])
@@ -1191,12 +1230,13 @@ var ends = rpc.pipe()
 isolate.spawn(@(transport) {
   import rpc
 
-  rpc.endpoint(transport)
-    .on_request('add', @(params) => params[0] + params[1])
-    .on_request('fail', @(params) {
-      raise rpc.RpcError(-32001, 'no')
-    })
-    .serve()
+  rpc
+      .endpoint(transport)
+      .on_request('add', @(params) => params[0] + params[1])
+      .on_request('fail', @(params) {
+        raise rpc.RpcError(-32001, 'no')
+      })
+      .serve()
 }, ends[1])
 
 var client = rpc.endpoint(ends[0])
@@ -1243,17 +1283,27 @@ var ends = rpc.pipe()
 isolate.spawn(@(transport) {
   import rpc
 
-  rpc.endpoint(transport)
-    .on_request('add', @(params) => params[0] + params[1])
-    .serve()
+  rpc
+      .endpoint(transport)
+      .on_request('add', @(params) => params[0] + params[1])
+      .serve()
 }, ends[1])
 
 var client = rpc.endpoint(ends[0])
 
 var answers = client.request_batch([
-  ['add', [1, 2]],
-  ['multiply', [3, 4]],
-  ['add', [5, 6]],
+  [
+    'add',
+    [1, 2],
+  ],
+  [
+    'multiply',
+    [3, 4],
+  ],
+  [
+    'add',
+    [5, 6],
+  ],
 ])
 
 for answer in answers {
@@ -1292,22 +1342,27 @@ import rpc
 var ends = rpc.pipe()
 var waiting = []
 
-var server = rpc.endpoint(ends[0])
-  .set_framing(rpc.LineFraming())
-  .on_request('next_job', @(params, context) {
-    waiting.append(context.defer())
-  })
-  .on_notification('add_job', @(params) {
-    for context in waiting {
-      context.reply(params)
-    }
+var server = rpc
+    .endpoint(ends[0])
+    .set_framing(rpc.LineFraming())
+    .on_request('next_job', @(params, context) {
+      waiting.append(context.defer())
+    })
+    .on_notification('add_job', @(params) {
+      for context in waiting {
+        context.reply(params)
+      }
 
-    waiting = []
-  })
+      waiting = []
+    })
 
 server.handle({ jsonrpc: '2.0', id: 1, method: 'next_job' })
 server.handle({ jsonrpc: '2.0', id: 2, method: 'next_job' })
-server.handle({ jsonrpc: '2.0', method: 'add_job', params: { file: 'cat.png' } })
+server.handle({
+  jsonrpc: '2.0',
+  method: 'add_job',
+  params: { file: 'cat.png' },
+})
 
 echo ends[1].read(4096).to_string().trim()
 echo ends[1].read(4096).to_string().trim()
@@ -1340,18 +1395,17 @@ var ends = rpc.pipe()
 isolate.spawn(@(transport) {
   import rpc
 
-  rpc.endpoint(transport)
-    .on_request('total', @(params, context) {
-      var price = context.endpoint.request('price_of', [params.item])
+  rpc.endpoint(transport).on_request('total', @(params, context) {
+    var price = context.endpoint.request('price_of', [params.item])
 
-      return price * params.count
-    })
-    .serve()
+    return price * params.count
+  }).serve()
 }, ends[1])
 
 var prices = { tea: 3, cake: 5 }
-var client = rpc.endpoint(ends[0])
-  .on_request('price_of', @(params) => prices[params[0]])
+var client = rpc
+    .endpoint(ends[0])
+    .on_request('price_of', @(params) => prices[params[0]])
 
 echo client.request('total', { item: 'tea', count: 4 })
 client.close()
@@ -1413,21 +1467,24 @@ var caller = isolate.spawn(@(transport) {
 var jobs = isolate.channel()
 var done = isolate.channel()
 
-isolate.spawn(@(jobs, done) {
-  var job = jobs.recv()
+isolate.spawn(
+  @(jobs, done) {
+    var job = jobs.recv()
 
-  while job != nil {
-    done.send({ id: job.id, result: job.value * job.value })
-    job = jobs.recv()
-  }
-}, jobs, done)
+    while job != nil {
+      done.send({ id: job.id, result: job.value * job.value })
+      job = jobs.recv()
+    }
+  },
+  jobs,
+  done,
+)
 
 var waiting = {}
-var server = rpc.endpoint(ends[1])
-  .on_request('square', @(params, context) {
-    waiting[context.id] = context.defer()
-    jobs.send({ id: context.id, value: params[0] })
-  })
+var server = rpc.endpoint(ends[1]).on_request('square', @(params, context) {
+  waiting[context.id] = context.defer()
+  jobs.send({ id: context.id, value: params[0] })
+})
 
 var inbox = server.listen()
 
@@ -1635,15 +1692,15 @@ var ends = rpc.pipe()
 isolate.spawn(@(transport) {
   import rpc
 
-  rpc.endpoint(transport)
-    .on_request('add', @(params) => params[0] + params[1])
-    .serve()
+  rpc
+      .endpoint(transport)
+      .on_request('add', @(params) => params[0] + params[1])
+      .serve()
 }, ends[1])
 
-var client = rpc.endpoint(ends[0])
-  .on_trace(@(direction, text) {
-    echo '${direction}: ${text}'
-  })
+var client = rpc.endpoint(ends[0]).on_trace(@(direction, text) {
+  echo '${direction}: ${text}'
+})
 
 client.request('add', [1, 2])
 client.close()

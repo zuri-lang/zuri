@@ -1,0 +1,219 @@
+/**
+ * Colouring the code blocks of a page.
+ *
+ * Every block is coloured as the page is built, so a reader's browser
+ * does no work and a page reads the same with scripts turned off. The
+ * markup names each piece of code by what it is, with classes such as
+ * `kw`, `str` and `com`, and the stylesheet decides how each one looks.
+ *
+ * | Language | Fence names |
+ * | --- | --- |
+ * | Zuri | `zuri`, `zu` |
+ * | A Zuri REPL session | `zuri-repl`, `repl` |
+ * | HTML and Wire | `html`, `htm`, `xhtml`, `wire` |
+ * | XML | `xml`, `svg`, `xsl`, `xslt`, `rss`, `atom`, `plist` |
+ * | JSON | `json`, `jsonc`, `json5`, `geojson` |
+ * | Shell scripts | `sh`, `bash`, `shell`, `zsh`, `ksh`, `fish` |
+ * | Terminal sessions | `console`, `terminal`, `shell-session`, `sh-session`, `shellsession` |
+ * | TOML | `toml` |
+ * | INI and `.env` | `ini`, `dosini`, `cfg`, `conf`, `properties`, `env`, `dotenv` |
+ * | JavaScript | `js`, `javascript`, `mjs`, `cjs` |
+ * | CSS | `css` |
+ *
+ * A block in any other language is shown as it is, escaped and
+ * uncoloured.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .data
+import .markup
+import .script
+import .shell
+import .spans { escape }
+import .zuri_lang
+
+# Each fence name, the highlighter it means, and how the block is
+# labelled on the page.
+var _LANGUAGES = {
+  zuri: ['zuri', 'Zuri'],
+  zu: ['zuri', 'Zuri'],
+  'zuri-repl': ['repl', 'REPL'],
+  repl: ['repl', 'REPL'],
+  html: ['html', 'HTML'],
+  htm: ['html', 'HTML'],
+  xhtml: ['html', 'XHTML'],
+  wire: ['wire', 'Wire'],
+  xml: ['xml', 'XML'],
+  svg: ['xml', 'SVG'],
+  xsl: ['xml', 'XSL'],
+  xslt: ['xml', 'XSLT'],
+  rss: ['xml', 'RSS'],
+  atom: ['xml', 'Atom'],
+  plist: ['xml', 'plist'],
+  json: ['json', 'JSON'],
+  jsonc: ['json', 'JSON'],
+  json5: ['json', 'JSON5'],
+  geojson: ['json', 'GeoJSON'],
+  sh: ['shell', 'Shell'],
+  bash: ['shell', 'Bash'],
+  shell: ['shell', 'Shell'],
+  zsh: ['shell', 'zsh'],
+  ksh: ['shell', 'ksh'],
+  fish: ['shell', 'fish'],
+  console: ['session', 'Terminal'],
+  terminal: ['session', 'Terminal'],
+  'shell-session': ['session', 'Terminal'],
+  'sh-session': ['session', 'Terminal'],
+  shellsession: ['session', 'Terminal'],
+  toml: ['toml', 'TOML'],
+  ini: ['ini', 'INI'],
+  dosini: ['ini', 'INI'],
+  cfg: ['ini', 'Config'],
+  conf: ['ini', 'Config'],
+  properties: ['ini', 'Properties'],
+  env: ['ini', '.env'],
+  dotenv: ['ini', '.env'],
+  js: ['js', 'JavaScript'],
+  javascript: ['js', 'JavaScript'],
+  mjs: ['js', 'JavaScript'],
+  cjs: ['js', 'JavaScript'],
+  css: ['css', 'CSS'],
+}
+
+# Fence names that mean plain text, and get no label.
+var _PLAIN = {
+  '': true,
+  text: true,
+  txt: true,
+  plain: true,
+  plaintext: true,
+  output: true,
+}
+
+/**
+ * The fence name in _info_, a code block's info string: its first word,
+ * up to a space or a comma, lower-cased. The rest of the info string is
+ * for other tools, as in `zuri,ignore`.
+ *
+ * @param ?string info
+ * @returns string
+ */
+def language_of(info: ?string) {
+  if info == nil {
+    return ''
+  }
+
+  var text = info.trim()
+  var end = 0
+
+  while end < text.length() and
+      !text[end].is_space() and
+      text[end] != ',' and
+      text[end] != '{' {
+    end++
+  }
+
+  var word = text[0, end].lower()
+
+  return word.starts_with('language-') ? word[9,] : word
+}
+
+/**
+ * Whether a block in _language_ is coloured.
+ *
+ * @param string language
+ * @returns bool
+ */
+def is_known(language: string) {
+  return _LANGUAGES.contains(language)
+}
+
+/**
+ * The name a block in _language_ is labelled with on the page: the
+ * language's own name for one this colours, the fence name as written
+ * for one it does not, and `nil` for plain text.
+ *
+ * A terminal session is labelled by what it shows: `Terminal` when
+ * commands were typed in it, and `Output` when it holds only what a
+ * program printed.
+ *
+ * @param string language
+ * @param ?string code
+ * @returns ?string
+ */
+def label(language: string, code: ?string) {
+  if _PLAIN.contains(language) {
+    return language == 'output' ? 'Output' : nil
+  }
+
+  var known = _LANGUAGES.get(language)
+
+  if known == nil {
+    return language
+  }
+
+  if known[0] == 'session' and code != nil and !shell.has_prompt(code) {
+    return 'Output'
+  }
+
+  return known[1]
+}
+
+/**
+ * _code_ as highlighted markup for a block in _language_, which is a
+ * fence name as `language_of()` gives it. Code in a language this does
+ * not colour is escaped and returned as it is.
+ *
+ * @param string code
+ * @param string language
+ * @returns string
+ */
+def highlight(code: string, language: string) {
+  var known = _LANGUAGES.get(language)
+
+  if known == nil {
+    return escape(code)
+  }
+
+  using known[0] {
+    when 'zuri' {
+      return zuri_lang.highlight(code)
+    }
+    when 'repl' {
+      return zuri_lang.highlight_repl(code)
+    }
+    when 'html' {
+      return markup.highlight(code, 'html')
+    }
+    when 'wire' {
+      return markup.highlight(code, 'wire')
+    }
+    when 'xml' {
+      return markup.highlight(code, 'xml')
+    }
+    when 'json' {
+      return data.highlight_json(code)
+    }
+    when 'toml' {
+      return data.highlight_toml(code)
+    }
+    when 'ini' {
+      return data.highlight_ini(code)
+    }
+    when 'shell' {
+      return shell.highlight(code)
+    }
+    when 'session' {
+      return shell.highlight_session(code)
+    }
+    when 'js' {
+      return script.highlight_js(code)
+    }
+    when 'css' {
+      return script.highlight_css(code)
+    }
+  }
+
+  return escape(code)
+}

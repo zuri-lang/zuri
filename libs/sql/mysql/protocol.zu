@@ -31,9 +31,7 @@ import ..errors { ConnectionError, ProtocolError, AuthenticationError }
 import .auth
 import .errors { raise_for }
 import .packets { Cursor, MAX_PAYLOAD, PacketStream, Writer }
-import .types {
-  UNSIGNED_FLAG, parameter_type, row_decoders, write_parameter,
-}
+import .types { UNSIGNED_FLAG, parameter_type, row_decoders, write_parameter }
 
 /** What the client asks for and what the server offers. */
 var CAPABILITIES = {
@@ -65,9 +63,7 @@ var CAPABILITIES = {
  * it sends where MySQL leaves reserved bytes. Bit 36 of the full set is
  * `0x10` here.
  */
-var MARIADB_CAPABILITIES = {
-  CACHE_METADATA: 0x00000010,
-}
+var MARIADB_CAPABILITIES = { CACHE_METADATA: 0x00000010 }
 
 /** What the server says about the session after each command. */
 var STATUS = {
@@ -338,9 +334,9 @@ class Protocol {
     }
 
     var count = self._cursor.reset(packet).lenenc_int()
-    var columns = self._metadata_follows(self._cursor) ?
-      self.read_columns(count, false, known) :
-      self._cached_columns(known, count)
+    var columns = self._metadata_follows(self._cursor)
+        ? self.read_columns(count, false, known)
+        : self._cached_columns(known, count)
     var decoders = self._decoders_for(columns, binary, known)
     var rows = []
     var row = self.read_row(decoders, binary, sql)
@@ -375,9 +371,9 @@ class Protocol {
       }
 
       var count = self._cursor.reset(packet).lenenc_int()
-      var columns = self._metadata_follows(self._cursor) ?
-        self.read_columns(count, false, nil) :
-        self._cached_columns(nil, count)
+      var columns = self._metadata_follows(self._cursor)
+          ? self.read_columns(count, false, nil)
+          : self._cached_columns(nil, count)
       var decoders = row_decoders(columns, binary)
       var row = self.read_row(decoders, binary, nil)
 
@@ -464,9 +460,9 @@ class Protocol {
       return nil
     }
 
-    return binary ?
-      self._read_binary_row(packet, decoders) :
-      self._read_text_row(packet, decoders)
+    return binary
+        ? self._read_binary_row(packet, decoders)
+        : self._read_text_row(packet, decoders)
   }
 
   /**
@@ -490,15 +486,15 @@ class Protocol {
     var parameter_count = cursor.int2()
 
     var parameters = parameter_count > 0
-      ? self.read_columns(parameter_count, false, nil)
-      : []
+        ? self.read_columns(parameter_count, false, nil)
+        : []
 
     # What the columns look like now is what every execution is checked
     # against.
     var known = { raws: [], columns: [], decoders: nil }
     var columns = column_count > 0
-      ? self.read_columns(column_count, false, known)
-      : []
+        ? self.read_columns(column_count, false, known)
+        : []
 
     self._known.set(id, known)
 
@@ -518,7 +514,8 @@ class Protocol {
    */
   execute(id: number, values: list, cursor_type: number, columns: list, sql) {
     self.send_command(
-      COMMANDS.STMT_EXECUTE, self._execute_payload(id, values, cursor_type),
+      COMMANDS.STMT_EXECUTE,
+      self._execute_payload(id, values, cursor_type),
     )
 
     var known = self._known.get(id, nil)
@@ -578,10 +575,7 @@ class Protocol {
       if _is_trailer(first, packet) {
         self._read_trailer(packet)
 
-        return {
-          rows,
-          done: (self._status & STATUS.LAST_ROW_SENT) != 0,
-        }
+        return { rows, done: (self._status & STATUS.LAST_ROW_SENT) != 0 }
       }
 
       rows.append(self._read_binary_row(packet, decoders))
@@ -681,7 +675,7 @@ class Protocol {
     if version != 10 {
       raise ProtocolError(
         'the server speaks handshake version ${version}; this adapter ' +
-          'speaks version 10',
+            'speaks version 10',
         { driver: 'mysql' },
       )
     }
@@ -745,12 +739,18 @@ class Protocol {
 
   # What this adapter asks for, kept to what the server also offers.
   _wanted_capabilities(options: dict, greeting: dict) {
-    var wanted = CAPABILITIES.PROTOCOL_41 | CAPABILITIES.SECURE_CONNECTION |
-      CAPABILITIES.LONG_PASSWORD | CAPABILITIES.LONG_FLAG |
-      CAPABILITIES.TRANSACTIONS | CAPABILITIES.PLUGIN_AUTH |
-      CAPABILITIES.PLUGIN_AUTH_LENENC_DATA | CAPABILITIES.MULTI_RESULTS |
-      CAPABILITIES.PS_MULTI_RESULTS | CAPABILITIES.DEPRECATE_EOF |
-      CAPABILITIES.SESSION_TRACK | CAPABILITIES.CONNECT_ATTRS
+    var wanted = CAPABILITIES.PROTOCOL_41 |
+        CAPABILITIES.SECURE_CONNECTION |
+        CAPABILITIES.LONG_PASSWORD |
+        CAPABILITIES.LONG_FLAG |
+        CAPABILITIES.TRANSACTIONS |
+        CAPABILITIES.PLUGIN_AUTH |
+        CAPABILITIES.PLUGIN_AUTH_LENENC_DATA |
+        CAPABILITIES.MULTI_RESULTS |
+        CAPABILITIES.PS_MULTI_RESULTS |
+        CAPABILITIES.DEPRECATE_EOF |
+        CAPABILITIES.SESSION_TRACK |
+        CAPABILITIES.CONNECT_ATTRS
 
     if options.get('database', nil) {
       wanted |= CAPABILITIES.CONNECT_WITH_DB
@@ -786,13 +786,13 @@ class Protocol {
     # rather than quietly given a readable connection. One that merely
     # preferred it carries on without.
     if (agreed & CAPABILITIES.SSL) == 0 and options.get('tls_required', false) {
-      raise ConnectionError(
-        'this server does not offer tls', { driver: 'mysql' },
-      )
+      raise ConnectionError('this server does not offer tls', {
+        driver: 'mysql',
+      })
     }
 
-    if compression != 'none'
-      and (agreed & (CAPABILITIES.ZSTD | CAPABILITIES.COMPRESS)) == 0 {
+    if compression != 'none' and
+        (agreed & (CAPABILITIES.ZSTD | CAPABILITIES.COMPRESS)) == 0 {
       raise ConnectionError(
         'this server does not offer ${compression} compression',
         { driver: 'mysql' },
@@ -807,7 +807,7 @@ class Protocol {
 
     if (agreed & CAPABILITIES.DEPRECATE_EOF) != 0 {
       self._extended = self._server_extended &
-        MARIADB_CAPABILITIES.CACHE_METADATA
+          MARIADB_CAPABILITIES.CACHE_METADATA
     }
 
     return agreed
@@ -847,7 +847,7 @@ class Protocol {
     if known == nil or known.columns.length() != count {
       raise ProtocolError(
         'the server left out the column definitions of a result this ' +
-          'connection has none of',
+            'connection has none of',
         { driver: 'mysql' },
       )
     }
@@ -865,8 +865,13 @@ class Protocol {
     self._stream.write_packet(writer.payload())
   }
 
-  _send_handshake_response(options: dict, capabilities: number, plugin: string,
-    scramble, password: string) {
+  _send_handshake_response(
+    options: dict,
+    capabilities: number,
+    plugin: string,
+    scramble,
+    password: string,
+  ) {
     var response = auth.response_for(plugin, password, scramble, self._private)
 
     var writer = Writer()
@@ -905,8 +910,9 @@ class Protocol {
 
     writer.lenenc_string('_client_name').lenenc_string('zuri')
     writer.lenenc_string('_client_version').lenenc_string('1')
-    writer.lenenc_string('program_name')
-      .lenenc_string(options.get('program', 'zuri') or 'zuri')
+    writer
+        .lenenc_string('program_name')
+        .lenenc_string(options.get('program', 'zuri') or 'zuri')
 
     return writer.payload()
   }
@@ -914,7 +920,10 @@ class Protocol {
   # Works through whatever else the server asks for until it either
   # accepts the connection or refuses it.
   _finish_authentication(
-    plugin: string, scramble, password: string, options: dict,
+    plugin: string,
+    scramble,
+    password: string,
+    options: dict,
   ) {
     var current = plugin
     var nonce = scramble
@@ -943,14 +952,15 @@ class Protocol {
         # The hash based plugins' 20 byte scramble comes with a zero after
         # it. Ed25519's 32 bytes come as they are, and the last of them
         # is as likely to be zero as any other, so they are kept whole.
-        if current != auth.ED25519 and nonce.length() > 0
-          and nonce[nonce.length() - 1] == 0 {
+        if current != auth.ED25519 and
+            nonce.length() > 0 and
+            nonce[nonce.length() - 1] == 0 {
           nonce = nonce[0, nonce.length() - 1]
         }
 
-        self._send_auth(auth.response_for(
-          current, password, nonce, self._private,
-        ))
+        self._send_auth(
+          auth.response_for(current, password, nonce, self._private),
+        )
 
         continue
       }
@@ -970,8 +980,13 @@ class Protocol {
 
   # The plugin specific middle of an exchange, which only the two RSA
   # plugins have.
-  _continue_authentication(plugin: string, packet, password: string, scramble,
-    options: dict) {
+  _continue_authentication(
+    plugin: string,
+    packet,
+    password: string,
+    scramble,
+    options: dict,
+  ) {
     var body = packet[1, packet.length()]
 
     if plugin == auth.CACHING_SHA2 and body.length() == 1 {
@@ -986,7 +1001,7 @@ class Protocol {
       if marker != 4 {
         raise ProtocolError(
           'the server asked for something this adapter does not ' +
-            'understand while authenticating',
+              'understand while authenticating',
           { driver: 'mysql' },
         )
       }
@@ -1044,8 +1059,8 @@ class Protocol {
 
       raise ProtocolError(
         'the server asked this client to send the file ${name}, which ' +
-          'is refused; pass local_infile to allow it, and only to a ' +
-          'server you trust with the files this process can read',
+            'is refused; pass local_infile to allow it, and only to a ' +
+            'server you trust with the files this process can read',
         { driver: 'mysql' },
       )
     }
@@ -1058,7 +1073,7 @@ class Protocol {
 
       raise ProtocolError(
         'local_infile has to be a function taking a file name and ' +
-          'returning its contents, not ${typeof(reader)}',
+            'returning its contents, not ${typeof(reader)}',
         { driver: 'mysql' },
       )
     }
@@ -1231,8 +1246,8 @@ class Protocol {
 
     iter var index = 0; index < values.length(); index++ {
       if values[index] == nil {
-        nulls[(index / 8).floor()] = nulls[(index / 8).floor()]
-          | (1 << (index % 8))
+        nulls[(index / 8).floor()] = nulls[(index / 8).floor()] |
+            (1 << (index % 8))
       }
     }
 
@@ -1283,17 +1298,14 @@ class Protocol {
       sqlstate = cursor.fixed(5).to_string()
     }
 
-    raise_for(
-      { code, sqlstate, message: cursor.rest().to_string() },
-      sql,
-    )
+    raise_for({ code, sqlstate, message: cursor.rest().to_string() }, sql)
   }
 
   _require_open() {
     if self._closed {
-      raise ConnectionError(
-        'this connection has been closed', { driver: 'mysql' },
-      )
+      raise ConnectionError('this connection has been closed', {
+        driver: 'mysql',
+      })
     }
   }
 }

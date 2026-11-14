@@ -47,38 +47,46 @@ describe('select', @{
 
   it('leaves out what never belongs in a package', @{
     make([
-      'project.toml', 'index.zu', 'app/index.zu', '.zuri/libs/x/index.zu',
-      '.git/HEAD', 'tmp/scratch.zu', 'debug.log', 'project.lock',
+      'project.toml',
+      'index.zu',
+      'app/index.zu',
+      '.zuri/libs/x/index.zu',
+      '.git/HEAD',
+      'tmp/scratch.zu',
+      'debug.log',
+      'project.lock',
       'app/tmp/kept.zu',
     ])
 
     var found = select(ROOT, { use_git: false })
 
-    expect(found.files).to_equal([
-      'app/index.zu', 'app/tmp/kept.zu', 'index.zu', 'project.toml',
-    ])
+    expect(
+      found.files,
+    ).to_equal(['app/index.zu', 'app/tmp/kept.zu', 'index.zu', 'project.toml'])
   })
 
   it('holds back secrets unless include names them', @{
     make([
-      'project.toml', '.env', 'config/.env.production', 'keys/server.pem',
+      'project.toml',
+      '.env',
+      'config/.env.production',
+      'keys/server.pem',
       'index.zu',
     ])
 
     var found = select(ROOT, { use_git: false })
 
-    expect(found.secrets).to_equal([
-      '.env', 'config/.env.production', 'keys/server.pem',
-    ])
+    expect(found.secrets)
+        .to_equal(['.env', 'config/.env.production', 'keys/server.pem'])
     expect(found.files).to_equal(['index.zu', 'project.toml'])
 
-    var named = select(
-      ROOT, { use_git: false, include: ['index.zu', 'keys/server.pem'] },
-    )
+    var named = select(ROOT, {
+      use_git: false,
+      include: ['index.zu', 'keys/server.pem'],
+    })
 
-    expect(named.files).to_equal([
-      'index.zu', 'keys/server.pem', 'project.toml',
-    ])
+    expect(named.files)
+        .to_equal(['index.zu', 'keys/server.pem', 'project.toml'])
   })
 
   it('narrows to include, and takes out exclude, keeping project.toml', @{
@@ -107,7 +115,11 @@ describe('select', @{
 describe('looks_secret', @{
   it('knows the usual names', @{
     for name in [
-      '.env', '.env.local', 'id_rsa', 'id_ed25519.pub', 'a/b/cert.key',
+      '.env',
+      '.env.local',
+      'id_rsa',
+      'id_ed25519.pub',
+      'a/b/cert.key',
       '.netrc',
     ] {
       expect(looks_secret(name)).to_be_true()

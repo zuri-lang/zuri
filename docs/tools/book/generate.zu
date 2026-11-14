@@ -28,16 +28,66 @@ var OUT = os.join_paths(ROOT, 'docs', 'book', 'src')
 # the pages appear in SUMMARY.md, and it runs from the types a reader
 # meets first to the ones they meet last.
 var TYPES = [
-  { stub: 'string',  page: 'appendix-05-01-string.md',  title: 'String Methods',     chapter: 'ch04-01-strings.md' },
-  { stub: 'number',  page: 'appendix-05-02-number.md',  title: 'Number Methods',     chapter: 'ch04-02-numbers.md' },
-  { stub: 'bigint',  page: 'appendix-05-03-bigint.md',  title: 'Bigint Methods',     chapter: 'ch04-02-numbers.md' },
-  { stub: 'bool',    page: 'appendix-05-04-bool.md',    title: 'Boolean Methods',    chapter: 'ch03-02-data-types.md' },
-  { stub: 'list',    page: 'appendix-05-05-list.md',    title: 'List Methods',       chapter: 'ch04-03-lists.md' },
-  { stub: 'dict',    page: 'appendix-05-06-dict.md',    title: 'Dictionary Methods', chapter: 'ch04-04-dictionaries.md' },
-  { stub: 'range',   page: 'appendix-05-07-range.md',   title: 'Range Methods',      chapter: 'ch04-05-ranges-and-iteration.md' },
-  { stub: 'bytes',   page: 'appendix-05-08-bytes.md',   title: 'Bytes Methods',      chapter: 'ch10-00-binary-data.md' },
-  { stub: 'file',    page: 'appendix-05-09-file.md',    title: 'File Methods',       chapter: 'ch09-00-files.md' },
-  { stub: 'function', page: 'appendix-05-10-function.md', title: 'Function Methods', chapter: 'ch05-01-defining-functions.md' },
+  {
+    stub: 'string',
+    page: 'appendix-05-01-string.md',
+    title: 'String Methods',
+    chapter: 'ch04-01-strings.md',
+  },
+  {
+    stub: 'number',
+    page: 'appendix-05-02-number.md',
+    title: 'Number Methods',
+    chapter: 'ch04-02-numbers.md',
+  },
+  {
+    stub: 'bigint',
+    page: 'appendix-05-03-bigint.md',
+    title: 'Bigint Methods',
+    chapter: 'ch04-02-numbers.md',
+  },
+  {
+    stub: 'bool',
+    page: 'appendix-05-04-bool.md',
+    title: 'Boolean Methods',
+    chapter: 'ch03-02-data-types.md',
+  },
+  {
+    stub: 'list',
+    page: 'appendix-05-05-list.md',
+    title: 'List Methods',
+    chapter: 'ch04-03-lists.md',
+  },
+  {
+    stub: 'dict',
+    page: 'appendix-05-06-dict.md',
+    title: 'Dictionary Methods',
+    chapter: 'ch04-04-dictionaries.md',
+  },
+  {
+    stub: 'range',
+    page: 'appendix-05-07-range.md',
+    title: 'Range Methods',
+    chapter: 'ch04-05-ranges-and-iteration.md',
+  },
+  {
+    stub: 'bytes',
+    page: 'appendix-05-08-bytes.md',
+    title: 'Bytes Methods',
+    chapter: 'ch10-00-binary-data.md',
+  },
+  {
+    stub: 'file',
+    page: 'appendix-05-09-file.md',
+    title: 'File Methods',
+    chapter: 'ch09-00-files.md',
+  },
+  {
+    stub: 'function',
+    page: 'appendix-05-10-function.md',
+    title: 'Function Methods',
+    chapter: 'ch05-01-defining-functions.md',
+  },
 ]
 
 def main() {
@@ -62,7 +112,10 @@ def main() {
     echo '${spec.page}: ${entries.length()} methods'
   }
 
-  file(os.join_paths(OUT, 'appendix-05-type-methods.md'), 'w').write(render_index_page(TYPES, counts))
+  file(
+    os.join_paths(OUT, 'appendix-05-type-methods.md'),
+    'w',
+  ).write(render_index_page(TYPES, counts))
 
   var builtins_source = file(os.join_paths(STUBS, '_builtins.stub.zu')).read()
   var builtins = parse_functions(builtins_source)

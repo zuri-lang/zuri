@@ -24,9 +24,10 @@ def test_insert() {
   assert returning.sql.ends_with('returning "id"')
 
   # A raw fragment is written out; everything else is bound.
-  var raw = crud.insert(
-    sqlite, 'posts', { title: 'Hi', at: sql.raw('now()') }, nil,
-  )
+  var raw = crud.insert(sqlite, 'posts', {
+    title: 'Hi',
+    at: sql.raw('now()'),
+  }, nil)
   assert raw.sql == 'insert into "posts" ("title", "at") values (?1, now())'
   assert raw.values == ['Hi']
 
@@ -40,7 +41,7 @@ def test_insert_many() {
   ])
 
   assert built.sql ==
-    'insert into "points" ("x", "y") values (?1, ?2), (?3, ?4)'
+      'insert into "points" ("x", "y") values (?1, ?2), (?3, ?4)'
   assert built.values == [1, 2, 3, 4]
 
   # Every row has to name the same columns, since a missing column and
@@ -48,7 +49,10 @@ def test_insert_many() {
   var ragged = false
 
   catch {
-    crud.insert_many(sqlite, 'points', [{ x: 1, y: 2 }, { x: 3 }])
+    crud.insert_many(sqlite, 'points', [
+      { x: 1, y: 2 },
+      { x: 3 },
+    ])
   } as error {
     ragged = instance_of(error, QueryError)
   }
@@ -80,7 +84,9 @@ def test_where() {
   assert missing.values == []
 
   # A list means IN, and each member is bound.
-  var any_of = crud.where(sqlite, { a: [1, 2, 3] }, 1)
+  var any_of = crud.where(sqlite, {
+    a: [1, 2, 3],
+  }, 1)
   assert any_of.clause == ' where "a" in (?1, ?2, ?3)'
   assert any_of.values == [1, 2, 3]
 
@@ -103,10 +109,13 @@ def test_update() {
 
   # A raw fragment on the left of an assignment reads the column.
   var bumped = crud.update(
-    sqlite, 'posts', { views: sql.raw('"views" + 1') }, { id: 7 },
+    sqlite,
+    'posts',
+    { views: sql.raw('"views" + 1') },
+    { id: 7 },
   )
-  assert bumped.sql
-    == 'update "posts" set "views" = "views" + 1 where "id" = ?1'
+  assert bumped.sql ==
+      'update "posts" set "views" = "views" + 1 where "id" = ?1'
   assert bumped.values == [7]
 
   var nothing = false
@@ -137,18 +146,23 @@ def test_delete() {
 def test_select() {
   assert crud.select(sqlite, 'posts', nil, nil).sql == 'select * from "posts"'
 
-  var built = crud.select(sqlite, 'posts', { ok: true }, {
-    columns: ['id', 'title'],
-    order: ['title desc', 'id'],
-    limit: 10,
-    offset: 5,
-  })
+  var built = crud.select(
+    sqlite,
+    'posts',
+    { ok: true },
+    {
+      columns: ['id', 'title'],
+      order: ['title desc', 'id'],
+      limit: 10,
+      offset: 5,
+    },
+  )
 
   # A term that names no direction is left without one, since SQL
   # already orders ascending by default.
   assert built.sql ==
-    'select "id", "title" from "posts" where "ok" = ?1 ' +
-      'order by "title" desc, "id" limit 10 offset 5'
+      'select "id", "title" from "posts" where "ok" = ?1 ' +
+          'order by "title" desc, "id" limit 10 offset 5'
   assert built.values == [true]
 
   # A limit goes into the statement text rather than being bound, since

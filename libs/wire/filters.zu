@@ -34,8 +34,15 @@ import date as _date
 
 import .escape
 import .values {
-  Safe, compare, is_empty, is_safe, safe, stringify, truthy,
-  type_name, unwrap,
+  Safe,
+  compare,
+  is_empty,
+  is_safe,
+  safe,
+  stringify,
+  truthy,
+  type_name,
+  unwrap,
 }
 
 # --------------------------------------------------------------------
@@ -90,8 +97,11 @@ def escape_value(value, context) {
   }
 
   var known = [
-    escape.CONTEXT_TEXT, escape.CONTEXT_ATTRIBUTE, escape.CONTEXT_URL,
-    escape.CONTEXT_SCRIPT, escape.CONTEXT_STYLE,
+    escape.CONTEXT_TEXT,
+    escape.CONTEXT_ATTRIBUTE,
+    escape.CONTEXT_URL,
+    escape.CONTEXT_SCRIPT,
+    escape.CONTEXT_STYLE,
   ]
 
   if !known.contains(wanted) {
@@ -282,9 +292,8 @@ def replace(value, search, replacement) {
  * @throws ArgumentError when _width_ is missing or not a number.
  */
 def lpad(value, width, fill) {
-  return stringify(unwrap(value)).lpad(
-    _pad_width('lpad', width), _pad_fill(fill),
-  )
+  return stringify(unwrap(value))
+      .lpad(_pad_width('lpad', width), _pad_fill(fill))
 }
 
 /**
@@ -298,9 +307,8 @@ def lpad(value, width, fill) {
  * @throws ArgumentError when _width_ is missing or not a number.
  */
 def rpad(value, width, fill) {
-  return stringify(unwrap(value)).rpad(
-    _pad_width('rpad', width), _pad_fill(fill),
-  )
+  return stringify(unwrap(value))
+      .rpad(_pad_width('rpad', width), _pad_fill(fill))
 }
 
 /**
@@ -385,13 +393,18 @@ def slug(value) {
 }
 
 /**
- * The value percent encoded for use inside a URL.
+ * The value percent encoded for use inside a URL, as `url.encode()`
+ * encodes it. Reserved characters such as `/`, `&` and `#` are kept
+ * unless _reserved_ is `false`, which is what one value in a query
+ * needs: `/search?q={{ query|url_encode(false) }}`.
  *
  * @param any value
+ * @param ?bool reserved: Default `true`. Whether the reserved
+ *    characters are kept as they are.
  * @returns string
  */
-def url_encode(value) {
-  return _url.encode(stringify(unwrap(value)))
+def url_encode(value, reserved: ?bool) {
+  return _url.encode(stringify(unwrap(value)), false, reserved)
 }
 
 /**
@@ -531,7 +544,9 @@ def number_format(value, places, point, separator) {
   var digits = 0
   if places != nil {
     if !is_number(places) or places < 0 {
-      raise ArgumentError('"number_format" needs a number of places of zero or more')
+      raise ArgumentError(
+        '"number_format" needs a number of places of zero or more',
+      )
     }
 
     digits = places
@@ -646,8 +661,10 @@ def length(value) {
     return 0
   }
 
-  if is_string(subject) or is_list(subject) or is_dict(subject) or
-    is_bytes(subject) {
+  if is_string(subject) or
+      is_list(subject) or
+      is_dict(subject) or
+      is_bytes(subject) {
     return subject.length()
   }
 
@@ -710,9 +727,11 @@ def join(value, glue) {
     between = stringify(glue)
   }
 
-  return between.join(_sequence('join', value).map(@(item) {
-    return stringify(unwrap(item))
-  }))
+  return between.join(
+    _sequence('join', value).map(@(item) {
+      return stringify(unwrap(item))
+    }),
+  )
 }
 
 /**
@@ -1133,8 +1152,8 @@ def _number(filter: string, value) {
 
   # A number that arrived as text, which is what a form field or a query
   # string always gives, is worth reading rather than refusing.
-  if is_string(subject)
-    and subject.trim().match('/^-?\\d+(\\.\\d+)?$/') != false {
+  if is_string(subject) and
+      subject.trim().match('/^-?\\d+(\\.\\d+)?$/') != false {
     return subject.trim().to_number()
   }
 

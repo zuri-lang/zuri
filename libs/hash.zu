@@ -484,9 +484,15 @@ def ripemd160(data, as_bytes) {
 
 # list of allowed hash functions allowed for computing hmac hash
 var _hmac_allowed = [
-  md4, md5, sha1,
-  sha224, sha256, sha384,
-  sha512, whirlpool, gost,
+  md4,
+  md5,
+  sha1,
+  sha224,
+  sha256,
+  sha384,
+  sha512,
+  whirlpool,
+  gost,
 ]
 
 /**
@@ -810,15 +816,17 @@ def pbkdf2(algorithm, password, salt, iterations, dk_len, as_bytes) {
   var algo_key = algorithm.lower()
   if !_algos.contains(algo_key) {
     raise Error(
-      'hash.pbkdf2: unsupported algorithm "' + algorithm + '". ' +
-        'Accepted values: md5, sha1, sha224, sha256, sha384, sha512.',
+      'hash.pbkdf2: unsupported algorithm "' +
+          algorithm +
+          '". ' +
+          'Accepted values: md5, sha1, sha224, sha256, sha384, sha512.',
     )
   }
 
   if !is_int(iterations) or iterations < 1 {
     raise Error(
       'hash.pbkdf2: iterations must be a positive integer >= 1, got: ' +
-        iterations,
+          iterations,
     )
   }
 
@@ -841,8 +849,14 @@ def pbkdf2(algorithm, password, salt, iterations, dk_len, as_bytes) {
   var max_len = 4294967295 * h_len
   if dk_len > max_len {
     raise Error(
-      'hash.pbkdf2: dk_len (' + dk_len + ') exceeds the maximum ' +
-        'allowed length (' + max_len + ') for algorithm "' + algorithm + '".',
+      'hash.pbkdf2: dk_len (' +
+          dk_len +
+          ') exceeds the maximum ' +
+          'allowed length (' +
+          max_len +
+          ') for algorithm "' +
+          algorithm +
+          '".',
     )
   }
 

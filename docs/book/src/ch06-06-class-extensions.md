@@ -74,7 +74,9 @@ something to say:
 
 ```zuri,ignore
 class AccountExtras > Account {
-  static shout(account) { return 'hi' }
+  static shout(account) {
+    return 'hi'
+  }
 }
 
 echo typeof(AccountExtras)

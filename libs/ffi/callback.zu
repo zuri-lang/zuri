@@ -28,7 +28,9 @@ class Callback {
   var _handle
 
   @new() {
-    raise FfiError('callbacks come from ffi.callback(), never from the Callback constructor')
+    raise FfiError(
+      'callbacks come from ffi.callback(), never from the Callback constructor',
+    )
   }
 
   /**

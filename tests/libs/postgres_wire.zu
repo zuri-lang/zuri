@@ -106,7 +106,8 @@ def test_capabilities() {
 
 def registry_roundtrip(value, oid) {
   return DEFAULT_REGISTRY.decode(
-    as_bytes(DEFAULT_REGISTRY.encode(value, oid)), oid,
+    as_bytes(DEFAULT_REGISTRY.encode(value, oid)),
+    oid,
   )
 }
 
@@ -155,8 +156,8 @@ def test_integers() {
 
   # A bigint int8 goes out byte for byte, sign-extended to eight.
   assert encode_int8(-1n) == bytes([255, 255, 255, 255, 255, 255, 255, 255])
-  assert encode_int8(9223372036854775807n)
-    == bytes([127, 255, 255, 255, 255, 255, 255, 255])
+  assert encode_int8(9223372036854775807n) ==
+      bytes([127, 255, 255, 255, 255, 255, 255, 255])
   assert encode_int8(-9223372036854775808n) == bytes([128, 0, 0, 0, 0, 0, 0, 0])
   assert encode_int8(4503599627370497) == bytes([0, 16, 0, 0, 0, 0, 0, 1])
 
@@ -174,8 +175,16 @@ def test_integers() {
 
   # Floats are read from their fields, which has to agree with the
   # encoder at the extremes as well as in the middle.
-  for value in [0, 1.5, -2.25, 5e-324, 2.2250738585072014e-308,
-    1.7976931348623157e308, 1 / 0, -1 / 0] {
+  for value in [
+    0,
+    1.5,
+    -2.25,
+    5e-324,
+    2.2250738585072014e-308,
+    1.7976931348623157e308,
+    1 / 0,
+    -1 / 0,
+  ] {
     assert registry_roundtrip(value, OIDS.Float8) == value
   }
 
@@ -214,7 +223,12 @@ def test_value_codecs() {
   assert roundtrip(3.5, OIDS.Float8) == 3.5
   assert roundtrip('héllo', OIDS.Text) == 'héllo'
   assert roundtrip(bytes([1, 2, 255]), OIDS.Bytea) == bytes([1, 2, 255])
-  assert roundtrip({ a: [1, 2] }, OIDS.Jsonb) == { a: [1, 2] }
+  assert roundtrip({
+        a: [1, 2],
+      }, OIDS.Jsonb) ==
+      {
+        a: [1, 2],
+      }
   assert roundtrip({ a: 1 }, OIDS.Json) == { a: 1 }
 
   var uuid = '550e8400-e29b-41d4-a716-446655440000'
@@ -256,11 +270,21 @@ def test_numeric() {
 
   # The reason `numeric` exists is that a double cannot hold these
   # exactly, so the codec must not put one in the middle.
-  for text in ['0', '1', '-1', '19.99', '-0.0001', '1000000',
-    '123456789.123456789', '0.10', '99999999999999999999.99'] {
+  for text in [
+    '0',
+    '1',
+    '-1',
+    '19.99',
+    '-0.0001',
+    '1000000',
+    '123456789.123456789',
+    '0.10',
+    '99999999999999999999.99',
+  ] {
     var original = Decimal(text)
     var back = registry.decode(
-      as_bytes(registry.encode(original, OIDS.Numeric)), OIDS.Numeric,
+      as_bytes(registry.encode(original, OIDS.Numeric)),
+      OIDS.Numeric,
     )
 
     assert instance_of(back, Decimal)
@@ -410,8 +434,12 @@ def test_command_tags() {
   assert type_name_of(OIDS.Int4) == 'int4'
   assert type_name_of(999999) == '999999'
 
-  assert describe_columns([{ name: 'a', oid: OIDS.Text }]) ==
-    [{ name: 'a', type: 'text' }]
+  assert describe_columns([
+        { name: 'a', oid: OIDS.Text },
+      ]) ==
+      [
+        { name: 'a', type: 'text' },
+      ]
 
   echo 'test_command_tags passed'
 }
@@ -421,18 +449,21 @@ def test_scram() {
   # example for SCRAM-SHA-256.
   var client_nonce = 'rOprNGfwEbeRWgbNEkqO'
   var server_first = 'r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,' +
-    's=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096'
+      's=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096'
 
   var proof = auth.client_proof(
-    'pencil', client_nonce, 'n=user,r=' + client_nonce, server_first,
+    'pencil',
+    client_nonce,
+    'n=user,r=' + client_nonce,
+    server_first,
   )
 
   assert proof.message ==
-    'c=biws,r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,' +
-      'p=dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ='
+      'c=biws,r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,' +
+          'p=dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ='
 
-  assert proof.server_signature
-    == '6rriTRBi23WpRR/wtup+mMhUZUn/dB5nLTJRsjl95G4='
+  assert proof.server_signature ==
+      '6rriTRBi23WpRR/wtup+mMhUZUn/dB5nLTJRsjl95G4='
 
   # The server proves itself too, and a wrong signature is rejected.
   auth.verify_server('v=${proof.server_signature}', proof.server_signature)
@@ -452,8 +483,12 @@ def test_scram() {
   var replayed = false
 
   catch {
-    auth.client_proof('pencil', client_nonce, 'n=,r=' + client_nonce,
-      'r=somethingelse,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096')
+    auth.client_proof(
+      'pencil',
+      client_nonce,
+      'n=,r=' + client_nonce,
+      'r=somethingelse,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096',
+    )
   } as error {
     replayed = instance_of(error, AuthenticationError)
   }

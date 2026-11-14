@@ -46,11 +46,14 @@ var _POOL_HEADROOM = 2
  * isolate, but a function belonging to a module is resolved there by
  * name, with its imports resolved again on that side.
  *
- * @param Channel connections: accepted sockets arrive here
+ * @param Channel connections: accepted sockets arrive here, and it
+ *    closes once nothing more will be accepted
+ * @param Channel halt: closed when the server is stopped, at which
+ *    point every connection is closed
  * @param function(1) setup: called once with this worker's server
  * @param dict options
  */
-def worker_main(connections, setup, options) {
+def worker_main(connections, halt, setup, options) {
   var instance = HttpServer(
     options.get('port', 8000),
     options.get('host', '127.0.0.1'),
@@ -67,22 +70,27 @@ def worker_main(connections, setup, options) {
 
   if cert_chain != nil {
     instance.use_tls(
-      cert_chain, private_key or cert_chain, options.get('tls', nil),
+      cert_chain,
+      private_key or cert_chain,
+      options.get('tls', nil),
     )
   }
 
+  instance.stop_with(halt)
   setup(instance)
 
   var loop = ConnectionLoop(
-    instance, options.get('max_connections_per_worker', _MAX_PER_WORKER),
+    instance,
+    options.get('max_connections_per_worker', _MAX_PER_WORKER),
   )
 
-  while true {
+  while !halt.is_closed() {
     var taken = _admit_waiting(loop, connections)
 
     # Nothing being watched and nothing waiting: block until the
     # acceptor has something, so an idle server costs nothing at all
-    # rather than spinning on a timeout.
+    # rather than spinning on a timeout. A stopped server closes
+    # `connections`, which ends the wait.
     if loop.is_empty() {
       if taken == 0 {
         var client = connections.recv()
@@ -101,6 +109,21 @@ def worker_main(connections, setup, options) {
   }
 
   loop.finish()
+  _close_waiting(connections)
+}
+
+# Closes every socket still waiting in `connections`, which no worker
+# will serve now.
+def _close_waiting(connections) {
+  var left = connections.try_recv()
+
+  while left != nil {
+    catch {
+      left.close()
+    }
+
+    left = connections.try_recv()
+  }
 }
 
 # How many connections one worker will take from the channel in a
@@ -168,6 +191,14 @@ def _admit_waiting(loop, connections) {
  * })
  * ```
  *
+ * Stopping the server, with that function or with `close()` on the
+ * server a worker was given, stops accepting connections. Every
+ * worker then closes the connections it holds, after giving what they
+ * have queued a chance to go out, and `serve()` returns. Reaching
+ * `max_connections` stops accepting too, but serves the connections
+ * already accepted until each of them closes, and `serve()` returns
+ * after the last.
+ *
  * @param function(1) setup
  * @param ?dict options: `port`, `host`, `workers`, `backlog`,
  *    `on_ready`, `max_connections` (stop after serving that many),
@@ -233,16 +264,17 @@ def serve(setup, options: ?dict) {
   if available < workers {
     raise HttpError(
       'cannot run ${workers} workers: the isolate pool has only ${available} ' +
-        'thread(s). Call isolate.configure(${workers + _POOL_HEADROOM}) before ' +
-        'anything else uses an isolate, or ask for fewer workers.',
+          'thread(s). Call isolate.configure(${workers + _POOL_HEADROOM}) before ' +
+          'anything else uses an isolate, or ask for fewer workers.',
     )
   }
 
   var connections = isolate.channel(backlog)
+  var halt = isolate.channel()
   var pool = []
 
   iter var i = 0; i < workers; i++ {
-    pool.append(isolate.spawn(worker_main, connections, setup, settings))
+    pool.append(isolate.spawn(worker_main, connections, halt, setup, settings))
   }
 
   var running = [true]
@@ -251,6 +283,7 @@ def serve(setup, options: ?dict) {
   if on_ready != nil {
     on_ready(listener.local_address(), @() {
       running[0] = false
+      halt.close()
       catch {
         listener.close()
       }
@@ -260,7 +293,9 @@ def serve(setup, options: ?dict) {
   var served = 0
 
   catch {
-    while running[0] {
+    # A worker's `close()` closes `halt` from that worker's isolate,
+    # which this sees within one accept interval.
+    while running[0] and !halt.is_closed() {
       var client = acceptor.next()
 
       # Nothing arrived within the interval. Round again, which is
@@ -286,13 +321,15 @@ def serve(setup, options: ?dict) {
     }
   }
 
+  _close_waiting(connections)
+
   catch {
     listener.close()
   }
 
   # A listener closed by `stop()` makes the accept that follows fail;
   # that is the shutdown path working, not an error to report.
-  if accept_error != nil and running[0] {
+  if accept_error != nil and running[0] and !halt.is_closed() {
     raise accept_error
   }
 }

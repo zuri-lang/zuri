@@ -11,24 +11,23 @@
  *
  * - `line`: a place to break. While its group stays on one line it is a
  *   space, or nothing when `soft`; once the group breaks it is a
- *   newline, and it always is when `hard`. One that is `kept` is a break
- *   the author wrote between two items of a fill, a newline while the
- *   fill's lines fit and an ordinary `line` once they do not.
+ *   newline, and it always is when `hard`.
  * - `group`: laid out on one line when it fits, otherwise broken as a
- *   whole. `broken` says it never fits.
+ *   whole. A group holding a line that always breaks is always broken,
+ *   and so is one made `broken`.
+ * - `first_fit`: several layouts of the same code, the first whose
+ *   opening line fits taken, and the last when none does.
+ * - `whole`: a layout of a `first_fit` taken only when all of its lines
+ *   fit.
+ * - `free`: what it holds decides its own breaks, even inside a layout
+ *   taken on one line.
  * - `fill`: parts and separators in turn, each separator breaking only
  *   when what follows it does not fit.
- * - `indent`: lines inside sit one level past the line it starts on.
  * - `nest`: lines inside sit one level past those of what holds it.
- * - `base`: lines inside sit at the level of the line it starts on.
  * - `if_break`: one document when its group breaks, another when not.
  * - `choose`: the first document when it fits on one line within a
  *   column limit, otherwise the second.
  * - `comment`: a doc block, its later lines moved along with its first.
- *
- * Breaking inside a part never forces the parts around it open. A group
- * holding a block lays out on one line up to where the block opens, so
- * `each(items, @{` stays together and only the block spreads out.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -36,11 +35,11 @@
 /**
  * One piece of a layout document that is neither text nor a list of
  * parts. Every kind is the same class, told apart by `t`, and uses the
- * fields its kind needs: `doc` for what a group, an indent or a branch
+ * fields its kind needs: `doc` for what a group, a nest or a branch
  * holds, `other` for the second branch of an `if_break` or a `choose`,
- * `parts` and `at` for a fill, `soft`, `hard` and `kept` for a line,
- * `broken` for a group, `limit` for a `choose`, and `text` and `column`
- * for a doc block.
+ * `parts` for the layouts of a `first_fit` and the parts of a fill, `at`
+ * for a fill, `soft` and `hard` for a line, `broken` for a group, `limit`
+ * for a `choose`, and `text` and `column` for a doc block.
  *
  * Build one with the functions below rather than by hand.
  */
@@ -53,10 +52,17 @@ class Doc {
   var broken = false
   var soft = false
   var hard = false
-  var kept = false
   var limit = 0
   var text = ''
   var column = 0
+
+  /**
+   * The width `flat_width()` found for a group or a `first_fit`, kept
+   * so that each is measured once however often it is asked.
+   *
+   * @type ?number
+   */
+  var width = nil
 
   /**
    * @param string t: The kind, one of those listed for this module.
@@ -67,12 +73,11 @@ class Doc {
 }
 
 # A line of the given sort.
-def _line(soft: bool, hard: bool, kept: bool) {
+def _line(soft: bool, hard: bool) {
   var line = Doc('line')
 
   line.soft = soft
   line.hard = hard
-  line.kept = kept
 
   return line
 }
@@ -89,24 +94,17 @@ def _holding(t: string, contents) {
 /**
  * A space on one line, a newline once the group holding it breaks.
  */
-var LINE = _line(false, false, false)
+var LINE = _line(false, false)
 
 /**
  * Nothing on one line, a newline once the group holding it breaks.
  */
-var SOFTLINE = _line(true, false, false)
+var SOFTLINE = _line(true, false)
 
 /**
  * A newline, always.
  */
-var HARDLINE = _line(false, true, false)
-
-/**
- * A newline the author wrote between two items of a list. It stays one
- * while every line of the list fits; once a line holding several items
- * runs past the width, the list is laid out again and this is a `LINE`.
- */
-var KEPTLINE = _line(false, true, true)
+var HARDLINE = _line(false, true)
 
 /**
  * An empty line followed by a newline, for a blank line kept between two
@@ -126,8 +124,7 @@ def group(contents) {
 }
 
 /**
- * A group that is always broken, for one whose own lines the author had
- * already broken.
+ * A group that is always broken.
  *
  * @param any contents
  * @returns Doc
@@ -138,6 +135,104 @@ def broken_group(contents) {
   held.broken = true
 
   return held
+}
+
+/**
+ * `contents` with the last group it holds at its top level broken, the
+ * group itself and not the ones inside it: the items of a list opened
+ * out under its `[` rather than the whole list kept on one line. Of a
+ * `first_fit`, its last layout is taken. Anything holding no group is
+ * left as it is.
+ *
+ * @param any contents
+ * @returns any
+ */
+def expanded(contents) {
+  var opened = _opened(contents)
+
+  return opened == nil ? contents : opened
+}
+
+# What `expanded()` gives for `contents`, or `nil` when it holds no
+# group to break.
+def _opened(contents) {
+  if is_list(contents) {
+    var index = contents.length() - 1
+
+    while index >= 0 {
+      var opened = _opened(contents[index])
+
+      if opened != nil {
+        var copy = contents[,]
+
+        copy[index] = opened
+
+        return copy
+      }
+
+      index -= 1
+    }
+
+    return nil
+  }
+
+  if !is_instance(contents) {
+    return nil
+  }
+
+  using contents.t {
+    when 'group' return broken_group(contents.doc)
+    when 'first_fit' return contents.parts.last()
+  }
+
+  return nil
+}
+
+/**
+ * Several layouts of the same code, most compact first. The printer
+ * takes the first whose opening line fits, up to its first line break,
+ * and the last when none does. Every layout but the last is laid out
+ * on one line apart from the groups it breaks itself, so a break any of
+ * them offers has to be in a broken group or a `free` part.
+ *
+ * @param list layouts
+ * @returns Doc
+ */
+def first_fit(layouts: list) {
+  if layouts.length() == 1 {
+    return layouts[0]
+  }
+
+  var choice = Doc('first_fit')
+
+  choice.parts = layouts
+
+  return choice
+}
+
+/**
+ * A layout of a `first_fit` taken only when every one of its lines
+ * fits, not just its first, with each group in it laid out flat. It is
+ * for a layout that is only worth having when nothing in it has to
+ * break any further.
+ *
+ * @param any contents
+ * @returns Doc
+ */
+def whole(contents) {
+  return _holding('whole', contents)
+}
+
+/**
+ * `contents` deciding its own breaks inside a layout otherwise laid out
+ * on one line, the way the arguments of the last call in a chain open
+ * out while the chain itself stays on its line.
+ *
+ * @param any contents
+ * @returns Doc
+ */
+def free(contents) {
+  return _holding('free', contents)
 }
 
 /**
@@ -169,18 +264,6 @@ def fill_from(parts: list, at: number) {
 }
 
 /**
- * Lines inside sit one level past the line this starts on, whatever
- * holds it. Every continuation of a statement is one level under its
- * first line this way, however deeply its parts are nested.
- *
- * @param any contents
- * @returns Doc
- */
-def indent(contents) {
-  return _holding('indent', contents)
-}
-
-/**
  * Lines inside sit one level past those of what holds this, the way a
  * block's body sits one level past the statement that owns it.
  *
@@ -192,14 +275,14 @@ def nest(contents) {
 }
 
 /**
- * Lines inside sit at the level of the line this starts on. A bracket's
- * closer returns this way to the line its opener is on.
+ * Lines inside sit two levels past those of what holds this, the indent
+ * of an expression continued onto another line.
  *
  * @param any contents
  * @returns Doc
  */
-def base(contents) {
-  return _holding('base', contents)
+def continued(contents) {
+  return nest(nest(contents))
 }
 
 /**
@@ -255,7 +338,8 @@ def comment(text: string, column: number) {
 
 /**
  * The width of `contents` laid out on one line, or `-1` when it cannot
- * be: it holds a line that always breaks, or text that spans lines.
+ * be: it holds a line that always breaks, a broken group, or text that
+ * spans lines.
  *
  * @param any contents
  * @returns number
@@ -290,7 +374,18 @@ def flat_width(contents) {
       return contents.soft ? 0 : 1
     }
     when 'group' {
-      return contents.broken ? -1 : flat_width(contents.doc)
+      if contents.width == nil {
+        contents.width = contents.broken ? -1 : flat_width(contents.doc)
+      }
+
+      return contents.width
+    }
+    when 'first_fit' {
+      if contents.width == nil {
+        contents.width = flat_width(contents.parts[0])
+      }
+
+      return contents.width
     }
     when 'fill' {
       return flat_width(contents.parts[contents.at,])

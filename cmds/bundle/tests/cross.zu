@@ -48,8 +48,10 @@ def bundle(words: list) {
 }
 
 before_all(@{
-  put(os.join_paths(PROJECT, 'project.toml'),
-    '[project]\nname = "greeter"\nversion = "1.2.0"\ndescription = "Greets"\n')
+  put(
+    os.join_paths(PROJECT, 'project.toml'),
+    '[project]\nname = "greeter"\nversion = "1.2.0"\ndescription = "Greets"\n',
+  )
   put(os.join_paths(PROJECT, 'project.lock'), 'version = 1\n')
   put(os.join_paths(PROJECT, 'index.zu'), 'echo "hello"\n')
   put(os.join_paths(PROJECT, 'app', 'words.zu'), 'var GREETING = "hello"\n')
@@ -74,7 +76,10 @@ describe('another platform', @{
     var inside = os.join_paths(out, 'greeter-1.2.0-${target}')
 
     for path in [
-      'greeter.exe', 'bundle.toml', 'libs/json.zu', 'app/index.zu',
+      'greeter.exe',
+      'bundle.toml',
+      'libs/json.zu',
+      'app/index.zu',
       'app/app/words.zu',
     ] {
       expect(file(os.join_paths(inside, path)).exists()).to_be_true()
@@ -84,7 +89,12 @@ describe('another platform', @{
   it('builds a directory for Linux on ARM with the marker saying so', @{
     var target = 'aarch64-unknown-linux-gnu'
     var built = bundle([
-      '--format', 'dir', '--target', target, '--runtime', runtime(target),
+      '--format',
+      'dir',
+      '--target',
+      target,
+      '--runtime',
+      runtime(target),
     ])
 
     expect(built.status).to_equal(0)
@@ -93,21 +103,26 @@ describe('another platform', @{
     var marker = file(os.join_paths(dir, 'bundle.toml')).read()
 
     expect(marker).to_contain('target = "${target}"')
-    expect(file(os.join_paths(
-      dir, 'greeter',
-    )).read()).to_equal('a ${target} runtime\n')
+    expect(file(os.join_paths(dir, 'greeter')).read())
+        .to_equal('a ${target} runtime\n')
   })
 
   it('appends the payload and its trailer to a single-file runtime', @{
     var target = 'aarch64-unknown-linux-gnu'
     var built = bundle([
-      '--format', 'exe', '--target', target, '--runtime', runtime(target),
+      '--format',
+      'exe',
+      '--target',
+      target,
+      '--runtime',
+      runtime(target),
     ])
 
     expect(built.status).to_equal(0)
 
     var data = file(
-      os.join_paths(PROJECT, 'dist', 'greeter-1.2.0-${target}'), 'rb',
+      os.join_paths(PROJECT, 'dist', 'greeter-1.2.0-${target}'),
+      'rb',
     ).read()
 
     var runtime_text = 'a ${target} runtime\n'
@@ -125,13 +140,19 @@ describe('another platform', @{
     runtime_file.close()
 
     var built = bundle([
-      '--format', 'exe', '--target', target, '--runtime', dir,
+      '--format',
+      'exe',
+      '--target',
+      target,
+      '--runtime',
+      dir,
     ])
 
     expect(built.status).to_equal(0)
 
     var data = file(
-      os.join_paths(PROJECT, 'dist', 'greeter-1.2.0-${target}'), 'rb',
+      os.join_paths(PROJECT, 'dist', 'greeter-1.2.0-${target}'),
+      'rb',
     ).read()
     var found = commands(data)
     var end = found.get('signature').dataoff
@@ -147,11 +168,15 @@ describe('another platform', @{
     os.create_dir(empty, 0c755, true)
 
     var built = bundle([
-      '--target', 'aarch64-unknown-linux-gnu', '--runtime', empty,
+      '--target',
+      'aarch64-unknown-linux-gnu',
+      '--runtime',
+      empty,
     ])
 
     expect(built.status).not.to_equal(0)
-    expect(built.all).to_contain('does not hold a aarch64-unknown-linux-gnu runtime')
+    expect(built.all)
+        .to_contain('does not hold a aarch64-unknown-linux-gnu runtime')
   })
 
   it('refuses a platform zuri is not released for', @{

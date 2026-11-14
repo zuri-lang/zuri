@@ -10,7 +10,10 @@
 import _sqlite
 
 import ..driver {
-  Driver, default_capabilities, READ_COMMITTED, REPEATABLE_READ,
+  Driver,
+  default_capabilities,
+  READ_COMMITTED,
+  REPEATABLE_READ,
   SERIALIZABLE,
 }
 import ..errors { ConnectionError, QueryError }
@@ -85,9 +88,11 @@ class SqliteDriver < Driver {
     caps.set('named_parameters', true)
     caps.set('last_insert_id', true)
     caps.set('returning', true)
-    caps.set(
-      'isolation_levels', [READ_COMMITTED, REPEATABLE_READ, SERIALIZABLE],
-    )
+    caps.set('isolation_levels', [
+      READ_COMMITTED,
+      REPEATABLE_READ,
+      SERIALIZABLE,
+    ])
     caps.set('server_side_cursors', true)
     caps.set('upsert', true)
     caps.set('concurrent_writers', false)
@@ -155,7 +160,7 @@ class SqliteDriver < Driver {
     if !is_string(dsn) {
       raise ConnectionError(
         'a sqlite connection string is a string or a dictionary, ' +
-          'not ${typeof(dsn)}',
+            'not ${typeof(dsn)}',
         { driver: 'sqlite' },
       )
     }
@@ -165,7 +170,7 @@ class SqliteDriver < Driver {
     if text.is_empty() {
       raise ConnectionError(
         'a sqlite connection string cannot be empty; use ${MEMORY} for ' +
-          'an in-memory database',
+            'an in-memory database',
         { driver: 'sqlite' },
       )
     }
@@ -253,7 +258,7 @@ class SqliteDriver < Driver {
     if !options.contains('path') or !is_string(options.path) {
       raise ConnectionError(
         'sqlite connection options need a path; use ${MEMORY} for an ' +
-          'in-memory database',
+            'in-memory database',
         { driver: 'sqlite' },
       )
     }
@@ -340,7 +345,7 @@ class SqliteDriver < Driver {
       default {
         raise QueryError(
           'unknown sqlite mode ${options.mode}; it is one of ro, rw, ' +
-            'rwc or memory',
+              'rwc or memory',
           { driver: 'sqlite' },
         )
       }

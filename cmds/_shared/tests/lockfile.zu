@@ -3,7 +3,12 @@
 import test { * }
 
 import ..lockfile {
-  Locked, Lockfile, LockfileError, Source, parse, parse_source,
+  Locked,
+  Lockfile,
+  LockfileError,
+  Source,
+  parse,
+  parse_source,
 }
 
 describe('sources', @{
@@ -42,19 +47,23 @@ describe('the file', @{
   it('comes back from its text as it went in', @{
     var lock = Lockfile()
 
-    lock.put(Locked({
-      name: 'b-pkg',
-      version: '2.0.0',
-      source: parse_source('registry+https://r.test'),
-      checksum: 'sha256:' + 'a' * 64,
-      dependencies: ['z', 'a'],
-    }))
-    lock.put(Locked({
-      name: 'a-pkg',
-      version: '1.0.0',
-      source: parse_source('path+../a'),
-      dev: true,
-    }))
+    lock.put(
+      Locked({
+        name: 'b-pkg',
+        version: '2.0.0',
+        source: parse_source('registry+https://r.test'),
+        checksum: 'sha256:' + 'a' * 64,
+        dependencies: ['z', 'a'],
+      }),
+    )
+    lock.put(
+      Locked({
+        name: 'a-pkg',
+        version: '1.0.0',
+        source: parse_source('path+../a'),
+        dev: true,
+      }),
+    )
 
     var again = parse(lock.to_string())
 

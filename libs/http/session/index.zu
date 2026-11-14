@@ -177,7 +177,7 @@ var ID_LENGTH = 43
 # The characters base64url uses, which is the whole of what an
 # identifier may contain.
 var _ID_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' +
-  '0123456789-_'
+    '0123456789-_'
 
 # Every option `session()` accepts, with the value each takes when it
 # is not given.
@@ -717,8 +717,8 @@ class Session {
 
     var now = time()
 
-    if self._config.lifetime != nil
-      and record.created + self._config.lifetime <= now {
+    if self._config.lifetime != nil and
+        record.created + self._config.lifetime <= now {
       self._store.destroy(key)
 
       return
@@ -762,13 +762,13 @@ class Session {
   # runs out first, measured from the last time it was written or
   # touched.
   _expiry() {
-    var idle = self._config.idle_timeout == nil ?
-      nil :
-      self._touched + self._config.idle_timeout
+    var idle = self._config.idle_timeout == nil
+        ? nil
+        : self._touched + self._config.idle_timeout
 
-    var absolute = self._config.lifetime == nil ?
-      nil :
-      self._created + self._config.lifetime
+    var absolute = self._config.lifetime == nil
+        ? nil
+        : self._created + self._config.lifetime
 
     if idle == nil {
       return absolute
@@ -793,7 +793,7 @@ class Session {
     if payload.length() > self._config.max_size {
       raise SessionError(
         'the session serialises to ${payload.length()} bytes, over the ' +
-          '${self._config.max_size} byte limit',
+            '${self._config.max_size} byte limit',
       )
     }
 
@@ -910,16 +910,16 @@ def _configure(options) {
 
   # The default interval is capped at half the idle window, so that a
   # short idle timeout does not collide with an interval nobody chose.
-  if !given.contains('touch_interval')
-    and config.idle_timeout != nil
-    and config.idle_timeout / 2 < config.touch_interval {
+  if !given.contains('touch_interval') and
+      config.idle_timeout != nil and
+      config.idle_timeout / 2 < config.touch_interval {
     config['touch_interval'] = config.idle_timeout / 2
   }
 
   if config.idle_timeout == nil and config.lifetime == nil {
     raise SessionError(
       'a session needs at least one of idle_timeout and lifetime; with ' +
-        'neither, nothing ever expires',
+          'neither, nothing ever expires',
     )
   }
 
@@ -928,32 +928,30 @@ def _configure(options) {
   _positive(config, 'touch_interval', false)
   _positive(config, 'max_size', false)
 
-  if config.idle_timeout != nil
-    and config.touch_interval >= config.idle_timeout {
+  if config.idle_timeout != nil and
+      config.touch_interval >= config.idle_timeout {
     raise SessionError(
       'touch_interval has to be shorter than idle_timeout, or a session in ' +
-        'constant use still expires because nothing moves its expiry',
+          'constant use still expires because nothing moves its expiry',
     )
   }
 
   if !_SAME_SITE.contains(config.same_site) {
     raise SessionError(
       "same_site is '${config.same_site}'; it has to be one of " +
-        "${', '.join(_SAME_SITE)}",
+          "${', '.join(_SAME_SITE)}",
     )
   }
 
   if config.same_site == 'None' and config.secure == false {
     raise SessionError(
       'same_site None is only stored by a browser on a Secure cookie, so ' +
-        'secure cannot be false alongside it',
+          'secure cannot be false alongside it',
     )
   }
 
   if config.store == nil {
-    config['store'] = FileStore(nil, {
-      gc_probability: config.gc_probability,
-    })
+    config['store'] = FileStore(nil, { gc_probability: config.gc_probability })
   }
 
   return config
@@ -1027,7 +1025,8 @@ def _decode_cookie(value, secret) {
     id = value[0, ID_LENGTH]
 
     if !util.secure_equals(
-      value[ID_LENGTH + 1,], hash.hmac_sha256(secret, id),
+      value[ID_LENGTH + 1,],
+      hash.hmac_sha256(secret, id),
     ) {
       return nil
     }
@@ -1055,10 +1054,10 @@ def _decode_payload(payload) {
   var created = record.get('created', nil)
   var touched = record.get('touched', nil)
 
-  if !is_dict(data)
-    or !is_dict(flash)
-    or !is_number(created)
-    or !is_number(touched) {
+  if !is_dict(data) or
+      !is_dict(flash) or
+      !is_number(created) or
+      !is_number(touched) {
     return nil
   }
 

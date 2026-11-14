@@ -6,7 +6,7 @@
 
 ```zuri
 # Rates are quoted per thousand, not per unit.
-var rate = 0.0125  # 1.25%
+var rate = 0.0125 # 1.25%
 ```
 
 ## Block Comments

@@ -54,7 +54,8 @@ import sql
 
 var db = sql.open('sqlite://guide.db')
 
-db.exec_script("
+db.exec_script(
+  "
   drop table if exists posts;
   drop table if exists authors;
 
@@ -70,7 +71,8 @@ db.exec_script("
     views integer not null default 0,
     published boolean not null default 0
   );
-")
+",
+)
 
 var ada = db.insert('authors', { name: 'Ada Lovelace' })
 var grace = db.insert('authors', { name: 'Grace Hopper' })
@@ -108,7 +110,9 @@ import sql
 
 var db = sql.open('sqlite://guide.db')
 
-for post in db.query('select title, views from posts where published = ?', [true]) {
+for post in db.query('select title, views from posts where published = ?', [
+  true,
+]) {
   echo '${post.title}: ${post.views}'
 }
 
@@ -139,9 +143,9 @@ explicit about the rest.
 `open()` takes a connection string and returns a `Connection`.
 
 ```zuri,ignore
-sql.open('sqlite://./app.db')          # a file
-sql.open(':memory:')                   # a private database in memory
-sql.open('./app.db')                   # a bare path is SQLite
+sql.open('sqlite://./app.db') # a file
+sql.open(':memory:') # a private database in memory
+sql.open('./app.db') # a bare path is SQLite
 sql.open('postgres://localhost/app')
 sql.open('postgres://alice:secret@db.internal:5432/shop?sslmode=require')
 sql.open('host=localhost dbname=app user=alice')
@@ -235,10 +239,10 @@ for post in db.query('select * from posts') {
 For the shapes that come up constantly there are shorter forms:
 
 ```zuri,ignore
-db.fetch_one(sql, params)             # the first row, or nil
-db.fetch_all(sql, params)             # every row, as dictionaries
+db.fetch_one(sql, params) # the first row, or nil
+db.fetch_all(sql, params) # every row, as dictionaries
 db.fetch_value(sql, params, fallback) # the first column of the first row
-db.fetch_column(sql, params, column)  # one column's values, as a list
+db.fetch_column(sql, params, column) # one column's values, as a list
 ```
 
 ```zuri
@@ -304,7 +308,7 @@ var db = sql.open('sqlite://guide.db')
 
 echo db.fetch_column(
   'select title from posts where author_id = ? and published = ?',
-  [1, true]
+  [1, true],
 )
 
 db.close()
@@ -324,7 +328,7 @@ var db = sql.open('sqlite://guide.db')
 
 echo db.fetch_column(
   'select title from posts where views > :floor and views < :ceiling',
-  { floor: 100, ceiling: 1000 }
+  { floor: 100, ceiling: 1000 },
 )
 
 db.close()
@@ -447,7 +451,9 @@ import sql
 var db = sql.open(':memory:')
 db.exec('create table t (ok boolean, at datetime, doc json)')
 db.exec('insert into t values (?, ?, ?)', [
-  true, '2026-09-16T14:30:00.000000+00:00', '{"a":1}',
+  true,
+  '2026-09-16T14:30:00.000000+00:00',
+  '{"a":1}',
 ])
 
 var row = db.fetch_one('select * from t')
@@ -587,14 +593,22 @@ var db = sql.open('sqlite://guide.db')
 
 echo db.count('posts')
 echo db.count('posts', { published: true })
-echo db.count('posts', { author_id: [1, 2] })
+echo db.count('posts', {
+  author_id: [1, 2],
+})
 echo db.count('posts', { author_id: [] })
 
-echo db.find('posts', { published: true }, {
-  columns: ['title'],
-  order: ['views desc'],
-  limit: 2,
-}).column('title')
+echo db
+    .find(
+      'posts',
+      { published: true },
+      {
+        columns: ['title'],
+        order: ['views desc'],
+        limit: 2,
+      },
+    )
+    .column('title')
 
 echo db.find_one('posts', { title: 'On Bugs' }).views
 
@@ -644,7 +658,10 @@ import sql
 var db = sql.open('sqlite://guide.db')
 
 echo db.count('posts', { published: true, author_id: 1 })
-echo db.count('posts', { published: true, views: [87, 1290] })
+echo db.count('posts', {
+  published: true,
+  views: [87, 1290],
+})
 
 db.close()
 ```
@@ -669,8 +686,16 @@ import sql
 
 var db = sql.open('sqlite://guide.db')
 
-echo db.find('posts', nil, { order: ['views desc'] }).column('title')
-echo db.find('posts', nil, { order: ['author_id asc', 'views desc'] }).column('title')
+echo db
+    .find('posts', nil, {
+      order: ['views desc'],
+    })
+    .column('title')
+echo db
+    .find('posts', nil, {
+      order: ['author_id asc', 'views desc'],
+    })
+    .column('title')
 
 db.close()
 ```
@@ -689,12 +714,14 @@ import sql
 var db = sql.open('sqlite://guide.db')
 
 def page(number, size) {
-  return db.find('posts', nil, {
-    columns: ['title'],
-    order: ['views desc'],
-    limit: size,
-    offset: (number - 1) * size,
-  }).column('title')
+  return db
+      .find('posts', nil, {
+        columns: ['title'],
+        order: ['views desc'],
+        limit: size,
+        offset: (number - 1) * size,
+      })
+      .column('title')
 }
 
 echo page(1, 2)
@@ -742,9 +769,19 @@ import sql
 
 var db = sql.open(':memory:')
 db.exec('create table t (id integer primary key, n integer)')
-db.insert_many('t', [{ n: 1 }, { n: 2 }, { n: 3 }])
+db.insert_many('t', [
+  { n: 1 },
+  { n: 2 },
+  { n: 3 },
+])
 
-echo db.update('t', { n: 0 }, { n: [1, 2] })
+echo db.update(
+  't',
+  { n: 0 },
+  {
+    n: [1, 2],
+  },
+)
 echo db.delete('t', { n: 0 })
 echo db.count('t')
 
@@ -824,16 +861,28 @@ var db = sql.open(':memory:')
 db.exec('create table t (id integer primary key, n integer)')
 
 db.transaction(@(tx) {
-  tx.insert_many('t', [{ n: 1 }, { n: 2 }, { n: 3 }])
+  tx.insert_many('t', [
+    { n: 1 },
+    { n: 2 },
+    { n: 3 },
+  ])
 
   echo tx.count('t')
-  echo tx.find('t', nil, { order: ['n desc'] }).column('n')
+  echo tx
+      .find('t', nil, {
+        order: ['n desc'],
+      })
+      .column('n')
 
   tx.update('t', { n: 9 }, { n: 1 })
   tx.delete('t', { n: 3 })
 })
 
-echo db.find('t', nil, { order: ['n asc'] }).column('n')
+echo db
+    .find('t', nil, {
+      order: ['n asc'],
+    })
+    .column('n')
 
 db.close()
 ```
@@ -866,7 +915,10 @@ import sql
 
 var db = sql.open(':memory:')
 db.exec('create table accounts (id integer primary key, balance integer)')
-db.insert_many('accounts', [{ balance: 500 }, { balance: 0 }])
+db.insert_many('accounts', [
+  { balance: 500 },
+  { balance: 0 },
+])
 
 db.transaction(@(tx) {
   tx.update('accounts', { balance: sql.raw('balance - 100') }, { id: 1 })
@@ -1319,10 +1371,15 @@ import sql
 def report(db) {
   db.exec_script('drop table if exists tally')
   db.exec_script(
-    'create table tally (id ' + key_type(db) + ' primary key, word text not null)'
+    'create table tally (id ' +
+        key_type(db) +
+        ' primary key, word text not null)',
   )
 
-  db.insert_many('tally', [{ word: 'alpha' }, { word: 'beta' }])
+  db.insert_many('tally', [
+    { word: 'alpha' },
+    { word: 'beta' },
+  ])
 
   var id = db.insert('tally', { word: 'gamma' })
   var found = db.fetch_column('select word from tally order by word')
@@ -1601,7 +1658,11 @@ slash. Unlike PostgreSQL the path names the socket itself rather than
 the directory holding it:
 
 ```zuri,ignore
-sql.open({ driver: 'mysql', socket: '/var/run/mysqld/mysqld.sock', user: 'app' })
+sql.open({
+  driver: 'mysql',
+  socket: '/var/run/mysqld/mysqld.sock',
+  user: 'app',
+})
 sql.open('socket=/var/run/mysqld/mysqld.sock user=app database=shop')
 sql.open('mysql://app@localhost/shop?socket=/var/run/mysqld/mysqld.sock')
 ```
@@ -1810,10 +1871,10 @@ a single statement rather than through `exec_script()`.
 ### Reaching the adapter
 
 ```zuri,ignore
-db.native().flavor()          # 'mysql' or 'mariadb'
-db.native().connection_id()   # what KILL names
-db.native().parameters()      # what the server said about itself
-db.native().reset()           # back to a fresh session
+db.native().flavor() # 'mysql' or 'mariadb'
+db.native().connection_id() # what KILL names
+db.native().parameters() # what the server said about itself
+db.native().reset() # back to a fresh session
 ```
 
 ## Writing Your Own Adapter

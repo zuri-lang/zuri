@@ -1,0 +1,360 @@
+/**
+ * HTML, Wire and XML.
+ *
+ * One scanner reads all three. HTML adds what a browser treats
+ * specially: the contents of `<script>` and `<style>`, coloured as
+ * JavaScript and CSS. Wire adds what a Wire template is made of on top
+ * of HTML: `{{ ... }}` values and `x-` directives, whose expressions are
+ * coloured as Zuri, and the `<include>`, `<extend>`, `<declare>`,
+ * `<define>` and `<super>` elements. HTML highlighting reads Wire too,
+ * since a Wire template is an HTML document. XML adds processing
+ * instructions and `CDATA` sections, and leaves scripts alone.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .script
+import .spans { escape, span }
+import .zuri_lang
+
+# The elements Wire rewrites into directives.
+var _WIRE_ELEMENTS = {
+  include: true,
+  extend: true,
+  declare: true,
+  define: true,
+  super: true,
+}
+
+# Whether _c_ can be part of a tag or attribute name.
+def _is_name(c: string) {
+  return !(c.is_space() or
+      c == '>' or
+      c == '/' or
+      c == '=' or
+      c == '<' or
+      c == '"' or
+      c == "'")
+}
+
+# A Wire expression, coloured as Zuri. What Zuri cannot read, such as a
+# filter's `|`, is shown plain without stopping the rest.
+def _expression(text: string) {
+  return zuri_lang.highlight(text)
+}
+
+# Text between tags, with entity references and, in HTML and Wire,
+# `{{ ... }}` values picked out.
+def _text(out: list, text: string, wire: bool) {
+  var i = 0
+  var at = 0
+  var length = text.length()
+
+  while i < length {
+    var c = text[i]
+
+    if c == '&' {
+      var end = i + 1
+
+      while end < length and
+          end - i < 40 and
+          (text[end].is_alnum() or text[end] == '#') {
+        end++
+      }
+
+      if end < length and text[end] == ';' and end > i + 1 {
+        out.append(escape(text[at, i]))
+        out.append(span('ent', text[i, end + 1]))
+        i = end + 1
+        at = i
+        continue
+      }
+    }
+
+    if wire and c == '%' and text[i, (i + 3).min(length)] == '%{{' {
+      i += 3
+      continue
+    }
+
+    if wire and c == '{' and i + 1 < length and text[i + 1] == '{' {
+      var close = text.index_of('}}', i + 2)
+
+      if close >= 0 {
+        out.append(escape(text[at, i]))
+        out.append(span('subst', '{{'))
+        out.append(_expression(text[i + 2, close]))
+        out.append(span('subst', '}}'))
+        i = close + 2
+        at = i
+        continue
+      }
+    }
+
+    i++
+  }
+
+  out.append(escape(text[at, length]))
+}
+
+# An attribute's quoted or bare value, starting at _start_. Returns
+# where it ends.
+def _value(out: list, text: string, start: number, name: string, wire: bool) {
+  var length = text.length()
+  var quote = text[start]
+  var end
+
+  if quote == '"' or quote == "'" {
+    end = text.index_of(quote, start + 1)
+    end = end < 0 ? length : end + 1
+  } else {
+    end = start
+
+    while end < length and !text[end].is_space() and text[end] != '>' {
+      end++
+    }
+  }
+
+  var value = text[start, end]
+  var quoted = quote == '"' or quote == "'"
+
+  # A directive's value is an expression, and so is the whole of a
+  # value Wire reads that way.
+  if wire and name.starts_with('x-') and quoted and value.length() >= 2 {
+    out.append(span('str', quote))
+    out.append(_expression(value[1, value.length() - 1]))
+
+    if value.ends_with(quote) {
+      out.append(span('str', quote))
+    }
+
+    return end
+  }
+
+  if wire and value.contains('{{') {
+    out.append('<span class="str">')
+    _text(out, value, true)
+    out.append('</span>')
+
+    return end
+  }
+
+  out.append(span('str', value))
+
+  return end
+}
+
+# A tag from its `<` to its `>`. Returns where it ends, and the name of
+# the element it opens, lower-cased, or an empty string.
+def _tag(out: list, text: string, start: number, wire: bool) {
+  var length = text.length()
+  var i = start + 1
+  var closing = i < length and text[i] == '/'
+
+  if closing {
+    i++
+  }
+
+  var name_end = i
+
+  while name_end < length and _is_name(text[name_end]) {
+    name_end++
+  }
+
+  var name = text[i, name_end]
+  var kind = wire and _WIRE_ELEMENTS.contains(name.lower()) ? 'dir' : 'tag'
+
+  if kind == 'tag' {
+    out.append(span('tag', text[start, name_end]))
+  } else {
+    out.append(span('tag', text[start, i]))
+    out.append(span(kind, name))
+  }
+
+  i = name_end
+
+  while i < length {
+    var c = text[i]
+
+    if c == '>' {
+      out.append(span('tag', '>'))
+
+      return { end: i + 1, opens: closing ? '' : name.lower() }
+    }
+
+    if c == '/' and i + 1 < length and text[i + 1] == '>' {
+      out.append(span('tag', '/>'))
+
+      return { end: i + 2, opens: '' }
+    }
+
+    if c.is_space() {
+      var end = i
+
+      while end < length and text[end].is_space() {
+        end++
+      }
+
+      out.append(text[i, end])
+      i = end
+      continue
+    }
+
+    if c == '<' {
+      # A tag left open; what follows starts again.
+      return { end: i, opens: '' }
+    }
+
+    var attr_end = i
+
+    while attr_end < length and _is_name(text[attr_end]) {
+      attr_end++
+    }
+
+    if attr_end == i {
+      out.append(escape(c))
+      i++
+      continue
+    }
+
+    var attribute = text[i, attr_end]
+
+    out.append(
+      span(wire and attribute.starts_with('x-') ? 'dir' : 'attr', attribute),
+    )
+    i = attr_end
+
+    var after = i
+
+    while after < length and text[after].is_space() {
+      after++
+    }
+
+    if after < length and text[after] == '=' {
+      out.append(text[i, after])
+      out.append(span('op', '='))
+      after++
+
+      var value_start = after
+
+      while value_start < length and text[value_start].is_space() {
+        value_start++
+      }
+
+      out.append(text[after, value_start])
+
+      if value_start < length {
+        i = _value(out, text, value_start, attribute.lower(), wire)
+      } else {
+        i = value_start
+      }
+    }
+  }
+
+  return { end: length, opens: '' }
+}
+
+# Where _marker_ next appears at or after _start_, or the end of _text_.
+def _until(text: string, start: number, marker: string) {
+  var found = text.index_of(marker, start)
+
+  return found < 0 ? text.length() : found
+}
+
+/**
+ * _source_ as highlighted markup.
+ *
+ * @param string source
+ * @param ?string dialect: `'html'`, the default, `'wire'` or `'xml'`.
+ * @returns string
+ */
+def highlight(source: string, dialect: ?string) {
+  var xml = dialect == 'xml'
+  var wire = !xml
+  var out = []
+  var length = source.length()
+  var i = 0
+  var at = 0
+
+  while i < length {
+    if source[i] != '<' {
+      i++
+      continue
+    }
+
+    var rest = source[i, (i + 9).min(length)]
+
+    if rest.starts_with('<!--') {
+      _text(out, source[at, i], wire)
+
+      var end = source.index_of('-->', i + 4)
+
+      end = end < 0 ? length : end + 3
+      out.append(span('com', source[i, end]))
+      i = end
+      at = i
+      continue
+    }
+
+    if rest.starts_with('<![CDATA[') {
+      _text(out, source[at, i], wire)
+
+      var end = source.index_of(']]>', i + 9)
+
+      end = end < 0 ? length : end + 3
+      out.append(span('meta', '<![CDATA['))
+      out.append(span('str', source[i + 9, (end - 3).max(i + 9)]))
+
+      if end - 3 >= i + 9 {
+        out.append(span('meta', ']]>'))
+      }
+
+      i = end
+      at = i
+      continue
+    }
+
+    if rest.starts_with('<!') or rest.starts_with('<?') {
+      _text(out, source[at, i], wire)
+
+      var end = source.index_of('>', i + 2)
+
+      end = end < 0 ? length : end + 1
+      out.append(span('meta', source[i, end]))
+      i = end
+      at = i
+      continue
+    }
+
+    var next = i + 1 < length ? source[i + 1] : ''
+
+    if !(next.is_alpha() or next == '/' or next == '_' or next == ':') {
+      i++
+      continue
+    }
+
+    _text(out, source[at, i], wire)
+
+    var tag = _tag(out, source, i, wire)
+
+    i = tag.end
+    at = i
+
+    # What a browser reads as raw text until the element closes.
+    if !xml and (tag.opens == 'script' or tag.opens == 'style') {
+      var close = _until(source.lower(), i, '</' + tag.opens)
+      var body = source[i, close]
+
+      out.append(
+        tag.opens == 'script'
+            ? script.highlight_js(body)
+            : script.highlight_css(body),
+      )
+      i = close
+      at = i
+    }
+  }
+
+  _text(out, source[at, length], wire)
+
+  return ''.join(out)
+}

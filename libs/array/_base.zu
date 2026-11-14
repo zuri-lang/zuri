@@ -134,11 +134,10 @@ class Array {
    */
   first() {
     if self.length() > 0 {
-      return struct.unpack(
-        self._data_type,
-        self._data[,self._item_size],
-        0,
-      ).values().first()
+      return struct
+          .unpack(self._data_type, self._data[,self._item_size], 0)
+          .values()
+          .first()
     }
 
     return nil
@@ -152,11 +151,14 @@ class Array {
    */
   last() {
     if self.length() > 0 {
-      return struct.unpack(
-        self._data_type,
-        self._data[self._data.length() - self._item_size,],
-        0,
-      ).values().first()
+      return struct
+          .unpack(
+            self._data_type,
+            self._data[self._data.length() - self._item_size,],
+            0,
+          )
+          .values()
+          .first()
     }
 
     return nil
@@ -182,11 +184,10 @@ class Array {
     }
 
     var start = idx * self._item_size
-    return struct.unpack(
-      self._data_type,
-      self._data[start, start + self._item_size],
-      0,
-    ).values().first()
+    return struct
+        .unpack(self._data_type, self._data[start, start + self._item_size], 0)
+        .values()
+        .first()
   }
 
   /**
@@ -295,9 +296,10 @@ class Array {
     }
 
     var pos = idx * self._item_size
-    var removed = struct.unpack(
-      self._data_type, self._data[pos, pos + self._item_size], 0,
-    ).values().first()
+    var removed = struct
+        .unpack(self._data_type, self._data[pos, pos + self._item_size], 0)
+        .values()
+        .first()
 
     var new_data = self._data[,pos]
     new_data.extend(self._data[pos + self._item_size,])
@@ -440,11 +442,9 @@ class Array {
     if self.length() == 0 {
       return []
     }
-    return struct.unpack(
-      '${self._data_type}${self.length()}',
-      self._data,
-      0,
-    ).values()
+    return struct
+        .unpack('${self._data_type}${self.length()}', self._data, 0)
+        .values()
   }
 
   /**

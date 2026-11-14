@@ -41,27 +41,20 @@ project's style. It knows what each piece of code is, so a sign is never
 mistaken for an operator, a type's `:` for a dictionary's, or a
 subscript for a list.
 
-- **Keeps the lines you wrote** while they fit. A list opened out one
-  item to a line, a concatenation carried across several, a call whose
-  arguments were spread on purpose: each keeps the breaks it was given
-  and is re-indented, never packed back together. A collection written
-  on one line stays on one line while it fits. A blank line between two
-  statements is kept, one at most.
-- **Realigns a list that runs past the width.** Once a line of a list
-  you broke holds several items and no longer fits, the whole list is
-  laid out again, as many items to a line as fit. A line holding a
-  single item too long for any line does not count, since nothing could
-  shorten it, and the comments and blank lines between items stay
-  where they are. This holds for lists, dictionaries, arguments,
-  parameters and an import's names.
-- **Indents** two spaces per level of nesting. Everything after a
-  statement's first line sits one level under it, however many breaks
-  it takes, and a bracket's closer returns to the line its opener is on.
+Where a long line breaks follows the rules of the Dart formatter, as
+closely as Zuri's grammar allows. The layout depends on the code alone:
+where the source broke a line inside an expression makes no difference,
+so the same code always comes out the same way.
+
+- **Indents** two spaces per level of nesting. A block's body, and the
+  items of a list that opens out, sit one level in. An expression
+  continued onto another line sits two levels past the line it
+  continues, so a broken `if` condition never lines up with the body
+  under it.
 - **Opens every block.** The statements inside a block each get their
   own line, and `;` between two statements becomes a line break. An
-  empty block stays as it was written, `{}` or open across two lines.
-  `else`, `while` after a `do`, and `as` after a `catch` follow the `}`
-  before them on its line.
+  empty block closes up to `{}`. `else`, `while` after a `do`, and `as`
+  after a `catch` follow the `}` before them on its line.
 - **Braces every body.** `if x y = 1` becomes a block, and so does the
   body of an `else`, a `while`, a `for` and a `do`. A body that declares
   a name, `if x var y = 1`, is left as it is, since braces would give the
@@ -70,32 +63,63 @@ subscript for a list.
   braces it otherwise.
 - **Sets declarations apart.** A function, method or class that spans
   several lines has a blank line on either side of it, ahead of the
-  comments that lead into it.
+  comments that lead into it. A blank line the source left between two
+  statements is kept, one at most.
 - **Spaces** by what each token is: around binary operators, after
   commas, none around `.` or inside a call's parentheses, none around `|`
   in a type, `{ a: 1 }` with spaces inside its braces. An empty `iter`
   clause keeps the space that shows it is there: `iter ; i < n; i++`.
-- **Breaks a long line** where its expression holds together least: at
-  every `or` of a condition before any `and`, before the `?` and `:` of a
-  conditional, before each call of a method chain with two or more, or
-  across the brackets of a call or a literal, as many items to a line as
-  fit. A dictionary made up mostly of `key: value` pairs takes one pair
-  to a line instead, whenever it does not stay on one line, and so does
-  one you broke yourself. A broken operator chain leads each line with its operator, except
-  a sum holding a `-`, which trails them, since a line opening with `-`
-  is a statement of its own. A line breaks only where the parser accepts
-  a break and only when the break brings it within the width; one with
-  nowhere useful to break is left as it was written.
-- **Adds a trailing comma** where a list, dictionary, argument or
-  parameter list ends with its closer on a line of its own, so a later
-  edit touches one line rather than two. One kept on a single line has
-  none.
+- **Keeps a list on one line, or opens it one item to a line.** This
+  holds for arguments, parameters, list and dictionary literals and an
+  import's names. One that does not fit opens out with each item on a
+  line of its own and a trailing comma after the last, its closer back
+  on the line it opened on. A blank line the source left between two
+  items is kept once the list opens out.
+- **Opens a list or dictionary that holds another**, at any depth and
+  through any call, even when it would fit on one line, so a tree of
+  data reads as a tree: `[[3, 4], [5, 6]]` takes a row to a line, and so
+  does `[Window('Main', { size: Size(720, 420) })]`. An empty `[]` or
+  `{}` inside does not count.
+- **Lets one argument open out on its own.** When a call's arguments
+  hold a single function with a body, or failing that a single list or
+  dictionary, and at most one argument follows it, that argument opens
+  out while the rest stay on the call's line: `each(items, @{`,
+  `Text(label, {`. When the arguments before it do not fit on that line,
+  every argument opens out instead. A call is never the argument that
+  opens out, so a call inside a call that does not fit moves to a line
+  of its own under `f(`, rather than opening as `f(g(`.
+- **Breaks an operator chain after every operator** of the loosest
+  precedence in it, `or` before `and` before `==` before `+`, leaving
+  the tighter ones on their lines while they fit. The operator ends its
+  line, which also keeps a line from opening with `-`, the start of a
+  statement of its own.
+- **Breaks a conditional before its `?` and `:`**, each branch on a
+  line of its own. A conditional in the last branch joins the chain, so
+  a run of them reads as a list of cases.
+- **Breaks a method chain before each call**, one call to a line, the
+  property reads it opens with kept beside the value it starts from.
+  Before that, a chain whose calls before the last take no arguments,
+  or whose last call takes a function or collection that opens out on
+  its own, opens only that call's arguments; and a chain that starts
+  from a call or a collection opens that instead when the rest of the
+  chain fits after its closing bracket. A call on a capitalized name,
+  `Color.of(x)`, counts as part of the value it is made on.
+- **Moves a value made of operators onto a line of its own** after the
+  `:` of a dictionary entry that does not fit. Nothing else breaks
+  after a `:`, and nothing breaks after an `=` or a `=>`, which the
+  language does not allow.
+- **Fills a list of numbers**, with or without `nil` among them, as
+  many to a line as fit, rather than one to a line.
+- **Keeps the rows of a list or dictionary holding a `#` comment**
+  between its items, each row laid out like a list of its own, so a
+  table stays a table when one of its lines carries a comment.
 - **Never adds or drops a subscript's commas.** `s[1]`, `s[1,]`, `s[,3]`
   and `s[1,3]` are four different reads, written `s[1]`, `s[1,]`,
   `s[,3]` and `s[1, 3]`.
 - **Keeps comments where they were written**: one that trails code stays
   at the end of its line, one on a line of its own keeps that line, and
-  a doc block moves along with the code it documents.
+  a doc block moves along with the code it documents. A `#` comment
+  inside a list or a call opens it out, since the comment ends its line.
 - **Writes strings and numbers exactly as the source does**, and import
   paths with their dots as written: `.. ..shared` and `....shared` both
   stay.
@@ -120,13 +144,14 @@ of the first syntax error: there is no tree to lay out.
 ## How it is built
 
 - `source.zu`: the tokens of the source, for what the tree does not
-  keep: where the author broke lines, every comment, and the operators
-  and commas between two nodes.
+  keep: the blank lines the author left, every comment, and the
+  operators and commas between two nodes.
 - `doc.zu`: the layout document, text and the places it may break.
 - `layout.zu`: the parse tree turned into a layout document, in source
   order so every comment is placed where it was written.
 - `printer.zu`: the document turned into lines, each group kept on one
-  line when it fits.
+  line when it fits, and of the layouts offered for one piece of code,
+  the first that fits taken.
 - `verify.zu`: the comparison of two trees and their comments.
 - `engine.zu`: `format(source)` and the checks around it.
 - `index.zu`: the command itself, the entry point `zuri fmt` runs.

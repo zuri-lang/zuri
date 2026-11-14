@@ -3,8 +3,11 @@
 Zuri installs with one command, which downloads the release for your
 machine, checks it, and puts `zuri` on your `PATH`. Releases cover:
 
-- Linux on x86-64 and ARM (`x86_64-unknown-linux-gnu`,
-  `aarch64-unknown-linux-gnu`)
+- Linux on x86-64 and ARM with the GNU C library, version 2.28 or later
+  (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`). That is
+  Debian 10, Ubuntu 20.04, RHEL 8, Amazon Linux 2023 and anything newer.
+- Linux on x86-64 and ARM with musl, as on Alpine
+  (`x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`)
 - macOS on Intel and Apple silicon (`x86_64-apple-darwin`,
   `aarch64-apple-darwin`)
 - Windows on x86-64 (`x86_64-pc-windows-msvc`)
@@ -38,6 +41,12 @@ directory that globally installed tools put their launchers in, and
 that one directory goes on your `PATH` through your shell's startup
 file: `.zshrc` for zsh, `.bashrc` for bash (`.bash_profile` on macOS),
 `config.fish` for fish, and `.profile` for anything else.
+
+On a Linux that uses musl, the installer picks the musl build, which runs
+on a bare Alpine with nothing added. It loads shared libraries the way
+Alpine's own programs do, which is what lets [`ffi`](ch26-00-ffi.md) open
+them, and why it needs the musl loader on the machine. It does not run on
+a Linux that uses the GNU C library.
 
 Options go after `sh -s --`:
 

@@ -70,8 +70,9 @@ class Queens {
   }
 
   get_row_column(r, c) {
-    return self.free_rows[r] and self.free_maxes[c + r] and
-      self.free_mins[c - r + 7]
+    return self.free_rows[r] and
+        self.free_maxes[c + r] and
+        self.free_mins[c - r + 7]
   }
 
   set_row_column(r, c, v) {

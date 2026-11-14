@@ -1,0 +1,1325 @@
+/**
+ * @module markdown.renderer
+ *
+ * Turning a parsed document into HTML.
+ *
+ * `HtmlRenderer` writes the markup the CommonMark reference
+ * implementation writes, byte for byte, so its output can be compared
+ * with any other conforming renderer's. Each node type has a method of
+ * its own name, and a subclass changes how one kind of node looks by
+ * overriding that method alone:
+ *
+ * ```zuri
+ * import markdown
+ * import markdown.renderer { HtmlRenderer }
+ *
+ * class NewTabLinks < HtmlRenderer {
+ *   link(node) {
+ *     self.write('<a href="${self.escape(self.url(node.destination))}" target="_blank">')
+ *     self.render_children(node)
+ *     self.write('</a>')
+ *   }
+ * }
+ *
+ * var md = markdown({ renderer: NewTabLinks })
+ * echo md.render('[Zuri](https://zuri-lang.github.io/zuri/)')
+ * ```
+ *
+ * Inside a method, `write()` adds markup as it is, `text()` adds text
+ * escaped, `cr()` starts a new line unless one was just started, and
+ * `render_children()` renders what the node holds.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ._text { escape_html, normalize_uri }
+import .node { Node }
+
+# Tags GFM's tag filter defuses in raw HTML, since they change how
+# everything after them is read.
+var _FILTERED_TAGS = [
+  'title',
+  'textarea',
+  'style',
+  'xmp',
+  'iframe',
+  'noembed',
+  'noframes',
+  'script',
+  'plaintext',
+]
+
+# Attributes an author may set with `{key=value}` when raw HTML is off.
+# Any other name is written with `data-` in front, where it can do no
+# harm.
+var _SAFE_ATTRIBUTES = {
+  id: true,
+  'class': true,
+  title: true,
+  lang: true,
+  dir: true,
+  width: true,
+  height: true,
+  alt: true,
+  role: true,
+  start: true,
+  align: true,
+  target: true,
+  rel: true,
+  hreflang: true,
+  type: true,
+  reversed: true,
+  loading: true,
+  decoding: true,
+  cite: true,
+  datetime: true,
+  colspan: true,
+  rowspan: true,
+  scope: true,
+}
+
+var _ALERT_TITLES = {
+  note: 'Note',
+  tip: 'Tip',
+  important: 'Important',
+  warning: 'Warning',
+  caution: 'Caution',
+}
+
+/**
+ * Renders a parsed document as HTML.
+ *
+ * One renderer renders one document at a time. `markdown()` makes a
+ * fresh one for every call to `render()`, so a subclass may keep
+ * whatever state it likes in fields of its own.
+ *
+ * @printable
+ */
+class HtmlRenderer {
+
+  /**
+   * The options the document was parsed with, as `markdown()` resolved
+   * them: every option is present.
+   *
+   * @type dict
+   */
+  var options = {}
+
+  var _out = []
+  var _last = '\n'
+  var _plain = 0
+  var _footnotes = {}
+  var _footnote_order = []
+  var _footnote_counts = {}
+  var _footnote_seen = {}
+  var _footnote_index = 0
+  var _footnote_written = 0
+  var _toc = []
+
+  /**
+   * @param dict options: the resolved options of the `Markdown` doing
+   *    the rendering.
+   * @constructor
+   */
+  @new(options: dict) {
+    self.options = options
+    self._out = []
+  }
+
+  /**
+   * The HTML for _node_ and everything beneath it. A document's
+   * footnotes follow it.
+   *
+   * @param Node node
+   * @returns string
+   */
+  render(node: Node) {
+    self._out = []
+    self._last = '\n'
+    self._plain = 0
+    self._number_footnotes(node)
+
+    if self.options.toc {
+      self._toc = node.find_all('heading')
+    }
+
+    self.render_node(node)
+
+    if node.type == 'document' {
+      self.footnotes()
+    }
+
+    return ''.join(self._out)
+  }
+
+  /**
+   * Adds _markup_ to the output as it is. Inside an image's description,
+   * where only text is allowed, nothing is added.
+   *
+   * @param string markup
+   */
+  write(markup: string) {
+    if self._plain > 0 or markup.is_empty() {
+      return
+    }
+
+    self._out.append(markup)
+    self._last = markup[markup.length() - 1]
+  }
+
+  /**
+   * Adds _text_ to the output, escaped for HTML.
+   *
+   * @param string text
+   */
+  text(text: string) {
+    if text.is_empty() {
+      return
+    }
+
+    self._out.append(escape_html(text))
+    self._last = text[text.length() - 1]
+  }
+
+  /**
+   * Starts a new line, unless the output is already at the start of one.
+   */
+  cr() {
+    if self._last != '\n' {
+      self.write('\n')
+    }
+  }
+
+  /**
+   * _text_ escaped for HTML.
+   *
+   * @param string text
+   * @returns string
+   */
+  escape(text: string) {
+    return escape_html(text)
+  }
+
+  /**
+   * _destination_ as it may go in an `href` or `src`, or `''` when it
+   * uses a scheme a page should not follow: `javascript:`, `vbscript:`,
+   * `file:`, or `data:` other than a PNG, GIF, JPEG or WebP image. The
+   * `unsafe_links` option lets everything through.
+   *
+   * @param string destination
+   * @returns string
+   */
+  url(destination: string) {
+    if self.options.unsafe_links or !_is_dangerous(destination) {
+      return destination
+    }
+
+    return ''
+  }
+
+  /**
+   * _node_'s attributes, and _extra_ before them, as markup to follow a
+   * tag name, starting with a space. A class in both is merged. When raw
+   * HTML is off, a name an author could use to run script is written
+   * with `data-` in front.
+   *
+   * @param Node node
+   * @param ?dict extra
+   * @returns string
+   */
+  attributes(node: Node, extra: ?dict) {
+    var all = extra == nil ? {} : extra.clone()
+    var own = node.attributes
+
+    for key in _ordered(own) {
+      var value = own.get(key)
+      var name = self.options.html ? key : _safe_name(key)
+
+      if name == 'class' and all.contains('class') {
+        all.set('class', all.get('class') + ' ' + value)
+      } else {
+        all.set(name, value)
+      }
+    }
+
+    return _attribute_markup(all)
+  }
+
+  # Attributes an author wrote, in order and renamed where the `html`
+  # option asks.
+  _authored(attributes: dict) {
+    var out = {}
+
+    for key in _ordered(attributes) {
+      out.set(self.options.html ? key : _safe_name(key), attributes.get(key))
+    }
+
+    return out
+  }
+
+  /**
+   * Renders _node_ by calling the method named after its type. A type
+   * this class does not know goes to `unknown()`.
+   *
+   * @param Node node
+   */
+  render_node(node: Node) {
+    using node.type {
+      when 'document' {
+        self.document(node)
+      }
+      when 'paragraph' {
+        self.paragraph(node)
+      }
+      when 'heading' {
+        self.heading(node)
+      }
+      when 'thematic_break' {
+        self.thematic_break(node)
+      }
+      when 'block_quote' {
+        self.block_quote(node)
+      }
+      when 'alert' {
+        self.alert(node)
+      }
+      when 'list' {
+        self.list(node)
+      }
+      when 'item' {
+        self.item(node)
+      }
+      when 'code_block' {
+        self.code_block(node)
+      }
+      when 'html_block' {
+        self.html_block(node)
+      }
+      when 'table' {
+        self.table(node)
+      }
+      when 'table_head', 'table_body' {
+        self.table_section(node)
+      }
+      when 'table_row' {
+        self.table_row(node)
+      }
+      when 'table_cell' {
+        self.table_cell(node)
+      }
+      when 'footnote_definition' {
+        self.footnote_definition(node)
+      }
+      when 'definition_list' {
+        self.definition_list(node)
+      }
+      when 'term' {
+        self.term(node)
+      }
+      when 'definition' {
+        self.definition(node)
+      }
+      when 'div' {
+        self.div(node)
+      }
+      when 'line_block' {
+        self.line_block(node)
+      }
+      when 'line' {
+        self.line(node)
+      }
+      when 'math_block' {
+        self.math_block(node)
+      }
+      when 'toc' {
+        self.toc(node)
+      }
+      when 'text' {
+        self.text_node(node)
+      }
+      when 'softbreak' {
+        self.softbreak(node)
+      }
+      when 'linebreak' {
+        self.linebreak(node)
+      }
+      when 'code' {
+        self.code(node)
+      }
+      when 'emphasis' {
+        self.emphasis(node)
+      }
+      when 'strong' {
+        self.strong(node)
+      }
+      when 'strikethrough' {
+        self.strikethrough(node)
+      }
+      when 'mark' {
+        self.mark(node)
+      }
+      when 'superscript' {
+        self.superscript(node)
+      }
+      when 'subscript' {
+        self.subscript(node)
+      }
+      when 'link' {
+        self.link(node)
+      }
+      when 'image' {
+        self.image(node)
+      }
+      when 'html_inline' {
+        self.html_inline(node)
+      }
+      when 'footnote_reference' {
+        self.footnote_reference(node)
+      }
+      when 'span' {
+        self.span(node)
+      }
+      when 'math' {
+        self.math(node)
+      }
+      when 'abbreviation' {
+        self.abbreviation(node)
+      }
+      when 'emoji' {
+        self.emoji(node)
+      }
+      default {
+        self.unknown(node)
+      }
+    }
+  }
+
+  /**
+   * Renders each of _node_'s children in turn.
+   *
+   * @param Node node
+   */
+  render_children(node: Node) {
+    for child in node.children {
+      self.render_node(child)
+    }
+  }
+
+  /**
+   * A node of a type no method is named for, such as one a transform
+   * added. Its children are rendered and nothing else.
+   *
+   * @param Node node
+   */
+  unknown(node: Node) {
+    self.render_children(node)
+  }
+
+  /** @param Node node */
+  document(node: Node) {
+    self.render_children(node)
+  }
+
+  /**
+   * A paragraph, without its `<p>` when it is in a tight list or a
+   * tight definition.
+   *
+   * @param Node node
+   */
+  paragraph(node: Node) {
+    var owner = node.parent_node
+    var tight = false
+
+    if owner != nil {
+      if owner.type == 'definition' {
+        tight = owner.tight == true
+      } else if owner.parent_node != nil and owner.parent_node.type == 'list' {
+        tight = owner.parent_node.tight == true
+      }
+    }
+
+    if tight {
+      self.render_children(node)
+      self._paragraph_backref(node)
+
+      return
+    }
+
+    self.cr()
+    self.write('<p${self.attributes(node)}>')
+    self.render_children(node)
+    self._paragraph_backref(node)
+    self.write('</p>')
+    self.cr()
+  }
+
+  /** @param Node node */
+  heading(node: Node) {
+    self.cr()
+    self.write('<h${node.level}${self.attributes(node)}>')
+    self.render_children(node)
+    self.write('</h${node.level}>')
+    self.cr()
+  }
+
+  /** @param Node node */
+  thematic_break(node: Node) {
+    self.cr()
+    self.write('<hr${self.attributes(node)} />')
+    self.cr()
+  }
+
+  /** @param Node node */
+  block_quote(node: Node) {
+    self.cr()
+    self.write('<blockquote${self.attributes(node)}>')
+    self.cr()
+    self.render_children(node)
+    self.cr()
+    self.write('</blockquote>')
+    self.cr()
+  }
+
+  /**
+   * A GitHub alert, in the markup GitHub gives it.
+   *
+   * @param Node node
+   */
+  alert(node: Node) {
+    var kind = node.kind == nil ? 'note' : node.kind
+    var title = _ALERT_TITLES.get(kind, kind.capitalize())
+
+    var extra = { 'class': 'markdown-alert markdown-alert-' + kind }
+
+    self.cr()
+    self.write('<div${self.attributes(node, extra)}>')
+    self.cr()
+    self.write('<p class="markdown-alert-title">')
+    self.text(title)
+    self.write('</p>')
+    self.cr()
+    self.render_children(node)
+    self.cr()
+    self.write('</div>')
+    self.cr()
+  }
+
+  /** @param Node node */
+  list(node: Node) {
+    var tag = node.ordered ? 'ol' : 'ul'
+    var extra = {}
+
+    if node.ordered and node.start != nil and node.start != 1 {
+      extra.set('start', '${node.start}')
+    }
+
+    self.cr()
+    self.write('<${tag}${self.attributes(node, extra)}>')
+    self.cr()
+    self.render_children(node)
+    self.cr()
+    self.write('</${tag}>')
+    self.cr()
+  }
+
+  /**
+   * A list item, with a disabled checkbox first when it is a task.
+   *
+   * @param Node node
+   */
+  item(node: Node) {
+    self.write('<li${self.attributes(node)}>')
+
+    if node.checked == true {
+      self.write('<input type="checkbox" checked="" disabled="" /> ')
+    } else if node.checked == false {
+      self.write('<input type="checkbox" disabled="" /> ')
+    }
+
+    self.render_children(node)
+    self.write('</li>')
+    self.cr()
+  }
+
+  /**
+   * A code block. Its info string's first word becomes a
+   * `language-` class on the `<code>`, and the `highlight` option, when
+   * set, may give the markup for the code itself.
+   *
+   * @param Node node
+   */
+  code_block(node: Node) {
+    var info = node.info == nil ? '' : node.info
+    var language = ''
+
+    if !info.is_empty() {
+      var space = 0
+
+      while space < info.length() and
+          info[space] != ' ' and
+          info[space] != '\t' {
+        space++
+      }
+
+      language = info[0, space]
+    }
+
+    var pre = {}
+    var classes = []
+
+    for key, value in node.attributes {
+      if key == 'class' {
+        classes.append(value)
+      } else {
+        pre.set(key, value)
+      }
+    }
+
+    if !language.is_empty() {
+      classes.insert(
+        language.starts_with('language-') ? language : 'language-' + language,
+        0,
+      )
+    }
+
+    var code_class = classes.is_empty()
+        ? ''
+        : ' class="${escape_html(' '.join(classes))}"'
+    var highlighted = nil
+    var highlight = self.options.highlight
+
+    if highlight != nil {
+      highlighted = highlight(node.literal, language)
+    }
+
+    self.cr()
+    self.write(
+      '<pre${_attribute_markup(self._authored(pre))}><code${code_class}>',
+    )
+
+    if is_string(highlighted) {
+      self.write(highlighted)
+    } else {
+      self.text(node.literal)
+    }
+
+    self.write('</code></pre>')
+    self.cr()
+  }
+
+  /**
+   * Raw HTML on its own lines. It is written as it is when the `html`
+   * option is on, and shown as text otherwise.
+   *
+   * @param Node node
+   */
+  html_block(node: Node) {
+    self.cr()
+
+    if self.options.html {
+      self.write(self._filter_tags(node.literal))
+    } else {
+      self.write('<p>')
+      self.text(node.literal.rtrim('\n'))
+      self.write('</p>')
+    }
+
+    self.cr()
+  }
+
+  /** @param Node node */
+  table(node: Node) {
+    self.cr()
+    self.write('<table${self.attributes(node)}>')
+    self.cr()
+    self.render_children(node)
+    self.cr()
+    self.write('</table>')
+    self.cr()
+  }
+
+  /**
+   * A table's `<thead>` or `<tbody>`.
+   *
+   * @param Node node
+   */
+  table_section(node: Node) {
+    var tag = node.type == 'table_head' ? 'thead' : 'tbody'
+
+    self.cr()
+    self.write('<${tag}>')
+    self.cr()
+    self.render_children(node)
+    self.cr()
+    self.write('</${tag}>')
+    self.cr()
+  }
+
+  /** @param Node node */
+  table_row(node: Node) {
+    self.cr()
+    self.write('<tr>')
+    self.cr()
+    self.render_children(node)
+    self.cr()
+    self.write('</tr>')
+    self.cr()
+  }
+
+  /** @param Node node */
+  table_cell(node: Node) {
+    var row = node.parent_node
+    var tag = row != nil and
+            row.parent_node != nil and
+            row.parent_node.type == 'table_head'
+        ? 'th'
+        : 'td'
+    var extra = node.align == nil ? nil : { align: node.align }
+
+    self.cr()
+    self.write('<${tag}${self.attributes(node, extra)}>')
+    self.render_children(node)
+    self.write('</${tag}>')
+    self.cr()
+  }
+
+  /**
+   * Where a footnote is defined, nothing: footnotes are written together
+   * at the end, by `footnotes()`.
+   *
+   * @param Node node
+   */
+  footnote_definition(node: Node) {}
+
+  /** @param Node node */
+  definition_list(node: Node) {
+    self.cr()
+    self.write('<dl${self.attributes(node)}>')
+    self.cr()
+    self.render_children(node)
+    self.cr()
+    self.write('</dl>')
+    self.cr()
+  }
+
+  /** @param Node node */
+  term(node: Node) {
+    self.cr()
+    self.write('<dt${self.attributes(node)}>')
+    self.render_children(node)
+    self.write('</dt>')
+    self.cr()
+  }
+
+  /** @param Node node */
+  definition(node: Node) {
+    self.cr()
+    self.write('<dd${self.attributes(node)}>')
+
+    if node.tight != true {
+      self.cr()
+    }
+
+    self.render_children(node)
+
+    if node.tight != true {
+      self.cr()
+    }
+
+    self.write('</dd>')
+    self.cr()
+  }
+
+  /** @param Node node */
+  div(node: Node) {
+    self.cr()
+    self.write('<div${self.attributes(node)}>')
+    self.cr()
+    self.render_children(node)
+    self.cr()
+    self.write('</div>')
+    self.cr()
+  }
+
+  /** @param Node node */
+  line_block(node: Node) {
+    var extra = { 'class': 'line-block' }
+
+    self.cr()
+    self.write('<div${self.attributes(node, extra)}>')
+
+    var first = true
+
+    for line in node.children {
+      if !first {
+        self.write('<br />\n')
+      }
+
+      self.render_node(line)
+      first = false
+    }
+
+    self.write('</div>')
+    self.cr()
+  }
+
+  /** @param Node node */
+  line(node: Node) {
+    self.render_children(node)
+  }
+
+  /**
+   * A ```` ```math ```` block, in the markup MathJax and KaTeX look for.
+   *
+   * @param Node node
+   */
+  math_block(node: Node) {
+    self.cr()
+    self.write('<div class="math display">\\[')
+    self.text(node.literal)
+    self.write('\\]</div>')
+    self.cr()
+  }
+
+  /**
+   * The document's table of contents, where `[TOC]` was written.
+   *
+   * @param Node node
+   */
+  toc(node: Node) {
+    var levels = self.options.toc_levels
+    var entries = []
+
+    for heading in self._toc {
+      if heading.level >= levels[0] and heading.level <= levels[1] {
+        entries.append(heading)
+      }
+    }
+
+    self.cr()
+    self.write('<nav class="table-of-contents">')
+    self.cr()
+
+    if !entries.is_empty() {
+      self._toc_list(entries, 0, entries.length())
+    }
+
+    self.write('</nav>')
+    self.cr()
+  }
+
+  # Writes the headings from _start_ to _end_ as a nested list, each
+  # heading holding the deeper ones after it.
+  _toc_list(entries: list, start: number, end: number) {
+    self.write('<ul>\n')
+
+    var i = start
+
+    while i < end {
+      var heading = entries[i]
+      var next = i + 1
+
+      while next < end and entries[next].level > heading.level {
+        next++
+      }
+
+      var id = heading.attributes.get('id')
+
+      self.write('<li>')
+
+      if id != nil {
+        self.write('<a href="#${escape_html(id)}">')
+        self.text(heading.text_content())
+        self.write('</a>')
+      } else {
+        self.text(heading.text_content())
+      }
+
+      if next > i + 1 {
+        self.write('\n')
+        self._toc_list(entries, i + 1, next)
+      }
+
+      self.write('</li>\n')
+      i = next
+    }
+
+    self.write('</ul>\n')
+  }
+
+  /** @param Node node */
+  text_node(node: Node) {
+    self.text(node.literal)
+  }
+
+  /**
+   * A line ending inside a paragraph: a newline, or a `<br />` when the
+   * `breaks` option is on.
+   *
+   * @param Node node
+   */
+  softbreak(node: Node) {
+    if self.options.breaks {
+      self.write('<br />')
+    }
+
+    self.write('\n')
+
+    if self._plain > 0 {
+      self.text('\n')
+    }
+  }
+
+  /** @param Node node */
+  linebreak(node: Node) {
+    self.write('<br />')
+    self.cr()
+
+    if self._plain > 0 {
+      self.text('\n')
+    }
+  }
+
+  /** @param Node node */
+  code(node: Node) {
+    self.write('<code${self.attributes(node)}>')
+    self.text(node.literal)
+    self.write('</code>')
+  }
+
+  /** @param Node node */
+  emphasis(node: Node) {
+    self.write('<em>')
+    self.render_children(node)
+    self.write('</em>')
+  }
+
+  /** @param Node node */
+  strong(node: Node) {
+    self.write('<strong>')
+    self.render_children(node)
+    self.write('</strong>')
+  }
+
+  /** @param Node node */
+  strikethrough(node: Node) {
+    self.write('<del>')
+    self.render_children(node)
+    self.write('</del>')
+  }
+
+  /** @param Node node */
+  mark(node: Node) {
+    self.write('<mark>')
+    self.render_children(node)
+    self.write('</mark>')
+  }
+
+  /** @param Node node */
+  superscript(node: Node) {
+    self.write('<sup>')
+    self.render_children(node)
+    self.write('</sup>')
+  }
+
+  /** @param Node node */
+  subscript(node: Node) {
+    self.write('<sub>')
+    self.render_children(node)
+    self.write('</sub>')
+  }
+
+  /** @param Node node */
+  link(node: Node) {
+    var extra = { href: self.url(node.destination) }
+
+    if !node.title.is_empty() {
+      extra.set('title', node.title)
+    }
+
+    self.write('<a${self.attributes(node, extra)}>')
+    self.render_children(node)
+    self.write('</a>')
+  }
+
+  /**
+   * An image. Its description becomes the `alt` text, with every bit of
+   * markup in it dropped.
+   *
+   * @param Node node
+   */
+  image(node: Node) {
+    self.write('<img src="${escape_html(self.url(node.destination))}" alt="')
+    self._plain++
+    self.render_children(node)
+    self._plain--
+    self.write('"')
+
+    if !node.title.is_empty() {
+      self.write(' title="${escape_html(node.title)}"')
+    }
+
+    self.write('${self.attributes(node)} />')
+  }
+
+  /**
+   * Raw HTML inside a paragraph. It is written as it is when the `html`
+   * option is on, and shown as text otherwise.
+   *
+   * @param Node node
+   */
+  html_inline(node: Node) {
+    if self.options.html {
+      self.write(self._filter_tags(node.literal))
+    } else {
+      self.text(node.literal)
+    }
+  }
+
+  /**
+   * A footnote reference: its number, linking to the footnote.
+   *
+   * @param Node node
+   */
+  footnote_reference(node: Node) {
+    var label = node.label
+    var number = self._footnotes.get(label)
+
+    if number == nil {
+      self.text('[^${label}]')
+
+      return
+    }
+
+    var seen = self._footnote_seen.get(label, 0) + 1
+
+    self._footnote_seen.set(label, seen)
+
+    var id = escape_html(normalize_uri(label))
+    var suffix = seen > 1 ? '-${seen}' : ''
+
+    self.write(
+      '<sup class="footnote-ref"><a href="#fn-${id}" id="fnref-${id}${suffix}" data-footnote-ref>${number}</a></sup>',
+    )
+  }
+
+  /** @param Node node */
+  span(node: Node) {
+    self.write('<span${self.attributes(node)}>')
+    self.render_children(node)
+    self.write('</span>')
+  }
+
+  /**
+   * Math, in the markup MathJax and KaTeX look for: `\(...\)` inline and
+   * `\[...\]` on its own line.
+   *
+   * @param Node node
+   */
+  math(node: Node) {
+    if node.display {
+      self.write('<span class="math display">\\[')
+      self.text(node.literal)
+      self.write('\\]</span>')
+    } else {
+      self.write('<span class="math inline">\\(')
+      self.text(node.literal)
+      self.write('\\)</span>')
+    }
+  }
+
+  /** @param Node node */
+  abbreviation(node: Node) {
+    if node.title == nil or node.title.is_empty() {
+      self.render_children(node)
+
+      return
+    }
+
+    self.write('<abbr title="${escape_html(node.title)}">')
+    self.render_children(node)
+    self.write('</abbr>')
+  }
+
+  /** @param Node node */
+  emoji(node: Node) {
+    self.text(node.literal)
+  }
+
+  /**
+   * The footnotes the document referred to, in the order it first
+   * referred to them, as a list at the end.
+   */
+  footnotes() {
+    if self._footnote_order.is_empty() {
+      return
+    }
+
+    self.cr()
+    self.write('<section class="footnotes" data-footnotes>\n<ol>\n')
+
+    for definition in self._footnote_order {
+      self._footnote_index++
+
+      var id = escape_html(normalize_uri(definition.label))
+
+      self.write('<li id="fn-${id}">\n')
+      self.render_children(definition)
+
+      if self._footnote_written < self._footnote_index {
+        self._write_backrefs(definition)
+        self.write('\n')
+      }
+
+      self.write('</li>\n')
+    }
+
+    self.write('</ol>\n</section>\n')
+  }
+
+  # The back-references of the footnote being written go at the end of
+  # its last paragraph, when it ends with one.
+  _paragraph_backref(node: Node) {
+    var owner = node.parent_node
+
+    if owner == nil or
+        owner.type != 'footnote_definition' or
+        self._footnote_index == 0 {
+      return
+    }
+
+    if owner.children.last() != node {
+      return
+    }
+
+    self.write(' ')
+    self._write_backrefs(owner)
+  }
+
+  _write_backrefs(definition: Node) {
+    if self._footnote_written >= self._footnote_index {
+      return
+    }
+
+    self._footnote_written = self._footnote_index
+
+    var id = escape_html(normalize_uri(definition.label))
+    var number = self._footnote_index
+    var count = self._footnote_counts.get(definition.label, 1)
+
+    self.write(
+      '<a href="#fnref-${id}" class="footnote-backref" data-footnote-backref data-footnote-backref-idx="${number}" aria-label="Back to reference ${number}">\u21A9</a>',
+    )
+
+    iter var i = 2; i <= count; i++ {
+      self.write(
+        ' <a href="#fnref-${id}-${i}" class="footnote-backref" data-footnote-backref data-footnote-backref-idx="${number}-${i}" aria-label="Back to reference ${number}-${i}">\u21A9<sup class="footnote-ref">${i}</sup></a>',
+      )
+    }
+  }
+
+  # Numbers the footnotes _root_ refers to in the order it first refers
+  # to them, counting the references inside the footnotes themselves.
+  _number_footnotes(root: Node) {
+    self._footnotes = {}
+    self._footnote_order = []
+    self._footnote_counts = {}
+    self._footnote_seen = {}
+    self._footnote_index = 0
+    self._footnote_written = 0
+
+    var definitions = {}
+
+    for definition in root.find_all('footnote_definition') {
+      if !definitions.contains(definition.label) {
+        definitions.set(definition.label, definition)
+      }
+    }
+
+    self._count_references(root, definitions)
+
+    var i = 0
+
+    while i < self._footnote_order.length() {
+      self._count_references(self._footnote_order[i], definitions)
+      i++
+    }
+  }
+
+  _count_references(node: Node, definitions: dict) {
+    for child in node.children {
+      if child.type == 'footnote_definition' {
+        continue
+      }
+
+      if child.type == 'footnote_reference' {
+        var definition = definitions.get(child.label)
+
+        # An inline note carries its own text, which becomes a footnote
+        # like any other.
+        if definition == nil and !child.children.is_empty() {
+          definition = _inline_note(child)
+          definitions.set(child.label, definition)
+        }
+
+        if definition != nil {
+          if !self._footnotes.contains(child.label) {
+            self._footnote_order.append(definition)
+            self._footnotes.set(child.label, self._footnote_order.length())
+          }
+
+          self._footnote_counts.set(
+            child.label,
+            self._footnote_counts.get(child.label, 0) + 1,
+          )
+        }
+
+        continue
+      }
+
+      self._count_references(child, definitions)
+    }
+  }
+
+  # Raw HTML with GFM's tag filter applied, when it is on.
+  _filter_tags(markup: string) {
+    if !self.options.tag_filter or !markup.contains('<') {
+      return markup
+    }
+
+    var lowered = markup.lower()
+    var out = []
+    var start = 0
+    var i = lowered.index_of('<')
+
+    while i >= 0 {
+      var name_start = i + 1
+
+      if name_start < lowered.length() and lowered[name_start] == '/' {
+        name_start++
+      }
+
+      for tag in _FILTERED_TAGS {
+        var end = name_start + tag.length()
+
+        if end <= lowered.length() and lowered[name_start, end] == tag {
+          var after = end < lowered.length() ? lowered[end] : ''
+
+          if after == '' or
+              after == '>' or
+              after == ' ' or
+              after == '\t' or
+              after == '\n' or
+              after == '/' {
+            out.append(markup[start, i])
+            out.append('&lt;')
+            start = i + 1
+          }
+
+          break
+        }
+      }
+
+      i = lowered.index_of('<', i + 1)
+    }
+
+    out.append(markup[start,])
+
+    return ''.join(out)
+  }
+
+  @to_string() {
+    return '<HtmlRenderer>'
+  }
+}
+
+# The keys of _attributes_ with `id` first and `class` second, the way
+# they are usually written.
+def _ordered(attributes: dict) {
+  var keys = []
+
+  if attributes.contains('id') {
+    keys.append('id')
+  }
+
+  if attributes.contains('class') {
+    keys.append('class')
+  }
+
+  for key in attributes.keys() {
+    if key != 'id' and key != 'class' {
+      keys.append(key)
+    }
+  }
+
+  return keys
+}
+
+# The footnote an inline note stands for: a paragraph of copies of its
+# text.
+def _inline_note(reference: Node) {
+  var definition = Node('footnote_definition')
+  var paragraph = Node('paragraph')
+
+  definition.label = reference.label
+  definition.append_child(paragraph)
+
+  for child in reference.children {
+    paragraph.append_child(child.clone())
+  }
+
+  return definition
+}
+
+# An attribute name an author wrote, with `data-` in front unless it is
+# one that cannot run script.
+def _safe_name(name: string) {
+  var lowered = name.lower()
+
+  if _SAFE_ATTRIBUTES.contains(lowered) or
+      lowered.starts_with('data-') or
+      lowered.starts_with('aria-') {
+    return name
+  }
+
+  return 'data-' + name
+}
+
+def _attribute_markup(attributes: dict) {
+  var parts = []
+
+  for name, value in attributes {
+    parts.append(' ${escape_html(name)}="${escape_html('${value}')}"')
+  }
+
+  return ''.join(parts)
+}
+
+var _SAFE_DATA_IMAGES = [
+  'data:image/png',
+  'data:image/gif',
+  'data:image/jpeg',
+  'data:image/webp',
+]
+
+def _is_dangerous(destination: string) {
+  var lowered = destination.trim().lower()
+
+  if lowered.starts_with('javascript:') or
+      lowered.starts_with('vbscript:') or
+      lowered.starts_with('file:') {
+    return true
+  }
+
+  if lowered.starts_with('data:') {
+    for prefix in _SAFE_DATA_IMAGES {
+      if lowered.starts_with(prefix) {
+        return false
+      }
+    }
+
+    return true
+  }
+
+  return false
+}

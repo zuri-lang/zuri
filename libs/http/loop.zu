@@ -248,8 +248,8 @@ class ConnectionLoop {
     self._acceptor = nil
 
     var now = time()
-    var limit = now
-      + (self._write_wait == nil ? _FINISH_LIMIT : self._write_wait)
+    var limit = now +
+        (self._write_wait == nil ? _FINISH_LIMIT : self._write_wait)
 
     for held in self._live.values() {
       held.closing = true
@@ -309,11 +309,11 @@ class ConnectionLoop {
   }
 
   _resume_accepting(now) {
-    if self._acceptor != nil
-      and !self._accepting
-      and now >= self._accept_after
-      and self.has_room()
-      and self._server.is_listening() {
+    if self._acceptor != nil and
+        !self._accepting and
+        now >= self._accept_after and
+        self.has_room() and
+        self._server.is_listening() {
       self._accepting = true
       self._poller.add(self._acceptor.listener(), 0, net.READABLE)
     }
@@ -453,7 +453,9 @@ class ConnectionLoop {
 
       if request == nil {
         var head = connection.try_request_head(
-          server.max_line_size, server.max_header_size, server.max_header_count,
+          server.max_line_size,
+          server.max_header_size,
+          server.max_header_count,
         )
 
         if head == nil {
@@ -484,8 +486,8 @@ class ConnectionLoop {
 
       # With the peer gone the rest of the body is never coming, and
       # the pipeline is what says so.
-      if !server.body_arrived(connection, request)
-        and !connection.peer_finished() {
+      if !server.body_arrived(connection, request) and
+          !connection.peer_finished() {
         held.request = request
         return
       }

@@ -92,7 +92,10 @@ echo '════════════════════════�
 # ---------------------------------------------------------------------------
 var ch1 = isolate.channel(1)
 var task1 = isolate.spawn(
-  net_dtls_server.echo_server, ch1, server_cert, server_key,
+  net_dtls_server.echo_server,
+  ch1,
+  server_cert,
+  server_key,
 )
 var addr1 = ch1.recv()
 
@@ -113,7 +116,10 @@ ok('client/server echo round-trip over a verified certificate chain')
 # ---------------------------------------------------------------------------
 var ch2 = isolate.channel(1)
 var task2 = isolate.spawn(
-  net_dtls_server.echo_server, ch2, server_cert, server_key,
+  net_dtls_server.echo_server,
+  ch2,
+  server_cert,
+  server_key,
 )
 var addr2 = ch2.recv()
 
@@ -123,7 +129,7 @@ var socket2 = dtls.DtlsSocket()
 assert raises(@() {
   socket2.connect(config2, addr2, 'localhost')
 }),
-  'connecting without trusting the test CA must raise'
+    'connecting without trusting the test CA must raise'
 ok('untrusted certificate is rejected')
 
 # ---------------------------------------------------------------------------
@@ -131,7 +137,12 @@ ok('untrusted certificate is rejected')
 # ---------------------------------------------------------------------------
 var ch3 = isolate.channel(1)
 var task3 = isolate.spawn(
-  net_dtls_server.mutual_dtls_server, ch3, server_cert, server_key, ca_cert)
+  net_dtls_server.mutual_dtls_server,
+  ch3,
+  server_cert,
+  server_key,
+  ca_cert,
+)
 var addr3 = ch3.recv()
 
 var config3 = dtls.DtlsConfig()
@@ -144,7 +155,7 @@ var reply3 = socket3.read(1024).to_string()
 task3.join()
 
 assert reply3 == 'subject:CN=test-client',
-  'server must see and report the client certificate subject'
+    'server must see and report the client certificate subject'
 ok('mutual DTLS: server verifies and reads the client certificate')
 
 # ===========================================================================
