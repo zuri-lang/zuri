@@ -158,6 +158,27 @@ class World {
     }
   }
 
+  /**
+   * Stops the repository, and gives back what it wrote to standard
+   * error, for a failure to report.
+   *
+   * @returns string
+   */
+  halt() {
+    if self.server == nil {
+      return ''
+    }
+
+    self.server.kill(15)
+    self.server.wait(5000)
+
+    var said = self.server.read_stderr().to_string()
+
+    self.server = nil
+
+    return said
+  }
+
   finish() {
     self.stop()
     remove(self.root)

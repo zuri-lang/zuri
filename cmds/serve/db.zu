@@ -137,13 +137,18 @@ class Database {
   /**
    * Runs `body` in a transaction.
    *
+   * On SQLite the transaction takes the write lock as it begins. One
+   * that took it only at its first write would already be reading, and
+   * SQLite refuses at once, without waiting, a reader that tries to
+   * write while another connection writes or after it has.
+   *
    * @param function body
    * @returns whatever `body` returns.
    */
   transaction(body: function) {
     return self.connection.transaction(@(tx) {
       return body()
-    })
+    }, self.engine == 'sqlite' ? sql.SERIALIZABLE : nil)
   }
 
   /**

@@ -75,11 +75,14 @@ before_all(@{
 
   # The standard library's reference is written as the repository
   # starts. The packages published below link to it once it is there.
-  var deadline = time() + 120
+  # A debug build on a loaded machine takes minutes to write it.
+  var deadline = time() + 600
 
   while !page('/std').contains('<h1>The standard library</h1>') {
     if time() > deadline {
-      raise Error("the standard library's reference was not written")
+      raise Error(
+        "the standard library's reference was not written:\n${world.halt()}",
+      )
     }
 
     os.sleep(0.2)

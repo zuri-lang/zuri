@@ -363,6 +363,12 @@ def _class(node, block) {
   return doc
 }
 
+# The path an import names, written with `/` whatever the platform: the
+# parser joins its segments with the native separator.
+def _import_path(node) {
+  return node.fields.path.replace(os.path_separator, '/', false)
+}
+
 # Works out the name an import binds. A plain `import @.tcp` leaves the
 # parser a placeholder rather than a real alias, because the name is
 # just the last segment of the path.
@@ -370,7 +376,7 @@ def _binding(node) {
   var alias = node.fields.name.fields.name
 
   if alias.starts_with('Literal{') {
-    var parts = node.fields.path.split('/')
+    var parts = _import_path(node).split('/')
 
     return parts[parts.length() - 1]
   }
@@ -423,7 +429,7 @@ def read(name: string, path: string, is_package: bool, text: string) {
 
     if inner.kind == 'Import' {
       module.imports.append({
-        path: inner.fields.path,
+        path: _import_path(inner),
         binding: _binding(inner),
         elements: inner.fields.elements.map(@(element) => element.fields.name),
         all: inner.fields.imports_all,
