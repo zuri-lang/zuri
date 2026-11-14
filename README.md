@@ -314,6 +314,13 @@ Already here:
 On the way, in the order it matters:
 
 - [ ] **HTTP/3.** The `http` module speaks HTTP/1.1 and HTTP/2 today.
+- [ ] **A public repository** at pub.zurilang.org, the default registry.
+- [ ] **A debugger** with breakpoints and stepping, for editors that speak DAP.
+- [ ] **A profiler** that shows where a program spends its time and memory.
+- [ ] **OAuth 2** in the standard library, for signing in with another service.
+- [ ] **Telemetry**, traces and metrics a program exports over OpenTelemetry.
+- [ ] **Scheduling** of jobs at set times and intervals, with no cron needed.
+- [ ] **A GitHub Action** that installs Zuri in a CI workflow.
 
 ## AI Involvement
 
