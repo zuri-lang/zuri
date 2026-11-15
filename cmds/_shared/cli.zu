@@ -27,12 +27,12 @@ import .ui
 def add_registry_option(parser) {
   parser.add_option(
     'registry',
-    'The registry to use, by alias or address; the default one otherwise',
+    'The registry to use, as an alias or an address',
     { short_name: 'r', type: args.STRING, metavar: 'registry' },
   )
   parser.add_option(
     'insecure',
-    'Allow a token to cross plain http to another machine',
+    'Allow sending a token over plain HTTP to another machine',
     nil,
   )
 }
@@ -45,7 +45,7 @@ def add_registry_option(parser) {
 def add_json_option(parser) {
   parser.add_option(
     'json',
-    'Print the result as JSON, for another program to read',
+    'Print the result as JSON',
     nil,
   )
 }

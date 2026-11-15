@@ -1,6 +1,6 @@
 # The REPL
 
-Run `zuri` with no arguments and you get an interactive prompt:
+If you run `zuri` without any arguments, you get an interactive prompt:
 
 ```console
 $ zuri
@@ -10,10 +10,10 @@ Type ".exit" to quit, ".help" for help or ".credits" for more information
 %>
 ```
 
-REPL stands for read-eval-print loop, and the *print* is the part that
-makes it useful. At the top level of the REPL, any expression whose value
-is not `nil` is printed for you, so you never need `echo` just to look at
-something:
+REPL stands for read-eval-print loop, and the *print* part is what makes it
+so handy. At the top level of the REPL, the value of any expression that
+isn't `nil` is printed for you, so you don't need `echo` just to look at a
+value:
 
 ```zuri
 %> 1 + 2
@@ -25,13 +25,12 @@ ZURI
 [1, 4, 9]
 ```
 
-Notice that `var name = 'Zuri'` printed nothing. A declaration is not an
-expression, and anything that evaluates to `nil` stays quiet. That single
-rule is what keeps `list.append(4)` and `echo x` from doubling up on your
-screen.
+Notice that `var name = 'Zuri'` didn't print anything. A declaration isn't
+an expression, and nothing is printed for values that are `nil`. That's why
+`list.append(4)` and `echo x` don't print their output twice.
 
-Auto-printing applies only to the outermost level. Type a loop and the body
-does not print once per iteration:
+Values are only printed automatically at the top level. If you type a loop,
+its body doesn't print anything on each iteration:
 
 ```zuri
 %> iter var i = 0; i < 3; i++ {
@@ -40,13 +39,13 @@ does not print once per iteration:
 %>
 ```
 
-Use `echo` inside a block when you want to see something.
+Use `echo` inside a block when you want to see a value.
 
 ## Multi-line Input
 
-The prompt changes from `%>` to `..` when what you have typed so far is
-not yet a complete statement. Press Enter at the end of a line with an
-unclosed brace and keep going:
+When what you've typed isn't a complete statement yet, the prompt changes
+from `%>` to `..`. If a line ends with an unclosed brace, press Enter and
+keep typing:
 
 ```zuri
 %> def double(n) {
@@ -56,17 +55,17 @@ unclosed brace and keep going:
 42
 ```
 
-The same applies to an unclosed bracket, an unclosed parenthesis, a string
-that has not been closed, or a block comment. The REPL reads what you typed
-the way the compiler does, so a bracket inside a string or a quote inside
-a comment does not count. It decides when you are finished; you never have
-to signal it.
+The same goes for an unclosed bracket or parenthesis, an unfinished string,
+or a block comment. The REPL reads your input the same way the compiler
+does, so a bracket inside a string or a quote inside a comment doesn't
+count. The REPL works out when your input is complete, so you never have to
+tell it.
 
-## Everything Stays Defined
+## Definitions Persist
 
-Variables, functions and classes you declare at the top level of the REPL
-remain defined for the rest of the session, because the whole session
-shares one namespace:
+Variables, functions and classes that you declare at the top level stay
+defined for the rest of the session, because the whole session shares one
+namespace:
 
 ```zuri
 %> class Point {
@@ -80,16 +79,16 @@ shares one namespace:
 5
 ```
 
-Redeclaring a name at the REPL's top level replaces it rather than raising
-an error, so you can retype a function until it is right.
+If you declare a name again at the top level, the new declaration replaces
+the old one instead of raising an error. That way, you can keep retyping a
+function until you get it right.
 
-## Getting Out
+## Leaving the REPL
 
-**Type `.exit`.** At a terminal, that is the only thing that ends the
-session.
+**Type `.exit`.** In a terminal, this is the only way to end the session.
 
-**Ctrl+C and Ctrl+D do not exit.** Both print an interrupt line and hand
-the prompt back:
+**Ctrl+C and Ctrl+D don't exit.** Both print an interrupt message and give
+you a new prompt:
 
 ```console
 %> <KeyboardInterrupt [CtrlC]>
@@ -97,18 +96,18 @@ Type '.exit' to exit the REPL session
 %>
 ```
 
-Ctrl+C is how you abandon a half-typed line: the line is discarded and you
-start again on a fresh prompt.
+Use Ctrl+C to throw away a line you've only partly typed. The line is
+discarded and you get a fresh prompt.
 
-To the rest of the language the session is one program, so handlers
-registered with `os.at_exit()` run when it ends, and `os.set_exit_code()`
-sets the status it ends with.
+As far as the rest of the language is concerned, the whole session is a
+single program. Handlers registered with `os.at_exit()` run when the session
+ends, and `os.set_exit_code()` sets its exit status.
 
 ## Piped Input
 
-When standard input is not a terminal, `zuri` reads the session from it
-instead. There is no banner and no prompt, only what the session prints,
-and it ends when the input does:
+When standard input isn't a terminal, `zuri` reads the session from standard
+input instead. It doesn't show a banner or a prompt, only the session's
+output, and it stops when the input ends:
 
 ```console
 $ printf '1 + 2\nvar n = 4\nn * 2\n' | zuri
@@ -116,61 +115,61 @@ $ printf '1 + 2\nvar n = 4\nn * 2\n' | zuri
 8
 ```
 
-Everything else is as if you had typed it: expressions print, declarations
-stay defined, a statement can run over several lines, and `.exit` ends the
-session early. A line that fails reports its error and the session carries
-on, so the exit status is still `0`. Use `zuri run` for a program that
-should stop at its first error.
+Otherwise, it behaves as though you'd typed the input yourself. Expressions
+are printed, declarations stay defined, statements can span several lines,
+and `.exit` ends the session early. When a line fails, its error is reported
+and the session continues, so the exit status is still `0`. If you want a
+program to stop at its first error, use `zuri run` instead.
 
 ## Syntax Highlighting
 
-On a terminal, the REPL colours what you type as you type it. Keywords are
-highlighted and everything else is left plain, so a misspelled `retrun` or
-`whiel` stands out before you press Enter — it simply does not change
-colour.
+In a terminal, the REPL highlights your input as you type. Keywords are
+colored and everything else is left plain, so a misspelling such as `retrun`
+or `whiel` is easy to spot before you press Enter, because it doesn't change
+color.
 
-The highlighting understands string literals. A keyword inside quotes is
-text, not a keyword, and is left uncoloured:
+The highlighter knows about string literals. A keyword inside quotes is just
+text, so it isn't colored:
 
 ```zuri
 %> var note = 'return it later'
 ```
 
-`return` there stays plain, because it is part of the string.
+Here, `return` stays plain because it's part of the string.
 
-Alongside it, a greyed-out suggestion appears to the right of the cursor
-when what you have typed so far matches something earlier in your history.
-Press the right arrow to accept it.
+The REPL also shows a grayed-out suggestion to the right of the cursor when
+what you've typed matches an earlier line in your history. Press the Right
+Arrow key to accept it.
 
-Both are terminal features. Piping input to `zuri` or redirecting its
-output produces plain text, so a session captured to a file has no escape
-codes in it.
+Highlighting and suggestions only appear in a terminal. If you pipe input
+into `zuri` or redirect its output, you get plain text, so a session saved
+to a file contains no escape codes.
 
-## The Other Dot Commands
+## Other Dot Commands
 
-**`.help`** reminds you that Tab offers completions.
+**`.help`** reminds you that you can press Tab for completions.
 
-**`.credits`** opens the project's licence in a pager. Press `q` to come
-back. A piped session prints it instead.
+**`.credits`** opens the project's license in a pager. Press `q` to return
+to the prompt. In a piped session, the license is printed instead.
 
-Both are completed by Tab, along with every keyword in the language.
+Tab completes both commands, as well as every keyword in the language.
 
 ## History
 
-Up and Down walk through previous lines, and Ctrl+R searches backwards
-through them. History is written to a `history.txt` file sitting next to
-the `zuri` executable, so it survives between sessions.
+Use the Up and Down arrow keys to move through previous lines, and Ctrl+R to
+search backward through them. History is saved to a `history.txt` file next
+to the `zuri` executable, so it's kept between sessions.
 
-## What the REPL Is Good At
+## What the REPL Is Good For
 
-Each line is compiled and run on its own, which makes the REPL the right
-tool for a specific kind of question:
+Each line is compiled and run separately, which makes the REPL a good fit
+for quick questions like these:
 
 - What does this method return? `'a,b,,c'.split(',')`
 - Is this value truthy? `!!(-1)`
-- What type am I actually holding? `typeof(x)`
-- Does this syntax parse the way I think? Type it and find out.
+- What type is this value? `typeof(x)`
+- Does this syntax parse the way I expect? Type it in and see.
 
-It is a poor place to *write* a program, because you cannot go back and
-edit line four. Once you are past a few lines, put them in a `.zu` file and
-run it — which is what the next chapter does.
+It's not a good place to *write* a program, since you can't go back and edit
+line four. Once you have more than a few lines, put them in a `.zu` file and
+run that instead. That's what the next chapter does.

@@ -156,46 +156,46 @@ var _BOOLEANS = ['trust_proxy', 'read_only']
 def parser() {
   var parser = args.Parser('zuri serve', false)
 
-  parser.description = 'Runs Nyssa, the package repository and the registry API.'
-  parser.epilog = 'With no subcommand, the repository starts and serves until stopped.'
+  parser.description = 'Runs Nyssa, the package registry, with its API and website.'
+  parser.epilog = 'If no subcommand is given, the registry starts and runs until it\'s stopped.'
 
-  parser.add_option('host', 'The address to listen on; 127.0.0.1 by default', {
+  parser.add_option('host', 'The address to listen on (127.0.0.1 by default)', {
     short_name: 'n',
     type: args.STRING,
     metavar: 'address',
   })
-  parser.add_option('port', 'The port to listen on; 3000 by default', {
+  parser.add_option('port', 'The port to listen on (3000 by default)', {
     short_name: 'p',
     type: args.INT,
     metavar: 'port',
   })
-  parser.add_option('storage', 'Where the database and archives live', {
+  parser.add_option('storage', 'The directory where the database and archives are stored', {
     short_name: 's',
     type: args.STRING,
     metavar: 'dir',
   })
   parser.add_option(
     'config',
-    'The configuration file; nyssa.toml in the storage directory',
+    'The configuration file (nyssa.toml in the storage directory by default)',
     { short_name: 'c', type: args.STRING, metavar: 'file' },
   )
   parser.add_option(
     'public-url',
-    'The address people reach the repository at',
+    'The public address of the registry',
     { type: args.STRING, metavar: 'url' },
   )
   parser.add_option(
     'workers',
-    'How many connections to serve at once; one per CPU, up to 8, by default',
+    'How many connections to serve at once (one per CPU, up to 8, by default)',
     { short_name: 'w', type: args.INT, metavar: 'count' },
   )
   parser.add_option(
     'trust-proxy',
-    'Believe the forwarding headers a proxy in front adds',
+    'Trust the forwarding headers added by a proxy in front of the server',
     nil,
   )
-  parser.add_option('read-only', 'Serve packages but accept no changes', nil)
-  parser.add_option('tls-cert', 'A certificate chain to serve HTTPS with', {
+  parser.add_option('read-only', 'Serve packages without accepting any changes', nil)
+  parser.add_option('tls-cert', 'The certificate chain to serve HTTPS with', {
     type: args.STRING,
     metavar: 'file',
   })
@@ -205,12 +205,12 @@ def parser() {
   })
   parser.add_option(
     'database',
-    'A connection string; SQLite in the storage directory by default',
+    'The database connection string (SQLite in the storage directory by default)',
     { short_name: 'd', type: args.STRING, metavar: 'url' },
   )
   parser.add_option(
     'signup',
-    'Whether anyone may create an account: open or closed',
+    'Whether anyone can create an account',
     {
       type: args.CHOICE,
       choices: ['open', 'closed'],
@@ -219,28 +219,28 @@ def parser() {
   )
   parser.add_option(
     'max-archive-size',
-    'The largest archive accepted, in bytes',
+    'The largest archive to accept, in bytes',
     { type: args.INT, metavar: 'bytes' },
   )
   parser.add_option(
     'guides-url',
-    "Where packages' own guides are served, on a host of its own",
+    "The address where packages' guides are served, which must be on a host of its own",
     { type: args.STRING, metavar: 'url' },
   )
 
-  parser.add_command('migrate', 'Brings the database up to date and exits')
+  parser.add_command('migrate', 'Update the database schema and exit')
   parser.add_command(
     'check',
-    'Checks every stored archive against its checksum',
+    'Check every stored archive against its checksum',
   )
   parser.add_command(
     'backup',
-    'Copies the database to a file while it is in use',
+    'Copy the database to a file while it\'s in use',
     { type: args.STRING, metavar: 'file' },
   )
   parser.add_command(
     'admin',
-    'create, promote, demote, suspend or restore <username>',
+    'Create, promote, demote, suspend or restore an account',
     { type: args.LIST, metavar: 'action username' },
   )
 
@@ -410,7 +410,7 @@ def check(chosen: dict) {
   }
 
   if (chosen.tls_cert == nil) != (chosen.tls_key == nil) {
-    raise UsageError('serving HTTPS takes both a certificate and its key')
+    raise UsageError('serving HTTPS requires both a certificate and its private key')
   }
 
   for key in ['tls_cert', 'tls_key'] {
@@ -520,7 +520,7 @@ def decode() {
   var text = os.get_env(SETTINGS_VARIABLE, nil)
 
   if text == nil {
-    raise UsageError('the repository was started without its settings')
+    raise UsageError('the registry was started without its settings')
   }
 
   return json.decode(text)

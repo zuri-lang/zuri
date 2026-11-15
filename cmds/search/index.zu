@@ -1,7 +1,7 @@
 /**
  * @command search
- * @description Finds packages on a registry by name, description or
- *    keyword.
+ * @description Searches a registry for packages by name, description
+ *    or keyword.
  *
  *   zuri search <words...> [options]
  *
@@ -21,27 +21,27 @@ import .._shared.ui
 def parser() {
   var parser = args.Parser('zuri search', true)
 
-  parser.description = 'Finds packages on a registry by name, description or keyword.'
+  parser.description = 'Searches a registry for packages by name, description or keyword.'
 
-  parser.add_index('words', 'What to look for', {
+  parser.add_index('words', 'The words to search for', {
     type: args.LIST,
     metavar: 'word',
     required: true,
   })
   cli.add_registry_option(parser)
-  parser.add_option('page', 'Which page of results; the first by default', {
+  parser.add_option('page', 'The page of results to show', {
     short_name: 'p',
     type: args.INT,
     metavar: 'page',
     value: 1,
   })
-  parser.add_option('limit', 'Results per page, up to 100; 20 by default', {
+  parser.add_option('limit', 'The number of results per page, up to 100', {
     short_name: 'l',
     type: args.INT,
     metavar: 'count',
     value: 20,
   })
-  parser.add_option('sort', 'relevance, downloads, updated or name', {
+  parser.add_option('sort', 'How to sort the results', {
     type: args.CHOICE,
     choices: ['relevance', 'downloads', 'updated', 'name'],
     metavar: 'order',

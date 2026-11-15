@@ -1,9 +1,9 @@
 # Appendix G: The Error Hierarchy
 
-Every error in Zuri is an instance of a class, and every one of them
-inherits from `Error`. They are declared in ordinary Zuri and go through
-the same class machinery user code does, which is why subclassing one
-behaves exactly like subclassing anything else.
+Every error in Zuri is an instance of a class, and all of them inherit from
+`Error`. They're declared in ordinary Zuri and use the same class machinery
+as your own code, which is why subclassing one works exactly like
+subclassing anything else.
 
 ```text
 Error
@@ -22,13 +22,13 @@ Error
 
 ## Fields
 
-Every error carries three:
+Every error has three fields:
 
 | Field | What it holds |
 | --- | --- |
-| `message` | the text, defaulting to `'An unexpected error has occurred'` |
-| `type` | the class name, as a string |
-| `stacktrace` | a list of frames, innermost first |
+| `message` | The error message. The default is `'An unexpected error has occurred'`. |
+| `type` | The name of the error's class, as a string |
+| `stacktrace` | A list of stack frames, starting with the innermost one |
 
 ```zuri
 catch {
@@ -46,27 +46,28 @@ bad input
 [/path/to/main.zu:2 -> @.script()]
 ```
 
-## When Each One Is Raised
+## When Each Error Is Raised
 
 | Class | Raised when |
 | --- | --- |
-| `Error` | the base class; a general failure with nothing more specific to say |
-| `TypeError` | an operation received the wrong type: an undefined operator signature, a method on `nil`, an annotated parameter given the wrong thing |
-| `ValueError` | the type was right and the value was not |
-| `NumericError` | an arithmetic operation failed |
-| `ArgumentError` | a call passed the wrong number of arguments to a native function |
-| `NotImplementedError` | a method meant to be overridden was not |
-| `RangeError` | an index or a bound fell outside what the value allows |
-| `AccessError` | a permission or access check failed |
-| `AssertError` | an `assert` condition was falsy |
-| `PropertyError` | a member that does not exist was read: a missing dictionary key, an undeclared field, a module member that was not exported |
-| `UndefinedError` | an undefined global was read |
-| `ModuleNotFoundError` | an `import` could not be resolved |
+| `Error` | The base class, for general failures with nothing more specific to report |
+| `TypeError` | An operation received a value of the wrong type, such as an operator used with unsupported types, a method called on `nil`, or the wrong kind of value passed to an annotated parameter |
+| `ValueError` | The type was right, but the value wasn't |
+| `NumericError` | An arithmetic operation failed |
+| `ArgumentError` | A call passed the wrong number of arguments to a native function |
+| `NotImplementedError` | A method that should have been overridden wasn't |
+| `RangeError` | An index or bound was outside what the value allows |
+| `AccessError` | A permission or access check failed |
+| `AssertError` | An `assert` condition was falsy |
+| `PropertyError` | Code read a member that doesn't exist, such as a missing dictionary key, an undeclared field or a module member that wasn't exported |
+| `UndefinedError` | Code read an undefined global name |
+| `ModuleNotFoundError` | An `import` couldn't be resolved |
 
-## Catching
+## Catching Errors
 
-`catch` catches everything inside its block. To handle one kind and let the
-rest through, test and re-raise:
+`catch` catches every error raised inside its block. To handle one kind of
+error and let the others through, check the error and raise it again if it
+isn't the kind you want:
 
 ```zuri,ignore
 catch {
@@ -80,11 +81,11 @@ catch {
 }
 ```
 
-`instance_of()` walks the whole chain, so a test against `Error` matches
-everything.
+`instance_of()` checks the whole inheritance chain, so checking against
+`Error` matches every error.
 
-A parameter annotated `Error` accepts any of them, which is the readable
-way to write a handler:
+A parameter annotated as `Error` accepts any error, which makes a handler
+easy to read:
 
 ```zuri
 def report(e: Error) {
@@ -92,7 +93,7 @@ def report(e: Error) {
 }
 ```
 
-## Subclassing
+## Defining Your Own Errors
 
 ```zuri
 class HttpError < Error {
@@ -105,20 +106,22 @@ class HttpError < Error {
 }
 ```
 
-Two things make this work well. Call `parent(message)` so the base
-constructor sets `message` and the stack trace is captured. Set
-`self.type` so the class name appears in logs and in the uncaught-error
-banner.
+There are two things to get right. Call `parent(message)` so that the base
+constructor sets `message` and records the stack trace. And set `self.type`,
+so that the class name appears in logs and in the message for an uncaught
+error.
 
-Carry whatever the handler needs. An error class exists precisely so it can
-hold more than a string; the capstone's `TaskError` carries the name of the
-field that failed validation, and that is what lets an API answer
+Give the error whatever information its handler needs. Being able to carry
+more than a string is the reason to write an error class at all. The
+capstone project's `TaskError` includes the name of the field that failed
+validation, which is what lets its API respond with
 `{"error": "...", "field": "title"}`.
 
-## Uncaught
+## Uncaught Errors
 
-An error nobody catches prints its type, its message, the source around the
-failure, and the stack trace, then exits `1`:
+An error that nothing catches prints its type, its message, the source code
+around the failure and the stack trace, and the program then exits with
+status `1`:
 
 ```console
 Unhandled ValueError: bottomed out
@@ -137,12 +140,12 @@ Stack trace (most recent call last):
   at recurse() /path/to/main.zu:5
 ```
 
-A deep stack is truncated in the middle. The top and the bottom are the
-parts that tell you anything.
+A deep stack trace is shortened in the middle, because the top and the
+bottom are the useful parts.
 
-## There Is No `finally`
+## There's No `finally`
 
-Code after a `catch` statement runs whether the block raised or not,
-because the handler either recovers or re-raises. See
-[Error Handling](ch07-00-error-handling.md) for the patterns that replace
-it.
+Code after a `catch` statement runs whether or not the block raised an
+error, because the handler either recovers from the error or raises it
+again. [Error Handling](ch07-00-error-handling.md) describes the patterns to
+use instead of `finally`.

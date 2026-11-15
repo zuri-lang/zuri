@@ -1,15 +1,16 @@
 /**
  * @module decimal
  *
- * Exact decimal numbers, for the money column that must not be a
- * float.
+ * Exact decimal numbers, for money and other values that mustn't be
+ * stored as floats.
  *
- * PostgreSQL's `numeric` holds a decimal value exactly. A `number` in
- * Zuri is a double, which holds `0.1` only approximately, so reading a
- * balance of `0.10` into one and writing it back is not guaranteed to
- * store what was there before. `Decimal` keeps the value as an integer
- * and a scale, so `10.05` is exactly ten and five hundredths and stays
- * that way through every read and write.
+ * PostgreSQL's `numeric` type holds a decimal value exactly. A Zuri
+ * `number` is a double, which can only hold `0.1` approximately, so
+ * reading a balance of `0.10` into a number and writing it back isn't
+ * guaranteed to store the original value. `Decimal` keeps the value as
+ * an integer and a scale, so `10.05` is exactly ten and five
+ * hundredths, and stays that way however many times it's read and
+ * written.
  *
  * ```zuri,ignore
  * var price = Decimal('19.99')
@@ -19,9 +20,9 @@
  * # 3.9980
  * ```
  *
- * Addition, subtraction and multiplication are exact. Division is not,
- * in general, so it takes the number of decimal places to produce and
- * rounds half away from zero, the rule money is normally counted by.
+ * Addition, subtraction and multiplication are exact. Division
+ * generally isn't, so it takes the number of decimal places to produce,
+ * and rounds half away from zero, which is the usual rule for money.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

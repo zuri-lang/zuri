@@ -1,13 +1,13 @@
 /**
  * @module ieee
  *
- * IEEE 754 floating point numbers from the bits a server sends.
+ * Decodes IEEE 754 floating-point numbers from the bits a server sends.
  *
  * PostgreSQL and MySQL both send a `real` or `double precision` value
- * in binary as its IEEE 754 bit pattern: big-endian for PostgreSQL and
- * little-endian for MySQL. The adapters read the bits as integers in
- * whichever order applies and hand them here, so the numbers come out
- * the same either way.
+ * in binary as its IEEE 754 bit pattern, in big-endian order for
+ * PostgreSQL and little-endian order for MySQL. The adapters read the
+ * bits as integers in the right order and pass them here, so the
+ * numbers come out the same either way.
  *
  * ```zuri
  * import sql.ieee { double_of, single_of }
@@ -16,9 +16,9 @@
  * echo single_of(0xc0200000)
  * ```
  *
- * Every pattern has an answer, including the ones for zero with either
- * sign, the subnormal numbers, both infinities and NaN, and that answer
- * is exactly the number the pattern encodes.
+ * Every bit pattern is decoded, including both signed zeros, the
+ * subnormal numbers, both infinities and NaN, and the result is exactly
+ * the number that the pattern encodes.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

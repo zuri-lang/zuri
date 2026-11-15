@@ -64,7 +64,7 @@ describe('zuri doc', @{
     var again = doc(['init', 'manual'])
 
     expect(again.status).to_be(1)
-    expect(again.all).to_contain('already holds documentation')
+    expect(again.all).to_contain('already contains documentation')
   })
 
   it('fails a strict build over a link that leads nowhere', @{

@@ -1,6 +1,7 @@
 /**
  * @command account
- * @description Manages account information and tokens for a registry.
+ * @description Signs in to a registry, and manages your account and
+ *    its API tokens.
  *
  *   zuri account create | login | logout | whoami | tokens
  *   zuri account token [name]
@@ -126,7 +127,7 @@ def _login(registry, parsed, as_json: bool) {
 
 def _logout(registry, as_json: bool) {
   if !config.credentials().contains(registry.address) {
-    echo 'This machine is not signed in to ${registry.address}.'
+    echo 'This machine isn\'t signed in to ${registry.address}.'
 
     return
   }
@@ -164,7 +165,7 @@ def _logout(registry, as_json: bool) {
 
 def _whoami(registry, as_json: bool) {
   if registry.token == nil {
-    raise CommandError('this machine is not signed in to ${registry.address}')
+    raise CommandError('this machine isn\'t signed in to ${registry.address}')
   }
 
   var me = registry.me()

@@ -3,13 +3,13 @@
 /**
  * @module http.session.file
  *
- * The session store that keeps one file per session.
+ * The session store that keeps each session in its own file.
  *
- * It is the default because it needs nothing set up: no database, no
- * daemon, no schema. It is also shared, which matters the moment a
- * server runs on more than one core - `http.serve()` puts every
- * worker in its own isolate, and a store held in memory would give
- * each of them a different set of sessions.
+ * It's the default because it doesn't need anything set up: no
+ * database, no daemon and no schema. It's also shared between
+ * processes, which matters as soon as a server runs on more than one
+ * core. `http.serve()` runs each worker in its own isolate, and a store
+ * held in memory would give each of them a different set of sessions.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -32,27 +32,27 @@ var DIRECTORY_MODE = 0c700
 var FILE_MODE = 0c600
 
 /**
- * The directory sessions are kept in when a `FileStore` is not told
- * where to put them: a private subdirectory of the platform's
+ * The directory where sessions are kept when a `FileStore` isn't told
+ * where to put them. It's a private subdirectory of the platform's
  * temporary directory, named after the working directory of the
- * program that asked.
+ * program.
  *
- * The temporary directory itself is deliberately not used. It is
- * world-writable, and on a shared machine world-readable, so a
- * session file dropped straight into it can be read by every other
- * account on the host - which is the oldest way there is to be logged
- * in as somebody else. The subdirectory is created `0700` and checked
- * before it is used.
+ * The temporary directory itself is deliberately not used. Anyone can
+ * write to it, and on a shared machine anyone can read it, so a session
+ * file placed directly in it could be read by every other account on
+ * the host. That's the oldest way there is of being logged in as
+ * somebody else. The subdirectory is created with mode `0700` and
+ * checked before it's used.
  *
- * Naming it after the working directory keeps two programs on one
- * machine from sharing a session space by accident, and keeps the
- * same program's sessions across a restart.
+ * Naming it after the working directory stops two programs on the same
+ * machine from sharing sessions by accident, and lets a program keep
+ * its sessions when it restarts.
  *
- * @note The platform's temporary directory is cleared on a schedule
- *    the platform decides, and on most of them at every reboot.
- *    Sessions kept here therefore survive a restart of the server but
- *    not necessarily a restart of the machine. Anything that has to
- *    outlive the host names its own directory.
+ * @note The platform clears its temporary directory on a schedule of
+ *    its own, and on most platforms at every reboot. Sessions kept here
+ *    therefore survive a restart of the server, but not necessarily a
+ *    restart of the machine. If sessions have to outlast the host, give
+ *    the store a directory of your own.
  * @returns string
  */
 def default_directory() {
@@ -63,8 +63,8 @@ def default_directory() {
 }
 
 /**
- * Keeps each session in its own file, named after the session's
- * storage key.
+ * Keeps each session in its own file, named after the session's storage
+ * key.
  *
  * ```zuri,ignore
  * import http.session
@@ -74,34 +74,34 @@ def default_directory() {
  * }))
  * ```
  *
- * A file holds its expiry on the first line and the payload on the
- * rest, so a sweep can decide whether to keep a session without
- * understanding what is in it.
+ * The first line of a file holds the session's expiry time and the rest
+ * holds the payload, so a sweep can decide whether to keep a session
+ * without having to understand what's in it.
  *
  * ### Writing
  *
- * A write goes to a uniquely named file in the same directory and is
- * then renamed over the real one, which the filesystem does
- * atomically. A reader therefore sees either the previous session or
- * the new one, never a half-written mixture, and a server killed
- * mid-write leaves the previous session intact.
+ * A write goes to a file with a unique name in the same directory,
+ * which is then renamed over the real file. The filesystem does that
+ * atomically, so a reader sees either the previous session or the new
+ * one, never a mixture of both, and a server killed in the middle of a
+ * write leaves the previous session intact.
  *
- * Two requests writing the same session at the same moment - the
- * usual cause being parallel requests from one browser tab - both
- * succeed, and the one that renames last is the one that survives.
- * Nothing here serialises them.
+ * If two requests write the same session at the same moment, which
+ * usually happens with parallel requests from one browser tab, both
+ * succeed, and the one that renames its file last wins. Nothing here
+ * puts the writes in order.
  *
  * ### Permissions
  *
- * A session file is a bearer credential in the same way the cookie
- * is. The directory is created `0700` and each file `0600`, and a
- * directory that anyone outside the owner can reach is refused
- * outright rather than used. Pass `strict_permissions: false` to
- * accept one anyway, which is occasionally what a deployment with its
- * own access control wants and is never what a default should do.
+ * A session file is a bearer credential, just like the cookie. The
+ * directory is created with mode `0700` and each file with mode `0600`,
+ * and a directory that anyone other than its owner can access is
+ * refused. Pass `strict_permissions: false` to accept one anyway. A
+ * deployment with its own access control occasionally needs that, but
+ * it should never be the default.
  *
- * On Windows the mode check does not run, because the mode a file
- * reports there does not describe who can open it.
+ * On Windows, the mode isn't checked, because the mode a file reports
+ * there doesn't describe who can open it.
  *
  * @printable
  */
@@ -110,13 +110,13 @@ class FileStore < SessionStore {
   var _directory
 
   /**
-   * @param ?string directory: where to keep the files; defaults to
-   *    `default_directory()`. Created, with every parent it needs, if
-   *    it is not already there
+   * @param ?string directory: where to keep the files. Defaults to
+   *    `default_directory()`. The directory is created, along with any
+   *    parents it needs, if it doesn't exist.
    * @param ?dict options: `gc_probability` (default `0.01`) and
    *    `strict_permissions` (default `true`)
-   * @throws SessionError if the directory cannot be created, is not a
-   *    directory, or is reachable by users other than its owner
+   * @throws SessionError if the directory can't be created, isn't a
+   *    directory, or can be accessed by users other than its owner
    */
   @new(directory: ?string, options: ?dict) {
     var settings = options == nil ? {} : options

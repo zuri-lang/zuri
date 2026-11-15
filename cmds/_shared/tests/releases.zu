@@ -254,7 +254,7 @@ describe('unpacking', @{
       refusal(@{
         releases.unpack(archive_path, destination, '6.0.0', TARGET)
       }),
-    ).to_contain('does not hold a zuri runtime')
+    ).to_contain("doesn't contain a zuri runtime")
     expect(os.dir_exists(destination)).to_be_false()
   })
 

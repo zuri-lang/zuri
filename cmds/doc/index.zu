@@ -1,7 +1,7 @@
 /**
  * @command doc
- * @description Builds a documentation site from pages written in
- *    Markdown, or from the doc blocks in a project.
+ * @description Builds a documentation site from Markdown pages, or an
+ *    API reference from a project's doc comments.
  *
  *   zuri doc [build|serve|init|generate|clean] [dir] [options]
  *
@@ -144,7 +144,7 @@ def _init(chosen: dict) {
   var target = plan.init_target(chosen.dir, os.cwd())
 
   if file(os.join_paths(target, config.FILE_NAME)).exists() {
-    raise UsageError('${_shown(target)} already holds documentation')
+    raise UsageError('${_shown(target)} already contains documentation')
   }
 
   var title = chosen.title == nil ? plan.default_title(target) : chosen.title

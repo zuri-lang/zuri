@@ -1,13 +1,14 @@
 /**
  * @module definition
  *
- * What a model is: its table, its columns, how its values are cast and
- * checked, what it is associated with, and which of its hooks it has.
+ * Describes a model: its table, its columns, how its values are cast
+ * and checked, what it's associated with, and which hooks it has.
  *
- * A model's class says most of it. Every field it declares that does
- * not start with `_` is a column of the same name, read and written as
- * the field. The rest it says in a static `define()`, which is handed a
- * `Definition` to describe itself on:
+ * Most of this comes from the model's class. Every field the class
+ * declares that doesn't start with `_` is a column with the same name,
+ * which is read and written as that field. The rest is described in a
+ * static `define()` method, which is passed a `Definition` to describe
+ * the model with:
  *
  * ```zuri,ignore
  * class Post < Model {
@@ -24,11 +25,11 @@
  * ```
  *
  * `define()` runs once, the first time the model is used, not when its
- * class is declared, so it can name a model declared after it in the
- * same file. What it describes is checked against the class then, and
- * a definition that cannot work, an association with no field to hold
- * it, a cast on a field that is not a column, raises `ModelError` at
- * that first use rather than somewhere further on.
+ * class is declared, so it can refer to a model that's declared later
+ * in the same file. The definition is checked against the class at that
+ * point. A definition that can't work, such as an association with no
+ * field to hold it or a cast on a field that isn't a column, raises a
+ * `ModelError` on that first use, instead of failing somewhere later.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

@@ -1,9 +1,9 @@
 # Class Extensions
 
-An **extension** adds methods to a class that already exists. It is written
-with `>` rather than `<`, and it is a different thing from inheritance:
-inheritance creates a *new* class that borrows from an old one, while an
-extension modifies the old one in place.
+An **extension** adds methods to an existing class. It's written with `>`
+instead of `<`, and it's different from inheritance. Inheritance creates a
+*new* class based on an existing one, while an extension changes the
+existing class directly.
 
 ```zuri
 class Account {
@@ -41,36 +41,36 @@ a
 account for ada
 ```
 
-`Account` gained two methods. There is no new class, no subclass, and no
-wrapper object: `a` is the same `Account` instance it was, and it now
-answers to `shout()` and `initials()` alongside the methods its own
-declaration gave it.
+`Account` now has two more methods. No new class, subclass or wrapper object
+was created. `a` is still the same `Account` instance, and it now responds
+to `shout()` and `initials()` as well as the methods declared in the class
+itself.
 
-## `<` Versus `>`
+## `<` Compared With `>`
 
-The two are easy to tell apart once you read the arrow as pointing at
-where the methods end up.
+They're easy to tell apart if you think of the arrow as pointing to where
+the methods end up.
 
 | | Inheritance | Extension |
 | --- | --- | --- |
 | Syntax | `class Child < Parent` | `class Anything > Target` |
-| Produces | a new class | nothing; it modifies `Target` |
-| Affects existing instances | no | **yes** |
-| May declare fields | yes | no |
-| May declare `@new` | yes | no, it is not a field-holder |
-| Methods are | ordinary methods | `static`, with the receiver as a parameter |
-| `self` inside a method | the instance | not available |
+| Creates | A new class | Nothing; it modifies `Target` |
+| Affects existing instances | No | **Yes** |
+| Can declare fields | Yes | No |
+| Can declare `@new` | Yes | No, because it doesn't hold fields |
+| Methods are | Ordinary methods | `static`, with the instance as a parameter |
+| `self` inside a method | The instance | Not available |
 
-## The Rules
+## Rules for Extensions
 
-Four rules are enforced at compile time, and the error messages say
-exactly what is wrong.
+The compiler enforces four rules, and its error messages tell you exactly
+what's wrong.
 
-### The Name Is a Label
+### The Name Is Only a Label
 
-An extension's own name is never bound to anything. It exists so the
-declaration reads like a declaration and so the error messages have
-something to say:
+The name of an extension is never bound to anything. It's there so the
+declaration reads like any other declaration, and so error messages have
+something to refer to:
 
 ```zuri,ignore
 class AccountExtras > Account {
@@ -86,8 +86,9 @@ echo typeof(AccountExtras)
 Unhandled UndefinedError: undefined global 'AccountExtras'
 ```
 
-Name it after what it adds. `AccountExtras`, `ShapeFormatting`,
-`NodeDebugging` all read well; the name appears in no other code.
+Name an extension after what it adds, such as `AccountExtras`,
+`ShapeFormatting` or `NodeDebugging`. The name isn't used anywhere else in
+your code.
 
 ### Every Method Must Be `static`
 
@@ -105,12 +106,12 @@ class Bad > Target {
 SyntaxError: extension method 'helper' must be declared 'static' and receive the instance explicitly as their own first parameter if desired
 ```
 
-`static` here does **not** mean the method ends up on the class rather than
-on instances. It means the method is compiled without an implicit receiver,
-so `self` does not exist inside it. The instance arrives as an ordinary
-argument instead.
+Here, `static` **doesn't** mean that the method is attached to the class
+instead of its instances. It means that the method is compiled without an
+implicit receiver, so `self` doesn't exist inside it. The instance is passed
+as an ordinary argument instead.
 
-### No Fields
+### Extensions Can't Add Fields
 
 ```zuri,ignore
 class Target {}
@@ -124,15 +125,15 @@ class Bad > Target {
 SyntaxError: extension 'Bad' can only declare static methods but not fields
 ```
 
-An extension adds behaviour, never state. A class's set of fields is fixed
-when the class is declared, and nothing — including an extension — can add
-one afterwards. When your extension needs somewhere to keep something, keep
-it in the extending module, keyed by whatever identifies the instance.
+An extension adds behavior, never state. A class's fields are fixed when the
+class is declared, and nothing can add one later, not even an extension. If
+your extension needs to store something, keep it in the module that declares
+the extension, keyed by something that identifies the instance.
 
-### The Target Must Exist
+### The Target Must Already Exist
 
 The target is evaluated when the extension is declared, so it has to be a
-name that is already bound to a class:
+name that's already bound to a class:
 
 ```zuri,ignore
 class Orphan > NoSuchClass {
@@ -146,9 +147,9 @@ class Orphan > NoSuchClass {
 Unhandled UndefinedError: undefined global 'NoSuchClass'
 ```
 
-The name does not have to be a bare one. Anything an expression starting
-with an identifier reaches works, so a class another module owns can be
-named straight through that module:
+The name doesn't have to be a plain identifier. Any expression that starts
+with an identifier works, so you can name a class from another module
+directly through that module:
 
 ```zuri
 import set
@@ -166,14 +167,14 @@ echo set.Set([1, 2, 3]).summary()
 set of 3
 ```
 
-Built-in types are not classes in scope, so `string`, `list`, `number` and
-the rest cannot be extended. `Error` and every class the standard library
-exports can be.
+Built-in types aren't classes you can refer to, so you can't extend
+`string`, `list`, `number` or the other built-in types. You can extend
+`Error` and any class that the standard library exports.
 
-## The Receiver
+## The Instance Parameter
 
-An extension method receives the instance as its **first parameter**. The
-name is yours to choose:
+An extension method receives the instance as its **first parameter**, and
+you can call that parameter whatever you like:
 
 ```zuri
 class Reading {
@@ -205,12 +206,12 @@ echo r.scaled(3)
 300
 ```
 
-`r.scaled(3)` passes `r` as `reading` and `3` as `factor`. Every argument
-at the call site shifts one place to the right of the receiver, exactly as
-it would for an ordinary method.
+`r.scaled(3)` passes `r` as `reading` and `3` as `factor`. All the arguments
+at the call site come after the instance, as they would for an ordinary
+method.
 
-Because arity is not enforced, the receiver parameter is optional. A method
-that does not need the instance can simply not declare one:
+Since argument counts aren't checked, the instance parameter is optional. A
+method that doesn't need the instance can simply leave it out:
 
 ```zuri
 class Widget {
@@ -232,7 +233,7 @@ echo Widget().api_version()
 1.0
 ```
 
-### `self` Does Not Exist Here
+### There's No `self`
 
 ```zuri,ignore
 class Thing {
@@ -254,12 +255,12 @@ class ThingBroken > Thing {
 SyntaxError: 'self' used outside of a method
 ```
 
-Use the receiver parameter. `t.n`, not `self.n`.
+Use the instance parameter instead: write `t.n`, not `self.n`.
 
-### Private Members Stay Private
+### Private Members Are Still Private
 
-An extension is outside code, and the underscore rule applies to it in
-full:
+An extension counts as code outside the class, so the underscore rule
+applies to it in full:
 
 ```zuri,ignore
 class Safe {
@@ -280,14 +281,14 @@ class Peek > Safe {
 SyntaxError: '_hidden' is private and can only be accessed via 'self' or 'parent'
 ```
 
-This is the important limit on extensions. They can add behaviour built out
-of a class's **public** surface, and they cannot reach inside it. An
-extension is not a way around encapsulation.
+This is the most important limitation of extensions. They can add behavior
+built from a class's **public** members, but they can't reach inside it. You
+can't use an extension to get around encapsulation.
 
 ## Replacing an Existing Method
 
-An extension method with the same name as one the class already has
-**replaces** it:
+If an extension method has the same name as an existing method of the class,
+it **replaces** that method:
 
 ```zuri
 class Greeter {
@@ -320,15 +321,15 @@ hello ada
 HELLO ADA
 ```
 
-Read that carefully. `g` was constructed **before** the extension was
-declared, and calling `greet()` on it after the declaration runs the new
-one. The replacement is not a shadow or a wrapper: the method table of the
-class itself changed, and every instance of it — past, present and future —
-sees the change.
+Read that example carefully. `g` was created **before** the extension was
+declared, and calling `greet()` on it afterwards runs the new version. The
+new method doesn't shadow or wrap the old one. The class's method table
+itself has changed, and every instance of the class sees the change,
+whenever it was created.
 
-This holds no matter how thoroughly the original has already been used.
-Build an eight-level tree, call the original `count()` four thousand times,
-then replace it:
+This is true however much the original method has already been used. Here,
+we build an eight-level tree, call the original `count()` four thousand
+times, and then replace it:
 
 ```zuri,ignore
 var t = tree_with(8)
@@ -355,15 +356,16 @@ echo t.count()
 999
 ```
 
-Four thousand calls to the old method, and the next call runs the new one.
-Replacement is unconditional: there is no warm-up state, cached lookup or
-earlier result that can keep an old body alive past the extension.
+After four thousand calls to the old method, the next call runs the new one.
+Replacement always takes effect, and there's no warm-up state, cached lookup
+or earlier result that can keep the old method alive after the extension
+runs.
 
 ## Decorated Methods
 
-An extension can add decorated methods, which is how you give operators,
-iteration or a string form to a class you did not write. The receiver still
-comes first, and the decorator's own parameters follow it:
+An extension can add decorated methods, which is how you add operators,
+iteration or a string form to a class you didn't write. The instance still
+comes first, followed by the decorated method's own parameters:
 
 ```zuri
 class Box {
@@ -406,14 +408,14 @@ Box(9)
 7
 ```
 
-`@add(a, b)` gets the left operand as `a` and the right as `b`.
-`@key(box, previous)` gets the instance and then the previous key, which is
-the argument `@key` would normally take on its own.
+`@add(a, b)` receives the left operand as `a` and the right operand as `b`.
+`@key(box, previous)` receives the instance and then the previous key, which
+is the argument `@key` would normally take on its own.
 
-## They Are Instance Methods, Not Statics
+## Extension Methods Are Instance Methods
 
 `static` in the declaration describes how the method is *compiled*, not
-where it lands. The methods go onto instances:
+where it ends up. The methods are added to instances:
 
 ```zuri,ignore
 class Item {
@@ -435,16 +437,16 @@ echo Item.label(Item())
 Unhandled PropertyError: undefined static member 'label' on class 'Item'
 ```
 
-Call it on the instance: `Item().label()`.
+Call the method on an instance, as in `Item().label()`.
 
 ## Extensions and Inheritance
 
-The two interact in one way worth knowing, and the rule is about **when**
-each declaration runs.
+There's one interaction between the two that you need to know about, and it
+depends on **when** each declaration runs.
 
-An extension changes the target's method table. A subclass copies its
-parent's methods when the subclass is declared. So a subclass sees an
-extension only if the extension came first:
+An extension changes the target class's method table, and a subclass copies
+its parent's methods when the subclass is declared. So a subclass only gets
+an extension's methods if the extension was declared first:
 
 ```zuri
 class Vehicle {
@@ -477,16 +479,16 @@ echo Car().doubled()
 8
 ```
 
-`Car` was declared after the extension, so it inherited `doubled`. Move the
-`class Car` declaration above the extension and `Car().doubled()` raises
-`undefined property 'doubled' on instance of 'Car'`, while `Vehicle` keeps
-it.
+`Car` was declared after the extension, so it inherited `doubled`. If you
+move the `class Car` declaration above the extension, `Car().doubled()`
+raises `undefined property 'doubled' on instance of 'Car'`, while `Vehicle`
+still has the method.
 
-**Declare extensions before the subclasses that should inherit them.** In
-practice that means at the top of a module, or in a module imported at the
-top.
+**Declare extensions before any subclasses that should inherit them.** In
+practice, that means at the top of a module, or in a module that's imported
+at the top.
 
-Extending a subclass never touches its parent:
+Extending a subclass never affects its parent:
 
 ```zuri
 class Animal {
@@ -520,13 +522,13 @@ woof
 undefined property 'speak' on instance of 'Animal'
 ```
 
-## Extensions Are Global
+## Extensions Apply Everywhere
 
-This is the property that makes extensions powerful and the one that makes
-them worth using sparingly. An extension is not scoped to the module that
-declares it. It changes the class everywhere in the program, and it takes
-effect the moment the declaring module runs — which, for an imported
-module, is the moment it is imported.
+This is what makes extensions powerful, and it's also why you should use
+them sparingly. An extension isn't limited to the module that declares it.
+It changes the class throughout the whole program, starting as soon as the
+declaring module runs. For an imported module, that's as soon as it's
+imported.
 
 <span class="filename">Filename: shape.zu</span>
 
@@ -577,19 +579,20 @@ shape: circle
 shape: square
 ```
 
-`main.zu` never mentions `label`'s definition. Importing `extras` — for any
-reason, including a reason unrelated to `Shape` — added a method to a class
-declared in a third file, and the instance created before the import
-gained it too.
+`main.zu` never refers to the definition of `label`. Importing `extras`, for
+whatever reason, even one that has nothing to do with `Shape`, added a
+method to a class declared in a third file, and the instance created before
+the import got the method too.
 
-Two consequences follow.
+This has two consequences.
 
-**An import can change behaviour you did not ask it to change.** A module
-that extends a class you use will alter it for your code as well, and
-nothing at your call site says so.
+**An import can change behavior you didn't ask it to change.** If a module
+extends a class you use, the change affects your code as well, and nothing
+at your call site tells you.
 
-**Two extensions of the same method collide silently.** The last one to run
-wins, and the winner depends on import order:
+**Two extensions that define the same method conflict without any warning.**
+The last one to run wins, so which one wins depends on the order of the
+imports:
 
 ```zuri
 class Slot {
@@ -618,35 +621,35 @@ echo Slot().which()
 second
 ```
 
-## When to Use One
+## When to Use an Extension
 
-Extensions answer a question inheritance cannot: how do you add behaviour
-to a class whose instances are created somewhere you do not control? A
-subclass only helps if you are the one calling the constructor.
+Extensions solve a problem that inheritance can't: adding behavior to a
+class whose instances are created somewhere you don't control. A subclass
+only helps if you're the one calling the constructor.
 
-Good reasons:
+Good reasons to use one:
 
-**Adding a view or a format to a domain class.** `to_string()`, a
-`@to_json`, a `summary()` — presentation that does not belong in the model
-itself, added from the module that cares about it.
+**Adding a view or format to a domain class.** For example, a `to_string()`,
+a `@to_json` or a `summary()` method. This is presentation code that doesn't
+belong in the model, added by the module that needs it.
 
-**Giving a standard library class an operator or an iterator** so it works
-with syntax it was not written for.
+**Adding an operator or iteration to a standard library class**, so that it
+works with syntax it wasn't originally written for.
 
-**Instrumenting during debugging.** Replacing a method with one that logs,
-then deleting the extension, is a diagnostic technique that costs nothing
-in the original file.
+**Instrumenting code while debugging.** You can replace a method with one
+that logs its calls, and then delete the extension when you're done, without
+touching the original file.
 
 Reasons to think twice:
 
-**It is invisible at the call site.** `account.shout()` gives no hint that
-`shout` lives in a different file from `Account`. A reader who greps the
-class body will not find it.
+**It's invisible at the call site.** Nothing about `account.shout()` tells
+you that `shout` is defined in a different file from `Account`. Someone
+searching the class body won't find it.
 
-**It is global.** Everything above.
+**It applies everywhere**, as described above.
 
-**A plain function is usually enough.** `shout(account)` is a function, it
-is obvious where it lives, and it cannot collide with anything. Reach for
-an extension when the thing genuinely needs to be a *method* — because
-syntax demands it, as with a decorated method, or because callers already
+**An ordinary function is usually enough.** `shout(account)` is a plain
+function, it's obvious where it's defined, and it can't conflict with
+anything. Use an extension when you really need a *method*, either because
+the syntax requires one, as with decorated methods, or because callers only
 have the instance and nothing else.

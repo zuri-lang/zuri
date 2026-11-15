@@ -1,12 +1,13 @@
 /**
  * @module casts
  *
- * Turning what an engine hands back into what a model's field holds.
+ * Converts the values that an engine returns into the types that a
+ * model's fields hold.
  *
- * Most values arrive already as the type they were stored as. The rest
- * depend on the engine: MySQL has no boolean and returns `1`, and
- * MariaDB keeps JSON as text. A cast declared on a field turns such a
- * value into the type the field holds on every engine, as it is read.
+ * Most values arrive as the type they were stored as. The rest depend
+ * on the engine. MySQL has no boolean type and returns `1`, and MariaDB
+ * stores JSON as text. A cast declared on a field converts such a
+ * value, as it's read, into the type the field holds on every engine.
  *
  * | Cast | The field holds |
  * | - | - |
@@ -16,10 +17,10 @@
  * | `decimal` | a `sql.Decimal`, from a number, a string or a decimal |
  * | `string` | text, from anything |
  * | `json` | a list or dictionary, from JSON text or one already decoded |
- * | `date` | a `date.Date`, from one, or from ISO 8601 text |
+ * | `date` | a `date.Date`, from a `date.Date` or from ISO 8601 text |
  *
- * Null stays `nil` under every cast, and a value that will not convert
- * is left as it was read rather than lost.
+ * A null stays `nil` whatever the cast, and a value that can't be
+ * converted is left as it was read, instead of being lost.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

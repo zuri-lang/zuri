@@ -1,6 +1,6 @@
 /**
  * @command test
- * @description Run the tests.
+ * @description Runs the tests.
  *
  *   zuri test [target]
  *

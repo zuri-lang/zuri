@@ -1,17 +1,17 @@
 /**
  * @module wire.render
  *
- * Walking a compiled template and writing the page out.
+ * Walks a compiled template and writes out the page.
  *
- * Nothing is parsed here and no markup is reassembled from text. The
- * compiler already decided what every instruction is and what escaping
- * every interpolation needs, so rendering is a walk that evaluates
+ * Nothing is parsed here, and no markup is put back together from text.
+ * The compiler has already decided what each instruction is and what
+ * escaping each interpolation needs, so rendering just evaluates
  * expressions and appends strings, and a value can never turn into
- * structure on its way to the page.
+ * markup on its way to the page.
  *
- * The renderer is also the scope an expression is evaluated against: it
- * is what answers what a name is bound to, what a filter does, and where
- * to point when something goes wrong.
+ * The renderer is also the scope that expressions are evaluated in.
+ * It's what decides what a name refers to, what a filter does, and
+ * where to point when something goes wrong.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
@@ -24,11 +24,11 @@ import .escape
 import .values { invoke, is_safe, stringify, truthy, type_name, unwrap }
 
 /**
- * One level of variables, pointing at the level around it.
+ * One level of variables, with a reference to the level around it.
  *
- * A loop pushes one of these rather than copying everything it can see,
- * so iterating a long list costs one small dictionary per iteration
- * instead of a copy of the whole page's variables.
+ * A loop adds one of these instead of copying everything it can see, so
+ * looping over a long list costs one small dictionary per iteration
+ * instead of a copy of all the page's variables.
  */
 class Frame {
 
@@ -498,12 +498,12 @@ class Renderer {
   }
 
   /**
-   * One attribute from an `x-attr` dictionary, or `nil` when it should
-   * not be written at all.
+   * One attribute from an `x-attr` dictionary, or `nil` if it shouldn't
+   * be written at all.
    *
-   * `true` gives a valueless attribute and `false` or `nil` leaves it
-   * off entirely, which is what makes `x-attr="{ disabled: !in_stock }"`
-   * behave the way the markup reads.
+   * `true` gives an attribute without a value, and `false` or `nil`
+   * leaves the attribute out, so that
+   * `x-attr="{ disabled: !in_stock }"` does what it looks like it does.
    *
    * @param string name
    * @param any value
@@ -759,15 +759,15 @@ class Renderer {
   /**
    * _value_ as a list of `[key, value]` pairs.
    *
-   * A list keeps its positions as keys and a dictionary its own, which
-   * is what lets one `x-for` read either. Anything with no entries at
-   * all, `nil` included, gives an empty list so that a loop over a
-   * variable that was never supplied renders nothing rather than
-   * raising.
+   * A list uses its positions as keys and a dictionary uses its own
+   * keys, so that one `x-for` can read either. Anything without
+   * entries, including `nil`, gives an empty list, so that a loop over
+   * a variable that was never supplied renders nothing instead of
+   * raising an error.
    *
    * @param any value
    * @returns list
-   * @throws RenderError when the value cannot be iterated.
+   * @throws RenderError if the value can't be iterated
    */
   _entries(value) {
     var subject = unwrap(value)
@@ -1051,11 +1051,12 @@ def _collect_blocks(chain: list, supplied: dict) {
 }
 
 /**
- * Every variable a frame chain can see, flattened into one dictionary.
+ * Every variable that a chain of frames can see, combined into one
+ * dictionary.
  *
- * An include starts a new chain rather than extending this one, since
- * what it does to its own variables must not leak back out, so the
- * variables it inherits have to be copied across.
+ * An include starts a new chain instead of extending this one, because
+ * changes it makes to its own variables mustn't leak back out. That
+ * means the variables it inherits have to be copied across.
  *
  * @param Frame frame
  * @returns dict

@@ -1,21 +1,23 @@
 # Decorated Methods
 
-A method whose name begins with `@` is a **decorated method**. The runtime
-calls it for you when a piece of language syntax is applied to your
-instance. That is how a class hooks into construction, arithmetic,
+A method whose name starts with `@` is a **decorated method**. The runtime
+calls it for you when a particular piece of syntax is used with an instance
+of your class. This is how a class can support construction, arithmetic,
 comparison and iteration without any special syntax of its own.
 
-Decorated methods are ordinary methods. They can be inherited, overridden
-and called by name.
+Apart from that, decorated methods are ordinary methods. They can be
+inherited, overridden and called by name.
 
 ## `@new`: Construction
 
-Already covered. It runs when the class is called, receives the arguments,
-and is the one place `self.x = value` may declare a new field.
+You've already seen this one. It runs when the class is called and receives
+the arguments, and it's the only place where `self.x = value` can declare a
+new field.
 
 ## Arithmetic
 
-Define the operator you want and it works on your instances:
+Define a method for the operator you want, and the operator works with your
+instances:
 
 ```zuri
 class Vector {
@@ -61,7 +63,7 @@ echo (-a).to_string()
 (-1, -2)
 ```
 
-The full arithmetic set:
+Here's the full set of arithmetic decorators:
 
 | Decorator | Operator |
 | --- | --- |
@@ -74,7 +76,7 @@ The full arithmetic set:
 | `@pow` | `**` |
 | `@neg` | `-` (unary) |
 
-## Bitwise and Logic
+## Bitwise and Logical Operators
 
 | Decorator | Operator |
 | --- | --- |
@@ -110,8 +112,8 @@ echo (~Flags(5)).bits
 -6
 ```
 
-`@not` is bound to `~`, the bitwise complement. `!` is logical negation and
-it is not overridable: an instance is always truthy, so `!instance` is
+`@not` is bound to `~`, the bitwise complement. `!` is logical negation, and
+you can't override it. An instance is always truthy, so `!instance` is
 always `false`.
 
 ## Comparison
@@ -152,10 +154,11 @@ true
 true
 ```
 
-### Each Operator Is Separate
+### Each Operator Is Defined Separately
 
-There is no derivation between them. Defining `@lt` does **not** give you
-`>`, and defining `@add` does not give you `+=` on the other side:
+Operators aren't derived from each other. Defining `@lt` **doesn't** give
+you `>`, and defining `@add` doesn't give you `+=` with your instance on the
+other side:
 
 ```zuri
 class Price {
@@ -183,13 +186,14 @@ true
 operator '>' not defined for Price and Price
 ```
 
-Define every operator you want to support. `@gt` is usually one line, as
-the `Version` example above shows.
+Define every operator you want to support. `@gt` is usually a single line,
+as the `Version` example above shows.
 
-### The Other Operand Is Not Checked
+### The Other Operand Isn't Checked
 
 A decorated method is an ordinary method, and its parameter is an ordinary
-parameter. Nothing guarantees the other side is the same class:
+parameter, so nothing guarantees that the other operand is an instance of
+the same class:
 
 ```zuri
 class Amount {
@@ -221,14 +225,14 @@ TypeError: cannot read property 'cents' on a number
 TypeError: operator '+' not defined for call signature (number, Amount)
 ```
 
-Read those two together. With the instance on the **left**, `@add` ran and
-failed inside your own method with a confusing message. With it on the
-**right**, the operator was never dispatched to your class at all — a
+Compare those two results. With the instance on the **left**, `@add` ran and
+failed inside your own method with a confusing message. With the instance on
+the **right**, the operator was never passed to your class at all, because a
 decorated method only handles the case where its own instance is the left
 operand.
 
-Annotate the parameter to fix the first message, and accept the second as
-the rule:
+Annotate the parameter to fix the first error message, and treat the second
+case as a rule of the language:
 
 ```zuri
 class Sum {
@@ -255,7 +259,7 @@ catch {
 
 ### Equality
 
-`@eq` defines `==` for your class, and `!=` is always its negation:
+`@eq` defines `==` for your class, and `!=` is always the opposite of `==`:
 
 ```zuri
 class Point {
@@ -288,18 +292,19 @@ false
 false
 ```
 
-`@eq` runs only when the value on the right is an object too: a string, a
-list, another instance and so on. `p == nil`, `p == 5` and `p == true`
-compare the ordinary way without calling it, so a `nil` check stays a `nil`
-check whatever the class defines. It must return a bool; anything else
-raises a `TypeError`. Without `@eq`, two instances are equal only when they
-are the same object.
+`@eq` only runs when the value on the right is also an object, such as a
+string, a list or another instance. `p == nil`, `p == 5` and `p == true` are
+compared in the usual way without calling it, so a check for `nil` always
+behaves the same, whatever the class defines. `@eq` has to return a bool,
+and returning anything else raises a `TypeError`. Without `@eq`, two
+instances are only equal if they're the same object.
 
-`using` matches through `@eq` as well, since it compares the way `==` does.
+`using` also uses `@eq` for matching, since it compares values the same way
+`==` does.
 
-`@eq` decides `==` and nothing else. Lists and dictionaries compare the
-instances inside them by identity, and so do `contains()`, `index_of()` and
-dictionary keys:
+`@eq` only affects `==`. Lists and dictionaries compare the instances they
+contain by identity, and so do `contains()`, `index_of()` and dictionary
+keys:
 
 ```zuri
 class Point {
@@ -332,9 +337,9 @@ true
 
 ## Iteration
 
-`@key` and `@value` together make a class work with `for ... in`. They are
-the largest of the decorated methods to get right, so they have a section
-of their own: [Making a Class Iterable](ch06-05-iterable-classes.md).
+Together, `@key` and `@value` make a class work with `for ... in`. They take
+the most care to get right of all the decorated methods, so they have their
+own section: [Making a Class Iterable](ch06-05-iterable-classes.md).
 
 | Decorator | Called by | Signature |
 | --- | --- | --- |
@@ -367,13 +372,13 @@ echo json.encode(User('ada', 'hunter2'))
 {"name":"ada"}
 ```
 
-Without it, encoding an instance has nothing to work from. With it, you
-decide exactly what crosses the wire, which is the right place to leave a
-password behind.
+Without `@to_json()`, there's nothing for the encoder to work with. With it,
+you decide exactly what gets sent, which makes it the right place to leave
+out things like a password.
 
 ## `@to_string`
 
-`@to_string()` decides what `echo` and `print()` show for an instance:
+`@to_string()` controls what `echo` and `print()` display for an instance:
 
 ```zuri
 class Money {
@@ -399,20 +404,21 @@ $5
 {total: $5}
 ```
 
-It applies wherever the instance sits in what is being shown, inside lists
-and dictionaries, as a key or as a value. Without it, an instance shows as
-`<instance of Money>`. It must return a string; anything else raises a
-`TypeError`.
+It applies wherever the instance appears in the output, including inside
+lists and dictionaries, as a key or as a value. Without it, an instance is
+displayed as `<instance of Money>`. `@to_string()` has to return a string,
+and returning anything else raises a `TypeError`.
 
 ## `to_string()`
 
-`to_string()` has no `@` because it is not a decorator; it is a real method
-every value already has, and a class may override it to give its instances
-a plain string form.
+`to_string()` doesn't have an `@` because it isn't a decorated method. It's
+a regular method that every value already has, and a class can override it
+to give its instances a plain string form.
 
-Nothing calls it for you. String interpolation and `+` render an instance
-as `<instance of Money>`, so call it inside the interpolation. A class that
-has both usually builds one from the other:
+Nothing calls it for you. String interpolation and `+` show an instance as
+`<instance of Money>`, so call `to_string()` inside the interpolation
+yourself. A class that defines both usually implements one in terms of the
+other:
 
 ```zuri
 class Money {
@@ -440,8 +446,9 @@ echo 'cost: ${m.to_string()}'
 cost: $5
 ```
 
-That is the split the standard library follows: `to_string()` is the value
-as text, and `@to_string()` is how the instance looks when you print it.
+This is the convention the standard library follows: `to_string()` returns
+the value as text, and `@to_string()` controls how the instance looks when
+you print it.
 
-Keep both cheap and free of side effects. Error messages, logging and
-debugging all reach for them.
+Keep both methods fast and free of side effects, because error messages,
+logging and debugging all rely on them.

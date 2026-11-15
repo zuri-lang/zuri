@@ -1,13 +1,13 @@
 /**
  * @module websocket
  *
- * WebSocket (RFC 6455), both ends of it.
+ * WebSockets (RFC 6455), for both clients and servers.
  *
- * `accept()` upgrades an inbound request, `connect()` opens an outbound
- * connection, and `WebSocket` is the resulting full-duplex channel.
- * `Message` is one complete message, reassembled from however many
- * frames carried it, and the `CLOSE_*` constants are the status codes a
- * close may carry.
+ * `accept()` upgrades an incoming request, `connect()` opens an
+ * outgoing connection, and `WebSocket` is the resulting two-way
+ * channel. `Message` is a single complete message, reassembled from
+ * however many frames it was sent in, and the `CLOSE_*` constants are
+ * the status codes a close frame can have.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -236,8 +236,8 @@ class WebSocket {
   }
 
   /**
-   * The underlying transport, for anything this class does not
-   * expose - a read timeout, the peer's address, its certificate.
+   * The underlying transport, for anything this class doesn't expose,
+   * such as a read timeout, the peer's address or its certificate.
    *
    * @returns Connection
    */
@@ -285,9 +285,9 @@ class WebSocket {
   }
 
   /**
-   * Begins the closing handshake and closes the transport.
+   * Starts the closing handshake and closes the transport.
    *
-   * @param ?number code: a close code; defaults to `CLOSE_NORMAL`
+   * @param ?number code: a close code. Defaults to `CLOSE_NORMAL`.
    * @param ?string reason: at most 123 bytes once encoded
    */
   close(code: ?number, reason: ?string) {
@@ -615,8 +615,8 @@ def is_handshake(request) {
  * Completes a WebSocket handshake and takes over the connection.
  *
  * Call this from an ordinary route handler. It writes the `101`
- * response itself and hands back a `WebSocket`; the server will not
- * write anything more on that connection afterwards.
+ * response itself and returns a `WebSocket`, and the server doesn't
+ * write anything else on that connection afterwards.
  *
  * ```zuri
  * server.get('/ws', @(request, response) {
@@ -628,10 +628,10 @@ def is_handshake(request) {
  * @param HttpRequest request
  * @param HttpResponse response
  * @param ?dict options: `protocols` (the subprotocols this server
- *    supports, most preferred first), `max_message_size`
+ *    supports, starting with the most preferred) and `max_message_size`
  * @returns WebSocket
- * @throws HttpError if the request is not a WebSocket handshake, or
- *    arrived on a connection that cannot be taken over
+ * @throws HttpError if the request isn't a WebSocket handshake, or
+ *    arrived on a connection that can't be taken over
  */
 def accept(request, response, options: ?dict) {
   var settings = options == nil ? {} : options

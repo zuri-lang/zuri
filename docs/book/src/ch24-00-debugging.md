@@ -1,14 +1,14 @@
 # Debugging
 
-Something is not doing what you expected. This chapter is about closing
-that gap: reading what the runtime tells you, recognising the handful of
-messages that account for most confusion, and the techniques that turn a
-vague "it's broken" into a line number.
+Something isn't doing what you expected. This chapter is about tracking down
+why: reading what the runtime tells you, recognizing the few messages that
+cause most of the confusion, and the techniques that turn a vague "it's
+broken" into a line number.
 
-## Reading an Error
+## Reading an Error Message
 
-An uncaught error prints three things: what went wrong, where, and how you
-got there.
+An uncaught error prints three things: what went wrong, where it went wrong,
+and how the program got there.
 
 ```console
 Unhandled ValueError: bottomed out
@@ -27,19 +27,20 @@ Stack trace (most recent call last):
   at recurse() /path/to/main.zu:5
 ```
 
-The type and message come first. Then the source around the failure, with
-the offending line marked. Then the call stack, innermost first.
+The error type and message come first, then the source code around the
+failure, with the line that failed marked, and finally the call stack,
+starting with the innermost call.
 
-A deep stack is truncated in the middle, because the top and the bottom are
-the parts that tell you anything: the top is where it broke, the bottom is
-where you started, and two hundred identical recursive frames in between
-are noise.
+A deep stack is shortened in the middle, because the top and the bottom are
+the useful parts. The top shows where the error happened, the bottom shows
+where your program started, and two hundred identical recursive calls in
+between don't tell you anything.
 
 The process exits with status `1`.
 
-## The Messages You Will Actually See
+## Common Error Messages
 
-Every message below is real output. Run this and you get all of them:
+Every message below is real output. If you run this, you'll see all of them:
 
 ```zuri
 class Config {
@@ -94,33 +95,33 @@ index past the end: RangeError — index 9 out of bounds (length 1)
 wrong argument type: TypeError — needs_string() expects parameter 's' (argument 1) to be a string, got number
 ```
 
-What each one usually means in practice:
+Here's what each one usually means in practice:
 
 | Message | What to look for |
 | --- | --- |
-| `undefined global 'x'` | a typo, or a `def` that appears **below** the top-level line calling it |
-| `undefined key 'x' in dict` | a key that is genuinely absent; `get(key, fallback)` is the fix when absence is legal |
-| `undefined field 'x' on instance of 'C'` | a typo in a field name — classes are sealed, so this cannot create one |
-| `undefined property 'x' on instance of 'C'` | reading a field or method the class never declared |
-| `undefined member 'x' on module m` | the module did not export it, or the export needs an `@` |
-| `object of type nil does not define method 'f'` | something upstream returned `nil` |
-| `operator '+' not defined for call signature (nil, number)` | the same, one step earlier |
-| `'x' is private and can only be accessed via 'self' or 'parent'` | a leading underscore, reached from outside |
-| `'x' is already declared in this scope` | two `var`s of one name in one block |
-| `cannot assign to constant 'x'` | writing to a local `const` |
-| `module 'x' could not be found` | usually a missing leading `.` on a sibling import |
+| `undefined global 'x'` | A typo, or a `def` that's declared **below** the top-level line that calls it |
+| `undefined key 'x' in dict` | A key that really isn't there. If it's allowed to be missing, use `get(key, fallback)`. |
+| `undefined field 'x' on instance of 'C'` | A typo in a field name. Classes are sealed, so this can't create a new field. |
+| `undefined property 'x' on instance of 'C'` | Reading a field or method that the class never declared |
+| `undefined member 'x' on module m` | The module doesn't export it, or the import needs an `@` to re-export it |
+| `object of type nil does not define method 'f'` | Something earlier in the code returned `nil` |
+| `operator '+' not defined for call signature (nil, number)` | The same problem, one step earlier |
+| `'x' is private and can only be accessed via 'self' or 'parent'` | A name with a leading underscore, used from outside the class |
+| `'x' is already declared in this scope` | Two `var` declarations with the same name in the same block |
+| `cannot assign to constant 'x'` | Assigning to a local `const` |
+| `module 'x' could not be found` | Usually a missing leading `.` on an import of a sibling module |
 
-The two `nil` messages are worth internalising. **Zuri never tells you
-where a `nil` came from**, because by the time it causes trouble the value
-has already been passed along. When you see one, stop looking at the line
-that failed and look at whatever produced the value.
+The two messages about `nil` are worth remembering. **Zuri can't tell you
+where a `nil` came from**, because by the time it causes a problem, the
+value has already been passed along. When you see one, don't look at the
+line that failed. Look at whatever produced the value.
 
-## Techniques
+## Debugging Techniques
 
-### Echo the Value and Its Type
+### Print the Value and Its Type
 
-Dynamic typing means the surprise is almost always that something is not
-what you assumed it was:
+In a dynamically typed language, the surprise is almost always that a value
+isn't what you assumed:
 
 ```zuri
 var value = '42'
@@ -138,12 +139,12 @@ string
 43
 ```
 
-One line of `typeof()` would have saved the third line's confusion.
+A single `typeof()` would have cleared up the confusion on the third line.
 
-### Give a Class `@to_string()`
+### Give Your Classes `@to_string()`
 
-`echo` shows an instance through its class's `@to_string()`, and as
-`<instance of Point>` when the class has none:
+`echo` displays an instance using its class's `@to_string()` method, or as
+`<instance of Point>` if the class doesn't have one:
 
 ```zuri
 class Point {
@@ -169,14 +170,14 @@ echo [p, Point(3, 4)]
 [(1, 2), (3, 4)]
 ```
 
-Define `@to_string()` on any class you expect to look at while debugging.
-The five minutes it costs are repaid the first time you print a list of
-them.
+Define `@to_string()` on any class you expect to look at while debugging. It
+only takes a few minutes, and it pays off the first time you print a list of
+instances.
 
-### Encode Nested Data Instead of Echoing It
+### Encode Nested Data Instead of Printing It
 
-A deep dictionary printed by `echo` is one unreadable line. `json.encode()`
-with `compact` off indents it:
+A deeply nested dictionary printed with `echo` is a single unreadable line.
+`json.encode()` with `compact` turned off indents it for you:
 
 ```zuri
 import json
@@ -209,10 +210,11 @@ echo json.encode(request, false)
 }
 ```
 
-### Add Context on the Way Up
+### Add Context to Errors
 
-An error raised deep in a call chain says what failed, not what you were
-doing at the time. Catch it, say what you were doing, and re-raise:
+An error raised deep in a chain of calls says what failed, but not what the
+program was doing at the time. Catch it, add what you were doing, and raise
+it again:
 
 ```zuri
 def parse_port(raw) {
@@ -242,13 +244,13 @@ catch {
 while reading config.json: not a number
 ```
 
-"not a number" is a fact. "while reading config.json: not a number" is a
-fact you can act on.
+"Not a number" is a fact. "While reading config.json: not a number" is a
+fact you can do something about.
 
 ### Print the Stack Trace Yourself
 
-The trace is a list on the error, so a handler can log it without letting
-the program die:
+The stack trace is a list on the error object, so a handler can log it
+without letting the program crash:
 
 ```zuri
 def inner() {
@@ -274,10 +276,10 @@ catch {
 /path/to/main.zu:10 -> @.script()
 ```
 
-### Ask the Compiler What It Made of Your Code
+### Check How the Compiler Read Your Code
 
-When an expression does not behave the way you read it, the bytecode
-settles the argument:
+When an expression doesn't behave the way you read it, the bytecode will
+tell you how the compiler read it:
 
 ```zuri
 import zuri
@@ -289,15 +291,16 @@ echo zuri.compile('var a = -2 ** 2').map(@(i) => i.op)
 [LoadConst, LoadConst, Pow, Neg, SetGlobal, LoadNil, Return]
 ```
 
-Read the order: the power happens **before** the negation. `**` binds
-tighter than unary minus, so `-2 ** 2` is `-(2 ** 2)`, which is `-4`, and
-not the `4` a reader expecting `(-2) ** 2` would get. The bytecode settles
-it in one line. [Chapter 21](ch21-00-metaprogramming.md)
-covers `zuri.compile()` and `zuri.parse()` properly.
+Look at the order: the power is calculated **before** the negation. `**`
+binds more tightly than unary minus, so `-2 ** 2` means `-(2 ** 2)`, which
+is `-4`, not the `4` you'd get from `(-2) ** 2`. One line of bytecode
+answers the question. [Chapter 21](ch21-00-metaprogramming.md) covers
+`zuri.compile()` and `zuri.parse()` in detail.
 
-### Narrow It With `assert`
+### Narrow Down the Problem With `assert`
 
-An `assert` is a claim you can leave in the code:
+An `assert` states something you believe is true, and you can leave it in
+the code:
 
 ```zuri
 def average(numbers) {
@@ -320,64 +323,65 @@ catch {
 AssertError: average() needs at least one number
 ```
 
-Without it, `average([])` would have returned `NaN` and the problem would
-have surfaced somewhere else entirely, in a value that looks like a
-number.
+Without it, `average([])` would have returned `NaN`, and the problem would
+have shown up somewhere else entirely, as a value that looks like a number.
 
-### Watch the Collector
+### Watch the Garbage Collector
 
-`ZURI_GC_LOG=1` reports garbage collector activity, which is the one to
-reach for when memory rather than logic is the question:
+`ZURI_GC_LOG=1` reports what the garbage collector is doing. Use it when the
+problem is memory rather than logic:
 
 ```console
 $ ZURI_GC_LOG=1 zuri run main.zu
 ```
 
-[Chapter 22](ch22-00-performance.md) lists the rest of the runtime's
-diagnostic switches alongside what each one measures.
+[Chapter 22](ch22-00-performance.md) lists the runtime's other diagnostic
+settings, along with what each one measures.
 
-## The Traps Worth Knowing by Heart
+## Common Pitfalls
 
-These are the behaviours that produce a *wrong answer* rather than an
-error, which makes them far more expensive to find.
+These behaviors produce a *wrong result* rather than an error, which makes
+them much harder to track down.
 
 **Zero is falsy.** `var n = count or 10` turns a real `0` into `10`, and
-`if index` is false for the first position and true for `-1`, "not
-found". Compare explicitly.
+`if index` is false for the first position but true for `-1`, which means
+"not found". Compare values explicitly.
 
-**`to_number()` returns `0` for text it cannot parse.** `'eighty'`, `''`
-and `'12abc'` all become `0`, and so does `' 7 '` with its spaces. There is
-no `NaN` and no error to catch, so a bad input silently becomes a valid
-zero. Validate the text before converting it.
+**`to_number()` returns `0` for text it can't parse.** `'eighty'`, `''` and
+`'12abc'` all become `0`, and so does `' 7 '` with its spaces. There's no
+`NaN` and no error to catch, so invalid input silently becomes a valid zero.
+Validate the text before you convert it.
 
 **`[]` and `{}` are truthy.** `if items` is true for an empty list. Use
-`is_empty()`.
+`is_empty()` instead.
 
-**`sort()` mutates; `reverse()` does not.** `var s = items.sort()` leaves
-`items` sorted as well. Clone first when you need both orders.
+**`sort()` changes the list, but `reverse()` doesn't.**
+`var s = items.sort()` sorts `items` as well. If you need both orders, clone
+the list first.
 
-**A method call on a string result was discarded.** `name.trim()` does
-nothing on its own; strings are immutable, so you must assign the result.
+**The result of a string method was thrown away.** `name.trim()` on its own
+does nothing. Strings are immutable, so you have to assign the result.
 
-**A nested `def` is local.** A function declared inside another is scoped
-to it, like a `var`, and nothing outside that scope can call it.
+**A nested `def` is local.** A function declared inside another function is
+scoped to it, like a `var`, and nothing outside that scope can call it.
 
-**`x++` evaluates to the new value.** Unlike C and JavaScript.
+**`x++` evaluates to the new value**, unlike in C and JavaScript.
 
-## Structuring Code You Can Reason About
+## Writing Code That's Easier to Debug
 
-Three habits pay for themselves the first time something breaks.
+Three habits pay off the first time something breaks.
 
-**Separate the decision from the effect.** A function that reads a file,
-parses it and decides something is three functions. Split them, and the
-parsing and the decision can both be exercised without a filesystem in the
-way.
+**Keep decisions separate from side effects.** A function that reads a file,
+parses it and makes a decision based on it is really three functions. Split
+them up, and you can test the parsing and the decision without needing a
+file system.
 
-**Pass dependencies in.** A function that calls `time()` behaves
-differently every second. One that takes a timestamp behaves identically
-every time you call it with the same number, which means you can reproduce
-a failure instead of waiting for it.
+**Pass dependencies in.** A function that calls `time()` behaves differently
+every second, while a function that takes a timestamp as an argument behaves
+exactly the same every time you call it with the same number. That means you
+can reproduce a failure instead of waiting for it to happen again.
 
-**Return values instead of printing them.** `echo` inside a function is
-invisible to its caller and useless to anything that wants to check the
-result. Return the string and let the caller decide.
+**Return values instead of printing them.** An `echo` inside a function is
+invisible to the code that called it, and useless to anything that wants to
+check the result. Return the string, and let the caller decide what to do
+with it.

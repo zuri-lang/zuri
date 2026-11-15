@@ -1,45 +1,47 @@
 # A Full-Stack Task Board
 
-We are going to build a real web application: a shared task board with
-three columns, a browser interface, and a JSON API over the same data.
+In this chapter, we'll build a real web application: a shared task board
+with three columns, a browser interface and a JSON API over the same data.
 
-It is about four hundred lines of Zuri, and it uses almost everything this
-book has covered. Classes and inheritance for the domain model. Custom
-errors for validation. The module system for structure. Files and JSON for
-persistence. The HTTP server for routing, middleware and static files. Wire
-for server-rendered HTML. `os` for configuration and signals. `log` for
-output.
+It's about four hundred lines of Zuri, and it uses almost everything this
+book has covered: classes and inheritance for the domain model, custom
+errors for validation, the module system for structure, files and JSON for
+storage, the HTTP server for routing, middleware and static files, Wire for
+HTML rendered on the server, `os` for configuration and signals, and `log`
+for output.
 
-No dependencies. Nothing to install. `zuri run taskboard` and it runs.
+There are no dependencies and nothing to install. Run `zuri run taskboard`
+and it starts.
 
-## What It Does
+## What the Application Does
 
-- Three columns: `todo`, `doing`, `done`.
-- A page at `/` showing the board, with forms to add, move and delete.
-- A JSON API under `/api` doing the same things, for anything that is not
-  a browser.
-- A `board.json` file holding the state, written atomically.
-- One error handler turning domain errors into the right status code, for
-  both the HTML and the JSON side.
+- It has three columns: `todo`, `doing` and `done`.
+- A page at `/` shows the board, with forms for adding, moving and deleting
+  tasks.
+- A JSON API under `/api` does the same things, for clients other than
+  browsers.
+- A `board.json` file stores the state, and is written atomically.
+- A single error handler turns domain errors into the right status code, for
+  both the HTML pages and the JSON API.
 
-## How the Chapter Is Organised
+## How This Chapter Is Organized
 
-Each section builds one layer, from the inside out:
+Each section builds one layer, starting from the inside:
 
 1. [Laying Out the Project](ch25-01-project-layout.md): the directory
-   structure and why it is shaped this way.
-2. [The Storage Layer](ch25-02-storage.md): the JSON file and the board
-   that sits on top of it.
+   structure, and the reasons for it.
+2. [The Storage Layer](ch25-02-storage.md): the JSON file, and the board
+   built on top of it.
 3. [Validation and the Domain Model](ch25-03-domain.md): the `Task` class,
    which owns every rule about what a task is.
-4. [The JSON API](ch25-04-api.md): six routes over the board.
+4. [The JSON API](ch25-04-api.md): six routes for working with the board.
 5. [Server-Rendered Pages with Wire](ch25-05-pages.md): the templates, the
    forms and the redirect-after-post pattern.
 6. [Middleware, Logging and Errors](ch25-06-middleware.md): the two pieces
-   of cross-cutting behaviour every request goes through.
-7. [Running It for Real](ch25-07-running-it.md): configuration, signals and
-   what changes when you want more than one core.
-8. [Testing the Board](ch25-08-testing.md): a suite over all three layers,
-   and what the layering bought.
+   of shared behavior that every request goes through.
+7. [Running It for Real](ch25-07-running-it.md): configuration, signals, and
+   what changes when you want to use more than one core.
+8. [Testing the Board](ch25-08-testing.md): a test suite covering all three
+   layers, and what the layered design makes possible.
 
-Read it in order. Each section assumes the previous one exists.
+Read the sections in order, because each one builds on the one before it.

@@ -1,15 +1,15 @@
 # Error Handling
 
-Things go wrong. A file is not there, a number arrives as text, a network
-peer stops answering. Zuri has one mechanism for all of it: an `Error`
-object, raised with `raise` and intercepted with `catch`. There is no
-`try`, no `finally`, and no checked exceptions.
+Things go wrong. A file is missing, a number arrives as text, or a server on
+the network stops responding. Zuri handles all of these with one mechanism:
+an `Error` object that you raise with `raise` and handle with `catch`.
+There's no `try`, no `finally` and no checked exceptions.
 
-This chapter covers raising, the three shapes of `catch`, what an error
-carries, the built-in hierarchy, writing your own, and the patterns that
-replace `finally`.
+This chapter covers raising errors, the three forms of `catch`, what an
+error contains, the built-in error classes, writing your own, and what to
+use instead of `finally`.
 
-## Raising
+## Raising Errors
 
 ```zuri
 def withdraw(balance, amount) {
@@ -20,8 +20,8 @@ def withdraw(balance, amount) {
 }
 ```
 
-`raise` takes an instance of `Error` or any subclass, and nothing else. A
-bare string or number is a `TypeError` in its own right:
+`raise` only accepts an instance of `Error` or one of its subclasses.
+Raising a plain string or number is itself a `TypeError`:
 
 ```zuri
 catch {
@@ -35,12 +35,11 @@ catch {
 can only raise an Error or subclass, got a string
 ```
 
-That rule is worth the small inconvenience: every value that travels
-through the error system has a `type`, a `message` and a stack trace,
-because there is no way to put anything else in.
+This is a small inconvenience, but it means that every error has a `type`, a
+`message` and a stack trace, because there's no way to raise anything else.
 
-An error that nobody catches ends the program with a message, a source
-excerpt and a stack trace:
+If an error isn't caught, the program ends and prints a message, an excerpt
+of the source code and a stack trace:
 
 ```console
 Unhandled ValueError: cannot withdraw 100 from 50
@@ -57,7 +56,7 @@ Stack trace (most recent call last):
   at @.script() /path/to/main.zu:8
 ```
 
-## Catching
+## Catching Errors
 
 ```zuri
 catch {
@@ -67,14 +66,14 @@ catch {
 }
 ```
 
-The `catch` block runs. If anything inside it raises, execution jumps to
-the handler with the error bound to `e`. If nothing raises, the handler
-never runs.
+The code in the `catch` block runs. If anything inside it raises an error,
+execution jumps to the handler, with the error assigned to `e`. If nothing
+raises an error, the handler doesn't run.
 
-There are three shapes, and each does something different.
+There are three forms of `catch`, and each one behaves differently.
 
-**`catch { ... }`** with nothing after it swallows the error and carries
-on:
+**`catch { ... }`**, with nothing after it, discards the error and
+continues:
 
 ```zuri
 catch {
@@ -87,11 +86,11 @@ echo 'swallowed'
 swallowed
 ```
 
-Use this when failure genuinely does not matter, and nowhere else.
+Only use this when the failure really doesn't matter.
 
-**`catch { ... } as e`** with no handler block binds the error to a
-variable that survives the statement. `e` is `nil` when nothing went
-wrong:
+**`catch { ... } as e`**, without a handler block, assigns the error to a
+variable that's still available after the statement. If nothing went wrong,
+`e` is `nil`:
 
 ```zuri
 catch {
@@ -107,13 +106,13 @@ if e {
 boom
 ```
 
-This is the shape to use when the recovery does not belong inside a
-handler, for example when you want to check several things in a row.
+Use this form when the recovery code doesn't belong inside a handler, for
+example when you want to check several things one after another.
 
-**`catch { ... } as e { ... }`** is the full form, and the one you will
-write most.
+**`catch { ... } as e { ... }`** is the full form, and the one you'll use
+most often.
 
-## What an Error Carries
+## What an Error Contains
 
 ```zuri
 catch {
@@ -131,14 +130,14 @@ bad input
 [/path/to/main.zu:2 -> @.script()]
 ```
 
-- `message` is the text.
-- `type` is the class name, as a string.
-- `stacktrace` is a list of frames, innermost first, each naming a file, a
-  line and a function.
+- `message` is the error message.
+- `type` is the name of the error's class, as a string.
+- `stacktrace` is a list of stack frames, starting with the innermost one.
+  Each frame names a file, a line and a function.
 
-The stack trace is captured where the error was **raised**, not where it
-was caught, so it points at the origin no matter how many frames it
-travelled through:
+The stack trace is recorded where the error was **raised**, not where it was
+caught, so it always points to where the error started, however many frames
+it passed through:
 
 ```zuri
 def inner() {
@@ -160,35 +159,36 @@ catch {
 3
 ```
 
-Three frames: `inner`, `middle`, and the script's top level. Printing them
-is often the fastest way to answer "how did we get here?" in code you did
-not write.
+There are three frames: `inner`, `middle` and the top level of the script.
+Printing the stack trace is often the quickest way to find out how the
+program got to a certain point, especially in code you didn't write.
 
-## The Built-in Errors
+## Built-in Error Classes
 
-Every one of these is a class, and every one inherits from `Error`:
+Each of these is a class, and they all inherit from `Error`:
 
 | Class | Raised when |
 | --- | --- |
-| `Error` | the base; a general failure |
-| `TypeError` | an operation got the wrong type |
-| `ValueError` | the type was right, the value was not |
-| `NumericError` | an arithmetic operation failed |
-| `ArgumentError` | wrong number of arguments |
-| `NotImplementedError` | a method that must be overridden was not |
-| `RangeError` | an index or bound was out of range |
-| `AccessError` | a permission or access check failed |
-| `AssertError` | an `assert` failed |
-| `PropertyError` | a member that does not exist was read |
-| `UndefinedError` | an undefined name was read |
-| `ModuleNotFoundError` | an `import` could not be resolved |
+| `Error` | The base class, for general failures |
+| `TypeError` | An operation received a value of the wrong type |
+| `ValueError` | The type was right, but the value wasn't |
+| `NumericError` | An arithmetic operation failed |
+| `ArgumentError` | A function received the wrong number of arguments |
+| `NotImplementedError` | A method that should have been overridden wasn't |
+| `RangeError` | An index or bound was out of range |
+| `AccessError` | A permission or access check failed |
+| `AssertError` | An `assert` failed |
+| `PropertyError` | Code read a member that doesn't exist |
+| `UndefinedError` | Code read a name that isn't defined |
+| `ModuleNotFoundError` | An `import` couldn't be resolved |
 
-Because they all inherit from `Error`, catching `Error` catches everything,
-and a parameter annotated `Error` accepts any of them.
+Since they all inherit from `Error`, catching `Error` catches all of them,
+and a parameter annotated as `Error` accepts any of them.
 
-## Custom Errors
+## Defining Your Own Errors
 
-Subclass `Error` and carry whatever the caller needs:
+Create a subclass of `Error` and give it whatever information the caller
+needs:
 
 ```zuri
 class HttpError < Error {
@@ -212,14 +212,16 @@ HttpError 404: not found
 true
 ```
 
-Two things make this work well. Call `parent(message)` so the base
-constructor sets `message` and captures the stack trace. Set `self.type` so
-the class name shows up in logs and in the uncaught-error banner.
+There are two things to get right. Call `parent(message)` so that the base
+constructor sets `message` and records the stack trace. And set `self.type`,
+so that the class name appears in logs and in the message for an uncaught
+error.
 
-## Deciding Which Error to Catch
+## Catching Specific Errors
 
-`catch` catches everything inside its block. To handle one kind and let the
-others through, test and re-raise:
+`catch` catches every error raised inside its block. To handle one kind of
+error and let the others through, check the error and raise it again if it
+isn't the kind you want:
 
 ```zuri,ignore
 catch {
@@ -232,13 +234,15 @@ catch {
 }
 ```
 
-`instance_of()` walks the inheritance chain, so a test against `Error`
-matches everything and a test against `HttpError` matches only that branch.
+`instance_of()` checks the whole inheritance chain, so checking against
+`Error` matches every error, while checking against `HttpError` only matches
+that branch of the hierarchy.
 
-## There Is No `finally`
+## Replacing `finally`
 
-Code after the `catch` statement runs whether the block raised or not,
-because the handler either recovers or re-raises:
+Code after the `catch` statement runs whether or not the block raised an
+error, because the handler either recovers from the error or raises it
+again:
 
 ```zuri
 def cleanup_demo() {
@@ -259,9 +263,10 @@ caught
 always runs
 ```
 
-That covers the common case. When the handler re-raises, or when the block
-contains a `return`, the trailing code is skipped, so a resource that must
-be released either way goes in the handler as well:
+That covers the most common case. But if the handler raises the error again,
+or the block contains a `return`, the code after the statement is skipped.
+So if a resource has to be released either way, release it in the handler as
+well:
 
 ```zuri,ignore
 var handle = file(path, 'w')
@@ -276,12 +281,11 @@ catch {
 handle.close()
 ```
 
-### The Bare `as e` Form Does It Once
+### Using `as e` Without a Handler
 
-The version above repeats `handle.close()`, once in the handler and once
-after the statement, because those are two different paths out. The third
-shape of `catch` — **`as e` with no handler block** — collapses them into
-one:
+The version above calls `handle.close()` twice, once in the handler and once
+after the statement, because those are two different ways out. The third
+form of `catch`, **`as e` without a handler block**, combines them into one:
 
 ```zuri,ignore
 var handle = file(path, 'w')
@@ -297,11 +301,11 @@ if e {
 }
 ```
 
-The difference is the missing `{ ... }` after `as e`, and it changes the
-control flow rather than just the layout. With no handler there is nothing
-to jump into, so a raise inside the block is **recorded in `e` and
-execution simply continues on the next line**. Both paths — the one that
-raised and the one that did not — now run the same trailing code:
+The only difference is the missing `{ ... }` after `as e`, but it changes
+the control flow, not just the layout. Without a handler, there's nothing to
+jump to, so an error raised inside the block is **stored in `e`, and
+execution continues on the next line**. Both paths, the one that raised an
+error and the one that didn't, now run the same code afterwards:
 
 ```console
   fallthrough: closing
@@ -309,35 +313,35 @@ raised and the one that did not — now run the same trailing code:
   caught: disk full
 ```
 
-That gives you `close()` written once, running unconditionally, followed by
-an explicit decision about whether to re-raise. It is the closest thing
-Zuri has to `finally`, and it is assembled out of the ordinary pieces
-rather than being a separate construct:
+This way, `close()` is written once and always runs, and then you decide
+explicitly whether to raise the error again. It's the nearest thing Zuri has
+to `finally`, built from ordinary statements rather than a separate
+construct:
 
-| Line | Job |
+| Line | Purpose |
 | --- | --- |
-| `catch { ... } as e` | run it, record any failure, do not jump |
-| `handle.close()` | the cleanup, on every path |
-| `if e { raise e }` | pass the failure on, unchanged |
+| `catch { ... } as e` | Runs the block and records any error, without jumping |
+| `handle.close()` | Cleans up, whichever path was taken |
+| `if e { raise e }` | Passes the error on, unchanged |
 
-Two things to be deliberate about.
+There are two things to keep in mind.
 
-**`e` is `nil` when nothing went wrong**, which is what makes
-`if e { raise e }` the whole of the decision. On the success path the
-cleanup runs and the function carries on normally.
+**`e` is `nil` when nothing went wrong**, so `if e { raise e }` is all you
+need to decide what to do. When there's no error, the cleanup runs and the
+function continues as normal.
 
-**Re-raising `e` itself keeps the original stack trace**, pointing at the
-line that actually failed rather than at the `raise` you just wrote. Wrap
-it in a new error only when you have something to add, as
-[Nesting and Re-raising](#nesting-and-re-raising) shows.
+**Raising `e` itself again keeps the original stack trace**, which points to
+the line that actually failed rather than to your `raise` statement. Only
+wrap it in a new error when you have something to add, as shown in [Nesting
+and Re-raising](#nesting-and-re-raising).
 
-Use the handler form when the failure needs handling. Use this form when it
-needs only cleaning up after.
+Use the form with a handler when you need to handle the error, and this form
+when you only need to clean up afterwards.
 
 ## `return` Inside `catch`
 
-A `return` from inside a `catch` block or its handler leaves the enclosing
-function, exactly as it would anywhere else:
+A `return` inside a `catch` block or its handler returns from the enclosing
+function, just as it would anywhere else:
 
 ```zuri
 def find(items, needle) {
@@ -365,9 +369,9 @@ handled: 9 not in list
 nil
 ```
 
-## Nesting
+## Errors Raised by Handlers
 
-Handlers can raise, and an outer `catch` will see it:
+A handler can raise an error, and an outer `catch` will see it:
 
 ```zuri
 catch {
@@ -385,29 +389,30 @@ catch {
 outer: inner
 ```
 
-## `assert` Versus `raise`
+## `assert` or `raise`?
 
 ```zuri,ignore
 assert items.length() > 0, 'caller must pass a non-empty list'
 ```
 
-`assert` raises an `AssertError` when its condition is falsy. The message
-is optional.
+`assert` raises an `AssertError` when its condition is falsy. The message is
+optional.
 
-Draw the line like this. **`raise` is for things that happen**: a file that
-is not there, a number that does not parse, a network that times out. The
-caller is expected to handle it. **`assert` is for things that cannot
-happen**: an invariant the code itself is responsible for maintaining. A
-failed assertion means the program has a bug, not that the world was
-uncooperative.
+Here's how to decide between them. **Use `raise` for things that can
+happen**, such as a missing file, a number that doesn't parse or a network
+timeout. The caller is expected to deal with these. **Use `assert` for
+things that should never happen**, such as an invariant that your own code
+is responsible for keeping. If an assertion fails, the program has a bug. It
+doesn't mean something outside the program went wrong.
 
-## Style
+## Good Practices
 
-Keep the `catch` block small. The block should contain the operation that
-can fail and nothing else, so the handler is not accidentally catching a
-mistake somewhere further down:
+Keep the `catch` block small. It should contain only the operation that
+might fail, so that the handler doesn't accidentally catch a mistake
+somewhere else:
 
-Too wide — a failure inside `render()` is reported as a parse failure:
+This block is too wide. A failure inside `render()` would be reported as a
+parsing failure:
 
 ```zuri,ignore
 def show_wide(text) {
@@ -420,7 +425,7 @@ def show_wide(text) {
 }
 ```
 
-Right — only the call that can fail is inside the block:
+This is better. Only the call that might fail is inside the block:
 
 ```zuri,ignore
 def show_narrow(text) {
@@ -437,24 +442,24 @@ def show_narrow(text) {
 }
 ```
 
-Note the `var data` outside the block. A `catch` block is a scope like any
-other, so a variable declared inside it is gone by the time the next
-statement runs.
+Notice that `var data` is declared outside the block. A `catch` block is a
+scope like any other, so a variable declared inside it no longer exists once
+the statement ends.
 
-Write messages that name the value:
+Write error messages that include the value that caused the problem:
 
 ```zuri,ignore
 raise ValueError('port must be between 1 and 65535, got ${port}')
 ```
 
-The person reading that message is trying to work out what went wrong from
-one line of a log file. Give them the number.
+Whoever reads that message is trying to work out what went wrong from a
+single line in a log file. Give them the number.
 
 ## Catching Inside a Loop
 
-A `catch` inside a loop body handles one iteration and lets the rest carry
-on. This is the shape for processing a batch where individual items are
-allowed to fail:
+A `catch` inside a loop body handles a single iteration and lets the rest of
+the loop continue. Use this when you're processing a batch of items and some
+of them are allowed to fail:
 
 ```zuri
 def parse_positive(text) {
@@ -492,15 +497,15 @@ echo rejected
 [not a number]
 ```
 
-Put the `catch` **outside** the loop instead, and the first failure ends
-the whole loop — which is the right choice when one bad item makes the
-rest meaningless, and the wrong one when it does not. The placement of the
-block is the decision; there is no flag to set.
+If you put the `catch` **outside** the loop instead, the first failure ends
+the whole loop. That's the right choice when one bad item makes the rest
+pointless, and the wrong choice when it doesn't. Where you put the block is
+how you make that decision, since there's no flag for it.
 
 ## Nesting and Re-raising
 
-A `catch` inside a handler works like any other, which is how you translate
-a low-level failure into one your caller understands:
+A `catch` inside a handler works like any other `catch`. You can use this to
+turn a low-level failure into an error that makes sense to your caller:
 
 ```zuri
 import json
@@ -528,11 +533,11 @@ catch {
 }
 ```
 
-The caller now gets an error in its own vocabulary. Include the original
-message, as above, so the detail is not lost on the way up.
+The caller now gets an error that's in terms it understands. Include the
+original message, as shown above, so the details aren't lost along the way.
 
-Re-raising the **same** error, rather than a new one, keeps the original
-stack trace pointing at the original line:
+Raising the **same** error again, instead of a new one, keeps the original
+stack trace, which points to the line where the error first happened:
 
 ```zuri
 def only_handle_missing(work) {
@@ -563,15 +568,15 @@ fine
 ValueError: not mine
 ```
 
-That is the pattern for "handle one kind and let everything else through",
-and it is worth reaching for whenever a handler would otherwise swallow a
-bug along with the failure it meant to catch.
+This is the pattern for handling one kind of error and letting all the
+others through. Use it whenever a handler might otherwise hide a bug along
+with the failure it was meant to catch.
 
-## A Worked Example
+## Example: Loading a File
 
-Here is the whole chapter in one function: a loader that validates its
-input, distinguishes the failures a caller can act on from the ones it
-cannot, and closes what it opened on every path.
+Here's everything in this chapter in a single function: a loader that
+validates its input, separates the failures a caller can do something about
+from the ones it can't, and closes the file it opened whatever happens.
 
 ```zuri
 import json
@@ -635,20 +640,20 @@ StoreError
 StoreError: no store at records.json
 ```
 
-Four things in there are worth naming.
+There are four things worth pointing out.
 
-Every failure the caller might reasonably handle arrives as one error type,
-`StoreError`, so `catch` on the calling side needs one branch rather than
-three.
+Every failure the caller might reasonably handle is reported as a single
+error type, `StoreError`, so the `catch` on the calling side needs one
+branch instead of three.
 
-The message always names the path. A log line saying "file is corrupt"
-with no filename costs someone an hour.
+The message always includes the path. A log line that says "file is corrupt"
+without saying which file can cost someone an hour.
 
-`handle.close()` appears on both paths — once in the handler before the
-re-raise, once after the block. There is no `finally` to do it for you, and
-forgetting the one in the handler is the most common resource leak in Zuri
-code.
+`handle.close()` is called on both paths: once in the handler before the
+error is raised again, and once after the block. There's no `finally` to do
+this for you, and forgetting the call in the handler is the most common way
+Zuri code leaks resources.
 
-And the shape check at the end is a `raise`, not an `assert`. A file on
-disk containing the wrong thing is the world being uncooperative, not a bug
-in this function.
+Finally, the check on the file's contents at the end uses `raise`, not
+`assert`. A file on disk with the wrong contents is a problem with the
+outside world, not a bug in this function.

@@ -1,8 +1,9 @@
 # Type Annotations
 
-Zuri is dynamically typed, and parameters may be annotated. An annotated
-parameter is **checked at every call**, and a mismatch raises a `TypeError`
-naming the parameter, its position and what actually arrived.
+Zuri is dynamically typed, but you can annotate parameters with types. An
+annotated parameter is **checked on every call**, and if the argument
+doesn't match, Zuri raises a `TypeError` that names the parameter and its
+position, and says what was actually passed.
 
 ```zuri
 def repeat(text: string, times: number) {
@@ -23,32 +24,32 @@ ababab
 repeat() expects parameter 'text' (argument 1) to be a string, got number
 ```
 
-## The Type Names
+## Type Names
 
 | Name | Accepts |
 | --- | --- |
-| `any` | anything, including `nil` |
+| `any` | Anything, including `nil` |
 | `bool` | `true` or `false` |
-| `number` | any number |
-| `int` | a number with no fractional part |
-| `bigint` | an arbitrary-precision integer |
-| `string` | a string |
-| `bytes` | a byte buffer |
-| `list` | a list |
-| `dict` | a dictionary |
-| `range` | a range |
-| `file` | a file handle |
-| `function` | a function or an anonymous function |
-| `callable` | anything callable, classes included |
-| `iterable` | anything `for` can walk |
-| `type` | a class |
-| *ClassName* | an instance of that class or a subclass |
+| `number` | Any number |
+| `int` | A number with no fractional part |
+| `bigint` | An arbitrary-precision integer |
+| `string` | A string |
+| `bytes` | A byte buffer |
+| `list` | A list |
+| `dict` | A dictionary |
+| `range` | A range |
+| `file` | A file handle |
+| `function` | A named or anonymous function |
+| `callable` | Anything that can be called, including classes |
+| `iterable` | Anything `for` can loop over |
+| `type` | A class |
+| *ClassName* | An instance of that class or one of its subclasses |
 
-Anything that is not one of those names is read as a class name.
+Any other name is treated as the name of a class.
 
-`number` and `bigint` are separate, in annotations exactly as they are
-everywhere else. A parameter typed `bigint` rejects `10`, and one typed
-`number` rejects `10n`:
+`number` and `bigint` are separate types in annotations, just as they are
+everywhere else. A parameter annotated as `bigint` rejects `10`, and one
+annotated as `number` rejects `10n`:
 
 ```zuri
 def factorial(n: bigint) {
@@ -73,13 +74,13 @@ catch {
 factorial() expects parameter 'n' (argument 1) to be a bigint, got number
 ```
 
-Write `bigint|number` when a function genuinely takes either, and convert
-inside it with `to_bigint()`.
+If a function really does accept either one, write `bigint|number`, and
+convert the value inside the function with `to_bigint()`.
 
-## Required by Default
+## Annotated Parameters Are Required
 
-A plain annotation makes the argument **required**. Omitting it is a
-`TypeError`, because the parameter arrives as `nil`:
+A plain annotation makes the argument **required**. Leaving it out raises a
+`TypeError`, because the parameter receives `nil`:
 
 ```zuri
 def needs_number(x: number) {}
@@ -95,12 +96,12 @@ catch {
 needs_number() expects parameter 'x' (argument 1) to be a number, got nil
 ```
 
-That is how you get argument checking out of a language that otherwise
-lets you call anything with anything.
+That's how you get argument checking in a language that otherwise lets you
+call any function with any arguments.
 
 ## Optional Parameters
 
-Prefix the type with `?` to allow `nil`:
+To allow `nil`, put a `?` in front of the type:
 
 ```zuri
 def connect(host: string, port: ?number) {
@@ -117,12 +118,12 @@ localhost:8080
 localhost:9000
 ```
 
-`?any` is the same as no annotation at all, which is what an unannotated
-parameter gets.
+`?any` is the same as having no annotation at all, which is what unannotated
+parameters get.
 
 ## Union Types
 
-Separate alternatives with `|`:
+To accept several types, separate them with `|`:
 
 ```zuri
 def render(value: string|number|list) {
@@ -147,11 +148,12 @@ text
 render() expects parameter 'value' (argument 1) to be a string, a number, or a list, got dict
 ```
 
-The `?` goes at the front and applies to the whole union: `?string|number`.
+The `?` goes at the front and applies to the whole union, as in
+`?string|number`.
 
 ## Classes and Subclasses
 
-A class name accepts instances of that class and of anything that inherits
+A class name accepts instances of that class and of any class that inherits
 from it:
 
 ```zuri
@@ -173,9 +175,9 @@ echo distance_from_origin(Point(3, 4))
 5
 ```
 
-The name means what it would mean in the function's body, so the class
-can be declared in the same file, brought in with an import, or held in
-a variable the function can see:
+The name means the same as it would inside the function body, so the class
+can be declared in the same file, imported, or stored in a variable that the
+function can see:
 
 ```zuri
 import date { Date, from_time }
@@ -191,8 +193,8 @@ echo year_of(from_time(0))
 1970
 ```
 
-This is what makes error handling readable, since every built-in error
-subclasses `Error`:
+This makes error handling easier to read, since all of the built-in errors
+are subclasses of `Error`:
 
 ```zuri
 def report(e: Error) {
@@ -210,9 +212,9 @@ catch {
 ValueError: bad value
 ```
 
-## Where Annotations Work
+## Where You Can Use Annotations
 
-Annotations go on parameters: in a `def`, in a method, and in an anonymous
+You can annotate the parameters of a `def`, a method or an anonymous
 function.
 
 ```zuri
@@ -225,7 +227,7 @@ class Report {
 var f = @(n: int) => n * 2
 ```
 
-The same syntax goes on `var` declarations and on class fields:
+The same syntax also works on `var` declarations and class fields:
 
 ```zuri
 var count: number = 0
@@ -237,27 +239,27 @@ class Report {
 }
 ```
 
-A variable annotation is a statement of intent. It is not checked at
-runtime, so the runtime will not stop you from putting a string in
-`count`. What it does is make the declaration self-documenting, and give
-static analysis tools something to work with: an annotated declaration
-tells a linter, an editor's completion engine or a type checker exactly
-what belongs there, and lets them flag the assignment your eyes would
-otherwise have to catch.
+An annotation on a variable describes what you intend to store in it, but it
+isn't checked at run time, so nothing stops you from putting a string in
+`count`. What it does is document the declaration and give tools something
+to work with. A linter, an editor's completion engine or a type checker can
+read the annotation, know what belongs in the variable, and flag an
+assignment that you'd otherwise have to spot by eye.
 
-Annotate declarations for the reader and the tooling. Annotate parameters
-for the runtime.
+Annotate declarations for people and tools, and annotate parameters for the
+runtime.
 
-## When to Annotate
+## When to Use Annotations
 
-Annotations are optional, and a program with none of them is perfectly
-ordinary Zuri. The question is where they earn their place.
+Annotations are optional, and a program that doesn't use them at all is
+perfectly normal Zuri. The real question is where they're most useful.
 
-**Annotate a boundary.** A function that receives data from outside your
-program — a request handler, a file parser, a public function in a module
-other people import — is where a wrong type first arrives. An annotation
-there turns a confusing failure deep in the call stack into a clear one at
-the door:
+**Annotate at the boundaries of your code.** A function that receives data
+from outside your program, such as a request handler, a file parser or a
+public function in a module that other people import, is where a value of
+the wrong type first shows up. An annotation there replaces a confusing
+failure deep in the call stack with a clear error at the point where the bad
+value came in:
 
 ```zuri
 def parse_port(raw: string) {
@@ -284,13 +286,14 @@ parse_port() expects parameter 'raw' (argument 1) to be a string, got number
 8080
 ```
 
-Note the division of labour there. The annotation handles *wrong type*, and
-the explicit check handles *wrong value*. An annotation can never do the
-second job, because `70000` is a perfectly good number.
+Notice how the work is divided. The annotation catches the *wrong type*, and
+the explicit check catches the *wrong value*. An annotation can never do the
+second job, because `70000` is a perfectly valid number.
 
-**Annotate to replace a manual check.** Any function that opens with
-`if !is_string(x) { raise TypeError(...) }` is spelling out by hand what an
-annotation says in one word, and the annotation produces a better message:
+**Use annotations instead of manual type checks.** If a function starts with
+`if !is_string(x) { raise TypeError(...) }`, it's doing by hand what an
+annotation does in one word, and the annotation gives a better error
+message:
 
 ```zuri
 def shout(text: string) {
@@ -304,11 +307,13 @@ echo shout('hello')
 HELLO!
 ```
 
-**Leave internal helpers alone if you prefer.** A private function called
-from three places in the same file, all of which you can see, gains less.
-Annotate it if it documents something non-obvious; skip it if it does not.
+**Annotating internal helpers is up to you.** A private function that's only
+called from three places in the same file, all of which you can see, gains
+less from annotations. Add them if they document something that isn't
+obvious, and leave them out if they don't.
 
-One thing an annotation is not: a substitute for validation. `text: string`
-guarantees you have a string, not that the string is a valid email address,
-a well-formed date or a non-empty name. The `validate` module covers that
-job, and [Chapter 13](ch13-00-stdlib-tour.md) introduces it.
+Keep in mind that an annotation isn't a replacement for validation.
+`text: string` guarantees that you have a string, but not that the string is
+a valid email address, a correctly formatted date or a non-empty name.
+That's what the `validate` module is for, which is introduced in [Chapter
+13](ch13-00-stdlib-tour.md).

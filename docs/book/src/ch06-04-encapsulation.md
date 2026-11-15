@@ -2,8 +2,8 @@
 
 ## Private Members
 
-A field or method whose name starts with `_` is private. It can be reached
-through `self` or `parent`, and nowhere else:
+A field or method whose name starts with `_` is private. You can access it
+through `self` or `parent`, but nowhere else:
 
 ```zuri
 class Box {
@@ -26,7 +26,7 @@ echo Box().add(1).add(2).count()
 2
 ```
 
-Reaching in from outside does not compile:
+Code outside the class that tries to access it doesn't compile:
 
 ```zuri,ignore
 var b = Box()
@@ -41,11 +41,11 @@ SyntaxError: '_items' is private and can only be accessed via 'self' or 'parent'
    |        ^
 ```
 
-This is a compile-time check, not a runtime one, so it costs nothing and
-cannot be worked around by computing the name.
+The check happens at compile time rather than at run time, so it has no
+cost, and you can't get around it by building the name dynamically.
 
-A subclass can reach its parent's private members, through `self` for
-fields and `parent` for methods:
+A subclass can access its parent's private members, through `self` for
+fields and through `parent` for methods:
 
 ```zuri
 class Base {
@@ -69,14 +69,14 @@ echo Child().reveal()
 base secret/base internal
 ```
 
-The same underscore convention governs modules: a module member whose name
-starts with `_` cannot be imported by name. [Chapter 8](ch08-00-modules.md)
-covers that side of it.
+Modules follow the same underscore convention: a module member whose name
+starts with `_` can't be imported by name. [Chapter 8](ch08-00-modules.md)
+covers modules.
 
 ## Classes Are Sealed
 
-Once a class is declared, its shape is final. You cannot add a field or a
-method to it, and you cannot add one to an instance:
+Once a class has been declared, its structure can't change. You can't add a
+field or a method to the class, and you can't add one to an instance either:
 
 ```zuri
 class Account {
@@ -96,14 +96,15 @@ catch {
 undefined field 'nickname' on instance of 'Account'
 ```
 
-The practical consequence is that a misspelled field name is an error at
-the point you write it, rather than a new field that silently shadows the
-one you meant. Every field a class has is declared in one place, and that
-place is `@new`.
+In practice, this means a misspelled field name is reported as an error
+where you wrote it, instead of creating a new field that quietly hides the
+one you meant. Every field of a class is declared in one place, which is
+`@new`.
 
-Static field **values** are mutable; the set of static fields is not.
+The **values** of static fields can change, but the set of static fields
+can't.
 
-## Reflective Access
+## Accessing Fields by Name
 
 Four built-in functions read and write fields by name:
 
@@ -123,35 +124,37 @@ true
 nil
 ```
 
-`setprop(obj, name, value)` writes; `delprop` resets the slot to `nil`.
-Both return `false` when the field does not exist on the class, because
-neither can create one.
+`setprop(obj, name, value)` writes a field, and `delprop` resets it to
+`nil`. Both return `false` if the class doesn't have the field, because
+neither function can create one.
 
-These bypass the underscore rule, which is deliberate: they exist for
-serialisers, debuggers and test helpers, where reaching into an object is
-the entire point. Regular code should not use them.
+These functions ignore the underscore rule on purpose. They exist for
+serializers, debuggers and test helpers, whose whole job is to look inside
+objects. Regular code shouldn't use them.
 
-The `zuri` module goes further, with a full reflection API over classes,
-functions and modules. [Chapter 21](ch21-00-metaprogramming.md) covers it.
+The `zuri` module goes further and provides a complete reflection API for
+classes, functions and modules. [Chapter 21](ch21-00-metaprogramming.md)
+covers it.
 
 ## Designing With Sealed Classes
 
-Two habits follow from sealing.
+Sealed classes lead to two good habits.
 
-**Declare every field on the class, even the ones the constructor fills
-in.** `self.x = value` inside `@new` will declare one for you, but a `var`
-line at the top of the body is documentation the next reader gets for free,
-and it is required the moment a helper method does the assigning instead.
+**Declare every field in the class, even the ones the constructor sets.**
+`self.x = value` inside `@new` declares a field for you, but a `var` line at
+the top of the class body documents it for the next person who reads the
+code. It's also required as soon as a helper method does the assigning
+instead.
 
-**Model optional state as a field holding `nil`, not as an absent field.**
-There is no such thing as an absent field, so a `var cached_result` that
-starts `nil` is the shape you want.
+**Represent optional state as a field that holds `nil`, not as a missing
+field.** Fields can't be missing, so a `var cached_result` that starts out
+as `nil` is the way to do it.
 
-## A Worked Example
+## Example: A Bounded History
 
-Privacy earns its place when a class has an invariant to protect. Here is a
-bounded history buffer: it keeps the last `n` entries and nothing else, and
-there is no way for a caller to break that from outside.
+Privacy is most useful when a class has an invariant to protect. Here's a
+bounded history buffer. It keeps the last `n` entries and nothing more, and
+a caller has no way of breaking that from outside.
 
 ```zuri
 class History {
@@ -212,18 +215,18 @@ catch {
 ValueError: limit must be at least 1, got 0
 ```
 
-Four decisions are doing the work.
+Four design decisions make this work.
 
-**The list is private**, so nothing outside can append to it and skip the
-trimming. `history._entries.append('x')` does not compile.
+**The list is private**, so nothing outside the class can append to it and
+skip the trimming. `history._entries.append('x')` doesn't compile.
 
-**`entries()` returns a clone.** Without it, the caller would hold the
-real list and could grow it past the limit — which is exactly what the
-fourth output line shows *not* happening. Handing out a private mutable
-collection is the most common way encapsulation leaks.
+**`entries()` returns a copy.** Otherwise, the caller would have the real
+list and could grow it past the limit. The fourth line of output shows that
+this *doesn't* happen. Returning a private, mutable collection is the most
+common way encapsulation breaks down.
 
-**The invariant is established in the constructor.** `_limit` is validated
-once, so `record()` never has to wonder whether it is sensible.
+**The invariant is set up in the constructor.** `_limit` is validated once,
+so `record()` never has to check whether it's sensible.
 
-**The class is sealed**, so `history.limit = 999` is an error rather than a
-second, ignored field sitting alongside `_limit`.
+**The class is sealed**, so `history.limit = 999` is an error, rather than a
+second field that's ignored while `_limit` keeps working.

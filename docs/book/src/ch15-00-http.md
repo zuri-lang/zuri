@@ -1,24 +1,22 @@
 # HTTP
 
-The `http` module is Zuri's HTTP stack: a client, a server, and the
-pieces both are built from. It speaks HTTP/1.1 and HTTP/2, over
-cleartext or TLS, and it is meant to face the internet directly.
+The `http` module is Zuri's HTTP stack. It contains a client, a server and
+the building blocks they share. It supports HTTP/1.1 and HTTP/2, over plain
+connections or TLS, and it's designed to be exposed directly to the
+internet.
 
-That last part is a design decision rather than a boast. Most
-language runtimes ship an HTTP server that is fine for development and
-then expect a reverse proxy in front of it in production — something
-else terminates TLS, serves the static files, compresses the
-responses, enforces the request limits, and speaks HTTP/2 to the
-browser. Everything on that list is in this module, done properly,
-because a standard library that leaves them out is not really shipping
-a server.
+That last point is a deliberate design decision. Many language runtimes
+include an HTTP server that's fine for development, but expect you to put a
+reverse proxy in front of it in production to terminate TLS, serve static
+files, compress responses, enforce request limits and speak HTTP/2 to
+browsers. All of those features are built into this module.
 
 - [Introduction](#introduction)
   - [A First Request](#a-first-request)
   - [A First Server](#a-first-server)
 - [Making Requests](#making-requests)
   - [The Shared Client](#the-shared-client)
-  - [Building a Client](#building-a-client)
+  - [Creating a Client](#creating-a-client)
   - [Request Methods](#request-methods)
   - [Request Bodies](#request-bodies)
   - [Uploading Files](#uploading-files)
@@ -57,7 +55,7 @@ a server.
   - [`force_https()`](#force_https)
   - [Ordering](#ordering)
 - [Sessions](#sessions)
-  - [Nothing Happens Until Something Uses It](#nothing-happens-until-something-uses-it)
+  - [Sessions Are Created on First Use](#sessions-are-created-on-first-use)
   - [Signing In](#signing-in)
   - [Flash Messages](#flash-messages)
   - [Where Sessions Are Kept](#where-sessions-are-kept)
@@ -65,8 +63,8 @@ a server.
   - [The Cookie](#the-cookie)
   - [Signing the Cookie](#signing-the-cookie)
   - [What a Session May Hold](#what-a-session-may-hold)
-  - [Across Workers](#across-workers)
-  - [What Sessions Do Not Do](#what-sessions-do-not-do)
+  - [Sessions Across Workers](#sessions-across-workers)
+  - [Session Limitations](#session-limitations)
 - [TLS](#tls)
 - [HTTP/2](#http2)
 - [WebSockets](#websockets)
@@ -76,8 +74,8 @@ a server.
   - [Using More Than One Core](#using-more-than-one-core)
   - [Limits](#limits)
   - [Graceful Shutdown](#graceful-shutdown)
-  - [Behind Another Proxy](#behind-another-proxy)
-- [What the Module Refuses](#what-the-module-refuses)
+  - [Running Behind a Proxy](#running-behind-a-proxy)
+- [Requests the Module Rejects](#requests-the-module-rejects)
 - [Module Reference](#module-reference)
 
 ## Introduction
@@ -90,10 +88,10 @@ import http
 echo http.get('https://example.com').as_text()
 ```
 
-`get()`, `post()`, `put()`, `patch()`, `delete()`, `head()`,
-`options()` and `trace()` all exist at module level and all go through
-one shared client, which keeps its connections open between calls.
-[Request Methods](#request-methods) covers each of them.
+`get()`, `post()`, `put()`, `patch()`, `delete()`, `head()`, `options()` and
+`trace()` are all available as module-level functions. They all use one
+shared client, which keeps its connections open between calls. [Request
+Methods](#request-methods) describes each of them.
 
 ### A First Server
 
@@ -113,28 +111,28 @@ server.get('/users/:id', @(request, response) {
 server.listen()
 ```
 
-Two things are already true of that server that are worth noticing:
-`GET /users/42` matches the second route and hands the handler
-`'42'`, and a `HEAD /` request is answered by the first route with the
-headers a `GET` would have produced and no body, because that is what
-HEAD means.
+This server already does two things worth noticing. `GET /users/42` matches
+the second route and passes `'42'` to the handler. And a `HEAD /` request is
+handled by the first route, which responds with the headers a `GET` would
+have produced but no body, because that's what HEAD means.
 
-> Blocks in this chapter that list several calls together — three ways to
-> save, four filters, a family of methods — are **reference listings**, not
-> programs. They show the shape of each call rather than a sequence you
-> could run, and several would conflict if pasted into one file. Anything
-> presented as a complete program on this page runs as written.
+> Code blocks in this chapter that list several calls together, such as
+> three ways to save, four filters or a family of methods, are **reference
+> listings**, not programs. They show the form of each call, not a sequence
+> you could run, and some of them would conflict if you pasted them into one
+> file. Anything shown as a complete program in this chapter runs as
+> written.
 
-## A Round Trip You Can Run
+## A Complete Example You Can Run
 
-Most examples in this chapter call a host that does not exist, or start a
-server that never returns — neither of which you can paste into a terminal
-and watch. This one you can. It runs a real server on a real port and makes
-real requests against it, in two files.
+Most of the examples in this chapter call a host that doesn't exist, or
+start a server that never returns, so you can't paste them into a terminal
+and watch them work. This one is different. It runs a real server on a real
+port and sends real requests to it, using two files.
 
-The server goes in its own file, because a function that references an
-imported module cannot be spawned from the file that imported it. See
-[Concurrency with Isolates](ch11-00-isolates.md) for the rule.
+The server goes in its own file, because a function that uses an imported
+module can't be spawned from the file that imported it. See [Concurrency
+with Isolates](ch11-00-isolates.md) for the details.
 
 <span class="filename">Filename: service.zu</span>
 
@@ -184,35 +182,35 @@ $ zuri run main.zu
 201
 ```
 
-Four details in there are worth carrying into your own code.
+There are four details here that are worth using in your own code.
 
 **Port `0` asks the operating system for a free port.** `listen()` would
-bind for you, but then nobody could ask which port it got, so the example
-calls `bind()` explicitly, reads the bound address, and only then starts
-accepting. That is the pattern for any test or any process running more
-than one server.
+bind the port for you, but then there'd be no way to find out which port it
+got. So the example calls `bind()` explicitly, reads the bound address, and
+only then starts accepting connections. Use this pattern for tests and for
+any process that runs more than one server.
 
-**The port travels over a channel.** The client cannot know it in advance,
-and the two halves are in different isolates with separate heaps, so a
-shared variable is not an option.
+**The port is sent over a channel.** The client can't know the port in
+advance, and the two halves run in different isolates with separate heaps,
+so a shared variable isn't an option.
 
 **`request.json_body()` parses the request body**, and
-`response.json(value, status)` writes the response. The names are not
-symmetrical because they are doing different jobs: one decodes what
-arrived, the other encodes and sets a status.
+`response.json(value, status)` writes the response. The names don't match
+because the two methods do different jobs: one decodes what arrived, and the
+other encodes the response and sets a status.
 
-**`task.cancel()` ends it.** `listen()` runs until the server is closed, so
-without that the program would never exit.
+**`task.cancel()` stops the server.** `listen()` runs until the server is
+closed, so without that call, the program would never exit.
 
 
 ## Making Requests
 
 ### The Shared Client
 
-The module-level functions use a single `HttpClient` that lives for
-the life of the program. It pools connections, so a second request to
-a host it has already talked to skips the TCP handshake and, over
-HTTPS, the TLS handshake as well.
+The module-level functions use a single `HttpClient` that exists for the
+lifetime of the program. It reuses connections, so a second request to a
+host it has already connected to skips the TCP handshake, and for HTTPS, the
+TLS handshake as well.
 
 ```zuri
 import http
@@ -224,11 +222,11 @@ echo page.headers.get('content-type')
 echo page.as_text()
 ```
 
-Reach that client with `http.shared_client()` when you want a setting
-to apply to every casual call in a program, and build your own for
+Use `http.shared_client()` to get that client when you want a setting to
+apply to every simple request in a program, and create your own client for
 anything more specific.
 
-### Building a Client
+### Creating a Client
 
 ```zuri,ignore
 var api = http.client('https://api.example.com', {
@@ -239,10 +237,10 @@ var api = http.client('https://api.example.com', {
 var me = api.get('/users/me').raise_for_status().as_dict()
 ```
 
-A client built with a base URL prefixes it onto any target that is not
-already absolute, so the rest of the program addresses the service by
-path. Everything in the options dictionary is a field of `HttpClient`,
-plus `headers`, and every one of them can also be set afterwards:
+If you give a client a base URL, it's added to the front of any target that
+isn't already an absolute URL, so the rest of your program can refer to the
+service by path alone. Every key in the options dictionary is a field of
+`HttpClient`, apart from `headers`, and you can also set any of them later:
 
 ```zuri,ignore
 api.user_agent = 'my-service/2.1'
@@ -251,33 +249,32 @@ api.set_header('X-Client-Version', '2.1')
 ```
 
 > **Note**
-> Build a client once and keep it. A fresh client per request throws
-> away the connection pool, the cookie jar and the TLS configuration —
-> which is to say, it throws away most of what a client is for.
+> Create a client once and reuse it. Creating a new client for each request
+> throws away its connection pool, its cookie jar and its TLS configuration,
+> which is most of what a client is for.
 
 ### Request Methods
 
-Every method has a function of its own. They exist twice over, with
-identical signatures: on the module, where they go through the shared
-client, and on any `HttpClient` you build yourself.
+Each HTTP method has its own function. Every function is available in two
+places, with the same signature: on the module, where it uses the shared
+client, and on any `HttpClient` you create.
 
-The three methods that carry a body take it as their second argument;
-the rest take the options dictionary in that position.
+The three methods that send a body take it as their second argument. The
+others take the options dictionary in that position.
 
 | Call | Sends a body |
 | --- | --- |
-| `get(url, options)` | no |
-| `post(url, data, options)` | yes |
-| `put(url, data, options)` | yes |
-| `patch(url, data, options)` | yes |
-| `delete(url, options)` | no |
-| `head(url, options)` | no |
-| `options(url, options)` | no |
-| `trace(url, options)` | no |
-| `request(method, url, options)` | if `options` says so |
+| `get(url, options)` | No |
+| `post(url, data, options)` | Yes |
+| `put(url, data, options)` | Yes |
+| `patch(url, data, options)` | Yes |
+| `delete(url, options)` | No |
+| `head(url, options)` | No |
+| `options(url, options)` | No |
+| `trace(url, options)` | No |
+| `request(method, url, options)` | If `options` includes one |
 
-Every argument after the first is optional, so the short forms all
-work:
+Every argument after the first is optional, so all the short forms work:
 
 ```zuri,ignore
 import http
@@ -304,7 +301,7 @@ echo probe.headers.get('content-length')
 echo http.options('https://example.com/items').headers.get('allow')
 ```
 
-The same calls on a client of your own, which is what you want for
+Here are the same calls on your own client, which is what you should use for
 anything that runs more than once:
 
 ```zuri,ignore
@@ -315,9 +312,9 @@ api.post('/items', { name: 'Widget' })
 api.delete('/items/1')
 ```
 
-`request()` takes the method as an argument, which is how you send one
-that has no function of its own — a WebDAV `PROPFIND`, or anything
-else a service has invented:
+`request()` takes the method as an argument, so you can use it to send a
+method that doesn't have its own function, such as a WebDAV `PROPFIND` or a
+custom method a service has defined:
 
 ```zuri,ignore
 api.request('PROPFIND', '/files/', {
@@ -327,19 +324,20 @@ api.request('PROPFIND', '/files/', {
 })
 ```
 
-Method names are case-sensitive on the wire, and every registered one
-is uppercase; a lowercase name is uppercased for you.
+HTTP method names are case-sensitive, and all the registered methods are
+uppercase. If you pass a lowercase name, it's converted to uppercase for
+you.
 
 > **Note**
-> `head()` does not follow redirects by default, and `delete()`,
-> `options()` and `trace()` send no body. A `DELETE` that genuinely
-> needs one — some APIs want a reason in the body — can use
+> `head()` doesn't follow redirects by default, and `delete()`, `options()`
+> and `trace()` don't send a body. If you need to send a `DELETE` with a
+> body, because an API wants a reason in it for example, use
 > `request('DELETE', url, { json: ... })`.
 
 ### Request Bodies
 
-The second argument to `post()`, `put()` and `patch()` is the body,
-and what it is decides how it is sent:
+The second argument to `post()`, `put()` and `patch()` is the body, and its
+type determines how it's sent:
 
 ```zuri,ignore
 api.post('/items', { name: 'Widget', price: 9 }) # JSON
@@ -349,20 +347,20 @@ api.post('/items', file('photo.jpg', 'rb').read()) # sent as-is
 api.post('/items', form_builder) # multipart
 ```
 
-A dictionary or list becomes JSON with a matching `Content-Type`; a
-string or bytes is sent exactly as given, with no content type unless
-you name one.
+A dictionary or a list is sent as JSON, with the matching `Content-Type`. A
+string or bytes value is sent exactly as it is, with no content type unless
+you set one.
 
-For anything else, or to be explicit, name it in the options
+For other kinds of body, or to be explicit, set it in the options
 dictionary:
 
 | Option | Sends | Content-Type |
 | --- | --- | --- |
-| `body` | a string or bytes, exactly as given | none, unless `content_type` is set |
-| `json` | any value, JSON-encoded | `application/json` |
-| `form` | a dictionary | `application/x-www-form-urlencoded` |
-| `multipart` | a `MultipartBuilder` | `multipart/form-data`, boundary included |
-| `content_type` | — | overrides whichever of the above applied |
+| `body` | A string or bytes, exactly as given | None, unless `content_type` is set |
+| `json` | Any value, encoded as JSON | `application/json` |
+| `form` | A dictionary | `application/x-www-form-urlencoded` |
+| `multipart` | A `MultipartBuilder` | `multipart/form-data`, including the boundary |
+| `content_type` | Nothing by itself | Overrides the content type set by any of the above |
 
 ```zuri,ignore
 # A login form
@@ -385,14 +383,14 @@ api.post('/search', nil, {
 })
 ```
 
-`Content-Length` is set for you from the body, and cannot be
-overridden — two parties disagreeing about how long a body is, is a
-request-smuggling bug rather than a formatting choice.
+`Content-Length` is set for you based on the body, and you can't override
+it. If the client and server disagree about how long a body is, that's a
+request smuggling vulnerability, not a matter of formatting.
 
 ### Uploading Files
 
-A file upload is a `multipart/form-data` body, which
-`MultipartBuilder` assembles:
+A file upload is a `multipart/form-data` body, and `MultipartBuilder` puts
+one together for you:
 
 ```zuri,ignore
 import http
@@ -411,20 +409,20 @@ form.add_file(
 var response = http.post('https://example.com/photos', form)
 ```
 
-Passing the builder as the body is enough — the `Content-Type`, the
-boundary parameter and the `Content-Length` all follow from it.
+Passing the builder as the body is all you need to do. The `Content-Type`,
+its boundary parameter and the `Content-Length` are all derived from it.
 
-| Method | Does |
+| Method | What it does |
 | --- | --- |
-| `add_field(name, value)` | adds a plain form field; numbers and booleans are stringified |
-| `add_file(name, filename, content, content_type)` | adds a file part; `content` is bytes or a string, `content_type` defaults to `application/octet-stream` |
-| `content_type()` | the `Content-Type` header value, boundary included |
-| `boundary()` | the boundary string |
-| `build()` | the assembled body, as bytes |
-| `length()` | how many parts have been added |
+| `add_field(name, value)` | Adds a plain form field. Numbers and booleans are converted to strings. |
+| `add_file(name, filename, content, content_type)` | Adds a file. `content` is bytes or a string, and `content_type` defaults to `application/octet-stream`. |
+| `content_type()` | Returns the value of the `Content-Type` header, including the boundary |
+| `boundary()` | Returns the boundary string |
+| `build()` | Returns the complete body, as bytes |
+| `length()` | Returns how many parts have been added |
 
-Several files under one field name is just several calls — that is
-what an `<input type="file" multiple>` sends:
+To send several files under the same field name, call `add_file()` several
+times. That's what an `<input type="file" multiple>` sends:
 
 ```zuri,ignore
 for path in paths {
@@ -432,13 +430,12 @@ for path in paths {
 }
 ```
 
-A filename that is not plain ASCII is sent twice: once as a
-transliterated `filename`, and once as an RFC 5987 `filename*`, which
-is what lets the real name survive a recipient that only understands
-one of the two.
+A filename that isn't plain ASCII is sent twice: once as a transliterated
+`filename`, and once as an RFC 5987 `filename*`. That way, the real name
+survives even if the recipient only understands one of the two.
 
-If you need the body separately — to sign it, to log its size, to send
-it somewhere this client is not going — build it yourself:
+If you need the body on its own, for example to sign it, log its size or
+send it somewhere other than through this client, build it yourself:
 
 ```zuri,ignore
 var body = form.build()
@@ -447,14 +444,14 @@ api.post('/photos', nil, { body, content_type: form.content_type() })
 ```
 
 > **Note**
-> `build()` assembles the whole body in memory. For an upload large
-> enough that this matters, send the file as a raw body with its own
-> content type instead — `multipart/form-data` only earns its overhead
-> when there are fields alongside the file.
+> `build()` assembles the entire body in memory. For an upload that's large
+> enough for this to matter, send the file as a raw body with its own
+> content type instead. `multipart/form-data` is only worth its overhead
+> when there are other fields alongside the file.
 
-The boundary is generated from the platform's secure random source,
-not from a timestamp or a counter — a boundary a peer can predict is a
-boundary a peer can write into a field value to forge extra parts.
+The boundary is generated from the platform's secure random number
+generator, not from a timestamp or a counter. If someone else could predict
+the boundary, they could include it in a field value to forge extra parts.
 
 ### Reading a Response
 
@@ -475,10 +472,10 @@ response.is_redirect() # 3xx
 response.is_error() # 4xx or 5xx
 ```
 
-`raise_for_status()` turns a 4xx or 5xx into a `StatusError` and
-returns the response otherwise, so it can be used inline. The response
-stays reachable on the raised error, which matters because that is
-where an API usually explains what went wrong:
+`raise_for_status()` raises a `StatusError` for a 4xx or 5xx status, and
+otherwise returns the response, so you can use it inline. The response is
+still available on the error, which matters because that's usually where an
+API explains what went wrong:
 
 ```zuri,ignore
 catch {
@@ -489,10 +486,10 @@ catch {
 }
 ```
 
-A compressed response body is decompressed automatically — gzip,
-deflate, brotli and zstd — and the `Content-Encoding` header is
-removed once it has been, so nothing downstream tries to decode it a
-second time.
+Compressed response bodies are decompressed automatically, whether they use
+gzip, deflate, brotli or zstd. Once a body has been decompressed, the
+`Content-Encoding` header is removed, so nothing later on tries to decode it
+again.
 
 ### Query Parameters and Headers
 
@@ -507,9 +504,9 @@ api.get('/search', {
 })
 ```
 
-A list value repeats the parameter, which is how a query string
-carries more than one value under one name. Per-request headers are
-merged over the client's own.
+A list value repeats the parameter, which is how a query string sends more
+than one value with the same name. Headers set for a request are merged with
+the client's own headers, and take priority over them.
 
 ### Authentication
 
@@ -522,16 +519,15 @@ api.get('/me', {
 })
 ```
 
-Credentials passed this way are scoped to the origin you addressed. If
-the response is a redirect to a different scheme, host or port, they
-are dropped rather than followed — a redirect to a host of someone
-else's choosing is otherwise a way to collect whatever `Authorization`
-header was in flight.
+Credentials passed this way only apply to the origin you sent the request
+to. If the response redirects to a different scheme, host or port, the
+credentials are dropped. Otherwise, a redirect to a host chosen by someone
+else would be a way to collect your `Authorization` header.
 
 ### Redirects
 
-Redirects are followed by default, up to `max_redirects` (10), and the
-number followed is on the response:
+Redirects are followed by default, up to `max_redirects` (10 by default),
+and the response records how many were followed:
 
 ```zuri
 var final = http.get('https://example.com/old')
@@ -540,24 +536,26 @@ final.redirects # how many were followed
 final.responder # the URL that finally answered
 ```
 
-A `303`, and in practice a `301` or `302`, becomes a `GET` with no
-body when followed — that is what every browser and every other client
-does, and a server that meant otherwise should have sent `307` or
-`308`, both of which preserve the method and body here.
+When a `303` is followed, the request becomes a `GET` without a body, and in
+practice the same happens for a `301` or `302`. That's what browsers and
+other clients do. A server that wants the method and body to be kept should
+send a `307` or `308`, and both of those are followed with the method and
+body unchanged.
 
-Turn following off per request or per client:
+You can turn off redirect following for a single request or for a whole
+client:
 
 ```zuri,ignore
 http.get(url, { follow_redirects: false })
 ```
 
-`head()` does not follow redirects by default, since the point of a
-HEAD is usually to inspect the very response a redirect would hide.
+`head()` doesn't follow redirects by default, because a HEAD request is
+usually meant to look at the exact response that a redirect would hide.
 
 ### Cookies
 
-A client with a cookie jar carries cookies between requests, so a
-login and the requests after it behave the way a browser would:
+A client with a cookie jar keeps cookies between requests, so logging in and
+the requests that follow behave as they would in a browser:
 
 ```zuri,ignore
 var session = http.client('https://example.com')
@@ -569,11 +567,11 @@ session.post('/login', nil, {
 session.get('/dashboard') # sends the session cookie
 ```
 
-The jar applies RFC 6265's matching rules: a cookie without a `Domain`
-is host-only, one with a `Domain` reaches subdomains, a path prefix
-matches below itself, and a `Secure` cookie is never sent over
-cleartext. A server trying to set a cookie for a domain it does not
-control is refused.
+The cookie jar follows the matching rules in RFC 6265. A cookie without a
+`Domain` is only sent to the host that set it, a cookie with a `Domain` is
+also sent to subdomains, a path matches every path below it, and a `Secure`
+cookie is never sent over an unencrypted connection. If a server tries to
+set a cookie for a domain it doesn't control, the cookie is rejected.
 
 ### Timeouts and Retries
 
@@ -587,20 +585,20 @@ var api = http.client('https://api.example.com', {
 api.get('/slow', { timeout: 30000 }) # this one request
 ```
 
-All timeouts are milliseconds. `max_retries` retries a failed request,
-but only when the method is idempotent — replaying a `POST` can mean
-charging a card twice, so `GET`, `HEAD`, `PUT`, `DELETE`, `OPTIONS`
-and `TRACE` are retried and nothing else is.
+All timeouts are in milliseconds. `max_retries` retries a failed request,
+but only for idempotent methods. Repeating a `POST` could mean charging
+someone's card twice, so `GET`, `HEAD`, `PUT`, `DELETE`, `OPTIONS` and
+`TRACE` are retried, and nothing else is.
 
-A pooled connection the far end closed while it was idle fails on the
-next write and looks exactly like a network failure. That specific
-case is retried once for an idempotent request even at the default
-`max_retries` of zero, because otherwise every connection a server
-reaps would surface as a spurious error.
+If the server closed a pooled connection while it was idle, the next write
+on that connection fails in a way that looks exactly like a network failure.
+In that specific case, an idempotent request is retried once, even with the
+default `max_retries` of zero. Otherwise, every connection that a server
+closes for being idle would show up as an error.
 
 ### Streaming a Response
 
-A large response does not have to be held in memory:
+You don't have to hold a large response in memory:
 
 ```zuri,ignore
 var response = api.get('/exports/large.csv', { stream: true })
@@ -618,37 +616,37 @@ out.close()
 api.finish(response)
 ```
 
-`finish()` hands the connection back to the pool once you are done
-with the body. Until then the connection is yours, since there is no
-way for the client to know when you have finished reading.
+`finish()` returns the connection to the pool once you've finished with the
+body. Until then, the connection belongs to you, because the client has no
+way of knowing when you've finished reading.
 
 ### TLS and Certificates
 
-Certificates are verified against the platform's trust store by
-default. To talk to a service with an internal or self-signed
-certificate, trust its authority:
+By default, certificates are verified against the platform's trusted
+certificates. To connect to a service with an internal or self-signed
+certificate, add its certificate authority:
 
 ```zuri,ignore
 api.add_ca(file('/etc/ssl/internal-ca.pem').read())
 ```
 
-There is also `verify = false`, which turns verification off
-completely. It exists for local development, and it makes the
-connection encrypted but unauthenticated — which is to say, trivially
-interceptable. `add_ca()` is the right answer everywhere else.
+There's also `verify = false`, which turns off verification completely. It's
+meant for local development only. With it, the connection is encrypted but
+not authenticated, which means anyone in the middle can easily intercept it.
+Everywhere else, use `add_ca()`.
 
 ### Proxies
 
-A client goes through the proxy the environment names, the way command
-line tools do: `HTTPS_PROXY` for `https` addresses, `HTTP_PROXY` for
-`http` ones, and `ALL_PROXY` for either, each in upper or lower case.
-`NO_PROXY` lists the hosts reached directly, separated by commas: a
-name covers every name under it, an entry with a port covers only that
-port, and `*` covers everything. This machine's own loopback addresses
-never go through a proxy.
+A client uses the proxy set in the environment, the same way command-line
+tools do: `HTTPS_PROXY` for `https` addresses, `HTTP_PROXY` for `http`
+addresses, and `ALL_PROXY` for both. Each variable can be written in
+uppercase or lowercase. `NO_PROXY` is a comma-separated list of hosts that
+are reached directly. A name in the list also covers every name under it, an
+entry with a port only covers that port, and `*` covers everything. The
+machine's own loopback addresses are never reached through a proxy.
 
-A client of your own can name its proxy instead, or ignore the
-environment altogether:
+A client you create yourself can specify its own proxy, or ignore the
+environment completely:
 
 ```zuri,ignore
 var api = http.client('https://api.example.com', {
@@ -658,19 +656,19 @@ var api = http.client('https://api.example.com', {
 var direct = http.client('https://api.example.com', { trust_env: false })
 ```
 
-An `https` request is tunnelled through the proxy with `CONNECT`, so the
-proxy carries the encrypted bytes and never sees what they say, and the
-certificate checked is the destination's own. An `http` request is
-handed to the proxy whole. Credentials in the proxy address are sent to
-the proxy alone, as `Proxy-Authorization`. The proxy itself is reached
-over plain HTTP; an `https://` proxy address is refused.
+An `https` request is tunneled through the proxy with `CONNECT`, so the
+proxy only passes the encrypted bytes along and can't read them, and the
+certificate that's checked belongs to the destination. An `http` request is
+passed to the proxy in full. Any credentials in the proxy address are only
+sent to the proxy, as a `Proxy-Authorization` header. The connection to the
+proxy itself uses plain HTTP, and an `https://` proxy address is rejected.
 
 ## Serving Requests
 
 ### Routing
 
-A route pattern is made of literal segments, `:name` parameters, and
-an optional trailing catch-all:
+A route pattern consists of literal segments, `:name` parameters and an
+optional catch-all at the end:
 
 | Pattern | Matches | Captures |
 | --- | --- | --- |
@@ -685,32 +683,33 @@ server.get('/users/:id', @(request, response) {
 })
 ```
 
-A literal segment always beats a parameter, and a parameter always
-beats a catch-all, so `/users/new` and `/users/:id` can both exist and
-the specific one wins — regardless of which was registered first.
-Matching runs over a trie, so a router with a thousand routes costs
-the same per request as one with ten.
+A literal segment always takes priority over a parameter, and a parameter
+always takes priority over a catch-all. So `/users/new` and `/users/:id` can
+both exist, and the more specific route wins, whichever was registered
+first. Routes are matched using a trie, so a router with a thousand routes
+costs the same per request as one with ten.
 
-`get()`, `post()`, `put()`, `patch()`, `delete()`, `head()` and
-`options()` register for one method. `any()` registers `GET`, `POST`,
-`PUT`, `PATCH`, `DELETE` and `OPTIONS` at once. `handle()` takes the
-method as an argument, which is how a method with no function of its
-own — `PROPFIND`, or anything a service has invented — gets a route:
+`get()`, `post()`, `put()`, `patch()`, `delete()`, `head()` and `options()`
+each register a route for one method. `any()` registers `GET`, `POST`,
+`PUT`, `PATCH`, `DELETE` and `OPTIONS` all at once. `handle()` takes the
+method as an argument, which is how you add a route for a method that
+doesn't have its own function, such as `PROPFIND` or a custom method:
 
 ```zuri,ignore
 server.handle('PROPFIND', '/files/' + '*path', list_properties)
 ```
 
-Three things are answered without a handler:
+Three kinds of request are answered without a handler:
 
-- `HEAD` falls back to the `GET` route for the same path, and the body
-  is dropped on the way out.
-- `OPTIONS` answers `204` with an `Allow` header listing what the path
-  actually accepts.
-- A path that exists for other methods answers `405`, again with
-  `Allow` — rather than a `404`, which would be a lie.
+- `HEAD` uses the `GET` route for the same path, and the body is removed
+  from the response.
+- `OPTIONS` gets a `204` response with an `Allow` header that lists the
+  methods the path accepts.
+- A request for a path that only exists for other methods gets a `405`
+  response, again with an `Allow` header, rather than a `404`, which would
+  be wrong.
 
-Name a route to build URLs from it later:
+Give a route a name so you can build URLs from it later:
 
 ```zuri,ignore
 server.get('/users/:id', show_user, 'user.show')
@@ -741,12 +740,12 @@ server.post('/items', @(request, response) {
 })
 ```
 
-`path` is percent-decoded and then normalised, in that order — which
-is the only order that works, since `%2e%2e%2f` is `../` written to
-survive a naive check. Route on `path`; `target` is the raw form and
-matching on it is how directory traversal gets through.
+`path` is percent-decoded and then normalized, in that order. That's the
+only order that works, because `%2e%2e%2f` is `../` encoded to get past a
+naive check. Route on `path`. `target` is the raw form, and matching on it
+is how directory traversal attacks get through.
 
-An uploaded file is an `UploadedFile`:
+An uploaded file is represented by an `UploadedFile`:
 
 ```zuri,ignore
 var upload = request.file('avatar')
@@ -758,18 +757,18 @@ upload.size()
 upload.save_to('/var/uploads/' + upload.safe_name())
 ```
 
-`filename` and `content_type` are both attacker-controlled and say
-nothing about what the bytes are. `safe_name()` drops any directory
-component — including a Windows one — and reduces the rest to letters,
+`filename` and `content_type` are both controlled by the client, and neither
+tells you anything reliable about the contents. `safe_name()` removes any
+directory part, including a Windows one, and reduces the rest to letters,
 digits, `.`, `-` and `_`.
 
 ### Forms and File Uploads
 
-A submitted form arrives as a request body, in one of two encodings,
-and both are read through the same methods. Which one a browser sends
-is decided by the `enctype` on the `<form>`: the default
-`application/x-www-form-urlencoded` for a form of plain fields, and
-`multipart/form-data` for one that carries a file.
+A submitted form arrives as the request body in one of two encodings, and
+you read both through the same methods. The `enctype` attribute on the
+`<form>` decides which one a browser sends: the default,
+`application/x-www-form-urlencoded`, for a form with only plain fields, and
+`multipart/form-data` for a form that includes a file.
 
 ```zuri,ignore
 server.post('/signup', @(request, response) {
@@ -788,31 +787,32 @@ server.post('/signup', @(request, response) {
 
 | Method | Returns |
 | --- | --- |
-| `form()` | every field as `name -> value`, keeping the first of a repeated name |
-| `form_all()` | every field as `name -> [value, ...]` |
-| `form_field(name, fallback)` | one field's first value |
-| `files()` | uploaded files as `name -> [UploadedFile, ...]` |
-| `file(name)` | the first file uploaded under `name`, or `nil` |
+| `form()` | Every field as `name -> value`, keeping the first value of a repeated name |
+| `form_all()` | Every field as `name -> [value, ...]` |
+| `form_field(name, fallback)` | The first value of one field |
+| `files()` | The uploaded files as `name -> [UploadedFile, ...]` |
+| `file(name)` | The first file uploaded under `name`, or `nil` |
 
-The body is parsed on first use and cached, so reading `form()` in a
-middleware and again in the handler costs one parse. A body that is
-neither encoding gives an empty dictionary rather than raising — use
-`request.json_body()` for a JSON body and `request.text()` for
+The body is parsed the first time you use it and then cached, so reading
+`form()` in a middleware and again in the handler only parses it once. A
+body in neither encoding gives you an empty dictionary instead of raising an
+error. Use `request.json_body()` for a JSON body and `request.text()` for
 anything else.
 
-A field a form can repeat — a set of checkboxes, a multi-select —
-needs `form_all()`, since `form()` keeps only the first value:
+A field that can appear more than once, such as a group of checkboxes or a
+multiple select, needs `form_all()`, because `form()` only keeps the first
+value:
 
 ```zuri,ignore
 var tags = request.form_all().get('tags', [])
 ```
 
 > **Note**
-> A redirect after a successful `POST` should be `303 See Other`, as
-> above. It is what stops a browser re-submitting the form when the
-> user reloads the resulting page.
+> After a successful `POST`, redirect with `303 See Other`, as shown above.
+> That stops the browser from submitting the form again if the user reloads
+> the resulting page.
 
-#### Receiving an upload
+#### Receiving an Upload
 
 ```html
 <form method="post" action="/avatar" enctype="multipart/form-data">
@@ -849,22 +849,22 @@ server.post('/avatar', @(request, response) {
 })
 ```
 
-An `UploadedFile` carries:
+An `UploadedFile` has these members:
 
-| Member | Is |
+| Member | Description |
 | --- | --- |
-| `filename` | the name the client claimed, exactly as sent |
-| `safe_name()` | that name reduced to one path-safe segment |
-| `content_type` | the type the client declared, or `application/octet-stream` |
-| `content` | the bytes |
-| `size()` | how many of them |
-| `name` | the form field it arrived under |
-| `headers` | every header on that part of the body |
-| `save_to(path)` | writes the content, and returns the byte count |
-| `to_text()` | the content decoded as UTF-8 |
+| `filename` | The name the client sent, exactly as it was sent |
+| `safe_name()` | That name reduced to a single segment that's safe to use in a path |
+| `content_type` | The type the client declared, or `application/octet-stream` |
+| `content` | The contents, as bytes |
+| `size()` | The number of bytes |
+| `name` | The form field the file was uploaded under |
+| `headers` | All the headers on that part of the body |
+| `save_to(path)` | Writes the contents to `path` and returns the number of bytes written |
+| `to_text()` | The contents decoded as UTF-8 |
 
-An `<input type="file" multiple>` sends several parts under one name,
-which is what `files()` returns a list for:
+An `<input type="file" multiple>` sends several parts under one name, which
+is why `files()` returns a list for each name:
 
 ```zuri,ignore
 for upload in request.files().get('attachments', []) {
@@ -872,22 +872,21 @@ for upload in request.files().get('attachments', []) {
 }
 ```
 
-#### Two things a handler must not trust
+#### What a Handler Shouldn't Trust
 
-**The filename.** It is attacker-controlled, and it routinely contains
-a full local path from a Windows client, `..` segments from a hostile
-one, or a NUL byte meant to truncate a later check. Never join it to a
-path directly:
+**The filename.** The client controls it, and it often contains a full local
+path from a Windows client, `..` segments from a malicious one, or a NUL
+byte intended to cut off a later check. Never join it to a path directly:
 
 ```zuri,ignore
 os.join_paths('./uploads', upload.filename) # no
 os.join_paths('./uploads', upload.safe_name()) # yes
 ```
 
-`safe_name()` drops every directory component — both separators — and
-reduces the rest to letters, digits, `.`, `-` and `_`, returning
-`'unnamed'` when nothing usable is left. Better still, name the file
-yourself and keep the client's name as a label:
+`safe_name()` removes every directory part, with either kind of separator,
+and reduces the rest to letters, digits, `.`, `-` and `_`. If nothing usable
+is left, it returns `'unnamed'`. Better still, choose the file name yourself
+and keep the client's name as a label:
 
 ```zuri,ignore
 var stored = '${uuid.v4()}.jpg'
@@ -895,12 +894,12 @@ upload.save_to(os.join_paths('./uploads', stored))
 record_upload(stored, upload.filename)
 ```
 
-**The content type.** `content_type` is whatever the client wrote in
-the part header and says nothing about what the bytes are. A file
-claiming `image/png` may be anything at all. When the difference
-matters, look at the bytes — `mime.detect_from_header()` reads a real
-file's leading bytes, so sniffing an upload means writing it somewhere
-first:
+**The content type.** `content_type` is whatever the client wrote in the
+part's header, and it doesn't tell you anything about the actual contents. A
+file that claims to be `image/png` could be anything. When the difference
+matters, check the bytes themselves. `mime.detect_from_header()` reads the
+first bytes of a real file, so to check an upload, you need to write it
+somewhere first:
 
 ```zuri,ignore
 import mime
@@ -920,35 +919,34 @@ if actual != 'image/png' and actual != 'image/jpeg' {
 os.rename(staged, os.join_paths('./uploads', stored_name))
 ```
 
-#### Size limits
+#### Size Limits
 
-The body is read into memory, bounded by the server's
-`max_body_size` — 10 MiB by default, which is deliberately small:
+The body is read into memory, up to the server's `max_body_size`, which is
+10 MiB by default. That's intentionally small:
 
 ```zuri,ignore
 server.max_body_size = 50 * 1024 * 1024 # accept uploads up to 50 MB
 ```
 
-A request that *announces* a body over the limit is refused with `413
-Content Too Large` before a byte of it is read, which is the whole
-point of `Content-Length`. One that lies about its length is cut off
-at the limit and also refused. Either way the connection then closes,
-since a body that was only partly read leaves nothing safe to parse
-after it.
+If a request *declares* a body larger than the limit, it's rejected with
+`413 Content Too Large` before any of the body is read, which is exactly
+what `Content-Length` is for. A request that gives a false length is cut off
+at the limit and also rejected. Either way, the connection is then closed,
+since a partly read body leaves nothing that can safely be parsed after it.
 
-A client asking permission first with `Expect: 100-continue` gets its
-answer before it sends anything — the server checks the announced
-length against the limit and either says `100 Continue` or refuses
-outright, so a rejected upload costs one round trip rather than a
-whole transfer.
+A client that asks for permission first with `Expect: 100-continue` gets an
+answer before it sends anything. The server checks the declared length
+against the limit and either responds with `100 Continue` or rejects the
+request straight away, so a rejected upload only costs one round trip
+instead of a whole transfer.
 
-For an upload too large to want in memory at all, take it as a raw
-body and stream it rather than as a form field. `multipart/form-data`
-earns its overhead only when there are fields alongside the file.
+For an upload that's too large to hold in memory, accept it as a raw body
+and stream it, rather than as a form field. `multipart/form-data` is only
+worth its overhead when there are other fields alongside the file.
 
 ### Request Validation
 
-A request validates itself against a `validate` schema:
+You can validate a request against a `validate` schema:
 
 ```zuri,ignore
 import http
@@ -970,12 +968,12 @@ server.post('/users', @(request, response) {
 })
 ```
 
-`validate()` returns the input it checked, so the happy path is one
-line and the data you go on to use is the data that was validated.
-Failure raises the schema's own `validate.ValidationError`, carrying
-an `errors` list of `{ field, message }`; `group_errors()` turns that
-into a dictionary keyed by field, which is the shape most front ends
-want:
+`validate()` returns the input it checked, so the success path takes one
+line, and the data you go on to use is the data that was validated. If
+validation fails, it raises the schema's own `validate.ValidationError`,
+which has an `errors` list of `{ field, message }` entries. `group_errors()`
+turns that list into a dictionary keyed by field, which is the format most
+front ends want:
 
 ```json
 {
@@ -986,8 +984,8 @@ want:
 }
 ```
 
-To branch rather than catch, validate the input yourself — there is
-no separate API for it:
+If you'd rather branch than catch an error, validate the input yourself.
+There's no separate API for it:
 
 ```zuri,ignore
 var result = create_user.check(request.input())
@@ -998,24 +996,24 @@ if !result.valid {
 }
 ```
 
-The rules themselves — and there are around eighty of them, including
-cross-field ones like `confirmed()` and `required_if()` — belong to
-the `validate` module rather than to this one.
+The rules themselves, of which there are around eighty, including rules that
+compare fields such as `confirmed()` and `required_if()`, are part of the
+`validate` module, not this one.
 
-#### What gets validated
+#### What Gets Validated
 
-`request.input()` is the dictionary `validate()` checks. Three sources
-are merged, each overriding the one before it:
+`request.input()` is the dictionary that `validate()` checks. It merges
+three sources, each overriding the one before it:
 
-1. route parameters, from the pattern that matched
-2. query string parameters
-3. the body — a JSON object's keys, or the submitted form fields
+1. Route parameters from the pattern that matched
+2. Query string parameters
+3. The body: the keys of a JSON object, or the submitted form fields
 
-So one schema covers `POST /users` with a JSON body, `GET /users?…`
-with a query string, and `/users/:id` with a route parameter, without
-the handler caring which arrived.
+That means one schema works for `POST /users` with a JSON body,
+`GET /users?…` with a query string and `/users/:id` with a route parameter,
+and the handler doesn't need to care which one it got.
 
-Take one source on its own by naming it:
+To use only one of the sources, name it:
 
 ```zuri,ignore
 request.validate(schema, 'body') # only the body
@@ -1023,70 +1021,66 @@ request.validate(schema, 'query') # only the query string
 request.validate(schema, 'params') # only the route parameters
 ```
 
-Two things are deliberately left out of the merge:
+Two things are intentionally left out of the merged input:
 
-- **Uploaded files.** Nothing a schema can say about a file is
-  expressible as a rule over its bytes; reach them with
-  `request.file()` and check them as [Forms and File
-  Uploads](#forms-and-file-uploads) describes.
-- **A JSON body that is not an object.** An array or a bare string has
-  no names to merge, so it contributes nothing; read it with
+- **Uploaded files.** There's nothing a schema rule could usefully say about
+  a file's bytes. Get files with `request.file()` and check them as
+  described in [Forms and File Uploads](#forms-and-file-uploads).
+- **A JSON body that isn't an object.** An array or a plain string has no
+  names to merge, so it doesn't contribute anything. Read it with
   `request.json_body()`.
 
-A body that fails to parse as JSON also contributes nothing rather
-than raising, which leaves the schema's own `required` rules to report
-what is missing. That is a better answer to a client than a parser
-message.
+A body that can't be parsed as JSON also contributes nothing, instead of
+raising an error. The schema's `required` rules then report what's missing,
+which is a more helpful response to a client than a parser error.
 
-#### Values from the wire are strings
+#### Values From Requests Are Strings
 
-A query string and a urlencoded form carry text and nothing else.
-`?age=36` is the string `'36'`, not the number `36`, and that changes
-which rules hold:
+Query strings and URL-encoded forms only contain text. `?age=36` gives you
+the string `'36'`, not the number `36`, and that affects which rules apply:
 
-| Rule | On `'36'` | Because |
+| Rule | On `'36'` | Why |
 | --- | --- | --- |
-| `integer()`, `numeric()`, `gt()`, `gte()`, `lt()`, `lte()` | reads it as 36 | these coerce |
-| `size()`, `min()`, `max()`, `between()` | reads it as 2 | these measure *size*, which for a string is its character count |
+| `integer()`, `numeric()`, `gt()`, `gte()`, `lt()`, `lte()` | Treats it as 36 | These rules convert the value |
+| `size()`, `min()`, `max()`, `between()` | Treats it as 2 | These rules measure *size*, which for a string is its number of characters |
 
-That is `validate`'s documented behaviour, not an accident of this
-module: `min(8)` on a password means eight characters. It only
-surprises when a schema written against a JSON body is later pointed
-at a query string.
+That's how `validate` is documented to work, not a quirk of this module.
+`min(8)` on a password means eight characters. It's only surprising when a
+schema written for a JSON body is later used for a query string.
 
-Write a schema that has to serve both with the value rules:
+If a schema has to work with both, use the rules that check values:
 
 ```zuri,ignore
 age: validate.required().integer().gte(18).lte(120)   # both
 age: validate.required().integer().between(18, 120)   # JSON bodies only
 ```
 
-`input()` does not coerce anything on your behalf. It would have to
-guess, and a postcode of `'01234'` or a version of `'1.0'` silently
-becoming a number is worse than the rule you have to pick deliberately.
+`input()` doesn't convert anything for you. It would have to guess, and
+silently turning a postcode like `'01234'` or a version like `'1.0'` into a
+number would be worse than having to choose the right rule.
 
 #### Repeated fields
 
-A name may legally repeat in a query string or a form, so those
-sources arrive as `name -> [values]`. `input()` flattens a name
-carrying exactly one value to that value, and leaves a name carrying
-several as a list:
+A name can legitimately appear more than once in a query string or a form,
+so those sources arrive as `name -> [values]`. `input()` replaces a list
+holding exactly one value with that value, and leaves a list of several
+values as it is:
 
 ```
 ?tag=a           ->  { tag: 'a' }
 ?tag=a&tag=b     ->  { tag: ['a', 'b'] }
 ```
 
-That is what lets a scalar rule see a scalar. A field that must
-*always* be a list, however many values arrived, is better read
-through `form_all()` or `request.query` directly and validated with
-`validate`'s `.*` wildcard.
+That way, a rule for a single value sees a single value. If a field must
+*always* be a list, however many values arrived, read it with `form_all()`
+or from `request.query` directly, and validate it with `validate`'s `.*`
+wildcard.
 
 > **Note**
-> The `http` module does not import `validate`. `validate()` takes any
-> object with a `check_or_raise()` method and calls it, so a server
-> that validates nothing never pays to load a schema engine — and a
-> schema of your own, or from somewhere else, works just as well.
+> The `http` module doesn't import `validate`. `validate()` accepts any
+> object that has a `check_or_raise()` method and calls it, so a server that
+> doesn't validate anything never has to load a schema engine, and your own
+> schema objects, or ones from another library, work just as well.
 
 ### The Response Object
 
@@ -1112,24 +1106,23 @@ response.cache_for(3600)
 response.no_cache()
 ```
 
-Every writer sets a sensible `Content-Type` alongside the body, and
-each returns the response, so they chain.
+Every method that writes a body also sets a suitable `Content-Type`, and
+each one returns the response, so you can chain them.
 
-`file()` streams from disk rather than reading the file into memory,
-which is what makes serving something larger than you would like to
-hold in memory a one-liner.
+`file()` streams the file from disk instead of reading it into memory, so
+serving a large file takes only one line.
 
-`content_disposition()` says whether a browser shows the body or saves
-it, and under what name. A name outside printable ASCII, or one with a
-quote, a backslash or a percent sign in it, goes as RFC 6266 has it:
-whole in `filename*`, with a plain ASCII stand-in in `filename`, and
-`download()` offers its file that way too, so a body written from memory
-and a file from disk reach the person under the same name.
+`content_disposition()` tells the browser whether to display the body or
+save it, and under what name. A name with characters outside printable
+ASCII, or one that contains a quote, a backslash or a percent sign, is sent
+as RFC 6266 describes: in full in `filename*`, with a plain ASCII substitute
+in `filename`. `download()` sends its file name the same way, so a body
+written from memory and a file from disk are saved under the same name.
 
 ### Middleware
 
-A middleware takes `(request, response, next)` and decides whether the
-rest of the chain runs:
+A middleware function takes `(request, response, next)` and decides whether
+the rest of the chain runs:
 
 ```zuri,ignore
 server.use(@(request, response, next) {
@@ -1140,8 +1133,8 @@ server.use(@(request, response, next) {
 })
 ```
 
-Not calling `next()` is how a middleware short-circuits, which is
-exactly what an authentication or rate-limiting layer wants:
+If a middleware doesn't call `next()`, the request stops there, which is
+exactly what an authentication or rate-limiting layer needs:
 
 ```zuri,ignore
 server.use(@(request, response, next) {
@@ -1153,15 +1146,15 @@ server.use(@(request, response, next) {
 })
 ```
 
-Middleware run in the order they were added, outermost first, so one
-added first wraps everything added after it.
+Middleware runs in the order it was added, with the first one added on the
+outside, so it wraps everything added after it.
 
-Code after `next()` runs only when the rest of the chain returned. A
-handler that raises never comes back there, and the `500` the visitor
-is sent is decided later, by the server's error handling. A middleware
-that reports on the response the client actually receives registers
-with `response.on_finish()` instead, which runs once the response is
-final, failures included:
+Code after `next()` only runs if the rest of the chain returned normally. If
+a handler raises an error, control never comes back there, and the server's
+error handling later decides on the `500` that's sent to the client. A
+middleware that needs to report on the response the client actually receives
+should register a callback with `response.on_finish()` instead. It runs once
+the response is final, including when the request failed:
 
 ```zuri,ignore
 server.use(@(request, response, next) {
@@ -1176,13 +1169,12 @@ server.use(@(request, response, next) {
 })
 ```
 
-Callbacks run once each, in the order they were registered, and one
-that raises is skipped rather than costing the client its response.
-`middleware.logger()` is built this way.
+Each callback runs once, in the order it was registered, and a callback that
+raises an error is skipped instead of costing the client its response.
+`middleware.logger()` works this way.
 
-Anything a middleware wants to hand to the handler goes on
-`request.context`, which is a plain dictionary that exists for exactly
-that:
+If a middleware wants to pass something to the handler, it puts it in
+`request.context`, which is a plain dictionary meant for exactly that:
 
 ```zuri,ignore
 server.use(@(request, response, next) {
@@ -1191,8 +1183,8 @@ server.use(@(request, response, next) {
 })
 ```
 
-A middleware that wants to act on the *response* calls `next()` first
-and then works on what came back:
+A middleware that needs to work with the *response* calls `next()` first,
+and then works with the result:
 
 ```zuri,ignore
 server.use(@(request, response, next) {
@@ -1201,15 +1193,15 @@ server.use(@(request, response, next) {
 })
 ```
 
-The ones most services need are already written — see
-[Built-in Middleware](#built-in-middleware).
+The middleware that most services need is already available. See [Built-in
+Middleware](#built-in-middleware).
 
 ### Errors
 
-A handler that raises becomes a `500`, and the exception message never
-reaches the client — an exception message routinely carries a file
-path, a query, or a fragment of the data being processed, and none of
-that belongs in a reply to whoever triggered it.
+If a handler raises an error, the client gets a `500`, and the error message
+is never sent to it. Error messages often contain a file path, a query or
+part of the data being processed, and none of that should be sent to whoever
+caused the error.
 
 ```zuri,ignore
 server.on_error(@(error, connection) {
@@ -1227,10 +1219,9 @@ server.not_found(@(request, response) {
 })
 ```
 
-`on_error()` listeners see everything, including connection-level
-failures that never reached a handler. `error_handler()` produces the
-response body for a failed request; without one, the server sends a
-bare `500`.
+`on_error()` listeners see every error, including failures on the connection
+that never reached a handler. `error_handler()` creates the response body
+for a failed request. Without one, the server sends a plain `500`.
 
 ### Static Files
 
@@ -1241,29 +1232,29 @@ server.serve_files('/static', './public', {
 })
 ```
 
-That single call brings with it the things a static file needs to
-actually behave well in front of a browser or a CDN:
+That one call handles everything a static file needs to work properly with a
+browser or a CDN:
 
-- `ETag` and `Last-Modified`, and `304 Not Modified` for a conditional
-  request that still holds
-- `Range` requests, answered with `206` and a `Content-Range`, and
-  `416` for a range that falls outside the file
+- `ETag` and `Last-Modified` headers, and `304 Not Modified` for a
+  conditional request that still matches
+- `Range` requests, answered with `206` and a `Content-Range` header, and
+  `416` for a range outside the file
 - `If-Match`, `If-Unmodified-Since`, `If-None-Match`, `If-Modified-Since`
-  and `If-Range`, evaluated in the order RFC 9110 lays down
-- `Content-Type` from the file extension
+  and `If-Range`, evaluated in the order RFC 9110 specifies
+- `Content-Type` based on the file extension
 - `index.html` for a request that names a directory
-- with `precompressed`, a `.br` or `.gz` sibling served in place of the
-  original when the client accepts that coding
+- With `precompressed`, a `.br` or `.gz` file next to the original, served
+  instead of it when the client accepts that encoding
 
-Every request path is percent-decoded, normalised, joined to the root,
-and then checked to still be inside the root — all three, because
-doing any two of them is not enough. Dotfiles are not served at all:
-`.env`, `.git` and `.htpasswd` all end up in a web root at some point
-in a project's life, and none of them should ever go out.
+Every request path is percent-decoded, normalized and joined to the root,
+and then checked to make sure it's still inside the root. All of these steps
+are needed, because doing only some of them isn't enough. Dotfiles aren't
+served at all. Files like `.env`, `.git` and `.htpasswd` end up in a web
+root at some point in most projects, and none of them should ever be served.
 
-For a single-page application, `fallback` serves the shell for any
-path that names no file, which is what makes client-side routes work
-on reload:
+For a single-page application, `fallback` serves the application's shell for
+any path that doesn't name a file, so client-side routes work when the page
+is reloaded:
 
 ```zuri,ignore
 server.serve_files('/', './dist', { fallback: 'index.html' })
@@ -1271,56 +1262,60 @@ server.serve_files('/', './dist', { fallback: 'index.html' })
 
 ### Compression
 
-Responses are compressed on the way out, and it is on by default. A
-response is compressed when all of the following hold:
+Responses are compressed on the way out, and compression is on by default. A
+response is compressed when all of these conditions are met:
 
-- `server.compression` is on (it is),
-- the body is at least `server.compression_min_size` bytes (1024),
-- its media type is one that benefits — anything `text/`, plus JSON,
-  JavaScript, XML, SVG, WebAssembly and the `+json`/`+xml` types,
-- the client's `Accept-Encoding` accepts `br` or `gzip`,
-- nothing already set a `Content-Encoding`,
-- and the compressed body actually came out smaller.
+- `server.compression` is on, which it is by default.
+- The body is at least `server.compression_min_size` bytes, which is 1024 by
+  default.
+- Its media type benefits from compression. That includes anything starting
+  with `text/`, as well as JSON, JavaScript, XML, SVG, WebAssembly and the
+  `+json` and `+xml` types.
+- The client's `Accept-Encoding` header accepts `br` or `gzip`.
+- Nothing has already set a `Content-Encoding`.
+- The compressed body is actually smaller than the original.
 
-Brotli is preferred over gzip when the client accepts both. `Vary:
-Accept-Encoding` is added either way, so a shared cache in front
-cannot serve a compressed body to a client that asked for none.
+When the client accepts both, Brotli is used instead of gzip.
+`Vary: Accept-Encoding` is added either way, so a shared cache in front of
+the server can't send a compressed body to a client that didn't ask for one.
 
-Turning it off, or moving the threshold:
+To turn compression off, or change the threshold:
 
 ```zuri,ignore
 server.compression = false # off entirely
 server.compression_min_size = 4096 # only bodies over 4 KiB
 ```
 
-The list is an allowlist rather than a denylist on purpose. A JPEG, an
-MP4 or a zip is already compressed; running it through brotli spends
-CPU to make it slightly larger.
+The list of media types is an allowlist rather than a denylist on purpose. A
+JPEG, an MP4 or a zip file is already compressed, and running it through
+Brotli would use CPU time only to make it slightly larger.
 
 > **Note**
-> Responses built with `response.file()` — which includes everything
-> `serve_files()` serves — are **not** compressed on the fly. They are
-> streamed from disk rather than held in memory, and compressing them
-> per request would mean reading them into memory to do it. Compress
-> those ahead of time and let the static handler pick the compressed
-> file up:
+> Responses created with `response.file()`, which includes everything
+> `serve_files()` serves, are **not** compressed on the fly. They're
+> streamed from disk instead of being held in memory, and compressing them
+> for each request would mean reading them into memory first. Compress those
+> files ahead of time, and let the static file handler pick up the
+> compressed versions:
 >
 > ```zuri
 > server.serve_files('/static', './public', { precompressed: true })
 > ```
 >
-> With that on, a request for `site.css` from a client that accepts
-> brotli is answered with `site.css.br` if it exists, and with
-> `site.css.gz` if that exists and gzip is accepted — at no CPU cost
-> per request, and with the correct `Content-Encoding` and `Vary`.
+> With this option on, a request for `site.css` from a client that accepts
+> Brotli is answered with `site.css.br` if that file exists, or with
+> `site.css.gz` if that exists and the client accepts gzip. This costs no
+> CPU time per request, and the response gets the correct `Content-Encoding`
+> and `Vary` headers.
 
-On the client side there is nothing to configure: `Accept-Encoding:
-gzip, br, deflate, zstd` is sent by default and a compressed response
-body is decoded before you see it.
+On the client side, there's nothing to configure.
+`Accept-Encoding: gzip, br, deflate, zstd` is sent by default, and
+compressed response bodies are decoded before you see them.
 
 ### Streaming a Response Body
 
-A response body can come from a callback instead of memory:
+A response body can be produced by a callback instead of being held in
+memory:
 
 ```zuri,ignore
 server.get('/export.csv', @(request, response) {
@@ -1337,9 +1332,9 @@ server.get('/export.csv', @(request, response) {
 })
 ```
 
-Unless a `Content-Length` was set beforehand, the body is framed with
-chunked transfer encoding on HTTP/1.1 and as an ordinary DATA stream
-on HTTP/2 — the handler does not have to know which.
+Unless a `Content-Length` was set beforehand, the body is sent with chunked
+transfer encoding over HTTP/1.1, and as an ordinary DATA stream over HTTP/2.
+The handler doesn't need to know which one is being used.
 
 ### Setting Cookies
 
@@ -1353,15 +1348,16 @@ response.set_cookie('theme', 'dark', {
 response.clear_cookie('theme')
 ```
 
-`http_only` defaults to `true` and `same_site` to `'Lax'`, which are
-what a cookie carrying anything sensitive should have; pass them
-explicitly to opt out. A cookie whose name carries the `__Secure-` or
-`__Host-` prefix has that prefix's rules applied for it, rather than
-being sent in a form the browser will silently refuse to store.
+`http_only` defaults to `true` and `same_site` defaults to `'Lax'`, which is
+what a cookie containing anything sensitive should have. Pass them
+explicitly if you want something else. If a cookie's name starts with the
+`__Secure-` or `__Host-` prefix, the rules for that prefix are applied
+automatically, so the cookie isn't sent in a form that the browser would
+silently refuse to store.
 
 For state that belongs to a visitor rather than to the browser, use a
-session, which keeps the state on the server and puts only an
-identifier in the cookie. [Sessions](#sessions) covers it.
+session. A session keeps the state on the server and only puts an identifier
+in the cookie. [Sessions](#sessions) covers them.
 
 ### Content Negotiation
 
@@ -1374,16 +1370,16 @@ var type = negotiate.best_match(request.header('accept'), [
 ])
 ```
 
-`best_match()` picks what the client would most like out of what you
-can produce, honouring quality weights, with your own order deciding
-ties. `request.accepts('text/html')` and `request.wants_json()` cover
-the common cases.
+`best_match()` chooses the format the client would most like from the ones
+you can produce. It takes quality weights into account, and your own order
+breaks ties. `request.accepts('text/html')` and `request.wants_json()` cover
+the most common cases.
 
 ## Built-in Middleware
 
-`http.middleware` holds the middleware nearly every public service
-ends up wanting. Each function *returns* a middleware, so it is called
-at the point you register it:
+`http.middleware` contains the middleware that almost every public service
+ends up needing. Each function *returns* a middleware, so you call it at the
+point where you register it:
 
 ```zuri
 import http
@@ -1396,32 +1392,31 @@ server.use(middleware.logger())
 server.use(middleware.security_headers())
 ```
 
-They are ordinary middleware with no special standing — read any of
-them as a worked example of writing your own.
+They're ordinary middleware with no special privileges, so you can read any
+of them as an example of how to write your own.
 
-None of them raises when it is built. That matters for the three that
-take a verifier — [`basic_auth()`](#basic_auth),
-[`bearer_auth()`](#bearer_auth) and [`jwt_auth()`](#jwt_auth) — where
-**no verifier means the middleware is disabled**: it passes every
-request straight through rather than refusing one, and rather than
-failing at registration.
+None of them raise an error when they're created. That matters for the three
+that take a verifier, [`basic_auth()`](#basic_auth),
+[`bearer_auth()`](#bearer_auth) and [`jwt_auth()`](#jwt_auth). For these,
+**passing no verifier disables the middleware**. It lets every request
+through, instead of rejecting requests or failing when you register it.
 
 ```zuri
 # Authentication, off. Everything else in the chain is untouched.
 server.use(middleware.jwt_auth(nil))
 ```
 
-That is the right shape for a middleware, and it is deliberately
-useful: blanking a verifier switches its middleware off without
-unpicking the chain around it, which is what you want when bisecting a
-request that is failing somewhere in a stack of them.
+This is intentional, and it's useful. Setting a verifier to `nil` turns off
+its middleware without changing the rest of the chain, which is what you
+want when you're tracking down which middleware in a stack is causing a
+request to fail.
 
-Disabling is opt-in and never a fallback: a verifier that is *present*
-and refuses a request still refuses it.
+A middleware is only disabled when you ask for it, never as a fallback. A
+verifier that's *present* and rejects a request still rejects it.
 
 ### `logger()`
 
-Writes one line per request, after the response is finished.
+Writes one line for each request, after the response has finished.
 
 ```zuri
 server.use(middleware.logger())
@@ -1431,16 +1426,16 @@ server.use(middleware.logger())
 127.0.0.1 - [Wed, 09 Sep 2026 20:09:17 GMT] "GET /static/big.txt HTTP/1.1" 200 320 3.07ms
 ```
 
-That is the Common Log Format with the response time added, which
-every log analyser already understands. The size comes from
-`Content-Length` when the body is file-backed or streamed, so a static
-file logs its real size rather than zero.
+This is the Common Log Format with the response time added, which every log
+analysis tool already understands. The size is taken from `Content-Length`
+when the body comes from a file or is streamed, so a static file is logged
+with its real size, not zero.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `sink` | `echo` | a function taking the finished line |
-| `format` | the format above | a function `(request, response, milliseconds)` returning the line |
-| `trust_proxy` | `false` | log the forwarded client address rather than the peer |
+| `sink` | `echo` | A function that receives each finished line |
+| `format` | The format shown above | A function `(request, response, milliseconds)` that returns the line |
+| `trust_proxy` | `false` | Logs the forwarded client address instead of the address of the connection |
 
 ```zuri
 server.use(
@@ -1453,7 +1448,7 @@ server.use(
 )
 ```
 
-Structured logging is a `format` that returns JSON:
+For structured logging, use a `format` that returns JSON:
 
 ```zuri
 server.use(
@@ -1471,36 +1466,38 @@ server.use(
 )
 ```
 
-A request that raises is logged too, with the status the client was
-sent once the server had answered the failure: the `500` of the default
-handling, or whatever the error handler chose.
+Requests that raise an error are logged too, with the status the client was
+sent after the server handled the failure. That's either the `500` from the
+default error handling, or whatever status the error handler chose.
 
 ### `request_id()`
 
-Gives every request an identifier, so one request can be followed
-across a log file and across services.
+Gives every request an identifier, so you can follow a single request
+through a log file and across services.
 
 ```zuri
 server.use(middleware.request_id())
 ```
 
-The identifier lands on `request.context['request_id']` and in the
-response's `X-Request-Id`. One supplied by the client is echoed rather
-than replaced, which is what makes a trace continue across a hop.
+The identifier is stored in `request.context['request_id']` and sent in the
+response's `X-Request-Id` header. If the client sends its own identifier,
+that one is used instead of a new one, which lets a trace continue across
+services.
 
-The single optional argument is the header name:
+The only optional argument is the header name:
 
 ```zuri
 server.use(middleware.request_id('X-Correlation-Id'))
 ```
 
-An identifier that came from outside is written into your logs, so it
-is capped at 64 characters and stripped of anything that is not
-plainly printable before it is trusted that far.
+An identifier from outside your service ends up in your logs, so it's
+limited to 64 characters, and anything that isn't plainly printable is
+removed before it's used.
 
 ### `security_headers()`
 
-Adds the response headers a browser acts on to harden a page.
+Adds the response headers that tell a browser to apply extra security
+measures to a page.
 
 ```zuri
 server.use(middleware.security_headers())
@@ -1508,12 +1505,12 @@ server.use(middleware.security_headers())
 
 | Option | Default | Header |
 | --- | --- | --- |
-| `content_type_options` | `'nosniff'` | `X-Content-Type-Options` — stops the browser second-guessing a declared content type |
-| `frame_options` | `'DENY'` | `X-Frame-Options` — refuses to be framed, which is what clickjacking needs |
-| `referrer_policy` | `'strict-origin-when-cross-origin'` | `Referrer-Policy` — keeps paths and queries out of outbound referrers |
+| `content_type_options` | `'nosniff'` | `X-Content-Type-Options`, which stops the browser from guessing a different content type from the one declared |
+| `frame_options` | `'DENY'` | `X-Frame-Options`, which stops the page from being shown in a frame, as clickjacking requires |
+| `referrer_policy` | `'strict-origin-when-cross-origin'` | `Referrer-Policy`, which keeps paths and query strings out of the referrer sent to other sites |
 | `hsts_max_age` | `31536000` | `Strict-Transport-Security` |
-| `hsts_subdomains` | `false` | adds `includeSubDomains` |
-| `content_security_policy` | not set | `Content-Security-Policy` |
+| `hsts_subdomains` | `false` | Adds `includeSubDomains` |
+| `content_security_policy` | Not set | `Content-Security-Policy` |
 
 ```zuri
 server.use(
@@ -1525,23 +1522,23 @@ server.use(
 )
 ```
 
-Pass `nil` for any of them to leave that header off entirely.
+Pass `nil` for any option to leave that header out.
 
-`Content-Security-Policy` has no default because a wrong one breaks
-the page and a permissive one is theatre; it depends on what your
-application actually loads.
+`Content-Security-Policy` has no default, because a wrong policy breaks the
+page and an overly permissive one doesn't protect anything. The right policy
+depends on what your application actually loads.
 
-`Strict-Transport-Security` is only sent over HTTPS. Over cleartext it
-is at best ignored, and at worst a way to lock a client out of a host
-that has no certificate.
+`Strict-Transport-Security` is only sent over HTTPS. Over an unencrypted
+connection, browsers ignore it at best, and at worst it can lock clients out
+of a host that doesn't have a certificate.
 
-Every header is set with `set_default`, so a handler that set its own
+Every header is set with `set_default`, so a handler that sets its own value
 keeps it.
 
 ### `cors()`
 
-Answers CORS preflights and adds the headers a browser needs before it
-will let script read a response from another origin.
+Responds to CORS preflight requests, and adds the headers a browser needs
+before it lets a script read a response from another origin.
 
 ```zuri
 server.use(
@@ -1554,30 +1551,28 @@ server.use(
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `origins` | `['*']` | origins allowed, matched exactly; `'*'` allows any |
-| `methods` | the seven usual ones | what a preflight is told is allowed |
-| `headers` | reflect what was asked | request headers script may set |
-| `expose` | none | response headers script may read |
-| `credentials` | `false` | whether cookies and `Authorization` may be sent |
-| `max_age` | `86400` | how long a preflight may be cached, in seconds |
+| `origins` | `['*']` | The allowed origins, matched exactly. `'*'` allows any origin. |
+| `methods` | The seven usual methods | The methods a preflight response says are allowed |
+| `headers` | The headers the request asked for | The request headers a script may set |
+| `expose` | None | The response headers a script may read |
+| `credentials` | `false` | Whether cookies and `Authorization` headers may be sent |
+| `max_age` | `86400` | How long a preflight response may be cached, in seconds |
 
-A request with no `Origin` is not a cross-origin request and passes
-straight through. An `Origin` that is not on the list gets no CORS
-headers at all — the browser then refuses to hand the response to
-script, which is the correct outcome; answering with an error instead
-would leak whether the resource exists.
+A request without an `Origin` header isn't a cross-origin request, so it's
+passed straight through. If the `Origin` isn't in the list, the response
+gets no CORS headers at all. The browser then won't let the script see the
+response, which is the right outcome. Responding with an error instead would
+reveal whether the resource exists.
 
 > **Note**
-> A wildcard and `credentials` cannot be combined — every browser
-> rejects that pairing. When `credentials` is set, the requesting
-> origin is echoed back instead, which makes the `origins` list the
-> only thing standing between an attacker's page and an authenticated
-> response. Name the origins explicitly whenever credentials are in
-> play.
+> You can't combine a wildcard with `credentials`, because every browser
+> rejects that combination. When `credentials` is set, the requesting origin
+> is sent back instead, which makes the `origins` list the only thing
+> standing between an attacker's page and an authenticated response.
+> Whenever you use credentials, list the allowed origins explicitly.
 
-`Vary: Origin` is added whenever the answer depends on the request's
-origin, so a shared cache cannot serve one origin's response to
-another.
+`Vary: Origin` is added whenever the response depends on the request's
+origin, so a shared cache can't serve one origin's response to another.
 
 ### `basic_auth()`
 
@@ -1591,23 +1586,23 @@ server.use(
 )
 ```
 
-The first argument is called with the username and password and
-returns whether they are acceptable. The second is the realm named in
-the challenge, and defaults to `'Restricted'`.
+The first argument is a function that's called with the username and
+password, and returns whether they're valid. The second argument is the
+realm named in the challenge, which defaults to `'Restricted'`.
 
-On success the username is put on `request.context['user']`. On
-failure the response is `401` with a `WWW-Authenticate` header, which
-is what makes a browser show its credentials prompt.
+If authentication succeeds, the username is stored in
+`request.context['user']`. If it fails, the response is a `401` with a
+`WWW-Authenticate` header, which makes the browser show its login prompt.
 
-Passing `nil` in place of the verifier disables the middleware
-entirely — see [the note above](#built-in-middleware).
+Passing `nil` instead of a verifier disables the middleware completely, as
+described in [the note above](#built-in-middleware).
 
-Compare secrets with `http.util.secure_equals()` rather than `==`: it
-compares in constant time, so a wrong guess and a nearly-right one
-take the same time and the comparison does not hand over the secret
-one character at a time.
+Compare secrets with `http.util.secure_equals()` instead of `==`. It
+compares in constant time, so a wrong guess and an almost correct guess take
+the same amount of time, and the comparison can't be used to discover the
+secret one character at a time.
 
-To guard part of a site rather than all of it, wrap it:
+To protect only part of a site, wrap the middleware:
 
 ```zuri,ignore
 var guard = middleware.basic_auth(check_credentials)
@@ -1621,15 +1616,15 @@ server.use(@(request, response, next) {
 })
 ```
 
-Note that the `next()` a guard calls on success continues the *whole*
-remaining chain, not just the handler. Two authentication middleware
-registered globally therefore both apply to every request; scope each
-of them by prefix, as above, when they are meant for different parts
-of the site.
+Note that when a guard succeeds, the `next()` it calls continues the
+*entire* rest of the chain, not just the handler. If you register two
+authentication middleware globally, both apply to every request. When
+they're meant for different parts of the site, limit each one to a path
+prefix, as shown above.
 
 ### `bearer_auth()`
 
-Requires a bearer token — the usual shape for an API.
+Requires a bearer token, which is the usual approach for an API.
 
 ```zuri
 server.use(
@@ -1640,28 +1635,27 @@ server.use(
 )
 ```
 
-The verifier is called with the token and returns either something
-falsy to refuse it, or a value to attach — that value lands on
-`request.context['user']`, so returning the subject, the claims, or a
-whole user record all work.
+The verifier is called with the token. It returns a falsy value to reject
+the token, or a value to attach to the request, which is stored in
+`request.context['user']`. You can return the subject, the claims or a
+complete user record.
 
-Failure is `401` with a `WWW-Authenticate: Bearer` challenge and a
-JSON body. The realm is the optional second argument and defaults to
-`'api'`. A `nil` verifier disables the middleware, as with
-`basic_auth()`.
+A failure produces a `401` with a `WWW-Authenticate: Bearer` challenge and a
+JSON body. The realm is the optional second argument, and defaults to
+`'api'`. As with `basic_auth()`, a `nil` verifier disables the middleware.
 
-`middleware.parse_bearer(header)` and `middleware.parse_basic(header)`
-are exported separately for code that needs to read an `Authorization`
-header without installing a middleware at all, and
-`request.bearer_token()` reads the token straight off a request.
+`middleware.parse_bearer(header)` and `middleware.parse_basic(header)` are
+also exported, for code that needs to read an `Authorization` header without
+installing a middleware, and `request.bearer_token()` reads the token
+directly from a request.
 
-For a JSON Web Token specifically, [`jwt_auth()`](#jwt_auth) does the
-verification, the claim handling and the RFC 6750 challenges rather
-than leaving them to the verifier you write here.
+For JSON Web Tokens in particular, use [`jwt_auth()`](#jwt_auth), which
+handles the verification, the claims and the RFC 6750 challenges for you,
+instead of leaving them to the verifier you write here.
 
 ### `jwt_auth()`
 
-Requires a valid JSON Web Token, verified by the `jwt` module.
+Requires a valid JSON Web Token, verified with the `jwt` module.
 
 ```zuri,ignore
 import http.middleware
@@ -1677,10 +1671,10 @@ server.use(
 )
 ```
 
-The first argument is either a `jwt.Verifier` or any function taking
-the token and returning its claims. The function form is what covers a
-key set resolved by `kid`, or anything else the `jwt` module can do
-that a fixed verifier cannot:
+The first argument is either a `jwt.Verifier`, or a function that takes the
+token and returns its claims. The function form lets you use a key set
+selected by `kid`, or anything else the `jwt` module can do that a fixed
+verifier can't:
 
 ```zuri
 server.use(
@@ -1692,13 +1686,14 @@ server.use(
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `realm` | `'api'` | the realm named in the challenge |
-| `optional` | `false` | attach the claims when a valid token is present, but do not refuse a request without one |
-| `scopes` | none | a list of scopes every token must carry |
+| `realm` | `'api'` | The realm named in the challenge |
+| `optional` | `false` | Attaches the claims when a valid token is present, but doesn't reject requests without one |
+| `scopes` | None | A list of scopes that every token must include |
 
-On success the claims land on `request.context['claims']`, and the
-`sub` claim — the usual place an issuer puts the account a token
-speaks for — on `request.context['user']`:
+If verification succeeds, the claims are stored in
+`request.context['claims']`, and the `sub` claim, which is where an issuer
+usually puts the account the token represents, is stored in
+`request.context['user']`:
 
 ```zuri
 server.get('/me', @(request, response) {
@@ -1709,30 +1704,28 @@ server.get('/me', @(request, response) {
 })
 ```
 
-Failures follow RFC 6750 §3:
+Failures follow section 3 of RFC 6750:
 
-| Situation | Answer |
+| Situation | Response |
 | --- | --- |
-| no token at all | `401`, `WWW-Authenticate: Bearer realm="api"` |
-| the token does not verify | `401`, with `error="invalid_token"` |
-| valid, but missing a required scope | `403`, with `error="insufficient_scope"` and the scope that was needed |
+| No token at all | `401`, with `WWW-Authenticate: Bearer realm="api"` |
+| The token can't be verified | `401`, with `error="invalid_token"` |
+| The token is valid but is missing a required scope | `403`, with `error="insufficient_scope"` and the scope that was needed |
 
-The distinction in that last row is the point of `scopes`: a token
-that failed to authenticate and a token that authenticated but is not
-allowed to do this are different problems, and answering both with
-`401` tells a client to go and get a new token when a new token will
-not help.
+The last row is the reason for `scopes`. A token that failed authentication
+and a token that's authenticated but not allowed to do something are
+different problems. Responding to both with `401` tells the client to get a
+new token, when a new token won't help.
 
 > **Note**
-> A challenge never says *which* check a token failed. An expired
-> token and a forged one get exactly the same
-> `error_description`, because which one it was is useful to your
-> logs and useful to an attacker, and to nobody else. If you need the
-> reason, log it from the verifier you passed in.
+> A challenge never says *which* check a token failed. An expired token and
+> a forged one get exactly the same `error_description`. Knowing which it
+> was is useful for your logs and for an attacker, and nobody else. If you
+> need the reason, log it from the verifier you passed in.
 
-`optional` is for a route that behaves differently when it knows who
-is asking without requiring it — a public page that shows an edit
-button to its author:
+`optional` is for a route that behaves differently when it knows who's
+making the request, but doesn't require it, such as a public page that shows
+an edit button to its author:
 
 ```zuri,ignore
 server.use(middleware.jwt_auth(verifier, { optional: true }))
@@ -1743,15 +1736,15 @@ server.get('/posts/:id', @(request, response) {
 })
 ```
 
-A token that is *present* but invalid is still refused under
-`optional`. Ignoring a bad token would let a client tamper with one
-and get the anonymous view rather than an error, which hides exactly
-the problem worth surfacing.
+With `optional`, a token that's *present* but invalid is still rejected. If
+a bad token were ignored, a client could tamper with a token and get the
+anonymous view instead of an error, which would hide exactly the kind of
+problem you want to know about.
 
-A `nil` verifier disables the middleware: every request passes
-through unauthenticated, and `request.context['claims']` is simply
-never set. Nothing here raises when it is built, so registering it
-never needs a `catch` around it.
+A `nil` verifier disables the middleware. Every request passes through
+without authentication, and `request.context['claims']` is never set.
+Nothing here raises an error when it's created, so you never need a `catch`
+around the registration.
 
 ```zuri,ignore
 var verifier = production ? jwt.Verifier(secret, options) : nil
@@ -1759,14 +1752,14 @@ var verifier = production ? jwt.Verifier(secret, options) : nil
 server.use(middleware.jwt_auth(verifier))
 ```
 
-Like `HttpRequest.validate()`, this does not import the `jwt` module —
-the verifier is built by the caller, which keeps the token format the
-application's business and means a server that authenticates nothing
-never pays to load it.
+Like `HttpRequest.validate()`, this middleware doesn't import the `jwt`
+module. The caller creates the verifier, which leaves the choice of token
+format to the application, and means a server that doesn't authenticate
+anything never has to load the module.
 
 ### `rate_limit()`
 
-Limits how many requests one client may make in a window of time.
+Limits how many requests a single client can make in a given period of time.
 
 ```zuri
 server.use(middleware.rate_limit({ limit: 100, window: 60 }))
@@ -1774,13 +1767,13 @@ server.use(middleware.rate_limit({ limit: 100, window: 60 }))
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `limit` | `60` | requests allowed per window |
-| `window` | `60` | the window, in seconds |
-| `key` | the client address | a function of the request returning the bucket key |
-| `trust_proxy` | `false` | derive the address from forwarding headers |
+| `limit` | `60` | The number of requests allowed per window |
+| `window` | `60` | The length of the window, in seconds |
+| `key` | The client's address | A function that takes the request and returns the key to count it under |
+| `trust_proxy` | `false` | Takes the address from the forwarding headers |
 
-Every response carries the current state, so a well-behaved client can
-back off before it is refused:
+Every response includes the current state of the limit, so a well-behaved
+client can slow down before it's rejected:
 
 ```
 RateLimit-Limit: 100
@@ -1788,9 +1781,11 @@ RateLimit-Remaining: 87
 RateLimit-Reset: 41
 ```
 
-Over the limit is `429 Too Many Requests` with a `Retry-After`.
+A client over the limit gets `429 Too Many Requests` with a `Retry-After`
+header.
 
-Rate-limit per API key rather than per address by supplying a `key`:
+To limit requests per API key instead of per address, provide a `key`
+function:
 
 ```zuri
 server.use(
@@ -1807,38 +1802,38 @@ server.use(
 ```
 
 > **Note**
-> The counter lives in memory, so it is per worker: running with
-> `workers: 4` makes the effective limit four times `limit`. That is
-> a deliberate trade — a shared counter would need shared state, and
-> this is meant to blunt a runaway client rather than to meter
-> billing. Divide `limit` by the worker count if the exact number
-> matters, or keep the count somewhere both workers can see.
+> The counter is kept in memory, so each worker has its own. Running with
+> `workers: 4` makes the effective limit four times `limit`. This is a
+> deliberate trade-off. A shared counter would need shared state, and this
+> middleware is meant to slow down a runaway client, not to meter usage for
+> billing. If the exact number matters, divide `limit` by the number of
+> workers, or keep the count somewhere all the workers can see it.
 
 ### `etag()`
 
-Computes a weak `ETag` over a finished response body and answers `304
-Not Modified` when the client already has that version.
+Computes a weak `ETag` for the finished response body, and responds with
+`304 Not Modified` when the client already has that version.
 
 ```zuri
 server.use(middleware.etag())
 ```
 
-The single optional argument is the smallest body worth tagging, in
-bytes; it defaults to `128`, below which the validator costs more than
-the body it would save.
+The only optional argument is the smallest body size worth tagging, in
+bytes. It defaults to `128`, because for smaller bodies, the validator costs
+more than the body it would save.
 
-A handler that already set its own `ETag` is left alone — it knows
-something about the resource that hashing the bytes does not — and so
-are file-backed responses, which `serve_files()` already tags from the
-file's size and modification time.
+If a handler has already set its own `ETag`, it's left alone, because the
+handler knows something about the resource that hashing the bytes doesn't.
+Responses backed by files are also left alone, because `serve_files()`
+already tags them using the file's size and modification time.
 
-Because it works on the finished body, it pairs with anything: a
-rendered template, a JSON document, a generated report.
+Because it works with the finished body, it works with any kind of response,
+such as a rendered template, a JSON document or a generated report.
 
 ### `force_https()`
 
-Redirects every request that arrived over cleartext to the same URL
-over HTTPS.
+Redirects every request that arrived over an unencrypted connection to the
+same URL over HTTPS.
 
 ```zuri
 server.use(middleware.force_https())
@@ -1846,11 +1841,11 @@ server.use(middleware.force_https())
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `status` | `308` | the redirect status; `308` preserves the method and body |
-| `port` | the default | the HTTPS port, when it is not 443 |
+| `status` | `308` | The redirect status. `308` keeps the method and the body. |
+| `port` | The default port | The HTTPS port, if it isn't 443 |
 
-This belongs on the cleartext listener, which usually exists only to
-perform this redirect:
+Use this on the unencrypted listener, which usually only exists to perform
+this redirect:
 
 ```zuri
 # port 80: redirect and nothing else
@@ -1858,14 +1853,14 @@ var redirector = http.server(80, '0.0.0.0')
 redirector.use(middleware.force_https())
 ```
 
-Pair it with `security_headers()`'s `Strict-Transport-Security` on the
-TLS listener, so that after the first visit the browser stops making
-the cleartext request at all.
+Combine it with `security_headers()`'s `Strict-Transport-Security` on the
+TLS listener, so that after the first visit, the browser stops making
+unencrypted requests altogether.
 
 ### Ordering
 
-Middleware run outermost first, so the order they are registered in is
-the order they wrap the request. A workable default:
+Middleware runs from the outside in, so the order in which you register it
+is the order in which it wraps the request. Here's a reasonable default:
 
 ```zuri,ignore
 server.use(middleware.request_id()) # so everything after can log it
@@ -1878,18 +1873,19 @@ server.use(middleware.jwt_auth(verifier)) # after the cheap refusals
 server.use(middleware.etag()) # innermost: it needs the finished body
 ```
 
-The reasoning behind each position: identifiers before anything that
-might log, logging outside everything so it records what actually
-happened, cheap refusals before expensive ones, and anything that
-inspects the response body innermost, where the body exists.
+Here's the reasoning behind each position. Identifiers come before anything
+that might log. Logging wraps everything else so that it records what
+actually happened. Cheap checks that might reject a request come before
+expensive ones. And anything that looks at the response body goes on the
+inside, where the body exists.
 
 ## Sessions
 
-A session is state that belongs to one visitor, kept on the server and
-found again by a cookie the browser sends back. Only the identifier
-travels, so a visitor can neither read what the session holds nor
-change it, and the cookie is worth nothing to anyone who cannot
-present the exact value that was issued.
+A session is state that belongs to a single visitor. It's kept on the server
+and found again through a cookie that the browser sends back. Only the
+identifier is sent to the browser, so a visitor can't read or change what
+the session contains, and the cookie is useless to anyone who can't present
+the exact value that was issued.
 
 ```zuri,ignore
 import http
@@ -1908,20 +1904,20 @@ server.get('/', @(request, response) {
 server.listen()
 ```
 
-`session()` is middleware. Register it once, above anything that reads
-a session, and every handler below it reaches its own through
+`session()` is a middleware. Register it once, before anything that reads a
+session, and every handler after it can get its session with
 `request.session()`.
 
-### Nothing Happens Until Something Uses It
+### Sessions Are Created on First Use
 
-A request that never touches its session costs nothing: no read from
-the store, no write, and no `Set-Cookie`. The record is created the
-first time something is written to the session, which is what keeps a
-crawler working through a public site from filling the store with
-empty sessions.
+A request that never uses its session costs nothing: the store isn't read or
+written, and no `Set-Cookie` header is sent. The session record is only
+created the first time something is written to the session, which stops a
+crawler working through a public site from filling the store with empty
+sessions.
 
-A request that only reads an existing session writes nothing back
-either, beyond moving the idle expiry along at most once every
+A request that only reads an existing session doesn't write anything back
+either, except to move the idle expiry time forward, at most once every
 `touch_interval` seconds.
 
 ### Signing In
@@ -1944,20 +1940,20 @@ server.post('/login', @(request, response) {
 })
 ```
 
-`regenerate()` is the line to get right. It gives the session a new
-identifier and destroys the record the old one named, keeping
-everything the session holds.
+`regenerate()` is the line you need to get right. It gives the session a new
+identifier and deletes the record stored under the old one, while keeping
+everything the session contains.
 
-Without it, an attacker who can set a cookie in the victim's browser
-beforehand — through a stray subdomain, an open redirect, a shared
-machine — knows the identifier the victim will be signed in under, and
-can simply use it afterwards. That is session fixation, and a new
-identifier is the whole of the defence. Call it whenever what the
-session means changes: signing in, elevating to administrator, a
-step-up authentication.
+Without it, an attacker who manages to set a cookie in the victim's browser
+beforehand, through a forgotten subdomain, an open redirect or a shared
+computer, knows which identifier the victim will be signed in under, and can
+simply use it afterwards. This attack is called session fixation, and a new
+identifier is the entire defense against it. Call `regenerate()` whenever
+the meaning of the session changes, such as when a user signs in, becomes an
+administrator or completes an extra authentication step.
 
-Signing out is `destroy()`, which removes the record and has the
-response expire the cookie:
+To sign out, call `destroy()`, which deletes the record and tells the
+response to expire the cookie:
 
 ```zuri,ignore
 server.post('/logout', @(request, response) {
@@ -1966,13 +1962,14 @@ server.post('/logout', @(request, response) {
 })
 ```
 
-`clear()` is the other one: it empties the session without ending it,
+`clear()` is the other option. It empties the session without ending it,
 keeping the identifier and the cookie.
 
 ### Flash Messages
 
-A handler that does the work and redirects cannot render the message
-saying what happened. A flash carries it to the page that can:
+A handler that does some work and then redirects can't render a message
+describing what happened. A flash message carries that message to the page
+that can:
 
 ```zuri,ignore
 server.post('/posts', @(request, response) {
@@ -1987,29 +1984,30 @@ server.get('/posts', @(request, response) {
 })
 ```
 
-A flash is spent by the next request that touches the session at all,
-whether or not that request asks for this one. A page that looked at
-the session and did not read the message does not leave it for the
-page after; a request that never touched its session — a static file,
-an image — leaves it waiting.
+A flash message is used up by the next request that touches the session in
+any way, whether or not that request reads this particular message. If a
+page looks at the session without reading the message, the message isn't
+kept for the page after it. A request that never touches its session, such
+as a request for a static file or an image, leaves the message waiting.
 
 ### Where Sessions Are Kept
 
-Four things can hold a session, and swapping between them changes one
-line.
+There are four places a session can be stored, and switching between them
+means changing one line.
 
-**`FileStore`, one file per session.** This is the default, because it
-needs no setup and is shared between the workers `http.serve()`
-starts. Given no directory it uses a private subdirectory of the
-platform's temporary directory, created `0700`:
+**`FileStore` keeps one file per session.** This is the default, because it
+doesn't need any setup and it's shared between the workers that
+`http.serve()` starts. If you don't give it a directory, it uses a private
+subdirectory of the platform's temporary directory, created with permissions
+`0700`:
 
 ```zuri,ignore
 server.use(http.session())
 ```
 
-That directory is cleared on whatever schedule the platform keeps, and
-on most of them at every reboot, so name your own for anything that
-has to outlive the host:
+The platform clears that directory on its own schedule, which on most
+systems means every reboot. For sessions that need to survive a restart of
+the host, specify your own directory:
 
 ```zuri,ignore
 server.use(
@@ -2017,14 +2015,14 @@ server.use(
 )
 ```
 
-A session file is a bearer credential in the same way the cookie is.
-The directory is created `0700` and each file `0600`, and a directory
-that every user on the machine can reach is refused rather than used —
-which is why the temporary directory itself is never the default.
-Pass `strict_permissions: false` to accept one anyway.
+A session file is a credential, just like the cookie. The directory is
+created with permissions `0700` and each file with `0600`, and a directory
+that every user on the machine can access is rejected instead of used.
+That's why the temporary directory itself is never the default. Pass
+`strict_permissions: false` to accept such a directory anyway.
 
-**`SqlStore`, one row per session.** It lives in its own import, so a
-program using the default store never loads the `sql` module:
+**`SqlStore` keeps one row per session.** It has its own import, so a
+program that uses the default store never loads the `sql` module:
 
 ```zuri,ignore
 import http.session.sql { SqlStore }
@@ -2036,17 +2034,17 @@ store.migrate()
 server.use(http.session({ store }))
 ```
 
-`migrate()` creates the table and its index if they are not there, and
-is safe to call on every start. It takes a `sql.Connection` or a
-`sql.Pool`; a server wants the pool.
+`migrate()` creates the table and its index if they don't already exist, and
+it's safe to call every time the program starts. It accepts a
+`sql.Connection` or a `sql.Pool`, and a server should use a pool.
 
-**`MemoryStore`, for a test.** Nothing survives a restart, and nothing
-is shared between workers, so a browser whose next request lands on a
-different worker arrives with a session that worker has never heard
-of. It is the right store for a test and the wrong one for traffic.
+**`MemoryStore` is for tests.** Nothing survives a restart, and nothing is
+shared between workers, so if a browser's next request goes to a different
+worker, that worker has never heard of its session. It's the right store for
+tests and the wrong one for real traffic.
 
-**Something of your own.** A store is five methods, none of which sees
-an identifier or understands a payload:
+**You can write your own store.** A store has five methods, and none of them
+sees a session identifier or needs to understand the contents of a session:
 
 ```zuri,ignore
 class RedisStore < http.session.SessionStore {
@@ -2077,68 +2075,70 @@ class RedisStore < http.session.SessionStore {
 }
 ```
 
-`touch()` has a working default built on `read()` and `write()`;
-override it where the backend can move an expiry on its own.
+`touch()` has a default implementation built on `read()` and `write()`.
+Override it if your backend can update an expiry time by itself.
 
-The key a store is handed is the SHA-256 of the identifier, not the
-identifier. Someone who reads the directory, the table, or a backup of
-either learns what is in the sessions but cannot resume one, because
-the value the browser presents is the preimage.
+The key passed to a store is the SHA-256 hash of the identifier, not the
+identifier itself. Someone who can read the directory, the table or a backup
+of either can see what's in the sessions, but can't resume one, because they
+don't have the value the browser presents.
 
 ### When a Session Ends
 
-Two clocks, and a session ends at whichever runs out first:
+A session has two time limits, and it ends when either one runs out:
 
-| Option | Default | |
+| Option | Default | Meaning |
 | --- | --- | --- |
-| `idle_timeout` | `7200` | seconds of inactivity; rolls forward while the visitor is active |
-| `lifetime` | `86400` | seconds the session may live however active it is |
+| `idle_timeout` | `7200` | Seconds of inactivity allowed. The limit moves forward while the visitor is active. |
+| `lifetime` | `86400` | Seconds the session can last, however active the visitor is |
 
-Either may be `nil` to remove that limit, but not both.
+You can set either one to `nil` to remove that limit, but not both.
 
-The absolute lifetime is what asks a tab left open overnight to sign
-in again.
+The absolute lifetime is what makes a user sign in again after leaving a tab
+open overnight.
 
-`touch_interval` is how often a request that only read the session
-bothers to move the idle expiry. It is the difference between a store
-write on every request and a store write once a minute. It defaults to
-sixty seconds, or half the idle timeout where that is shorter, and one
-set by hand has to stay under `idle_timeout` — otherwise a session in
-constant use still expires, because nothing ever moves it.
+`touch_interval` is how often a request that only reads the session updates
+the idle expiry time. It's the difference between writing to the store on
+every request and writing once a minute. It defaults to sixty seconds, or
+half of the idle timeout if that's shorter. If you set it yourself, it has
+to be less than `idle_timeout`. Otherwise, even a session that's constantly
+in use would expire, because nothing would ever move its expiry time
+forward.
 
-Nothing schedules a sweep of expired sessions, so one rides along with
-ordinary traffic: `gc_probability` (default `0.01`) is the chance that
-a write also sweeps. Set it to `0` where a cron job calls `store.gc()`
-instead.
+Nothing schedules a regular cleanup of expired sessions, so cleanup happens
+as part of ordinary traffic. `gc_probability` (`0.01` by default) is the
+chance that a write also cleans up expired sessions. If you'd rather run
+`store.gc()` from a cron job, set it to `0`.
 
 ### The Cookie
 
-| Option | Default | |
+| Option | Default | Meaning |
 | --- | --- | --- |
 | `name` | `'zuri_session'` | |
 | `path` | `'/'` | |
-| `domain` | `nil` | `nil` scopes the cookie to the exact host, which is the narrower choice |
-| `secure` | `nil` | `nil` follows the request's own scheme |
+| `domain` | `nil` | `nil` limits the cookie to the exact host, which is the more restrictive choice |
+| `secure` | `nil` | `nil` follows the scheme of the request |
 | `http_only` | `true` | |
 | `same_site` | `'Lax'` | `'Strict'`, `'Lax'` or `'None'` |
-| `persistent` | `false` | whether the cookie outlives the browser |
+| `persistent` | `false` | Whether the cookie lasts after the browser closes |
 
-`secure` following the request is what lets development over cleartext
-work while production over TLS gets `Secure` without being told. A
-deployment behind a proxy that terminates TLS sets `secure: true`
+Because `secure` follows the request by default, development over plain HTTP
+works, while production over TLS gets the `Secure` attribute automatically.
+A deployment behind a proxy that terminates TLS should set `secure: true`
 itself.
 
-`persistent: false` sends a cookie that ends with the browser session,
-which is what a sign-in should normally do. `persistent: true` sends
+`persistent: false` sends a cookie that ends when the browser session ends,
+which is what a sign-in should usually do. `persistent: true` sends a
 `Max-Age` instead, and moves it forward on every request.
 
 ### Signing the Cookie
 
-An identifier is 32 bytes from the platform's cryptographic generator,
-which is far beyond guessing. Signing adds nothing against that, and
-everything against volume: with a secret set, a cookie this server did
-not issue is thrown out after one HMAC, rather than after a read from
-disk or a query to the database.
+An identifier is 32 bytes from the platform's cryptographic random number
+generator, which is far too large to guess. Signing doesn't add any
+protection against guessing, but it helps a lot against high volumes of fake
+cookies. With a secret set, a cookie that this server didn't issue is
+rejected after a single HMAC calculation, instead of after a disk read or a
+database query.
 
 ```zuri,ignore
 import env
@@ -2146,26 +2146,28 @@ import env
 server.use(http.session({ secret: env.require('SESSION_SECRET') }))
 ```
 
-Set it on anything facing the open internet, and give every worker the
-same secret — a cookie issued by one is otherwise refused by the next.
-Turning signing on refuses the cookies issued before it, so it signs
-everyone out once.
+Set a secret on any server that's exposed to the internet, and give every
+worker the same secret, because otherwise a cookie issued by one worker is
+rejected by the next. Turning on signing rejects all cookies issued before
+it, so everyone is signed out once.
 
 ### What a Session May Hold
 
-Whatever JSON holds: strings, numbers, booleans, `nil`, lists and
-dictionaries of those. A class instance is not JSON, and storing one
-raises when the session is written.
+A session can hold anything JSON can represent: strings, numbers, booleans,
+`nil`, and lists and dictionaries of those values. A class instance can't be
+represented as JSON, so storing one raises an error when the session is
+written.
 
-Sessions are for identity and small state — who is signed in, which
-steps of a form are done, what to say on the next page. A payload over
-`max_size` (default 65536 bytes) raises `SessionError`; the answer to
-that is a row in a database with the session holding its key.
+Sessions are meant for identity and small amounts of state, such as who's
+signed in, which steps of a form have been completed, or what message to
+show on the next page. If the contents are larger than `max_size` (65536
+bytes by default), a `SessionError` is raised. If you need to store more
+than that, put it in a database row and keep the row's key in the session.
 
-### Across Workers
+### Sessions Across Workers
 
-`http.serve()` runs each worker in its own isolate, so the store is
-built inside `setup` rather than handed in from outside:
+`http.serve()` runs each worker in its own isolate, so create the store
+inside `setup` instead of passing it in from outside:
 
 ```zuri,ignore
 # app.zu
@@ -2186,17 +2188,17 @@ def setup(server) {
 }
 ```
 
-A `sql` connection belongs to the isolate that opened it, so a worker
-using `SqlStore` opens its own pool in `setup` too.
+A `sql` connection belongs to the isolate that opened it, so a worker that
+uses `SqlStore` also opens its own pool in `setup`.
 
-### What Sessions Do Not Do
+### Session Limitations
 
-Two requests writing the same session at the same moment — parallel
-requests from one browser tab, usually — both succeed, and the one
-that finishes last is the one that survives. The file store writes
-through a rename, so a reader never sees half a session, and the SQL
-store writes in one statement; neither takes a lock. Do not use a
-session as a counter that several requests increment at once.
+If two requests write the same session at the same time, which usually means
+parallel requests from the same browser tab, both succeed, and whichever
+finishes last wins. The file store writes by renaming a file, so a reader
+never sees half a session, and the SQL store writes in a single statement,
+but neither one takes a lock. Don't use a session as a counter that several
+requests increment at the same time.
 
 ## TLS
 
@@ -2206,7 +2208,7 @@ server.load_certs('/etc/certs/site.crt', '/etc/certs/site.key')
 server.listen()
 ```
 
-Or from strings, with more control:
+Or from strings, which gives you more control:
 
 ```zuri,ignore
 server.use_tls(cert_chain_pem, private_key_pem, {
@@ -2216,49 +2218,46 @@ server.use_tls(cert_chain_pem, private_key_pem, {
 })
 ```
 
-`cert_chain` must be the server certificate followed by any
-intermediates. Leaving the intermediates out is the single most common
-TLS misconfiguration, and it fails only for the clients that do not
-happen to have them cached — which is to say, it fails in a way that
-looks fine from your own browser.
+`cert_chain` must contain the server certificate followed by any
+intermediate certificates. Leaving out the intermediates is the most common
+TLS mistake, and it only fails for clients that don't already have them
+cached. That means it often looks fine from your own browser.
 
 > **Note**
-> The certificate and key are parsed when the first handshake runs,
-> not when they are set, so a malformed or mismatched pair surfaces as
-> a failed connection rather than as an error from `use_tls()`. Make a
-> request against the server as part of starting it if you want to
-> find out early.
+> The certificate and key are parsed when the first handshake happens, not
+> when you set them, so an invalid or mismatched pair shows up as a failed
+> connection rather than as an error from `use_tls()`. If you want to find
+> out early, make a request to the server as part of starting it.
 
-Turning on TLS also advertises `h2` through ALPN, so a browser gets
-HTTP/2 without anything else being configured.
+Turning on TLS also advertises `h2` through ALPN, so browsers get HTTP/2
+without any other configuration.
 
 ## HTTP/2
 
-HTTP/2 needs nothing turned on. `HttpServer` speaks it when ALPN
-negotiates `h2` over TLS, and when a cleartext client opens with the
-HTTP/2 connection preface. `HttpClient` uses it whenever a server
-negotiates `h2` for an HTTPS connection. Routes, middleware and
-handlers are the same code either way; `request.version` is `'2'` when
-it applies.
+You don't need to turn HTTP/2 on. `HttpServer` uses it when ALPN negotiates
+`h2` over TLS, and when a client on an unencrypted connection starts with
+the HTTP/2 connection preface. `HttpClient` uses it whenever a server
+negotiates `h2` for an HTTPS connection. Routes, middleware and handlers are
+the same code either way, and `request.version` is `'2'` when HTTP/2 is in
+use.
 
-What that gets you is one connection carrying every request, HPACK
-header compression, and flow control — rather than the six-connection
-scramble HTTP/1.1 forces a browser into.
+With HTTP/2, a single connection carries every request, headers are
+compressed with HPACK, and flow control is built in, instead of the six
+parallel connections a browser has to open with HTTP/1.1.
 
-Set `server.http2 = false` to turn it off, which also stops `h2` being
-advertised in ALPN.
+To turn it off, set `server.http2 = false`, which also stops `h2` from being
+advertised through ALPN.
 
-`http.h2` exposes the machinery underneath — the frame codec, HPACK
-and its Huffman coding — for anything that needs to speak the protocol
+`http.h2` provides the lower-level pieces, including the frame codec, HPACK
+and its Huffman coding, for code that needs to work with the protocol
 directly.
 
 > **Note**
-> Streams are multiplexed on the wire but handled in the order they
-> complete: one connection is served by one isolate, so a request that
-> arrives while another is being handled is read, buffered, and
-> answered next rather than in parallel. That is a throughput
-> property, not a correctness one, and `http.serve()` is how you get
-> more than one request handled at a time.
+> Streams are multiplexed on the connection, but they're handled in the
+> order they complete. Each connection is served by one isolate, so a
+> request that arrives while another is being handled is read, buffered and
+> answered next, not in parallel. This affects throughput, not correctness,
+> and `http.serve()` is how you handle more than one request at a time.
 
 ## WebSockets
 
@@ -2282,12 +2281,13 @@ server.get('/ws', @(request, response) {
 })
 ```
 
-`accept()` completes the RFC 6455 handshake and takes the connection
-over; the server writes nothing more on it. Fragmented messages are
-reassembled, ping frames are answered, and a close frame from the peer
-is answered and then handed back so you can see the code and reason.
+`accept()` completes the RFC 6455 handshake and takes over the connection,
+so the server doesn't write anything else on it. Fragmented messages are
+reassembled, ping frames are answered automatically, and when the other side
+sends a close frame, it's answered and then returned to you so that you can
+see the code and reason.
 
-The client side is `ws.connect()`:
+On the client side, use `ws.connect()`:
 
 ```zuri,ignore
 var socket = ws.connect('wss://example.com/ws')
@@ -2297,16 +2297,16 @@ echo socket.receive().text()
 socket.close()
 ```
 
-Client frames are masked with a key from the platform's secure random
-source, as the RFC requires — the mask is what stops a hostile page
-from steering a proxy into caching a forged response.
+As the RFC requires, client frames are masked with a key from the platform's
+secure random number generator. The mask is what stops a malicious page from
+tricking a proxy into caching a forged response.
 
 ## Server-Sent Events
 
-Where a WebSocket gives you a duplex connection, server-sent events
-give you a long-lived response body and nothing else — which is all a
-live feed of updates needs, and it survives proxies that would refuse
-an upgrade.
+A WebSocket gives you a two-way connection. Server-sent events give you a
+long-lived response body and nothing else, which is all you need for a live
+feed of updates, and they work through proxies that would refuse a
+connection upgrade.
 
 ```zuri
 import http.sse
@@ -2320,9 +2320,9 @@ server.get('/events', @(request, response) {
 })
 ```
 
-A browser's `EventSource` reconnects on its own and sends back the
-last id it saw; `sse.last_event_id(request)` reads it, which is how a
-stream resumes where it left off instead of replaying from the start.
+A browser's `EventSource` reconnects automatically and sends the last event
+ID it received. `sse.last_event_id(request)` reads it, so a stream can
+continue where it left off instead of starting over.
 
 ## Reverse Proxying
 
@@ -2334,19 +2334,19 @@ server.any('/api/' + '*path', @(request, response) {
 })
 ```
 
-Hop-by-hop headers are stripped in both directions — including any
-field the message's own `Connection` header names, which is how an
-endpoint declares an extra one. Forwarding a client-supplied
-`Transfer-Encoding` to an upstream that frames it differently is the
-classic request-smuggling setup, so this is not optional.
+Hop-by-hop headers are removed in both directions, including any field named
+in the message's own `Connection` header, which is how an endpoint declares
+an additional hop-by-hop header. Passing a client's `Transfer-Encoding` on
+to an upstream server that frames the message differently is the classic
+setup for request smuggling, so this step can't be turned off.
 
-`X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host` and RFC
-7239's `Forwarded` are added, and the response body is streamed rather
-than buffered.
+`X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host` and the RFC 7239
+`Forwarded` header are added, and the response body is streamed instead of
+buffered.
 
-Several upstreams get a `LoadBalancer`, which is round-robin with an
-upstream that fails taken out of rotation for a while rather than
-retried on every request:
+For several upstream servers, use a `LoadBalancer`. It uses round-robin, and
+when an upstream fails, it's taken out of the rotation for a while instead
+of being retried on every request:
 
 ```zuri
 var pool = http.LoadBalancer(
@@ -2359,14 +2359,14 @@ var pool = http.LoadBalancer(
 
 ### Using More Than One Core
 
-`listen()` serves every connection on the calling isolate. It watches
-them all and does for each only what can be done without waiting, so a
-client that goes quiet, sends half a request or stops reading holds up
-nobody else. A handler does run to completion, though, so a slow one
-delays every other connection, and a streamed body or a WebSocket
-holds the isolate until it finishes.
+`listen()` serves every connection on the isolate that called it. It watches
+all of the connections and only does the work for each one that can be done
+without waiting, so a client that goes quiet, sends half a request or stops
+reading doesn't hold up anyone else. A handler does run until it finishes,
+though, so a slow handler delays every other connection, and a streamed body
+or a WebSocket keeps the isolate busy until it's done.
 
-`http.serve()` runs the same pipeline across a pool of isolates: one
+`http.serve()` runs the same pipeline across a pool of isolates. A single
 accept loop hands each connection to whichever worker takes it next.
 
 ```zuri
@@ -2390,54 +2390,53 @@ import .app
 http.serve(app.setup, { host: '0.0.0.0', port: 3000, workers: 8 })
 ```
 
-`setup` is called once inside each worker with that worker's own
-`HttpServer`. It can live in the main script or in a module, and it can
-use whatever it imports; a module it reaches for is loaded again inside
-the worker rather than shared with it. Putting it in a module of its own,
-as above, is still the better shape once it registers more than a couple
-of routes.
+`setup` is called once inside each worker, with that worker's own
+`HttpServer`. It can be defined in the main script or in a module, and it
+can use anything it imports. A module it uses is loaded again inside the
+worker, not shared with it. Once `setup` registers more than a few routes,
+it's better to put it in its own module, as shown above.
 
-Isolates share no memory, so anything a worker needs — a cache, a
-connection pool, a counter — is per worker. That is the trade the
-model makes: no locks and no shared-heap garbage collection pauses, in
-exchange for state that has to be either per worker or in something
-outside the process.
+Isolates don't share memory, so anything a worker needs, such as a cache, a
+connection pool or a counter, exists separately in each worker. That's the
+trade-off this model makes: no locks and no garbage collection pauses on a
+shared heap, in exchange for state that has to be kept either per worker or
+somewhere outside the process.
 
-`backlog` bounds how many accepted connections may queue for a free
-worker. Bounding it is deliberate: an unbounded queue under load means
-accepting connections faster than they can be served and then
-answering all of them late, rather than letting the kernel's own
-listen backlog apply back-pressure.
+`backlog` limits how many accepted connections can wait for a free worker.
+The limit is intentional. With an unlimited queue, a server under load would
+accept connections faster than it could serve them and then answer all of
+them late, instead of letting the kernel's own listen backlog apply
+backpressure.
 
 ### Limits
 
-Every part of a request whose size a peer controls has a ceiling:
+Every part of a request whose size the client controls has a limit:
 
-| Setting | Default | Bounds |
+| Setting | Default | Limits |
 | --- | --- | --- |
-| `max_line_size` | 8 KiB | the request line, and each header line |
-| `max_header_size` | 64 KiB | the header section |
-| `max_header_count` | 100 | how many header fields |
-| `max_body_size` | 10 MiB | the request body |
-| `header_timeout` | 10s | how long the whole head may take to arrive |
-| `keep_alive_timeout` | 5s | how long an idle connection is held |
-| `max_keep_alive_requests` | 0 (unlimited) | how many requests one connection may serve |
-| `max_open_connections` | 1024 | how many connections `listen()` holds at once |
+| `max_line_size` | 8 KiB | The request line, and each header line |
+| `max_header_size` | 64 KiB | The header section |
+| `max_header_count` | 100 | The number of header fields |
+| `max_body_size` | 10 MiB | The request body |
+| `header_timeout` | 10s | How long the client can take to send the whole request head |
+| `keep_alive_timeout` | 5s | How long an idle connection is kept open |
+| `max_keep_alive_requests` | 0 (unlimited) | How many requests a single connection can serve |
+| `max_open_connections` | 1024 | How many connections `listen()` keeps open at once |
 
-`header_timeout` is the one that is easy to leave out and matters
-most: without it, a client sending one byte every few seconds holds a
-connection open indefinitely while never tripping any single read's
-timeout. That is what slowloris is.
+`header_timeout` is the easiest one to forget, and the most important.
+Without it, a client that sends one byte every few seconds can keep a
+connection open forever without ever exceeding the timeout of any single
+read. That's how a slowloris attack works.
 
-Raise `max_body_size` deliberately for a service that takes uploads,
-rather than discovering it by accident:
+If a service accepts uploads, raise `max_body_size` deliberately, rather
+than finding out about the limit by accident:
 
 ```zuri
 server.max_body_size = 100 * 1024 * 1024
 ```
 
-A request that announces a body over the limit is refused with `413`
-before a byte of it is read, which is the whole point of the header.
+A request that declares a body larger than the limit is rejected with `413`
+before any of the body is read, which is exactly what the header is for.
 
 ### Graceful Shutdown
 
@@ -2460,10 +2459,10 @@ http.serve(app.setup, {
 })
 ```
 
-`stop()` closes the listener, which ends the accept loop, and every
-worker closes the connections it holds, after giving what each has
-queued a chance to go out; `serve()` then returns. A handler can do the
-same by calling `close()` on the server its worker was given:
+`stop()` closes the listener, which ends the accept loop. Each worker then
+closes its connections, after giving any data already queued on each one a
+chance to be sent, and then `serve()` returns. A handler can do the same by
+calling `close()` on the server its worker was given:
 
 ```zuri,ignore
 http.serve(@(server) {
@@ -2474,86 +2473,87 @@ http.serve(@(server) {
 }, { port: 3000 })
 ```
 
-For a single-isolate server, `close()` ends the accept loop too, and
-`listen()` closes what it still holds in the same way.
+For a server running on a single isolate, `close()` ends the accept loop as
+well, and `listen()` closes its remaining connections in the same way.
 
-### Behind Another Proxy
+### Running Behind a Proxy
 
-If something else really is in front — a CDN, a load balancer you
-control — tell the server, and tell it which addresses to believe:
+If there really is something in front of the server, such as a CDN or a load
+balancer you control, tell the server about it, and tell it which addresses
+to trust:
 
 ```zuri
 server.trust_proxy = true
 server.trusted_proxies = ['10.0.0.1', '10.0.0.2']
 ```
 
-`request.client_ip(true, server.trusted_proxies)` then walks the
-forwarding chain in from the proxy end and returns the rightmost entry
-that is not itself a trusted proxy. Taking the leftmost entry — the
-common shortcut — hands an attacker whatever client address they care
-to claim, which matters the moment an address is used for rate
-limiting, allowlisting or an audit trail.
+`request.client_ip(true, server.trusted_proxies)` then works through the
+forwarding chain starting from the proxy's end, and returns the rightmost
+address that isn't a trusted proxy. Taking the leftmost address instead,
+which is a common shortcut, lets an attacker claim any client address they
+like. That matters as soon as you use an address for rate limiting, an
+allowlist or an audit log.
 
-Left off, forwarding headers are ignored entirely and the peer is the
-client. That is the right default: those headers are request headers,
-which is to say anyone can write anything in them.
+If you don't configure this, forwarding headers are ignored completely and
+the connection's address is treated as the client's. That's the right
+default, because those headers are ordinary request headers, which anyone
+can fill with anything.
 
-## What the Module Refuses
+## Requests the Module Rejects
 
-Some of what this module does is refuse things, and it is worth being
-explicit about which, since each refusal is a request that some other
-implementation would have accepted:
+Part of this module's job is to reject certain requests. It's worth listing
+them explicitly, because other implementations would accept each of these:
 
-- A header field name with whitespace before its colon. `Content-Length : 5`
-  is read as a length by some parsers and as an unknown field by
-  others, and that disagreement is a smuggled request.
-- Two `Content-Length` fields that disagree, for the same reason.
-- A `Content-Length` alongside a `Transfer-Encoding`.
-- A `Transfer-Encoding` whose last coding is not `chunked`.
-- An obsolete folded header line — RFC 9112 deprecated it, and
-  intermediaries unfold it differently.
-- An HTTP/1.1 request with no `Host`, or with two.
-- A header value containing CR, LF or NUL, at the point it is set:
-  a value that can inject a newline is a response-splitting bug
-  wherever it eventually lands.
-- An uppercase header field name over HTTP/2, and any of the
+- A header field name with whitespace before the colon. Some parsers read
+  `Content-Length : 5` as a length and others as an unknown field, and that
+  disagreement can be used to smuggle a request.
+- Two `Content-Length` fields with different values, for the same reason.
+- A `Content-Length` together with a `Transfer-Encoding`.
+- A `Transfer-Encoding` whose last coding isn't `chunked`.
+- An obsolete folded header line. RFC 9112 deprecated them, and
+  intermediaries unfold them in different ways.
+- An HTTP/1.1 request with no `Host` header, or with two.
+- A header value containing CR, LF or NUL, which is rejected at the point
+  it's set. A value that can insert a newline can cause response splitting
+  wherever it ends up.
+- An uppercase header field name in HTTP/2, and any of the
   connection-specific fields there.
-- A static file path that resolves outside the root, before or after
-  percent-decoding, and any dotfile.
+- A static file path that resolves to somewhere outside the root, before or
+  after percent-decoding, and any dotfile.
 
 ## Module Reference
 
-| Module | What it holds |
+| Module | Contents |
 | --- | --- |
-| `http` | the facade: `get()`, `post()`, `server()`, `client()`, `serve()` |
-| `http.status` | status codes, reason phrases, and predicates |
-| `http.headers` | `Headers`, field validation, canonical names |
-| `http.cookies` | `Cookie`, `CookieJar`, and both cookie header formats |
+| `http` | The main interface: `get()`, `post()`, `server()`, `client()`, `serve()` |
+| `http.status` | Status codes, reason phrases and checks |
+| `http.headers` | `Headers`, field validation and canonical names |
+| `http.cookies` | `Cookie`, `CookieJar` and both cookie header formats |
 | `http.session` | `Session`, `SessionStore`, `FileStore`, `MemoryStore` |
-| `http.session.sql` | `SqlStore`, for sessions kept in a database |
-| `http.request` | `HttpRequest`, query string encoding and decoding |
+| `http.session.sql` | `SqlStore`, for sessions stored in a database |
+| `http.request` | `HttpRequest`, and encoding and decoding query strings |
 | `http.response` | `HttpResponse` |
 | `http.router` | `Router`, `Route`, `RouteMatch` |
-| `http.middleware` | CORS, logging, security headers, auth, rate limiting |
-| `http.files` | `StaticFiles`, byte ranges, validators |
-| `http.multipart` | `MultipartBuilder`, `UploadedFile`, the parser |
-| `http.negotiate` | `Accept` parsing and matching |
-| `http.body` | message framing, chunked encoding, content codings |
-| `http.h1` | the HTTP/1.1 wire codec |
-| `http.loop` | `ConnectionLoop`, many connections on one thread |
-| `http.h2` | HTTP/2: frames, HPACK, connections |
+| `http.middleware` | CORS, logging, security headers, authentication, rate limiting |
+| `http.files` | `StaticFiles`, byte ranges and validators |
+| `http.multipart` | `MultipartBuilder`, `UploadedFile` and the parser |
+| `http.negotiate` | Parsing and matching `Accept` headers |
+| `http.body` | Message framing, chunked encoding and content codings |
+| `http.h1` | The HTTP/1.1 wire format |
+| `http.loop` | `ConnectionLoop`, for many connections on one thread |
+| `http.h2` | HTTP/2: frames, HPACK and connections |
 | `http.websocket` | RFC 6455, client and server |
-| `http.sse` | server-sent events |
+| `http.sse` | Server-sent events |
 | `http.proxy` | `ReverseProxy`, `LoadBalancer` |
-| `http.stream` | the buffered connection both protocols read and write through |
-| `http.util` | dates, header parameters, percent coding, path normalisation |
-| `http.errors` | the error hierarchy |
+| `http.stream` | The buffered connection that both protocols read from and write to |
+| `http.util` | Dates, header parameters, percent-encoding and path normalization |
+| `http.errors` | The error hierarchy |
 
-Two other standard library modules meet this one without it depending
-on either: `HttpRequest.validate()` takes a schema from `validate`,
-and `middleware.jwt_auth()` takes a verifier from `jwt`. Both are
-duck-typed, so neither module is loaded by a server that does not use
-it.
+Two other standard library modules work with this one without it depending
+on either of them. `HttpRequest.validate()` accepts a schema from
+`validate`, and `middleware.jwt_auth()` accepts a verifier from `jwt`. Both
+rely on duck typing, so a server that doesn't use them never loads either
+module.
 
 Every error this module raises descends from `HttpError`:
 `ProtocolError` for a malformed message, `ConnectionError` for a

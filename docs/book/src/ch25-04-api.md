@@ -1,11 +1,11 @@
 # The JSON API
 
-Six routes. Every one of them reads or writes through the board and returns
-JSON, and not one of them handles an error.
+The API has six routes. Each one reads from or writes to the board and
+returns JSON, and none of them handle errors.
 
-## The Routes, One at a Time
+## The Routes
 
-### The Shape of the File
+### The Structure of the File
 
 <span class="filename">Filename: routes/api.zu</span>
 
@@ -23,12 +23,13 @@ import ..storage { NotFoundError }
 def register(server, board) {
 ```
 
-`register(server, board)` takes the server and the board rather than
-importing them. That is what lets the same routes run against a different
-board — a temporary one in a test, a seeded one in a demo — and it keeps
-this file free of any decision about where the data lives.
+`register(server, board)` takes the server and the board as arguments
+instead of importing them. That's what lets the same routes work with a
+different board, such as a temporary one in a test or one filled with sample
+data for a demo, and it keeps any decision about where the data is stored
+out of this file.
 
-### Listing, With an Optional Filter
+### Listing Tasks, With an Optional Filter
 
 ```zuri,ignore
 server.get('/api/tasks', @(request, response) {
@@ -42,19 +43,20 @@ server.get('/api/tasks', @(request, response) {
 })
 ```
 
-One route serving two questions: every task, or every task in one column.
+A single route answers two questions: what are all the tasks, and what are
+all the tasks in a particular column?
 
-`query_param('column', nil)` supplies the fallback, and the test is
-`column == nil` rather than `if column`. That distinction matters: a query
-string of `?column=` produces an empty string, which is falsy but *present*
-— and an empty column name should be rejected by `in_column()`, not
+`query_param('column', nil)` provides the fallback, and the check is
+`column == nil` instead of `if column`. That distinction matters, because a
+query string of `?column=` produces an empty string, which is falsy but
+*present*, and an empty column name should be rejected by `in_column()`, not
 silently treated as "no filter".
 
-The response carries `summary` alongside `tasks` because a client
-rendering a board wants both, and making it ask twice would be two requests
-for one screen.
+The response includes `summary` alongside `tasks`, because a client that
+displays a board needs both, and making it ask separately would mean two
+requests for one screen.
 
-### Fetching One
+### Fetching a Single Task
 
 ```zuri,ignore
 server.get('/api/tasks/:id', @(request, response) {
@@ -62,11 +64,11 @@ server.get('/api/tasks/:id', @(request, response) {
 })
 ```
 
-One line, and it can fail. `board.get()` raises `NotFoundError` for an
-unknown id, and this handler does nothing about it — which is the subject
-of the section below.
+This is a single line, and it can fail. `board.get()` raises a
+`NotFoundError` for an unknown ID, and this handler does nothing about it,
+for reasons explained in the section below.
 
-### Creating
+### Creating a Task
 
 ```zuri,ignore
 server.post('/api/tasks', @(request, response) {
@@ -81,17 +83,19 @@ server.post('/api/tasks', @(request, response) {
 })
 ```
 
-`request.json_body()` returns `nil` for a request with no body, or a body
-that is not JSON at all. `or {}` turns that into an empty dictionary, so
-`body.get('title', nil)` works either way and a missing title becomes the
-*model's* problem — which is where the message about it already lives.
+`request.json_body()` returns `nil` for a request with no body, or with a
+body that isn't JSON. `or {}` turns that into an empty dictionary, so
+`body.get('title', nil)` works either way, and a missing title becomes the
+*model's* problem, which is where the message about it already lives.
 
-The `201` is the second argument to `response.json()`. A created resource
-is not a `200`, and saying so is one character of effort.
+The `201` is the second argument to `response.json()`. A newly created
+resource shouldn't get a `200`, and getting it right only takes one
+argument.
 
-`task.to_view()` rather than `task`, for the reason below.
+The handler returns `task.to_view()` rather than `task`, for the reason
+explained below.
 
-### Updating and Deleting
+### Updating and Deleting Tasks
 
 ```zuri,ignore
   server.patch('/api/tasks/:id', @(request, response) {
@@ -112,54 +116,55 @@ is not a `200`, and saying so is one character of effort.
 ```
 
 The `PATCH` handler passes the decoded body straight to `board.update()`
-with no filtering. That is safe because `update()` only looks at the three
-keys it knows — `title`, `notes`, `column` — using `contains()`, so a body
-containing `{"id": "hacked"}` changes nothing. The whitelist lives in the
-model, once, rather than in every route that accepts a body.
+without filtering it. That's safe, because `update()` only looks at the
+three keys it knows about, `title`, `notes` and `column`, using
+`contains()`. So a body containing `{"id": "hacked"}` doesn't change
+anything. The list of allowed keys is kept in the model, once, instead of in
+every route that accepts a body.
 
-`DELETE` returns a body rather than a bare `204`, because a client that
-parses every response as JSON should not have to special-case one route.
+`DELETE` returns a body instead of an empty `204`, so that a client that
+parses every response as JSON doesn't need a special case for one route.
 
-## Handlers Do Not Handle Errors
+## Why the Handlers Don't Handle Errors
 
-This is the chapter's real point, and it is easiest to see by counting: six
-handlers, zero `catch` blocks.
+This is the main point of this section, and it's easiest to see if you
+count: there are six handlers, and not one `catch` block.
 
-`board.get()` raises `NotFoundError` for an unknown id. `board.add()` and
-`board.update()` raise `TaskError` for a bad title or an unknown column.
-Not one handler catches either, and every one of them is one to five lines
-as a direct result.
+`board.get()` raises a `NotFoundError` for an unknown ID. `board.add()` and
+`board.update()` raise a `TaskError` for an invalid title or an unknown
+column. None of the handlers catch either error, and that's why each one is
+only one to five lines long.
 
 The middleware in [the next section](ch25-06-middleware.md) catches both
-and turns them into a 404 and a 422. **There is exactly one place in this
-application that knows which domain error means which status code**, and it
-is not in a route.
+errors and turns them into a 404 and a 422. **Only one place in this
+application knows which domain error corresponds to which status code**, and
+it isn't a route.
 
-Consider the alternative for a moment. Six handlers each wrapping their
-board call in a `catch`, each deciding on a status, each formatting an
-error body — thirty-odd lines of duplication, and a seventh route added
-next month that gets one of them subtly wrong.
+Think about the alternative for a moment. Six handlers would each wrap their
+call to the board in a `catch`, choose a status code and format an error
+response. That's thirty or so lines of duplicated code, and a seventh route
+added next month would probably get one of those details slightly wrong.
 
-Note also the two imports at the top of the file. `TaskError` and
-`NotFoundError` are imported and never mentioned again in this file; they
-are there because the module that catches them needs them re-exported
-through `routes`. That is the module system doing its job, and
-[Chapter 8](ch08-00-modules.md) covers why the `@` matters there.
+Notice also the two imports at the top of the file. `TaskError` and
+`NotFoundError` are imported but never used again in this file. They're
+there because the module that catches them needs them to be re-exported
+through `routes`. That's the module system doing its job, and [Chapter
+8](ch08-00-modules.md) explains why the `@` matters there.
 
-## `to_view()` at the Boundary
+## Using `to_view()` for Responses
 
-Every response sends `to_view()`, never the `Task` itself.
+Every response sends the result of `to_view()`, never the `Task` itself.
 
-That single habit means the API's shape is a decision `Task` makes in one
-method, rather than something that leaks out of however the object happens
-to be laid out. Add a private field to `Task` tomorrow and the API returns
-exactly what it returned yesterday.
+That one habit means the structure of the API is decided by `Task`, in a
+single method, instead of depending on however the object happens to be laid
+out internally. If you add a private field to `Task` tomorrow, the API still
+returns exactly what it returned yesterday.
 
-It is also why the responses carry `created_on` and `is_done`, which are
-not stored anywhere — `to_view()` computes them, so every client gets a
-formatted date and a boolean without doing the work itself.
+It's also why the responses include `created_on` and `is_done`, which aren't
+stored anywhere. `to_view()` calculates them, so every client gets a
+formatted date and a boolean without having to work them out.
 
-## The Routes in Practice
+## Trying the API
 
 ```console
 $ curl -s localhost:8000/api/tasks -H 'content-type: application/json' \
@@ -185,5 +190,6 @@ $ curl -s localhost:8000/api/tasks/does-not-exist
 {"error":"no task with id does-not-exist"}
 ```
 
-The last two are the interesting ones. A 422 with a `field`, and a 404 with
-a message, from handlers that said nothing at all about status codes.
+The last two requests are the interesting ones. You get a 422 with a
+`field`, and a 404 with a message, from handlers that never mention status
+codes at all.

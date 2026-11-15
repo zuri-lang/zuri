@@ -1,30 +1,31 @@
 /**
  * @module ddl
  *
- * Turning a `Blueprint` into the statements one engine understands,
- * and running them the way that engine needs them run.
+ * Turns a `Blueprint` into the statements that one engine understands,
+ * and runs them in the way that engine needs.
  *
- * Every engine spells a table differently. An auto-numbered key is
- * `autoincrement` to SQLite, an identity column to PostgreSQL and
- * `auto_increment` to MySQL; a byte-for-byte comparison is SQLite's
- * default, PostgreSQL's `"C"` collation and MySQL's `utf8mb4_bin`; and
- * a change SQLite's `ALTER TABLE` cannot make has to be carried out by
- * building the table again. `DdlAdapter` holds what is the same for
- * all of them, and each adapter's subclass supplies the rest.
+ * Every engine describes tables differently. An auto-numbered key is
+ * `autoincrement` in SQLite, an identity column in PostgreSQL and
+ * `auto_increment` in MySQL. A byte-for-byte comparison is the default
+ * in SQLite, the `"C"` collation in PostgreSQL and `utf8mb4_bin` in
+ * MySQL. And a change that SQLite's `ALTER TABLE` can't make has to be
+ * carried out by rebuilding the table. `DdlAdapter` contains what's the
+ * same for all of them, and each adapter's subclass supplies the rest.
  *
- * A program never calls this directly. `db.schema.create_table()` and
- * the other schema changes go through `Driver.ddl()`, and an adapter of
- * one's own subclasses `DdlAdapter` and returns it from its driver's
- * `ddl()` to get them.
+ * Programs never call this directly. `db.schema.create_table()` and the
+ * other schema methods go through `Driver.ddl()`. To support them in an
+ * adapter of your own, subclass `DdlAdapter` and return an instance
+ * from the driver's `ddl()`.
  *
  * ### Running a change
  *
  * Each method takes the `Connection` to change and runs its statements
- * on it. `schema_change()` is the envelope a change runs in when the
- * caller has no transaction open, and what `sql.migrate` runs every
- * migration in: a transaction on an engine that can roll a schema
- * change back, nothing on one that cannot, and on SQLite foreign key
- * enforcement switched off around it, checked again before it commits.
+ * on it. `schema_change()` wraps a change when the caller has no
+ * transaction open, and `sql.migrate` runs every migration in it. On an
+ * engine that can roll back a schema change, it starts a transaction.
+ * On one that can't, it does nothing. On SQLite, it also turns off
+ * foreign key enforcement around the change, and checks the foreign
+ * keys again before committing.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

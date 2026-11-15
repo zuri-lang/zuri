@@ -1,12 +1,12 @@
 /**
  * @module response
  *
- * `HttpResponse`: one response, whether it is being built by a handler
- * or read back from a server.
+ * `HttpResponse`, a single response, whether it's being built by a
+ * handler or read from a server.
  *
- * It carries the status, the headers and the body, and the helpers on it
- * cover what a handler nearly always wants: JSON, a file, a redirect, or
- * a stream written a chunk at a time.
+ * It holds the status, the headers and the body, and its helper methods
+ * cover what a handler usually needs: JSON, a file, a redirect, or a
+ * stream written one chunk at a time.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -25,21 +25,21 @@ import os
 import wire
 
 /**
- * An HTTP response, in both directions: the thing a server builds and
- * sends, and the thing a client receives and reads.
+ * An HTTP response. The same class is used in both directions: a server
+ * builds one and sends it, and a client receives one and reads it.
  *
- * On the server side the useful surface is the writers - `text()`,
- * `json()`, `html()`, `file()`, `redirect()`, `render()` - each of
- * which sets a sensible `Content-Type` alongside the body, plus
- * `set_cookie()` and the caching helpers.
+ * On the server side, you'll mostly use the methods that write the
+ * body, `text()`, `json()`, `html()`, `file()`, `redirect()` and
+ * `render()`, each of which also sets a suitable `Content-Type`. There
+ * are also `set_cookie()` and the caching helpers.
  *
- * On the client side it is `as_text()`, `as_dict()`, `is_ok()` and
- * `raise_for_status()`.
+ * On the client side, you'll mostly use `as_text()`, `as_dict()`,
+ * `is_ok()` and `raise_for_status()`.
  *
- * A body can be bytes held in memory, a file streamed from disk, or a
- * callback that produces bytes as it goes. The last two matter for a
- * server that has to serve something larger than it would like to
- * hold in memory; see `file()` and `stream()`.
+ * The body can be bytes held in memory, a file streamed from disk, or a
+ * callback that produces the bytes as it goes. The last two are for a
+ * server that has to send something larger than it wants to hold in
+ * memory. See `file()` and `stream()`.
  *
  * @printable
  * @serializable
@@ -53,9 +53,9 @@ class HttpResponse {
   var status = 200
 
   /**
-   * The reason phrase. Left `nil` to use the canonical phrase for
-   * `status`, which is nearly always what you want; HTTP/2 and HTTP/3
-   * drop the phrase entirely.
+   * The reason phrase. Leave it as `nil` to use the standard phrase for
+   * `status`, which is almost always what you want. HTTP/2 and HTTP/3
+   * don't send a reason phrase at all.
    * @type ?string
    */
   var reason
@@ -81,8 +81,8 @@ class HttpResponse {
   var body
 
   /**
-   * Cookies to be sent with this response. Add to it through
-   * `set_cookie()` rather than directly.
+   * The cookies to send with this response. Add to it with
+   * `set_cookie()`, not directly.
    * @type list
    */
   var cookies = []
@@ -115,16 +115,16 @@ class HttpResponse {
   var certificate
 
   /**
-   * The reader for the body, when the client was asked to stream the
-   * response rather than materialise it. `nil` otherwise.
+   * The reader for the body, if the client was asked to stream the
+   * response instead of reading it in full. `nil` otherwise.
    * @type ?BodyReader
    */
   var body_reader
 
   /**
-   * The method of the request this answers. The protocol needs it -
-   * a response to HEAD is framed as though it had a body and then
-   * sends none.
+   * The method of the request this response answers. The protocol needs
+   * to know it, because a response to a HEAD request is framed as if it
+   * had a body, but no body is sent.
    * @type ?string
    */
   var request_method
@@ -251,19 +251,20 @@ class HttpResponse {
   }
 
   /**
-   * Serves the file at `path`, streamed from disk rather than read
-   * into memory, with `Content-Type` guessed from the extension.
+   * Serves the file at `path`, streamed from disk instead of read into
+   * memory, with a `Content-Type` based on the file's extension.
    *
-   * `offset` and `length` serve part of the file, which is what a
-   * `Range` request needs; the caller is responsible for setting the
-   * `206` status and `Content-Range` header that go with it.
+   * `offset` and `length` send only part of the file, which is what a
+   * `Range` request needs. The caller is responsible for setting the
+   * `206` status and the `Content-Range` header that go with it.
    *
    * @param string path
-   * @param ?number offset: byte offset to start from; defaults to `0`
-   * @param ?number length: how many bytes to send; defaults to the
-   *    rest of the file
+   * @param ?number offset: the byte offset to start from. Defaults to
+   *    `0`.
+   * @param ?number length: the number of bytes to send. Defaults to the
+   *    rest of the file.
    * @returns HttpResponse: this same instance, for chaining
-   * @throws HttpError if the file does not exist or cannot be read
+   * @throws HttpError if the file doesn't exist or can't be read
    */
   file(path: string, offset: ?number, length: ?number) {
     var handle = file(path, 'rb')
@@ -294,12 +295,12 @@ class HttpResponse {
   }
 
   /**
-   * Serves the file at `path` as an attachment, so a browser saves it
-   * rather than displaying it.
+   * Serves the file at `path` as an attachment, so that a browser saves
+   * it instead of displaying it.
    *
    * @param string path
-   * @param ?string name: the filename to offer; defaults to the
-   *    file's own base name
+   * @param ?string name: the file name to suggest. Defaults to the
+   *    file's own name.
    * @returns HttpResponse: this same instance, for chaining
    */
   download(path: string, name: ?string) {
@@ -317,18 +318,16 @@ class HttpResponse {
   }
 
   /**
-   * Produces the body from a callback instead of holding it in
-   * memory.
+   * Produces the body from a callback, instead of holding it in memory.
    *
    * `handler` is called with a writer that has `write(data)` and
-   * `flush()`. Anything it writes goes out as it is written, which is
-   * what makes server-sent events, a progress feed, or a large
-   * generated export possible without buffering the whole thing
-   * first.
+   * `flush()` methods. Whatever it writes is sent as it's written.
+   * That's what makes server-sent events, a progress feed or a large
+   * generated export possible without buffering the whole body first.
    *
-   * Unless a `Content-Length` is set beforehand, the body is framed
-   * with chunked transfer encoding on HTTP/1.1 and as an ordinary
-   * DATA stream on HTTP/2.
+   * Unless a `Content-Length` header has been set beforehand, the body
+   * is sent with chunked transfer encoding over HTTP/1.1, and as an
+   * ordinary stream of DATA frames over HTTP/2.
    *
    * ```zuri
    * server.handle('GET', '/export', @(request, response) {
@@ -379,18 +378,18 @@ class HttpResponse {
   }
 
   /**
-   * Sends the client to `location`, setting both the `Location`
+   * Redirects the client to `location`, by setting both the `Location`
    * header and a 3xx status.
    *
    * The default is `302 Found`, which browsers follow with a GET
-   * regardless of the original method. Use `307` or `308` when the
-   * method and body must be preserved, and `303` after a form
-   * submission that should not be replayed on refresh.
+   * request, whatever the original method was. Use `307` or `308` when
+   * the method and body must be kept, and `303` after a form submission
+   * that shouldn't be submitted again when the page is refreshed.
    *
    * @param string location
-   * @param ?number status: must be a 3xx; defaults to `302`
+   * @param ?number status: a 3xx status. Defaults to `302`.
    * @returns HttpResponse: this same instance, for chaining
-   * @throws ValueError if `status` is not a redirect status
+   * @throws ValueError if `status` isn't a redirect status
    */
   redirect(location: string, status: ?number) {
     var code = status == nil ? 302 : status
@@ -425,29 +424,30 @@ class HttpResponse {
   }
 
   /**
-   * Sets `Content-Disposition`, which says whether a browser shows the
-   * body or saves it, and under what name.
+   * Sets the `Content-Disposition` header, which tells a browser
+   * whether to display the body or save it, and under what name.
    *
-   * A name that is all printable ASCII, with no `"`, `\` or `%` in it,
-   * is sent once, quoted. Any other is sent twice, as RFC 6266 lays
-   * out: `filename*` carries it whole as percent-encoded UTF-8, which a
-   * browser takes in preference, and `filename` carries a stand-in with
-   * each of those characters made `_` for a browser that reads only
-   * that. The stand-in leaves out the three because RFC 6266 warns that
-   * many browsers mishandle a backslash escape in a quoted filename,
-   * and some decode a percent sign that was meant literally. Control
-   * characters are dropped from the name either way, so a name taken
-   * from an upload or a message cannot end the header early.
+   * A name made up entirely of printable ASCII characters, with no `"`,
+   * `\` or `%`, is sent once, in quotes. Any other name is sent twice,
+   * as RFC 6266 describes. `filename*` carries the full name,
+   * percent-encoded as UTF-8, and browsers use it when it's present.
+   * `filename` carries a fallback, with each of those three characters
+   * replaced by `_`, for browsers that only read that parameter. The
+   * fallback leaves them out because RFC 6266 warns that many browsers
+   * mishandle a backslash escape in a quoted file name, and that some
+   * decode a percent sign that was meant literally. Control characters
+   * are always removed from the name, so that a name taken from an
+   * upload or a message can't end the header early.
    *
    * ```zuri,ignore
    * response.content_disposition('attachment', 'Résumé.pdf')
    * # attachment; filename="R_sum_.pdf"; filename*=UTF-8''R%C3%A9sum%C3%A9.pdf
    * ```
    *
-   * @param string kind: `attachment` to have the body saved, `inline`
-   *    to have it shown where the browser can.
-   * @param ?string name: the filename to offer; none when not given or
-   *    empty.
+   * @param string kind: `attachment` to have the body saved, or
+   *    `inline` to have it displayed if the browser can
+   * @param ?string name: the file name to suggest. If it's left out or
+   *    empty, no name is sent.
    * @returns HttpResponse: this same instance, for chaining
    */
   content_disposition(kind: string, name: ?string) {
@@ -484,14 +484,14 @@ class HttpResponse {
    * Adds a cookie to the response.
    *
    * `http_only` defaults to `true` and `same_site` to `'Lax'`, which
-   * are the settings a session cookie should have; pass them
-   * explicitly to opt out. `secure` defaults to `true` for any cookie
-   * whose name carries the `__Secure-` or `__Host-` prefix.
+   * are the right settings for a session cookie. Pass them explicitly
+   * to change them. `secure` defaults to `true` for any cookie whose
+   * name starts with `__Secure-` or `__Host-`.
    *
    * @param string name
    * @param string value
    * @param ?dict attributes: `domain`, `path`, `expires`, `max_age`,
-   *    `secure`, `http_only`, `same_site`, `partitioned`
+   *    `secure`, `http_only`, `same_site` and `partitioned`
    * @returns HttpResponse: this same instance, for chaining
    */
   set_cookie(name: string, value: string, attributes: ?dict) {
@@ -532,12 +532,12 @@ class HttpResponse {
   }
 
   /**
-   * Marks the response as cacheable for `seconds`, for both private
-   * and shared caches.
+   * Marks the response as cacheable for `seconds`, by both private and
+   * shared caches.
    *
    * @param number seconds
-   * @param ?bool public_cache: whether shared caches (a CDN, a proxy)
-   *    may store it too; defaults to `true`
+   * @param ?bool public_cache: whether shared caches, such as a CDN or
+   *    a proxy, can store it as well. Defaults to `true`.
    * @returns HttpResponse: this same instance, for chaining
    */
   cache_for(seconds: number, public_cache: ?bool) {
@@ -616,8 +616,9 @@ class HttpResponse {
   }
 
   /**
-   * The media type from `Content-Type`, without its parameters, e.g.
-   * `'application/json'` for `'application/json; charset=utf-8'`.
+   * The media type from `Content-Type`, without its parameters. For
+   * example, `'application/json'` for
+   * `'application/json; charset=utf-8'`.
    *
    * @returns ?string
    */
@@ -670,15 +671,15 @@ class HttpResponse {
   }
 
   /**
-   * Raises `StatusError` when the status is a 4xx or 5xx, and returns
-   * the response otherwise, so it can be used inline:
+   * Raises a `StatusError` if the status is 4xx or 5xx, and returns the
+   * response otherwise, so that it can be used in an expression:
    *
    * ```zuri
    * var data = http.get(url).raise_for_status().as_dict()
    * ```
    *
-   * The response stays reachable on the raised error, so the body -
-   * where an API usually explains what went wrong - is not lost.
+   * The response is available from the error that's raised, so the
+   * body, where an API usually explains what went wrong, isn't lost.
    *
    * @returns HttpResponse
    * @throws StatusError
@@ -729,9 +730,9 @@ class HttpResponse {
   }
 
   /**
-   * Records the connection a streamed response is still being read
-   * from. Set by `HttpClient`; hand the response to
-   * `HttpClient.finish()` when you are done reading it.
+   * Records the connection that a streamed response is still being read
+   * from. `HttpClient` sets this. Pass the response to
+   * `HttpClient.finish()` once you've finished reading it.
    *
    * @param ?list carrier
    */
@@ -760,38 +761,40 @@ class HttpResponse {
   }
 
   /**
-   * Marks the response as committed. Called by the protocol writer;
-   * applications have no reason to.
+   * Marks the response as committed. The protocol writer calls this,
+   * and applications have no reason to.
    */
   commit() {
     self._committed = true
   }
 
   /**
-   * Registers `callback` to run once the response is final: after the
-   * handler, every middleware and any error handling have had their
-   * say, so `status`, the headers and the body are what the client
-   * receives.
+   * Registers `callback` to run once the response is final, which is
+   * after the handler, every middleware and any error handling have
+   * finished with it. At that point, `status`, the headers and the body
+   * are what the client receives.
    *
    * Middleware that reports on a response, such as an access log,
-   * registers here rather than reading the response when its `next()`
-   * returns. A failure further in never returns there, and the status
-   * the client is sent for it is only decided afterwards.
+   * should register a callback here instead of reading the response
+   * when its `next()` returns. If something fails further down the
+   * chain, `next()` never returns, and the status that the client is
+   * sent for the failure is only decided later.
    *
-   * Callbacks run once each, in the order they were registered. One
-   * that raises is skipped over, so a broken reporter never costs the
-   * client its response.
+   * Each callback runs once, in the order the callbacks were
+   * registered. If a callback raises an error, it's skipped, so that a
+   * broken reporter can never stop the client from getting its
+   * response.
    *
-   * @param function callback: called with no arguments.
+   * @param function callback: called without arguments
    */
   on_finish(callback: function) {
     self._finish_callbacks.append(callback)
   }
 
   /**
-   * Runs every callback `on_finish()` registered, once. Called by the
-   * server when the response is final; applications have no reason
-   * to.
+   * Runs each callback registered with `on_finish()`, once. The server
+   * calls this when the response is final, and applications have no
+   * reason to.
    */
   finish() {
     var callbacks = self._finish_callbacks

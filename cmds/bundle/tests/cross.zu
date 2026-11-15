@@ -176,7 +176,7 @@ describe('another platform', @{
 
     expect(built.status).not.to_equal(0)
     expect(built.all)
-        .to_contain('does not hold a aarch64-unknown-linux-gnu runtime')
+        .to_contain("doesn't contain a aarch64-unknown-linux-gnu runtime")
   })
 
   it('refuses a platform zuri is not released for', @{

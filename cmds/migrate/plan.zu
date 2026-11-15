@@ -21,17 +21,17 @@ import .._shared.paths
 def parser() {
   var parser = args.Parser('zuri migrate', false)
 
-  parser.description = 'Applies, rolls back and reports database migrations.'
-  parser.epilog = 'With no subcommand, every pending migration is applied.'
+  parser.description = 'Applies, rolls back and lists database migrations.'
+  parser.epilog = 'If no subcommand is given, every pending migration is applied.'
 
   parser.add_option(
     'database',
-    'The connection string; DATABASE_URL, from the environment or .env, by default',
+    'The database connection string (DATABASE_URL from the environment or .env by default)',
     { short_name: 'd', type: args.STRING, metavar: 'url' },
   )
   parser.add_option(
     'dir',
-    'The directory of migrations; migrations in the project by default',
+    'The directory containing the migrations (migrations in the project by default)',
     { type: args.STRING, metavar: 'path' },
   )
   parser.add_option(
@@ -39,22 +39,22 @@ def parser() {
     'The table recording migrations; ${DEFAULT_TABLE} by default',
     { type: args.STRING, metavar: 'name' },
   )
-  parser.add_option('steps', 'With up or down, how many migrations at most', {
+  parser.add_option('steps', 'With up or down, the maximum number of migrations to apply or roll back', {
     short_name: 's',
     type: args.INT,
     metavar: 'count',
   })
   parser.add_option(
     'to',
-    'With up, the last migration to apply; with down, the one to leave latest',
+    'With up, the last migration to apply. With down, the migration to roll back to.',
     { type: args.STRING, metavar: 'name' },
   )
 
-  parser.add_command('up', 'Applies pending migrations')
-  parser.add_command('status', 'Lists every migration and whether it has run')
-  parser.add_command('down', 'Rolls back the latest batch, or --steps, or --to')
-  parser.add_command('reset', 'Rolls back every migration')
-  parser.add_command('new', 'Writes a new, empty migration for each <name>', {
+  parser.add_command('up', 'Apply pending migrations')
+  parser.add_command('status', 'List every migration and whether it has been applied')
+  parser.add_command('down', 'Roll back the latest batch, or as many as --steps or --to say')
+  parser.add_command('reset', 'Roll back every migration')
+  parser.add_command('new', 'Create a new, empty migration for each <name>', {
     type: args.LIST,
     metavar: 'name',
   })
@@ -86,15 +86,15 @@ def settings(parsed) {
   var to = options.get('to', nil)
 
   if steps != nil and to != nil {
-    raise UsageError('--steps and --to say the same thing two ways; give one')
+    raise UsageError('use either --steps or --to, not both')
   }
 
   if (steps != nil or to != nil) and command != 'up' and command != 'down' {
-    raise UsageError('--steps and --to go with up and down, not ${command}')
+    raise UsageError('--steps and --to can only be used with up and down, not with ${command}')
   }
 
   if steps != nil and steps < 1 {
-    raise UsageError('--steps is a count from 1, not ${steps}')
+    raise UsageError('--steps must be at least 1, not ${steps}')
   }
 
   var names = command == 'new' ? parsed.command.value : nil

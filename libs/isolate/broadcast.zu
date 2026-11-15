@@ -1,70 +1,58 @@
 /**
  * @module broadcast
  *
- * One-to-many (fan-out) publish-subscribe message distribution
- * for isolate isolates.
+ * Publish and subscribe for isolates. A `Broadcast` delivers every
+ * message it's given to every subscriber.
  *
  * ## Overview
  *
- * While a standard `Channel` provides one-to-one or many-to-one
- * message delivery (where each sent message is consumed by
- * exactly one receiver), a `Broadcast` hub provides
- * **one-to-many publish-subscribe** semantics. Every value
- * published via `Broadcast.send()` is cloned and delivered to
- * *all* currently active subscriber channels.
+ * A `Channel` delivers each message to exactly one receiver, however
+ * many isolates are reading from it. A `Broadcast` is different: every
+ * value sent with `Broadcast.send()` is copied and delivered to every
+ * isolate that's currently subscribed.
  *
- * `Broadcast` is built on top of Zuri's thread-safe `Channel`
- * primitives, inheriting the same deep-copy memory isolation
- * guarantees: published values cross isolate barriers cleanly
- * without shared mutable state.
+ * `Broadcast` is built on `Channel`, so values are copied between
+ * isolates in the same way, and no mutable state is shared.
  *
- * Re-exported by the `isolate` module, so `import isolate` is
- * sufficient to use `isolate.Broadcast` and
- * `isolate.broadcast()`.
+ * The `isolate` module re-exports it, so `import isolate` is enough to
+ * use `isolate.Broadcast` and `isolate.broadcast()`.
  *
- * ## Subscription & Message Delivery
+ * ## Subscribing
  *
- * - **Dynamic Subscription**: Calling `broadcast.subscribe()`
- * registers a new subscriber and returns a dedicated `Channel`
- * for that subscriber. - **No Historical Replay**: Subscribers
- * only receive messages published *after* they subscribe. Past
- * messages published prior to subscription are not replayed. -
- * **Independent Consumer Queues**: Each subscriber possesses its
- * own queue buffer. One slow consumer reading slowly from its
- * channel does not prevent fast consumers from receiving their
- * copies at full speed.
+ * - `broadcast.subscribe()` adds a subscriber and returns a `Channel`
+ *   for it to read from.
+ * - A subscriber only receives messages sent *after* it subscribed.
+ *   Earlier messages aren't replayed.
+ * - Each subscriber has a queue of its own, so a subscriber that reads
+ *   slowly doesn't hold up the others.
  *
- * ## Backpressure & Drop-on-Full Semantics
+ * ## Full queues
  *
- * - **Unbounded Subscriber Channels (`capacity: 0` or `nil`)**:
- * Each subscriber channel grows dynamically. Published messages
- * are always delivered to all subscribers without dropping. -
- * **Bounded Subscriber Channels (`capacity: n > 0`)**: When a
- * subscriber's individual channel buffer reaches capacity `n`,
- * the broadcaster uses a non-blocking send (`timeout: 0`). If
- * the buffer is full, the message is **dropped specifically for
- * that slow subscriber** rather than blocking the publisher or
- * stalling other subscribers. This prevents a single lagging
- * isolate from causing system-wide backpressure or deadlocks.
+ * - If subscriber channels are unbounded, which is the default
+ *   (`capacity` of `0` or `nil`), each queue grows as needed and every
+ *   message reaches every subscriber.
+ * - If they're bounded (`capacity` greater than `0`), the broadcast
+ *   sends to each subscriber without waiting (`timeout: 0`). When a
+ *   subscriber's queue is full, that subscriber misses the message, but
+ *   the sender isn't blocked and the other subscribers still get it.
+ *   That way, one isolate that falls behind can't stall the rest of the
+ *   program or cause a deadlock.
  *
- * ## Lifecycle & Graceful Teardown
+ * ## Unsubscribing and closing
  *
- * - **Unsubscribing**: A subscriber can be removed by calling
- * `broadcast.unsubscribe(ch)`. The channel stops receiving new
- * broadcasts, but any previously queued messages remain
- * readable. - **Closing**: Calling `broadcast.close()` closes
- * the broadcast hub and all active subscriber channels.
- * Subscribed isolates will drain their remaining buffered
- * messages, after which subsequent `recv()` calls return `nil`.
- * Attempting to call `send()` or `subscribe()` on a closed
- * broadcast raises a `IsolateError`. - **Automatic Pruning**: If
- * a subscriber closes its channel independently, the broadcast
- * hub automatically detects the closed channel during the next
- * `send()` and prunes it from the subscriber registry.
+ * - `broadcast.unsubscribe(ch)` removes a subscriber. Its channel
+ *   doesn't receive any more messages, but anything already queued can
+ *   still be read.
+ * - `broadcast.close()` closes the broadcast and every subscriber's
+ *   channel. Subscribers can still read what's left in their queues,
+ *   and after that, `recv()` returns `nil`. Calling `send()` or
+ *   `subscribe()` on a closed broadcast raises an `IsolateError`.
+ * - If a subscriber closes its own channel, the broadcast notices
+ *   during the next `send()` and removes it.
  *
  * ## Examples
  *
- * ### 1. Publish-Subscribe Event Fan-Out
+ * ### Sending events to several services
  *
  * ```zuri
  * import isolate
@@ -102,7 +90,7 @@
  * echo "Total metrics events: ${metrics.join()}"
  * ```
  *
- * ### 2. Dynamic Unsubscription
+ * ### Unsubscribing
  *
  * ```zuri
  * import isolate
@@ -127,7 +115,7 @@ import .channel { Channel }
 import .error { IsolateError }
 
 /**
- * A one-to-many publish-subscribe message distribution hub.
+ * A hub that delivers every message to all of its subscribers.
  */
 class Broadcast {
   var _subscribers
@@ -135,18 +123,18 @@ class Broadcast {
   var _closed
 
   /**
-   * Constructs a new `Broadcast` hub.
+   * Creates a `Broadcast`.
    *
-   * @param ?int capacity: Buffer capacity for each subscriber
-   *    channel created via `subscribe()`. `nil` or `0` (the
-   *    default) creates unbounded channels. When bounded, slow
-   *    subscribers whose buffers are full will drop missed
-   *    broadcasts rather than blocking the publisher.
+   * @param ?int capacity: the capacity of each subscriber channel that
+   *    `subscribe()` creates. `nil` or `0`, the default, makes
+   *    unbounded channels. If the channels are bounded, a subscriber
+   *    whose channel is full misses new messages, and the sender isn't
+   *    blocked.
    *
    * ```zuri
    * import isolate
-   * var hub = isolate.broadcast()      # Unbounded subscriber buffers
-   * var bounded_hub = isolate.broadcast(50) # Drop on full after 50 items
+   * var hub = isolate.broadcast()            # unbounded subscriber channels
+   * var bounded_hub = isolate.broadcast(50)  # each subscriber holds at most 50
    * ```
    */
   @new(capacity: ?int) {
@@ -156,15 +144,13 @@ class Broadcast {
   }
 
   /**
-   * Registers a new subscriber to this broadcast hub and returns
-   * a dedicated `Channel` for receiving published messages.
+   * Adds a subscriber and returns the `Channel` it receives messages
+   * on.
    *
-   * Subscribers only receive messages sent after the moment of
-   * subscription.
+   * A subscriber only receives messages sent after it subscribed.
    *
-   * @returns Channel: A channel delivering published broadcasts.
-   * @raises IsolateError if the broadcast hub has already been
-   *    closed.
+   * @returns Channel
+   * @raises IsolateError if the broadcast has been closed
    *
    * ```zuri
    * var sub_ch = hub.subscribe()
@@ -181,17 +167,15 @@ class Broadcast {
   }
 
   /**
-   * Unregisters a subscriber `channel` from this broadcast hub.
+   * Removes a subscriber.
    *
-   * The channel immediately stops receiving new broadcasts. Any
-   * messages already buffered in the channel remain readable via
-   * `recv()`.
+   * The channel stops receiving new messages at once. Messages already
+   * in it can still be read with `recv()`.
    *
-   * If `channel` was not subscribed or was already removed, this
-   * call is a no-op.
+   * If `channel` isn't subscribed, or has already been removed, this
+   * does nothing.
    *
-   * @param Channel channel: The subscriber channel returned by
-   *    `subscribe()`.
+   * @param Channel channel: a channel returned by `subscribe()`
    *
    * ```zuri
    * hub.unsubscribe(sub_ch)
@@ -208,18 +192,16 @@ class Broadcast {
   }
 
   /**
-   * Delivers `value` to all currently registered subscribers.
+   * Sends `value` to every current subscriber.
    *
-   * If a subscriber's channel has a bounded capacity and is
-   * currently full, the message is dropped for that specific
-   * subscriber without blocking the sender or delaying other
-   * subscribers.
+   * If a subscriber's channel is bounded and full, that subscriber
+   * misses the message. The sender isn't blocked, and the other
+   * subscribers aren't delayed.
    *
-   * Any subscriber channels discovered to be closed are
-   * automatically pruned.
+   * Subscriber channels that turn out to be closed are removed.
    *
-   * @param any value: The value or object graph to broadcast.
-   * @raises IsolateError if the broadcast hub has been closed.
+   * @param any value: the value to send
+   * @raises IsolateError if the broadcast has been closed
    *
    * ```zuri
    * hub.send("alert: system update")
@@ -243,12 +225,11 @@ class Broadcast {
   }
 
   /**
-   * Closes the broadcast hub and all active subscriber channels.
+   * Closes the broadcast and every subscriber's channel.
    *
-   * Subscribed channels can continue draining any remaining
-   * buffered messages. Once drained, subsequent calls to
-   * `recv()` on subscriber channels will return `nil`. Calling
-   * `send()` or `subscribe()` after closing raises
+   * Subscribers can still read the messages left in their channels.
+   * After that, `recv()` returns `nil`. Calling `send()` or
+   * `subscribe()` after the broadcast is closed raises an
    * `IsolateError`.
    *
    * ```zuri
@@ -263,9 +244,9 @@ class Broadcast {
   }
 
   /**
-   * Checks whether the broadcast hub has been closed.
+   * Whether the broadcast has been closed.
    *
-   * @returns bool: `true` if closed, `false` otherwise.
+   * @returns bool
    *
    * ```zuri
    * if !hub.is_closed() {
@@ -278,10 +259,9 @@ class Broadcast {
   }
 
   /**
-   * Returns the current number of active subscribers registered
-   * to this hub.
+   * The number of current subscribers.
    *
-   * @returns int: Count of registered subscriber channels.
+   * @returns int
    *
    * ```zuri
    * echo "Subscribers listening: ${hub.subscriber_count()}"
@@ -293,10 +273,11 @@ class Broadcast {
 }
 
 /**
- * Creates a new one-to-many `Broadcast` distribution hub.
+ * Creates a `Broadcast`, which delivers every message to all of its
+ * subscribers.
  *
- * @param ?int capacity: Per-subscriber buffer capacity (`nil` or
- *    `0` means unbounded).
+ * @param ?int capacity: the capacity of each subscriber's channel.
+ *    `nil` or `0` means unbounded.
  * @returns Broadcast
  *
  * ```zuri

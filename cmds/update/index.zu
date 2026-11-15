@@ -1,7 +1,7 @@
 /**
  * @command update
  * @description Updates packages to the newest versions their ranges
- *    allow, or with latest, to the newest there are.
+ *    allow, or with --latest, to the newest releases.
  *
  *   zuri update [package...] [options]
  *
@@ -32,39 +32,39 @@ def parser() {
 
   parser.description = 'Updates packages to the newest versions their ranges allow.'
 
-  parser.add_index('packages', 'Only these; every package when none is named', {
+  parser.add_index('packages', 'The packages to update (all of them if none are named)', {
     type: args.LIST,
     metavar: 'package',
   })
   parser.add_option(
     'latest',
-    'Move each range in project.toml to the newest release there is',
+    'Change each range in project.toml to the newest release',
     { short_name: 'L' },
   )
-  parser.add_option('dry-run', 'Show what is out of date and change nothing', {
+  parser.add_option('dry-run', 'Show what\'s out of date without changing anything', {
     short_name: 'n',
   })
   parser.add_option(
     'check',
-    'Like dry-run, and exit 1 when anything is out of date',
+    'Like --dry-run, but exit with status 1 if anything is out of date',
     nil,
   )
-  parser.add_option('global', 'Update the packages installed for this user', {
+  parser.add_option('global', 'Update the packages installed for your user', {
     short_name: 'g',
   })
-  parser.add_option('offline', 'Use only what is already downloaded', nil)
-  parser.add_option('no-hooks', 'Run no install scripts at all', nil)
+  parser.add_option('offline', 'Only use what\'s already downloaded', nil)
+  parser.add_option('no-hooks', 'Don\'t run any install scripts', nil)
   parser.add_option(
     'allow-hooks',
-    'Let these packages run their scripts this time',
+    'Allow these packages to run their scripts this time',
     { type: args.LIST, metavar: 'package' },
   )
   parser.add_option(
     'insecure',
-    'Allow a token to cross plain http to another machine',
+    'Allow sending a token over plain HTTP to another machine',
     nil,
   )
-  parser.add_option('quiet', 'Print only the result', { short_name: 'q' })
+  parser.add_option('quiet', 'Only print the result', { short_name: 'q' })
   cli.add_json_option(parser)
 
   return parser

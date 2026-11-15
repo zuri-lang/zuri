@@ -1,22 +1,22 @@
 /**
  * @module crud
  *
- * Building the four statements that are the same everywhere.
+ * Builds the four statements that are the same on every engine.
  *
- * Inserting a row, updating rows that match, deleting rows that match
- * and selecting rows that match are written the same way against every
- * engine, apart from how identifiers are quoted and how placeholders
- * are spelled. Both of those come from the driver, so these builders
+ * Inserting a row, and updating, deleting and selecting the rows that
+ * match some conditions, are written the same way on every engine,
+ * except for how identifiers are quoted and how placeholders are
+ * written. Both of those come from the driver, so these builders
  * produce correct SQL for whichever adapter is active.
  *
- * This is not a query builder and is not trying to become one. There
- * is no join here, no subquery, no expression tree. Anything past a
- * flat list of equality where is written as SQL, which is a
- * better language for it than any chain of method calls.
+ * This isn't a query builder, and it isn't meant to become one. There
+ * are no joins, no subqueries and no expression trees. Anything more
+ * than a flat list of equality conditions should be written as SQL,
+ * which is a better language for it than a chain of method calls.
  *
- * Every value becomes a bound parameter. Nothing built here
- * interpolates a value into the statement text, which is what makes
- * these safe to hand user input.
+ * Every value is bound as a parameter. Nothing built here inserts a
+ * value into the text of the statement, so it's safe to pass user input
+ * to these builders.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

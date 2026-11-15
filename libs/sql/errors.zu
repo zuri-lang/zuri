@@ -1,20 +1,21 @@
 /**
  * @module errors
  *
- * Every error a database raises, under one root, in one shape,
- * whatever engine it came from.
+ * The errors that databases raise, all with the same base class and the
+ * same shape, whatever engine they came from.
  *
- * This is the part of `sql` that pays for itself soonest. PostgreSQL
- * reports a unique constraint violation as SQLSTATE `23505`; SQLite
- * reports it as extended result code `2067`. Neither number means
- * anything to the other, and code that matched on either would stop
- * working the moment the adapter changed. Every adapter translates its
- * engine's own vocabulary into the classes below, so a program catches
- * `UniqueViolation` and keeps catching it after a migration.
+ * This is the part of `sql` that pays off soonest. PostgreSQL reports a
+ * unique constraint violation as SQLSTATE `23505`, and SQLite reports
+ * it as extended result code `2067`. Neither number means anything to
+ * the other engine, and code that checked for either one would stop
+ * working as soon as the adapter changed. Every adapter translates its
+ * engine's errors into the classes below, so a program can catch
+ * `UniqueViolation` and keep catching it after moving to a different
+ * database.
  *
- * The original is never thrown away. `code` and `sqlstate` carry
- * whatever the engine said, so anything genuinely engine specific is
- * still reachable.
+ * The original error information is never discarded. `code` and
+ * `sqlstate` hold whatever the engine reported, so anything specific to
+ * the engine is still available.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

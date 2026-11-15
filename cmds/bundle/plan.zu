@@ -42,18 +42,18 @@ var MAGIC = 'ZURIBND1'
 def parser() {
   var parser = args.Parser('zuri bundle', false)
 
-  parser.description = 'Packages the project and a runtime together, into something that runs ' +
-      'on a machine with no zuri installed.'
-  parser.epilog = 'Run zuri restore first; a bundle carries the packages that are installed.'
+  parser.description = 'Packages the project together with a runtime, so that it can run on ' +
+      'machines without Zuri.'
+  parser.epilog = 'A bundle includes the packages that are installed, so run zuri restore first.'
 
   parser.add_option(
     'target',
-    'host, all, or a platform such as aarch64-apple-darwin',
+    'The platforms to build for: host, all, or a platform such as aarch64-apple-darwin',
     { short_name: 't', type: args.LIST, metavar: 'target' },
   )
   parser.add_option(
     'format',
-    'dir, archive, exe (one file) or app (macOS); archive by default',
+    'What to build: a directory, an archive, a single executable or a macOS app',
     {
       short_name: 'f',
       type: args.CHOICE,
@@ -64,20 +64,20 @@ def parser() {
   )
   parser.add_option(
     'output',
-    'Where bundles are written; dist in the project by default',
+    'Where to write the bundles (dist in the project by default)',
     { short_name: 'o', type: args.STRING, metavar: 'dir' },
   )
   parser.add_option(
     'name',
-    'What the program is called; the project name by default',
+    "The program's name (the project's name by default)",
     { type: args.STRING, metavar: 'name' },
   )
   parser.add_option(
     'runtime',
-    'A runtime to build with, unpacked, in place of a release',
+    'An unpacked runtime to build with, instead of a downloaded release',
     { type: args.STRING, metavar: 'dir' },
   )
-  parser.add_option('force', 'Replace a bundle that is already there', nil)
+  parser.add_option('force', 'Replace a bundle that already exists', nil)
   parser.add_option('json', 'Print what was built as JSON', nil)
 
   return parser

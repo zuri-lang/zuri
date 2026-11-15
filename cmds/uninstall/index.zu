@@ -1,7 +1,7 @@
 /**
  * @command uninstall
- * @description Removes packages from the project, along with 
- *    dependencies that are only needed by them.
+ * @description Removes packages from a project, along with any
+ *    dependencies that only they need.
  *
  *   zuri uninstall <package...> [options]
  *
@@ -25,26 +25,26 @@ import .._shared.ui
 def parser() {
   var parser = args.Parser('zuri uninstall', true)
 
-  parser.description = 'Removes packages from the project, along with dependencies that are only needed by them.'
+  parser.description = 'Removes packages from a project, along with any dependencies that only they need.'
 
   parser.add_index('packages', 'The packages to remove', {
     type: args.LIST,
     metavar: 'package',
     required: true,
   })
-  parser.add_option('global', 'Remove from this user rather than the project', {
+  parser.add_option('global', 'Remove the packages from your user instead of the project', {
     short_name: 'g',
   })
-  parser.add_option('dry-run', 'Show what would change and change nothing', {
+  parser.add_option('dry-run', 'Show what would change without changing anything', {
     short_name: 'n',
   })
-  parser.add_option('no-hooks', 'Run no uninstall scripts at all', nil)
+  parser.add_option('no-hooks', 'Don\'t run any uninstall scripts', nil)
   parser.add_option(
     'allow-hooks',
-    'Let these packages run their scripts this time',
+    'Allow these packages to run their scripts this time',
     { type: args.LIST, metavar: 'package' },
   )
-  parser.add_option('quiet', 'Print only the result', { short_name: 'q' })
+  parser.add_option('quiet', 'Only print the result', { short_name: 'q' })
 
   return parser
 }

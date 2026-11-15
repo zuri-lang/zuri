@@ -1,6 +1,6 @@
 /**
  * @command migrate
- * @description Applies, rolls back and reports database migrations.
+ * @description Applies, rolls back and lists database migrations.
  *
  *   zuri migrate [up | status | down | reset | new <name>...] [options]
  *

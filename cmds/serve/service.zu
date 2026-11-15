@@ -211,7 +211,7 @@ def publish(nyssa, token: dict, data: bytes, metadata: dict, address: string) {
     raise ServiceError(
       422,
       'bad_archive',
-      'the archive holds no project.toml at its root',
+      'the archive doesn\'t have a project.toml at its root',
     )
   }
 

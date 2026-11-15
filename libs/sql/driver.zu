@@ -1,25 +1,28 @@
 /**
  * @module driver
  *
- * The contract every database adapter implements, and the capability
- * flags that let one adapter differ from another without the code
- * above them having to know which is in use.
+ * The interface that every database adapter implements, and the
+ * capability flags that let adapters differ without the code above them
+ * having to know which one is in use.
  *
- * An adapter supplies four things: a `Driver` that knows how to read a
- * connection string and open a connection, a `DriverConnection` that
- * runs statements, a `DriverStatement` for a prepared one, and a
- * `DriverCursor` for reading a result a batch at a time. Everything a
- * program touches directly is built on top of these, so an adapter
- * that implements them gets pooling, transactions, the CRUD helpers,
- * placeholder translation and the error hierarchy without writing any
- * of it.
+ * An adapter supplies four classes:
  *
- * The methods here raise `NotImplementedError`. An adapter that
- * forgets one fails where the gap is rather than somewhere further
- * down, and an adapter for an engine that genuinely cannot do
- * something raises `NotSupportedError` from its own override instead,
- * which reads differently on purpose: the first is an unfinished
- * adapter, the second is an honest limit of the engine.
+ * - A `Driver`, which reads a connection string and opens a connection.
+ * - A `DriverConnection`, which runs statements.
+ * - A `DriverStatement`, for a prepared statement.
+ * - A `DriverCursor`, for reading a result a batch at a time.
+ *
+ * Everything a program uses directly is built on these, so an adapter
+ * that implements them gets connection pooling, transactions, the CRUD
+ * helpers, placeholder translation and the error classes without
+ * writing any of them.
+ *
+ * The methods here raise `NotImplementedError`, so an adapter that's
+ * missing one fails at the missing method, not somewhere further on. An
+ * adapter for an engine that really can't do something should raise
+ * `NotSupportedError` from its own override instead. The two errors
+ * mean different things: the first means the adapter is unfinished, and
+ * the second means the engine has a limitation.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

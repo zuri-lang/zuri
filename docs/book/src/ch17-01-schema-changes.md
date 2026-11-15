@@ -1,26 +1,25 @@
 # Changing the Schema
 
-`db.schema` reports what is in a database, and it changes it too. A
-table is described once, in Zuri, on a `Blueprint`, and the adapter
-turns the description into its own engine's statements. The same
-description creates the same table on SQLite, PostgreSQL, MySQL and
-MariaDB.
+`db.schema` can change a database as well as describe it. You describe a
+table once, in Zuri, using a `Blueprint`, and the adapter turns that
+description into the right statements for its engine. The same description
+creates the same table on SQLite, PostgreSQL, MySQL and MariaDB.
 
 - [Creating a Table](#creating-a-table)
 - [Column Types](#column-types)
-- [Columns Are Required by default](#columns-are-required-by-default)
+- [Columns Are Required by Default](#columns-are-required-by-default)
 - [Keys and Indexes](#keys-and-indexes)
 - [Changing a Table](#changing-a-table)
-- [Renaming and Dropping](#renaming-and-dropping)
-- [How a Change Runs](#how-a-change-runs)
-- [SQLite Builds a Table Again](#sqlite-builds-a-table-again)
-- [Engine Specific SQL](#engine-specific-sql)
+- [Renaming and Dropping Tables](#renaming-and-dropping-tables)
+- [How Changes Are Applied](#how-changes-are-applied)
+- [How SQLite Rebuilds a Table](#how-sqlite-rebuilds-a-table)
+- [SQL for a Specific Engine](#sql-for-a-specific-engine)
 
 ## Creating a Table
 
-`create_table()` hands its body a `Blueprint`, and creates the table
-once the body returns. Written with its type, as below, the body's
-`table` is one an editor completes the blueprint's methods on:
+`create_table()` passes a `Blueprint` to its body, and creates the table
+when the body returns. If you annotate the body's `table` parameter with its
+type, as below, your editor can complete the blueprint's methods:
 
 ```zuri
 import sql
@@ -57,19 +56,18 @@ db.close()
 authors
 ```
 
-Every column method returns the column, and every modifier returns it
-again, so a column is described in one chain. `timestamps()` adds
-`created_at` and `updated_at`, each defaulting to the moment a row is
-inserted.
+Every column method returns the column, and so does every modifier, so you
+can describe a column in a single chain. `timestamps()` adds `created_at`
+and `updated_at` columns, each defaulting to the time the row was inserted.
 
-`{ if_not_exists: true }` as a third argument leaves a table that is
-already there exactly as it is, indexes included. It is what a library
-creating its own table on every start passes.
+If you pass `{ if_not_exists: true }` as a third argument, a table that
+already exists is left exactly as it is, indexes included. A library that
+creates its own table every time it starts would pass this.
 
 ## Column Types
 
-Each type is the same kind of value on every engine, stored the way
-that engine stores it best:
+Each type holds the same kind of value on every engine, stored in whatever
+way suits that engine best:
 
 | Method | SQLite | PostgreSQL | MySQL and MariaDB |
 | --- | --- | --- | --- |
@@ -89,14 +87,14 @@ that engine stores it best:
 | `json(name)` | `json` | `jsonb` | `json` |
 | `uuid(name)` | `char(36)` | `uuid` | `char(36)` |
 
-`string()` is 255 characters when no length is given. An `id()` is
-never handed out twice, even after the row holding the highest one is
-deleted. A `decimal()` on SQLite holds at most fifteen significant
-digits, the most a double keeps exactly, and a larger precision is
-refused there with `NotSupportedError`. `references(name, table)` is a
-big integer referring to another table's `id()`, with its foreign key.
+`string()` has a length of 255 characters if you don't specify one. An
+`id()` value is never reused, even after the row with the highest ID is
+deleted. On SQLite, a `decimal()` can hold at most 15 significant digits,
+which is the most a double can store exactly, and a larger precision raises
+`NotSupportedError` there. `references(name, table)` creates a big integer
+column that refers to another table's `id()`, along with its foreign key.
 
-The modifiers:
+The modifiers are:
 
 ```zuri,ignore
 table.string('slug', 120).nullable() # may hold null
@@ -111,18 +109,19 @@ table.string('username', 40).exact() # compared byte for byte
 table.uuid('owner_id').references('users', 'id').on_delete('set null')
 ```
 
-`exact()` makes a text column compare byte for byte on every engine:
-`'Ada'` and `'ada'` are two values, and so are `'é'` and `'e'`. SQLite
-compares that way already; PostgreSQL is given the `"C"` collation and
-MySQL and MariaDB `utf8mb4_bin`, whose default collations treat case,
-and on MySQL accents, as the same. A column holding a key, where two
-values differing only in case must not collide, wants it.
+`exact()` makes a text column compare values byte by byte on every engine,
+so `'Ada'` and `'ada'` are different values, and so are `'é'` and `'e'`.
+SQLite already compares this way. On PostgreSQL, the column gets the `"C"`
+collation, and on MySQL and MariaDB, `utf8mb4_bin`, because their default
+collations treat uppercase and lowercase letters as equal, and on MySQL,
+accented and unaccented letters too. Use it for a column that holds keys,
+where two values that only differ in case must not clash.
 
-## Columns Are Required by default
+## Columns Are Required by Default
 
-Every column is `NOT NULL` until `nullable()` says it may hold nothing.
-A value a program forgot is then an error the database reports, rather
-than a null nobody meant to store:
+Every column is `NOT NULL` unless you call `nullable()`. That way, if a
+program forgets to provide a value, the database reports an error instead of
+storing a null that nobody intended:
 
 ```zuri
 import sql
@@ -153,8 +152,8 @@ NotNullViolation
 
 ## Keys and Indexes
 
-A key or index on one column is a modifier on it. One spanning several
-columns is declared on the table:
+A key or index on a single column is a modifier on that column. A key or
+index on several columns is declared on the table:
 
 ```zuri,ignore
 table.primary(['order_id', 'line'])
@@ -165,27 +164,28 @@ table
     .on_delete('cascade')
 ```
 
-Indexes, unique indexes and foreign keys are named for their table and
-columns: `posts_author_id_index`, `posts_slug_unique`,
-`posts_author_id_foreign`. A second argument names one otherwise. Since
-the name is known, an index is dropped by its columns as readily as by
-its name. A name past 63 characters, the longest PostgreSQL keeps, is
-shortened and finished with a hash of the whole, so it stays unique.
+Indexes, unique indexes and foreign keys are named after their table and
+columns, such as `posts_author_id_index`, `posts_slug_unique` and
+`posts_author_id_foreign`. You can pass a second argument to choose a
+different name. Because the name is predictable, you can drop an index by
+its columns just as easily as by its name. A name longer than 63 characters,
+which is the longest PostgreSQL allows, is shortened and ends with a hash of
+the full name, so it stays unique.
 
 Foreign keys are always written as table constraints. MySQL parses a
-`references` clause written on a column and then ignores it, so a key
-declared that way exists on the other engines and not there; declared
-on the table, it exists on every one.
+`references` clause on a column and then ignores it, so a key declared that
+way would exist on the other engines but not on MySQL. Declared on the
+table, it exists on every engine.
 
-The actions a foreign key takes when the row it refers to is deleted or
-has its key changed are `'cascade'`, `'restrict'`, `'set null'`,
-`'set default'` and `'no action'`, the last being what a key does when
-it names none.
+The actions a foreign key can take when the row it refers to is deleted, or
+has its key changed, are `'cascade'`, `'restrict'`, `'set null'`,
+`'set default'` and `'no action'`. The last one is what a key does if you
+don't specify an action.
 
 ## Changing a Table
 
-`alter_table()` describes changes on a blueprint and makes them in the
-order they were described:
+`alter_table()` describes changes on a blueprint and applies them in the
+order you describe them:
 
 ```zuri
 import sql
@@ -220,13 +220,13 @@ db.close()
 {id: 1, title: On Engines, content: Notes., slug: nil}
 ```
 
-A column described in `alter_table()` is added. `change()` turns the
-description into a change to a column that exists: it takes the type,
-nullability, default and comparison described, whatever it had before,
-so a column is declared in full, `nullable()` included where it
-applies. Its indexes stay as they are.
+A column described in `alter_table()` is added to the table. `change()`
+turns the description into a change to an existing column instead. The
+column takes the type, nullability, default and comparison you describe,
+whatever it had before, so you need to describe the column in full,
+including `nullable()` where it applies. The column's indexes are kept.
 
-The rest of what an alteration can say:
+Here's what else an alteration can do:
 
 ```zuri,ignore
 table.rename_column('body', 'content')
@@ -237,12 +237,13 @@ table.drop_foreign(['author_id'])
 table.drop_primary()
 ```
 
-Dropping a column drops every index, unique index and key it is part
-of, on every engine. A required column with no default can only be
-added to a table with no rows, since there is nothing to fill them
-with; on a table with rows the engine reports `NotNullViolation`.
+Dropping a column also drops every index, unique index and key that it's
+part of, on every engine. A required column without a default can only be
+added to an empty table, because there'd be nothing to fill the existing
+rows with. On a table that has rows, the engine reports a
+`NotNullViolation`.
 
-## Renaming and Dropping
+## Renaming and Dropping Tables
 
 ```zuri,ignore
 db.schema.rename_table('posts', 'articles')
@@ -250,10 +251,10 @@ db.schema.drop_table('articles')
 db.schema.drop_table('articles', { if_exists: true })
 ```
 
-A renamed table keeps its indexes under the names they had, and foreign
-keys referring to it follow it. A table another one refers to through a
-foreign key is refused, on every engine, rather than taking the rows
-that refer to it along with it:
+A renamed table keeps its indexes under their existing names, and foreign
+keys that refer to it are updated to follow it. If another table refers to a
+table through a foreign key, dropping it is rejected on every engine,
+instead of deleting the rows that refer to it as well:
 
 ```zuri
 import sql
@@ -288,16 +289,17 @@ QueryError
 []
 ```
 
-## How a Change Runs
+## How Changes Are Applied
 
-A change made with no transaction open runs as a whole. On SQLite and
-PostgreSQL that means a transaction of its own, so an alteration whose
-third step fails leaves the first two undone with it. MySQL and MariaDB
-commit at every statement that changes a table's definition, whatever
-transaction is open, so there each statement stands once it has run.
+A change made outside a transaction is applied as a single unit. On SQLite
+and PostgreSQL, that means it runs in a transaction of its own, so if the
+third step of an alteration fails, the first two are undone as well. MySQL
+and MariaDB commit every statement that changes a table's definition,
+whatever transaction is open, so on those engines each statement is
+permanent once it has run.
 
-A change made inside a transaction runs in it, as part of it, and is
-rolled back with it on the engines that can:
+A change made inside a transaction becomes part of it, and on engines that
+support it, it's rolled back along with the transaction:
 
 ```zuri
 import sql
@@ -328,28 +330,28 @@ db.close()
 [id]
 ```
 
-## SQLite Builds a Table Again
+## How SQLite Rebuilds a Table
 
-SQLite's `ALTER TABLE` adds and renames columns and very little else.
-For anything more, changing a column, adding or dropping a key, dropping
-a column an index or key uses, the adapter does what SQLite's own
-documentation lays out: it builds a new table with the changed
-definition, copies the rows across, drops the old table and renames the
-new one into its place, then puts back the indexes and triggers and
-carries over the sequence behind the `id()`. The new definition is the
-old one with only the changed parts rewritten, read from the table's
-own `create table` text, so whatever else it declared, checks and
-collations included, comes through as it was.
+SQLite's `ALTER TABLE` can add and rename columns, but not much else. For
+anything more, such as changing a column, adding or dropping a key, or
+dropping a column that an index or key uses, the adapter follows the
+procedure in SQLite's own documentation. It creates a new table with the
+changed definition, copies the rows across, drops the old table and renames
+the new one to take its place. It then recreates the indexes and triggers
+and carries over the sequence behind the `id()` column. The new definition
+is based on the table's own `create table` statement, with only the changed
+parts rewritten, so everything else it declared, including checks and
+collations, is kept.
 
-Dropping the old table deletes from it first, and with foreign keys
-enforced, that delete runs the `on delete` of every table referring to
-it: a rebuild with them on would take every referring row with it. So
-a rebuild runs only with enforcement switched off, which SQLite allows
-only outside a transaction. A change made with no transaction open
-switches it off around itself, and checks every foreign key before it
-commits; `sql.migrate` does the same around every migration. A rebuild
-asked for inside a transaction while foreign keys are on raises
-`NotSupportedError` rather than risk the rows:
+Dropping the old table deletes its rows first, and when foreign keys are
+enforced, that delete triggers the `on delete` action of every table that
+refers to it. With enforcement on, a rebuild would therefore delete every
+row that refers to the table. So a rebuild only runs with enforcement turned
+off, which SQLite only allows outside a transaction. A change made outside a
+transaction turns enforcement off for its own duration, and checks every
+foreign key before it commits, and `sql.migrate` does the same for every
+migration. A rebuild requested inside a transaction while foreign keys are
+enforced raises a `NotSupportedError` instead of putting the rows at risk:
 
 ```zuri
 import sql
@@ -395,11 +397,11 @@ db.close()
 NotSupportedError
 ```
 
-## Engine Specific SQL
+## SQL for a Specific Engine
 
-A blueprint covers what every engine can do. For a feature only one
-engine has, a PostgreSQL extension, a partial index, the statement is
-written as SQL and run where it applies:
+A blueprint covers what every engine can do. For a feature that only one
+engine has, such as a PostgreSQL extension or a partial index, write the
+statement in SQL and run it where it applies:
 
 ```zuri,ignore
 if db.driver_name() == 'postgres' {
@@ -407,5 +409,5 @@ if db.driver_name() == 'postgres' {
 }
 ```
 
-Statements run this way are a part of the same change, transaction and
-all, as the blueprint's.
+Statements run this way are part of the same change as the blueprint's
+statements, including its transaction.

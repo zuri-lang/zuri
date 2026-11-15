@@ -1,8 +1,9 @@
 # Binary Data and Streams
 
-Text is convenient. Protocols, file formats, images and checksums are not
-text, and this chapter is about the four tools Zuri gives you for them:
-the `bytes` type, the `struct` module, `io.BytesIO`, and `compress`.
+Text is easy to work with, but protocols, file formats, images and checksums
+aren't text. This chapter covers the four tools Zuri provides for working
+with binary data: the `bytes` type, the `struct` module, `io.BytesIO` and
+the `compress` module.
 
 ## The `bytes` Type
 
@@ -24,14 +25,14 @@ echo d
 (48 69)
 ```
 
-`bytes(n)` allocates `n` zero bytes. `bytes(list)` builds one from numbers,
-each of which must be in `0..256`. `to_bytes()` on a string gives you its
-UTF-8 encoding.
+`bytes(n)` creates a buffer of `n` zero bytes. `bytes(list)` creates one
+from a list of numbers, each between 0 and 255. Calling `to_bytes()` on a
+string gives you its UTF-8 encoding.
 
-The hexadecimal-in-parentheses rendering is how `bytes` always prints,
-which makes it impossible to confuse one with a list at a glance.
+Bytes are always printed as hexadecimal values in parentheses, so you can't
+mistake them for a list.
 
-### Reading
+### Reading Bytes
 
 ```zuri
 var b = bytes([1, 2, 3, 4, 5])
@@ -61,17 +62,18 @@ echo 'Hi'.to_bytes().to_string()
 Hi
 ```
 
-Indexing gives a **number**. Slicing gives `bytes`. `to_string()` decodes
-as UTF-8, `to_list()` gives numbers.
+Indexing gives you a **number**, and slicing gives you `bytes`.
+`to_string()` decodes the bytes as UTF-8, and `to_list()` returns them as a
+list of numbers.
 
-`index_of()` and `last_index_of()` both return `-1` when the byte is not
-there, and both take a second argument bounding where a match may sit,
-so they search the two halves either side of one index.
+`index_of()` and `last_index_of()` both return `-1` if the byte isn't found,
+and both take a second argument that limits where a match can be, so you can
+search either side of a given index.
 
 ### Slicing
 
-`b[a, b]` takes the bytes from `a` up to but **not including** `b`, and
-returns a new byte stream:
+`b[a, b]` returns a new byte buffer with the bytes from `a` up to but **not
+including** `b`:
 
 ```zuri
 var b = bytes([10, 20, 30, 40, 50])
@@ -89,12 +91,12 @@ echo b[-2,]
 (28 32)
 ```
 
-The rules are exactly the list's. Either bound may be omitted: `b[, n]`
-starts at the beginning and `b[n, ]` runs to the end. Negative bounds count
-back from the end, so `b[-2, ]` is the last two bytes.
+The rules are the same as for lists. You can leave out either bound:
+`b[, n]` starts at the beginning, and `b[n, ]` goes to the end. Negative
+bounds count back from the end, so `b[-2, ]` is the last two bytes.
 
-Note the difference between an index and a slice, because for `bytes` the
-two return **different types**:
+Be careful with the difference between indexing and slicing, because for
+`bytes` they return **different types**:
 
 ```zuri
 var b = bytes([10, 20, 30])
@@ -112,14 +114,16 @@ number
 bytes
 ```
 
-One index gives you the numeric value of that byte. A slice of length one
-gives you a byte stream containing it. Reaching for `b[0]` when you meant
-`b[0, 1]` is the most common slip here, and it shows up as a `number` where
-a `bytes` was expected rather than as an error at the slicing site.
+An index gives you the numeric value of a single byte, while a slice of
+length one gives you a byte buffer that contains that byte. Writing `b[0]`
+when you meant `b[0, 1]` is the most common mistake here, and instead of an
+error where you slice, it shows up later as a `number` where `bytes` was
+expected.
 
-#### Bounds Are Checked
+#### Slices Check Their Bounds
 
-A slice that runs past the end raises rather than returning what it can:
+A slice that goes past the end raises an error instead of returning as much
+as it can:
 
 ```zuri
 var b = bytes([10, 20, 30, 40, 50])
@@ -135,8 +139,8 @@ catch {
 RangeError: slice bounds 1..99 out of range (length 5)
 ```
 
-`length()` itself is always a legal upper bound, because the bound is
-exclusive, and an empty slice is legal rather than an error:
+Because the upper bound is exclusive, `length()` itself is always a valid
+upper bound, and an empty slice is allowed:
 
 ```zuri
 var b = bytes([10, 20, 30, 40, 50])
@@ -152,11 +156,11 @@ echo b[2, 2].is_empty()
 true
 ```
 
-An empty byte stream prints as `()`.
+An empty byte buffer is printed as `()`.
 
-#### A Slice Is a Copy
+#### Slices Are Copies
 
-Slicing allocates a new stream, so writing through one does not disturb the
+Slicing creates a new buffer, so writing to the slice doesn't change the
 original:
 
 ```zuri
@@ -174,15 +178,16 @@ echo part
 (63 14)
 ```
 
-That matters when you are parsing a buffer. Pulling a header out with
-`frame[0, 4]` gives you something you can modify freely, and the frame you
-are still reading from is untouched. It also means slicing in a loop copies
-every time, so a parser that walks a large buffer should carry an offset
-and slice once per field rather than re-slicing the remainder each step.
+This matters when you're parsing a buffer. If you take a header out with
+`frame[0, 4]`, you can change it freely, and the frame you're reading from
+stays the same. It also means that slicing in a loop makes a copy every
+time. A parser that works through a large buffer should keep track of an
+offset and slice each field once, rather than slicing off the rest of the
+buffer at every step.
 
-#### Slice, Then Decode
+#### Slicing Before Decoding
 
-The common shape when a buffer holds text with a known extent:
+This is the usual approach when a buffer contains text of a known length:
 
 ```zuri
 var b = bytes([72, 101, 108, 108, 111, 33])
@@ -196,14 +201,14 @@ Hello
 Hello!
 ```
 
-`to_string()` decodes the whole stream it is called on, so the slice is
-what limits the extent. Slicing on a byte boundary in the middle of a
-multi-byte character produces a stream that is not valid UTF-8; decode
-whole units, or keep the tail for the next read.
+`to_string()` decodes the entire buffer it's called on, so the slice is what
+limits how much is decoded. If you slice in the middle of a multi-byte
+character, the result isn't valid UTF-8. Decode whole characters, or keep
+the leftover bytes for the next read.
 
-#### There Is No Slice Assignment
+#### Slices Can't Be Assigned To
 
-A slice can be read but not written to:
+You can read a slice, but you can't write to one:
 
 ```zuri,ignore
 var b = bytes([10, 20, 30])
@@ -215,8 +220,8 @@ b[0, 2] = bytes([1, 1])
 SyntaxError: invalid assignment target
 ```
 
-Assign to one index at a time, or rebuild the stream with `extend()`. A
-single index does accept assignment, and the value has to be a real byte:
+Assign one index at a time instead, or rebuild the buffer with `extend()`.
+You can assign to a single index, and the value must be a valid byte:
 
 ```zuri
 var b = bytes([72, 101, 108, 108, 111, 33])
@@ -237,10 +242,11 @@ Jello!
 NumericError: bytes element must be an integer in 0..=255, got 300
 ```
 
-Note the difference from `bytes([300])`, which wraps rather than raising.
-Construction is lenient; assignment is not.
+This is different from `bytes([300])`, which wraps the value around instead
+of raising an error. Creating a buffer is lenient, but assigning to one
+isn't.
 
-### Writing
+### Changing Bytes
 
 ```zuri
 var b = bytes([1, 2, 3])
@@ -258,14 +264,14 @@ echo b.reverse()
 (04 03 02 01)
 ```
 
-Unlike a list, `bytes.reverse()` **mutates in place**. So do `append`,
-`extend`, `pop` and `remove`.
+Unlike `reverse()` on a list, `bytes.reverse()` **changes the buffer in
+place**. So do `append`, `extend`, `pop` and `remove`.
 
-`dispose()` releases the buffer's memory immediately rather than waiting
-for the collector, which matters when you have just finished with something
-very large.
+`dispose()` frees the buffer's memory immediately instead of waiting for the
+garbage collector, which can be useful when you've just finished with a very
+large buffer.
 
-### Splitting
+### Splitting Bytes
 
 `split()` takes a `bytes` delimiter, not a number:
 
@@ -277,11 +283,11 @@ echo bytes([1, 2, 3, 4, 5]).split(bytes([3]))
 [(01 02), (04 05)]
 ```
 
-### Walking
+### Iterating Over Bytes
 
-A byte stream is iterable, and every form that works on a list works here.
-What you get out is always a **number** between 0 and 255, never a
-one-character string.
+A byte buffer is iterable, and every form of iteration that works with lists
+also works here. Each value you get is always a **number** between 0 and
+255, never a one-character string.
 
 ```zuri
 var b = bytes([72, 105])
@@ -296,7 +302,7 @@ for value in b {
 105
 ```
 
-Two variables give you the index first and the value second:
+With two variables, you get the index first and the value second:
 
 ```zuri
 var b = bytes([72, 105])
@@ -311,9 +317,9 @@ for index, value in b {
 1: 105
 ```
 
-`iter` is the form to use when you are decoding a structure and the
-position drives the walk — reading a two-byte length, then skipping that
-many bytes, then reading the next field:
+Use `iter` when you're decoding a structure and the position determines what
+comes next, for example when you read a two-byte length, skip that many
+bytes, and then read the next field:
 
 ```zuri
 var b = bytes([72, 105, 33])
@@ -328,8 +334,8 @@ iter var i = 0; i < b.length(); i += 2 {
 2: 33
 ```
 
-And `each()` takes a function, with the **value first and the index
-second** as everywhere else:
+`each()` takes a function, which receives the **value first and the index
+second**, as it does everywhere else:
 
 ```zuri
 bytes([72, 105]).each(@(value, index) {
@@ -342,14 +348,14 @@ bytes([72, 105]).each(@(value, index) {
 1=105
 ```
 
-When you want the characters rather than the numbers, convert first:
-`b.to_string()` decodes the whole stream as UTF-8, and `b.to_list()` gives
+If you want characters rather than numbers, convert the buffer first.
+`b.to_string()` decodes the whole buffer as UTF-8, and `b.to_list()` gives
 you the numbers as an ordinary list.
 
 ## Binary Files
 
-Append `b` to the file mode and reads give you `bytes` instead of a string,
-and writes accept `bytes`:
+Add `b` to the file mode to read the file as `bytes` instead of a string.
+Writes then accept `bytes` too:
 
 ```zuri
 var out = file('data.bin', 'wb')
@@ -363,14 +369,15 @@ echo file('data.bin', 'rb').read()
 (01 02 03)
 ```
 
-Reading a non-UTF-8 file without the `b` fails rather than silently
-producing replacement characters, which is the behaviour you want: a
-decoding failure is information.
+Reading a file that isn't valid UTF-8 without the `b` raises an error
+instead of silently inserting replacement characters. That's the behavior
+you want, because a decoding failure tells you something.
 
 ## `struct`: Packing and Unpacking
 
 `struct` converts between Zuri values and a fixed binary layout. A format
-string is a sequence of `/`-separated fields, each `CODE[COUNT][:NAME]`.
+string is a series of fields separated by `/`, each written as
+`CODE[COUNT][:NAME]`.
 
 ```zuri
 import struct
@@ -394,8 +401,8 @@ echo struct.unpack('N:magic/n:version/Z8:name/C:flags', header)
 {magic: 1515541065, version: 1, name: task, flags: 3}
 ```
 
-`unpack()` hands back a dictionary keyed by the `:NAME` you gave each
-field. Fields with no name get numbered:
+`unpack()` returns a dictionary, using the `:NAME` you gave each field as
+its key. Fields without a name are numbered:
 
 ```zuri
 echo struct.unpack('N/N', struct.pack('N2', 7, 8))
@@ -405,7 +412,7 @@ echo struct.unpack('N/N', struct.pack('N2', 7, 8))
 {1: 7, 2: 8}
 ```
 
-A count greater than one under a single name numbers the keys:
+When a single name has a count greater than one, the keys are numbered:
 
 ```zuri
 echo struct.unpack('n3:vals', struct.pack('n3', 1, 2, 3))
@@ -415,71 +422,73 @@ echo struct.unpack('n3:vals', struct.pack('n3', 1, 2, 3))
 {vals1: 1, vals2: 2, vals3: 3}
 ```
 
-### The Format Codes
+### Format Codes
 
 Strings:
 
 | Code | Size | Meaning |
 | --- | --- | --- |
-| `a` | count | NUL-padded string |
-| `A` | count | space-padded string |
-| `Z` | count | NUL-padded and NUL-terminated, like C |
-| `h` / `H` | ceil(count/2) | hex string, low or high nibble first |
+| `a` | count | String padded with NUL bytes |
+| `A` | count | String padded with spaces |
+| `Z` | count | String padded with NUL bytes and NUL-terminated, as in C |
+| `h` / `H` | ceil(count/2) | Hex string, low or high nibble first |
 
-Integers. The letter tells you the width and the byte order:
-
-| Code | Size | Meaning |
-| --- | --- | --- |
-| `c` / `C` | 1 | signed / unsigned 8-bit |
-| `?` | 1 | boolean |
-| `s` / `S` | 2 | signed / unsigned 16-bit, native order |
-| `n` / `v` | 2 | unsigned 16-bit, big- / little-endian |
-| `i` `l` / `I` `L` | 4 | signed / unsigned 32-bit, native order |
-| `N` / `V` | 4 | unsigned 32-bit, big- / little-endian |
-| `q` / `Q` | 8 | signed / unsigned 64-bit, native order |
-| `J` / `P` | 8 | unsigned 64-bit, big- / little-endian |
-| `u` / `U` | 16 | signed / unsigned 128-bit, little-endian |
-
-Floats:
+Integers. The letter determines the width and the byte order:
 
 | Code | Size | Meaning |
 | --- | --- | --- |
-| `f` / `g` / `G` | 4 | float: native / little / big endian |
-| `d` / `e` / `E` | 8 | double: native / little / big endian |
-| `w` / `W` | 2 | half-precision: little / big endian |
+| `c` / `C` | 1 | Signed / unsigned 8-bit |
+| `?` | 1 | Boolean |
+| `s` / `S` | 2 | Signed / unsigned 16-bit, native byte order |
+| `n` / `v` | 2 | Unsigned 16-bit, big endian / little endian |
+| `i` `l` / `I` `L` | 4 | Signed / unsigned 32-bit, native byte order |
+| `N` / `V` | 4 | Unsigned 32-bit, big endian / little endian |
+| `q` / `Q` | 8 | Signed / unsigned 64-bit, native byte order |
+| `J` / `P` | 8 | Unsigned 64-bit, big endian / little endian |
+| `u` / `U` | 16 | Signed / unsigned 128-bit, little endian |
+
+Floating-point numbers:
+
+| Code | Size | Meaning |
+| --- | --- | --- |
+| `f` / `g` / `G` | 4 | Float: native / little endian / big endian |
+| `d` / `e` / `E` | 8 | Double: native / little endian / big endian |
+| `w` / `W` | 2 | Half precision: little endian / big endian |
 
 Padding:
 
 | Code | Meaning |
 | --- | --- |
-| `x` | write `count` NUL bytes, consumes no argument |
-| `X` | back up `count` bytes |
-| `@` | seek to absolute position `count` |
+| `x` | Writes `count` NUL bytes without using an argument |
+| `X` | Moves back `count` bytes |
+| `@` | Moves to the absolute position `count` |
 
-`n`, `N` and `J` are the network-order codes, which is what you want for
-almost every wire protocol.
+`n`, `N` and `J` use network byte order, which is what almost every network
+protocol needs.
 
-A count of `*` means "the rest".
+A count of `*` means "all of the rest".
 
 ### Precision
 
-Zuri numbers are doubles, so they hold integers exactly only up to 2^53.
-Every 64-bit and 128-bit code (`q`, `Q`, `J`, `P`, `u`, `U`) automatically
-produces a **bigint** when the unpacked value falls outside that range,
-rather than quietly losing digits. Packing accepts either.
+Zuri numbers are doubles, so they can only represent integers exactly up to
+2^53. All of the 64-bit and 128-bit codes (`q`, `Q`, `J`, `P`, `u` and `U`)
+automatically return a **bigint** when the unpacked value is outside that
+range, instead of silently losing digits. When packing, they accept either a
+number or a bigint.
 
-### The Rest of the Module
+### Other Functions
 
-`calcsize(format)` gives the fixed byte size of a format with no `*` in it.
-`pack_into(buffer, offset, format, ...)` and `unpack_from(format, buffer,
-offset)` work on an existing buffer at a position, which is how you build
-one large frame without allocating and concatenating per field.
+`calcsize(format)` returns the size in bytes of a format that doesn't
+contain `*`. `pack_into(buffer, offset, format, ...)` and
+`unpack_from(format, buffer, offset)` work on an existing buffer at a given
+position, which lets you build one large frame without creating and
+concatenating a new buffer for each field.
 
 ## `io.BytesIO`
 
-`BytesIO` is a file-shaped object backed by memory. It implements the same
-interface `file()` handles do, which means anything that takes a file takes
-a `BytesIO` too:
+`BytesIO` is a file-like object stored in memory. It has the same interface
+as the handles returned by `file()`, so anything that accepts a file also
+accepts a `BytesIO`:
 
 ```zuri
 import io
@@ -496,18 +505,19 @@ echo buffer.source.to_string()
 hello world
 ```
 
-The constructor takes a `bytes` source and a mode. It has `read`, `gets`,
-`write`, `puts`, `seek`, `tell`, `flush`, `close` and `stats`, so a
-function written against files needs no changes to work in memory.
+The constructor takes a `bytes` value to start from and a mode. `BytesIO`
+has `read`, `gets`, `write`, `puts`, `seek`, `tell`, `flush`, `close` and
+`stats`, so a function written for files works in memory without any
+changes.
 
-That is the useful part: test a function that writes a file without
-touching the disk, and parse an in-memory buffer with code written for a
-stream.
+This is where it's useful. You can test a function that writes a file
+without touching the disk, and you can parse an in-memory buffer with code
+that was written for streams.
 
 ## Compression
 
-The `compress` module has a submodule per format, each with `compress()`
-and `decompress()`:
+The `compress` module has a submodule for each format, and each submodule
+has `compress()` and `decompress()` functions:
 
 ```zuri
 import compress
@@ -533,9 +543,9 @@ echo compress.lz4.compress(raw).length()
 37
 ```
 
-The formats are `deflate`, `zlib`, `gzip`, `zstd`, `lz4`, `bzip2` and
-`brotli`. `zlib` is re-exported at the top level, so `compress()`
-and `compress.decompress()` are the zlib pair:
+The available formats are `deflate`, `zlib`, `gzip`, `zstd`, `lz4`, `bzip2`
+and `brotli`. `zlib` is also re-exported at the top level, so `compress()`
+and `compress.decompress()` use zlib:
 
 ```zuri
 echo compress.decompress(compress(raw)).to_string() == raw.to_string()
@@ -545,14 +555,14 @@ echo compress.decompress(compress(raw)).to_string() == raw.to_string()
 true
 ```
 
-Which to reach for: `gzip` when something else has to read it, `zstd` when
-you want the best ratio-to-speed trade, `lz4` when speed is the only thing
-that matters, `brotli` for text you will serve over HTTP.
+Use `gzip` when another program needs to read the data, `zstd` when you want
+the best balance of compression ratio and speed, `lz4` when speed is all
+that matters, and `brotli` for text that you'll serve over HTTP.
 
 ### Archives
 
 `compress.tar` and `compress.zip` read and write archives, and
-`compress.checksum` has `crc32()` and `adler32()`:
+`compress.checksum` provides `crc32()` and `adler32()`:
 
 ```zuri
 import compress
@@ -566,7 +576,7 @@ echo compress.checksum.crc32('hello'.to_bytes())
 
 ## Hashing and Encoding
 
-`base64` moves binary through text channels:
+`base64` lets you send binary data through channels that only accept text:
 
 ```zuri
 import base64
@@ -582,7 +592,7 @@ aGVsbG8=
 hello
 ```
 
-`hash` covers the digest algorithms:
+`hash` provides the digest algorithms:
 
 ```zuri
 import hash
@@ -596,22 +606,23 @@ echo hash.hmac_sha256('key', 'hello')
 9307b3b915efb5171ff14d8cb55fbcc798c6c0ef1456d66ded1a6aa723a58b7b
 ```
 
-Every function takes an optional final `as_bytes` argument; pass `true` to
+Each function takes an optional last argument, `as_bytes`. Pass `true` to
 get raw `bytes` instead of a hex string.
 
-The algorithms are md2, md4, md5, sha1, sha224, sha256, sha384, sha512, the
-sha3 family, shake128/256, blake2b512, blake2s256, ripemd160, whirlpool and
-gost, each with an `hmac_` counterpart, plus `pbkdf2()` for key derivation.
-`hash(algorithm, data)` selects by name at runtime.
+The available algorithms are md2, md4, md5, sha1, sha224, sha256, sha384,
+sha512, the sha3 family, shake128 and shake256, blake2b512, blake2s256,
+ripemd160, whirlpool and gost. Each one has an `hmac_` version as well, and
+there's also `pbkdf2()` for key derivation. `hash(algorithm, data)` lets you
+choose the algorithm by name at run time.
 
-For password storage, use `bcrypt` rather than any of these. A fast hash is
-the wrong tool for a password, and [Chapter 13](ch13-00-stdlib-tour.md)
-covers the right one.
+To store passwords, use `bcrypt` instead of any of these. A fast hash is the
+wrong tool for passwords, and [Chapter 13](ch13-00-stdlib-tour.md) covers
+the right one.
 
-## A Worked Example: A Length-Prefixed Frame
+## Example: A Length-Prefixed Frame
 
-Most binary protocols are a header followed by a payload. Here is the whole
-round trip:
+Most binary protocols consist of a header followed by a payload. Here's a
+complete round trip:
 
 ```zuri
 import struct
@@ -659,6 +670,6 @@ ping
 400
 ```
 
-`calcsize()` tells you where the header ends, slicing gives you the two
-halves, and the `compressed` flag is one byte because a protocol that has
-to guess is a protocol that breaks.
+`calcsize()` tells you where the header ends, slicing splits the frame in
+two, and the `compressed` flag takes up a byte of its own, so the receiver
+never has to guess whether the payload is compressed.

@@ -1,15 +1,16 @@
 /**
  * @module error
  *
- * `IsolateError`, kept in its own leaf module (no imports of its
- * own) so both `index` and `channel` can depend on it without a
- * circular import between them. Re-exported by `isolate`.
+ * Defines `IsolateError` and its subclasses. They're in a module of
+ * their own, with no imports, so that both `index` and `channel` can
+ * depend on them without importing each other. The `isolate` module
+ * re-exports them.
  */
 
 /**
- * Raised when an isolate's function raises an uncaught error, a
- * `Channel` operation fails, or a value cannot cross an isolate
- * boundary.
+ * Raised when an isolate's function raises an error that it doesn't
+ * catch, when a `Channel` operation fails, or when a value can't be
+ * passed to another isolate.
  */
 class IsolateError < Error {
   @new(message) {
@@ -19,9 +20,8 @@ class IsolateError < Error {
 }
 
 /**
- * Raised when `Isolate.join()`, `Channel.send()`, or
- * `Channel.recv()` is given a `timeout` and it elapses before
- * the operation completes.
+ * Raised when `Isolate.join()`, `Channel.send()` or `Channel.recv()` is
+ * given a `timeout` that passes before the operation completes.
  */
 class IsolateTimeoutError < IsolateError {
   @new(message) {
@@ -31,11 +31,11 @@ class IsolateTimeoutError < IsolateError {
 }
 
 /**
- * Raised from `Isolate.join()`, `Channel.send()`,
- * `Channel.recv()`, `isolate.wait_any()`, `isolate.wait_all()`,
- * or `isolate.select()` when the CALLING isolate; the one
- * blocked in that call, not whatever it was waiting on; is
- * `cancel()`ed while still waiting.
+ * Raised by `Isolate.join()`, `Channel.send()`, `Channel.recv()`,
+ * `isolate.wait_any()`, `isolate.wait_all()` or `isolate.select()` when
+ * the *calling* isolate, the one that's waiting in that call, is
+ * cancelled with `cancel()`. It isn't raised because of whatever the
+ * call was waiting for.
  */
 class IsolateCancelledError < IsolateError {
   @new(message) {

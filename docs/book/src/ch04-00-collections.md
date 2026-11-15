@@ -1,13 +1,13 @@
 # Text, Numbers and Collections
 
-Chapter 3 introduced the built-in types and showed what the operators do to
-them. This chapter is the working manual for the five you will reach for
-every day: strings, numbers, lists, dictionaries and ranges.
+Chapter 3 introduced the built-in types and showed how the operators work
+with them. This chapter goes into detail on the five types you'll use every
+day: strings, numbers, lists, dictionaries and ranges.
 
-One idea shapes all five. **Zuri puts behaviour on the value itself.**
-There is no `len(x)` and no `str.upper(x)`; there is `x.length()` and
-`x.upper()`. That holds for numbers too, which carry the whole of the
-mathematics library as methods:
+All five have one thing in common. **In Zuri, behavior belongs to the value
+itself.** Instead of `len(x)` or `str.upper(x)`, you write `x.length()` and
+`x.upper()`. This is true for numbers as well, and the math functions are
+all available as methods:
 
 ```zuri
 echo 'zuri'.upper()
@@ -23,8 +23,8 @@ ZURI
 ff
 ```
 
-Because the methods live on the value, they chain, and a chain reads left
-to right in the order the work happens:
+Because the methods are called on the value, you can chain them, and a chain
+reads from left to right in the order the work happens:
 
 ```zuri
 var line = '  Ada, Grace , Alan  '
@@ -36,7 +36,7 @@ echo line.trim().split(',').map(@(name) => name.trim()).length()
 3
 ```
 
-Each section here covers the methods worth knowing by name, the ones with a
-behaviour you would not guess, and the mistakes that come up most often.
-[Appendix E](appendix-05-type-methods.md) is the complete list, generated
-from the same documentation the runtime ships.
+Each section in this chapter covers the methods you should know by name, the
+ones whose behavior might surprise you, and the most common mistakes.
+[Appendix E](appendix-05-type-methods.md) has the complete list, generated
+from the same documentation that ships with the runtime.

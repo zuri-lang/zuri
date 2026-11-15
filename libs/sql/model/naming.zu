@@ -1,13 +1,13 @@
 /**
  * @module naming
  *
- * The names a model takes when it does not say otherwise.
+ * The names that a model uses when it doesn't specify its own.
  *
- * A model's table is its class name in snake case, made plural by the
- * regular rules of English: `Post` is `posts`, `BlogPost` is
- * `blog_posts`, `Category` is `categories` and `Address` is
- * `addresses`. A word that makes its plural any other way, `Person` to
- * `people`, says its table with `model.table()`.
+ * A model's table name is its class name in snake case, made plural
+ * with the regular rules of English: `Post` becomes `posts`, `BlogPost`
+ * becomes `blog_posts`, `Category` becomes `categories` and `Address`
+ * becomes `addresses`. For a word with an irregular plural, such as
+ * `Person` and `people`, give the table name with `model.table()`.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

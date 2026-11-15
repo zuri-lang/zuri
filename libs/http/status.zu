@@ -1,12 +1,12 @@
 /**
  * @module http.status
  *
- * The HTTP status codes registered with IANA, their canonical reason
- * phrases, and a handful of predicates for asking what class a code
- * belongs to.
+ * The HTTP status codes registered with IANA, their standard reason
+ * phrases, and a few functions for checking which class a code belongs
+ * to.
  *
- * The names are the constants; `reason()` turns a code into the
- * phrase a response line carries.
+ * Each status has a named constant, and `reason()` returns the reason
+ * phrase for a code:
  *
  * ```zuri
  * import http
@@ -33,7 +33,7 @@ var CONTINUE = 100
 
 /**
  * 101 Switching Protocols. The server has accepted an `Upgrade`
- * request; everything after the response head speaks the new
+ * request, and everything after the response head uses the new
  * protocol. This is how a WebSocket handshake completes.
  *
  * @type int
@@ -67,7 +67,8 @@ var EARLY_HINTS = 103
 var OK = 200
 
 /**
- * 201 Created. A new resource exists; `Location` names it.
+ * 201 Created. A new resource has been created, and `Location` gives
+ * its address.
  * @type int
  */
 var CREATED = 201
@@ -87,15 +88,16 @@ var ACCEPTED = 202
 var NON_AUTHORITATIVE_INFORMATION = 203
 
 /**
- * 204 No Content. Success, and deliberately no body. A response with
- * this status must never carry `Content-Length` or a body.
+ * 204 No Content. The request succeeded, and the response intentionally
+ * has no body. A response with this status must never include a
+ * `Content-Length` or a body.
  * @type int
  */
 var NO_CONTENT = 204
 
 /**
- * 205 Reset Content. Success; the client should reset the document
- * view that sent the request.
+ * 205 Reset Content. The request succeeded, and the client should reset
+ * the document view that sent it.
  * @type int
  */
 var RESET_CONTENT = 205
@@ -166,7 +168,7 @@ var SEE_OTHER = 303
 var NOT_MODIFIED = 304
 
 /**
- * 305 Use Proxy. Deprecated; clients are required to ignore it.
+ * 305 Use Proxy. Deprecated, and clients are required to ignore it.
  * @type int
  */
 var USE_PROXY = 305
@@ -190,8 +192,9 @@ var PERMANENT_REDIRECT = 308
 # ---------------------------------------------------------------------------
 
 /**
- * 400 Bad Request. The message could not be understood - malformed
- * syntax, invalid framing, a header the server refuses to guess at.
+ * 400 Bad Request. The message couldn't be understood, for example
+ * because of invalid syntax, invalid framing, or a header the server
+ * won't guess the meaning of.
  * @type int
  */
 var BAD_REQUEST = 400
@@ -210,8 +213,8 @@ var UNAUTHORIZED = 401
 var PAYMENT_REQUIRED = 402
 
 /**
- * 403 Forbidden. Understood and refused; re-authenticating won't
- * help. Use `401` when it would.
+ * 403 Forbidden. The request was understood but refused, and
+ * authenticating again won't help. Use `401` when it would.
  * @type int
  */
 var FORBIDDEN = 403
@@ -257,7 +260,7 @@ var REQUEST_TIMEOUT = 408
 var CONFLICT = 409
 
 /**
- * 410 Gone. Like `404`, but deliberately permanent.
+ * 410 Gone. Like `404`, but intentionally permanent.
  * @type int
  */
 var GONE = 410
@@ -310,8 +313,8 @@ var RANGE_NOT_SATISFIABLE = 416
 var EXPECTATION_FAILED = 417
 
 /**
- * 418 I'm a teapot (RFC 2324). Reserved, and not to be taken
- * seriously, but registered often enough to be worth naming.
+ * 418 I'm a teapot (RFC 2324). Reserved, and not meant to be taken
+ * seriously, but used often enough to be worth naming.
  * @type int
  */
 var IM_A_TEAPOT = 418
@@ -325,8 +328,9 @@ var IM_A_TEAPOT = 418
 var MISDIRECTED_REQUEST = 421
 
 /**
- * 422 Unprocessable Content. Syntactically fine, semantically
- * impossible - the usual answer to a validation failure.
+ * 422 Unprocessable Content. The request is syntactically valid but
+ * can't be processed. This is the usual response to a validation
+ * failure.
  * @type int
  */
 var UNPROCESSABLE_CONTENT = 422
@@ -365,8 +369,8 @@ var UPGRADE_REQUIRED = 426
 var PRECONDITION_REQUIRED = 428
 
 /**
- * 429 Too Many Requests (RFC 6585). Rate limited; `Retry-After` says
- * for how long.
+ * 429 Too Many Requests (RFC 6585). The client has been rate limited,
+ * and `Retry-After` says for how long.
  * @type int
  */
 var TOO_MANY_REQUESTS = 429
@@ -394,8 +398,9 @@ var UNAVAILABLE_FOR_LEGAL_REASONS = 451
 var INTERNAL_SERVER_ERROR = 500
 
 /**
- * 501 Not Implemented. The server does not recognise the method at
- * all - not to be confused with `405`, which is per-resource.
+ * 501 Not Implemented. The server doesn't recognize the method at all.
+ * Don't confuse this with `405`, which applies to a particular
+ * resource.
  * @type int
  */
 var NOT_IMPLEMENTED = 501
@@ -408,8 +413,8 @@ var NOT_IMPLEMENTED = 501
 var BAD_GATEWAY = 502
 
 /**
- * 503 Service Unavailable. Temporary, by definition; pair it with
- * `Retry-After`.
+ * 503 Service Unavailable. By definition, the condition is temporary.
+ * Send it together with `Retry-After`.
  * @type int
  */
 var SERVICE_UNAVAILABLE = 503
@@ -531,14 +536,14 @@ var _reasons = {
 }
 
 /**
- * The canonical reason phrase for `code`, e.g. `'Not Found'` for
+ * The standard reason phrase for `code`, such as `'Not Found'` for
  * `404`.
  *
- * An unregistered code is still perfectly legal on the wire - a
- * client is required to treat it as the generic `x00` of its class -
- * so rather than failing, this falls back to the class name
- * (`'Informational'`, `'Success'`, `'Redirection'`, `'Client Error'`,
- * `'Server Error'`), or `'Unknown'` for a code outside 100-599.
+ * An unregistered code is still valid in HTTP, and a client is required
+ * to treat it like the generic `x00` code of its class. So instead of
+ * failing, this falls back to the name of the class (`'Informational'`,
+ * `'Success'`, `'Redirection'`, `'Client Error'` or `'Server Error'`),
+ * or `'Unknown'` for a code outside the range 100 to 599.
  *
  * @param int code
  * @returns string
@@ -641,10 +646,10 @@ def is_error(code: int) {
 }
 
 /**
- * Whether a response carrying `code` is defined to have no body at
- * all, regardless of what headers say. RFC 9110 puts `1xx`, `204`
- * and `304` in this category, and framing a body onto any of them is
- * a protocol violation rather than a stylistic choice.
+ * Whether a response with `code` is defined to have no body at all,
+ * whatever its headers say. RFC 9110 puts `1xx`, `204` and `304` in
+ * this category, and adding a body to any of them violates the
+ * protocol.
  *
  * @param int code
  * @returns bool
@@ -654,9 +659,9 @@ def is_bodiless(code: int) {
 }
 
 /**
- * Whether a redirect with `code` must keep the original method and
- * body when followed. True for `307` and `308`; `301`, `302` and
- * `303` are all conventionally rewritten to GET.
+ * Whether a redirect with `code` must keep the original method and body
+ * when it's followed. This is true for `307` and `308`. `301`, `302`
+ * and `303` are conventionally changed to GET.
  *
  * @param int code
  * @returns bool

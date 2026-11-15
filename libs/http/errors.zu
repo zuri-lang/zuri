@@ -1,13 +1,14 @@
 /**
  * @module errors
  *
- * Every error the HTTP stack raises, under one root.
+ * All the errors the HTTP stack raises, under a single base class.
  *
- * `HttpError` is that root, so a caller that only wants to know whether
- * the request failed can catch it and ignore the rest. The subclasses
- * separate the cases worth handling differently: a connection that never
- * opened, one that timed out, a response too large to accept, a redirect
- * loop, and a status the caller asked to be treated as an error.
+ * `HttpError` is the base class, so a caller that only wants to know
+ * whether a request failed can catch it and ignore the details. The
+ * subclasses distinguish the cases that are worth handling separately:
+ * a connection that couldn't be opened, a timeout, a response too large
+ * to accept, a redirect loop, and a status code the caller asked to
+ * have treated as an error.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -15,12 +16,11 @@
 #!-- part of the http module
 
 /**
- * Base class for every error the `http` module raises.
+ * The base class for every error the `http` module raises.
  *
- * Catching `HttpError` catches everything this module can throw on
- * its own; the more specific subclasses below let a caller tell a
- * connection failure apart from a malformed response without matching
- * on message text.
+ * Catching `HttpError` catches every error this module raises itself.
+ * The more specific subclasses let a caller tell a connection failure
+ * from an invalid response without checking the message text.
  *
  * @printable
  */
@@ -90,10 +90,10 @@ class TimeoutError < HttpError {
 }
 
 /**
- * Raised when a message exceeds one of the configured size limits -
- * request line, header block, or body. Servers turn this into a
- * `431` or `413` response rather than reading an unbounded amount of
- * attacker-controlled data into memory.
+ * Raised when a message exceeds one of the configured size limits, for
+ * the request line, the header block or the body. Servers respond to
+ * this with a `431` or `413`, instead of reading an unlimited amount of
+ * data controlled by an attacker into memory.
  *
  * @printable
  */

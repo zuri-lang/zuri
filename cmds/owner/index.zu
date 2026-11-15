@@ -1,7 +1,6 @@
 /**
  * @command owner
- * @description Shows, adds and removes a publisher from a
- *    package.
+ * @description Lists, adds and removes the owners of a package.
  *
  *   zuri owner list <package>
  *   zuri owner add <package> <username>
@@ -22,15 +21,15 @@ import .._shared.names
 def parser() {
   var parser = args.Parser('zuri owner', true)
 
-  parser.description = 'Shows, adds and removes a publisher from a package.'
+  parser.description = 'Lists, adds and removes the owners of a package.'
 
-  parser.add_index('action', 'list, add or remove', {
+  parser.add_index('action', 'What to do with the package\'s owners', {
     type: args.CHOICE,
     choices: ['list', 'add', 'remove'],
     required: true,
   })
   parser.add_index('package', 'The package', { required: true })
-  parser.add_index('username', 'The publisher to add or remove')
+  parser.add_index('username', 'The owner to add or remove')
   cli.add_registry_option(parser)
   cli.add_json_option(parser)
 
@@ -49,7 +48,7 @@ def main() {
     owners = registry.owners(package)
   } else {
     if username == nil {
-      raise UsageError('say which publisher to ${action}')
+      raise UsageError('give the username of the owner to ${action}')
     }
 
     owners = action == 'add'

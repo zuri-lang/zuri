@@ -5,7 +5,7 @@
  *
  * The session store that keeps sessions in a relational database.
  *
- * It lives in its own submodule, rather than alongside the other
+ * It's in a submodule of its own, instead of alongside the other
  * stores, so that a program using the default file store never loads
  * the `sql` module or any of its adapters.
  *
@@ -39,27 +39,28 @@ var _CONFLICT_ENGINES = ['sqlite', 'postgres']
 var _DUPLICATE_ENGINES = ['mysql', 'mariadb']
 
 /**
- * Keeps sessions in one table of a relational database.
+ * Keeps sessions in a single table of a relational database.
  *
- * The table is three columns - the storage key, the payload, and when
- * the session stops being valid - and `migrate()` creates it on
- * whichever engine is in use.
+ * The table has three columns, which hold the storage key, the payload
+ * and the time the session expires. `migrate()` creates it on whichever
+ * database engine is in use.
  *
  * ### What it takes
  *
- * Either a `sql.Connection` or a `sql.Pool`. A server wants the pool:
- * a connection is used by one isolate at a time, and the pool is what
- * hands each request one and takes it back.
+ * Either a `sql.Connection` or a `sql.Pool`. A server should use a
+ * pool, because a connection can only be used by one isolate at a time,
+ * and the pool is what gives each request a connection and takes it
+ * back afterwards.
  *
- * A connection belongs to the isolate that opened it and cannot be
- * shared, so under `http.serve()` each worker builds its own pool and
- * its own store inside `setup`, rather than being handed one from
+ * A connection belongs to the isolate that opened it and can't be
+ * shared. Under `http.serve()`, each worker therefore creates its own
+ * pool and its own store in `setup`, instead of being given one from
  * outside.
  *
  * ### Concurrency
  *
  * Every write is a single statement, so a reader never sees half a
- * session. Two requests writing the same session at the same moment
+ * session. If two requests write the same session at the same moment,
  * both succeed and the later one wins. Nothing here takes a lock.
  *
  * @printable
@@ -107,15 +108,15 @@ class SqlStore < SessionStore {
   }
 
   /**
-   * Creates the table and its index if they are not already there.
+   * Creates the table and its index if they don't already exist.
    *
-   * Safe to call on every start: an existing table is left exactly as
-   * it is, and nothing in it is touched.
+   * It's safe to call this every time the program starts. An existing
+   * table is left exactly as it is, along with everything in it.
    *
-   * The columns are portable rather than ideal for any one engine. An
-   * application that wants a different shape - a partitioned table, a
-   * different collation, an engine-specific TTL - creates the table
-   * itself and skips this.
+   * The column types are chosen to work everywhere, not to be ideal for
+   * any one engine. An application that wants a different design, such
+   * as a partitioned table, a different collation or an engine-specific
+   * TTL, should create the table itself and not call this.
    *
    * | Column | Type | |
    * | - | - | - |

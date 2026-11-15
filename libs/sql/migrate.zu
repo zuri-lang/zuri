@@ -1,11 +1,12 @@
 /**
  * @module migrate
  *
- * Versioned changes to a database's schema, applied once each, in
+ * Versioned changes to a database's schema, each applied once, in
  * order, on every engine.
  *
- * A migration is a Zuri file in a directory of them. Its name starts
- * with a version, a run of digits, and says what it does:
+ * A migration is a Zuri file in a directory of migrations. Its name
+ * starts with a version, which is a sequence of digits, followed by a
+ * description of what it does:
  *
  * ```text
  * migrations/
@@ -13,13 +14,14 @@
  *   20261012091500_add_slug_to_posts.zu
  * ```
  *
- * Each exports `up(db)`, which makes the change, and `down(db)`, which
- * undoes it. `db` is the `Transaction` the migration runs in, or the
- * `Connection` itself where it runs outside one: always on MySQL and
- * MariaDB, and anywhere for a migration that asks to. Its type is
- * `Transaction|Connection`, and the change is described with
- * `db.schema` and its `Blueprint`, once, for every engine the program
- * runs against:
+ * Each migration exports `up(db)`, which makes the change, and
+ * `down(db)`, which undoes it. `db` is the `Transaction` that the
+ * migration runs in, or the `Connection` itself when it runs outside a
+ * transaction. That's always the case on MySQL and MariaDB, and on any
+ * engine for a migration that asks for it. Its type is
+ * `Transaction|Connection`, and the change is described once, with
+ * `db.schema` and a `Blueprint`, for every engine the program runs
+ * against:
  *
  * ```zuri,ignore
  * import sql { Blueprint, Connection, Transaction }
@@ -37,9 +39,9 @@
  * }
  * ```
  *
- * `Migrator` applies what a database has not had and rolls back what
- * it has, and records each one in a table of its own, `zuri_migrations`
- * by default:
+ * `Migrator` applies the migrations that a database hasn't had yet and
+ * rolls back the ones it has, and records each one in a table of its
+ * own, which is `zuri_migrations` by default:
  *
  * ```zuri,ignore
  * import sql
@@ -55,16 +57,17 @@
  * ### How a migration runs
  *
  * Each migration runs in a transaction of its own, together with the
- * row recording it, so on SQLite and PostgreSQL a migration that fails
- * part way leaves nothing behind and is not recorded. MySQL and MariaDB
- * commit at every schema change: there a migration runs on its own and
- * is recorded once it has finished, and one that fails part way leaves
- * the statements before the failure in place.
+ * row that records it. On SQLite and PostgreSQL, a migration that fails
+ * partway through therefore leaves nothing behind and isn't recorded.
+ * MySQL and MariaDB commit after every schema change, so there a
+ * migration runs outside a transaction and is recorded once it has
+ * finished, and a migration that fails partway through leaves the
+ * statements before the failure in place.
  *
- * On SQLite, foreign key enforcement is switched off while a migration
- * runs, so a change that builds a table again cannot take the rows
- * referring to it along, and every foreign key is checked before the
- * migration commits.
+ * On SQLite, foreign key enforcement is turned off while a migration
+ * runs, so that rebuilding a table doesn't also delete the rows that
+ * refer to it. Every foreign key is checked before the migration
+ * commits.
  *
  * A migration that has to run outside a transaction, as PostgreSQL's
  * `create index concurrently` does, says so:
@@ -75,18 +78,20 @@
  *
  * ### Several processes at once
  *
- * Two processes migrating one database at the same moment apply each
- * migration once. On PostgreSQL, MySQL and MariaDB a run holds the
- * engine's own lock, and a second run waits for the first to finish.
- * On SQLite each migration takes the write lock as it starts, and every
- * migration checks the record again once it holds the lock, so one
- * another process applied meanwhile is passed over.
+ * If two processes migrate the same database at the same time, each
+ * migration is still applied once. On PostgreSQL, MySQL and MariaDB, a
+ * run holds a lock provided by the engine, and a second run waits for
+ * the first to finish. On SQLite, each migration takes the write lock
+ * when it starts and checks the record again once it holds the lock, so
+ * a migration that another process has applied in the meantime is
+ * skipped.
  *
  * ### Batches
  *
- * Every migration one `up()` applies shares a batch number, and
- * `down()` with no options rolls back the latest batch whole: what the
- * last run applied, however many that was.
+ * All the migrations applied by one call to `up()` share a batch
+ * number. `down()` with no options rolls back the whole of the latest
+ * batch, which is everything the last run applied, however many
+ * migrations that was.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

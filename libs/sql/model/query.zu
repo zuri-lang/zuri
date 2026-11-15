@@ -1,12 +1,12 @@
 /**
  * @module query
  *
- * Reading and writing a model's rows by conditions, as records.
+ * Reads and writes a model's rows as records, by conditions.
  *
  * `db.model(Post)` starts a query on a connection or a transaction.
- * Every method that narrows it returns a new query and leaves the one
- * it was called on as it was, so a query can be kept and built on in
- * more than one direction:
+ * Every method that narrows the query returns a new query, and leaves
+ * the one it was called on unchanged, so you can keep a query and build
+ * on it in more than one direction:
  *
  * ```zuri,ignore
  * var published = db.model(Post).where({ published: true })
@@ -17,24 +17,25 @@
  *
  * ### Conditions
  *
- * `where()` with a dictionary reads as the CRUD helpers' conditions
- * do: a value matches itself, `nil` matches null, a list matches any of
- * its values, and an empty list matches nothing. Anything else is a
- * fragment of SQL, with `?` for each value:
+ * `where()` with a dictionary works like the conditions of the CRUD
+ * helpers: a value matches itself, `nil` matches null, a list matches
+ * any of its values, and an empty list matches nothing. Anything else
+ * is a fragment of SQL, with a `?` for each value:
  *
  * ```zuri,ignore
  * db.model(Post).where('views > ? or featured = ?', [100, true])
  * ```
  *
- * Every condition must hold. A fragment is bracketed as it is added, so
- * an `or` inside one stays inside it.
+ * Every condition must be true. A fragment is put in parentheses when
+ * it's added, so an `or` inside it stays inside it.
  *
  * ### Associations
  *
- * `include()` loads associations along with the records, one query per
- * association rather than one per record, and a dotted name reaches
- * further: `include('comments.author')` loads every post's comments
- * and every comment's author, in three queries however many there are.
+ * `include()` loads associations together with the records, with one
+ * query per association instead of one per record. A dotted name goes
+ * further: `include('comments.author')` loads the comments of every
+ * post and the author of every comment in three queries, however many
+ * there are.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

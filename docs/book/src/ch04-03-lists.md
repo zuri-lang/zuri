@@ -1,7 +1,8 @@
 # Lists
 
-A list is an ordered, growable sequence. It holds values of any type,
-including other lists, and it grows and shrinks as you work with it.
+A list is an ordered sequence of values. It can hold values of any type,
+including other lists, and it grows and shrinks as you add and remove
+elements.
 
 ```zuri
 var items = [3, 1, 4, 1, 5]
@@ -24,14 +25,13 @@ echo empty.is_empty()
 true
 ```
 
-Lists carry 40 methods, and they fall into six groups: reading, searching,
-adding and removing, ordering, transforming, and walking. This section
-takes them in that order. The one distinction to keep in mind throughout
-is whether a method **mutates** the list you called it on or returns a new
-one, because Zuri's lists do both and the method names do not tell you
-which.
+Lists have 40 methods, which fall into six groups: reading, searching,
+adding and removing, ordering, transforming and iterating. This section goes
+through them in that order. Throughout, keep an eye on whether a method
+**changes** the list you call it on or returns a new one. Zuri's lists have
+both kinds of methods, and you can't tell which is which from the name.
 
-## Reading
+## Reading Elements
 
 ```zuri
 var l = [3, 1, 4, 1, 5]
@@ -57,7 +57,7 @@ false
 
 ### Indexing
 
-An index counts from zero, and a negative index counts back from the end:
+Indexes start at zero, and negative indexes count back from the end:
 
 ```zuri
 var l = ['a', 'b', 'c', 'd']
@@ -75,10 +75,11 @@ d
 a
 ```
 
-`l[-1]` is the last element, which saves writing `l[l.length() - 1]`
-everywhere.
+`l[-1]` is the last element, which saves you from writing
+`l[l.length() - 1]` all the time.
 
-Indexing out of range raises rather than returning `nil`:
+Using an index that's out of range raises an error instead of returning
+`nil`:
 
 ```zuri
 var l = [1, 2, 3]
@@ -94,9 +95,8 @@ catch {
 index 99 out of bounds (length 3)
 ```
 
-`get()` is the form that can fall back, but **only when you give it
-something to fall back to**. `get(i)` with one argument raises exactly like
-`l[i]` does:
+`get()` can return a fallback value, but **only if you give it one**. With
+just one argument, `get(i)` raises an error in the same way as `l[i]`:
 
 ```zuri
 var l = [1, 2, 3]
@@ -119,8 +119,8 @@ list index 99 out of range at get()
 
 ### Slicing
 
-`l[a, b]` takes the elements from `a` up to but **not including** `b`, and
-gives you a new list:
+`l[a, b]` returns a new list with the elements from `a` up to but **not
+including** `b`:
 
 ```zuri
 var l = [1, 2, 3, 4, 5]
@@ -138,11 +138,12 @@ echo l[-2,]
 [4, 5]
 ```
 
-Either bound may be left out: `l[, b]` starts at the beginning and `l[a, ]`
-runs to the end. Negative bounds count from the end, just as an index does.
+You can leave out either bound. `l[, b]` starts at the beginning, and
+`l[a, ]` goes to the end. Negative bounds count from the end, as they do for
+indexes.
 
-A slice checks its bounds, exactly as an index does. Running past the end
-raises rather than returning what it can:
+Slices check their bounds in the same way as indexes. If a slice goes past
+the end, it raises an error instead of returning what it can:
 
 ```zuri
 catch {
@@ -156,9 +157,9 @@ catch {
 slice bounds 1..99 out of range (length 3)
 ```
 
-The one bound that is always legal is `length()` itself, since a slice's
-upper bound is exclusive. `l[0, l.length()]` is the whole list, and
-`l[3, 3]` on a three-element list is empty rather than an error.
+Since a slice's upper bound is exclusive, `length()` is always a valid upper
+bound. `l[0, l.length()]` is the whole list, and `l[3, 3]` on a
+three-element list is an empty list rather than an error.
 
 ```zuri
 var l = [1, 2, 3]
@@ -172,11 +173,11 @@ echo l[3, 3]
 []
 ```
 
-This same rule governs string slicing, which is why
-[Strings](ch04-01-strings.md) uses `s[split_at + 1, s.length()]` rather
-than a large number to mean "the rest".
+String slicing follows the same rule, which is why
+[Strings](ch04-01-strings.md) uses `s[split_at + 1, s.length()]` to mean
+"the rest of the string" instead of using some large number.
 
-A slice is a copy. Changing one does not touch the other:
+A slice is a copy, so changing one doesn't affect the other:
 
 ```zuri
 var original = [1, 2, 3]
@@ -195,7 +196,8 @@ echo part
 
 ### Nested Lists
 
-A list holds lists, and indexes chain:
+A list can contain other lists, and you can chain indexes to reach into
+them:
 
 ```zuri
 var grid = [
@@ -217,14 +219,16 @@ echo grid[1].length()
 2
 ```
 
-`grid.length()` counts rows, not elements. There is no two-dimensional
-index; `grid[1, 0]` is a *slice* from row one to row zero, which is empty.
+`grid.length()` counts the rows, not the individual elements. There's no
+two-dimensional index syntax. `grid[1, 0]` is a *slice* from row one to row
+zero, so it's empty.
 
 ## Combining Lists
 
 ### Concatenation with `+`
 
-`+` joins two lists into a new one, leaving both operands alone:
+`+` combines two lists into a new one and leaves the original lists
+unchanged:
 
 ```zuri
 var a = [1, 2]
@@ -241,14 +245,14 @@ echo b
 [3]
 ```
 
-That is the difference between `+` and `extend()`: `a + b` builds a third
-list, while `a.extend(b)` modifies `a` in place and returns it. Use `+`
-when you want to keep the originals, and `extend()` when you are
-accumulating.
+That's how `+` differs from `extend()`. `a + b` creates a third list, while
+`a.extend(b)` changes `a` in place and returns it. Use `+` when you want to
+keep the original lists, and `extend()` when you're adding to an existing
+list.
 
 ### Repetition with `*`
 
-`*` repeats a list a whole number of times:
+`*` repeats a list a given number of times:
 
 ```zuri
 echo [1, 2] * 3
@@ -260,11 +264,11 @@ echo [0] * 5
 [0, 0, 0, 0, 0]
 ```
 
-`[0] * 5` is the idiom for a fixed-size list of a starting value, and it is
-worth knowing before you write the loop.
+`[0] * 5` is the usual way to create a list of a fixed size filled with a
+starting value, so you don't need to write a loop for it.
 
-The count behaves exactly as it does for strings: zero and any negative
-number both produce an empty list, and a fractional count is truncated.
+The count works the same way as it does for strings. Zero or any negative
+number gives an empty list, and a fractional count is truncated.
 
 ```zuri
 echo [1] * 0
@@ -276,8 +280,8 @@ echo [1] * -3
 []
 ```
 
-There is one trap. Repetition copies the *elements*, and when an element is
-itself a list, all the copies are the same list:
+There's one trap to watch for. Repetition copies the *elements*, so when an
+element is itself a list, every copy refers to the same list:
 
 ```zuri
 var grid = [
@@ -294,8 +298,8 @@ echo grid
 [[9, 0], [9, 0], [9, 0]]
 ```
 
-One assignment changed every row, because there is only one row. Build
-nested structure with a loop, or with `map()`:
+A single assignment changed every row, because there's really only one row.
+To build nested lists, use a loop or `map()` instead:
 
 ```zuri
 var grid = 0..3.to_list().map(@(i) => [0, 0])
@@ -311,8 +315,8 @@ echo grid
 
 ## Comparing Lists
 
-`==` compares lists by value, element by element, however deeply they
-nest:
+`==` compares lists by value, element by element, however deeply they're
+nested:
 
 ```zuri
 echo [1, 2] == [1, 2]
@@ -335,9 +339,9 @@ false
 false
 ```
 
-Order matters and length matters. To compare two lists as *sets*, sort
-copies of them first, or use the `set` module from
-[Chapter 13](ch13-00-stdlib-tour.md).
+Both the order and the length have to match. To compare two lists as *sets*,
+sort copies of them first, or use the `set` module described in [Chapter
+13](ch13-00-stdlib-tour.md).
 
 ## Searching
 
@@ -355,8 +359,8 @@ true
 2
 ```
 
-`index_of()` gives `-1` when the value is absent. `last_index_of()`
-searches from the other end:
+`index_of()` returns `-1` if the value isn't in the list. `last_index_of()`
+searches from the end:
 
 ```zuri
 var l = [3, 1, 4, 1, 5]
@@ -374,27 +378,27 @@ echo l.last_index_of(9)
 -1
 ```
 
-Both take a second argument bounding *where a match may sit*, so the
-pair splits the list at one index: `index_of(x, n)` finds the first
-match at or after `n`, `last_index_of(x, n)` the last one at or before
-it. Both compare by value, so a list of dictionaries can be searched
-with a dictionary literal.
+Both methods take a second argument that limits *where a match can be*, so
+together they split the list at an index. `index_of(x, n)` finds the first
+match at or after `n`, and `last_index_of(x, n)` finds the last match at or
+before `n`. Both compare by value, so you can search a list of dictionaries
+using a dictionary literal.
 
-## Adding and Removing
+## Adding and Removing Elements
 
-These mutate the list in place:
+These methods change the list in place:
 
 | Method | Effect |
 | --- | --- |
-| `append(v)` | add to the end |
-| `insert(v, at)` | insert at a position |
-| `extend(other)` | append every element of another list |
-| `pop()` | remove and return the last element |
-| `shift()` | remove and return the first element |
-| `remove(v)` | remove the first element equal to `v` |
-| `remove_at(i)` | remove by position |
-| `delete(from, to)` | remove an inclusive range, return how many went |
-| `clear()` | empty it |
+| `append(v)` | Adds `v` to the end |
+| `insert(v, at)` | Inserts `v` at the given position |
+| `extend(other)` | Appends every element of another list |
+| `pop()` | Removes and returns the last element |
+| `shift()` | Removes and returns the first element |
+| `remove(v)` | Removes the first element equal to `v` |
+| `remove_at(i)` | Removes the element at position `i` |
+| `delete(from, to)` | Removes an inclusive range and returns how many elements were removed |
+| `clear()` | Removes every element |
 
 ```zuri
 var l = [3, 1, 4]
@@ -422,10 +426,10 @@ echo l
 [1, 5]
 ```
 
-Note that `delete()` takes a **from** and a **to**, both inclusive, and
-returns the number of elements removed rather than the list.
+Note that `delete()` takes a **from** and a **to** position, both inclusive,
+and returns the number of elements it removed, not the list.
 
-## Ordering
+## Sorting and Reversing
 
 ```zuri
 var l = [3, 1, 2]
@@ -443,13 +447,15 @@ echo l
 [1, 2, 3]
 ```
 
-Look closely at those two. **`sort()` mutates and returns the list.
-`reverse()` returns a new list and leaves the original alone.** That
-asymmetry is the single most common source of list bugs in Zuri code.
+Take a close look at those two methods. **`sort()` changes the list and
+returns it. `reverse()` returns a new list and leaves the original
+unchanged.** This difference is the most common cause of list bugs in Zuri
+code.
 
-To sort by anything else, pass a comparator. It is given two items and
-returns a negative number to put the first one first, a positive number to
-put the second one first, and zero to leave them as they are:
+To sort by something else, pass a comparison function. It receives two items
+and returns a negative number if the first item should come first, a
+positive number if the second should come first, or zero to keep their
+current order:
 
 ```zuri
 var people = [
@@ -466,13 +472,13 @@ echo by_age
 [Bob, Ada]
 ```
 
-Strings cannot be ordered with the `-` operator, so a comparator over text uses
-`compare()`, which returns exactly what a comparator needs:
+You can't subtract strings, so to compare text in a comparison function, use
+`compare()`, which returns exactly what a comparison function needs:
 `people.sort(@(a, b) => a.name.compare(b.name))`.
 
-## Transforming
+## Transforming Lists
 
-Every one of these returns a new list and leaves the receiver untouched:
+All of these methods return a new list and leave the original unchanged:
 
 ```zuri
 var l = [1, 2, 3, 4]
@@ -494,7 +500,7 @@ echo l.clone()
 [1, 2, 3, 4]
 ```
 
-`compact()` drops `nil` entries:
+`compact()` removes `nil` elements:
 
 ```zuri
 echo [1, nil, 2, nil].compact()
@@ -504,8 +510,8 @@ echo [1, nil, 2, nil].compact()
 [1, 2]
 ```
 
-`reduce()` folds the list down to one value. With no initial value it
-starts from the first element:
+`reduce()` combines the elements of a list into a single value. If you don't
+give it an initial value, it starts with the first element:
 
 ```zuri
 echo [1, 2, 3].reduce(@(acc, x) => acc + x)
@@ -517,7 +523,8 @@ echo [1, 2, 3].reduce(@(acc, x) => acc + x, 100)
 106
 ```
 
-`partition()` splits in one pass, matches first:
+`partition()` splits a list in one pass, and returns the matching elements
+first:
 
 ```zuri
 echo [1, 2, 3, 4].partition(@(x) => x % 2 == 0)
@@ -527,7 +534,7 @@ echo [1, 2, 3, 4].partition(@(x) => x % 2 == 0)
 [[2, 4], [1, 3]]
 ```
 
-## Finding
+## Finding Elements
 
 ```zuri
 var l = [1, 2, 3]
@@ -547,7 +554,7 @@ echo l.find_all(@(x) => x > 1)
 [2, 3]
 ```
 
-## Asking About Every Element
+## Testing Every Element
 
 ```zuri
 echo [1, 2, 3].every(@(x) => x > 0)
@@ -559,14 +566,15 @@ true
 true
 ```
 
-`some()` stops at the first match; `every()` stops at the first failure.
+`some()` stops at the first element that matches, and `every()` stops at the
+first one that doesn't.
 
-## Walking
+## Iterating Over a List
 
-There are four ways to visit every element, and they are not
-interchangeable. Pick by what you need in the body.
+There are four ways to visit every element, and each one suits a different
+situation. Choose based on what you need inside the loop.
 
-### `for`, When You Want the Values
+### `for`, When You Only Need the Values
 
 ```zuri
 for value in ['a', 'b', 'c'] {
@@ -580,9 +588,9 @@ b
 c
 ```
 
-This is the default. Reach for it whenever the position does not matter.
+This is the default choice. Use it whenever the position doesn't matter.
 
-### `for` With Two Variables, When You Want the Index Too
+### `for` With Two Variables, When You Also Need the Index
 
 ```zuri
 for index, value in ['a', 'b', 'c'] {
@@ -596,10 +604,11 @@ for index, value in ['a', 'b', 'c'] {
 2: c
 ```
 
-With two variables you get the **key first and the value second**, and for
-a list the key is the index. No call to `length()`, no manual counter.
+With two variables, you get the **key first and the value second**, and for
+a list the key is the index. There's no need to call `length()` or keep a
+counter yourself.
 
-### `iter`, When You Need Control of the Position
+### `iter`, When You Need to Control the Position
 
 ```zuri
 var items = ['a', 'b', 'c']
@@ -615,9 +624,10 @@ iter var i = 0; i < items.length(); i++ {
 2: c
 ```
 
-`iter` costs more typing and earns it only when the traversal is not one
-step forward per pass: walking backwards, walking in twos, comparing an
-element with its neighbour, or advancing the index from inside the body.
+`iter` takes more typing, so it's only worth using when you don't simply
+move forward one element at a time, for example when going backward,
+stepping by two, comparing each element with its neighbor, or changing the
+index inside the loop.
 
 ```zuri
 var items = ['a', 'b', 'c', 'd']
@@ -640,7 +650,7 @@ a
 c
 ```
 
-### `each()`, When You Have a Function Already
+### `each()`, When You Already Have a Function
 
 ```zuri
 [10, 20].each(@(value, index) {
@@ -653,21 +663,21 @@ c
 1: 20
 ```
 
-`each()` takes a function, which makes it the one that composes: it chains
-onto a `map()` or a `filter()` without a temporary variable, and it accepts
-a function you already have by name.
+`each()` takes a function, which makes it easy to combine with other
+methods. You can chain it after `map()` or `filter()` without a temporary
+variable, and you can pass it a function you've already defined by name.
 
-Watch the argument order. **`each()` hands the callback the value first and
-the index second**, which is the opposite of `for`. Every list callback in
-this chapter follows the same rule — `map`, `filter`, `find`, `some`,
-`every` all take `(value, index)` — so it is one thing to remember rather
-than several. `for` is a loop over key-value pairs; `each` is a callback
-over values that happens to tell you where it is.
+Pay attention to the argument order. **`each()` passes the value first and
+the index second**, which is the opposite of `for`. All of the list
+callbacks in this chapter, including `map`, `filter`, `find`, `some` and
+`every`, take `(value, index)`, so there's only one rule to remember. `for`
+loops over key and value pairs, while `each` calls a function with each
+value and also tells it the position.
 
-`break` and `continue` work inside `for` and `iter`. They do not exist
-inside an `each()` callback; `return` there ends that one call, not the
-walk. When you need to stop early, use a loop, or `find()` / `some()`,
-which stop on their own.
+`break` and `continue` work in `for` and `iter` loops, but not inside an
+`each()` callback. There, `return` only ends the current call, not the whole
+iteration. If you need to stop early, use a loop instead, or `find()` or
+`some()`, which stop by themselves.
 
 ## Combining
 
@@ -685,12 +695,12 @@ echo [
 [[1, 4], [2, 5], [3, 6]]
 ```
 
-`zip()` pairs with one other list. `zip_from()` takes a list of lists and
-zips across all of them at once.
+`zip()` pairs up the elements of two lists. `zip_from()` takes a list of
+lists and zips all of them together.
 
-## Lists Are References
+## Lists Are Passed by Reference
 
-Assigning a list does not copy it:
+Assigning a list to another variable doesn't copy it:
 
 ```zuri
 var a = [1, 2]
@@ -703,8 +713,8 @@ echo a
 [1, 2, 3]
 ```
 
-Use `clone()` when you need an independent copy. The clone is shallow:
-nested lists inside it are still shared.
+Use `clone()` when you need a separate copy. The copy is shallow, which
+means any nested lists inside it are still shared.
 
 ```zuri
 var original = [
@@ -725,24 +735,24 @@ echo copy
 [[1, 2, 4], 99]
 ```
 
-Replacing the top-level `3` affected only the copy. Appending to the
-*nested* list affected both, because both lists point at the same inner
-list. When you need a deep copy, copy the levels you care about yourself.
+Replacing the top-level `3` only changed the copy. Appending to the *nested*
+list changed both, because both lists refer to the same inner list. If you
+need a deep copy, copy each level you care about yourself.
 
-## Mutating or Not: The Summary
+## Summary: Which Methods Change the List
 
-This is the table to come back to.
+You'll probably want to refer back to this table.
 
-| Mutates the receiver | Returns a new list |
+| Changes the list | Returns a new list |
 | --- | --- |
 | `append`, `insert`, `extend` | `map`, `filter`, `find_all` |
 | `pop`, `shift`, `remove`, `remove_at` | `unique`, `compact`, `take` |
 | `delete`, `clear` | `reverse`, `clone`, `zip`, `zip_from` |
 | `sort` | `partition` |
 
-`sort()` is the one that catches people out: it is in the left column, and
-it also returns the list, so `var sorted = items.sort()` leaves `items`
-sorted too. If you need both orders, clone first:
+`sort()` is the one that trips people up. It's in the left column, but it
+also returns the list, so `var sorted = items.sort()` sorts `items` too. If
+you need both the original order and the sorted order, clone the list first:
 
 ```zuri
 var items = [3, 1, 2]
@@ -757,11 +767,12 @@ echo sorted
 [1, 2, 3]
 ```
 
-## A Worked Example
+## Example: A Simple Report
 
-A tiny report generator: take a list of records, drop the incomplete ones,
-group what is left, and print a summary. It uses `filter`, `map`,
-`reduce`, `sort` and `each` together, which is how they usually show up.
+Here's a small report generator. It takes a list of records, drops the
+incomplete ones, groups the rest, and prints a summary. It uses `filter`,
+`map`, `reduce`, `sort` and `each` together, which is how you'll usually see
+them.
 
 ```zuri
 var sales = [
@@ -798,14 +809,14 @@ south  280
 total  445
 ```
 
-`east` is absent from the report, not present with a zero, because its one
-record was filtered out before any accumulating happened and nothing ever
-created the key. That is usually what you want from a report; when it is
-not, seed the dictionary with every region first.
+`east` doesn't appear in the report at all, rather than appearing with a
+total of zero. Its only record was filtered out before anything was added
+up, so the key was never created. That's usually what you want in a report.
+If it isn't, add every region to the dictionary first.
 
-Two other details are worth pulling out. `totals.get(r.region, 0)` supplies
-a starting value for a key that does not exist yet, which is what turns a
-dictionary into an accumulator. And `totals.to_list()[0]` takes the keys —
-`to_list()` returns keys and values as two parallel lists — which are then
-sorted so the report comes out in a stable order rather than in whatever
-order the records happened to arrive.
+Two other details are worth pointing out. `totals.get(r.region, 0)` provides
+a starting value for a key that doesn't exist yet, which is what lets the
+dictionary act as an accumulator. And `totals.to_list()[0]` gets the keys
+(`to_list()` returns the keys and the values as two parallel lists), which
+are then sorted so the report always comes out in the same order, regardless
+of the order the records arrived in.

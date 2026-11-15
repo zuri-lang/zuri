@@ -1,141 +1,152 @@
 # Appendix H: Coming From Another Language
 
-The places Zuri will surprise you are the places it looks most familiar.
-This is that list.
+The places where Zuri is most likely to surprise you are the places where it
+looks most familiar. This appendix lists them.
 
-## Everyone
+## For Everyone
 
-| You expect | Zuri does |
+| You might expect | What Zuri does |
 | --- | --- |
-| `x++` as a statement only | `x++` is postfix only, and in an expression it evaluates to the **new** value. `++x` does not parse. |
+| `x++` only as a statement | `x++` is postfix only, and inside an expression it evaluates to the **new** value. `++x` doesn't parse. |
 | `[]` to be falsy | `[]` and `{}` are truthy. Use `is_empty()`. |
-| `finally` | There is none. Code after the `catch` statement runs either way. |
+| `finally` | There isn't one. Code after the `catch` statement runs either way. |
 | `try` | The keyword is `catch`, and it takes the block that might fail: `catch { ... } as e { ... }`. |
-| `new Thing()` | Call the class: `Thing()`. |
-| `switch`/`case` with fall-through | `using`/`when`, first match only, no `break`. |
-| a `main` function | A file's top level is the program. |
-| declaration hoisting | None. A `def` must appear above the top-level line that calls it. |
-| overloading by arity | None. Two `def`s of one name in one scope is a compile error. |
-| reopening a class | `class Ext > Target` adds methods to an existing class, globally. See [Extensions](ch06-06-class-extensions.md). |
-| string ordering with `<` | `<` is numbers only. Use `compare()`, which returns `-1`, `0` or `1`. |
-| `x in collection` | No membership operator. Use `contains()`. |
-| `?.` and `??` | Neither exists. `or` covers the common case, with the truthiness caveat above. |
-| an `eval()` | There is none, deliberately. See [Metaprogramming](ch21-00-metaprogramming.md). |
+| `new Thing()` | Call the class instead: `Thing()`. |
+| `switch` and `case` with fall-through | `using` and `when`, which only run the first match, with no `break` |
+| A `main` function | The top level of a file is the program. |
+| Declarations to be hoisted | They aren't. A `def` must come before the top-level line that calls it. |
+| Overloading by number of arguments | There's no overloading. Two `def` declarations with the same name in the same scope are a compile error. |
+| Reopening a class | `class Ext > Target` adds methods to an existing class, everywhere. See [Extensions](ch06-06-class-extensions.md). |
+| Comparing strings with `<` | `<` only works with numbers. Use `compare()`, which returns `-1`, `0` or `1`. |
+| `x in collection` | There's no membership operator. Use `contains()`. |
+| `?.` and `??` | Neither exists. `or` covers the most common case, with the truthiness caveat above. |
+| `eval()` | There isn't one, on purpose. See [Metaprogramming](ch21-00-metaprogramming.md). |
 
-## From Python
+## Coming From Python
 
-- Blocks are braces, not indentation, and every control-flow body takes one.
-- `def` declares functions and `class` declares classes, but there is no
-  `self` parameter: `self` is implicit inside a method and required for
-  every field access.
-- The constructor is `@new`, not `__init__`. Dunder methods are `@`-prefixed
-  decorated methods: `@add`, `@lt`, `@key`, `@to_json`.
-- `__eq__` is `@eq`, and `!=` is always its negation. It runs only when
-  the other side is an object too, so `x == nil` never calls it. Without
-  it, instances compare by identity.
-- No list comprehensions. `map()`, `filter()` and `reduce()` are methods on
-  the list.
-- `len(x)` is `x.length()`. `str(x)` is `x.to_string()`. `int(x)` is
+- Blocks use braces, not indentation, and every control flow statement needs
+  them.
+- `def` declares functions and `class` declares classes, but there's no
+  `self` parameter. `self` is available automatically inside a method, and
+  you have to use it for every field access.
+- The constructor is `@new`, not `__init__`. Python's dunder methods are
+  decorated methods that start with `@`, such as `@add`, `@lt`, `@key` and
+  `@to_json`.
+- `__eq__` is `@eq`, and `!=` is always its opposite. It only runs when the
+  other side is also an object, so `x == nil` never calls it. Without it,
+  instances are compared by identity.
+- There are no list comprehensions. `map()`, `filter()` and `reduce()` are
+  methods of lists.
+- `len(x)` is `x.length()`, `str(x)` is `x.to_string()`, and `int(x)` is
   `x.int()` or `x.to_number()`.
-- Slicing is `s[a, b]`, with a comma, not `s[a:b]`.
+- Slices are written `s[a, b]`, with a comma, not `s[a:b]`.
 - `elif` is `else if`.
-- Modules run once and are cached, as in Python. Circular imports behave
-  the same way, and have the same caveat.
-- `if __name__ == '__main__'` is `if __root__ == __file__`.
+- As in Python, modules run once and are cached. Circular imports work in
+  the same way, with the same caveat.
+- `if __name__ == '__main__'` is written `if __root__ == __file__`.
 
-## From JavaScript
+## Coming From JavaScript
 
-- `var` is block-scoped and behaves like `let`. `const` prevents rebinding
-  and is enforced in local scopes.
-- `==` does no coercion. `'1' == 1` is `false`. There is no `===`.
-- Arrow functions are `@(x) => x * 2` or `def(x) => x * 2`. The `@` is the
-  common spelling.
-- There is no `this` rebinding to worry about. `self` is the instance,
-  always.
-- Objects and dictionaries are the same thing, and a class is not one.
-  Classes are sealed: you cannot add a property to an instance, though a
-  `class Ext > Target` declaration can add a *method* to the class.
+- `var` is block-scoped and behaves like `let`. `const` prevents a name from
+  being reassigned, and it's enforced in local scopes.
+- `==` never converts types, so `'1' == 1` is `false`. There's no `===`.
+- Arrow functions are written `@(x) => x * 2` or `def(x) => x * 2`, and `@`
+  is the more common form.
+- You don't have to worry about `this` being rebound, because `self` is
+  always the instance.
+- Objects and dictionaries are the same thing, but a class instance isn't a
+  dictionary. Classes are sealed, so you can't add a property to an
+  instance, although a `class Ext > Target` declaration can add a *method*
+  to the class.
 - `null` and `undefined` are both `nil`.
-- No `async`/`await` and no event loop. Concurrency is isolates: real
-  threads with separate heaps, communicating by copying.
+- There's no `async`/`await` and no event loop. Concurrency uses isolates,
+  which are real threads with separate heaps that communicate by copying
+  values.
 - `JSON.stringify` is `json.encode`, and `compact` defaults to `true`.
-- Template literals are `'${expr}'`, in ordinary single or double quotes.
+- Template literals are written `'${expr}'`, in ordinary single or double
+  quotes.
 
-## From Ruby
+## Coming From Ruby
 
-- No implicit returns. A function without `return` yields `nil`.
-- No blocks or `yield`. Pass an anonymous function.
+- There are no implicit returns. A function without a `return` returns
+  `nil`.
+- There are no blocks or `yield`. Pass an anonymous function instead.
 - `nil` is the only nil-like value, and `false` is separate from it.
-- Methods do not end in `?` or `!`. Predicates are named `is_*` and
-  mutation is documented rather than punctuated.
-- `each` hands the callback **value first, index second**. `for` hands you
-  **key first, value second**.
-- There is no `method_missing`. Adding methods to an existing class is
-  possible, but through an explicit `class Ext > Target` declaration rather
-  than by reopening the class.
-- Modules are files, not a language construct. There is no `include` or
+- Method names don't end in `?` or `!`. Predicates are named `is_*`, and
+  whether a method changes its receiver is documented rather than indicated
+  by punctuation.
+- `each` passes the **value first and the index second** to its callback,
+  while `for` gives you the **key first and the value second**.
+- There's no `method_missing`. You can add methods to an existing class, but
+  only through an explicit `class Ext > Target` declaration, not by
+  reopening the class.
+- Modules are files, not a language construct, and there's no `include` or
   `extend`.
 
-## From Go
+## Coming From Go
 
-- Dynamically typed, with optional annotations on parameters that are
-  checked at every call.
-- Errors are raised and caught, not returned. There is no `err !=  nil`
+- Zuri is dynamically typed, with optional annotations on parameters that
+  are checked on every call.
+- Errors are raised and caught, not returned, so there's no `err != nil`
   pattern.
-- Isolates are not goroutines. They are OS threads with **separate heaps**,
-  and values crossing between them are copied. That is the whole
-  concurrency model, and it is why there are no mutexes.
-- Channels are bounded queues and behave the way you expect, `select()`
-  included.
-- No interfaces. A parameter typed `Error` accepts any subclass, and that
-  is the whole of the polymorphism story alongside inheritance.
-- `defer` has no equivalent. Close what you opened, on both paths.
+- Isolates aren't goroutines. They're operating system threads with
+  **separate heaps**, and values passed between them are copied. That's the
+  whole concurrency model, and it's why there are no mutexes.
+- Channels are bounded queues and behave the way you'd expect, including
+  `select()`.
+- There are no interfaces. A parameter annotated as `Error` accepts any
+  subclass of `Error`, and that, together with inheritance, is all there is
+  to polymorphism.
+- There's no equivalent of `defer`. Close what you opened on both the
+  success path and the error path.
 
-## From Java or C#
+## Coming From Java or C#
 
-- No static typing, no generics, no interfaces, no packages-as-namespaces.
-  A module is a file.
-- Single inheritance, and no `abstract` keyword. A base method that raises
-  `NotImplementedError` is the idiom.
-- `public`/`private` is a leading underscore, enforced at compile time for
-  both class members and module members.
-- There is no overloading. One name, one method, and a second
-  declaration of either is a compile error.
+- There's no static typing, no generics, no interfaces, and no packages as
+  namespaces. A module is a file.
+- There's only single inheritance, and no `abstract` keyword. The usual
+  approach is a base method that raises `NotImplementedError`.
+- Instead of `public` and `private`, a leading underscore marks something as
+  private, and this is enforced at compile time for both class members and
+  module members.
+- There's no overloading. Each name refers to one method, and declaring it a
+  second time is a compile error.
 - `equals()` is `@eq`, and `==` calls it.
 - `toString()` is `to_string()`, and nothing calls it for you. What `echo`
   shows for an instance comes from `@to_string()`.
 
-## From C
+## Coming From C
 
-- Numbers are doubles. There is no integer type, and `/` never truncates.
+- Numbers are doubles. There's no integer type, and `/` never truncates.
   `//` is floor division.
-- `%` keeps the sign of the left operand, as in C. `//` rounds toward
-  negative infinity, which C's `/` does not.
-- No pointers, no manual memory management. A generational collector owns
-  the heap.
+- As in C, the result of `%` has the sign of the left operand. `//` rounds
+  toward negative infinity, which C's `/` doesn't.
+- There are no pointers and no manual memory management. A generational
+  garbage collector manages the heap.
 - `bytes` is the buffer type, and `struct` is how you read and write binary
   layouts.
-- `switch` is `using`, with no fall-through.
+- `switch` is `using`, and there's no fall-through.
 
-## Things That Will Save You an Hour
+## Things That Can Save You an Hour
 
-**Interpolation does not call `to_string()`.** `'${thing}'` is
-`<instance of Thing>`. Call the method. `echo` shows an instance through
-`@to_string()`, a separate method.
+**Interpolation doesn't call `to_string()`.** `'${thing}'` gives you
+`<instance of Thing>`, so call the method yourself. `echo` displays an
+instance using `@to_string()`, which is a separate method.
 
-**`list.sort()` mutates and returns; `list.reverse()` does neither to the
-original.** That asymmetry is the most common list bug in Zuri code.
+**`list.sort()` changes the list and returns it, while `list.reverse()`
+returns a new list and leaves the original unchanged.** This difference is
+the most common cause of list bugs in Zuri code.
 
-**A `def` scopes like a `var`.** At the top level of a file it binds a
-module-level name; anywhere else it is a local of the block it is written
-in, and it goes away with that block.
+**A `def` is scoped like a `var`.** At the top level of a file, it creates a
+module-level name. Anywhere else, it creates a local in the block where it's
+written, and that local disappears when the block ends.
 
-**`import` is local by default.** If your module imports something and a
-third file cannot see it through you, add the `@`.
+**Imports are private by default.** If your module imports something and a
+third file can't see it through your module, add the `@`.
 
-**A same-directory import is `import .sibling`**, not the full path from
-the project root.
+**To import a module in the same directory, write `import .sibling`**, not
+the full path from the project root.
 
-**A conditional expression breaks across lines either way.** `?` and `:`
-may each end a line or begin the next, so `cond ?` on one line and a
-line *starting* with `?` or `:` both parse.
+**A conditional expression can be split across lines either way.** `?` and
+`:` can each end a line or start the next one, so both `cond ?` at the end
+of a line and a line *starting* with `?` or `:` parse correctly.

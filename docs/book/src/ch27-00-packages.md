@@ -1,9 +1,9 @@
 # Packages and Nyssa
 
-A package is a Zuri project other projects can use. Zuri installs,
-publishes and serves them itself: the commands ship with the runtime,
-and so does Nyssa, the repository they talk to. There is nothing else
-to install.
+A package is a Zuri project that other projects can use. Zuri installs,
+publishes and serves packages itself. The commands come with the runtime,
+and so does Nyssa, the package registry they talk to, so there's nothing
+else to install.
 
 ```console
 $ zuri install http-extra
@@ -19,59 +19,60 @@ Installed 2 packages.
 import http_extra
 ```
 
-This chapter covers the whole of it:
+This chapter covers all of it:
 
-1. [Projects and Versions](ch27-01-projects.md): what `project.toml`
-   says, how packages are named, and how version ranges read.
+1. [Projects and Versions](ch27-01-projects.md): what goes in
+   `project.toml`, how packages are named, and how to read version ranges.
 2. [Installing Packages](ch27-02-installing.md): adding, updating and
-   removing dependencies, the lockfile, and where packages can come
+   removing dependencies, the lockfile, and the places packages can come
    from.
-3. [Publishing Packages](ch27-03-publishing.md): accounts, tokens, and
-   putting a version on a registry.
-4. [Commands From Packages](ch27-04-commands.md): packages that add
-   `zuri` commands, and installing tools for your user.
+3. [Publishing Packages](ch27-03-publishing.md): accounts, tokens and
+   publishing a version to a registry.
+4. [Commands From Packages](ch27-04-commands.md): packages that add `zuri`
+   commands, and installing tools for your user.
 5. [Bundles and Upgrades](ch27-05-bundles.md): shipping a program to
    machines without Zuri, and keeping Zuri itself up to date.
-6. [Running Nyssa](ch27-06-nyssa.md): hosting a repository for a team,
-   a company, or the public.
+6. [Running Nyssa](ch27-06-nyssa.md): hosting a registry for a team, a
+   company or the public.
 
 ## The Commands
 
 | Command | What it does |
 | --- | --- |
-| `zuri init` | starts a project |
-| `zuri install` | adds packages, or installs everything a project declares |
-| `zuri uninstall` | removes packages and whatever only they needed |
-| `zuri update` | moves packages to newer versions |
-| `zuri restore` | installs exactly what the lockfile names |
-| `zuri info` | describes the project's packages, or one on a registry |
-| `zuri search` | finds packages on a registry |
-| `zuri account` | signs in, and manages tokens |
-| `zuri publish` | publishes a version |
-| `zuri yank` | stops a version from being chosen |
-| `zuri owner` | manages who may publish a package |
-| `zuri clean` | frees the space downloads and installs take |
-| `zuri bundle` | packages a program with a runtime |
-| `zuri upgrade` | replaces this Zuri with a newer release |
-| `zuri serve` | runs a Nyssa repository |
+| `zuri init` | Creates a project |
+| `zuri install` | Adds packages, or installs everything a project declares |
+| `zuri uninstall` | Removes packages, along with anything only they needed |
+| `zuri update` | Updates packages to newer versions |
+| `zuri restore` | Installs exactly what the lockfile lists |
+| `zuri info` | Describes the project's packages, or a package on a registry |
+| `zuri search` | Searches for packages on a registry |
+| `zuri account` | Signs in and manages tokens |
+| `zuri publish` | Publishes a version of a package |
+| `zuri yank` | Stops a version from being chosen |
+| `zuri owner` | Manages who can publish a package |
+| `zuri clean` | Frees the disk space used by downloads and installs |
+| `zuri bundle` | Packages a program together with a runtime |
+| `zuri upgrade` | Updates Zuri itself to a newer release |
+| `zuri serve` | Runs a Nyssa registry |
 
-Every one of them answers `--help`, and every one that changes a
-project answers `--dry-run` with exactly what it would do.
+Every command accepts `--help`, and every command that changes a project
+accepts `--dry-run`, which shows exactly what it would do.
 
-## What Holds It Together
+## Key Concepts
 
-- **A project is a directory with a `project.toml`.** Every command
-  works on the project around the directory it runs in, found by
-  looking upwards, the same way imports find it.
-- **Packages install into the project.** They land in `.zuri/libs`,
-  which `import` searches before the standard library. Two projects on
-  one machine never share, or fight over, an installed package.
-- **One version of each package.** Every requirement in the project is
-  satisfied at once or the install stops and says which requirements
-  clash. Nothing is installed twice at two versions.
-- **The lockfile is the record.** `project.lock` pins every package to
-  an exact version and the checksum of what was downloaded, and
+- **A project is a directory with a `project.toml`.** Every command works on
+  the project that contains the current directory, which it finds by
+  searching upward, the same way imports do.
+- **Packages are installed into the project.** They go in `.zuri/libs`,
+  which `import` searches before the standard library. Two projects on the
+  same machine never share or conflict over an installed package.
+- **Each package has a single version.** Every requirement in the project
+  has to be satisfied at the same time. If that's not possible, the install
+  stops and tells you which requirements conflict. A package is never
+  installed twice in two different versions.
+- **The lockfile is the record.** `project.lock` pins every package to an
+  exact version, along with the checksum of what was downloaded, and
   `zuri restore` reproduces it anywhere.
-- **Nothing half done.** An install is staged beside `.zuri/libs` and
-  swapped in whole, so a failure or an interrupted command leaves the
-  project as it was.
+- **Nothing is left half done.** An install is prepared next to `.zuri/libs`
+  and swapped in all at once, so if it fails or is interrupted, the project
+  is left as it was.

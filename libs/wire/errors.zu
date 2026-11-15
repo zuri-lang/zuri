@@ -1,23 +1,22 @@
 /**
  * @module wire.errors
  *
- * The errors Wire raises, and the location information they carry.
+ * The errors that Wire raises, and the location information they carry.
  *
- * Every one of them knows which template it came from and, where the
- * problem can be traced to a specific tag, which line and column that
- * tag started at. A template engine that can only say "something is
- * wrong" is not much use once a layout hierarchy is a few files deep,
- * so the location travels with the error rather than being reassembled
- * by whoever catches it.
+ * Each error knows which template it came from and, if the problem can
+ * be traced to a particular tag, the line and column where that tag
+ * starts. An error that only says that something is wrong isn't much
+ * help once a layout is a few files deep, so the location is part of
+ * the error, and whoever catches it doesn't have to work it out again.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
 
 /**
- * The base class of every error Wire raises.
+ * The base class of every error that Wire raises.
  *
- * Catching this catches all of them, which is what a web handler
- * wanting to turn any template failure into a 500 page should do.
+ * Catching it catches all of them, which is what a web handler should
+ * do if it wants to turn any template failure into a 500 page.
  *
  * ```zuri
  * import wire
@@ -58,13 +57,13 @@ class WireError < Error {
   var reason = ''
 
   /**
-   * @param string reason: What went wrong, phrased without any
-   *    location; the location is appended for you.
-   * @param ?string path: The template the problem is in. Defaults to
+   * @param string reason: what went wrong, without any location. The
+   *    location is added for you.
+   * @param ?string path: the template the problem is in. Defaults to
    *    `<source>`.
-   * @param ?number line: The line, counting from 1. Omit or pass `0`
-   *    when there is no meaningful line.
-   * @param ?number column: The column, counting from 1.
+   * @param ?number line: the line, counting from 1. Leave it out or
+   *    pass `0` if there's no meaningful line.
+   * @param ?number column: the column, counting from 1
    * @constructor
    */
   @new(reason: string, path: ?string, line: ?number, column: ?number) {
@@ -104,12 +103,12 @@ class WireError < Error {
 }
 
 /**
- * Raised when a template file cannot be found, or when it resolves to
- * somewhere outside the root directory.
+ * Raised when a template file can't be found, or when its path resolves
+ * to somewhere outside the root directory.
  *
- * A path that climbs out of the root with `..` is reported as not found
- * rather than as a permission problem, so a template cannot be used to
- * probe the filesystem for what does and does not exist.
+ * A path that climbs out of the root with `..` is reported as not
+ * found, not as a permission problem, so that a template can't be used
+ * to find out which files exist on the system.
  */
 class TemplateNotFoundError < WireError {
 
@@ -126,14 +125,14 @@ class TemplateNotFoundError < WireError {
 }
 
 /**
- * Raised while compiling a template, for anything Wire can tell is
- * wrong without rendering: an unknown directive, an expression that
- * does not parse, an `x-elif` with no `x-if` in front of it, a region
- * defined twice.
+ * Raised while a template is compiled, for anything that Wire can tell
+ * is wrong without rendering it: an unknown directive, an expression
+ * that doesn't parse, an `x-elif` without an `x-if` in front of it, or
+ * a region defined twice.
  *
- * Compilation happens once per template rather than once per render, so
- * these surface the first time a template is used and not on every
- * request after that.
+ * A template is compiled once, not every time it's rendered, so these
+ * errors appear the first time a template is used, not on every request
+ * after that.
  */
 class TemplateSyntaxError < WireError {
 
@@ -150,14 +149,14 @@ class TemplateSyntaxError < WireError {
 }
 
 /**
- * Raised while rendering, for anything that depends on the values a
- * template was given: iterating something that cannot be iterated, a
- * filter that rejects its input, an include hierarchy that never
- * bottoms out.
+ * Raised while a template is rendered, for anything that depends on the
+ * values it was given: looping over something that can't be iterated, a
+ * filter that rejects its input, or includes that never stop including
+ * each other.
  *
- * A variable that was simply not supplied is not one of these. Missing
- * variables render as empty and test as falsy, which is what makes
- * optional sections readable.
+ * A variable that simply wasn't supplied doesn't cause one of these.
+ * Missing variables render as nothing and count as false in a test, so
+ * that optional sections are easy to write.
  */
 class RenderError < WireError {
 

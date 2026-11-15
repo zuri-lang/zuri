@@ -1,19 +1,20 @@
 # A Tour of the Standard Library
 
-The standard library is part of the installation. There is nothing to add
-to a manifest, no package manager to run, and no dependency to resolve;
+The standard library comes with every installation. There's nothing to add
+to a manifest, no package manager to run and no dependencies to resolve, so
 `import json` works in a file you created ten seconds ago.
 
-This chapter walks through what is there, grouped by the job you would
-reach for it to do, with a working example of each. It is a tour rather
-than a reference: [Appendix F](appendix-06-stdlib-index.md) is the index,
-every module carries doc blocks in `libs/`, and the three largest modules
-have chapters of their own — [Wire](ch14-00-wire.md),
-[HTTP](ch15-00-http.md) and [Imagine](ch16-00-imagine.md).
+This chapter looks at what's available, grouped by what you'd use it for,
+with a working example of each module. It's an overview rather than a
+reference. [Appendix F](appendix-06-stdlib-index.md) is the index, every
+module has doc comments in `libs/`, and the three largest modules have their
+own chapters: [Wire](ch14-00-wire.md), [HTTP](ch15-00-http.md) and
+[Imagine](ch16-00-imagine.md).
 
-Read it once to learn what exists. The value of a tour like this is not
-remembering the details; it is recognising, six months from now, that the
-thing you are about to write by hand is already here.
+Read through it once to see what exists. You don't need to remember the
+details. The point is that six months from now, when you're about to write
+something by hand, you'll remember that it's already in the standard
+library.
 
 ## Data Formats
 
@@ -41,9 +42,9 @@ echo json.encode({ name: 'Ada' }, false)
 }
 ```
 
-`encode(value, compact, max_depth)` defaults to compact. `parse(path)`
-reads and decodes a file; `dump(value, file)` writes one. A class that
-defines `@to_json()` controls its own encoding.
+`encode(value, compact, max_depth)` produces compact output by default.
+`parse(path)` reads and decodes a file, and `dump(value, file)` writes one.
+A class that defines `@to_json()` controls how its instances are encoded.
 
 ### `yaml`
 
@@ -57,8 +58,8 @@ echo yaml.parse('name: zuri\ntags:\n  - fast\n  - small')
 {name: zuri, tags: [fast, small]}
 ```
 
-Anchors, aliases, tags, multi-document streams and block scalars are all
-supported.
+Anchors, aliases, tags, documents with several parts and block scalars are
+all supported.
 
 ### `toml`
 
@@ -73,8 +74,8 @@ echo toml.parse('[package]\nname = "zuri"\nversion = "1.0"\n')
 ```
 
 `parse()` and `dump()` treat a document as data. `edit()` treats it as a
-file somebody wrote: the `Document` it returns renders back byte for byte
-until it is changed, and a change disturbs only the line it lands on.
+file someone wrote by hand. The `Document` it returns is written back byte
+for byte until you change it, and a change only affects the line it's on.
 
 ```zuri
 import toml
@@ -92,8 +93,8 @@ version = "1.0.0"  # bump me
 
 ```
 
-That is what a program editing somebody else's configuration file needs:
-the comment stayed, and so did the spacing on the line that changed.
+That's what you need when a program edits someone else's configuration file:
+the comment is kept, and so is the spacing on the line that changed.
 
 ### `csv`
 
@@ -108,11 +109,11 @@ echo csv.parse('a,b\n1,2')
 ```
 
 `Reader` and `Writer` stream large files, `Dialect` configures separators
-and quoting, and `sniff_dialect()` guesses from a sample.
+and quoting, and `sniff_dialect()` guesses the dialect from a sample.
 
 ### `struct`
 
-Binary layouts. Covered in [Chapter 10](ch10-00-binary-data.md).
+For binary layouts, covered in [Chapter 10](ch10-00-binary-data.md).
 
 ### `base64`, `convert`
 
@@ -130,14 +131,15 @@ ff
 255
 ```
 
-`convert` handles every base-to-base conversion you would otherwise write
-by hand, plus hex, binary, octal and unicode helpers.
+`convert` handles conversions between number bases that you'd otherwise
+write by hand, and also has helpers for hex, binary, octal and Unicode.
 
 ## Text and Markup
 
 ### `html`
 
-A WHATWG-conformant parser, a real DOM, and CSS selectors:
+A parser that follows the WHATWG HTML standard, a full DOM and CSS
+selectors:
 
 ```zuri
 import html
@@ -153,13 +155,13 @@ one
 2
 ```
 
-The DOM supports traversal, mutation and serialisation, which makes it a
-scraper, a templating backend and a sanitiser in one module.
+The DOM supports traversal, changes and serialization, so you can use this
+one module for scraping, as a template backend or to sanitize HTML.
 
 ### `wire`
 
-Templating, with directives expressed as HTML attributes rather than a
-second syntax layered over your markup:
+Templates, with directives written as HTML attributes instead of a second
+syntax mixed into your markup:
 
 ```zuri
 import wire
@@ -171,12 +173,12 @@ echo wire.render_string('<p x-text="msg"></p>', { msg: 'hi' })
 <p>hi</p>
 ```
 
-Everything is escaped by default, and escaped correctly for where it sits:
-a value in an attribute, in a URL and in a `<script>` block are three
-different escapes, and Wire knows which is which because it parses your
-template as structure rather than text.
+Everything is escaped by default, and escaped correctly for where it
+appears. A value in an attribute, in a URL and in a `<script>` block each
+need a different kind of escaping, and Wire knows which is which because it
+parses your template's structure instead of treating it as plain text.
 
-[Chapter 14](ch14-00-wire.md) is the full treatment.
+[Chapter 14](ch14-00-wire.md) covers Wire in full.
 
 ### `url`
 
@@ -210,13 +212,13 @@ echo mime.detect_from_name('a.png')
 image/png
 ```
 
-`detect(file)` sniffs content rather than trusting the extension, which is
-the check you want on an upload.
+`detect(file)` identifies a file's type by looking at its contents instead
+of trusting its extension, which is the check you want for uploaded files.
 
 ### `colors`
 
-ANSI colour for terminal output, and conversion between every colour space
-you are likely to have a value in:
+ANSI colors for terminal output, and conversions between all the color
+spaces you're likely to have a value in:
 
 ```zuri
 import colors
@@ -240,11 +242,11 @@ import colors
 echo colors.text('warning', colors.text_color.yellow)
 ```
 
-The conversions are what make the same code work on a terminal that cannot
-do what you asked: a true-colour value becomes the nearest of 256, and 256
-becomes the nearest of 16. `hex()`, `rgb()`, `hsl()`, `hsv()`, `hwb()`,
-`cmyk()` and `xyz()` each take a colour in that space and produce the
-escape sequence for it.
+The conversions are what let the same code work on a terminal that can't
+display the colors you asked for. A true-color value is converted to the
+nearest of 256 colors, and a 256-color value to the nearest of 16. `hex()`,
+`rgb()`, `hsl()`, `hsv()`, `hwb()`, `cmyk()` and `xyz()` each take a color
+in their color space and return the escape sequence for it.
 
 ## Time
 
@@ -266,24 +268,25 @@ Friday, 11th September 2026
 2026-09-11
 ```
 
-The format codes are single letters: `Y` four-digit year, `m` zero-padded
-month, `d` zero-padded day, `H` 24-hour, `i` minutes, `s` seconds, `l`
-weekday name, `F` month name, `jS` day with an ordinal suffix.
+The format codes are single letters: `Y` for a four-digit year, `m` for a
+zero-padded month, `d` for a zero-padded day, `H` for the hour on a 24-hour
+clock, `i` for minutes, `s` for seconds, `l` for the name of the weekday,
+`F` for the name of the month, and `jS` for the day with an ordinal suffix.
 
-`localtime()` and `gmtime()` give the current time, `from_time(seconds)`
-converts a Unix timestamp, and the module carries a real IANA time zone
-database, so `from_timezone('Europe/London', ...)` does the right thing
-across a daylight-saving boundary.
+`localtime()` and `gmtime()` return the current time, and
+`from_time(seconds)` converts a Unix timestamp. The module includes the IANA
+time zone database, so `from_timezone('Europe/London', ...)` handles
+daylight saving time changes correctly.
 
 ## Cryptography and Identity
 
 ### `hash`
 
-Digests and HMACs. Covered in [Chapter 10](ch10-00-binary-data.md).
+Digests and HMACs, covered in [Chapter 10](ch10-00-binary-data.md).
 
 ### `bcrypt`
 
-Password hashing, which is a different problem from digesting:
+Password hashing, which is a different problem from computing a digest:
 
 ```zuri
 import bcrypt
@@ -299,13 +302,13 @@ true
 10
 ```
 
-Use this for passwords and `hash` for everything else. `needs_rehash()`
-tells you when a stored hash was made with a lower cost than you now
+Use `bcrypt` for passwords and `hash` for everything else. `needs_rehash()`
+tells you when a stored hash was created with a lower cost than you now
 require.
 
 ### `crypto`
 
-RSA signing and HKDF key derivation.
+RSA signatures and HKDF key derivation.
 
 ### `uuid`
 
@@ -321,19 +324,20 @@ echo uuid.is_valid(uuid.v7())
 true
 ```
 
-Versions 1, 3, 4, 5, 6, 7 and 8 are all there. `v4` is the random one you
-usually want; `v7` is time-ordered, which makes it a better database key.
+Versions 1, 3, 4, 5, 6, 7 and 8 are all available. `v4` is the random
+version you'll usually want, and `v7` is ordered by time, which makes it a
+better choice for database keys.
 
 ### `jwt`
 
-Signing, verifying and decoding JSON Web Tokens, with a JWKS client for
-rotating keys.
+Signing, verifying and decoding JSON Web Tokens, with a JWKS client for keys
+that rotate.
 
 ## Validation and Structure
 
 ### `validate`
 
-A fluent schema builder:
+A schema builder with a fluent API:
 
 ```zuri
 import validate
@@ -352,13 +356,15 @@ echo schema.check({ name: 'a name that is far too long', age: 200.5 })
 {valid: false, errors: [{field: name, message: The name field must not exceed 10 characters.}, {field: age, message: The age field must be an integer.}]}
 ```
 
-`check_or_raise()` raises instead of returning. `extend()`, `only()` and
-`except()` build one schema from another, which is how a create schema and
-an update schema stay in sync.
+`check_or_raise()` raises an error instead of returning the result.
+`extend()`, `only()` and `except()` build one schema from another, which is
+how you keep a schema for creating a record and a schema for updating it in
+sync.
 
 ### `types`
 
-Type predicates, one per type, as an alternative to the `is_*` built-ins:
+Type checks, one for each type, as an alternative to the built-in `is_*`
+functions:
 
 ```zuri
 import types
@@ -382,17 +388,17 @@ true
 true
 ```
 
-Each one **answers a question** and returns a boolean; none of them
-converts anything. `types.int(4.2)` is `false` because `4.2` is not an
-integer, not because it failed to become one.
+Each one **answers a question** and returns a boolean, and none of them
+convert anything. `types.int(4.2)` is `false` because `4.2` isn't an
+integer, not because converting it failed.
 
-`types.of()` is `typeof()`. `digit()`, `alpha()` and `char()` are the
-string-shape tests the built-ins do not cover, and `instance(value, Class)`
-walks the inheritance chain.
+`types.of()` is the same as `typeof()`. `digit()`, `alpha()` and `char()`
+check the content of strings in ways the built-in functions don't, and
+`instance(value, Class)` checks the whole inheritance chain.
 
-When you want conversion rather than a question, the methods on the value
-do it: `to_number()`, `to_string()`, `to_bigint()`, `to_list()`,
-`to_bytes()`.
+When you want to convert a value rather than check it, use the methods on
+the value itself: `to_number()`, `to_string()`, `to_bigint()`, `to_list()`
+and `to_bytes()`.
 
 ### `set`
 
@@ -407,7 +413,7 @@ echo s.length()
 3
 ```
 
-Union, intersection, difference and subset tests, with insertion order
+Union, intersection, difference and subset checks, with insertion order
 preserved.
 
 ### `enum`
@@ -427,10 +433,10 @@ Pass a dictionary instead of a list to choose the values yourself.
 
 ### `array`
 
-Typed, fixed-width numeric arrays: `Int8Array` through `Uint64Array`, plus
-`FloatArray` and `DoubleArray`. They store values in their declared width
-rather than as doubles, which matters for memory and for talking to binary
-formats.
+Typed numeric arrays with a fixed width, from `Int8Array` to `Uint64Array`,
+plus `FloatArray` and `DoubleArray`. They store values at their declared
+width instead of as doubles, which matters for memory use and for working
+with binary formats.
 
 ```zuri
 import array
@@ -443,25 +449,25 @@ echo ints.length()
 3
 ```
 
-## The System
+## The Operating System
 
 ### `os`
 
-Processes, the filesystem, paths and the environment. Covered in
+Processes, the file system, paths and environment variables, covered in
 [Chapter 9](ch09-00-files.md).
 
-`os.exec(command)` runs a shell command and gives you its output.
-`os.spawn(command, args, options)` starts a process you can talk to.
-`os.on_signal(name, handler)` installs a signal handler.
-`os.at_exit(handler)` registers cleanup that runs however the program
-ends, and `os.set_exit_code(code)` decides the status it ends with
-without ending it there and then.
+`os.exec(command)` runs a shell command and returns its output.
+`os.spawn(command, args, options)` starts a process that you can communicate
+with. `os.on_signal(name, handler)` installs a signal handler.
+`os.at_exit(handler)` registers cleanup code that runs however the program
+ends, and `os.set_exit_code(code)` sets the exit status without ending the
+program right away.
 
 ### `env`
 
-Configuration: a `.env` file read into the process environment, and
-values read back out already converted. Covered in
-[Chapter 19](ch19-00-env.md).
+Configuration: a `.env` file loaded into the process environment, and values
+read back out already converted to the right type. Covered in [Chapter
+19](ch19-00-env.md).
 
 ```zuri,ignore
 import env
@@ -473,8 +479,8 @@ var debug = env.bool('DEBUG', false)
 var secret = env.require('SESSION_SECRET')
 ```
 
-Names already set in the environment are left alone, so the file is a
-set of defaults and the deployment is what overrides them.
+Variables that are already set in the environment aren't changed, so the
+file provides defaults and the deployment environment can override them.
 
 ### `io`
 
@@ -489,12 +495,12 @@ var secret = io.readline('Password: ', true)
 echo io.stdout.is_tty()
 ```
 
-`io.TTY` puts the terminal into raw mode, reads single keypresses and moves
-the cursor, which is what an interactive program needs. `io.BytesIO` is the
-in-memory file from [Chapter 10](ch10-00-binary-data.md).
+`io.TTY` puts the terminal into raw mode, reads individual key presses and
+moves the cursor, which is what an interactive program needs. `io.BytesIO`
+is the in-memory file described in [Chapter 10](ch10-00-binary-data.md).
 
 `io.capture(body)` collects everything `body` writes to standard output
-instead of printing it, `echo`, `print()` and `io.stdout` alike:
+instead of printing it. That includes `echo`, `print()` and `io.stdout`:
 
 ```zuri
 import io
@@ -514,15 +520,16 @@ echo 'captured ${out.length()} characters'
 captured 12 characters
 ```
 
-Captures nest, and `capture_begin()`/`capture_end()` are the manual pair
-for when the body might raise and you want its output anyway. This is
-what lets [Chapter 23](ch23-00-testing.md) assert on what a function
-prints, and keep a passing test's output out of the report.
+Captures can be nested, and `capture_begin()` and `capture_end()` do the
+same thing manually, for when the body might raise an error and you still
+want its output. This is how the tests in [Chapter 23](ch23-00-testing.md)
+check what a function prints, and how output from passing tests is kept out
+of the report.
 
 ### `test`
 
-Suites, matchers, mocks, snapshots and reports. Covered in
-[Chapter 23](ch23-00-testing.md).
+Test suites, matchers, mocks, snapshots and reports, covered in [Chapter
+23](ch23-00-testing.md).
 
 ```zuri,ignore
 import test { * }
@@ -538,8 +545,8 @@ run()
 
 ### `stat`
 
-The `S_IS*` predicates over the `mode` word from `file().stats()`, plus a
-renderer for it:
+The `S_IS*` functions for the `mode` value returned by `file().stats()`,
+plus a function to format it:
 
 ```zuri
 import stat
@@ -561,15 +568,15 @@ false
 ```
 
 `S_ISREG`, `S_ISDIR`, `S_ISLNK`, `S_ISCHR`, `S_ISBLK`, `S_ISFIFO` and
-`S_ISSOCK` each answer one question about the kind of entry.
-`S_IMODE(mode)` strips the type bits and leaves the permissions;
-`file_mode(mode)` renders the whole thing the way `ls -l` does.
+`S_ISSOCK` each check for one kind of entry. `S_IMODE(mode)` removes the
+type bits and keeps the permissions, and `file_mode(mode)` formats the whole
+value the way `ls -l` does.
 
 ### `args`
 
-A command-line parser with subcommands, typed options, automatic
-`--help` and wrapped terminal output. Covered in
-[Chapter 20](ch20-00-args.md).
+A command-line parser with subcommands, typed options, automatic `--help`
+and output that wraps to the terminal width. Covered in [Chapter
+20](ch20-00-args.md).
 
 ```zuri,ignore
 import args
@@ -584,8 +591,8 @@ parser.add_command('history', 'Show past greetings')
 var parsed = parser.parse()
 ```
 
-The help text is written from the same declarations that read the
-arguments, so the two cannot drift apart.
+The help text is generated from the same declarations that parse the
+arguments, so the two can't get out of sync.
 
 ### `log`
 
@@ -596,20 +603,20 @@ log.info('server started')
 log.error('connection refused')
 ```
 
-A `Logger` binds structured fields, a `child()` logger inherits them, and
-transports send records to the console, a file or somewhere you write
-yourself.
+A `Logger` attaches structured fields to every record, a `child()` logger
+inherits the fields of its parent, and transports send the records to the
+console, to a file or to a destination you write yourself.
 
 ### `isolate`
 
-Concurrency. Covered in [Chapter 11](ch11-00-isolates.md).
+Concurrency, covered in [Chapter 11](ch11-00-isolates.md).
 
 ### `ffi`
 
-Calling C and Rust. `ffi` loads shared libraries, reads their C headers
-or Rust sources as declarations, calls their functions with checked
-conversions, and turns Zuri functions into callbacks; it links static
-libraries into loadable ones too.
+Calling C and Rust code. `ffi` loads shared libraries, reads their C headers
+or Rust source files as declarations, calls their functions with checked
+conversions, and turns Zuri functions into callbacks. It can also link
+static libraries into loadable ones.
 
 ```zuri
 import ffi
@@ -625,31 +632,31 @@ echo c.strlen('interop')
 
 Covered in [Chapter 26](ch26-00-ffi.md).
 
-## The Network
+## Networking
 
 ### `net`
 
-TCP, UDP, unix domain sockets, TLS, DTLS, addresses and polling. Covered
-in [Chapter 12](ch12-00-networking.md).
+TCP, UDP, Unix domain sockets, TLS, DTLS, addresses and polling, covered in
+[Chapter 12](ch12-00-networking.md).
 
 ### `http`
 
-Client and server, HTTP/1.1 and HTTP/2, with routing, middleware,
+An HTTP/1.1 and HTTP/2 client and server, with routing, middleware,
 WebSockets, server-sent events, multipart uploads, static files and a
-reverse proxy. Introduced in [Chapter 12](ch12-00-networking.md), covered
-fully in [Chapter 15](ch15-00-http.md), and used throughout
+reverse proxy. It's introduced in [Chapter 12](ch12-00-networking.md),
+covered in full in [Chapter 15](ch15-00-http.md), and used throughout
 [Chapter 25](ch25-00-task-board.md).
 
 ### `rpc`
 
-JSON-RPC 2.0, the protocol for calling methods in another program, on
-both ends. A service answers calls with handlers, behind an `http`
-route or on a connection; a client calls a service over HTTP; and an
-endpoint on a WebSocket, a socket, a child process's standard streams
-or a pipe between isolates both answers and calls, so either side can
-call the other at any time. `rpc.serve()` gives every connection to a
-listening socket an endpoint of its own, over TCP, TLS or a Unix
-domain socket.
+JSON-RPC 2.0, the protocol for calling methods in another program, for both
+the calling side and the answering side. A service answers calls with
+handlers, either behind an `http` route or on a connection. A client calls a
+service over HTTP. An endpoint, which can run over a WebSocket, a socket, a
+child process's standard streams or a pipe between isolates, both answers
+and makes calls, so either side can call the other at any time.
+`rpc.serve()` gives each connection to a listening socket its own endpoint,
+over TCP, TLS or a Unix domain socket.
 
 ```zuri
 import rpc
@@ -682,14 +689,14 @@ Covered in [Chapter 28](ch28-00-rpc.md).
 
 ### `sql`
 
-One way to talk to a relational database, whichever one it is. `sql`
-defines what an adapter has to provide and supplies everything that is
-the same across engines: parameters, transactions and savepoints,
-cursors, pooling, introspection, and one error hierarchy. SQLite,
-PostgreSQL and MySQL adapters ship with it, and changing between them
-means changing the connection string. On top of it, `db.schema` changes
-tables described once for every engine, `sql.migrate` applies versioned
-migrations, and `sql.model` gives each table a class.
+A single API for relational databases, whichever one you use. `sql` defines
+what a database adapter has to provide, and supplies everything that's the
+same across databases: parameters, transactions and savepoints, cursors,
+connection pools, introspection and a single error hierarchy. It comes with
+adapters for SQLite, PostgreSQL and MySQL, and switching between them means
+changing the connection string. On top of that, `db.schema` changes tables
+using one description that works for every database, `sql.migrate` applies
+versioned migrations, and `sql.model` gives each table a class.
 
 ```zuri,ignore
 import sql
@@ -708,15 +715,15 @@ Covered in [Chapter 17](ch17-00-sql.md).
 
 ### `mail`
 
-Messages and the three protocols that move them, written in Zuri from
-the socket up. `mail.message()` builds a message out of text, HTML and
-files and works out the MIME tree from what went in; `mail.parse()`
-reads one back. `mail.smtp` sends, `mail.imap` reads mail where it is
-kept, and `mail.pop3` takes it away. Both server ends are here too: an
-SMTP server that decides what to accept through handlers of your own,
-and an IMAP server that answers out of a mail store, of which one keeps
-mail on disk in Maildir format and one keeps it in the process.
-`mail.dkim` signs outgoing mail and checks incoming mail.
+Email messages, and the three protocols used to send and receive them, all
+written in Zuri from the socket up. `mail.message()` builds a message from
+text, HTML and attachments and works out the MIME structure for you, and
+`mail.parse()` reads a message back in. `mail.smtp` sends mail, `mail.imap`
+reads mail where it's stored, and `mail.pop3` downloads it. The server side
+is included too: an SMTP server that uses your own handlers to decide what
+to accept, and an IMAP server that serves messages from a mail store. One
+store keeps mail on disk in Maildir format and the other keeps it in memory.
+`mail.dkim` signs outgoing mail and verifies incoming mail.
 
 ```zuri,ignore
 import mail
@@ -747,9 +754,9 @@ and `zip` archives and `checksum` for CRC32 and Adler-32. Covered in
 
 ### `imagine`
 
-Image creation and manipulation on an RGBA buffer: drawing primitives,
-text with a built-in stroke font, filters, colour-space conversion, and
-reading and writing the common formats.
+Creating and editing images in an RGBA buffer, with drawing functions, text
+in a built-in stroke font, filters, color space conversion, and reading and
+writing the common image formats.
 
 ```zuri
 import imagine { Image }
@@ -760,23 +767,24 @@ Image(400, 200, '#0f172a')
     .save('badge.png')
 ```
 
-Almost every method returns an image, so operations chain.
-`Image.open(path)` decodes an existing file, with the format taken from the
-contents rather than the extension:
+Almost every method returns an image, so you can chain operations.
+`Image.open(path)` decodes an existing file, working out the format from the
+file's contents instead of its extension:
 
 ```zuri,ignore
 Image.open('photo.jpg').thumbnail(400, 400).save('thumb.webp')
 ```
 
-Decoding and encoding are native; everything between them — filters,
-drawing, colour conversion — is ordinary Zuri you can read in `libs/imagine`
-and extend. [Chapter 16](ch16-00-imagine.md) is the full treatment.
+Decoding and encoding are done in native code. Everything in between,
+including filters, drawing and color conversion, is ordinary Zuri code that
+you can read and extend in `libs/imagine`. [Chapter 16](ch16-00-imagine.md)
+covers it in full.
 
 ## The Language Itself
 
 ### `zuri`
 
-Lexing, parsing, compiling and reflection, all reachable from Zuri code:
+Lexing, parsing, compiling and reflection, all available from Zuri code:
 
 ```zuri
 import zuri
@@ -790,16 +798,16 @@ true
 list
 ```
 
-[Chapter 21](ch21-00-metaprogramming.md) is the full treatment.
+[Chapter 21](ch21-00-metaprogramming.md) covers it in full.
 
 ### `math`
 
-The constants. Everything else is a method on `number`; see
-[Chapter 4](ch04-02-numbers.md).
+Mathematical constants. Everything else is a method of `number`, as
+described in [Chapter 4](ch04-02-numbers.md).
 
-## Finding the Rest
+## Learning More
 
-Every module's source is in `libs/`, and every public function in it
-carries a doc block with its parameters, its defaults and its edge cases.
-Reading `libs/set.zu` is a faster way to learn `set` than any summary, and
-the standard library is written to be read.
+The source code for every module is in `libs/`, and every public function
+has a doc comment describing its parameters, their default values and its
+edge cases. Reading `libs/set.zu` is a quicker way to learn the `set` module
+than any summary, and the standard library is written to be readable.

@@ -2,12 +2,12 @@
 /**
  * @module http.middleware
  *
- * The middleware every public HTTP service ends up needing: CORS,
- * access logging, the security headers a browser acts on,
- * authentication, and a request rate limit.
+ * The middleware that almost every public HTTP service needs: CORS,
+ * access logging, the security headers that browsers act on,
+ * authentication and rate limiting.
  *
- * Each function here returns a middleware - a function of
- * `(request, response, next)` - ready to hand to `HttpServer.use()`:
+ * Each function here returns a middleware, which is a function of
+ * `(request, response, next)`, ready to pass to `HttpServer.use()`:
  *
  * ```zuri
  * import http
@@ -20,8 +20,9 @@
  * server.use(middleware.cors({ origins: ['https://app.example.com'] }))
  * ```
  *
- * Order matters: middleware run outermost first, so a logger added
- * first sees the final status of everything added after it.
+ * The order matters. Middleware runs from the outside in, so a logger
+ * added first sees the final status of every request, after everything
+ * added later has run.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -32,24 +33,24 @@ import .util
 import hash
 
 /**
- * Answers CORS preflights and adds the cross-origin headers a browser
- * needs before it will let script read a response from another
+ * Responds to CORS preflight requests and adds the cross-origin headers
+ * a browser needs before it lets a script read a response from another
  * origin.
  *
- * `origins` is the list of origins allowed, matched exactly. The
- * literal `'*'` allows any origin, but only for requests that carry
- * no credentials: a wildcard together with
- * `Access-Control-Allow-Credentials` is rejected by every browser, so
- * setting `credentials` reflects the request's own origin instead -
- * which means the `origins` list becomes the only thing standing
- * between an attacker's page and an authenticated response, and it
- * needs to be an explicit list rather than a wildcard.
+ * `origins` is the list of allowed origins, which are matched exactly.
+ * The value `'*'` allows any origin, but only for requests without
+ * credentials. Every browser rejects a wildcard combined with
+ * `Access-Control-Allow-Credentials`, so when `credentials` is set, the
+ * request's own origin is sent back instead. That makes the `origins`
+ * list the only thing standing between an attacker's page and an
+ * authenticated response, so it needs to list the origins explicitly
+ * instead of using a wildcard.
  *
  * @param ?dict options: `origins` (default `['*']`), `methods`,
- *    `headers` (allowed request headers; defaults to reflecting what
- *    was asked for), `expose` (response headers script may read),
- *    `credentials` (default `false`), `max_age` (seconds a preflight
- *    may be cached, default 86400)
+ *    `headers` (allowed request headers, defaulting to whatever the
+ *    request asked for), `expose` (response headers a script may read),
+ *    `credentials` (default `false`), `max_age` (how many seconds a
+ *    preflight response may be cached, default 86400)
  * @returns function(3)
  */
 def cors(options: ?dict) {
@@ -135,17 +136,18 @@ def cors(options: ?dict) {
 }
 
 /**
- * Writes one line per request once the response is finished.
+ * Writes one line for each request, once the response has finished.
  *
- * The default format is the Common Log Format extended with the
- * response time, which every log analyser already understands. Pass
+ * The default format is the Common Log Format with the response time
+ * added, which every log analysis tool already understands. Pass
  * `format` to build the line yourself, or `sink` to send it somewhere
  * other than standard output.
  *
- * @param ?dict options: `sink` (a function taking the line),
- *    `format` (a function taking `(request, response, milliseconds)`
- *    and returning the line), `trust_proxy` (whether to log the
- *    forwarded client address rather than the peer)
+ * @param ?dict options: `sink` (a function that receives each line),
+ *    `format` (a function that takes
+ *    `(request, response, milliseconds)` and returns the line),
+ *    `trust_proxy` (whether to log the forwarded client address instead
+ *    of the address of the connection)
  * @returns function(3)
  */
 def logger(options: ?dict) {
@@ -212,23 +214,24 @@ def _round(value, places) {
 }
 
 /**
- * Adds the response headers a browser acts on to harden a page.
+ * Adds the response headers that tell a browser to apply extra security
+ * measures to a page.
  *
- * Every one of them is opt-out, because the right value depends on
- * the application:
+ * You can turn off each of them, because the right value depends on the
+ * application:
  *
  * | Header | Default | What it does |
  * | ------ | ------- | ------------ |
- * | `X-Content-Type-Options` | `nosniff` | stops the browser second-guessing a declared content type |
- * | `X-Frame-Options` | `DENY` | refuses to be framed, which is what clickjacking needs |
- * | `Referrer-Policy` | `strict-origin-when-cross-origin` | keeps paths and queries out of outbound referrers |
- * | `Strict-Transport-Security` | one year | only sent over HTTPS, where it is meaningful |
- * | `Content-Security-Policy` | not set | too application-specific to guess at |
+ * | `X-Content-Type-Options` | `nosniff` | Stops the browser from guessing a different content type from the one declared |
+ * | `X-Frame-Options` | `DENY` | Stops the page from being shown in a frame, which clickjacking requires |
+ * | `Referrer-Policy` | `strict-origin-when-cross-origin` | Keeps paths and query strings out of the referrer sent to other sites |
+ * | `Strict-Transport-Security` | One year | Only sent over HTTPS, where it has an effect |
+ * | `Content-Security-Policy` | Not set | Too specific to each application to guess |
  *
- * @param ?dict options: any of the header values above by lowercase
+ * @param ?dict options: any of the header values above, by lowercase
  *    name (`content_security_policy`, `frame_options`,
  *    `referrer_policy`, `hsts_max_age`, `hsts_subdomains`,
- *    `content_type_options`), each `nil` to omit
+ *    `content_type_options`), each set to `nil` to leave the header out
  * @returns function(3)
  */
 def security_headers(options: ?dict) {
@@ -290,19 +293,19 @@ def _disabled() {
 /**
  * Requires HTTP Basic authentication.
  *
- * `verify` is called with the username and password and returns
- * whether they are acceptable; it should compare secrets with
- * `http.util.secure_equals()` rather than `==`, so that a wrong
- * guess and a nearly-right one take the same time.
+ * `verify` is called with the username and password, and returns
+ * whether they're valid. It should compare secrets with
+ * `http.util.secure_equals()` instead of `==`, so that a wrong guess
+ * and an almost correct guess take the same amount of time.
  *
- * A `nil` verifier disables the middleware: it passes every request
- * straight through rather than refusing one. That makes blanking the
- * verifier a way to switch authentication off without unpicking the
- * chain around it.
+ * A `nil` verifier disables the middleware, so it lets every request
+ * through instead of rejecting any. That means you can turn off
+ * authentication by removing the verifier, without changing the rest of
+ * the chain.
  *
- * @param ?function(2) verify: `nil` to disable
- * @param ?string realm: the realm named in the challenge; defaults to
- *    `'Restricted'`
+ * @param ?function(2) verify: `nil` to disable the middleware
+ * @param ?string realm: the realm named in the challenge. Defaults to
+ *    `'Restricted'`.
  * @returns function(3)
  */
 def basic_auth(verify, realm: ?string) {
@@ -335,11 +338,11 @@ def basic_auth(verify, realm: ?string) {
 /**
  * Requires a bearer token.
  *
- * A `nil` verifier disables the middleware, as with `basic_auth()`.
+ * As with `basic_auth()`, a `nil` verifier disables the middleware.
  *
- * @param ?function(1) verify: called with the token; returns whether
- *    it is acceptable, or a value to attach to `request.context` as
- *    `'user'`. `nil` to disable
+ * @param ?function(1) verify: called with the token, and returns
+ *    whether it's valid, or a value to store in `request.context` as
+ *    `'user'`. `nil` to disable the middleware
  * @param ?string realm
  * @returns function(3)
  */
@@ -397,8 +400,8 @@ def parse_bearer(header: string) {
 /**
  * Requires a valid JSON Web Token, verified by the `jwt` module.
  *
- * `verifier` is either a `jwt.Verifier`, or any function taking the
- * token and returning its claims:
+ * `verifier` is either a `jwt.Verifier`, or a function that takes the
+ * token and returns its claims:
  *
  * ```zuri
  * import http.middleware
@@ -409,8 +412,8 @@ def parse_bearer(header: string) {
  * ))
  * ```
  *
- * The function form is what covers a key set resolved by `kid`, or
- * anything else the `jwt` module can do that a fixed verifier cannot:
+ * The function form lets you use a key set selected by `kid`, or
+ * anything else the `jwt` module can do that a fixed verifier can't:
  *
  * ```zuri
  * server.use(middleware.jwt_auth(@(token) {
@@ -418,31 +421,33 @@ def parse_bearer(header: string) {
  * }))
  * ```
  *
- * On success the claims land on `request.context['claims']`, and the
- * `sub` claim - the usual place an issuer puts the account the token
- * speaks for - on `request.context['user']`.
+ * If verification succeeds, the claims are stored in
+ * `request.context['claims']`, and the `sub` claim, which is where an
+ * issuer usually puts the account the token represents, is stored in
+ * `request.context['user']`.
  *
- * Failures follow RFC 6750 §3: a request with no token is answered
- * `401` with a bare `Bearer` challenge, one whose token does not
- * verify is answered `401` with `error="invalid_token"`, and one
- * whose token is valid but lacks a required scope is answered `403`
+ * Failures follow section 3 of RFC 6750. A request without a token gets
+ * a `401` with a plain `Bearer` challenge, a request whose token can't
+ * be verified gets a `401` with `error="invalid_token"`, and a request
+ * whose token is valid but is missing a required scope gets a `403`
  * with `error="insufficient_scope"`.
  *
- * @note Like `HttpRequest.validate()`, this deliberately does not
- *    import the `jwt` module. The verifier is built by the caller,
- *    which keeps the token format entirely the application's business
- *    and means a server that authenticates nothing never pays to load
- *    it.
+ * @note Like `HttpRequest.validate()`, this middleware intentionally
+ *    doesn't import the `jwt` module. The caller creates the verifier,
+ *    which leaves the token format entirely up to the application, and
+ *    means a server that doesn't authenticate anything never has to
+ *    load the module.
  *
- * A `nil` verifier disables the middleware: every request passes
- * straight through, unauthenticated. Nothing here raises, so
- * registering it never needs a catch block around it.
+ * A `nil` verifier disables the middleware, so every request passes
+ * through without authentication. Nothing here raises an error, so you
+ * never need a `catch` block around the registration.
  *
- * @param {Verifier|function(1)|nil} verifier: `nil` to disable
+ * @param {Verifier|function(1)|nil} verifier: `nil` to disable the
+ *    middleware
  * @param ?dict options: `realm` (default `'api'`), `optional` (attach
- *    the claims when a valid token is present but do not refuse a
- *    request without one), and `scopes` (a list every token must
- *    carry)
+ *    the claims when a valid token is present, but don't reject
+ *    requests without one) and `scopes` (a list of scopes every token
+ *    must include)
  * @returns function(3)
  */
 def jwt_auth(verifier, options: ?dict) {
@@ -565,18 +570,19 @@ def _token_scopes(claims) {
 }
 
 /**
- * Limits how many requests one client may make in a window of time.
+ * Limits how many requests a single client can make in a given period
+ * of time.
  *
- * The counter lives in memory, so it is per worker: with `workers`
- * isolates the effective limit is `limit` times `workers`. That is a
- * deliberate trade - a shared counter would need shared state, and
- * this is meant to blunt a runaway client rather than to meter
- * billing.
+ * The counter is kept in memory, so each worker has its own. With
+ * `workers` isolates, the effective limit is `limit` times `workers`.
+ * This is a deliberate trade-off. A shared counter would need shared
+ * state, and this middleware is meant to slow down a runaway client,
+ * not to meter usage for billing.
  *
  * @param ?dict options: `limit` (requests per window, default 60),
- *    `window` (seconds, default 60), `key` (a function of the request
- *    returning the bucket key; defaults to the client address),
- *    `trust_proxy`
+ *    `window` (seconds, default 60), `key` (a function that takes the
+ *    request and returns the key to count it under, which defaults to
+ *    the client's address) and `trust_proxy`
  * @returns function(3)
  */
 def rate_limit(options: ?dict) {
@@ -640,14 +646,15 @@ def rate_limit(options: ?dict) {
 }
 
 /**
- * Attaches a unique identifier to every request, echoing back one the
- * client supplied so a trace can be followed across services.
+ * Gives every request a unique identifier. If the client sends its own
+ * identifier, that one is used instead, so a trace can be followed
+ * across services.
  *
- * The identifier lands on `request.context['request_id']` and in the
- * response's `X-Request-Id`.
+ * The identifier is stored in `request.context['request_id']` and sent
+ * in the response's `X-Request-Id` header.
  *
- * @param ?string header: the header to read and write; defaults to
- *    `'X-Request-Id'`
+ * @param ?string header: the header to read and write. Defaults to
+ *    `'X-Request-Id'`.
  * @returns function(3)
  */
 def request_id(header: ?string) {
@@ -711,14 +718,15 @@ def force_https(options: ?dict) {
 }
 
 /**
- * Computes a weak `ETag` over a finished response body and answers
- * `304 Not Modified` when the client already has that version.
+ * Computes a weak `ETag` for the finished response body, and responds
+ * with `304 Not Modified` when the client already has that version.
  *
- * A handler that already set its own `ETag` is left alone - it knows
- * something about the resource that hashing the bytes does not.
+ * If a handler has already set its own `ETag`, it's left alone, because
+ * the handler knows something about the resource that hashing the bytes
+ * doesn't.
  *
- * @param ?number min_size: bodies smaller than this are not tagged;
- *    defaults to 128 bytes
+ * @param ?number min_size: bodies smaller than this aren't tagged.
+ *    Defaults to 128 bytes.
  * @returns function(3)
  */
 def etag(min_size: ?number) {

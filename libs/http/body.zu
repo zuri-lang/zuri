@@ -1,12 +1,13 @@
 /**
  * @module body
  *
- * A request or response body, in whatever shape the wire delivered it:
- * a fixed `Content-Length`, a chunked stream, or nothing at all.
+ * Reading and writing request and response bodies, whatever form they
+ * take on the wire: a fixed `Content-Length`, a chunked stream, or no
+ * body at all.
  *
- * `BodyReader` hides that difference behind one interface, and
- * `decode_content()`/`encode_content()` handle the `Content-Encoding`
- * layer on top of it: gzip, deflate, brotli and zstd.
+ * `BodyReader` provides one interface for all of them, and
+ * `decode_content()` and `encode_content()` handle the
+ * `Content-Encoding` layer on top: gzip, deflate, brotli and zstd.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -131,19 +132,20 @@ def parse_chunk_size(line) {
 }
 
 /**
- * Reads a message body off a connection according to whichever of
- * HTTP/1.1's framings applies.
+ * Reads a message body from a connection, using whichever of HTTP/1.1's
+ * framing methods applies.
  *
- * The framing is decided once, by `for_message()`, and never
- * re-derived: `Transfer-Encoding: chunked` wins over
- * `Content-Length`, a fixed length is next, and a response with
- * neither is delimited by the connection closing. A request with
- * neither has no body at all - a server may not wait for a close that
- * a client has no reason to perform.
+ * The framing is decided once, by `for_message()`, and never worked out
+ * again. `Transfer-Encoding: chunked` takes priority over
+ * `Content-Length`, a fixed length comes next, and the end of a
+ * response with neither is marked by the connection closing. A request
+ * with neither has no body at all, because a server can't wait for the
+ * client to close the connection when the client has no reason to.
  *
- * Read it incrementally with `read()`, or in one go with `read_all()`.
- * Either way, call `drain()` before reusing the connection, or the
- * next message will start parsing in the middle of this one's body.
+ * You can read it a piece at a time with `read()`, or all at once with
+ * `read_all()`. Either way, call `drain()` before reusing the
+ * connection, or the next message will be parsed starting in the middle
+ * of this one's body.
  */
 class BodyReader {
 
@@ -205,12 +207,13 @@ class BodyReader {
   }
 
   /**
-   * Whether the whole body already sits in the connection's buffer,
-   * so that reading it will not touch the socket.
+   * Whether the whole body is already in the connection's buffer, so
+   * that reading it won't touch the socket.
    *
-   * A body that cannot be read to a good end counts as arrived as
-   * well: a malformed chunk, or more than `limit`. Waiting for more of
-   * it would get nowhere, and the read is what reports the problem.
+   * A body that can't be read successfully also counts as having
+   * arrived, such as one with an invalid chunk or one larger than
+   * `limit`. Waiting for more of it wouldn't help, and reading it is
+   * what reports the problem.
    *
    * @param number limit: the largest body worth waiting for, in bytes
    * @returns bool
@@ -392,10 +395,10 @@ class BodyReader {
   /**
    * Reads the whole body into memory.
    *
-   * @param ?number limit: the most to accept, in bytes; `nil` for no
-   *    limit
+   * @param ?number limit: the maximum number of bytes to accept, or
+   *    `nil` for no limit
    * @returns bytes
-   * @throws TooLargeError if the body exceeds `limit`
+   * @throws TooLargeError if the body is larger than `limit`
    */
   read_all(limit) {
     # A declared length over the limit can be refused before a single
@@ -431,15 +434,15 @@ class BodyReader {
   }
 
   /**
-   * Reads and throws away whatever is left, so the connection is
-   * positioned at the start of the next message and can be reused.
+   * Reads and discards whatever is left of the body, so the connection
+   * is positioned at the start of the next message and can be reused.
    *
-   * Returns `false` when the leftover exceeds `limit` - at which
-   * point draining costs more than a new connection would, and the
-   * caller should close instead.
+   * Returns `false` if what's left is larger than `limit`, because at
+   * that point draining it costs more than opening a new connection
+   * would, and the caller should close the connection instead.
    *
-   * @param ?number limit: the most worth draining; defaults to 1 MiB
-   * @returns bool: whether the connection is now reusable
+   * @param ?number limit: the most worth draining. Defaults to 1 MiB.
+   * @returns bool: whether the connection can now be reused
    */
   drain(limit) {
     if limit == nil {
@@ -483,20 +486,21 @@ class BodyReader {
 }
 
 /**
- * Works out how a message's body is framed and returns a reader for
+ * Works out how a message's body is framed, and returns a reader for
  * it.
  *
- * `is_request` matters because the two directions disagree about what
- * "no framing headers" means: a request without them has no body,
- * while a response without them runs until the connection closes.
+ * `is_request` matters because requests and responses disagree about
+ * what a message without framing headers means. A request without them
+ * has no body, while a response without them continues until the
+ * connection closes.
  *
  * @param Connection connection
  * @param Headers headers
  * @param bool is_request
- * @param ?bool bodiless: force an empty body regardless of the
- *    headers - true for a response to HEAD, and for `1xx`, `204` and
- *    `304`, all of which carry framing headers that describe a body
- *    they do not actually send
+ * @param ?bool bodiless: forces an empty body whatever the headers say.
+ *    This is true for a response to HEAD, and for `1xx`, `204` and
+ *    `304` responses, all of which have framing headers that describe a
+ *    body they don't actually send.
  * @returns BodyReader
  * @throws ProtocolError if the framing headers contradict each other
  */
@@ -686,24 +690,24 @@ def decode_content(data, encoding) {
 }
 
 /**
- * The brotli quality this module compresses a response with when the
- * caller names no quality of its own.
+ * The brotli quality this module uses to compress a response when the
+ * caller doesn't specify one.
  *
- * Brotli's own default is 11, and that is a setting for compressing a
- * file once at build time rather than for compressing a response per
- * request. Measured against q5 on real response bodies, q11 costs
- * 64-104x the CPU and, because of how brotli sizes its window at high
- * quality, frequently produces a *larger* result:
+ * Brotli's own default is 11, which is a setting for compressing a file
+ * once at build time, not for compressing a response on every request.
+ * Measured against quality 5 on real response bodies, quality 11 costs
+ * 64 to 104 times as much CPU time, and because of how brotli sizes its
+ * window at high quality, it often produces a *larger* result:
  *
- * | body | q11 | q5 |
+ * | Body | q11 | q5 |
  * | --- | --- | --- |
  * | 1.5 KB JSON | 3.48 ms, 152 B | 0.054 ms, 152 B |
  * | 15 KB JSON | 13.5 ms, 654 B | 0.19 ms, 591 B |
  * | 150 KB JSON | 144 ms, 5119 B | 2.08 ms, 4831 B |
  * | 120 KB HTML | 178 ms, 3322 B | 1.88 ms, 3350 B |
  *
- * A 178 ms compression on a single page is the entire time budget for
- * a request, spent to make the response 0.8% smaller.
+ * Spending 178 ms compressing a single page uses up the entire time
+ * budget for a request, only to make the response 0.8% smaller.
  *
  * @type int
  */
@@ -730,24 +734,24 @@ def _clamped(quality, low, high) {
 /**
  * Applies a content coding to `data`.
  *
- * `quality` is interpreted on the scale of whichever coding is being
- * applied - brotli `0`-`11`, deflate `0`-`9`, zstd `1`-`22` - and is
- * clamped into range rather than rejected. Omit it to get the coding's
- * own sensible default for a response compressed per request: `5` for
- * brotli (see `DEFAULT_BROTLI_QUALITY`), and each of the others'
- * native default, which is already the right shape for dynamic
- * content.
+ * `quality` uses the scale of whichever coding is being applied: brotli
+ * from `0` to `11`, deflate from `0` to `9`, or zstd from `1` to `22`.
+ * Values outside the range are clamped rather than rejected. If you
+ * leave it out, you get each coding's sensible default for compressing
+ * a response on every request: `5` for brotli (see
+ * `DEFAULT_BROTLI_QUALITY`), and each of the others' native default,
+ * which is already well suited to dynamic content.
  *
- * @note `gzip` has no quality parameter at this layer. It compresses
- *    at zlib's own default level of 6, which is what nginx and every
- *    CDN use for dynamic responses anyway.
+ * @note `gzip` doesn't accept a quality at this level. It always
+ *    compresses at zlib's default level of 6, which is what nginx and
+ *    CDNs use for dynamic responses anyway.
  *
  * @param bytes data
  * @param string coding: `'gzip'`, `'deflate'`, `'br'`, `'zstd'` or
  *    `'identity'`
  * @param ?number quality
  * @returns bytes
- * @throws ProtocolError on an unknown coding
+ * @throws ProtocolError for an unknown coding
  */
 def encode_content(data, coding: string, quality: ?number) {
   using coding.lower() {

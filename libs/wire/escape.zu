@@ -1,20 +1,18 @@
 /**
  * @module wire.escape
  *
- * Turning a value into something safe to write at a particular place in
- * a page.
+ * Makes a value safe to write at a particular place in a page.
  *
- * Escaping HTML is not one operation, it is five. The same string that
- * is harmless between two tags will end a `<script>` early, or turn an
- * `href` into a code execution, or break out of a stylesheet. Wire
- * knows which of those places every interpolation sits in, because it
- * compiles a real parsed tree rather than substituting into text, so it
- * applies the escaping that place actually needs instead of one
- * approximation everywhere.
+ * Escaping for HTML isn't one operation but five. A string that's
+ * harmless between two tags can end a `<script>` element early, turn an
+ * `href` into a way to run code, or break out of a stylesheet. Wire
+ * compiles a parsed tree instead of substituting into text, so it knows
+ * which of those places each interpolation is in, and it applies the
+ * escaping that place needs instead of one approximation everywhere.
  *
- * Nothing here is optional or discoverable at render time. A template
- * that wants unescaped output has to say so with the `raw` filter, or
- * hand Wire a `Safe` value.
+ * None of this can be switched off or changed at render time. A
+ * template that wants output left unescaped has to say so with the
+ * `raw` filter, or be given a `Safe` value.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
@@ -51,12 +49,11 @@ var CONTEXT_SCRIPT = 'script'
 var CONTEXT_STYLE = 'style'
 
 /**
- * The attributes whose value a browser resolves as a URL, and which
- * therefore have to be checked for a dangerous scheme rather than
- * merely escaped.
+ * The attributes whose value a browser treats as a URL. Their values
+ * have to be checked for a dangerous scheme, not just escaped.
  *
- * `srcset` and `ping` hold several URLs separated by commas or spaces
- * and are checked entry by entry.
+ * `srcset` and `ping` hold several URLs, separated by commas or spaces,
+ * and each one is checked separately.
  */
 var URL_ATTRIBUTES = [
   'action',
@@ -78,7 +75,7 @@ var URL_ATTRIBUTES = [
 ]
 
 /**
- * URL attributes holding a list of URLs rather than a single one.
+ * The URL attributes that hold a list of URLs instead of a single one.
  */
 var URL_LIST_ATTRIBUTES = ['ping', 'srcset']
 
@@ -122,11 +119,11 @@ var DEFAULT_URL_SCHEMES = [
 var BLOCKED_URL = 'about:blank'
 
 /**
- * The characters a value may contain inside a `<style>` body.
+ * The characters that a value can contain inside a `<style>` element.
  *
- * Everything else is dropped rather than escaped, because a stylesheet
- * has no escape syntax that would make a `<` harmless: the tokenizer
- * that finds `</style>` runs before CSS is ever parsed.
+ * Any other character is dropped instead of being escaped, because a
+ * stylesheet has no escape syntax that would make a `<` harmless. The
+ * HTML tokenizer looks for `</style>` before the CSS is ever parsed.
  */
 var STYLE_SAFE = '/[^-a-zA-Z0-9 \\t\\n\\r#%.,()_\\/:;+*!@]/'
 
@@ -181,11 +178,11 @@ def text(value) {
 }
 
 /**
- * Escapes _value_ for a double quoted attribute value, turning `&` and
- * `"` into character references.
+ * Escapes _value_ for an attribute value in double quotes, by turning
+ * `&` and `"` into character references.
  *
- * A `<` needs no escaping inside an attribute and is left alone, which
- * is what the HTML serialization algorithm does too.
+ * A `<` doesn't need escaping inside an attribute and is left alone, as
+ * the HTML serialization algorithm also does.
  *
  * @param any value
  * @returns string
@@ -231,13 +228,13 @@ def script(value) {
 }
 
 /**
- * Escapes _value_ for the body of a `<style>` element by dropping every
- * character outside a conservative CSS-safe set.
+ * Escapes _value_ for the contents of a `<style>` element, by dropping
+ * every character outside a conservative set that's safe in CSS.
  *
- * Dropping rather than escaping is deliberate. There is no escape
- * sequence that stops a `<` inside a stylesheet from being found by the
- * HTML tokenizer looking for `</style>`, so the only safe answer is for
- * the character not to be there.
+ * The characters are dropped because no escape sequence can stop the
+ * HTML tokenizer from finding a `<` inside a stylesheet while it's
+ * looking for `</style>`. The only safe option is for the character not
+ * to be there at all.
  *
  * @param any value
  * @returns string
@@ -270,21 +267,21 @@ def url(value, schemes: ?list) {
 }
 
 /**
- * Escapes _value_ for an attribute holding several URLs, checking each
- * entry's scheme on its own.
+ * Escapes _value_ for an attribute that holds several URLs, checking
+ * the scheme of each one separately.
  *
- * The two attributes that hold a list spell it differently. `ping` is
- * whitespace separated and every token in it is a URL. `srcset` is comma
- * separated and only the first token of each entry is a URL; what
- * follows is a descriptor such as `2x` or `640w` and is left alone.
- * _descriptors_ picks between them.
+ * The two attributes that hold a list use different formats. `ping` is
+ * separated by whitespace, and every token in it is a URL. `srcset` is
+ * separated by commas, and only the first token of each entry is a URL.
+ * What follows it is a descriptor such as `2x` or `640w`, which is left
+ * alone. _descriptors_ chooses between the two formats.
  *
- * Every separator is preserved exactly as it was written, since a
- * `srcset` whose spaces went missing is no longer a `srcset`.
+ * Every separator is kept exactly as it was written, because a `srcset`
+ * that has lost its spaces isn't a valid `srcset` any more.
  *
  * @param any value
  * @param ?list schemes
- * @param bool descriptors: True for `srcset`, false for `ping`.
+ * @param bool descriptors: `true` for `srcset`, and `false` for `ping`
  * @returns string
  */
 def url_list(value, schemes: ?list, descriptors: bool) {
@@ -379,11 +376,12 @@ def uses_descriptors(name: string) {
 
 /**
  * Whether _name_ is an event handler attribute, whose value a browser
- * reads as JavaScript.
+ * runs as JavaScript.
  *
- * Every one of them starts with `on`, and treating the whole prefix as
- * script rather than keeping a list means a handler HTML gains next
- * year is covered the day it ships.
+ * All of them start with `on`. Treating every attribute with that
+ * prefix as script, instead of keeping a list, means that a handler
+ * added to HTML in the future is covered as soon as browsers support
+ * it.
  *
  * @param string name
  * @returns bool

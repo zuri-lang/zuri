@@ -1,7 +1,7 @@
 /**
  * @command clean
- * @description Frees the space downloads, logs and installed packages
- *    take up.
+ * @description Frees up the disk space used by downloads, logs and
+ *    installed packages.
  *
  *   zuri clean [options]
  *

@@ -66,7 +66,7 @@
  * OPTIONS:
  *   -h, --help           Show this help message and exit
  *   -n, --name <name>    Person to greet
- *   -c, --count <count>  Number of greetings (default: 1)
+ *   -c, --count <count>  Number of greetings [default: 1]
  *
  * COMMANDS:
  *   call  Make a phone call
@@ -120,7 +120,7 @@
  * GLOBAL OPTIONS:
  *   -h, --help           Show this help message and exit
  *   -n, --name <name>    Person to greet
- *   -c, --count <count>  Number of greetings (default: 1)
+ *   -c, --count <count>  Number of greetings [default: 1]
  * ```
  *
  * Options declared on the parser itself are global: they are accepted
@@ -253,6 +253,17 @@ def _vpad(text, width) {
     return text
   }
   return text + ' ' * (width - vlen)
+}
+
+# A list of choices as a sentence would write it: `a, b or c`.
+def _one_of(choices) {
+  var words = choices.map(@(choice) => choice.to_string())
+
+  if words.length() < 2 {
+    return ', '.join(words)
+  }
+
+  return ', '.join(words[0, words.length() - 1]) + ' or ' + words.last()
 }
 
 def _muted(text) {
@@ -1087,7 +1098,7 @@ class Parser < _Optionable {
                 var keys = is_dict(option.choices)
                     ? option.choices.keys()
                     : option.choices
-                msg += ': one of {\'${"', '".join(keys)}\'}'
+                msg += ', one of ${_one_of(keys)}'
               }
               self._option_error(option.long_name, msg)
             }
@@ -1142,8 +1153,8 @@ class Parser < _Optionable {
                 if !keys.contains(raw_val) {
                   self._command_error(
                     command.name,
-                    'command "${command.name}" expects one of ' +
-                        '{\'${"', '".join(keys)}\'}, got "${raw_val}"',
+                    'command "${command.name}" must be given one of ' +
+                        '${_one_of(keys)}, not "${raw_val}"',
                   )
                 }
               }
@@ -1344,7 +1355,7 @@ class Parser < _Optionable {
       if !choices.contains(value) {
         self._option_error(
           item.long_name,
-          '${label} expects one of {\'${"', '".join(choices)}\'}, got "${value}"',
+          '${label} must be one of ${_one_of(choices)}, not "${value}"',
         )
       }
     }
@@ -1566,18 +1577,17 @@ class Parser < _Optionable {
     return left
   }
 
-  # Render one option row, properly padded
   /**
-   * Renders one two-column help row: `left` (already indented, e.g.
-   * `'  -n, --name <name>'`) padded out to the shared flag-column
-   * width, followed by `help_text` wrapped to whatever's left of
-   * `self.terminal_width`, with continuation lines aligned under the
-   * description column. `suffix` (tags/choices/default annotations,
-   * already `_muted()`-styled) is appended to the last line as-is,
-   * unwrapped: it's always short enough in practice that wrapping it
-   * would cost more clarity than it saves.
+   * Renders one two-column help row: `left` (already indented, such as
+   * `'  -n, --name <name>'`) padded out to the shared flag column,
+   * followed by `help_text` wrapped to the width left over, with
+   * continuation lines aligned under the description column.
+   *
+   * `notes` are plain annotations such as `[default: 1]`. They are
+   * shown muted after the text, on the last line when they fit there
+   * and on a line of their own when they do not.
    */
-  _render_row(left, help_text, suffix, col_width) {
+  _render_row(left, help_text, notes, col_width) {
     var indent_width = col_width + 4
     var avail = self.terminal_width - indent_width
     if avail < 20 {
@@ -1585,23 +1595,53 @@ class Parser < _Optionable {
     }
 
     var lines = _wrap_lines(help_text, avail)
+
+    # Each note goes on the line so far when it fits, and starts a line
+    # of its own when it does not. The length counted is the visible
+    # one, since a muted note carries escape codes.
+    for note in notes {
+      var last = lines.last()
+
+      if _visual_len(last) + 1 + note.length() <= avail {
+        lines[lines.length() - 1] = last + ' ' + _muted(note)
+      } else {
+        lines.append(_muted(note))
+      }
+    }
+
     var out = [_vpad(left, indent_width) + lines[0]]
     iter var i = 1; i < lines.length(); i++ {
       out.append(' ' * indent_width + lines[i])
     }
 
-    var joined = '\n'.join(out)
-    if suffix != '' {
-      joined += suffix
+    return '\n'.join(out)
+  }
+
+  # The annotations an option or positional argument carries in the help.
+  # A positional argument lists its choices whatever its type.
+  _notes(item, tags, positional) {
+    var notes = []
+
+    if !tags.is_empty() {
+      notes.append('[${", ".join(tags)}]')
     }
-    return joined
+
+    if (positional or item.type == CHOICE) and !item.choices.is_empty() {
+      var keys = is_dict(item.choices) ? item.choices.keys() : item.choices
+      notes.append('[possible values: ${", ".join(keys)}]')
+    }
+
+    if item.value != nil and (positional or item.type != NONE) {
+      notes.append('[default: ${item.value}]')
+    }
+
+    return notes
   }
 
   _option_row(opt, col_width, indent) {
     var flag = self._format_flag(opt)
     var help_text = opt.help ? opt.help : _muted('<no description>')
 
-    var suffix = ''
     var tags = []
     if opt.required {
       tags.append('required')
@@ -1609,27 +1649,15 @@ class Parser < _Optionable {
     if opt.deprecated {
       tags.append('deprecated')
     }
-    if !tags.is_empty() {
-      suffix += ' ' + _muted('[${", ".join(tags)}]')
-    }
 
-    if opt.type == CHOICE and !opt.choices.is_empty() {
-      var keys = is_dict(opt.choices) ? opt.choices.keys() : opt.choices
-      suffix += ' ' + _muted('{\'${"', '".join(keys)}\'}')
-    }
-
-    if opt.value != nil and opt.type != NONE {
-      suffix += ' ' + _muted('(default: ${opt.value})')
-    }
-
-    return self._render_row('  ' + flag, help_text, suffix, col_width)
+    return self._render_row('  ' + flag, help_text, self._notes(opt, tags, false), col_width)
   }
 
   # Render a command row
   _command_row(cmd, col_width) {
     var left = '  ' + self._command_left(cmd)
     var help_text = cmd.help ? cmd.help : _muted('<no description>')
-    return self._render_row(left, help_text, '', col_width)
+    return self._render_row(left, help_text, [], col_width)
   }
 
   /**
@@ -1690,16 +1718,8 @@ class Parser < _Optionable {
         var left = '  ' + self._positional_left(idx)
 
         var help_text = idx.help ? idx.help : _muted('<no description>')
-        var suffix = ''
-        if !idx.choices.is_empty() {
-          var keys = is_dict(idx.choices) ? idx.choices.keys() : idx.choices
-          suffix += ' ' + _muted('{\'${"', '".join(keys)}\'}')
-        }
-        if idx.value != nil {
-          suffix += ' ' + _muted('(default: ${idx.value})')
-        }
 
-        echo self._render_row(left, help_text, suffix, cw)
+        echo self._render_row(left, help_text, self._notes(idx, [], true), cw)
       }
       echo ''
     }

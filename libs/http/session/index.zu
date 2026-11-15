@@ -3,16 +3,16 @@
 /**
  * @module http.session
  *
- * Server-side sessions: a small amount of state that belongs to one
- * visitor, kept on the server and found again by a cookie the browser
- * sends back.
+ * Server-side sessions. A session is a small amount of state that
+ * belongs to one visitor. It's kept on the server and found again
+ * through a cookie that the browser sends back.
  *
- * Only the identifier travels. Whatever the session holds stays in a
- * store the server controls, so a visitor can neither read it nor
- * change it, and the cookie is worth nothing to anyone who cannot
- * present the exact value that was issued.
+ * Only the session ID is sent to the browser. Whatever the session
+ * holds stays in a store that the server controls, so a visitor can
+ * neither read it nor change it, and the cookie is useless to anyone
+ * who can't present the exact value that was issued.
  *
- * ### Using it
+ * ### Using sessions
  *
  * ```zuri,ignore
  * import http
@@ -25,8 +25,8 @@
  * server.post('/login', @(request, response) {
  *   var account = authenticate(request.form())
  *
- *   # A new identifier, so a session identifier planted beforehand is
- *   # not the one that ends up logged in.
+ *   # Give the session a new ID, so that an ID planted beforehand
+ *   # isn't the one that ends up signed in.
  *   request.session().regenerate()
  *   request.session().set('account', account.id)
  *
@@ -42,27 +42,27 @@
  * server.listen()
  * ```
  *
- * `session()` is middleware, so it is registered once and every
- * handler below it can reach `request.session()`.
+ * `session()` is middleware, so you register it once, and every handler
+ * after it can call `request.session()`.
  *
- * ### Nothing happens until something uses it
+ * ### Nothing happens until a session is used
  *
- * A request that never touches its session costs nothing: no store
- * read, no store write, and no `Set-Cookie`. A store record is
- * created the first time something is written, which is what keeps a
- * crawler working through a public site from filling the store with
- * empty sessions.
+ * A request that never touches its session costs nothing. There's no
+ * read from the store, no write to it, and no `Set-Cookie` header. A
+ * record is only created in the store the first time something is
+ * written to the session, so a crawler working its way through a public
+ * site doesn't fill the store with empty sessions.
  *
- * A request that only reads an existing session writes nothing back
- * either, beyond moving the idle expiry along at most once every
- * `touch_interval` seconds.
+ * A request that only reads an existing session doesn't write anything
+ * back either, except to move the idle expiry time forward, at most
+ * once every `touch_interval` seconds.
  *
- * ### Where it is kept
+ * ### Where sessions are kept
  *
- * `FileStore` is the default, in a private directory under the
- * platform's temporary directory. It needs no setup and it is shared
- * between the workers `http.serve()` starts, which a store held in
- * memory is not.
+ * The default is a `FileStore`, in a private directory under the
+ * platform's temporary directory. It needs no setup, and unlike a store
+ * held in memory, it's shared between the workers that `http.serve()`
+ * starts.
  *
  * ```zuri,ignore
  * server.use(session({
@@ -70,9 +70,9 @@
  * }))
  * ```
  *
- * A relational database works as well, from `http.session.sql`, which
- * is a separate import so that a program using the default store
- * never loads the `sql` module:
+ * You can also use a relational database, with `http.session.sql`. It's
+ * a separate import, so that a program using the default store never
+ * loads the `sql` module:
  *
  * ```zuri,ignore
  * import http.session.sql { SqlStore }
@@ -84,8 +84,8 @@
  * server.use(session({ store }))
  * ```
  *
- * Anything else - Redis, a key-value service, a table of your own
- * shape - is a subclass of `SessionStore`.
+ * For anything else, such as Redis, a key-value service or a table with
+ * a design of your own, write a subclass of `SessionStore`.
  *
  * ### Options
  *
@@ -94,33 +94,34 @@
  * | `store` | a `FileStore` in the default directory | where sessions are kept |
  * | `name` | `'zuri_session'` | the cookie's name |
  * | `path` | `'/'` | the cookie's path |
- * | `domain` | `nil` | the cookie's domain; `nil` scopes it to the exact host |
- * | `secure` | `nil` | `nil` follows the request's own scheme |
+ * | `domain` | `nil` | the cookie's domain. `nil` limits it to the exact host. |
+ * | `secure` | `nil` | `nil` follows the scheme of the request |
  * | `http_only` | `true` | hides the cookie from scripts |
  * | `same_site` | `'Lax'` | `'Strict'`, `'Lax'` or `'None'` |
- * | `persistent` | `false` | whether the cookie outlives the browser |
- * | `idle_timeout` | `7200` | seconds of inactivity before a session ends |
- * | `lifetime` | `86400` | seconds a session may live however active |
- * | `touch_interval` | `60`, or half `idle_timeout` when that is less | how often a read-only request moves the idle expiry |
- * | `max_size` | `65536` | the largest payload a session may serialise to |
- * | `secret` | `nil` | signs the cookie, so a forged one is refused without a store read |
- * | `gc_probability` | `0.01` | passed to a default `FileStore`; ignored when `store` is given |
+ * | `persistent` | `false` | whether the cookie is kept after the browser closes |
+ * | `idle_timeout` | `7200` | the number of seconds without activity before a session ends |
+ * | `lifetime` | `86400` | the number of seconds a session can last, however active it is |
+ * | `touch_interval` | `60`, or half of `idle_timeout` if that's less | how often a request that only reads the session moves the idle expiry forward |
+ * | `max_size` | `65536` | the largest a serialized session can be, in bytes |
+ * | `secret` | `nil` | signs the cookie, so that a forged one is refused without reading the store |
+ * | `gc_probability` | `0.01` | passed to the default `FileStore`, and ignored when `store` is given |
  *
  * ### Two clocks
  *
- * `idle_timeout` rolls forward while the visitor is active;
- * `lifetime` does not. A session ends at whichever comes first, so a
- * tab left open overnight is still asked to sign in again. Either may
- * be `nil` to remove that limit, but not both.
+ * `idle_timeout` moves forward while the visitor is active, but
+ * `lifetime` doesn't. A session ends when either limit is reached, so a
+ * visitor who leaves a tab open overnight still has to sign in again.
+ * Either one can be `nil` to remove that limit, but not both.
  *
  * ### Signing the cookie
  *
- * An identifier is 32 bytes from the platform's cryptographic
- * generator, which is far beyond guessing. Signing adds nothing
- * against that, and everything against volume: with `secret` set, a
- * cookie that was not issued by this server is thrown out after one
- * HMAC, rather than after a read from disk or a query to the
- * database. Set it on anything exposed to the open internet.
+ * A session ID is 32 bytes from the platform's cryptographic random
+ * number generator, which is far too many to guess. Signing doesn't
+ * make it any harder to guess, but it does help against a flood of
+ * requests. With `secret` set, a cookie that this server didn't issue
+ * is rejected after computing one HMAC, instead of after a read from
+ * disk or a database query. Set it on any server that's exposed to the
+ * internet.
  *
  * ```zuri,ignore
  * import env
@@ -128,20 +129,21 @@
  * server.use(session({ secret: env.require('SESSION_SECRET') }))
  * ```
  *
- * Every worker must be given the same secret, or a cookie issued by
- * one is refused by the next.
+ * Every worker must be given the same secret, or a cookie issued by one
+ * worker is refused by the next.
  *
- * ### What a session may hold
+ * ### What a session can hold
  *
- * Whatever JSON holds: strings, numbers, booleans, `nil`, lists and
- * dictionaries of those. A class instance is not JSON, and storing
- * one raises when the session is written rather than coming back as
- * something else.
+ * Anything that JSON can represent: strings, numbers, booleans, `nil`,
+ * and lists and dictionaries of those. A class instance isn't JSON, so
+ * storing one raises an error when the session is written, instead of
+ * coming back as something different.
  *
- * Sessions are for identity and small state - who is signed in, which
- * steps of a form are done, what to say on the next page. A payload
- * over `max_size` raises `SessionError`; the answer is a row in a
- * database with the session holding its key.
+ * Sessions are meant for identity and small amounts of state, such as
+ * who is signed in, which steps of a form have been completed, or a
+ * message to show on the next page. A payload larger than `max_size`
+ * raises a `SessionError`. If you need to store more, put it in a
+ * database row and keep the row's key in the session.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -158,11 +160,11 @@ import hash
 import json
 
 /**
- * The payload format this module writes and reads.
+ * The version of the payload format that this module writes and reads.
  *
- * A session written by a different version is ignored rather than
- * guessed at, so an upgrade signs people out instead of handing a
- * handler fields that are not what it expects.
+ * A session written with a different version is ignored instead of
+ * being guessed at. An upgrade therefore signs people out, instead of
+ * passing a handler fields that aren't what it expects.
  */
 var FORMAT = 1
 
@@ -202,15 +204,14 @@ var _DEFAULTS = {
 var _SAME_SITE = ['Strict', 'Lax', 'None']
 
 /**
- * One visitor's session.
+ * A visitor's session.
  *
- * A handler reaches its own through `request.session()` rather than
- * building one. The middleware makes it, hands it to the request, and
- * writes it back afterwards.
+ * A handler gets its session from `request.session()`, instead of
+ * creating one. The middleware creates it, attaches it to the request
+ * and writes it back afterwards.
  *
- * Nothing is read from the store until the first method that needs
- * the contents is called, and nothing is written back unless
- * something changed.
+ * Nothing is read from the store until a method that needs the contents
+ * is called, and nothing is written back unless something changed.
  *
  * @printable
  */
@@ -272,9 +273,10 @@ class Session {
   }
 
   /**
-   * Whether this request arrived without a session the store
-   * recognised - no cookie, a cookie that did not verify, or one
-   * naming a session that has expired or been destroyed.
+   * Whether the request arrived without a session that the store
+   * recognized. That's the case if there was no cookie, if the cookie
+   * couldn't be verified, or if it named a session that has expired or
+   * been destroyed.
    *
    * @returns bool
    */
@@ -364,11 +366,11 @@ class Session {
   }
 
   /**
-   * Empties the session without ending it. The identifier, the
-   * cookie and the record all survive; only the contents go.
+   * Empties the session without ending it. The ID, the cookie and the
+   * stored record all remain, and only the contents are removed.
    *
    * Use `destroy()` to end the session itself, which is what signing
-   * out wants.
+   * out needs.
    *
    * @returns Session: this same instance, for chaining
    */
@@ -384,21 +386,22 @@ class Session {
   }
 
   /**
-   * Gives the session a new identifier, keeping everything it holds,
-   * and removes the record the old identifier named.
+   * Gives the session a new ID, keeping everything it holds, and
+   * removes the record stored under the old ID.
    *
-   * Call this the moment an account signs in. Without it, an attacker
-   * who can set a cookie in the victim's browser beforehand - through
-   * a stray subdomain, an open redirect, a shared machine - knows the
-   * identifier the victim will be signed in under, and can simply use
-   * it. That is session fixation, and a new identifier is the whole
-   * of the defence.
+   * Call this as soon as a user signs in. Otherwise, an attacker who
+   * manages to set a cookie in the victim's browser beforehand, through
+   * a forgotten subdomain, an open redirect or a shared computer, knows
+   * the ID the victim will be signed in under, and can simply use it.
+   * This attack is called session fixation, and a new ID is the
+   * complete defense against it.
    *
-   * It is also worth doing whenever what the session means changes:
-   * an elevation to administrator, a step-up authentication.
+   * It's also worth doing whenever the meaning of the session changes,
+   * such as when a user is given administrator rights or completes a
+   * step-up authentication.
    *
-   * The absolute `lifetime` restarts here, since a new identifier
-   * begins a new session; the contents carry across.
+   * The absolute `lifetime` starts again here, because a new ID begins
+   * a new session. The contents are kept.
    *
    * @returns Session: this same instance, for chaining
    */
@@ -456,11 +459,11 @@ class Session {
   }
 
   /**
-   * Stores `value` under `name` for exactly the next request.
+   * Stores `value` under `name` for the next request only.
    *
-   * This is the message a redirect needs to carry: the handler that
-   * did the work knows what happened, and the page the visitor is
-   * sent to is the one that has to say so.
+   * This is how a message survives a redirect. The handler that did the
+   * work knows what happened, but it's the page the visitor is
+   * redirected to that has to show it.
    *
    * ```zuri,ignore
    * server.post('/posts', @(request, response) {
@@ -475,12 +478,13 @@ class Session {
    * })
    * ```
    *
-   * A flash is spent by the next request that touches the session at
-   * all, whether or not that request asks for this one. A page that
-   * looked at the session and did not read the message does not
-   * leave it for the page after. A request that never touched its
-   * session - a static file, an image - leaves it waiting, which is
-   * what keeps the message for the page it was meant for.
+   * A flash value is used up by the next request that accesses the
+   * session at all, whether or not that request reads this particular
+   * value. If a page accesses the session without reading the message,
+   * the message isn't kept for the following page. A request that never
+   * touches its session, such as a request for a static file or an
+   * image, leaves the message in place, which is what keeps it for the
+   * page it was meant for.
    *
    * @param string name
    * @param any value
@@ -549,12 +553,12 @@ class Session {
   }
 
   /**
-   * When the session was last written or touched, as epoch seconds,
-   * or `nil` when it does not exist yet.
+   * When the session was last written or touched, in seconds since the
+   * epoch, or `nil` if it doesn't exist yet.
    *
-   * A read-only request moves this at most once every
-   * `touch_interval` seconds, so it is a coarse measure of activity
-   * rather than the time of the last request.
+   * A request that only reads the session updates this at most once
+   * every `touch_interval` seconds, so it's a rough measure of
+   * activity, not the time of the last request.
    *
    * @returns ?number
    */
@@ -577,15 +581,16 @@ class Session {
   }
 
   /**
-   * Writes the session to the store now, if anything changed.
+   * Writes the session to the store now, if anything has changed.
    *
-   * The middleware does this as the response goes out, so a handler
-   * rarely calls it. It is here for one that is about to do something
-   * long - stream a large body, wait on a slow service - and would
-   * rather not hold the change until afterwards.
+   * The middleware does this when the response is sent, so handlers
+   * rarely need to call it. It's useful in a handler that's about to do
+   * something that takes a long time, such as streaming a large body or
+   * waiting for a slow service, and doesn't want to hold the change
+   * until it has finished.
    *
    * @returns bool: whether anything was written
-   * @throws SessionError if the session serialises to more than
+   * @throws SessionError if the serialized session is larger than
    *    `max_size` bytes
    */
   save() {
@@ -603,18 +608,18 @@ class Session {
   }
 
   /**
-   * Writes the session and puts whatever the client needs on the
-   * response: the cookie for a session that is new or has a new
-   * identifier, an expired cookie for one that was destroyed.
+   * Writes the session and adds whatever the client needs to the
+   * response: a cookie for a session that's new or has a new ID, or an
+   * expired cookie for a session that was destroyed.
    *
    * The middleware calls this once, after the rest of the chain has
-   * run. Calling it again does no harm and writes nothing more.
+   * run. Calling it again is harmless and doesn't write anything more.
    *
-   * @note A response that has already started going out cannot carry
-   *    a `Set-Cookie`. A session whose identifier has just changed is
-   *    then not written at all, since nothing could present it; an
-   *    existing session is still written, and only its cookie is
-   *    skipped. Start a session before streaming begins.
+   * @note Once a response has started being sent, it can't carry a
+   *    `Set-Cookie` header. In that case, a session whose ID has just
+   *    changed isn't written at all, because the client could never
+   *    present it. An existing session is still written, and only its
+   *    cookie is left out. Start a session before you start streaming.
    * @param HttpResponse response
    */
   commit(response) {

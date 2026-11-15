@@ -1,12 +1,13 @@
 /**
  * @module worker
  *
- * The multi-process side of `HttpServer`: a pool of isolates, each
+ * The multi-isolate side of `HttpServer`: a pool of isolates, each one
  * accepting and serving connections from the same listening socket.
  *
  * Each worker runs a `ConnectionLoop` over the connections it holds, so
- * a slow client occupies a descriptor and not a thread. This is what
- * `HttpServer` uses when it is configured with more than one worker.
+ * a slow client only takes up a file descriptor, not a thread.
+ * `HttpServer` uses this when it's configured with more than one
+ * worker.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -38,16 +39,17 @@ var _MAX_PER_WORKER = 256
 var _POOL_HEADROOM = 2
 
 /**
- * The loop each worker isolate runs: build a server of its own from
- * `setup`, then serve whatever connections the acceptor hands it.
+ * The loop that each worker isolate runs. It builds its own server
+ * using `setup`, and then serves whatever connections the acceptor
+ * passes to it.
  *
- * This lives in a module because it names imported ones of its own
- * (`HttpServer`, `net`). A module value cannot be handed to an
- * isolate, but a function belonging to a module is resolved there by
- * name, with its imports resolved again on that side.
+ * This is in a module because it uses imported modules of its own
+ * (`HttpServer` and `net`). A module can't be passed to an isolate, but
+ * a function in a module is looked up by name inside the isolate, and
+ * its imports are resolved again there.
  *
- * @param Channel connections: accepted sockets arrive here, and it
- *    closes once nothing more will be accepted
+ * @param Channel connections: accepted sockets arrive here, and the
+ *    channel closes once no more connections will be accepted
  * @param Channel halt: closed when the server is stopped, at which
  *    point every connection is closed
  * @param function(1) setup: called once with this worker's server
@@ -152,31 +154,32 @@ def _admit_waiting(loop, connections) {
 }
 
 /**
- * Binds a listening socket and serves it across a pool of worker
+ * Binds a listening socket and serves it using a pool of worker
  * isolates.
  *
- * The calling isolate does nothing but accept, which is cheap; every
- * accepted socket is moved across a channel to whichever worker takes
- * it next. Because isolates share no memory, each worker builds its
- * own routes by calling `setup`.
+ * The calling isolate only accepts connections, which is cheap. Each
+ * accepted socket is moved over a channel to whichever worker takes it
+ * next. Isolates don't share memory, so each worker sets up its own
+ * routes by calling `setup`.
  *
- * @note Each worker holds an isolate pool thread for as long as the
- *    server runs. `serve()` sizes the pool for that when it is the
- *    first thing in the process to use an isolate; when it is not -
- *    because something already spawned one, fixing the pool's size -
- *    it raises rather than deadlocking behind workers that never
- *    finish. Call `isolate.configure()` yourself, first thing, if the
- *    process needs isolates for anything besides serving.
+ * @note Each worker uses a thread from the isolate pool for as long as
+ *    the server runs. If `serve()` is the first thing in the process to
+ *    use an isolate, it sizes the pool accordingly. Otherwise, the
+ *    pool's size is already fixed, because something else has already
+ *    spawned an isolate, so `serve()` raises an error instead of
+ *    deadlocking behind workers that never finish. If the process needs
+ *    isolates for anything other than serving, call
+ *    `isolate.configure()` yourself, at the very start.
  *
- * `backlog` is how many accepted-but-unclaimed connections may queue
- * before the acceptor blocks. Bounding it is deliberate: an unbounded
- * queue under load means accepting connections faster than they can
- * be served and answering all of them late, rather than letting the
- * kernel's own listen backlog apply back-pressure.
+ * `backlog` is the number of accepted connections that can wait to be
+ * claimed before the acceptor blocks. The limit is intentional. With an
+ * unlimited queue, a server under load would accept connections faster
+ * than it could serve them and then answer all of them late, instead of
+ * letting the kernel's own listen backlog apply backpressure.
  *
- * `on_ready` is called once in this isolate with the bound address
- * and a function that stops the server, which is what a signal
- * handler needs in order to shut down cleanly:
+ * `on_ready` is called once on this isolate, with the bound address and
+ * a function that stops the server, which is what a signal handler
+ * needs to shut down cleanly:
  *
  * ```zuri
  * http.serve(app.setup, {
@@ -191,20 +194,20 @@ def _admit_waiting(loop, connections) {
  * })
  * ```
  *
- * Stopping the server, with that function or with `close()` on the
- * server a worker was given, stops accepting connections. Every
- * worker then closes the connections it holds, after giving what they
- * have queued a chance to go out, and `serve()` returns. Reaching
- * `max_connections` stops accepting too, but serves the connections
- * already accepted until each of them closes, and `serve()` returns
- * after the last.
+ * Stopping the server, either with that function or by calling
+ * `close()` on the server a worker was given, stops it from accepting
+ * connections. Each worker then closes its connections, after giving
+ * any queued data a chance to be sent, and `serve()` returns. Reaching
+ * `max_connections` also stops the server from accepting connections,
+ * but the connections already accepted are served until each one
+ * closes, and `serve()` returns after the last one.
  *
  * @param function(1) setup
  * @param ?dict options: `port`, `host`, `workers`, `backlog`,
  *    `on_ready`, `max_connections` (stop after serving that many),
- *    `cert_chain`, `private_key`, plus any `HttpServer` field to
- *    apply to every worker
- * @throws HttpError if the socket cannot be bound
+ *    `cert_chain`, `private_key`, and any `HttpServer` field to apply
+ *    to every worker
+ * @throws HttpError if the socket can't be bound
  */
 def serve(setup, options: ?dict) {
   if !is_function(setup) and !is_callable(setup) {

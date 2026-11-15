@@ -1,12 +1,12 @@
 /**
  * @module multipart
  *
- * `multipart/form-data`, in both directions.
+ * `multipart/form-data`, for both receiving and sending.
  *
- * `MultipartData` and `UploadedFile` are what a parsed upload arrives
- * as; `MultipartBuilder` constructs one for sending. Parsing streams
- * rather than buffering, so an upload larger than memory is still an
- * upload.
+ * A parsed upload arrives as `MultipartData` and `UploadedFile`
+ * objects, and `MultipartBuilder` builds a body for sending. The parser
+ * streams the data instead of buffering it, so it can handle an upload
+ * that's larger than the available memory.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -23,12 +23,11 @@ import .util
 var _MAX_PARTS = 1000
 
 /**
- * One file received in a `multipart/form-data` body.
+ * A single file received in a `multipart/form-data` body.
  *
- * The content is held in memory. `HttpServer`'s `max_body_size` is
- * what bounds how much that can be, so a service accepting large
- * uploads should raise that limit deliberately rather than by
- * accident.
+ * The content is held in memory. `HttpServer`'s `max_body_size` limits
+ * how large it can be, so a service that accepts large uploads should
+ * raise that limit deliberately rather than by accident.
  *
  * @printable
  */
@@ -41,12 +40,11 @@ class UploadedFile {
   var name
 
   /**
-   * The filename the client claimed, exactly as sent.
+   * The file name the client sent, exactly as it was sent.
    *
-   * @note Never build a path out of this directly. It is
-   *    attacker-controlled and may contain `..`, absolute path
-   *    prefixes, or NUL bytes; `safe_name()` gives a version that has
-   *    been stripped of all of that.
+   * @note Never build a path from this directly. The client controls
+   *    it, and it might contain `..`, an absolute path or NUL bytes.
+   *    `safe_name()` returns a version with all of those removed.
    * @type ?string
    */
   var filename
@@ -235,16 +233,16 @@ class MultipartData {
 /**
  * Parses a `multipart/form-data` body (RFC 7578).
  *
- * The boundary comes from the `Content-Type` header's `boundary`
- * parameter and must be given; a body cannot be parsed without it.
+ * The boundary comes from the `boundary` parameter of the
+ * `Content-Type` header, and you must provide it, because a body can't
+ * be parsed without it.
  *
  * @param bytes body
  * @param string boundary
- * @param ?dict options: `max_parts` (default 1000) and
- *    `max_file_size` (default: unlimited)
+ * @param ?dict options: `max_parts` (default 1000) and `max_file_size`
+ *    (unlimited by default)
  * @returns MultipartData
- * @throws ProtocolError if the body is not a well-formed multipart
- *    message
+ * @throws ProtocolError if the body isn't a valid multipart message
  * @throws TooLargeError if a limit is exceeded
  */
 def parse(body, boundary: string, options: ?dict) {
@@ -384,10 +382,10 @@ def _read_part(result, body, start, end, max_file_size) {
 /**
  * Builds a `multipart/form-data` request body.
  *
- * The boundary is generated from the platform's secure random source
- * rather than a counter or a timestamp, since a boundary a peer can
- * predict is a boundary a peer can inject into a field value and
- * thereby forge extra parts.
+ * The boundary is generated from the platform's secure random number
+ * generator, not from a counter or a timestamp. If a peer could predict
+ * the boundary, it could include it in a field value and forge extra
+ * parts.
  *
  * ```zuri
  * var form = http.MultipartBuilder()
@@ -445,17 +443,18 @@ class MultipartBuilder {
   }
 
   /**
-   * Adds a file part.
+   * Adds a file.
    *
-   * A filename that is not plain ASCII is additionally sent as an RFC
-   * 5987 `filename*` parameter, which is how a non-ASCII name
-   * survives the trip; the plain `filename` is kept alongside it for
+   * A file name that isn't plain ASCII is also sent as an RFC 5987
+   * `filename*` parameter, which is how a name with other characters
+   * survives the trip. The plain `filename` is kept alongside it for
    * recipients that only understand that one.
    *
-   * @param string name: the form field name
+   * @param string name: the name of the form field
    * @param string filename
    * @param {bytes|string} content
-   * @param ?string content_type: defaults to `'application/octet-stream'`
+   * @param ?string content_type: defaults to
+   *    `'application/octet-stream'`
    * @returns MultipartBuilder: this same instance, for chaining
    */
   add_file(name: string, filename: string, content, content_type: ?string) {

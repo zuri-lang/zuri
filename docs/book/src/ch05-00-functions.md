@@ -1,12 +1,12 @@
 # Functions
 
-A function is a piece of behaviour with a name, a list of parameters, and a
-result. You have been calling them since Chapter 1; this chapter is about
-writing them.
+A function is a named piece of behavior with a list of parameters and a
+result. You've been calling functions since Chapter 1. This chapter is about
+writing your own.
 
-Functions in Zuri are **values**. You can put one in a list, hand it to
-another function, return one from a function, store one in a dictionary,
-and call whatever comes back:
+In Zuri, functions are **values**. You can put one in a list, pass it to
+another function, return it from a function, store it in a dictionary, and
+call whatever you get back:
 
 ```zuri
 def double(n) {
@@ -28,16 +28,16 @@ echo [1, 2, 3].map(double)
 [2, 4, 6]
 ```
 
-That one property is what makes `map`, `filter`, `reduce`, every callback
-in the standard library, and every route handler in Chapter 15 possible.
+That's what makes `map`, `filter`, `reduce`, the callbacks throughout the
+standard library and the route handlers in Chapter 15 possible.
 
-Note the shape of those two calls. `operations.twice` *reads* the function
-out of the dictionary, and then you call what you read. Writing
-`operations.twice(5)` in one step does not work: a dot followed by a call
-looks for a **method** on the dictionary, and a dictionary has no method
-called `twice`. Either read it into a variable first, as above, or index
-with brackets and call the result: `operations['twice'](5)`.
+Look closely at those two calls. `operations.twice` *reads* the function
+from the dictionary, and then you call the value you read. You can't write
+`operations.twice(5)` in one step, because a dot followed by a call looks
+for a **method** of the dictionary, and dictionaries don't have a method
+called `twice`. Either read the function into a variable first, as above, or
+use brackets and call the result: `operations['twice'](5)`.
 
-This chapter covers declaring a function, the spellings an anonymous one
-can take, how a closure captures the variables around it, and the optional
-type annotations that make the runtime check arguments for you.
+This chapter covers how to declare functions, the different ways to write
+anonymous functions, how closures capture the variables around them, and the
+optional type annotations that ask the runtime to check arguments for you.

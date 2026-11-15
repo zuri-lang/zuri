@@ -1,8 +1,8 @@
 # Middleware, Logging and Errors
 
-Two pieces of behaviour belong to every request and to no handler: logging
-what happened, and turning a domain error into a status code. Both are
-middleware.
+Two kinds of behavior apply to every request but don't belong in any
+handler: logging what happened, and turning a domain error into a status
+code. Both are implemented as middleware.
 
 <span class="filename">Filename: app.zu</span>
 
@@ -49,53 +49,53 @@ def build(port, data_dir) {
 }
 ```
 
-That one function is the whole assembly, and the order of its lines is the
-order of the application.
+That one function puts the whole application together, and the order of its
+lines is the order of the application.
 
-**It builds the board first**, because everything else needs it. Passing
-`data_dir` through rather than letting `Board` find it means a test, or a
-second instance, can point at a different directory without touching
-`config`.
+**It creates the board first**, because everything else needs it. Passing
+`data_dir` through, instead of letting `Board` find it, means that a test or
+a second instance can use a different directory without changing `config`.
 
-**`auto_reload: true` on the template engine** re-reads a template when the
-file changes, which is what you want while writing one. It is also the
-first line to reconsider before a deployment, since it costs a filesystem
-check per render.
+**`auto_reload: true` on the template engine** reads a template again when
+its file changes, which is what you want while you're writing one. It's also
+the first setting to reconsider before you deploy, because it costs a file
+system check on every render.
 
-**`port == nil ? config.PORT : port` is not `port or config.PORT`.** That
-distinction is load-bearing here: port `0` is a legitimate value meaning
-"let the operating system pick a free one", and `0` is falsy, so the `or`
-form would silently turn it into the configured port. This is the
-negative-and-zero trap from [Chapter 3](ch03-02-data-types.md) in a place
-where it would really bite.
+**`port == nil ? config.PORT : port` isn't the same as
+`port or config.PORT`.** The difference matters here. Port `0` is a valid
+value that means "let the operating system choose a free port", but `0` is
+falsy, so the `or` version would silently replace it with the configured
+port. This is the problem with zero from [Chapter 3](ch03-02-data-types.md),
+in a place where it would really cause trouble.
 
-**`max_body_size` is set explicitly.** A server that accepts a request body
-of any size is a server anyone can exhaust with a single request. 64 KiB is
-generous for a form that carries a title and a column.
+**`max_body_size` is set explicitly.** A server that accepts request bodies
+of any size can be exhausted by anyone with a single request. 64 KiB is
+plenty for a form that sends a title and a column.
 
-**Middleware is installed before the routes.** Middleware runs outermost
-first, so anything registered here wraps every route added afterwards —
+**Middleware is installed before the routes.** Middleware runs from the
+outside in, so anything registered here wraps every route added afterwards,
 including `/health` and the static files below.
 
-**The routes are registered by handing each module what it needs.**
-`api.register(server, board)` and `pages.register(server, board, view)` are
-the same shape: a function, given its dependencies, that attaches things to
-the server. The page routes get the template engine; the API routes do not,
-because they never render one.
+**Routes are registered by passing each module what it needs.**
+`api.register(server, board)` and `pages.register(server, board, view)` work
+the same way: each is a function that receives its dependencies and adds
+routes to the server. The page routes get the template engine, and the API
+routes don't, because they never render a template.
 
-**`/health` is defined here rather than in a route module**, because it is
-about the process rather than about tasks. It reports a task count so that
-a monitoring check proves the board actually loaded, not merely that the
-socket answers.
+**`/health` is defined here instead of in a route module**, because it's
+about the process rather than about tasks. It reports the number of tasks,
+so that a monitoring check can confirm that the board actually loaded, not
+just that the server responds.
 
-**`serve_files()` comes last**, mapping `/static` onto a directory. It is
-last because more specific routes should be registered before a catch-all
-prefix.
+**`serve_files()` comes last** and maps `/static` to a directory. It's last
+because more specific routes should be registered before a route that
+matches a whole prefix.
 
 And `build()` returns the server **without binding a socket**. Nothing here
-listens. That separation is what lets the entry point decide how to serve
-it — one process, a pool of isolates, or a test harness that never listens
-at all — and it is what makes the next section possible.
+starts listening. That separation lets the entry point decide how to run the
+server, whether as a single process, with a pool of isolates, or in a test
+harness that never listens at all, and it's what makes the next section
+possible.
 
 ## The Middleware
 
@@ -127,17 +127,18 @@ def _install_middleware(server) {
 }
 ```
 
-A middleware takes three arguments: the request, the response, and a
-`next` function. **`next()` is where everything below it runs** — the other
-middleware, and eventually the route handler itself.
+A middleware function takes three arguments: the request, the response and a
+`next` function. **Calling `next()` runs everything that comes after the
+middleware**, including the other middleware and finally the route handler
+itself.
 
-That one fact explains the shape of both functions here. Code written
-*before* the `next()` call happens on the way in; code written *after* it
-happens on the way out, once the handler has finished and the response is
-populated. A middleware is therefore a pair of moments, not a single step,
-and the call in the middle is the seam between them.
+That explains the structure of both functions here. Code *before* the call
+to `next()` runs on the way in, and code *after* it runs on the way out,
+once the handler has finished and the response has been filled in. So a
+middleware function covers two points in time, not just one, and the call in
+the middle separates them.
 
-### Reading the Logger
+### How the Logger Works
 
 ```zuri,ignore
 server.use(@(request, response, next) {
@@ -152,15 +153,14 @@ server.use(@(request, response, next) {
 })
 ```
 
-The timestamp is taken on the way in, before anything else runs. The log
-line is written on the way out, which is the only point at which
-`response.status` is known — on the way in, nothing has decided it yet.
+The time is recorded on the way in, before anything else runs. The log line
+is written on the way out, because that's the only point at which
+`response.status` is known. On the way in, nothing has set it yet.
 
-That is the whole reason timing middleware works: the same function body
-runs at both ends of the request, with a local variable surviving in
-between.
+That's why timing middleware works at all. The same function body runs at
+both ends of the request, and a local variable keeps its value in between.
 
-### Reading the Error Handler
+### How the Error Handler Works
 
 ```zuri,ignore
 server.use(@(request, response, next) {
@@ -172,16 +172,16 @@ server.use(@(request, response, next) {
 })
 ```
 
-This one has nothing before `next()` and nothing after it. All its work is
-in the handler, and what it catches is **everything that raised anywhere
-below it** — a route, the board, the model, the store.
+This middleware doesn't do anything before or after `next()`. All of its
+work happens in the handler, and it catches **every error raised anywhere
+after it**, whether in a route, the board, the model or the store.
 
-That is the mechanism the whole application leans on. A `catch` around
-`next()` catches the routes, because `next()` *is* the routes.
+The whole application depends on this. A `catch` around `next()` catches
+errors from the routes, because `next()` *is* the routes.
 
 ### Why the Logger Comes First
 
-Middleware run **outermost first**, in the order they were added. So the
+Middleware runs **from the outside in**, in the order it was added. So the
 logger wraps the error handler, which wraps the routes:
 
 ```text
@@ -192,19 +192,19 @@ logger        starts the clock
 logger        writes the line, with that status
 ```
 
-Read the order bottom to top on the way out and the reason becomes obvious:
-a request that **failed** still gets logged, and it gets logged with the
-status the error handler chose rather than with whatever the response held
-when the exception was raised.
+If you follow the order from the bottom up on the way out, the reason
+becomes clear. A request that **failed** is still logged, and it's logged
+with the status the error handler chose, rather than whatever the response
+contained when the error was raised.
 
-Swap the two and a failing request would be logged before the error handler
-had set a status — or not at all, if the exception escaped the logger
-first.
+If you swapped the two, a failed request would be logged before the error
+handler had set its status, or it wouldn't be logged at all if the error
+went past the logger first.
 
-### The Module Already Has One
+### The Built-in Logger
 
 `http.middleware.logger()` is a ready-made request logger, and in a real
-application it is what you would reach for:
+application, it's what you'd use:
 
 ```zuri,ignore
 import http.middleware
@@ -212,17 +212,17 @@ import http.middleware
 server.use(middleware.logger())
 ```
 
-It writes the Common Log Format extended with the response time, which
-every log analyser already parses, and it takes a `sink` to send lines
-somewhere other than standard output, a `format` to build the line
+It writes the Common Log Format with the response time added, which every
+log analysis tool already understands. It accepts a `sink` to send lines
+somewhere other than standard output, a `format` to build each line
 yourself, and `trust_proxy` to log the forwarded client address instead of
-the peer.
+the address of the connection.
 
-The nine lines above are written out by hand here because a middleware you
-have read the whole of teaches more than one you called. Once you can see
-what `next()` does, swap in the real one.
+The nine lines above are written out here because you learn more from a
+middleware you've read in full than from one you've only called. Once you
+understand what `next()` does, switch to the built-in one.
 
-## One Place That Knows About Status Codes
+## A Single Place for Status Codes
 
 ```zuri
 def _render_error(request, response, error) {
@@ -248,24 +248,26 @@ def _render_error(request, response, error) {
 }
 ```
 
-This is the payoff for defining `NotFoundError` and `TaskError` as real
-classes instead of raising `Error('not found')` everywhere.
-`instance_of()` maps a domain error to a status code, once.
+This is what you gain from defining `NotFoundError` and `TaskError` as real
+classes, instead of raising `Error('not found')` everywhere. `instance_of()`
+maps each domain error to a status code, in one place.
 
-Three details matter.
+There are three details that matter.
 
-**Unknown errors are a 500 with a generic body**, and the real message goes
-to the log. An error message can contain a path, a query, or a fragment of
-a file. It goes where operators can read it, not where users can.
+**Unknown errors become a 500 with a generic message**, and the real message
+goes to the log. An error message can contain a path, a query or part of a
+file. It belongs where the people running the service can read it, not where
+users can.
 
-**The response shape follows the client.** A request under `/api`, or one
-whose `Accept` header asks for JSON, gets JSON. Everything else gets HTML.
-`request.wants_json()` reads the header for you.
+**The format of the response depends on the client.** A request under
+`/api`, or one whose `Accept` header asks for JSON, gets a JSON response,
+and everything else gets HTML. `request.wants_json()` checks the header for
+you.
 
-**A handler that has already committed a response** is not overwritten,
-because the error handler only ever runs when `next()` raised.
+**A response that a handler has already sent** isn't overwritten, because
+the error handler only runs when `next()` raised an error.
 
-## What It Looks Like
+## The Output
 
 ```console
 2026-09-11T02:29:55+01:00 INFO [taskboard]: task board on http://127.0.0.1:8000
@@ -276,18 +278,18 @@ because the error handler only ever runs when `next()` raised.
 2026-09-11T02:30:03+01:00 INFO [taskboard]: GET /static/app.css -> 200 (1ms)
 ```
 
-`log` puts the timestamp, the level and the module name on every line and
-colours it when the output is a terminal. The module name comes from where
-the call was made, so a message from `routes/api.zu` says so without being
-told.
+`log` adds the time, the level and the module name to every line, and uses
+colors when the output is a terminal. The module name is based on where the
+call was made, so a message from `routes/api.zu` shows that without you
+having to say so.
 
-The 409ms on that first `GET /` is Wire compiling the two templates. Every
-render after it walks the cached instruction tree instead, which is the
-1-3ms the later lines show.
+The 409ms on the first `GET /` is the time Wire took to compile the two
+templates. Every later render uses the cached instruction tree, which is why
+the later lines show 1 to 3ms.
 
-## Middleware Worth Adding
+## Other Useful Middleware
 
-`http.middleware` has ready-made pieces for the things every application
-eventually wants: CORS, compression, rate limiting, and authentication.
-Each is a function you pass to `server.use()`, in the position you want it
-in the chain.
+`http.middleware` has ready-made middleware for what every application
+eventually needs, such as CORS, compression, rate limiting and
+authentication. Each one is a function you pass to `server.use()`, at the
+position in the chain where you want it.

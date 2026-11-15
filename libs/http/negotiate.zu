@@ -1,12 +1,12 @@
 /**
  * @module negotiate
  *
- * Content negotiation: choosing what to send when the client has said
- * what it prefers.
+ * Content negotiation, which is choosing what to send based on what the
+ * client says it prefers.
  *
  * `Accept`, `Accept-Encoding` and `Accept-Language` all use the same
- * quality-value grammar, which `parse_accept()` reads and `best_match()`
- * scores against what the server can actually produce.
+ * grammar for quality values. `parse_accept()` reads it, and
+ * `best_match()` compares it with what the server can produce.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -22,8 +22,8 @@ import .util
 class AcceptEntry {
 
   /**
-   * The value itself, lowercased - a media type, a coding, a
-   * language tag, a charset.
+   * The value itself, in lowercase, such as a media type, a coding, a
+   * language tag or a charset.
    * @type string
    */
   var value
@@ -76,16 +76,18 @@ class AcceptEntry {
 
 /**
  * Parses an `Accept`, `Accept-Encoding`, `Accept-Language` or
- * `Accept-Charset` header into entries, most preferred first.
+ * `Accept-Charset` header into a list of entries, starting with the
+ * most preferred.
  *
- * Ordering follows RFC 9110 §12.5.1: by quality weight descending,
- * then by specificity, then by the order they were written. An entry
- * with `q=0` is kept rather than dropped, because `q=0` is an
- * explicit refusal ("anything but this") and a caller needs to see it
- * to honour it.
+ * The entries are ordered as RFC 9110 §12.5.1 describes: by quality
+ * weight, from highest to lowest, then by how specific they are, and
+ * then in the order they were written. An entry with `q=0` is kept
+ * instead of being dropped, because `q=0` explicitly refuses something
+ * ("anything but this"), and a caller needs to see it to respect it.
  *
  * @param ?string header
- * @returns list: `AcceptEntry`, most preferred first
+ * @returns list: `AcceptEntry` objects, starting with the most
+ *    preferred
  */
 def parse_accept(header) {
   var entries = []
@@ -198,12 +200,12 @@ def quality_of(header, candidate: string) {
 }
 
 /**
- * Picks the entry of `available` the client would most like, or `nil`
- * when it would accept none of them.
+ * Chooses the entry in `available` that the client would most like, or
+ * returns `nil` if the client wouldn't accept any of them.
  *
- * `available` is in server preference order, which decides ties - the
- * usual and correct behaviour, since the server is the one that knows
- * which representation is cheapest or best.
+ * `available` is in the server's order of preference, which is used to
+ * break ties. That's the usual and correct behavior, because the server
+ * knows which representation is cheapest or best.
  *
  * ```zuri
  * negotiate.best_match(request.header('accept'), ['application/json', 'text/html'])
@@ -243,18 +245,18 @@ def best_match(header, available: list) {
 }
 
 /**
- * Picks a content coding for a response, given the request's
- * `Accept-Encoding`.
+ * Chooses a content coding for a response, based on the request's
+ * `Accept-Encoding` header.
  *
- * `identity` - sending the body uncompressed - is acceptable unless
- * the client explicitly refused it, so this falls back to
- * `'identity'` rather than to `nil` whenever it can, and only returns
- * `nil` when the client has refused identity too and offered nothing
- * else this server has.
+ * `identity`, which means sending the body uncompressed, is acceptable
+ * unless the client explicitly refused it. So this falls back to
+ * `'identity'` instead of `nil` whenever it can, and only returns `nil`
+ * if the client has also refused `identity` and didn't offer anything
+ * else this server supports.
  *
  * @param ?string header
- * @param list available: the codings the server can produce, in
- *    preference order
+ * @param list available: the codings the server can produce, in order
+ *    of preference
  * @returns ?string
  */
 def preferred_encoding(header, available: list) {
@@ -334,13 +336,13 @@ def preferred_language(header, available: list) {
 }
 
 /**
- * Whether `header` names `value` outright rather than covering it
+ * Whether `header` names `value` explicitly, instead of covering it
  * with a wildcard.
  *
  * This is the difference between a client that asked for JSON and one
- * that sent `Accept: ` followed by a bare wildcard and would take
- * anything - a distinction that matters when deciding what to give a
- * client that expressed no real preference.
+ * that sent `Accept: ` with a plain wildcard and would accept anything.
+ * That distinction matters when you're deciding what to send a client
+ * that didn't express a real preference.
  *
  * @param ?string header
  * @param string value

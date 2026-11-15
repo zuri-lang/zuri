@@ -1,13 +1,15 @@
 # Performance and the JIT
 
-Zuri runs your bytecode in an interpreter until a piece of it gets hot,
-then compiles that piece to machine code and runs it there instead. Two
-compilers share the work, one quick and one thorough, and a hot function
-passes through both. The tiering happens on its own, on background
-threads, with no annotations and no flags.
+Zuri runs your bytecode in an interpreter until part of it becomes hot. It
+then compiles that part to machine code and runs the machine code instead.
+There are two compilers, a fast baseline compiler and a slower optimizing
+compiler. By default, hot functions are compiled by the optimizing compiler,
+and the baseline compiler handles the ones it turns down. All of this
+happens automatically, on background threads, without any annotations or
+flags.
 
-Here is what that is worth on a plain recursive Fibonacci, measured on one
-idle machine:
+Here's the difference it makes for a simple recursive Fibonacci function,
+measured on an idle machine:
 
 ```zuri
 def fib(n) {
@@ -32,100 +34,106 @@ $ ZURI_JIT=0 zuri run fib.zu
 took 47ms
 ```
 
-Over three times, for a function that does nothing but add and compare, and
-you write nothing to get it. The rest of this chapter explains how the
-compilers work and covers the handful of cases where what you write decides
-whether you get it.
+That's more than three times faster, for a function that does nothing but
+add and compare, and you don't have to write anything to get it. The rest of
+this chapter explains how the compilers work, and covers the few cases where
+the way you write code determines whether you get that speedup.
 
 ## The Two Compilers
 
-**Kebbi** is the baseline compiler. It turns a function's bytecode into machine code
-one instruction at a time, keeps values in machine registers, and proves
-what it can about types before it compiles: a parameter annotated `list` is
-a list, and a counter that starts at 0 and steps by 1 is a whole number.
-Kebbi compiles quickly, and its code runs several times faster than the
-interpreter.
+**Kebbi** is the baseline compiler. It turns a function's bytecode into
+machine code one instruction at a time, keeps values in machine registers,
+and works out what it can about types before it compiles. For example, it
+knows that a parameter annotated as `list` is a list, and that a counter
+that starts at 0 and goes up by 1 is a whole number. Kebbi compiles quickly,
+and the code it produces runs several times faster than the interpreter.
 
-**Bayelsa** is the optimizing compiler. It builds the whole function as a graph of
-typed values, then optimizes that graph before it generates any machine
-code. It carries a fact proven once to every later use, moves checks that
-cannot change out of loops, keeps loop counters as plain integers, builds
-small functions into the functions that call them, and bets on what a
-function has done so far wherever nothing proves it. Bayelsa takes longer
-to compile, and its code is the fastest Zuri produces.
+**Bayelsa** is the optimizing compiler. It represents the whole function as
+a graph of typed values, and optimizes that graph before generating any
+machine code. It applies a fact it has proven once to every later use, moves
+checks that can't change out of loops, keeps loop counters as plain
+integers, inlines small functions into the functions that call them, and
+wherever nothing proves a type, speculates based on what the function has
+done so far. Bayelsa takes longer to compile, and the code it produces is
+the fastest that Zuri can generate.
 
-Both compile with Cranelift, and both run on background threads. A program
-never waits for a compile: it carries on in the interpreter, or in the code
-it already has, until the new code is ready.
+Both compilers use Cranelift, and both run on background threads. A program
+never waits for a compilation. It keeps running in the interpreter, or in
+the code it already has, until the new code is ready.
 
-### How a Function Compiles
+### How a Function Is Compiled
 
-1. **The interpreter.** Every function starts here. It counts its calls and
-   its loop turns, and records the kind of value each operation meets.
-2. **Bayelsa (default).** Once a function is warm, Bayelsa compiles it
-   directly from the feedback the interpreter gathered. Small helper calls
-   inline, constant checks hoist out of loops, and variables stay in CPU
-   registers.
-3. **Kebbi fallback.** If Bayelsa declines a function (for instance, because
-   it contains a `catch` block), Kebbi compiles it instead.
+1. **The interpreter.** Every function starts here. The interpreter counts
+   how many times the function is called and how many times its loops
+   repeat, and records what kinds of values each operation sees.
+2. **Bayelsa (the default).** Once a function is warm, Bayelsa compiles it
+   directly, using the information the interpreter recorded. Small helper
+   functions are inlined, checks on constants are moved out of loops, and
+   variables are kept in CPU registers.
+3. **Kebbi as a fallback.** If Bayelsa turns down a function, for example
+   because it contains a `catch` block, Kebbi compiles it instead.
 
-When requested via `ZURI_JIT_TIERED=1`, Zuri can also run a multi-tier
-pipeline: a warm function compiles in Kebbi first with profiling
-instrumentation, and once that profiling code has done enough work, Bayelsa
-compiles it from the gathered feedback.
+If you set `ZURI_JIT_TIERED=1`, Zuri can also use a multi-tier pipeline. A
+warm function is first compiled by Kebbi with profiling instrumentation, and
+once that profiling code has done enough work, Bayelsa compiles the function
+using the information it gathered.
 
-### When a Bet Fails
+### When Speculation Fails
 
-Bayelsa compiles what it has seen. A loop that only ever added whole
-numbers does integer arithmetic; a module constant that held `10` is
-compared as the integer 10; an index that only ever met `bytes` reads a
-byte. Each bet is checked where it is made, and a failed check hands the
-frame back to the interpreter at that exact instruction, with every
-variable as the compiled code left it. This is a **deoptimisation**.
+Bayelsa compiles the code based on what it has seen. A loop that has only
+ever added whole numbers uses integer arithmetic. A module constant that
+held `10` is compared as the integer 10. An index operation that has only
+ever seen `bytes` reads a byte. Each assumption is checked at the point
+where it's made, and if a check fails, the frame is handed back to the
+interpreter at that exact instruction, with every variable as the compiled
+code left it. This is called **deoptimization**.
 
-The place that failed is remembered. The next compile of the function makes
-no bet there, so a function deoptimises at a given place once, not every
-time round.
+The place where the check failed is remembered, and the next compilation of
+the function doesn't make that assumption there. So a function is
+deoptimized at a particular place only once, not every time it gets there.
 
-### What Stays in Kebbi
+### Functions That Stay in Kebbi
 
 Bayelsa leaves a function to Kebbi in two cases:
 
-- The function contains a `catch`. Kebbi compiles it, handlers included.
-- The function's hot operations are ones Kebbi handles inline and Bayelsa
-  would hand to the runtime: arithmetic on values that were not always
-  numbers, method calls on strings, and indexing lists and strings whose
-  kind nothing settles. Kebbi's code is the faster of the two there.
+- The function contains a `catch`. Kebbi compiles it, including its
+  handlers.
+- The function's hot operations are ones that Kebbi handles inline but
+  Bayelsa would pass to the runtime, such as arithmetic on values that
+  weren't always numbers, method calls on strings, and indexing lists and
+  strings whose type can't be determined. In those cases, Kebbi's code is
+  faster.
 
-A function left in Kebbi is rebuilt without its profiling and runs at
-Kebbi's full speed.
+A function that's left in Kebbi is recompiled without its profiling code, so
+it runs at Kebbi's full speed.
 
-## How Tiering Works
+## How Functions Become Hot
 
-Every function counts its own calls, and every loop counts its own
-back-edges. When a counter crosses its threshold, a compile job goes to a
-background thread. When the machine code comes back, later calls use it.
+Every function counts its own calls, and every loop counts how many times it
+repeats. When a counter reaches its threshold, a compilation job is sent to
+a background thread. When the machine code is ready, later calls use it.
 
-The threshold is not a fixed number. It scales with the function's size:
+The threshold isn't a fixed number. It depends on the size of the function:
 
 ```text
 threshold = K / sqrt(instruction_count)
 ```
 
-A large function gets a low threshold, because it is doing more work per
-call and the compilation pays for itself sooner. A three-instruction getter
-gets a high one, because compiling it is speculative and most tiny
-functions never run enough to earn it back.
+A large function gets a low threshold, because it does more work per call,
+so compiling it pays off sooner. A getter with three instructions gets a
+high threshold, because compiling it is a gamble, and most tiny functions
+never run often enough to make it worthwhile.
 
-Loops get their own, lower threshold through **on-stack replacement**. A
-loop inside a function that is only ever called once still compiles, and
-execution jumps from the interpreter into the middle of the compiled
-version without unwinding anything. That is what makes a one-shot batch
-script fast. A loop's threshold follows the same curve from the loop's own
-length, so a short loop in a long function, such as setup code walking a
-small table, turns many times before it compiles the function around it.
+Loops get their own, lower threshold, through **on-stack replacement**. A
+loop inside a function that's only ever called once still gets compiled, and
+execution jumps from the interpreter into the middle of the compiled version
+without unwinding anything. That's what makes a script that runs once fast.
+A loop's threshold follows the same curve, based on the length of the loop
+itself, so a short loop in a long function, such as setup code that goes
+through a small table, has to repeat many times before the function around
+it is compiled.
 
-You can watch it happen:
+You can see it happen:
 
 ```console
 $ ZURI_JIT_LOG=1 zuri run fib.zu
@@ -134,9 +142,10 @@ $ ZURI_JIT_LOG=1 zuri run fib.zu
 196418
 ```
 
-`fib` goes straight to Bayelsa because warm functions compile directly
-through the optimizing compiler by default. With Bayelsa off (`ZURI_JIT_KEBBI=1`),
-Kebbi compiles it instead, and the line lists what Kebbi proved:
+`fib` goes straight to Bayelsa, because by default, warm functions are
+compiled directly by the optimizing compiler. With Bayelsa turned off
+(`ZURI_JIT_KEBBI=1`), Kebbi compiles it instead, and the output lists what
+Kebbi was able to prove:
 
 ```console
 $ ZURI_JIT_KEBBI=1 ZURI_JIT_LOG=1 zuri run fib.zu
@@ -144,13 +153,14 @@ $ ZURI_JIT_KEBBI=1 ZURI_JIT_LOG=1 zuri run fib.zu
 196418
 ```
 
-A function Bayelsa leaves to Kebbi gets a line saying why:
+When Bayelsa leaves a function to Kebbi, the output includes a line
+explaining why:
 
 ```text
 [jit] 'report' stays in Kebbi: catch at ip 5
 ```
 
-And you can see what did and did not make it:
+You can also see what was and wasn't compiled:
 
 ```console
 $ ZURI_JIT_COVERAGE=1 zuri run fib.zu
@@ -161,20 +171,21 @@ cold	0	56	100	0	@.script
 ...
 ```
 
-`calls` against `threshold` tells you how close something came.
+Comparing `calls` with `threshold` tells you how close a function came to
+being compiled.
 
-## Keep Errors for Errors
+## Use Errors Only for Errors
 
-A function with a `catch` compiles like any other. While no error comes
-through, a `catch` costs next to nothing: the handler is registered and
-dropped around the body, and the body runs as compiled code.
+A function with a `catch` is compiled like any other. As long as no error is
+raised, a `catch` costs almost nothing: the handler is registered and
+removed around the body, and the body runs as compiled code.
 
-What costs is an error that is actually raised. A `raise` hands the frame
-back to the interpreter at that instruction, and a caught error resumes at
-its handler in the interpreter too. The function returns to compiled code
-the next time its loop comes round, or the next time it is called. For a
-genuine failure that is the right trade. For an outcome a loop meets every
-few iterations, it is not:
+What does cost something is an error that's actually raised. A `raise` hands
+the frame back to the interpreter at that instruction, and a caught error
+continues at its handler in the interpreter too. The function returns to
+compiled code the next time its loop repeats, or the next time it's called.
+That's a reasonable cost for a real failure, but not for an outcome that a
+loop runs into every few iterations:
 
 ```zuri
 def parse_or_raise(i) {
@@ -233,23 +244,24 @@ timed('return nil     ', @() {
 })
 ```
 
-Two hundred rounds of a thousand iterations, one in ten of them failing:
+Here are two hundred rounds of a thousand iterations, with one in ten
+failing:
 
 | Variant | Time |
 | --- | --- |
-| `raise`, caught in the loop | 73ms |
+| `raise`, caught inside the loop | 73ms |
 | `nil` returned and checked | 11ms |
 
-When failing is an expected outcome, input that might not parse or a key
-that might be missing, return a value that says so and test it. Keep
-`raise` for what the caller cannot reasonably carry on from. A `raise` that
-never fires, a guard clause at the top of a function, costs the compiled
-path nothing.
+When failure is an expected outcome, such as input that might not parse or a
+key that might be missing, return a value that indicates it and check that
+value. Save `raise` for situations the caller can't reasonably recover from.
+A `raise` that never runs, such as a guard clause at the top of a function,
+doesn't slow down the compiled code.
 
-## Type Annotations Are a Performance Feature
+## Type Annotations Improve Performance
 
-The JIT speculates on the types it has seen. When it has been told instead,
-it does not need to guess, and the guard disappears.
+The JIT speculates based on the types it has seen. When you tell it the type
+instead, it doesn't need to guess, and the check disappears.
 
 ```zuri
 def sum_untyped(values) {
@@ -269,48 +281,48 @@ def sum_typed(values: list) {
 }
 ```
 
-Twenty thousand rounds over a thousand-element list:
+Here are twenty thousand rounds over a list of a thousand elements:
 
 | Variant | Time |
 | --- | --- |
 | `values: list` | 85ms |
-| no annotation | 150ms |
+| No annotation | 150ms |
 
-Running them in both orders gives the same answer, which is the check that
-tells you it is the annotation and not the warm-up.
+Running the two variants in both orders gives the same result, which
+confirms that the difference comes from the annotation and not from warm-up.
 
-Annotate the parameters of any function on a hot path. It costs one word
-per parameter and it documents the function at the same time.
+Annotate the parameters of any function on a hot path. It costs one word per
+parameter, and it documents the function at the same time.
 
 ## Keep Types Stable
 
-Speculation works by assuming the future looks like the past. A variable
-that holds a number on ten thousand iterations and a string on the ten
-thousand and first causes a **deoptimisation**: the compiled code bails to
-the interpreter, and the function may be recompiled with a weaker
-assumption.
+Speculation works by assuming the future will look like the past. If a
+variable holds a number for ten thousand iterations and then a string on the
+next one, the code is **deoptimized**: the compiled code falls back to the
+interpreter, and the function might be recompiled with a weaker assumption.
 
-One deopt is cheap. A loop that deopts every iteration is slower than never
-compiling at all.
+A single deoptimization is cheap. But a loop that's deoptimized on every
+iteration is slower than if it had never been compiled at all.
 
-In practice this means:
+In practice, this means:
 
-- One variable, one kind of value.
-- A list of numbers, not a list of numbers-and-sometimes-strings.
-- A field that starts `nil` and later holds a number is two types. Start it
-  at `0`.
+- Use each variable for one kind of value.
+- Use a list of numbers, not a list of numbers that sometimes contains
+  strings.
+- A field that starts as `nil` and later holds a number has two types. Start
+  it at `0` instead.
 
-That last one is the common case. `var count` on a class field is a `nil`
-until the constructor runs, and every read of it in compiled code has to
-handle both. `var count = 0` does not.
+The last one is the most common case. A class field declared as `var count`
+is `nil` until the constructor runs, so every read of it in compiled code
+has to handle both types. `var count = 0` doesn't have this problem.
 
 ## Where to Put a Hot Loop
 
-A per-element loop belongs in a **typed free function**, not in a method
-reading a field:
+A loop that processes every element belongs in a **standalone function with
+typed parameters**, not in a method that reads a field:
 
-Slower, because every iteration reads `self.pixels` back through a field
-guard:
+This is slower, because every iteration reads `self.pixels` through a field
+check:
 
 ```zuri
 class Canvas {
@@ -324,7 +336,8 @@ class Canvas {
 }
 ```
 
-Faster, because the loop sees plain locals whose types are declared:
+This is faster, because the loop only uses local variables with declared
+types:
 
 ```zuri
 def _brighten(pixels: bytes, amount: number) {
@@ -343,7 +356,8 @@ class Canvas {
 ```
 
 The standard library's `imagine` module is written this way throughout, and
-the difference on a per-pixel loop is measured in multiples, not percent.
+the difference for a loop over every pixel is measured in multiples, not
+percentages.
 
 ## Reading the Bytecode
 
@@ -359,42 +373,44 @@ echo zuri.compile('var a = 1 + 2').map(@(i) => i.op)
 [LoadConst, AddImm, SetGlobal, LoadNil, Return]
 ```
 
-`AddImm` rather than a separate load tells you the constant was folded into
-the instruction. This is the fastest way to check whether a rewrite did
-what you hoped, and it never goes stale.
+The `AddImm` instruction, rather than a separate load, tells you that the
+constant was included in the instruction itself. This is the quickest way to
+check whether a change to your code did what you hoped, and it's always
+accurate.
 
-## Measuring Honestly
+## Measuring Performance Reliably
 
-Every number in this chapter is one measurement on one machine. Treat them
-as ratios rather than as figures to reproduce: yours will differ with your
-processor, your build and what else the machine is doing. Five rules make
-the difference between a measurement and a guess.
+Every number in this chapter is a single measurement on a single machine.
+Treat them as ratios rather than numbers to reproduce, because your results
+will vary with your processor, your build and whatever else the machine is
+doing. These five rules make the difference between a measurement and a
+guess.
 
-**Warm up before you time.** The first few hundred iterations run
-interpreted, and if your benchmark is short, that is all you measured.
+**Warm up before you start timing.** The first few hundred iterations run in
+the interpreter, and if your benchmark is short, that's all you've measured.
 
-**Run each variant on its own.** Two variants in one process share warm-up
-state and a heap. Order them both ways; if the answer changes, you measured
-the order.
+**Run each variant separately.** Two variants in the same process share
+warm-up state and a heap. Run them in both orders, and if the result
+changes, you've measured the order.
 
-**Watch the machine.** A laptop under sustained load throttles, and a
-second run is not comparable to the first. Check the load before the timed
-run, not before the build that precedes it.
+**Keep an eye on the machine.** A laptop under sustained load slows itself
+down, so a second run isn't comparable to the first. Check the load just
+before the timed run, not before the build that comes before it.
 
-**Change one thing.** A "fix" that touches three sites has three possible
-explanations for its effect, and at least one of them is usually a
-regression hiding behind the other two.
+**Change one thing at a time.** If a fix changes three places, there are
+three possible explanations for its effect, and one of them is often a
+regression hidden by the other two.
 
-**Measure the real program.** A microbenchmark of one function tells you
-about that function in isolation, with a warm cache and no competing
-allocation. `ZURI_JIT_COVERAGE=1` on the actual workload tells you which
-function to look at in the first place, which is nearly always the more
-valuable answer.
+**Measure the real program.** A microbenchmark of a single function tells
+you about that function on its own, with a warm cache and no other
+allocations competing with it. Running the real workload with
+`ZURI_JIT_COVERAGE=1` tells you which function to look at in the first
+place, which is nearly always more useful.
 
-### Timing Something Yourself
+### Timing Code Yourself
 
-`time()` returns epoch seconds with microsecond resolution, so a timing
-harness is four lines:
+`time()` returns the time in seconds since the epoch, with microsecond
+resolution, so a timing harness only takes four lines:
 
 ```zuri
 def timed(label, work) {
@@ -419,72 +435,74 @@ var squares = timed('build a list', @() {
 echo squares.length()
 ```
 
-The elapsed line will differ every run; the length will not. Print both, so
-a change in the second tells you the harness broke rather than the code
-getting faster.
+The elapsed time will be different on every run, but the length won't. Print
+both, so that if the length ever changes, you know the harness is broken,
+rather than thinking the code has become faster.
 
 ## Choosing a Mode
 
-Bayelsa compiles directly by default, falling back to Kebbi whenever a function
-is declined. `ZURI_JIT_KEBBI=1` (or `ZURI_JIT_BAYELSA=0`) turns Bayelsa off, and
-every hot function then stays in Kebbi. `ZURI_JIT_TIERED=1` enables the multi-tier
-pipeline where Kebbi profiles before Bayelsa compiles.
+By default, Bayelsa compiles functions directly, and falls back to Kebbi
+whenever it turns a function down. `ZURI_JIT_KEBBI=1` (or
+`ZURI_JIT_BAYELSA=0`) turns off Bayelsa, so every hot function stays in
+Kebbi. `ZURI_JIT_TIERED=1` turns on the multi-tier pipeline, where Kebbi
+profiles a function before Bayelsa compiles it.
 
-Keep the default for anything that runs long enough for its speed to
-matter: servers, batch jobs, numeric work, anything whose hot loops run for
-more than a moment. That is where Bayelsa's code repays its compile many
-times over.
+Keep the default for anything that runs long enough for its speed to matter,
+such as servers, batch jobs, numeric work, and anything whose hot loops run
+for more than a moment. That's where Bayelsa's code pays back the cost of
+compiling it many times over.
 
-Turn Bayelsa off (`ZURI_JIT_KEBBI=1`) when:
+Turn off Bayelsa (`ZURI_JIT_KEBBI=1`) when:
 
-- **The program is short.** A script that finishes in a fraction of a
-  second spends a real share of its life compiling, and the
-  faster code arrives too late to pay for itself.
-- **Cores are scarce.** Bayelsa's compiles take more processor time than
-  Kebbi's. On a machine or container held to one core, or with every core
-  busy with isolates, that time comes out of the program's own.
-- **Start-up is the workload.** A command-line tool run over and over, a
-  few milliseconds each time, gains nothing from code that is faster on
-  its thousandth iteration.
-- **Timings have to hold from the first run.** Kebbi reaches its speed
-  sooner and stays there.
+- **The program is short.** A script that finishes in a fraction of a second
+  spends a significant part of its run time compiling, and the faster code
+  arrives too late to pay for itself.
+- **CPU cores are limited.** Bayelsa's compilations use more processor time
+  than Kebbi's. On a machine or container limited to one core, or when every
+  core is busy running isolates, that time comes out of the program's own.
+- **Startup time is what matters.** A command-line tool that's run over and
+  over again, for a few milliseconds each time, gains nothing from code
+  that's faster on its thousandth iteration.
+- **Timings need to be consistent from the first run.** Kebbi reaches its
+  full speed sooner and stays there.
 
-Measure both. The switch is one variable, and running the real workload
-each way settles the question for that workload.
+Measure both. The setting is a single environment variable, and running your
+real workload both ways answers the question for that workload.
 
-## The Environment Variables
+## Environment Variables
 
-These exist for measurement and debugging. Ordinary programs need none of
-them.
+These variables are for measuring and debugging. Ordinary programs don't
+need any of them.
 
 | Variable | Effect |
 | --- | --- |
-| `ZURI_JIT=0` | disable the JIT entirely |
-| `ZURI_JIT_KEBBI=1` | compile with Kebbi alone (same as `ZURI_JIT_BAYELSA=0`) |
-| `ZURI_JIT_TIERED=1` | enable multi-tier mode (Kebbi profiling before Bayelsa) |
-| `ZURI_JIT_LOG=1` | one line per compilation attempt |
-| `ZURI_JIT_LOG_IR=1` | dump the Cranelift IR, and Bayelsa's own before it |
-| `ZURI_JIT_COVERAGE=1` | a table of what compiled, at exit |
-| `ZURI_JIT_NO_SPECIALIZATION=1` | compile, but do not speculate on types |
-| `ZURI_JIT_THREADS=n` | background compiler threads |
-| `ZURI_JIT_CALL_K`, `ZURI_JIT_OSR_K` | the warm-up curve constants |
-| `ZURI_JIT_TIERUP_K` | how much profiling work comes before Bayelsa (tiered mode) |
-| `ZURI_GC_LOG=1` | garbage collector activity |
-| `ZURI_GC_NURSERY_MB=n` | the young generation's starting and smallest size, in megabytes |
-| `ZURI_OPCODE_PROFILE=1` | interpreter opcode histogram |
-| `MIMALLOC_PURGE_DELAY=n` | milliseconds freed memory waits before going back to the system; 10 unless set |
+| `ZURI_JIT=0` | Turns off the JIT completely |
+| `ZURI_JIT_KEBBI=1` | Compiles with Kebbi only (the same as `ZURI_JIT_BAYELSA=0`) |
+| `ZURI_JIT_TIERED=1` | Turns on multi-tier mode, where Kebbi profiles before Bayelsa compiles |
+| `ZURI_JIT_LOG=1` | Prints one line for each compilation attempt |
+| `ZURI_JIT_LOG_IR=1` | Prints the Cranelift IR, and Bayelsa's own IR before it |
+| `ZURI_JIT_COVERAGE=1` | Prints a table of what was compiled when the program exits |
+| `ZURI_JIT_NO_SPECIALIZATION=1` | Compiles functions, but without speculating on types |
+| `ZURI_JIT_THREADS=n` | Sets the number of background compiler threads |
+| `ZURI_JIT_CALL_K`, `ZURI_JIT_OSR_K` | Set the constants for the warm-up curve |
+| `ZURI_JIT_TIERUP_K` | Sets how much profiling work comes before Bayelsa, in tiered mode |
+| `ZURI_GC_LOG=1` | Prints garbage collector activity |
+| `ZURI_GC_NURSERY_MB=n` | Sets the starting and minimum size of the young generation, in megabytes |
+| `ZURI_OPCODE_PROFILE=1` | Prints a histogram of the interpreter's opcodes |
+| `MIMALLOC_PURGE_DELAY=n` | Sets how many milliseconds freed memory waits before it's returned to the operating system. The default is 10. |
 
 `ZURI_JIT=0` is the most useful one. Running a benchmark with and without it
-tells you immediately whether your hot path is being compiled at all, which
-is the first question to ask when something is slower than it should be.
+tells you straight away whether your hot path is being compiled at all,
+which is the first thing to check when something is slower than it should
+be.
 
-## When to Stop
+## Knowing When to Stop
 
-The interpreter is fast and the JIT is automatic. Most Zuri code needs no
-performance work at all, and the code that does usually needs exactly one
-of the three things in this chapter: return a value instead of raising for
-an expected outcome, annotate a parameter, or stop putting two types in one
-variable.
+The interpreter is fast, and the JIT works automatically. Most Zuri code
+doesn't need any performance work at all, and code that does usually needs
+just one of the three changes described in this chapter: return a value
+instead of raising an error for an expected outcome, annotate a parameter,
+or stop storing two types in one variable.
 
-Reach for anything more exotic only after `ZURI_JIT_COVERAGE` has told you
-which function is actually the problem.
+Only try anything more unusual after `ZURI_JIT_COVERAGE` has shown you which
+function is actually causing the problem.

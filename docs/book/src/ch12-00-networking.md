@@ -1,19 +1,19 @@
 # Networking
 
-The `net` module is the socket layer: TCP, UDP, unix domain sockets, TLS,
-DTLS, address parsing and polling. The `http` module sits on top of it and gives you a client and
-a server that speak HTTP/1.1 and HTTP/2.
+The `net` module is Zuri's socket layer. It covers TCP, UDP, Unix domain
+sockets, TLS, DTLS, address parsing and polling. The `http` module is built
+on top of it and provides a client and a server for HTTP/1.1 and HTTP/2.
 
 Every example in this chapter runs a server in an isolate and a client in
-the main program, which is how you test network code without two terminals.
-[Chapter 11](ch11-00-isolates.md) is the background.
+the main program, which lets you test network code without needing two
+terminals. [Chapter 11](ch11-00-isolates.md) explains isolates.
 
 ## TCP
 
-A `TcpStream` is both ends. `bind()` and `accept()` make it a listener;
-`connect()` makes it a client. `accept()` blocks until someone connects,
-unless the listener was put in non-blocking mode, in which case it answers
-`nil` when nobody is waiting.
+A `TcpStream` can be either end of a connection. `bind()` and `accept()`
+make it a listener, and `connect()` makes it a client. `accept()` blocks
+until a client connects, unless the listener is in non-blocking mode, in
+which case it returns `nil` when nobody is waiting.
 
 <span class="filename">Filename: server.zu</span>
 
@@ -62,45 +62,46 @@ task.join()
 echo: hello
 ```
 
-Three things in that pair of files are doing real work.
+There are three important things in this pair of files.
 
-**The server lives in its own file.** It has to: `echo_server` refers to
-`net`, and a function that references an imported module cannot be spawned
-from the file that did the importing. In `server.zu`, `net` is resolved
-inside the isolate instead of being captured from the caller.
-[Chapter 11](ch11-00-isolates.md) covers the rule and the alternative.
+**The server is in its own file.** It has to be, because `echo_server` uses
+`net`, and a function that uses an imported module can't be spawned from the
+file that imported it. In `server.zu`, `net` is resolved inside the isolate
+instead of being captured from the caller. [Chapter 11](ch11-00-isolates.md)
+explains this rule and the alternative.
 
 **Binding to port `0`** asks the operating system for a free port, and
-`local_address()` reports which one it gave. That is the right way to write
-a test, and the right way to run several servers in one process. The port
-travels back to the main program through the channel, because the main
-program cannot know it in advance.
+`local_address()` tells you which one it chose. That's the right way to
+write a test, and the right way to run several servers in one process. The
+port is sent back to the main program through the channel, since the main
+program can't know it in advance.
 
-**`shutdown(net.Shutdown.WRITE)` is not optional here.**
-`read_as_string()` reads until the peer stops writing, so without a
-half-close from the client the server would still be waiting for more
-request while the client waits for a response — a deadlock that looks
-exactly like a hang. `Shutdown` has `READ`, `WRITE` and `BOTH`.
+**The `shutdown(net.Shutdown.WRITE)` call is required here.**
+`read_as_string()` keeps reading until the other side stops writing. Without
+a half-close from the client, the server would keep waiting for more of the
+request while the client waits for the response. That's a deadlock, and it
+looks just like a hang. `Shutdown` has `READ`, `WRITE` and `BOTH`.
 
-### Reading
+### Reading From a Socket
 
-| Method | Behaviour |
+| Method | Behavior |
 | --- | --- |
-| `read(length)` | up to `length` bytes, whatever has arrived |
-| `read_exact(length)` | exactly `length` bytes, waiting for them |
-| `read_all()` | everything until the peer closes, as `bytes` |
-| `read_as_string()` | the same, decoded as UTF-8 |
-| `peek(length)` | look without consuming |
+| `read(length)` | Reads up to `length` bytes, whatever has arrived so far |
+| `read_exact(length)` | Reads exactly `length` bytes, waiting for them if necessary |
+| `read_all()` | Reads everything until the other side closes, as `bytes` |
+| `read_as_string()` | The same, decoded as UTF-8 |
+| `peek(length)` | Looks at incoming bytes without consuming them |
 
-`read()` returning fewer bytes than you asked for is normal, not an error.
-That is what `read_exact()` is for.
+It's normal for `read()` to return fewer bytes than you asked for, and it
+isn't an error. That's what `read_exact()` is for.
 
-### Writing
+### Writing to a Socket
 
-`write(data)` writes what it can and tells you how much. `write_all(data)`
-loops until everything is out, and is what you want almost always.
+`write(data)` writes as much as it can and tells you how much it wrote.
+`write_all(data)` keeps writing until everything has been sent, and it's
+almost always the one you want.
 
-### Options
+### Socket Options
 
 ```zuri,ignore
 socket.set_read_timeout(5000)
@@ -110,23 +111,25 @@ socket.set_non_blocking(true)
 socket.set_ttl(64)
 ```
 
-Timeouts here are **milliseconds**, which is the opposite of the `isolate`
-module's seconds — easy to mix up in a program that uses both.
+Timeouts in this module are in **milliseconds**, unlike the `isolate`
+module, which uses seconds. It's easy to mix them up in a program that uses
+both.
 
-**Set a read timeout on anything that talks to the network.** A socket
-with no timeout and a peer that never answers is a thread that never
-comes back.
+**Set a read timeout on every socket that talks to the network.** If a
+socket has no timeout and the other side never responds, the thread using it
+never gets control back.
 
-`set_nodelay(true)` disables Nagle's algorithm, which is what you want for
-a request/response protocol where latency matters more than packet count.
+`set_nodelay(true)` turns off Nagle's algorithm, which is what you want for
+a request and response protocol where latency matters more than the number
+of packets.
 
-`set_non_blocking(true)` makes a read or write that cannot go ahead fail
-rather than wait. For a socket in that mode watched with a `net.Poller`,
-`try_read(length)` and `try_write(data)` report that as a result instead of
-an error: `try_read()` returns `nil` when nothing has arrived, and
-`try_write()` returns how much the socket took, which is `0` when it has no
-room. `TlsStream` has both, along with `try_flush()` for what it has
-encrypted but not yet sent.
+`set_non_blocking(true)` makes a read or write that can't proceed fail
+instead of waiting. For a non-blocking socket watched with a `net.Poller`,
+`try_read(length)` and `try_write(data)` report this as a result instead of
+an error. `try_read()` returns `nil` when nothing has arrived, and
+`try_write()` returns how many bytes the socket accepted, which is `0` when
+it has no room. `TlsStream` has both methods, plus `try_flush()` for data it
+has encrypted but not yet sent.
 
 ## UDP
 
@@ -161,35 +164,36 @@ ping
 pong
 ```
 
-The second line is written with a placeholder because the real one is not
-predictable: `bind('127.0.0.1:0')` asks the operating system for any free
-port, and it picks a different one every run.
+The second line uses a placeholder because the real value is different every
+time. `bind('127.0.0.1:0')` asks the operating system for any free port, and
+it picks a different one each run.
 
-`receive_from(length)` gives you the datagram's bytes. To learn who sent
-it, `peek_from(length)` returns `{ data, address }` without consuming the
-datagram, so the pattern for a responder is peek, read, reply.
+`receive_from(length)` returns the bytes of the datagram. To find out who
+sent it, use `peek_from(length)`, which returns `{ data, address }` without
+consuming the datagram. So a responder peeks, reads and then replies.
 
-A datagram larger than the buffer you give is truncated, and the rest is
-discarded. Size the buffer for your protocol's largest message.
+If a datagram is larger than the buffer you provide, it's truncated and the
+rest is discarded. Make the buffer large enough for the largest message your
+protocol sends.
 
-There is also `connect()` to fix a peer, `set_broadcast()`, and
-`join_multicast_v4()` / `join_multicast_v6()`.
+UDP sockets also have `connect()` to set a fixed peer, `set_broadcast()`,
+and `join_multicast_v4()` and `join_multicast_v6()`.
 
-## Unix Sockets
+## Unix Domain Sockets
 
-A unix domain socket is a path on the filesystem rather than an address
-on the network. It is how two programs on one machine usually talk when
-one of them is a server: databases, message brokers and system daemons
-nearly all listen on one.
+A Unix domain socket is identified by a path on the file system instead of
+an address on the network. It's the usual way for two programs on the same
+machine to communicate when one of them is a server. Databases, message
+brokers and system daemons nearly all listen on one.
 
-There is no port to collide with and nothing to reach it from another
-host. And because the socket is a file, the filesystem decides who may
-connect — a socket in a directory only one user can enter is reachable
-by only that user, which is a stronger answer than binding to loopback
-and trusting everyone on the machine.
+There's no port that can clash with another program, and no way to reach the
+socket from another machine. And because the socket is a file, the file
+system decides who can connect. A socket inside a directory that only one
+user can access can only be reached by that user, which is more secure than
+binding to the loopback address and trusting everyone on the machine.
 
-`pair()` gives two sockets already connected to each other, with no
-path and nothing left on disk:
+`pair()` returns two sockets that are already connected to each other, with
+no path and nothing left on disk:
 
 ```zuri
 import net
@@ -211,8 +215,8 @@ ends[1].close()
 pong
 ```
 
-A server binds a path and accepts on it, exactly as a `TcpStream`
-binds an address:
+A server binds to a path and accepts connections on it, just as a
+`TcpStream` binds to an address:
 
 ```zuri,ignore
 import net
@@ -227,17 +231,17 @@ while true {
 }
 ```
 
-Two things differ from TCP and both come from the socket being a file.
-`bind()` refuses a path that already exists, including one a crashed
-process left behind, so a server that expects to be restarted deletes
-a stale path first. And closing frees the descriptor without removing
-the file, because by then another process may have bound the same path
-and removing it would break them.
+There are two differences from TCP, and both are because the socket is a
+file. First, `bind()` fails if the path already exists, even if it was left
+behind by a process that crashed, so a server that expects to be restarted
+should delete a stale path first. Second, closing the socket frees the file
+descriptor but doesn't delete the file, because by then another process
+might have bound the same path, and deleting it would break that process.
 
-`net.is_supported()` is false on Windows, where these are not
-available. Every call raises there rather than the module being
-missing, so a program that can fall back to TCP tests it rather than
-catching an error.
+`net.is_supported()` returns false on Windows, where Unix domain sockets
+aren't available. On Windows, every call raises an error, but the module
+itself still exists, so a program that can fall back to TCP should check
+`is_supported()` rather than catch an error.
 
 ## Addresses
 
@@ -253,7 +257,7 @@ echo address.to_string()
 127.0.0.1:8080
 ```
 
-`resolve()` turns a name into addresses:
+`resolve()` converts a host name into addresses:
 
 ```zuri,ignore
 echo net.resolve('localhost:80').map(@(a) => a.to_string())
@@ -263,18 +267,19 @@ echo net.resolve('localhost:80').map(@(a) => a.to_string())
 [[::1]:80, 127.0.0.1:80]
 ```
 
-It returns a list because a name can have several addresses, and what comes
-back depends on the machine: a host with IPv6 configured answers for both
-families, one without gives only `[127.0.0.1:80]`. Never assume a position
-in that list, and never assume a family.
+It returns a list because a name can have several addresses, and the result
+depends on the machine. A host with IPv6 configured returns addresses for
+both families, while one without IPv6 returns only `[127.0.0.1:80]`. Don't
+assume that an address is at a particular position in the list, or that it
+belongs to a particular family.
 
-`net.ip` has `IpAddress`, `Ipv4Address` and `Ipv6Address` for parsing,
-comparing and classifying addresses, which is what you want before you
-trust an `X-Forwarded-For` header.
+`net.ip` provides `IpAddress`, `Ipv4Address` and `Ipv6Address` for parsing,
+comparing and classifying addresses, which you'll need before you trust an
+`X-Forwarded-For` header.
 
 ## TLS
 
-`net.tls` wraps an established TCP stream:
+`net.tls` wraps an existing TCP connection in TLS:
 
 ```zuri,ignore
 import net
@@ -292,37 +297,38 @@ var secure = tls.TlsStream.accept(client, config)
 echo secure.read_as_string()
 ```
 
-A `TlsStream` has the same read and write interface a `TcpStream` does, so
-code written against one works against the other.
+A `TlsStream` has the same methods for reading and writing as a `TcpStream`,
+so code written for one works with the other.
 
 On the client side, `tls.TlsStream.connect(socket, config, hostname)`
-performs the handshake and verifies the certificate. `config.add_ca_pem()`
-adds a trust anchor, and `config.require_client_cert(true)` turns on mutual
-TLS. `peer_certificate()` gives you the other end's certificate once the
-handshake is done.
+performs the handshake and verifies the server's certificate.
+`config.add_ca_pem()` adds a trusted certificate authority, and
+`config.require_client_cert(true)` turns on mutual TLS. Once the handshake
+has finished, `peer_certificate()` returns the other side's certificate.
 
-`net.dtls` is the same thing over UDP.
+`net.dtls` provides the same thing over UDP.
 
 ## Polling
 
-`net.poll` waits on many sockets at once without a thread each. It is the
-right tool when you have thousands of mostly-idle connections and the wrong
-tool when you have a handful of busy ones, where an isolate per connection
-is simpler and faster.
+`net.poll` waits on many sockets at once without needing a thread for each
+one. It's the right tool when you have thousands of connections that are
+mostly idle, and the wrong tool when you have just a few busy ones. In that
+case, using an isolate per connection is simpler and faster.
 
-### Accepting without parking the thread
+### Accepting Connections Without Blocking the Thread
 
-`accept()` on a blocking listener waits inside the runtime. Nothing else on
-that thread gets a turn while it waits: a signal trapped with
-`os.on_signal()` is not delivered, and a flag telling the server to stop is
-not read, until a connection happens to arrive. On an idle server that is
-never, which is why Ctrl+C on one can appear to do nothing at all.
+`accept()` on a blocking listener waits inside the runtime, and nothing else
+on that thread can run while it waits. A signal handled with
+`os.on_signal()` isn't delivered, and a flag telling the server to stop
+isn't checked, until a connection happens to arrive. On an idle server, that
+might never happen, which is why pressing Ctrl+C on one can seem to do
+nothing.
 
-`net.Acceptor` is the accept loop without that problem. It puts the listener
-into non-blocking mode and waits on a poller instead. `next()` hands over a
-connection when there is one and returns `nil` when its interval passes with
-nothing arriving, which is the loop's chance to look at whatever else it has
-to look at.
+`net.Acceptor` is an accept loop that doesn't have this problem. It switches
+the listener to non-blocking mode and waits on a poller instead. `next()`
+returns a connection when there is one, and returns `nil` when its interval
+passes without a connection arriving. That gives the loop a chance to check
+anything else it needs to.
 
 ```zuri
 import net
@@ -352,12 +358,13 @@ nil
 127.0.0.1
 ```
 
-The interval decides how soon a stopped server notices, not how soon a
-connection is served: one that arrives wakes the wait at once. Nothing is
-added while connections are arriving either, because `next()` tries
-`accept()` first and reaches for the poller only when the queue is empty.
+The interval only affects how quickly a stopped server notices that it
+should stop, not how quickly a connection is handled, because a new
+connection ends the wait immediately. It doesn't add any delay while
+connections are arriving either, because `next()` tries `accept()` first and
+only uses the poller when there's nothing waiting.
 
-That turns a server into something Ctrl+C can stop:
+This makes a server that you can stop with Ctrl+C:
 
 ```zuri,ignore
 import net
@@ -388,23 +395,23 @@ while running {
 listener.close()
 ```
 
-The handler returns `true` to say it has taken responsibility for the
-signal. A handler that returns anything falsy declines, and the process
-then dies of the signal as it would have with nothing registered at all.
+The handler returns `true` to show that it has handled the signal. If a
+handler returns a falsy value, it declines the signal, and the process is
+terminated by the signal as it would be if no handler were registered.
 
-`http` accepts this way in both `HttpServer.listen()` and `http.serve()`, and
-so do the SMTP and IMAP servers in `mail`. A server built on any of them is
-already stoppable.
+`http` accepts connections this way in both `HttpServer.listen()` and
+`http.serve()`, and so do the SMTP and IMAP servers in `mail`. A server
+built on any of these can already be stopped with Ctrl+C.
 
 ## Above the Socket Layer
 
-Everything so far has been bytes on a socket. Most programs want a protocol
-on top of that, and the standard library brings two of them.
+So far, everything has been about sending bytes over a socket. Most programs
+need a protocol on top of that, and the standard library provides two.
 
-**`http`** is a complete HTTP/1.1 and HTTP/2 client and server: routing,
-middleware, cookies, multipart uploads, static files, server-sent events
-and WebSockets. It is large enough to have its own chapter, and
-[Chapter 15](ch15-00-http.md) is it. The one-line version:
+**`http`** is a complete HTTP/1.1 and HTTP/2 client and server, with
+routing, middleware, cookies, multipart uploads, static files, server-sent
+events and WebSockets. It's big enough to need its own chapter, which is
+[Chapter 15](ch15-00-http.md). Here's the shortest possible example:
 
 ```zuri,ignore
 import http
@@ -416,27 +423,27 @@ echo response.as_text()
 ```
 
 **`net.tls`** wraps a `TcpStream` in TLS, as shown above, for protocols
-that are not HTTP — a mail client, a database driver, a custom binary
+other than HTTP, such as a mail client, a database driver or a custom binary
 protocol.
 
-A rough guide to which layer you want:
+Here's a rough guide to which layer to use:
 
-| You are writing | Reach for |
+| If you're writing | Use |
 | --- | --- |
-| a web API, or a client for one | `http` |
-| a browser-facing server | `http` |
-| a client for an existing non-HTTP protocol | `net.tcp`, plus `net.tls` if it is encrypted |
-| a protocol of your own design | `net.tcp` and `struct` |
-| discovery, telemetry, games | `net.udp` |
-| anything waiting on many sockets at once | `net.poll` |
-| a server that has to stop on Ctrl+C | `net.Acceptor` |
+| A web API, or a client for one | `http` |
+| A server that browsers connect to | `http` |
+| A client for an existing protocol that isn't HTTP | `net.tcp`, plus `net.tls` if the protocol is encrypted |
+| A protocol of your own | `net.tcp` and `struct` |
+| Service discovery, telemetry or games | `net.udp` |
+| Anything that waits on many sockets at once | `net.poll` |
+| A server that has to stop on Ctrl+C | `net.Acceptor` |
 
-## A Worked Example
+## Example: A Length-Prefixed Protocol
 
-A length-prefixed request/response protocol of the kind `net` is for: each
-message is a four-byte big-endian length followed by that many bytes of
-JSON. This is the pattern behind most binary protocols, and it is worth
-writing once by hand.
+This example implements a request and response protocol of the kind `net` is
+designed for. Each message is a four-byte big-endian length, followed by
+that many bytes of JSON. Most binary protocols follow this pattern, and it's
+worth writing one by hand at least once.
 
 <span class="filename">Filename: framed.zu</span>
 
@@ -531,38 +538,38 @@ task.join()
 {"reply":"second"}
 ```
 
-The framing is the whole point. TCP is a stream of bytes with no message
-boundaries in it: one `write_all()` may arrive as three reads, and three
-writes may arrive as one. `read_exact(4)` followed by `read_exact(length)`
-is what puts the boundaries back, and `read()` alone would not — it returns
-whatever has arrived, which is why the table above distinguishes the two.
+The framing is the important part. TCP is a stream of bytes with no message
+boundaries. One `write_all()` might arrive as three reads, and three writes
+might arrive as one. Calling `read_exact(4)` and then `read_exact(length)`
+restores the boundaries, which `read()` on its own wouldn't do, because it
+returns whatever has arrived. That's why the table above lists both methods.
 
-The end of the conversation is the other thing worth studying.
-`read_exact()` **raises** when the stream ends before it has the bytes it
-was promised, and a peer that hangs up cleanly between frames produces
-exactly that. Catching it and returning `nil` is what turns "the connection
-closed" from a crash into the loop's normal exit.
+The end of the conversation is also worth looking at. `read_exact()`
+**raises an error** when the stream ends before all of the expected bytes
+have arrived, and that's exactly what happens when the other side closes the
+connection cleanly between messages. Catching the error and returning `nil`
+turns a closed connection into the loop's normal exit, rather than a crash.
 
-Note also that both ends share `framed.zu`. A protocol implemented twice,
-once per end, is a protocol that will eventually disagree with itself.
+Notice also that both sides share `framed.zu`. If you implement a protocol
+twice, once for each side, the two implementations will eventually disagree.
 
-One last detail, easily missed: the reply key is `reply`, not `echo`.
-`echo` is a keyword, so it cannot be a bare dictionary key — `{ echo: x }`
-is a syntax error. Quote it as `{ 'echo': x }` if you need that exact
-name.
+One last detail that's easy to miss: the reply key is `reply`, not `echo`.
+`echo` is a keyword, so it can't be used as a bare dictionary key, and
+`{ echo: x }` is a syntax error. If you need that exact name, quote it:
+`{ 'echo': x }`.
 
-## The Rest of the Module
+## Other Submodules
 
-`net.poll` answers "which of these sockets can I read right now?" without a
-thread per socket, which is how you serve many connections from one
-isolate. It takes a `UnixStream` alongside a `TcpStream` or a `TlsStream`. `net.addr` and `net.ip` parse, format and classify addresses —
-`is_private()`, `is_loopback()`, `is_multicast()` and the rest — which is
-what you want before trusting an address a client sent you. `is_global()`
-answers the question a server asks before it connects somewhere a stranger
-named, such as a URL to fetch: whether the address is on the public
-internet, or one of the blocks the IANA registries keep off it, from
-loopback and the private ranges to carrier-grade NAT and the
-documentation prefixes. `net.dtls` is
-TLS over UDP.
+`net.poll` tells you which sockets you can read from right now without a
+thread for each socket, which is how one isolate can serve many connections.
+It accepts a `UnixStream` as well as a `TcpStream` or a `TlsStream`.
+`net.addr` and `net.ip` parse, format and classify addresses with methods
+such as `is_private()`, `is_loopback()` and `is_multicast()`, which you'll
+need before trusting an address a client sent you. `is_global()` answers the
+question a server should ask before connecting to an address provided by
+someone else, such as a URL to fetch: is the address on the public internet,
+or in one of the ranges that the IANA registries reserve, from loopback and
+private ranges to carrier-grade NAT and documentation prefixes? `net.dtls`
+is TLS over UDP.
 
-[Appendix F](appendix-06-stdlib-index.md) lists every submodule.
+[Appendix F](appendix-06-stdlib-index.md) lists all of the submodules.

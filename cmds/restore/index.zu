@@ -1,7 +1,7 @@
 /**
  * @command restore
- * @description Restores the project dependencies with their locked 
- *    versions.
+ * @description Installs the exact package versions recorded in the
+ *    project's lockfile.
  *
  *   zuri restore [options]
  *
@@ -25,47 +25,47 @@ import .._shared.ui
 def parser() {
   var parser = args.Parser('zuri restore', false)
 
-  parser.description = 'Restores the project dependencies with their locked versions.'
+  parser.description = 'Installs the exact package versions recorded in the project\'s lockfile.'
 
   parser.add_option(
     'frozen',
-    'Refuse, rather than resolve again, when project.lock is out of date',
+    'Stop with an error instead of resolving again if project.lock is out of date',
     nil,
   )
   parser.add_option(
     'production',
-    'Leave out packages only development dependencies need',
+    'Leave out packages that only development dependencies need',
     { short_name: 'P' },
   )
   parser.add_option(
     'verify',
-    'Check every installed package against what was installed',
+    'Check whether any installed package has changed since it was installed',
     nil,
   )
-  parser.add_option('global', 'Restore the packages installed for this user', {
+  parser.add_option('global', 'Restore the packages installed for your user', {
     short_name: 'g',
   })
-  parser.add_option('offline', 'Use only what is already downloaded', nil)
-  parser.add_option('dry-run', 'Show what would change and change nothing', {
+  parser.add_option('offline', 'Only use what\'s already downloaded', nil)
+  parser.add_option('dry-run', 'Show what would change without changing anything', {
     short_name: 'n',
   })
   parser.add_option(
     'force',
-    'Replace directories in .zuri/libs that zuri did not install',
+    'Replace directories in .zuri/libs that weren\'t installed by zuri',
     nil,
   )
-  parser.add_option('no-hooks', 'Run no install scripts at all', nil)
+  parser.add_option('no-hooks', 'Don\'t run any install scripts', nil)
   parser.add_option(
     'allow-hooks',
-    'Let these packages run their scripts this time',
+    'Allow these packages to run their scripts this time',
     { type: args.LIST, metavar: 'package' },
   )
   parser.add_option(
     'insecure',
-    'Allow a token to cross plain http to another machine',
+    'Allow sending a token over plain HTTP to another machine',
     nil,
   )
-  parser.add_option('quiet', 'Print only the result', { short_name: 'q' })
+  parser.add_option('quiet', 'Only print the result', { short_name: 'q' })
 
   return parser
 }

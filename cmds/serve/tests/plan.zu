@@ -188,7 +188,7 @@ describe('checks', @{
       failure(@{
         settings(['--tls-cert', os.join_paths(ROOT, 'cert.pem')], nil)
       }),
-    ).to_contain('both a certificate and its key')
+    ).to_contain('both a certificate and its private key')
   })
 
   it('warns about listening beyond this machine in the clear', @{

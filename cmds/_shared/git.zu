@@ -286,7 +286,7 @@ def _read_manifest_from(path: string) {
   })
 
   if text == nil {
-    raise GitError('the repository holds no project.toml at its root')
+    raise GitError('the repository doesn\'t have a project.toml at its root')
   }
 
   return manifest_module.parse(text, 'project.toml')
@@ -311,7 +311,7 @@ def pack_checkout(
 
   if !file(manifest_path).exists() {
     raise GitError(
-      'the repository at commit ${commit[0, 12]} holds no project.toml at its root',
+      'the repository at commit ${commit[0, 12]} doesn\'t have a project.toml at its root',
     )
   }
 
@@ -319,7 +319,7 @@ def pack_checkout(
   var declared = found.name()
 
   if declared == nil {
-    raise GitError("the repository's project.toml states no name")
+    raise GitError("the repository's project.toml doesn't have a name")
   }
 
   if name == nil {

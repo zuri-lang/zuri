@@ -1,7 +1,6 @@
 /**
  * @command upgrade
- * @description Upgrades this installation of zuri with a newer
- *    release.
+ * @description Upgrades Zuri to a newer release.
  *
  *   zuri upgrade [options]
  *

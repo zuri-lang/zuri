@@ -2,11 +2,11 @@
 
 ## Ranges
 
-`a..b` builds a range value: the integers from `a` up to but not including
-`b`.
+`a..b` creates a range, which represents the integers from `a` up to but not
+including `b`.
 
-`..` binds tighter than a method call, so a range takes a method directly
-with no parentheses around it:
+`..` binds more tightly than a method call, so you can call a method on a
+range directly without parentheses:
 
 ```zuri
 echo 1..5.to_list()
@@ -18,20 +18,19 @@ echo 1..10.step(3).get_step()
 3
 ```
 
-Parenthesise only when the bounds are themselves expressions, since `..`
-takes primaries: `(n * 2)..(n * 3)`.
+You only need parentheses when the bounds are themselves expressions,
+because `..` only accepts primary expressions: `(n * 2)..(n * 3)`.
 
-> A property access and a call are expressions too, so `0..self.size`
-> and `0..items.length()` are `(0..self).size` and
-> `(0..items).length()`. Write `0..(self.size)` and
-> `0..(items.length())` when the bound is the property rather than the
-> range.
+> Property accesses and method calls are expressions too, so `0..self.size`
+> and `0..items.length()` mean `(0..self).size` and `(0..items).length()`.
+> If you want the bound to be the property instead of applying it to the
+> range, write `0..(self.size)` and `0..(items.length())`.
 >
-> This is the price of the line above it. `..` has to bind tighter than
-> `.` for `1..10.step(3)` to mean a range that steps, and once it does,
-> there is no way for `0..self.step(5)` to mean the instance's own
-> `step` instead. The parentheses say which one is meant, and the
-> compiler cannot guess.
+> This is a consequence of the previous rule. `..` has to bind more tightly
+> than `.` so that `1..10.step(3)` creates a range with a step, and once it
+> does, `0..self.step(5)` can't mean the instance's own `step` method. The
+> parentheses make it clear which one you mean, because the compiler has no
+> way of guessing.
 
 ```zuri
 var r = 1..10
@@ -49,10 +48,10 @@ echo r.range()
 9
 ```
 
-`range()` is the distance between the bounds.
+`range()` returns the distance between the two bounds.
 
-A range is a value, not loop syntax. Store it, pass it to a function,
-return it:
+A range is a value in its own right, not just loop syntax. You can store it,
+pass it to a function and return it:
 
 ```zuri
 def page(number) {
@@ -69,7 +68,7 @@ echo page(2)
 
 ### Counting Down
 
-Write the larger bound first and the range runs backwards:
+If you write the larger bound first, the range counts down:
 
 ```zuri
 for i in 10..1 {
@@ -89,10 +88,10 @@ for i in 10..1 {
 2
 ```
 
-The rule is the same in both directions: the first bound is included, the
-second is not.
+The same rule applies in both directions: the first bound is included and
+the second isn't.
 
-### Stepping
+### Steps
 
 ```zuri
 for i in 1..10.step(3) {
@@ -106,11 +105,11 @@ for i in 1..10.step(3) {
 7
 ```
 
-`step()` gives back a new range carrying that stride. `get_step()` reads
-it; the default is `1`.
+`step()` returns a new range with the given step size. `get_step()` returns
+the step, which is `1` by default.
 
-`to_list()` materialises a range into a list at stride one, ignoring any
-step you set:
+`to_list()` turns a range into a list with a step of one, and ignores any
+step you've set:
 
 ```zuri
 echo 1..5.to_list()
@@ -120,11 +119,11 @@ echo 1..5.to_list()
 [1, 2, 3, 4]
 ```
 
-### Membership
+### Checking Whether a Value Is in a Range
 
-`within()` tests against the bounds **inclusively on both sides**, and it
-normalises direction, so `10..1.within(10)` and `1..10.within(10)` both
-answer the same:
+`within()` checks a value against the bounds, **including both of them**. It
+works the same way regardless of direction, so `10..1.within(10)` and
+`1..10.within(10)` give the same answer:
 
 ```zuri
 var r = 1..10
@@ -138,14 +137,14 @@ true
 true
 ```
 
-That differs from iteration, which excludes the upper bound. When you want
-"would the loop visit this number", compare against `lower()` and `upper()`
-yourself.
+This is different from iteration, which leaves out the upper bound. If you
+want to know whether a loop over the range would visit a particular number,
+compare it against `lower()` and `upper()` yourself.
 
-### Walking a Range
+### Iterating Over a Range
 
-`for` with one variable gives you the values, and with two it gives you
-the position first and the value second:
+With one variable, `for` gives you the values. With two, it gives you the
+position first and the value second:
 
 ```zuri
 for value in 3..6 {
@@ -166,10 +165,11 @@ for index, value in 3..6 {
 2: 5
 ```
 
-The index counts from zero regardless of where the range starts, which is
-what makes it useful: `3..6` yields values 3, 4, 5 at positions 0, 1, 2.
+The position always counts from zero, wherever the range starts. That's what
+makes it useful: `3..6` gives the values 3, 4 and 5 at positions 0, 1 and 2.
 
-`loop()` is the callback form. It honours the step and the direction:
+`loop()` takes a callback instead. It respects both the step and the
+direction:
 
 ```zuri
 25..18.loop(@(i) {
@@ -182,8 +182,8 @@ print('\n')
 25 24 23 22 21 20 19 
 ```
 
-An `iter` loop needs no range at all — its three clauses already say
-everything a range says, and more, since the step can be any expression:
+An `iter` loop doesn't need a range at all. Its three clauses can express
+everything a range can, and more, since the step can be any expression:
 
 ```zuri
 iter var i = 3; i < 6; i++ {
@@ -197,21 +197,21 @@ iter var i = 3; i < 6; i++ {
 5
 ```
 
-Use a range with `for` when the bounds are the interesting part, and `iter`
-when the stepping is.
+Use a range with `for` when the bounds are what matter, and `iter` when the
+way you step through the values matters more.
 
-## What Is Iterable
+## Iterable Types
 
-`for ... in` works on:
+You can use `for ... in` with:
 
-- **lists**, giving index and value
-- **dictionaries**, giving key and value, in insertion order
-- **strings**, giving character position and character
-- **bytes**, giving index and the numeric byte
-- **ranges**, giving position and value
-- **any class** that defines `@key()` and `@value()`
+- **Lists**, which give the index and the value
+- **Dictionaries**, which give the key and the value, in insertion order
+- **Strings**, which give the position and the character
+- **Bytes**, which give the index and the numeric value of the byte
+- **Ranges**, which give the position and the value
+- **Any class** that defines `@key()` and `@value()`
 
-`is_iterable()` answers the question for any value:
+`is_iterable()` tells you whether a value can be iterated over:
 
 ```zuri
 echo is_iterable([1, 2])
@@ -227,23 +227,25 @@ false
 
 ## The Iterator Protocol
 
-`for` is not magic. It desugars into a loop over two method calls.
+There's nothing magic about `for`. Under the hood, it's a loop that makes
+two method calls.
 
-Given `for value in thing`, Zuri evaluates `thing` **once**, then repeats:
+For `for value in thing`, Zuri evaluates `thing` **once**, and then repeats
+these steps:
 
-1. `key = thing.@key(key)`, starting from `nil`
-2. stop if `key` is `nil`
+1. `key = thing.@key(key)`, starting with `key` set to `nil`
+2. If `key` is `nil`, stop
 3. `value = thing.@value(key)`
-4. run the body
+4. Run the body
 
-So `@key(previous)` answers "what comes after this one?", returning `nil`
-when there is nothing left, and `@value(key)` answers "what is stored
-here?".
+In other words, `@key(previous)` returns the key that comes after the
+previous one, or `nil` when there are no more, and `@value(key)` returns the
+value stored under that key.
 
-Everything built in implements this. So can your own classes, which is
-what [Chapter 6](ch06-03-decorated-methods.md) shows.
+All of the built-in types implement this protocol, and your own classes can
+too, as [Chapter 6](ch06-03-decorated-methods.md) shows.
 
-Because the iterable is evaluated exactly once, this is safe:
+Because the expression after `in` is evaluated only once, this is safe:
 
 ```zuri,ignore
 for line in read_the_whole_file() {
@@ -251,4 +253,4 @@ for line in read_the_whole_file() {
 }
 ```
 
-The function runs once, not once per line.
+The function is called once, not once for every line.

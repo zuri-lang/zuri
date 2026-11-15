@@ -2,14 +2,14 @@
 /**
  * @module http.sse
  *
- * Server-sent events (the WHATWG `text/event-stream` format): a
- * one-way stream of named, identified messages that a browser's
- * `EventSource` reconnects to on its own.
+ * Server-sent events, in the WHATWG `text/event-stream` format. They
+ * provide a one-way stream of named messages with IDs, which a
+ * browser's `EventSource` reconnects to automatically.
  *
- * Where a WebSocket gives you a duplex connection and a framing
- * protocol to go with it, this gives you a long-lived response body
- * and nothing else - which is all a live feed of updates actually
- * needs, and it survives proxies that would refuse an upgrade.
+ * A WebSocket gives you a two-way connection and a framing protocol.
+ * Server-sent events give you a long-lived response body and nothing
+ * else, which is all a live feed of updates needs, and they work
+ * through proxies that would refuse a connection upgrade.
  *
  * ```zuri
  * import http
@@ -47,17 +47,18 @@ class EventStream {
   }
 
   /**
-   * Sends one event.
+   * Sends a single event.
    *
-   * `data` may be a string, or any value, in which case it is
-   * JSON-encoded - which is what a browser's `EventSource` handler
-   * almost always parses it back out of anyway. A multi-line string
-   * is split across several `data:` lines, as the format requires.
+   * `data` can be a string, or any other value, in which case it's
+   * encoded as JSON, which is what a browser's `EventSource` handler
+   * almost always parses it as anyway. A string with several lines is
+   * split across several `data:` lines, as the format requires.
    *
    * @param any data
-   * @param ?string event: the event name, which a browser dispatches
-   *    under; omitted means the default `message` event
-   * @param ?string id: the event id, which the browser sends back as
+   * @param ?string event: the event name, which the browser dispatches
+   *    the event under. If it's left out, the default `message` event
+   *    is used.
+   * @param ?string id: the event ID, which the browser sends back as
    *    `Last-Event-ID` when it reconnects
    * @returns EventStream: this same instance, for chaining
    */

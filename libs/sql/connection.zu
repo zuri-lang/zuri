@@ -1,16 +1,16 @@
 /**
  * @module connection
  *
- * The connection a program holds.
+ * The connection that a program holds.
  *
- * Everything that is the same whichever database is underneath lives
- * here: translating placeholders, shaping results, running
- * transactions and their savepoints, generating the four statements
- * that are always the same, and getting an id back from an insert on
- * an engine that has no last insert id.
+ * Everything that's the same whatever the database is handled here:
+ * translating placeholders, shaping results, running transactions and
+ * their savepoints, generating the four statements that are the same on
+ * every engine, and getting an ID back from an insert on an engine that
+ * has no last insert ID.
  *
- * What is left over is the adapter's, reachable through `native()` for
- * the cases where an engine's own feature is the point.
+ * Everything else belongs to the adapter. Call `native()` to reach it
+ * when you need a feature that's specific to one engine.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

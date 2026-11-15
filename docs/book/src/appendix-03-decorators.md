@@ -1,12 +1,13 @@
 # Appendix C: Decorated Methods
 
-A method whose name begins with `@` is called by the runtime when a piece
-of syntax is applied to an instance of its class. They are ordinary
-methods otherwise: inherited, overridable, and callable by name.
+A method whose name starts with `@` is called by the runtime when a
+particular piece of syntax is used with an instance of its class. Apart from
+that, decorated methods are ordinary methods: they can be inherited,
+overridden and called by name.
 
-See [Decorated Methods](ch06-03-decorated-methods.md) for the guided
-treatment, and [Class Extensions](ch06-06-class-extensions.md) for adding
-one to a class you did not write.
+See [Decorated Methods](ch06-03-decorated-methods.md) for a full
+explanation, and [Class Extensions](ch06-06-class-extensions.md) for adding
+one to a class you didn't write.
 
 ## Construction
 
@@ -14,8 +15,8 @@ one to a class you did not write.
 | --- | --- | --- |
 | `@new` | `ClassName(...)` | `@new(...args)` |
 
-`@new` is the only place `self.x = value` may declare a field that was not
-declared with `var`.
+`@new` is the only place where `self.x = value` can declare a field that
+wasn't declared with `var`.
 
 ## Arithmetic
 
@@ -42,9 +43,9 @@ declared with `var`.
 | `@rshift` | `a >> b` | `@rshift(other)` |
 | `@urshift` | `a >>> b` | `@urshift(other)` |
 
-`@not` is bound to `~`, the bitwise complement. `!` is logical negation and
-is not overridable: an instance is always truthy, so `!instance` is always
-`false`.
+`@not` is bound to `~`, the bitwise complement. `!` is logical negation, and
+it can't be overridden. An instance is always truthy, so `!instance` is
+always `false`.
 
 ## Comparison
 
@@ -56,10 +57,10 @@ is not overridable: an instance is always truthy, so `!instance` is always
 | `@gt` | `a > b` | `@gt(other)` |
 | `@gte` | `a >= b` | `@gte(other)` |
 
-`!=` is the negation of `@eq`. `@eq` runs only when the right operand is
-an object too, so `x == nil` never calls it, and it must return a bool.
+`!=` is the opposite of `@eq`. `@eq` only runs when the right operand is
+also an object, so `x == nil` never calls it, and it must return a bool.
 Lists, dictionaries, `contains()` and `index_of()` compare instances by
-identity whether or not the class defines it.
+identity, whether or not their class defines `@eq`.
 
 ## Iteration
 
@@ -68,11 +69,11 @@ identity whether or not the class defines it.
 | `@key` | `for ... in` | `@key(previous)` |
 | `@value` | `for ... in` | `@value(key)` |
 
-`@key(previous)` receives the previous key, starting from `nil`, and
-returns the next one or `nil` when the sequence is finished. `@value(key)`
-returns what is stored at that key.
+`@key(previous)` receives the previous key, starting with `nil`, and returns
+the next key, or `nil` when there are no more. `@value(key)` returns the
+value stored under that key.
 
-Defining both is what makes `is_iterable()` return `true` for the class.
+Defining both methods makes `is_iterable()` return `true` for the class.
 
 ## Display
 
@@ -80,37 +81,38 @@ Defining both is what makes `is_iterable()` return `true` for the class.
 | --- | --- | --- |
 | `@to_string` | `echo`, `print()` | `@to_string()` |
 
-`@to_string()` returns the text shown for the instance, including when it
-sits inside a list or dictionary being shown, as a key or as a value. It
-must return a string; anything else raises a `TypeError`. Without it, an
-instance shows as `<instance of ClassName>`.
+`@to_string()` returns the text displayed for the instance, including when
+it appears inside a list or dictionary that's being displayed, as a key or
+as a value. It must return a string, and returning anything else raises a
+`TypeError`. Without it, an instance is displayed as
+`<instance of ClassName>`.
 
-## Serialisation
+## Serialization
 
 | Decorator | Called by | Signature |
 | --- | --- | --- |
 | `@to_json` | `json.encode()` | `@to_json()` |
 
-Returns whatever should be encoded in the instance's place, which is where
-you decide what does and does not cross the wire.
+Returns whatever should be encoded in place of the instance, which lets you
+decide exactly what gets sent.
 
-## Not a Decorator
+## `to_string()` Isn't a Decorated Method
 
-`to_string()` has no `@`. It is a real method every value already carries,
-and a class may override it.
+`to_string()` doesn't have an `@`. It's a regular method that every value
+already has, and a class can override it.
 
-Nothing calls it implicitly. String interpolation and `+` render an
+Nothing calls it automatically. String interpolation and `+` display an
 instance as `<instance of ClassName>`, and `echo` and `print()` use
 `@to_string()`.
 
-## Resolution
+## Which Method Is Called
 
-The left operand decides. `a + b` looks for `@add` on `a`'s class only; if
-`a` is a number and `b` is your instance, the operation is a `TypeError`
-rather than a call to `b`'s `@add`.
+The left operand decides. `a + b` only looks for `@add` on the class of `a`.
+If `a` is a number and `b` is an instance of your class, the operation
+raises a `TypeError`, rather than calling `b`'s `@add`.
 
-An operator with no matching decorator raises a `TypeError` naming the
-exact signature:
+An operator without a matching decorated method raises a `TypeError` that
+shows the exact combination of types:
 
 ```console
 operator '+' not defined for call signature (nil, number)

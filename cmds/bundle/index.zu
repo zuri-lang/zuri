@@ -1,7 +1,7 @@
 /**
  * @command bundle
- * @description Packages the project with a runtime, into something
- *    that runs where zuri is not installed.
+ * @description Packages the project together with a runtime, so that
+ *    it can run on machines without Zuri.
  *
  *   zuri bundle [options]
  *
@@ -47,7 +47,7 @@ def _runtime(target: string, given: ?string) {
 
     if !file(executable).exists() or
         !os.dir_exists(os.join_paths(root, 'libs')) {
-      raise UsageError('${root} does not hold a ${target} runtime and its libs')
+      raise UsageError('${root} doesn\'t contain a ${target} runtime and its libs')
     }
 
     return { executable, libs: os.join_paths(root, 'libs') }
@@ -190,7 +190,7 @@ def _claim(path: string, force: bool) {
   }
 
   if !force {
-    raise UsageError('${path} is already there; pass force to replace it')
+    raise UsageError('${path} already exists; use --force to replace it')
   }
 
   fsx.remove(path)
@@ -300,7 +300,7 @@ def main() {
 
   if name == nil {
     raise UsageError(
-      'project.toml states no name to call the program by; pass one with name',
+      'project.toml doesn\'t name the project; use --name to name the program',
     )
   }
 

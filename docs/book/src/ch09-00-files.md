@@ -1,8 +1,9 @@
 # Files and the Filesystem
 
-Two things do the work here. The built-in `file()` function gives you a
-handle to one file. The `os` module covers everything else: directories,
-paths, globs, temporary files and the environment.
+Two things handle most of the work with files. The built-in `file()`
+function gives you a handle to a single file, and the `os` module covers
+everything else: directories, paths, globs, temporary files and environment
+variables.
 
 ## Opening a File
 
@@ -11,30 +12,32 @@ var handle = file('notes.txt')
 var writer = file('notes.txt', 'w')
 ```
 
-`file(path)` defaults to read mode. The second argument is the mode:
+`file(path)` opens a file for reading by default. The second argument sets
+the mode:
 
 | Mode | Meaning |
 | --- | --- |
-| `r` | read; the file must exist |
-| `w` | write; creates the file, truncates an existing one |
-| `a` | append; writes always go to the end, creates the file |
-| `r+` | read and update; the file must exist |
-| `w+` | read and update; creates the file, does **not** truncate |
-| `a+` | read and append; creates the file |
-| `x` | write; creates the file, fails if the path already exists |
-| `x+` | read and write; creates the file, fails if the path already exists |
+| `r` | Read. The file must exist. |
+| `w` | Write. Creates the file, or truncates it if it exists. |
+| `a` | Append. Every write goes to the end. Creates the file if needed. |
+| `r+` | Read and update. The file must exist. |
+| `w+` | Read and update. Creates the file, but does **not** truncate it. |
+| `a+` | Read and append. Creates the file if needed. |
+| `x` | Write. Creates the file, and fails if the path already exists. |
+| `x+` | Read and write. Creates the file, and fails if the path already exists. |
 
-Append `b` to any of them for binary mode: `'rb'`, `'wb'`, `'ab'`.
+Add `b` to any mode to open the file in binary mode, as in `'rb'`, `'wb'` or
+`'ab'`.
 
-`x` is the one to reach for when two programs might create the same file.
-The existence check and the creation happen in a single step, so exactly
-one of them succeeds and every other one fails, which is what a lock file
-needs.
+Use `x` when two programs might try to create the same file at the same
+time. Checking whether the file exists and creating it happen in a single
+step, so exactly one program succeeds and all the others fail. That's what a
+lock file needs.
 
-Creating a handle does not touch the disk. Nothing happens until you read,
+Creating a handle doesn't touch the disk. Nothing happens until you read,
 write or call `open()`.
 
-## Reading a Whole File
+## Reading an Entire File
 
 ```zuri
 file('notes.txt', 'w').write('It works!')
@@ -46,18 +49,18 @@ echo file('notes.txt').read()
 It works!
 ```
 
-`read()` with no argument opens the file, reads all of it, and closes it
-again. That is the one-liner for "give me this file's contents", and it is
-what you want most of the time.
+`read()` without an argument opens the file, reads all of it and closes it
+again. It's the one-line way to get a file's contents, and it's what you'll
+want most of the time.
 
-In text mode you get a string, decoded strictly as UTF-8. In binary mode
-you get `bytes`.
+In text mode, you get a string, decoded as strict UTF-8. In binary mode, you
+get `bytes`.
 
 ### Reading in Chunks
 
-`read(length)` reads at most that many bytes and leaves the handle open, so
-you can call it again. This is how you process a file too large to hold in
-memory at once:
+`read(length)` reads up to that many bytes and leaves the handle open, so
+you can call it again. This is how you process a file that's too large to
+fit in memory all at once:
 
 ```zuri
 file('notes.txt', 'w').write('alpha\nbeta\ngamma\n')
@@ -86,18 +89,18 @@ echo chunks
 3
 ```
 
-Six bytes at a time is a demonstration; in real code the chunk is tens of
-kilobytes. The shape is what matters: open once, read until you get an
-empty result, close once.
+Reading six bytes at a time is only for demonstration, and in real code
+you'd read tens of kilobytes at a time. What matters is the pattern: open
+the file once, read until you get an empty result, then close it once.
 
-Note that chunks fall wherever the byte count lands, not on line
-boundaries. A chunked reader that needs whole lines has to keep the tail of
-each chunk and join it to the front of the next.
+Note that chunks end wherever the byte count runs out, not at the end of a
+line. If a chunked reader needs complete lines, it has to keep the end of
+each chunk and join it to the start of the next one.
 
 ### Reading Lines
 
-For text you want line by line, the simplest form reads the file and splits
-it:
+To process text one line at a time, the simplest approach is to read the
+whole file and split it:
 
 ```zuri
 file('notes.txt', 'w').write('alpha\nbeta\ngamma\n')
@@ -113,22 +116,22 @@ for line in file('notes.txt').read().lines() {
 [gamma]
 ```
 
-`lines()` handles both `\n` and `\r\n`, and drops the trailing empty
-piece a final newline would otherwise produce.
+`lines()` handles both `\n` and `\r\n`, and it drops the empty string that a
+trailing newline would otherwise produce at the end.
 
-## Writing
+## Writing to a File
 
 ```zuri
 file('notes.txt', 'w').write('It works!')
 ```
 
-Like `read()`, `write()` opens the handle if it is closed, writes, flushes,
-and closes it again. One call, one complete file.
+Like `read()`, `write()` opens the handle if it's closed, writes the data,
+flushes it and closes the handle again. One call writes one complete file.
 
-That auto-close has a consequence worth being precise about. **Two
-consecutive `write()` calls on a closed handle in `w` mode each truncate
-the file, so only the last one survives.** When you are writing more than
-once, open the handle yourself:
+Closing automatically has an important consequence. **If you call `write()`
+twice on a closed handle in `w` mode, each call truncates the file, so only
+the second write is kept.** When you need to write more than once, open the
+handle yourself:
 
 ```zuri
 var handle = file('notes.txt', 'w')
@@ -148,17 +151,17 @@ second line
 
 ```
 
-The explicit `open()` is what keeps the handle open across both writes.
-Without it, each `write()` would open, truncate, write and close, and only
-`second line` would survive.
+The explicit `open()` call keeps the handle open for both writes. Without
+it, each `write()` would open the file, truncate it, write to it and close
+it, and only `second line` would be left.
 
-An already-open handle is written to where it stands, so the sequence above
-does exactly what it reads like.
+If the handle is already open, `write()` writes at the current position, so
+the code above does what it looks like it does.
 
-`puts()` writes without ever opening or closing. It requires an open
-handle, and it is the method to reach for inside a loop.
+`puts()` writes without opening or closing the handle at all. The handle has
+to be open already, and `puts()` is the method to use inside a loop.
 
-## Reading and Writing at a Position
+## Reading and Writing at a Specific Position
 
 ```zuri
 var handle = file('notes.txt')
@@ -172,7 +175,8 @@ handle.close()
 ```
 
 `seek(offset, whence)` takes `0` for the start of the file, `1` for the
-current position and `2` for the end. The `io` module names them:
+current position and `2` for the end. The `io` module has names for these
+values:
 
 ```zuri,ignore
 import io
@@ -181,9 +185,9 @@ handle.seek(0, io.SEEK_SET)
 handle.seek(-10, io.SEEK_END)
 ```
 
-`tell()` reports the current offset.
+`tell()` returns the current position.
 
-## Asking About a File
+## Getting Information About a File
 
 ```zuri
 var handle = file('notes.txt')
@@ -197,7 +201,7 @@ echo handle.is_open()
 echo handle.is_closed()
 ```
 
-`stats()` returns a dictionary of metadata about the file on disk:
+`stats()` returns a dictionary of information about the file on disk:
 
 ```zuri
 file('notes.txt', 'w').write('alpha\nbeta\n')
@@ -215,9 +219,10 @@ true
 [is_readable, is_writable, is_executable, is_symbolic, size, mode, dev, ino, nlink, uid, gid, mtime, atime, ctime, blocks, blksize]
 ```
 
-`size` is in bytes. `mtime`, `atime` and `ctime` are epoch seconds, ready
-to hand to the `date` module. `mode` is the raw permission-and-type word,
-and the `stat` module is what turns it into an answer:
+`size` is in bytes. `mtime`, `atime` and `ctime` are times in seconds since
+the epoch, which you can pass straight to the `date` module. `mode` is the
+raw word that holds the permissions and the type of entry, and the `stat`
+module helps you make sense of it:
 
 ```zuri
 import stat
@@ -237,9 +242,9 @@ false
 -rw-r--r--
 ```
 
-`S_ISREG`, `S_ISDIR`, `S_ISLNK` and the rest of the family each answer one
-question about the kind of entry. `file_mode()` renders the permission bits
-the way `ls -l` does.
+`S_ISREG`, `S_ISDIR`, `S_ISLNK` and the other functions like them each check
+for one kind of entry. `file_mode()` formats the permission bits the same
+way `ls -l` does.
 
 ## Managing Files
 
@@ -249,14 +254,14 @@ file('backup.txt').rename('archive.txt')
 file('archive.txt').delete()
 ```
 
-There is also `truncate(length)`, `chmod(mode)`, `set_times(access,
-modify)` and `symlink(target)`.
+File handles also have `truncate(length)`, `chmod(mode)`,
+`set_times(access, modify)` and `symlink(target)`.
 
-## Always Close What You Opened
+## Closing Files
 
-`read()` and `write()` clean up after themselves. Anything you opened with
-`open()` is yours to close, and the cleanest way to guarantee it is a
-`catch` that closes on the way out:
+`read()` and `write()` clean up after themselves, but you're responsible for
+closing anything you opened with `open()`. The cleanest way to make sure it
+happens is a `catch` that closes the file on the way out:
 
 ```zuri,ignore
 var handle = file(path, 'w')
@@ -273,8 +278,8 @@ if e {
 }
 ```
 
-For something that has to be cleaned up however the program ends, rather
-than however one block ends, register it with `os.at_exit()`:
+For cleanup that has to happen however the program ends, rather than however
+a single block ends, register a handler with `os.at_exit()`:
 
 ```zuri
 import os
@@ -295,10 +300,11 @@ echo scratch.is_open()
 true
 ```
 
-Handlers run last registered first, and they run whether the program
-reached the end of its script, called `os.exit()`, or stopped on an
-uncaught error. A handler that raises is reported on standard error and
-the rest still run, so one failed cleanup cannot cancel the others.
+Handlers run in reverse order of registration. They run whether the program
+reached the end of its script, called `os.exit()` or stopped because of an
+uncaught error. If a handler raises an error, the error is reported on
+standard error and the remaining handlers still run, so one failed cleanup
+can't stop the others.
 
 ## Directories
 
@@ -308,9 +314,9 @@ import os
 os.create_dir('sub/deep', nil, true)
 ```
 
-The three arguments are the path, the permission bits, and whether to
-create intermediate directories. It returns `false` when the directory
-already existed.
+The three arguments are the path, the permission bits, and whether to create
+any missing parent directories. It returns `false` if the directory already
+existed.
 
 ```zuri
 echo os.dir_exists('sub')
@@ -318,11 +324,13 @@ echo os.is_dir('sub')
 echo os.remove_dir('sub', true)
 ```
 
-`remove_dir`'s second argument makes it recursive.
+If the second argument to `remove_dir` is true, it removes the directory and
+everything in it.
 
-## Listing and Globbing
+## Listing Files and Globbing
 
-Everything in this section works on a real tree, so build one first:
+The examples in this section work on a real directory tree, so let's create
+one first:
 
 ```zuri
 import os
@@ -334,7 +342,7 @@ file('tree/sub/nested.txt', 'w').write('b')
 file('tree/sub/notes.md', 'w').write('c')
 ```
 
-`read_dir()` lists one directory:
+`read_dir()` lists the contents of a directory:
 
 ```zuri
 echo os.read_dir('tree')
@@ -346,14 +354,15 @@ echo os.read_dir('tree', true)
 [., .., sub, sub/nested.txt, sub/notes.md, top.txt]
 ```
 
-Three things to notice. `.` and `..` are included, so a loop over the result
-almost always wants to skip them. The recursive form returns nested entries
-as paths **relative to the directory you asked about**, not as bare names,
-which is what makes them usable directly. And entries come back sorted by
-name, with a directory's contents following immediately after it, so the
-listing reads the same on every machine and filesystem.
+There are three things to notice here. First, `.` and `..` are included, so
+a loop over the result usually needs to skip them. Second, the recursive
+form returns nested entries as paths **relative to the directory you
+listed**, not as bare names, so you can use them directly. Third, entries
+are sorted by name, and each directory's contents come immediately after the
+directory itself, so the listing is the same on every machine and file
+system.
 
-`glob()` is usually what you actually want:
+`glob()` is usually what you really want:
 
 ```zuri
 echo os.glob('*.txt', 'tree')
@@ -365,16 +374,16 @@ echo os.glob('**/*.txt', 'tree')
 [sub/nested.txt]
 ```
 
-`*` matches within one path segment; `**` matches across segments. The
-second argument is the base directory, and results come back relative to
+`*` matches within a single part of a path, while `**` matches across parts.
+The second argument is the base directory, and the results are relative to
 it.
 
-Read those two results together, because the distinction catches people
-out. `*.txt` found the file at the top and not the nested one. `**/*.txt`
-found the nested one and **not** the top-level one, because `**/` means
-"in a subdirectory". Neither pattern finds both.
+Compare those two results carefully, because the difference often catches
+people out. `*.txt` found the file at the top level but not the nested one.
+`**/*.txt` found the nested file but **not** the top-level one, because
+`**/` means "in a subdirectory". Neither pattern finds both.
 
-To match at every depth, glob `**` and filter:
+To match files at any depth, glob for `**` and filter the results:
 
 ```zuri
 echo os.glob('**', 'tree')
@@ -386,12 +395,11 @@ echo os.glob('**', 'tree').filter(@(p) => p.ends_with('.txt'))
 [sub/nested.txt, top.txt]
 ```
 
-`**` on its own matches every entry at every depth, directories included,
-which is why the filter is doing real work in the second line. `glob()`
-walks with `read_dir()` underneath, so matches arrive in that same sorted
-order.
+`**` on its own matches every entry at every depth, including directories,
+which is why the filter on the second line is needed. `glob()` uses
+`read_dir()` internally, so its matches come back in the same sorted order.
 
-Clean up when you are done:
+Clean up when you're done:
 
 ```zuri
 echo os.remove_dir('tree', true)
@@ -403,7 +411,7 @@ true
 
 ## Paths
 
-Every path function is pure string manipulation except where noted:
+All of the path functions just manipulate strings, except where noted:
 
 ```zuri
 echo os.join_paths('sub', 'a.txt')
@@ -421,12 +429,13 @@ sub
 sub
 ```
 
-`real_path()` resolves symlinks and requires the path to exist.
-`abs_path()` does not. `expand_user()` turns a leading `~` into the home
-directory. `path_contains(base, candidate)` answers whether one path is
-inside another, which is the check you need before serving a file a user
-named. On Windows, both it and `relative_path()` ignore case, the way
-Windows itself looks names up.
+`real_path()` resolves symbolic links, and the path has to exist.
+`abs_path()` doesn't require that. `expand_user()` replaces a leading `~`
+with the home directory. `path_contains(base, candidate)` checks whether one
+path is inside another, which is the check you need before serving a file
+that a user asked for by name. On Windows, both `path_contains()` and
+`relative_path()` ignore case, the same way Windows does when it looks up
+names.
 
 ```zuri
 echo os.cwd()
@@ -443,8 +452,8 @@ var path = os.create_temp_file('report-', '.csv')
 var dir = os.create_temp_dir('build-')
 ```
 
-Both create the thing and hand you its path. Clean them up yourself when
-you are done.
+Both functions create the file or directory and return its path. You're
+responsible for removing them when you're done.
 
 ## Environment Variables
 
@@ -459,13 +468,13 @@ echo os.environ()
 echo os.expand_vars('$HOME/projects')
 ```
 
-`get_env()` takes a fallback. `environ()` gives the whole set as a
-dictionary.
+`get_env()` accepts a fallback value. `environ()` returns all of the
+environment variables as a dictionary.
 
-## Locating Files Relative to Your Code
+## Finding Files Relative to Your Code
 
 The current working directory is wherever the user ran `zuri` from, which
-is not where your source lives. Use `__file__`:
+isn't necessarily where your source code is. Use `__file__` instead:
 
 ```zuri
 import os
@@ -474,19 +483,18 @@ var HERE = os.dir_name(__file__)
 var templates = os.join_paths(HERE, 'templates')
 ```
 
-Doing this in every module that reads a file next to itself is the
-difference between a program that works and one that works only from the
-project root.
+Do this in every module that reads a file stored next to it. Otherwise, your
+program will only work when it's run from the project root.
 
-## Watching for Changes
+## Watching for File Changes
 
-An `os.Watcher` is told when files change, by the operating system, as
-they change. It does not look at the files over and over. It asks the
-platform's own mechanism to report them: inotify on Linux, FSEvents on
-macOS, `ReadDirectoryChangesW` on Windows, kqueue on the BSDs. FSEvents
-watches only about one directory for every twelve files a process may
-have open, so on macOS the first watcher raises the process's soft limit
-on open files as far as the hard limit allows.
+An `os.Watcher` is notified by the operating system as files change. It
+doesn't poll the files repeatedly. Instead, it uses each platform's own
+notification mechanism: inotify on Linux, FSEvents on macOS,
+`ReadDirectoryChangesW` on Windows, and kqueue on the BSDs. FSEvents only
+allows about one watched directory for every twelve files a process can have
+open, so on macOS, the first watcher raises the process's soft limit on open
+files as far as the hard limit allows.
 
 ```zuri
 import os
@@ -508,22 +516,22 @@ os.remove_dir(dir, true)
 create todo.txt
 ```
 
-`add()` takes a directory, which is watched with everything under it, or
-a single file. `next()` waits for the next event and takes a timeout in
-milliseconds, returning `nil` if nothing happened in time. Each event's
-`kind` is one of these:
+`add()` accepts either a directory, which is watched along with everything
+inside it, or a single file. `next()` waits for the next event. It takes a
+timeout in milliseconds and returns `nil` if nothing happened in that time.
+Each event's `kind` is one of the following:
 
-- `'create'`: something now stands at `path`;
-- `'modify'`: the file at `path` changed in place;
-- `'remove'`: nothing stands at `path` any more;
-- `'rescan'`: the operating system dropped events, so anything may have
-  changed.
+- `'create'`: something now exists at `path`.
+- `'modify'`: the file at `path` was changed in place.
+- `'remove'`: nothing exists at `path` anymore.
+- `'rescan'`: the operating system dropped some events, so anything might
+  have changed.
 
-A rename is a `'remove'` of the old path and a `'create'` of the new one.
-Reading a file is never reported.
+A rename is reported as a `'remove'` of the old path and a `'create'` of the
+new one. Reading a file is never reported.
 
-A watcher can follow a child process too, and then its exit arrives in
-the same wait as the file changes:
+A watcher can also follow a child process. When the process exits, the
+watcher reports it alongside the file changes:
 
 ```zuri
 import os
@@ -544,9 +552,9 @@ exit
 0
 ```
 
-A `for` loop over a watcher waits for event after event until the
-watcher is closed. A signal handler is still answered while it waits,
-which makes Ctrl+C the natural way to stop one:
+A `for` loop over a watcher keeps waiting for events until the watcher is
+closed. Signal handlers still run while it waits, so pressing Ctrl+C is the
+usual way to stop one:
 
 ```zuri,ignore
 import os
@@ -565,11 +573,12 @@ for event in watcher {
 echo 'stopped watching'
 ```
 
-This is what `zuri run --watch` is built on.
+`zuri run --watch` is built on top of this.
 
-## A Worked Example
+## Example: Counting Words
 
-Counting words across every text file in a directory tree, start to finish:
+Here's a complete function that counts the words in every text file in a
+directory tree:
 
 ```zuri
 import os
@@ -611,26 +620,26 @@ os.remove_dir('wc', true)
 {hello: 2, world: 2, of: 1, zuri: 1}
 ```
 
-Four things in that function are worth pointing at.
+There are four things in that function worth pointing out.
 
-`glob('**', root)` returns paths **relative to the root**, so they have to
-be joined back onto it before they can be opened. Forgetting that join is
-the most common mistake in code that globs.
+`glob('**', root)` returns paths **relative to the root**, so you have to
+join each one to the root before you can open it. Forgetting to do that is
+the most common mistake in code that uses globs.
 
-The `.md` file is absent from the result because `text_files()` filtered it
-out, which is the filter doing the job `**` alone cannot.
+The `.md` file doesn't appear in the result, because `text_files()` filtered
+it out. That's the filtering that `**` can't do by itself.
 
-`split('/\W+/')` is a regular expression, which is why punctuation does not
-end up in the keys — `world,` and `hello!` became `world` and `hello`. A
-plain `split(' ')` would have kept both.
+`split('/\W+/')` splits on a regular expression, which is why no punctuation
+ends up in the keys: `world,` and `hello!` became `world` and `hello`. A
+plain `split(' ')` would have kept the punctuation.
 
-And `counts.get(word, 0) + 1` supplies the starting value for a key that
-does not exist yet. Without the fallback, the first sighting of every word
-would raise.
+And `counts.get(word, 0) + 1` provides a starting value for keys that don't
+exist yet. Without the fallback, the first time each word appeared would
+raise an error.
 
-## Where to Go Next
+## Further Reading
 
-Binary files, byte streams and the `io` module's in-memory files are
-[Chapter 10](ch10-00-binary-data.md). Reading a file over the network is
-[Chapter 12](ch12-00-networking.md). The complete list of methods a file
-handle carries is [Appendix E](appendix-05-09-file.md).
+Binary files, byte streams and the `io` module's in-memory files are covered
+in [Chapter 10](ch10-00-binary-data.md). Reading files over the network is
+covered in [Chapter 12](ch12-00-networking.md). [Appendix
+E](appendix-05-09-file.md) lists every method of a file handle.

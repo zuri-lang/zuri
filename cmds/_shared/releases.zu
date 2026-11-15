@@ -332,7 +332,7 @@ def unpack(
     fsx.remove(destination)
 
     raise ReleaseError(
-      '${os.base_name(archive_path)} does not hold a zuri runtime',
+      '${os.base_name(archive_path)} doesn\'t contain a zuri runtime',
     )
   }
 

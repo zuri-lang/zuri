@@ -1,13 +1,12 @@
 /**
  * @module cursor
  *
- * Reading a result without holding all of it.
+ * Reads a result without holding all of it in memory.
  *
- * `query()` builds the whole result in memory, which is the right
- * thing for the hundreds of rows most queries return and the wrong
- * thing for the millions some do. A cursor reads the same result a row
- * at a time, so the memory a loop needs is the size of one row rather
- * than of the table.
+ * `query()` builds the whole result in memory. That's right for the
+ * hundreds of rows most queries return, but wrong for the millions that
+ * some return. A cursor reads the same result one row at a time, so a
+ * loop only needs enough memory for one row, not for the whole table.
  *
  * ```zuri,ignore
  * var cursor = db.stream('select * from events')
@@ -17,9 +16,9 @@
  * }
  * ```
  *
- * Running to the end closes the cursor. A loop that stops early does
- * not, so anything that might `break` should close it, which `using`
- * makes hard to forget.
+ * Reading to the end closes the cursor, but a loop that stops early
+ * doesn't. Close the cursor yourself in any loop that might `break`. A
+ * `using` block makes that hard to forget.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

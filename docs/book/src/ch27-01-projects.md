@@ -9,9 +9,9 @@ $ zuri run
 Hello, world!
 ```
 
-`zuri init` writes a project that runs and a test that passes, with
-`project.toml` describing it. `zuri init --help` lists what it asks and
-what it can be told up front.
+`zuri init` creates a project that runs, with a test that passes and a
+`project.toml` that describes it. `zuri init --help` lists the questions it
+asks, and the options you can use to answer them in advance.
 
 ## project.toml
 
@@ -37,30 +37,30 @@ fixtures = "^0.3"
 
 | Key | Meaning |
 | --- | --- |
-| `name` | what the package is called, and what it is imported as |
-| `version` | the version publishing sends, a semantic version |
-| `description` | one sentence, shown in search results |
-| `authors`, `license`, `readme`, `homepage`, `repository`, `keywords` | shown on the package's page; `license` is an SPDX expression |
-| `zuri` | the versions of Zuri the package works with, as a range |
-| `include`, `exclude` | which files publishing sends, as globs |
+| `name` | The package's name, which is also the name it's imported by |
+| `version` | The version that gets published, as a semantic version |
+| `description` | A one-sentence description, shown in search results |
+| `authors`, `license`, `readme`, `homepage`, `repository`, `keywords` | Shown on the package's page. `license` is an SPDX expression. |
+| `zuri` | The versions of Zuri the package works with, as a range |
+| `include`, `exclude` | Which files are published, as glob patterns |
 
-`[dependencies]` is what the project needs to run. `[dev-dependencies]`
-is what working on it needs, such as test fixtures, and is never
-required of a project that depends on this one. Both are managed by the
-package commands, which keep every comment and blank line the file
-already has.
+`[dependencies]` lists what the project needs to run. `[dev-dependencies]`
+lists what you need to work on it, such as test fixtures, and they're never
+required by projects that depend on this one. Both sections are managed by
+the package commands, which keep any comments and blank lines already in the
+file.
 
-Four more sections come up later in the chapter: `[registries]` in
-[Installing Packages](ch27-02-installing.md#other-registries),
-`[install]` and `[hooks]` in
-[Install Scripts](ch27-02-installing.md#install-scripts), and
-`[bundle]` in [Bundles and Upgrades](ch27-05-bundles.md).
+Four more sections are described later in this chapter: `[registries]` in
+[Installing Packages](ch27-02-installing.md#other-registries), `[install]`
+and `[hooks]` in [Install Scripts](ch27-02-installing.md#install-scripts),
+and `[bundle]` in [Bundles and Upgrades](ch27-05-bundles.md).
 
-## Names
+## Package Names
 
-A package name is lowercase letters, digits, hyphens and underscores,
-starting with a letter and ending with a letter or digit, at most 64
-characters. It is imported with every hyphen made an underscore:
+A package name consists of lowercase letters, digits, hyphens and
+underscores. It must start with a letter, end with a letter or digit, and be
+no longer than 64 characters. When you import a package, every hyphen in its
+name becomes an underscore:
 
 | Package | Import |
 | --- | --- |
@@ -68,46 +68,49 @@ characters. It is imported with every hyphen made an underscore:
 | `json-schema` | `import json_schema` |
 | `orm_lite` | `import orm_lite` |
 
-Because of that, two names that differ only in hyphens and underscores
-are the same package, and a registry refuses the second. A name the
-standard library already uses, such as `json` or `http`, cannot be a
-package, since the package could never be imported past the standard
-library module.
+Because of this, two names that only differ in their hyphens and underscores
+refer to the same package, and a registry rejects the second one. A name
+that the standard library already uses, such as `json` or `http`, can't be
+used for a package, because the standard library module would always be
+imported instead.
 
 ## Versions
 
-A version is `major.minor.patch`, as
-[Semantic Versioning](https://semver.org) lays it out:
+A version has the form `major.minor.patch`, as described by [Semantic
+Versioning](https://semver.org):
 
-- **patch** for fixes that change nothing anyone relies on,
-- **minor** for additions that break nothing,
-- **major** for anything that can break code written against the
-  version before.
+- Increase the **patch** version for fixes that don't change anything people
+  rely on.
+- Increase the **minor** version for additions that don't break anything.
+- Increase the **major** version for any change that could break code
+  written against the previous version.
 
-A pre-release, such as `2.0.0-rc.1`, sorts below its release, and
-build metadata after a `+` is ignored when comparing.
+A pre-release version, such as `2.0.0-rc.1`, sorts before the release it
+leads up to, and build metadata after a `+` is ignored when comparing
+versions.
 
-## Ranges
+## Version Ranges
 
-A dependency says which versions it accepts:
+A dependency specifies which versions it accepts:
 
 | Range | Accepts |
 | --- | --- |
-| `1.4.2` or `^1.4.2` | `>=1.4.2, <2.0.0`: anything compatible |
-| `^0.4.2` | `>=0.4.2, <0.5.0`: below `1.0`, a minor change may break |
-| `^0.0.4` | exactly `0.0.4` |
-| `~1.4.2` | `>=1.4.2, <1.5.0`: patches only |
-| `=1.4.2` | exactly `1.4.2` |
-| `1.4` | `>=1.4.0, <2.0.0`, a caret range like any bare version |
+| `1.4.2` or `^1.4.2` | `>=1.4.2, <2.0.0`, meaning any compatible version |
+| `^0.4.2` | `>=0.4.2, <0.5.0`, because below `1.0`, a minor version change can break things |
+| `^0.0.4` | Exactly `0.0.4` |
+| `~1.4.2` | `>=1.4.2, <1.5.0`, meaning patch releases only |
+| `=1.4.2` | Exactly `1.4.2` |
+| `1.4` | `>=1.4.0, <2.0.0`, which is a caret range, like any plain version |
 | `1.4.*`, `1.4.x` | `>=1.4.0, <1.5.0` |
-| `*` | any release |
-| `>=1.2, <1.8` | both at once; a comma or a space joins comparators |
-| `^1.2 \|\| ^2.1` | either |
+| `*` | Any release |
+| `>=1.2, <1.8` | Both conditions at once. Conditions can be separated by a comma or a space. |
+| `^1.2 \|\| ^2.1` | Either range |
 
-A bare version is a caret range, so the common case takes compatible
-updates without saying so. `=` pins.
+A plain version is treated as a caret range, so by default you get
+compatible updates without having to ask for them. Use `=` to pin an exact
+version.
 
-A pre-release is only chosen for a range that names a pre-release of
-the same `major.minor.patch` itself: `^2.0.0-rc.1` accepts
-`2.0.0-rc.3`, and `^1.4` accepts no pre-release at all. Nobody who
-asked for releases is handed an unfinished version.
+A pre-release is only chosen for a range that itself names a pre-release of
+the same `major.minor.patch` version. So `^2.0.0-rc.1` accepts `2.0.0-rc.3`,
+but `^1.4` doesn't accept any pre-release at all. If you asked for releases,
+you'll never get an unfinished version.

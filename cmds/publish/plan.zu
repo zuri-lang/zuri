@@ -31,21 +31,21 @@ var _SPDX = '/^\\(?[A-Za-z0-9.+-]+\\)?(\\s+(AND|OR|WITH)\\s+\\(?[A-Za-z0-9.+-]+\
 def parser() {
   var parser = args.Parser('zuri publish', false)
 
-  parser.description = 'Packs the project and publishes it as a new version to a package registry.'
-  parser.epilog = 'Run it from anywhere inside the project. A published version never changes.'
+  parser.description = 'Packs the project and publishes it to a package registry as a new version.'
+  parser.epilog = 'You can run this from anywhere inside the project. Once a version is published, it can\'t be changed.'
 
   cli.add_registry_option(parser)
   parser.add_option(
     'dry-run',
-    'Show exactly what would be published and publish nothing',
+    'Show exactly what would be published without publishing anything',
     { short_name: 'n' },
   )
   parser.add_option(
     'allow-dirty',
-    'Publish even when git has uncommitted changes',
+    'Publish even if there are uncommitted changes in git',
     nil,
   )
-  parser.add_option('quiet', 'Print nothing but a failure', { short_name: 'q' })
+  parser.add_option('quiet', 'Only print errors', { short_name: 'q' })
   cli.add_json_option(parser)
 
   return parser
@@ -142,7 +142,7 @@ def prepare(root: string, options: ?dict) {
   var version = found.version()
 
   if name == nil {
-    problems.append('project.toml states no name')
+    problems.append('project.toml doesn\'t have a name')
   } else {
     catch {
       names.check_name(name)

@@ -383,12 +383,12 @@ def options(parsed, file: ?string) {
 def parser() {
   var parser = args.Parser('zuri test', false)
 
-  parser.description = "Run the tests."
-  parser.epilog = 'If no target is given, everything in the tests directory is run.'
+  parser.description = "Runs the tests."
+  parser.epilog = 'If no target is given, every test in the tests directory is run.'
 
   parser.add_index(
     'target',
-    'A test file, or a directory of them; the tests directory by default',
+    'A test file, or a directory of test files (tests by default)',
   )
 
   parser.add_option(
@@ -398,37 +398,37 @@ def parser() {
   )
   parser.add_option(
     'timeout',
-    'How long to give a single file before killing it, such as 30s',
+    'How long a single file can run before it\'s stopped, such as 30s',
     { short_name: 't', type: args.STRING, metavar: 'duration' },
   )
   parser.add_option(
     'bail',
-    'Stop after this many failing files; on its own, stop at the first',
+    'Stop after this many files fail, or after the first failure if no count is given',
     { short_name: 'b', type: args.OPTIONAL, metavar: 'count' },
   )
-  parser.add_option('match', 'Filename patterns to run, instead of *.zu', {
+  parser.add_option('match', 'File name patterns to run, instead of *.zu', {
     short_name: 'm',
     type: args.LIST,
     metavar: 'pattern',
   })
   parser.add_option(
     'ignore',
-    'Filename patterns to skip, instead of the defaults',
+    'File name patterns to skip, instead of the defaults',
     { short_name: 'i', type: args.LIST, metavar: 'pattern' },
   )
   parser.add_option(
     'no-recursive',
-    'Only the files directly in the directory, not those below it',
+    'Only run the files directly in the directory, not in subdirectories',
     nil,
   )
   parser.add_option(
     'env',
-    'Extra environment for every test process, as KEY=VALUE',
+    'Extra environment variables for every test process, as KEY=VALUE',
     { short_name: 'e', type: args.LIST, metavar: 'assignment' },
   )
   parser.add_option(
     'list',
-    'Print the files that would run, one to a line, and stop',
+    'Print the files that would run, one per line, and stop',
     { short_name: 'l' },
   )
 

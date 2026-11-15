@@ -3,18 +3,16 @@
  *
  * Wire, an HTML template engine.
  *
- * A Wire template is an HTML document. Not a document with a templating
- * language sprinkled through it, and not a string that happens to end up
- * looking like HTML: the source is parsed by the same
- * [WHATWG](https://html.spec.whatwg.org/multipage/) parser the `html`
- * module uses, and every valid HTML5 document is already a valid Wire
- * template. What Wire adds are attributes on ordinary elements and
- * values written between `{{` and `}}`.
+ * A Wire template is an ordinary HTML document. The source is parsed by
+ * the same [WHATWG](https://html.spec.whatwg.org/multipage/) parser
+ * that the `html` module uses, and any valid HTML5 document is already
+ * a valid Wire template. Wire adds attributes for ordinary elements,
+ * and values written between `{{` and `}}`.
  *
- * Parsing rather than substituting is what makes the rest possible. Wire
- * knows that one interpolation sits in a paragraph, another in an
- * `href`, another in a `<script>`, and it escapes each of them for where
- * it actually is. A value can never turn into structure.
+ * Because Wire parses templates instead of substituting text into them,
+ * it knows that one value is inside a paragraph, another inside an
+ * `href` and another inside a `<script>`, and it escapes each one for
+ * where it actually is. A value can never turn into markup.
  *
  * ```zuri
  * import wire
@@ -26,14 +24,12 @@
  * # <p>Hello &lt;b&gt;Ada&lt;/b&gt;</p>
  * ```
  *
- * ---
- *
  * ### Templates from files
  *
- * `render_string()` is convenient for a one-off and for reading
- * documentation. Real templates live in files under a root directory,
- * which is `templates` beside the working directory unless you say
- * otherwise:
+ * `render_string()` is handy for a quick test and for examples like the
+ * ones here. Real templates are kept in files under a root directory,
+ * which is `templates` in the working directory unless you choose a
+ * different one:
  *
  * ```zuri
  * import wire
@@ -44,21 +40,20 @@
  * echo view.render('pages/home', { user })
  * ```
  *
- * The `.html` extension is added when the path as written names no file,
- * so `'pages/home'` finds `pages/home.html`. `set_extension()` changes
- * that.
+ * If the path as written doesn't name a file, `.html` is added, so
+ * `'pages/home'` finds `pages/home.html`. Use `set_extension()` to
+ * change the extension.
  *
- * Every path resolves **inside** the root and nowhere else. One that
- * climbs out with `..`, or names an absolute path elsewhere, is refused.
- * That matters the moment a path is built from anything a request
+ * Every path resolves **inside** the root and nowhere else. A path that
+ * climbs out with `..`, or an absolute path somewhere else, is refused.
+ * This matters as soon as a path is built from anything a request
  * supplied.
- *
- * ---
  *
  * ### Values
  *
- * Anything between `{{` and `}}` is an expression. The full language is
- * in `wire.expression`; in practice it reads the way you would guess:
+ * Anything between `{{` and `}}` is an expression. `wire.expression`
+ * describes the full language, but in practice it works the way you'd
+ * expect:
  *
  * ```wire
  * <h1>{{ post.title }}</h1>
@@ -68,17 +63,17 @@
  * <p>{{ user.nickname ?? user.name }}</p>
  * ```
  *
- * A name that was never supplied is `nil`, and so is a key read off it,
- * so `{{ user.address.city }}` on a request with no user renders as
- * nothing rather than failing. Ask with `x-if` when the difference
+ * A name that was never supplied is `nil`, and so is any key read from
+ * it, so on a request with no user, `{{ user.address.city }}` renders
+ * as nothing instead of failing. Use `x-if` when the difference
  * matters.
  *
- * Writing `{{` literally is `%{{`.
+ * To write `{{` literally, write `%{{`.
  *
  * #### Filters
  *
- * A value passed through `|` goes through a filter. They chain, and they
- * take arguments:
+ * A `|` followed by a name passes the value through a filter. Filters
+ * can be chained, and they can take arguments:
  *
  * ```wire
  * {{ name|trim|title }}
@@ -86,14 +81,12 @@
  * {{ summary|truncate(80, '…') }}
  * ```
  *
- * `wire.filters` lists the forty-odd that ship with Wire, and
+ * `wire.filters` lists the forty or so filters that come with Wire, and
  * `register_filter()` adds your own.
  *
- * ---
+ * ### Escaping
  *
- * ### Escaping, and why there is no way to turn it off
- *
- * Every interpolation is escaped for the place it lands in:
+ * Every value is escaped for the place where it's written:
  *
  * | Where it is             | What happens                              |
  * | ----------------------- | ----------------------------------------- |
@@ -103,12 +96,12 @@
  * | `<script>`, `onclick`   | the value is encoded as JSON               |
  * | `<style>`               | anything outside a CSS-safe set is dropped |
  *
- * A `javascript:` URL in an `href` becomes `about:blank`.
- * `set_url_schemes()` changes the allowlist when an application really
- * does need another scheme.
+ * A `javascript:` URL in an `href` becomes `about:blank`. If an
+ * application really needs another scheme, add it to the allowed list
+ * with `set_url_schemes()`.
  *
- * Inside a `<script>` the value carries its own quotes, so do not add
- * any:
+ * Inside a `<script>` element, the value includes its own quotes, so
+ * don't add any:
  *
  * ```wire
  * <script>
@@ -117,33 +110,35 @@
  * </script>
  * ```
  *
- * Markup you built yourself and want rendered as markup goes through the
- * `raw` filter, or arrives already wrapped in `wire.safe()`:
+ * To have markup that you built yourself rendered as markup, pass it
+ * through the `raw` filter, or wrap it in `wire.safe()` before you pass
+ * it in:
  *
  * ```wire
  * <div class="body">{{ article.rendered_html|raw }}</div>
  * ```
  *
- * `raw` is a promise that the value is safe where it lands. Applying it
- * to anything a user supplied is how a template engine becomes a
+ * Using `raw` is a promise that the value is safe where it's written.
+ * Using it on anything a user supplied is how a template ends up with a
  * cross-site scripting hole.
  *
- * ---
+ * Escaping can't be turned off. It can only be skipped for a particular
+ * value, with `raw` or `wire.safe()`.
  *
  * ### Directives
  *
- * Wire's own attributes all begin with `x-`. Wire owns that prefix
- * outright: an `x-` attribute it does not recognize is an error rather
- * than something that quietly does nothing, so `x-fi` is caught the
- * first time the template compiles.
+ * All of Wire's own attributes start with `x-`. Wire reserves that
+ * prefix completely: an `x-` attribute that it doesn't recognize is an
+ * error, so a typo like `x-fi` is caught the first time the template is
+ * compiled.
  *
- * A directive can go on any element, and the element it goes on is part
- * of what it controls. Put it on `<template>` when you want the control
- * without an element in the output; `<template>` is the one element HTML
- * lets through untouched anywhere, including inside `<head>`, a table
- * and a `<select>`, and Wire removes it.
+ * A directive can be used on any element, and it controls that element
+ * as well as its contents. To get the effect of a directive without an
+ * element in the output, put it on a `<template>` element, which Wire
+ * removes. `<template>` is the only element that HTML leaves alone
+ * everywhere, including inside `<head>`, a table or a `<select>`.
  *
- * #### Choosing
+ * #### Conditions
  *
  * ```wire
  * <p x-if="user.is_admin">Admin</p>
@@ -151,11 +146,11 @@
  * <p x-else>Member</p>
  * ```
  *
- * `x-elif` and `x-else` attach to the element sibling in front of them,
+ * `x-elif` and `x-else` attach to the sibling element just before them,
  * with only whitespace and comments allowed in between. `x-not` is the
- * inverse of `x-if` and takes no chain.
+ * opposite of `x-if`, and it can't be followed by `x-elif` or `x-else`.
  *
- * #### Repeating
+ * #### Loops
  *
  * ```wire
  * <li x-for="items" x-value="item" x-key="index">
@@ -163,28 +158,29 @@
  * </li>
  * ```
  *
- * The element repeats, not just its children. Lists, dictionaries,
- * strings and ranges all iterate; a list binds `x-key` to the position
- * and a dictionary to the key.
+ * The element itself is repeated, not just its children. You can loop
+ * over lists, dictionaries, strings and ranges. For a list, `x-key` is
+ * set to the position, and for a dictionary, it's set to the key.
  *
- * Every iteration also publishes a `loop` variable:
+ * Each iteration also sets a `loop` variable:
  *
- * | Field                | Is                                     |
+ * | Field                | Value                                  |
  * | -------------------- | -------------------------------------- |
- * | `loop.index`         | the position counting from 1           |
- * | `loop.index0`        | the position counting from 0           |
- * | `loop.first`         | true on the first pass                 |
- * | `loop.last`          | true on the last                       |
- * | `loop.length`        | how many entries there are             |
+ * | `loop.index`         | the position, counting from 1          |
+ * | `loop.index0`        | the position, counting from 0          |
+ * | `loop.first`         | true on the first iteration            |
+ * | `loop.last`          | true on the last iteration             |
+ * | `loop.length`        | the number of entries                  |
  * | `loop.even`, `.odd`  | whether the position is even or odd    |
- * | `loop.key`, `.value` | this entry, whether or not it is bound |
- * | `loop.parent`        | the enclosing loop's own `loop`        |
+ * | `loop.key`, `.value` | the current entry, whether or not it's bound to a name |
+ * | `loop.parent`        | the `loop` variable of the enclosing loop |
  *
- * `x-loop="row"` renames it, which is how two nested loops can both be
- * read without going through `parent`.
+ * `x-loop="row"` gives it a different name, so that two nested loops
+ * can both be read without going through `parent`.
  *
- * An `x-if` on a repeated element is asked once per iteration, so it can
- * read the loop's variables. It cannot be continued with `x-elif` there.
+ * An `x-if` on a repeated element is evaluated once for each iteration,
+ * so it can use the loop's variables. In that position, it can't be
+ * followed by `x-elif`.
  *
  * #### Content
  *
@@ -194,11 +190,10 @@
  * <a x-attr="{ href: post.url, rel: post.external ? 'nofollow' : nil }">…</a>
  * ```
  *
- * `x-text` and `x-html` replace an element's children. `x-attr` spreads
- * a dictionary onto it, where `true` gives a valueless attribute and
- * `false` or `nil` leaves the attribute off.
- *
- * ---
+ * `x-text` and `x-html` replace an element's children. `x-attr` adds
+ * the entries of a dictionary to the element as attributes. A value of
+ * `true` gives an attribute without a value, and `false` or `nil`
+ * leaves the attribute out.
  *
  * ### Composition
  *
@@ -209,29 +204,30 @@
  * <template x-include="partials/header.html"></template>
  * ```
  *
- * Those two are the same thing. `<include>`, `<extend>`, `<declare>`,
- * `<define>` and `<super>` are sugar, rewritten into the directive form
- * while the source is being tokenized, which is why they work inside a
- * `<head>` or a table where an unknown element would be moved or
- * dropped.
+ * These two lines do the same thing. `<include>`, `<extend>`,
+ * `<declare>`, `<define>` and `<super>` are shorthand. They're
+ * rewritten into the directive form while the source is tokenized,
+ * which is why they work inside `<head>` or a table, where an unknown
+ * element would be moved or dropped.
  *
- * A path is read as text, not as an expression, so it can be written
- * plainly and computed where it needs to be:
+ * A path is read as text, not as an expression, so you can write it
+ * plainly and insert values where you need them:
  *
  * ```wire
  * <include path="themes/{{ theme }}/header.html" />
  * ```
  *
- * An include sees the variables around it. `x-with` adds to them and
- * `x-only` withholds everything else, which is what turns a partial into
- * a component with a real interface:
+ * An included template can see the variables around it. `x-with` adds
+ * variables, and `x-only`, written `only` on `<include>`, hides
+ * everything else. Together they let you treat a partial as a component
+ * with a defined interface:
  *
  * ```wire
  * <include path="components/badge" x-with="{ label: 'New', tone: 'green' }" only />
  * ```
  *
- * Anything written inside an include is handed to it as the region
- * called `content`, so a partial can wrap what it was given:
+ * Anything written inside an include is passed to it as the region
+ * named `content`, so a partial can wrap whatever it was given:
  *
  * ```wire
  * <!-- components/card.html -->
@@ -246,9 +242,9 @@
  * </include>
  * ```
  *
- * #### Inheriting
+ * #### Inheritance
  *
- * A base template marks the regions a page may replace:
+ * A base template marks the regions that a page can replace:
  *
  * ```wire
  * <!-- layouts/page.html -->
@@ -286,21 +282,20 @@
  * </extend>
  * ```
  *
- * A region nobody defines renders whatever the base put inside it.
- * `<super />` renders the definition this one replaces, so a page can
- * add to a footer instead of restating it. Inheritance nests as deep as
- * you like, and a middle template can declare regions of its own.
+ * A region that no template defines renders whatever the base template
+ * put inside it. `<super />` renders the definition that the current
+ * one replaces, so a page can add to a footer instead of repeating it.
+ * Inheritance can be nested as deeply as you like, and a template in
+ * the middle can declare regions of its own.
  *
- * One template extends one base, and everything in an extending template
- * has to be inside a `<define>`, because the base is what decides the
- * structure. Defining the same region twice needs `override` said out
- * loud:
+ * A template can only extend one base, and everything in an extending
+ * template has to be inside a `<define>`, because the base template
+ * decides the structure. To define the same region twice, you have to
+ * say so explicitly with `override`:
  *
  * ```wire
  * <define name="content" override>…</define>
  * ```
- *
- * ---
  *
  * ### Extending Wire from Zuri
  *
@@ -315,61 +310,57 @@
  *   return ' '.join(value.split('/\\s+/').take(count)) + '…'
  * })
  *
- * # A value every template can see without being handed it.
+ * # A value that every template can use without being passed it.
  * view.register_global('site_name', 'Example')
  *
- * # A function a template calls.
+ * # A function that templates can call.
  * view.register_global('route', @(name) {
  *   return '/' + name
  * })
  * ```
  *
- * Used as:
+ * Used like this:
  *
  * ```wire
  * <p>{{ post.body|excerpt(40) }}</p>
  * <a href="{{ route('about') }}">{{ site_name }}</a>
  * ```
  *
- * `register_element()` claims a tag name outright and hands every one of
- * them to a function, which is the escape hatch for anything the
- * directives cannot express.
- *
- * ---
+ * `register_element()` takes over a tag name completely and passes
+ * every element with that name to a function. Use it for anything that
+ * the directives can't express.
  *
  * ### Compiling and caching
  *
- * A template is parsed once, not once per render. `render()` compiles on
- * first use and keeps the result, checking the file's modification time
- * and size before reusing it.
+ * A template is parsed once, not every time it's rendered. `render()`
+ * compiles a template the first time it's used and keeps the result,
+ * checking the file's modification time and size before using it again.
  *
- * That check is one `stat` per template per render, which is what you
- * want while writing templates and not what you want under load.
- * `set_auto_reload(false)` turns it off, and `clear_cache()` is how a
- * long-running process picks up a deployment.
- *
- * ---
+ * That check costs one `stat` call per template per render. That's what
+ * you want while you're writing templates, but not under load.
+ * `set_auto_reload(false)` turns it off, and a long-running process can
+ * call `clear_cache()` to pick up a new deployment.
  *
  * ### Comments
  *
- * HTML comments are server-side notes and do not reach the page:
+ * HTML comments are treated as notes for the server, and they aren't
+ * included in the page:
  *
  * ```wire
  * <!-- This never ships, and neither does {{ secret }}. -->
  * ```
  *
- * Nothing inside one is evaluated. `set_comments(true)` keeps them when
- * a comment is genuinely meant for the browser, as a conditional comment
- * or a build marker is.
+ * Nothing inside a comment is evaluated. Call `set_comments(true)` to
+ * keep comments when they really are meant for the browser, such as
+ * conditional comments or build markers.
  *
- * ---
+ * ### Errors
  *
- * ### When something is wrong
- *
- * Everything Wire raises is a `WireError` and carries the template and
- * the line and column of the tag at fault. `TemplateSyntaxError` comes
- * from compiling, `RenderError` from rendering, and
- * `TemplateNotFoundError` from a path that goes nowhere.
+ * Everything that Wire raises is a `WireError`, which records the
+ * template and the line and column of the tag at fault.
+ * `TemplateSyntaxError` comes from compiling, `RenderError` from
+ * rendering, and `TemplateNotFoundError` from a path that doesn't lead
+ * to a template.
  *
  * ```zuri
  * catch {
@@ -424,10 +415,10 @@ import @.render as _render
 class Wire {
 
   /**
-   * Values every template can read without being handed them.
+   * Values that every template can read without being passed them.
    *
-   * A variable passed to `render()` of the same name wins, so a global
-   * is a default rather than an override.
+   * A variable with the same name passed to `render()` takes priority,
+   * so a global is a default, not an override.
    */
   var globals = {}
 
@@ -543,14 +534,14 @@ class Wire {
   # ------------------------------------------------------------------
 
   /**
-   * Sets the directory template paths resolve inside.
+   * Sets the directory that template paths resolve inside.
    *
    * A relative path is taken from the working directory. The directory
-   * does not have to exist yet; a path under one that does not is
-   * reported as not found like any other.
+   * doesn't have to exist yet. If it doesn't, a path under it is
+   * reported as not found, like any other missing template.
    *
-   * Changing the root empties the cache, since the same path can now
-   * mean a different file.
+   * Changing the root empties the cache, because the same path might
+   * now refer to a different file.
    *
    * @param string path
    * @returns Wire
@@ -574,15 +565,15 @@ class Wire {
   }
 
   /**
-   * Creates the root directory when it does not exist, and reports
-   * whether it had to.
+   * Creates the root directory if it doesn't exist, and returns whether
+   * it had to.
    *
-   * Wire never does this on its own. Creating directories is not a
-   * template engine's business, and a typo in a root should read as a
-   * missing template rather than quietly produce an empty directory.
+   * Wire never does this by itself. Creating directories isn't a
+   * template engine's job, and a typo in the root should show up as a
+   * missing template, not quietly create an empty directory.
    *
    * @returns bool
-   * @throws Error when the directory cannot be created.
+   * @throws Error if the directory can't be created
    */
   create_root() {
     if os.dir_exists(self._root) {
@@ -616,13 +607,15 @@ class Wire {
   }
 
   /**
-   * Drops whitespace-only text from the output when _compact_ is true.
+   * Leaves text that's only whitespace out of the output when _compact_
+   * is true.
    *
-   * This is the cheap kind of minification: the indentation between tags
-   * goes, and nothing else is touched. Whitespace inside a `<pre>` is
-   * whitespace-only only when the whole run is, so this can still change
-   * how preformatted text reads; leave it off where that matters and
-   * reach for `html.minify()` instead, which knows the difference.
+   * This is a simple kind of minification: the indentation between tags
+   * is removed, and nothing else is changed. Whitespace inside a
+   * `<pre>` element counts as whitespace-only when the whole run of
+   * text is, so this can still change how preformatted text looks.
+   * Leave it off where that matters, and use `html.minify()` instead,
+   * which knows the difference.
    *
    * @param bool compact
    * @returns Wire
@@ -638,8 +631,9 @@ class Wire {
   /**
    * Keeps HTML comments in the output when _comments_ is true.
    *
-   * Comments are dropped by default, which is what makes an HTML comment
-   * a server-side note. Nothing inside one is ever evaluated either way.
+   * Comments are left out by default, which is what makes an HTML
+   * comment a note for the server. Nothing inside a comment is
+   * evaluated either way.
    *
    * @param bool comments
    * @returns Wire
@@ -671,20 +665,21 @@ class Wire {
   }
 
   /**
-   * Replaces the URL schemes allowed in an `href` and its relatives.
+   * Replaces the list of URL schemes allowed in `href` and similar
+   * attributes.
    *
-   * A URL with no scheme is always allowed, so every relative link keeps
-   * working whatever this is set to. A URL whose scheme is not listed is
-   * replaced with `about:blank`.
+   * A URL without a scheme is always allowed, so relative links keep
+   * working whatever this is set to. A URL whose scheme isn't in the
+   * list is replaced with `about:blank`.
    *
-   * The default is in `escape.DEFAULT_URL_SCHEMES` and deliberately
+   * The default list is `escape.DEFAULT_URL_SCHEMES`. It intentionally
    * leaves out `javascript`, `vbscript`, `data` and `file`.
    *
    * ```zuri
    * view.set_url_schemes(escape.DEFAULT_URL_SCHEMES + ['app'])
    * ```
    *
-   * @param list schemes: Scheme names without the colon, in lower case.
+   * @param list schemes: scheme names in lower case, without the colon
    * @returns Wire
    * @throws ArgumentError
    */
@@ -708,14 +703,15 @@ class Wire {
   # ------------------------------------------------------------------
 
   /**
-   * Registers a filter templates can use after a `|`.
+   * Registers a filter that templates can use after a `|`.
    *
-   * The value being filtered arrives as the first argument and whatever
-   * the template passed follows it. An argument the template left out
-   * arrives as `nil`, so give it a default rather than insisting.
+   * The value being filtered is passed as the first argument, followed
+   * by the arguments the template passed. An argument that the template
+   * left out is passed as `nil`, so give each parameter a default
+   * instead of requiring it.
    *
-   * Registering a name that already exists replaces it, which is how an
-   * application makes `date` mean its own thing.
+   * Registering a name that already exists replaces the existing
+   * filter, so an application can give `date` a meaning of its own.
    *
    * ```zuri
    * view.register_filter('excerpt', @(value, words) {
@@ -724,9 +720,9 @@ class Wire {
    * })
    * ```
    *
-   * A filter returning a plain string has its result escaped like any
-   * other value. One that genuinely produces markup returns
-   * `wire.safe()`, and is then responsible for what is inside it.
+   * If a filter returns a plain string, the result is escaped like any
+   * other value. A filter that really does produce markup should return
+   * `wire.safe()`, and it's then responsible for what's inside it.
    *
    * @param string name
    * @param callable handler
@@ -745,21 +741,21 @@ class Wire {
   }
 
   /**
-   * Claims a tag name and hands every element of that name to _handler_
-   * instead of writing it out.
+   * Takes over a tag name, so that every element with that name is
+   * passed to _handler_ instead of being written out.
    *
-   * The handler is called with the `Wire` and a dictionary describing
-   * the element:
+   * The handler is called with the `Wire` instance and a dictionary
+   * describing the element:
    *
-   * | Key          | Is                                              |
+   * | Key          | Contains                                        |
    * | ------------ | ----------------------------------------------- |
    * | `name`       | the tag name                                    |
    * | `attributes` | its attributes, with every value already rendered and escaped |
    * | `content`    | its children, already rendered                  |
    * | `variables`  | the scope it was written in                     |
    *
-   * Return `wire.safe(markup)` to write markup, any other value to write
-   * it as escaped text, or `nil` to write nothing at all.
+   * Return `wire.safe(markup)` to write markup, any other value to
+   * write it as escaped text, or `nil` to write nothing.
    *
    * ```zuri
    * view.register_element('icon', @(view, element) {
@@ -768,10 +764,11 @@ class Wire {
    * })
    * ```
    *
-   * Directives still work on a claimed element, so `<icon x-if="…" />`
-   * behaves the way it reads. Reach for this only where the directives
-   * genuinely cannot express something; a partial and `x-include` is
-   * easier to read and does not need Zuri code to follow it.
+   * Directives still work on an element that's been taken over, so
+   * `<icon x-if="…" />` does what it looks like it does. Only use this
+   * where the directives really can't express what you need. A partial
+   * with `x-include` is easier to read, and you don't need to read Zuri
+   * code to follow it.
    *
    * @param string name
    * @param callable handler
@@ -790,11 +787,11 @@ class Wire {
   }
 
   /**
-   * Makes _value_ readable from every template by _name_.
+   * Makes _value_ available to every template as _name_.
    *
-   * A variable of the same name passed to `render()` wins, so a global
-   * is a default rather than an override. A callable global is a
-   * function a template can call.
+   * A variable with the same name passed to `render()` takes priority,
+   * so a global is a default, not an override. A global that can be
+   * called is a function that templates can call.
    *
    * @param string name
    * @param any value
@@ -871,9 +868,9 @@ class Wire {
    * Compiles the template at _path_ without rendering it, and returns
    * it.
    *
-   * Useful for checking a directory of templates at build or startup
-   * time, so that a syntax error is found then rather than on the
-   * request that reaches it.
+   * This is useful for checking a directory of templates when a program
+   * is built or starts, so that a syntax error is found then, instead
+   * of on the request that reaches it.
    *
    * ```zuri
    * for name in os.list_dir('./views') {
@@ -908,15 +905,16 @@ class Wire {
   # ------------------------------------------------------------------
 
   /**
-   * The compiled template at _path_, from the cache when it is there and
-   * still current.
+   * The compiled template at _path_, from the cache if it's there and
+   * still up to date.
    *
-   * _context_ names the element the template will sit inside, so that a
-   * partial holding table rows is parsed knowing it is going into a
-   * table. _from_, _line_ and _column_ describe where the include was
-   * written, for the error when the path goes nowhere.
+   * _context_ names the element the template will be placed inside, so
+   * that a partial containing table rows is parsed knowing that it's
+   * going into a table. _from_, _line_ and _column_ describe where the
+   * include was written, for the error message if the path doesn't lead
+   * to a template.
    *
-   * The renderer calls this; there is rarely a reason to call it
+   * The renderer calls this, and there's rarely a reason to call it
    * directly.
    *
    * @param string path
@@ -1061,11 +1059,12 @@ def wire(options: ?dict) {
 var _shared = Wire()
 
 /**
- * The `Wire` behind the module-level `render()` and `render_string()`.
+ * The `Wire` instance used by the module-level `render()` and
+ * `render_string()` functions.
  *
- * Configure this to use those without building your own, which is worth
- * doing for a small program and not worth doing for anything that wants
- * two different roots.
+ * Configure it to use those functions without creating a `Wire` of your
+ * own. That's fine for a small program, but anything that needs two
+ * different roots should create its own instances.
  *
  * ```zuri
  * import wire

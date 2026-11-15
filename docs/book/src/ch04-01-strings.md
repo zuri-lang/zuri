@@ -1,16 +1,16 @@
 # Strings
 
-A Zuri string is UTF-8 text. Indexing, slicing and `length()` work in
-characters, not bytes, so a string of emoji behaves the way a reader
-expects.
+A Zuri string is UTF-8 text. Indexing, slicing and `length()` all work in
+characters rather than bytes, so a string of emoji behaves the way you'd
+expect.
 
-Text is the type you will write most, so this section starts with how you
-write one down — quoting, escapes and interpolation — before moving on to
-what you can do with it.
+You'll probably work with strings more than any other type, so this section
+starts with how to write them (quoting, escape sequences and interpolation)
+before moving on to what you can do with them.
 
-## Writing a String
+## String Literals
 
-A string literal is written between single or double quotes:
+A string literal is written in single or double quotes:
 
 ```zuri
 echo 'single quotes'
@@ -22,10 +22,10 @@ single quotes
 double quotes
 ```
 
-**The two styles are identical.** They are not the two different things
-they are in some other languages. Both process escape sequences, both
-interpolate expressions, and both may span several lines. Nothing at all
-changes except which quote character ends the string:
+**The two styles are identical.** Unlike in some other languages, they don't
+mean different things. Both process escape sequences, both support
+interpolation, and both can span several lines. The only difference is which
+quote character ends the string:
 
 ```zuri
 var name = 'Zuri'
@@ -39,9 +39,9 @@ escape 	 and interpolate Zuri
 escape 	 and interpolate Zuri
 ```
 
-Pick whichever avoids escaping. A string containing an apostrophe is
-easiest in double quotes; a string containing a quotation mark is easiest
-in single quotes:
+Choose whichever one saves you from escaping. A string that contains an
+apostrophe is easiest to write in double quotes, and one that contains a
+double quote is easiest in single quotes:
 
 ```zuri
 echo "it's clearer this way"
@@ -53,13 +53,13 @@ it's clearer this way
 she said "hello"
 ```
 
-Most Zuri code, and all of the standard library, uses single quotes by
-default and switches to double quotes when the content calls for it.
+Most Zuri code, including the whole standard library, uses single quotes by
+default and switches to double quotes when the content needs it.
 
 ### Multi-line Strings
 
-A literal may simply contain newlines. There is no separate triple-quoted
-form and no continuation character:
+A string literal can contain newlines directly. There's no special
+triple-quoted syntax and no line continuation character:
 
 ```zuri
 var message = 'Dear reader,
@@ -75,36 +75,36 @@ Dear reader,
 Thank you for the strings.
 ```
 
-Everything between the quotes is part of the string, indentation included.
-When a long string is indented inside a function, the leading spaces on
-each line are in the string too, which is why it is advisable that code
-that builds indented text should assemble it with `join()` rather than
-writing one long literal.
+Everything between the quotes is part of the string, including indentation.
+If you indent a long string inside a function, the leading spaces on each
+line end up in the string too. For that reason, code that builds indented
+text is usually better off assembling it with `join()` than writing one long
+literal.
 
 ## Escape Sequences
 
-A backslash starts an escape. The full set is:
+A backslash starts an escape sequence. These are all of them:
 
 | Escape | Produces |
 | --- | --- |
-| `\0` | the null character, U+0000 |
-| `\a` | the alert (bell) character, U+0007 |
-| `\b` | backspace, U+0008 |
-| `\t` | horizontal tab, U+0009 |
-| `\n` | line feed, U+000A |
-| `\v` | vertical tab, U+000B |
-| `\f` | form feed, U+000C |
-| `\r` | carriage return, U+000D |
-| `\\` | a single backslash |
-| `\'` | a single quote |
-| `\"` | a double quote |
-| `\${` | `${` itself, with no interpolation |
-| `\xNN` | the byte with hexadecimal value `NN` |
-| `\uNNNN` | the code point `U+NNNN` |
-| `\UNNNNNNNN` | the code point `U+NNNNNNNN` |
+| `\0` | The null character, U+0000 |
+| `\a` | The alert (bell) character, U+0007 |
+| `\b` | Backspace, U+0008 |
+| `\t` | Horizontal tab, U+0009 |
+| `\n` | Line feed, U+000A |
+| `\v` | Vertical tab, U+000B |
+| `\f` | Form feed, U+000C |
+| `\r` | Carriage return, U+000D |
+| `\\` | A single backslash |
+| `\'` | A single quote |
+| `\"` | A double quote |
+| `\${` | A literal `${`, with no interpolation |
+| `\xNN` | The byte with the hexadecimal value `NN` |
+| `\uNNNN` | The code point `U+NNNN` |
+| `\UNNNNNNNN` | The code point `U+NNNNNNNN` |
 
-The three numeric forms take exactly the number of hex digits shown — two,
-four and eight — and the digits may be upper or lower case:
+The three numeric forms take exactly the number of hex digits shown (two,
+four and eight), and the digits can be uppercase or lowercase:
 
 ```zuri
 echo 'hex byte: \x41'
@@ -118,15 +118,15 @@ code point: é
 astral: 😀
 ```
 
-`\u` covers everything up to U+FFFF. Anything above that — emoji, most
-historic scripts, mathematical alphanumerics — needs `\U` and its eight
-digits. Zero-pad to fill them.
+`\u` covers code points up to U+FFFF. Anything higher, such as emoji, most
+historic scripts and mathematical alphanumerics, needs `\U` with eight
+digits. Pad the value with leading zeros to fill them.
 
-### Unknown Escapes Are Left Alone
+### Unknown Escape Sequences
 
-A backslash followed by anything not in the table above is **not** an
-error, and it is not silently dropped either. The backslash and the
-character both survive:
+A backslash followed by a character that isn't in the table above is **not**
+an error, and it isn't silently removed either. Both the backslash and the
+character stay in the string:
 
 ```zuri
 echo 'a regex: \d+ and \w+'
@@ -139,19 +139,19 @@ a path: C:	emp
 otes
 ```
 
-The first line came through untouched: `\d` and `\w` are not escapes, so
-both backslashes survived, which is exactly why regular expressions can be
-written as plain strings.
+The first line comes through unchanged. `\d` and `\w` aren't escape
+sequences, so both backslashes are kept, and that's why you can write
+regular expressions as ordinary strings.
 
-The second line did not. `\t` *is* an escape, so `C:\temp` became `C:`
-followed by a tab and then `emp`; `\n` is an escape too, so `\notes` became
-a newline followed by `otes`. One path, two silent substitutions. The rule
-is easy to state and easy to forget: unknown escapes pass through, known
-ones do not, and nothing in the way you write them tells you which is
-which.
+The second line doesn't. `\t` *is* an escape sequence, so `C:\temp` becomes
+`C:` followed by a tab and `emp`. `\n` is an escape sequence too, so
+`\notes` becomes a newline followed by `otes`. That's two silent
+substitutions in a single path. The rule is simple but easy to forget:
+unknown escape sequences are left alone and known ones aren't, and nothing
+in the way you write them tells you which is which.
 
-For Windows paths and regular expressions — the two places this bites —
-double the backslashes:
+Windows paths and regular expressions are where this usually causes trouble.
+In both, double the backslashes:
 
 ```zuri
 echo 'a path: C:\\temp\\notes'
@@ -161,9 +161,10 @@ echo 'a path: C:\\temp\\notes'
 a path: C:\temp\notes
 ```
 
-### Escaping the Quote You Chose
+### Escaping Quotes
 
-You only need to escape the quote character that would end the string:
+You only need to escape the quote character that would otherwise end the
+string:
 
 ```zuri
 echo 'it\'s escaped'
@@ -175,8 +176,8 @@ it's escaped
 she said "hi"
 ```
 
-Escaping the *other* quote is harmless but pointless, and because an
-unnecessary escape is an unknown escape, the backslash stays in the result:
+Escaping the *other* quote character doesn't do anything useful. Since it
+isn't a known escape sequence, the backslash stays in the result:
 
 ```zuri
 echo 'this \" keeps its backslash'
@@ -186,13 +187,13 @@ echo 'this \" keeps its backslash'
 this \" keeps its backslash
 ```
 
-That is a good reason to choose the quote style that lets you write the
-text plainly and escape nothing at all.
+That's another reason to pick the quote style that lets you write the text
+without escaping anything.
 
 ## Interpolation
 
 `${...}` inside a string evaluates the expression between the braces and
-splices its text into the result:
+inserts its text into the string:
 
 ```zuri
 var name = 'Ada'
@@ -205,14 +206,14 @@ echo 'In ${year}, ${name} wrote the first program.'
 In 1843, Ada wrote the first program.
 ```
 
-This works in both quote styles, and it is the way most Zuri code builds a
-string. The section after next covers `+`, which does the same job with
-more punctuation.
+Interpolation works with both quote styles, and it's how most Zuri code
+builds strings. Two sections from now, we'll look at `+`, which does the
+same job with more punctuation.
 
-### Any Expression Fits
+### Using Any Expression
 
-The braces take a whole expression, not just a variable name. Arithmetic,
-method calls, indexing, comparisons and conditionals all work:
+The braces can contain any expression, not just a variable name. Arithmetic,
+method calls, indexing, comparisons and conditional expressions all work:
 
 ```zuri
 var items = ['a', 'b', 'c']
@@ -233,16 +234,16 @@ role: admin
 name: Ada
 ```
 
-Notice the third line. The quotes inside `${...}` are the **same** quote
-character that opened the string, and it still parses correctly, because
-the expression inside the braces is lexed as its own piece of code rather
-than as text. You do not need to switch quote styles or escape anything to
-put a string literal inside an interpolation.
+Look at the third line. The quotes inside `${...}` are the **same** quote
+character that started the string, and it still works. That's because the
+expression inside the braces is read as code, not as part of the text. You
+don't need to switch quote styles or escape anything to put a string literal
+inside an interpolation.
 
-### Interpolations Nest
+### Nested Interpolation
 
-A string literal inside `${...}` is a string literal like any other, which
-means it may contain interpolations of its own, to any depth:
+A string literal inside `${...}` is an ordinary string literal, so it can
+contain interpolations of its own, nested as deeply as you like:
 
 ```zuri
 var n = 1
@@ -256,9 +257,9 @@ outer inner 2
 8
 ```
 
-This is not a curiosity. It is what makes a conditional inside a string
-able to produce formatted text rather than a bare word, which comes up
-constantly in messages meant for a person to read:
+This is more useful than it might sound. It lets a conditional inside a
+string produce formatted text instead of a single word, which you'll need
+often in messages meant for people to read:
 
 ```zuri
 var user = { name: 'ada', unread: 3 }
@@ -270,15 +271,14 @@ echo 'Hi ${user.name.capitalize()}, you have ${user.unread > 0 ? '${user.unread}
 Hi Ada, you have 3 new messages.
 ```
 
-Three levels of interpolation are at work there: the outer message, the
-branch that chooses between a count and "nothing new", and the branch that
-picks the singular or the plural. Each one is an ordinary string literal in
-an ordinary expression, and each one uses single quotes, because the
-expression inside `${...}` is lexed as code and its quotes never collide
-with the ones around it.
+There are three levels of interpolation here: the outer message, the branch
+that chooses between a count and "nothing new", and the branch that chooses
+between singular and plural. Each level is an ordinary string literal in an
+ordinary expression, and each one uses single quotes. The quotes never
+clash, because the expression inside `${...}` is read as code.
 
-Nesting is equally useful inside a callback, where the inner string is
-building one element of a larger result:
+Nesting is also handy inside a callback, where the inner string builds one
+piece of a larger result:
 
 ```zuri
 var items = ['a', 'b']
@@ -290,13 +290,13 @@ echo 'list: ${', '.join(items.map(@(i) => '<${i}>'))}'
 list: <a>, <b>
 ```
 
-Depth costs readability quickly. When a line like the message above stops
-being scannable, lift the inner pieces into local variables on the lines
-before it; the language is happy either way.
+Deep nesting gets hard to read quickly. When a line like the message above
+becomes difficult to follow, move the inner parts into local variables on
+the lines before it. Both versions work the same way.
 
-### What Each Type Looks Like
+### How Values Are Displayed
 
-Interpolation renders a value the same way `echo` does:
+Interpolation displays a value the same way `echo` does:
 
 ```zuri
 var settings = { a: 1 }
@@ -316,8 +316,8 @@ nil: nil
 bool: true
 ```
 
-A dictionary **literal** written directly inside `${...}` does not parse,
-because its closing brace runs into the interpolation's closing brace:
+You can't write a dictionary **literal** directly inside `${...}`, because
+its closing brace would end the interpolation:
 
 ```zuri,ignore
 echo 'dict: ${{ a: 1 }}'
@@ -327,11 +327,11 @@ echo 'dict: ${{ a: 1 }}'
 SyntaxError: Expected '}' after dictionary
 ```
 
-Put it in a variable first, as above. A list literal has no such problem,
-since `]` and `}` are different characters.
+Assign it to a variable first, as in the example above. List literals don't
+have this problem, because `]` and `}` are different characters.
 
-There is one important exception, and it catches everyone once.
-**Interpolating a class instance does not call its `to_string()` method:**
+There's one important exception that catches almost everyone at least once.
+**Interpolating a class instance doesn't call its `to_string()` method:**
 
 ```zuri
 class Point {
@@ -357,16 +357,16 @@ implicit: <instance of Point>
 explicit: (3, 4)
 ```
 
-Call the method yourself. This applies to `'text ' + p` too. Interpolation
-and `+` never call a method on your behalf to produce text; if you want
-`to_string()` to run, write it. `echo` is the exception, through
-`@to_string()`, which [Decorated Methods](ch06-03-decorated-methods.md)
-covers.
+You have to call the method yourself. The same applies to `'text ' + p`.
+Neither interpolation nor `+` will call a method for you to get the text. If
+you want `to_string()` to run, call it. `echo` is the exception, through
+`@to_string()`, which is covered in [Decorated
+Methods](ch06-03-decorated-methods.md).
 
 ### Writing a Literal `${`
 
-A backslash before `${` stops the interpolation, and the backslash itself is
-dropped:
+A backslash in front of `${` prevents interpolation, and the backslash
+itself is removed:
 
 ```zuri
 var x = 7
@@ -379,10 +379,11 @@ literal: ${x}
 value: 7
 ```
 
-The escape is a backslash and a dollar sign followed by `{`. `\\` is an
-escape of its own, so `\\${x}` is a backslash followed by the value.
-Anywhere else `\$` is an unknown escape and keeps its backslash, which is
-what lets a regular expression match a literal dollar sign:
+The escape sequence is a backslash, a dollar sign and a `{`. `\\` is a
+separate escape sequence, so `\\${x}` gives you a backslash followed by the
+value of `x`. Anywhere else, `\$` is an unknown escape sequence and keeps
+its backslash, which is how a regular expression can match a literal dollar
+sign:
 
 ```zuri
 var x = 7
@@ -395,8 +396,8 @@ echo 'price: $100'.match('/(?<=\$)\d+/')
 {0: 100}
 ```
 
-A lone `$` is not special, so only the exact sequence `${` needs this
-treatment:
+A `$` on its own has no special meaning, so you only need to escape the
+exact sequence `${`:
 
 ```zuri
 echo 'price: $5.00'
@@ -408,11 +409,11 @@ price: $5.00
 total: $20
 ```
 
-## Joining Strings Together
+## Combining Strings
 
 ### Concatenation with `+`
 
-`+` joins two strings end to end:
+`+` joins two strings together:
 
 ```zuri
 echo 'Hello, ' + 'world'
@@ -424,8 +425,8 @@ Hello, world
 abc
 ```
 
-When one side is a string, the other side is converted to its text form
-first. This works in both directions, and for every built-in type:
+When one side is a string, the other side is converted to text first. This
+works whichever side the string is on, and for all built-in types:
 
 ```zuri
 echo 'n=' + 5
@@ -445,10 +446,10 @@ missing: nil
 items: [1, 2]
 ```
 
-Read the second line again: `5 + 'n'` gives `'5n'`, not an error and not
-arithmetic. A string on *either* side turns the whole expression into
-concatenation. That is worth knowing when a value arrives from somewhere
-you do not control:
+Look at the second line again. `5 + 'n'` gives `'5n'`. It's not an error,
+and it's not arithmetic. A string on *either* side turns the whole
+expression into concatenation. Keep this in mind when a value comes from a
+source you don't control:
 
 ```zuri
 var quantity = '2'
@@ -462,11 +463,11 @@ echo quantity.to_number() + 3
 5
 ```
 
-The first line is text, the second is arithmetic, and nothing in the
-expression tells you which you are getting. When a number must be a number,
-convert it at the point it enters your program rather than hoping.
+The first line is string concatenation and the second is arithmetic, and
+nothing in the expression tells you which one you'll get. When a value needs
+to be a number, convert it as soon as it enters your program.
 
-The one type that does **not** convert usefully is a class instance:
+The one type that **doesn't** convert in a useful way is a class instance:
 
 ```zuri
 class Point {
@@ -488,13 +489,13 @@ echo 'at ' + Point(1, 2).to_string()
 at (1, 2)
 ```
 
-Concatenating the instance directly would produce `<instance of Point>`,
-for the same reason interpolation does: Zuri does not call `to_string()`
+Concatenating the instance directly would give you `<instance of Point>`,
+for the same reason as with interpolation: Zuri doesn't call `to_string()`
 for you.
 
-### Concatenation Versus Interpolation
+### Concatenation or Interpolation?
 
-Both produce the same string, so choose on readability:
+Both produce the same string, so choose whichever is easier to read:
 
 ```zuri
 var host = 'localhost'
@@ -509,15 +510,15 @@ connecting to localhost:8080/health
 connecting to localhost:8080/health
 ```
 
-Interpolation wins whenever there is more than one hole to fill: the
-literal text stays in one piece, the quotes do not multiply, and there is
-no chance of losing a separator between two `+` signs. Reach for `+` when
-you are gluing exactly two pieces together, or when one of them is already
-a variable holding a complete string.
+Interpolation is usually better when there's more than one value to insert.
+The literal text stays in one piece, you don't end up with lots of quotes,
+and you can't accidentally lose a separator between two `+` signs. Use `+`
+when you're joining just two pieces, or when one of them is a variable that
+already holds a complete string.
 
 ### Repetition with `*`
 
-`*` repeats a string a whole number of times:
+`*` repeats a string a given number of times:
 
 ```zuri
 echo 'ab' * 3
@@ -531,17 +532,18 @@ ababab
     indented
 ```
 
-That second line is the reason this operator earns its place. Separators,
-rules, indentation and padding are all one short expression instead of a
+The second line shows why this operator is useful. Separators, horizontal
+rules, indentation and padding each become one short expression instead of a
 loop.
 
-The rules for the count are worth stating exactly:
+Here are the exact rules for the count:
 
 - A count of `1` returns the string unchanged.
-- A count of `0` returns the empty string.
-- A **negative** count also returns the empty string, rather than raising.
-- A **fractional** count is truncated toward zero, so `* 2.7` repeats
-  twice.
+- A count of `0` returns an empty string.
+- A **negative** count also returns an empty string instead of raising an
+  error.
+- A **fractional** count is truncated toward zero, so `* 2.7` repeats the
+  string twice.
 
 ```zuri
 echo '[' + 'ab' * 1 + ']'
@@ -557,9 +559,9 @@ echo '[' + 'ab' * 2.7 + ']'
 [abab]
 ```
 
-The negative case is the one to watch. `'-' * (width - label.length())`
-silently produces nothing when the label is longer than the width, and no
-error tells you so. When the count is computed, clamp it:
+Watch out for the negative case. `'-' * (width - label.length())` quietly
+produces nothing when the label is longer than the width, and there's no
+error to tell you. When the count is calculated, clamp it:
 
 ```zuri
 def rule(width, label) {
@@ -577,7 +579,8 @@ ab--------
 a much longer label
 ```
 
-Unlike `+`, repetition does not commute. The string has to be on the left:
+Unlike `+`, the order matters for repetition. The string has to be on the
+left:
 
 ```zuri,ignore
 echo 3 * 'ab'
@@ -587,10 +590,10 @@ echo 3 * 'ab'
 Unhandled TypeError: operator '*' not defined for call signature (number, string)
 ```
 
-### Building a String from Many Pieces
+### Building a String From Many Pieces
 
-For more than a handful of pieces, neither operator is the right tool.
-Collect them in a list and `join()`:
+When you have more than a few pieces, neither operator is a good fit.
+Collect the pieces in a list and call `join()`:
 
 ```zuri
 var names = ['ada', 'grace', 'alan']
@@ -606,9 +609,9 @@ ada, grace, alan
 - Alan
 ```
 
-`join()` lives on the **separator**, not on the list, and it converts each
-element to text on the way — so a list of numbers joins as readily as a
-list of strings:
+`join()` is a method of the **separator**, not of the list. It converts each
+element to text as it goes, so a list of numbers can be joined just as
+easily as a list of strings:
 
 ```zuri
 echo '-'.join([1, 2, 3])
@@ -618,11 +621,11 @@ echo '-'.join([1, 2, 3])
 1-2-3
 ```
 
-Note also that `join()` puts the separator *between* elements, never at
-either end, which is exactly the behaviour a hand-written loop usually gets
-wrong on the last item.
+`join()` also puts the separator only *between* elements, never at the
+beginning or end. That's exactly the part that hand-written loops tend to
+get wrong for the last item.
 
-## Inspecting
+## Inspecting Strings
 
 ```zuri
 var s = 'Hello, Zuri'
@@ -646,11 +649,11 @@ true
 true
 ```
 
-`index_of()` returns `-1` when there is no match, and takes an optional
-second argument to start the search from.
+`index_of()` returns `-1` when there's no match. It accepts an optional
+second argument that sets where the search starts.
 
-`last_index_of()` searches from the other end, which is what you want
-whenever the interesting separator is the final one:
+`last_index_of()` searches from the end instead, which is what you want when
+the separator you care about is the last one:
 
 ```zuri
 var path = 'src/vm/value.rs'
@@ -668,13 +671,13 @@ value.rs
 -1
 ```
 
-Both take a second argument, and in both it bounds where a *match may
-begin*. That makes the pair split a string at one index: for any `n`,
-`index_of(str, n)` finds the first match at or after `n` and
-`last_index_of(str, n)` the last match at or before it.
+Both methods take a second argument, and in both cases it limits where a
+*match can start*. Together, they split a string at an index: for any `n`,
+`index_of(str, n)` finds the first match at or after `n`, and
+`last_index_of(str, n)` finds the last match at or before `n`.
 
-There is a family of character-class predicates, each true when **every**
-character in the string qualifies:
+There's also a set of methods that test character classes. Each one returns
+true when **every** character in the string matches:
 
 ```zuri
 echo 'abc'.is_alpha()
@@ -690,8 +693,8 @@ true
 true
 ```
 
-The full set is `is_alpha`, `is_alnum`, `is_number`, `is_lower`,
-`is_upper`, `is_space`, plus `is_empty`.
+The full set is `is_alpha`, `is_alnum`, `is_number`, `is_lower`, `is_upper`
+and `is_space`, along with `is_empty`.
 
 ## Changing Case
 
@@ -711,12 +714,12 @@ Hello, zuri
 Hello, Zuri
 ```
 
-`capitalize()` uppercases the first character and lowercases the rest.
-`title()` does that to every word.
+`capitalize()` converts the first character to uppercase and the rest to
+lowercase. `title()` does the same for every word.
 
-For comparing text from users, reach for `case_fold()` rather than
-`lower()`. Case folding is the Unicode operation defined for
-case-insensitive matching, and it handles cases simple lowercasing gets
+When you compare text entered by users, use `case_fold()` instead of
+`lower()`. Case folding is the Unicode operation designed for
+case-insensitive matching, and it handles cases that simple lowercasing gets
 wrong:
 
 ```zuri
@@ -745,9 +748,10 @@ hi
 hi
 ```
 
-With no argument, all three strip whitespace: spaces, tabs, newlines,
-carriage returns, vertical tabs and form feeds. Given a string, they strip
-every character in it, in any order, so `'-=hi=-'.trim('-=')` is `hi`.
+Called without an argument, all three methods remove whitespace: spaces,
+tabs, newlines, carriage returns, vertical tabs and form feeds. If you pass
+a string, they remove any of the characters in it, in any order, so
+`'-=hi=-'.trim('-=')` gives `hi`.
 
 ```zuri
 echo 'x'.lpad(5, '.')
@@ -759,9 +763,9 @@ echo 'x'.rpad(5, '.')
 x....
 ```
 
-`lpad` and `rpad` take a target width and an optional fill character that
-defaults to a space. A string already at or over the width comes back
-unchanged.
+`lpad` and `rpad` take a target width and an optional fill character, which
+defaults to a space. If the string is already as wide as the target or
+wider, it's returned unchanged.
 
 ## Splitting and Joining
 
@@ -779,11 +783,11 @@ a, b, c
 [line1, line2]
 ```
 
-`join` lives on the **separator**, not on the list. `to_list()` splits into
-single characters. `lines()` splits on newlines and handles both `\n` and
-`\r\n`.
+`join` is a method of the **separator**, not of the list. `to_list()` splits
+a string into single characters. `lines()` splits on newlines, and handles
+both `\n` and `\r\n`.
 
-## Replacing
+## Replacing Text
 
 ```zuri
 echo 'Hello, Zuri'.replace('Zuri', 'World')
@@ -793,8 +797,9 @@ echo 'Hello, Zuri'.replace('Zuri', 'World')
 Hello, World
 ```
 
-Every occurrence is replaced. The pattern may be a regular expression, and
-the replacement can refer back to capture groups with `$1`, `$2` and so on:
+`replace()` replaces every occurrence. The pattern can be a regular
+expression, and the replacement can refer to capture groups with `$1`, `$2`
+and so on:
 
 ```zuri
 echo 'John Smith'.replace('/(\w+) (\w+)/', '$2, $1')
@@ -804,9 +809,9 @@ echo 'John Smith'.replace('/(\w+) (\w+)/', '$2, $1')
 Smith, John
 ```
 
-The optional third argument turns regex handling off, so a pattern that
-would otherwise be read as a regex is matched literally, delimiters
-included:
+The optional third argument turns off regular expression handling, so a
+pattern that would otherwise be treated as a regular expression is matched
+literally, delimiters and all:
 
 ```zuri
 echo 'a/b/c'.replace('/b/', 'X')
@@ -831,22 +836,22 @@ a<1>b<2>
 
 ## Regular Expressions
 
-Zuri's regular expressions are **PCRE2**, the same engine that powers
-regular expressions in PHP, R and a long list of other tools. It is the
-real library rather than a subset of it, so named groups, backreferences,
-lookahead, lookbehind, atomic groups, possessive quantifiers, conditionals
-and recursion all work exactly as PCRE2 documents them.
+Zuri uses **PCRE2** for regular expressions, the same engine used by PHP, R
+and many other tools. It's the full library, not a subset, so named groups,
+backreferences, lookahead, lookbehind, atomic groups, possessive
+quantifiers, conditionals and recursion all work as the PCRE2 documentation
+describes.
 
-This section covers how a pattern is written in Zuri, which methods accept
-one, what each modifier does, and the handful of places where Zuri's
-surface differs from what you may expect. It does not teach regular
-expression syntax itself; any PCRE or Perl reference applies unchanged.
+This section explains how to write a pattern in Zuri, which methods accept
+patterns, what each modifier does, and the few places where Zuri behaves
+differently from what you might expect. It doesn't teach regular expression
+syntax itself, but any PCRE or Perl reference applies as it is.
 
 ### Writing a Pattern
 
-A pattern is an ordinary string whose **first character is a non-word
-character, repeated to close the pattern**, with any modifier letters
-after the closing delimiter:
+A pattern is an ordinary string. Its **first character must be a non-word
+character, and the same character closes the pattern**. Any modifier letters
+go after the closing delimiter:
 
 ```text
 '/[a-z]+/'
@@ -855,10 +860,10 @@ after the closing delimiter:
 '!https?://\S+!i'
 ```
 
-A "non-word character" is anything that is not a letter, a digit or an
-underscore. Forward slash is the conventional choice, and every example in
-this book uses it, but the delimiter is yours to pick — which is worth
-doing when the pattern itself is full of slashes:
+A non-word character is anything other than a letter, a digit or an
+underscore. A forward slash is the usual choice, and it's what every example
+in this book uses, but you can pick a different delimiter. That's useful
+when the pattern itself contains a lot of slashes:
 
 ```zuri
 echo 'see https://example.com/docs now'.match('!https?://\S+!')
@@ -868,14 +873,14 @@ echo 'see https://example.com/docs now'.match('!https?://\S+!')
 {0: https://example.com/docs}
 ```
 
-Because the pattern is a string, the backslashes in it are subject to
-Zuri's own escape rules first. This is almost never a problem, because
-`\d`, `\w`, `\s`, `\b` and `\S` are not escape sequences and therefore pass
-through untouched. The exceptions are the letters that *are* escapes —
-`\t`, `\n`, `\r`, `\f`, `\v`, `\a`, `\b`, `\0`, `\x` and `\u`. Of those,
-`\t` and `\n` mean the same thing to both, so they are harmless; `\b`
-(word boundary in a pattern, backspace in a string) is the one that will
-catch you:
+Because a pattern is a string, Zuri's own escape rules are applied to its
+backslashes first. In practice, this rarely causes problems, because `\d`,
+`\w`, `\s`, `\b` and `\S` aren't escape sequences in strings and are passed
+through unchanged. The exceptions are the letters that *are* escape
+sequences: `\t`, `\n`, `\r`, `\f`, `\v`, `\a`, `\b`, `\0`, `\x` and `\u`.
+`\t` and `\n` mean the same thing in both strings and patterns, so they're
+harmless. The one that will catch you out is `\b`, which means a word
+boundary in a pattern but a backspace in a string:
 
 ```zuri
 echo 'one two'.match('/\btwo\b/')
@@ -887,12 +892,12 @@ false
 {0: two}
 ```
 
-Double the backslash whenever the pattern needs `\b`.
+Whenever a pattern needs `\b`, write it with a double backslash.
 
-### A Plain String Is a Literal
+### Plain Strings Are Matched Literally
 
-Every method in this section also accepts a plain string, and treats it as
-a **literal substring** rather than a pattern:
+All of the methods in this section also accept a plain string, which they
+treat as a **literal substring** rather than a pattern:
 
 ```zuri
 echo 'a.b'.replace('.', 'X')
@@ -904,13 +909,14 @@ aXb
 XXX
 ```
 
-The first call replaced the single full stop. The second compiled `.` as a
-pattern, where it means "any character", and replaced all three.
+The first call replaced the single period. The second call compiled `.` as a
+pattern, where it means "any character", so it replaced all three
+characters.
 
-That distinction is decided purely by whether the string looks like a
-delimited pattern. When you have text from elsewhere that might
-accidentally look like one, `replace()` takes a third argument that turns
-pattern handling off:
+The only thing that decides this is whether the string looks like a
+delimited pattern. If you're working with text from elsewhere that might
+happen to look like one, pass `false` as the third argument to `replace()`
+to turn off pattern handling:
 
 ```zuri
 echo 'a/b/c'.replace('/b/', 'X')
@@ -922,24 +928,24 @@ a/X/c
 aXc
 ```
 
-With `false`, the delimiters are matched as characters like anything else.
+With `false`, the delimiters are matched as ordinary characters.
 
-### Which Methods Take a Pattern
+### Methods That Accept Patterns
 
-Five, and only five:
+There are exactly five:
 
 | Method | What it does with the pattern |
 | --- | --- |
-| `match(pattern)` | the first match and its groups, or `false` |
-| `matches(pattern)` | every match, grouped by capture group |
-| `replace(pattern, with, use_regex)` | replaces every match |
-| `replace_with(pattern, callback)` | replaces every match with a call |
-| `split(pattern)` | splits on every match |
+| `match(pattern)` | Returns the first match and its groups, or `false` |
+| `matches(pattern)` | Returns every match, grouped by capture group |
+| `replace(pattern, with, use_regex)` | Replaces every match |
+| `replace_with(pattern, callback)` | Replaces every match with the result of a function call |
+| `split(pattern)` | Splits the string at every match |
 
-Everything else — `contains()`, `index_of()`, `count()`, `starts_with()`,
-`ends_with()`, `trim()` — takes a **literal** string only. A
-regex-looking argument passed to one of those is matched as the literal
-characters it contains:
+All the other methods, such as `contains()`, `index_of()`, `count()`,
+`starts_with()`, `ends_with()` and `trim()`, only accept **literal**
+strings. If you pass them something that looks like a regular expression,
+they search for those exact characters:
 
 ```zuri
 echo 'a1b'.contains('/[0-9]/')
@@ -953,13 +959,14 @@ false
 0
 ```
 
-All three answered about the six-character string `/[0-9]/`, which is not
-in `a1b`. When you need a pattern there, reach for `match()` instead.
+All three calls searched for the six-character string `/[0-9]/`, which
+doesn't appear in `a1b`. If you need a pattern in a case like this, use
+`match()` instead.
 
 ### `match()` and `matches()`
 
-`match()` finds the **first** match and returns it as a dictionary under
-key `0`. It returns `false` — not `nil` — when nothing matches:
+`match()` finds the **first** match and returns it in a dictionary under the
+key `0`. When nothing matches, it returns `false`, not `nil`:
 
 ```zuri
 echo 'one two'.match('/\w+/')
@@ -973,13 +980,13 @@ false
 bool
 ```
 
-Both are falsy, so `if s.match(p) { ... }` reads correctly. An equality
-test against `nil` does not, and this is the single most common regex
-mistake in Zuri code.
+Both `false` and `nil` are falsy, so `if s.match(p) { ... }` works as
+expected. Comparing the result with `nil` doesn't, and that's the most
+common regular expression mistake in Zuri code.
 
-The dictionary holds the pattern's capture groups as well, each under its
-number, and a named group under its name too. A group that takes no part in
-the match is `nil`:
+The dictionary also contains the pattern's capture groups, each under its
+number, and named groups under their names as well. A group that doesn't
+take part in the match is `nil`:
 
 ```zuri
 echo '2024-01'.match('/(?<year>\d+)-(\d+)/')
@@ -992,8 +999,9 @@ echo 'ab'.match('/([a-z]+)(\d+)?/')
 ```
 
 `matches()` finds **every** match and groups the results by capture group.
-Key `0` holds the whole matches, key `1` the first group's, and so on —
-each as a list, parallel across the keys:
+Key `0` holds the full matches, key `1` holds the matches for the first
+group, and so on. Each value is a list, and the lists line up with each
+other:
 
 ```zuri
 echo 'a1b2c3'.matches('/[0-9]/')
@@ -1005,13 +1013,13 @@ echo 'a1b2'.matches('/([a-z])([0-9])/')
 {0: [a1, b2], 1: [a, b], 2: [1, 2]}
 ```
 
-In the second result, match zero is `a1` with groups `a` and `1`, and
-match one is `b2` with groups `b` and `2`. Read down the lists, not
-across.
+In the second result, the first match is `a1`, with groups `a` and `1`, and
+the second match is `b2`, with groups `b` and `2`. Read down each list, not
+across them.
 
-When nothing matches, `matches()` returns `{0: []}` rather than `false`.
-The two methods differ here, so test `matches()` with `is_empty()` on key
-zero:
+When nothing matches, `matches()` returns `{0: []}` instead of `false`.
+Since the two methods behave differently here, check the result of
+`matches()` by calling `is_empty()` on key zero:
 
 ```zuri
 var found = 'nope'.matches('/zzz/')
@@ -1027,7 +1035,7 @@ true
 
 ### Capture Groups in a Replacement
 
-`replace()` refers to a capture group with `$1`, `$2` and so on:
+In `replace()`, you refer to a capture group with `$1`, `$2` and so on:
 
 ```zuri
 echo 'John Smith'.replace('/(\w+) (\w+)/', '$2, $1')
@@ -1037,10 +1045,10 @@ echo 'John Smith'.replace('/(\w+) (\w+)/', '$2, $1')
 Smith, John
 ```
 
-**Do not write `${1}`.** The braced form is Zuri's own string
-interpolation, and it is consumed before `replace()` ever sees it. The
-expression `2` evaluates to the number two, so the replacement string is
-already `'2, 1'` by the time it arrives:
+**Don't write `${1}`.** The braced form is Zuri's own string interpolation,
+and it's evaluated before `replace()` sees the string. The expression `2`
+evaluates to the number two, so by the time the replacement string reaches
+`replace()`, it's already `'2, 1'`:
 
 ```zuri
 echo 'John Smith'.replace('/(\w+) (\w+)/', '${2}, ${1}')
@@ -1050,14 +1058,13 @@ echo 'John Smith'.replace('/(\w+) (\w+)/', '${2}, ${1}')
 2, 1
 ```
 
-Use the bare `$1` form throughout. This is one of the few places where
-Zuri's interpolation and another language's syntax collide, and it fails
-quietly rather than loudly.
+Always use the plain `$1` form. This is one of the few places where Zuri's
+interpolation syntax clashes with another syntax, and when it goes wrong,
+there's no error to warn you.
 
 ### Named Groups
 
-Named groups are supported in the **pattern**, because PCRE2 supports
-them:
+Named groups are supported in **patterns**, because PCRE2 supports them:
 
 ```zuri
 echo 'John Smith'.matches('/(?<first>\w+) (?<last>\w+)/')
@@ -1067,14 +1074,14 @@ echo 'John Smith'.matches('/(?<first>\w+) (?<last>\w+)/')
 {0: [John Smith], 1: [John], 2: [Smith]}
 ```
 
-The results are keyed by **position**, not by name. A name in a pattern
-documents the group and lets a backreference such as `\k<first>` refer to
-it; it does not change how the result is keyed. Count the groups to find
-the one you want.
+However, the results are keyed by **position**, not by name. A group's name
+documents what it's for and lets a backreference such as `\k<first>` refer
+to it, but it doesn't change the keys in the result. To find the group you
+want, count the groups.
 
 ### Computing the Replacement
 
-When the replacement depends on what matched, `replace_with()` calls a
+When the replacement depends on what was matched, `replace_with()` calls a
 function for each match:
 
 ```zuri
@@ -1085,9 +1092,10 @@ echo 'a1b2'.replace_with('/[0-9]/', @(m) => '<' + m + '>')
 a<1>b<2>
 ```
 
-The callback receives the whole match first, then one argument per capture
-group, then the offset of the match, then the whole subject string. Take
-only the arguments you need, since extra arguments are dropped:
+The function receives the full match first, then one argument for each
+capture group, then the position of the match, and finally the whole string
+being searched. You only need to declare the arguments you use, because
+extra arguments are ignored:
 
 ```zuri
 echo 'aXbXc'.replace_with('/X/', @(match, offset) => '[${offset}]')
@@ -1099,8 +1107,8 @@ a[1]b[3]c
 
 ### Splitting on a Pattern
 
-`split()` accepts a pattern, which is how you split on "one or more of
-something" rather than on an exact separator:
+`split()` accepts a pattern, which lets you split on "one or more of
+something" instead of an exact separator:
 
 ```zuri
 echo 'a1b22c'.split('/[0-9]+/')
@@ -1112,23 +1120,24 @@ echo 'a, b,c ,  d'.split('/\s*,\s*/')
 [a, b, c, d]
 ```
 
-### The Modifiers
+### Modifiers
 
-Modifier letters go after the closing delimiter, in any order and any
-combination. `/[a-z]+/mi` is both multi-line and case-insensitive.
+Modifier letters go after the closing delimiter, in any order and
+combination. For example, `/[a-z]+/mi` is both multi-line and
+case-insensitive.
 
 | Modifier | Effect |
 | --- | --- |
 | `i` | Case-insensitive matching. |
-| `m` | Multi-line: `^` and `$` match at every line boundary, not only at the start and end of the subject. |
-| `s` | Dot-all: `.` matches a newline as well as everything else. |
-| `x` | Extended: unescaped whitespace in the pattern is ignored, and `#` starts a comment to end of line. |
-| `u` | Unicode properties: `\d`, `\w`, `\s` and friends become Unicode-aware instead of ASCII-only. |
-| `U` | Ungreedy: quantifiers become lazy by default, and `?` after one makes it greedy. |
-| `A` | Anchored: a match is only accepted if it begins exactly where the search started. |
-| `J` | Allow two capture groups in one pattern to share a name. |
+| `m` | Multi-line mode: `^` and `$` match at the start and end of every line, not just the start and end of the string. |
+| `s` | Dot-all mode: `.` also matches newlines. |
+| `x` | Extended mode: whitespace in the pattern is ignored unless escaped, and `#` starts a comment that runs to the end of the line. |
+| `u` | Unicode mode: `\d`, `\w`, `\s` and similar classes match Unicode characters instead of only ASCII. |
+| `U` | Ungreedy mode: quantifiers are lazy by default, and a `?` after one makes it greedy. |
+| `A` | Anchored mode: a match is only accepted if it starts exactly where the search started. |
+| `J` | Allows two capture groups in the same pattern to have the same name. |
 
-Each one in use:
+Here's each of them in use:
 
 ```zuri
 echo 'HELLO'.match('/hello/i')
@@ -1153,35 +1162,36 @@ b}
 false
 ```
 
-Read the last two together: the pattern matched when it was at the start of
-the subject and failed when it was not, which is what `A` is for. Without
-it, the second would have matched at offset one.
+Compare the last two results. The pattern matched when the text was at the
+start of the string and failed when it wasn't, which is what `A` is for.
+Without `A`, the second one would have matched at position one.
 
-`u` is worth a second look as well. Without it, `\w` is ASCII-only and
-`é` is not a word character; with it, the Unicode properties apply and it
-is. Matching itself is always per-character rather than per-byte, so
-indexes and offsets are correct on multi-byte text regardless of `u`.
+`u` deserves a closer look too. Without it, `\w` only matches ASCII, so `é`
+isn't a word character. With it, Unicode properties apply, and `é` is a word
+character. Matching is always done per character rather than per byte, so
+positions are correct on text with multi-byte characters, with or without
+`u`.
 
-### The One Exception to PCRE2 Compatibility
+### Differences From PCRE2
 
-**PCRE2's `D` (dollar-endonly) modifier has no effect in Zuri.** `$`
-always matches before a trailing newline as well as at the absolute end of
-the subject, and there is no way to change that. The letter is accepted
-rather than rejected, so a pattern carrying it compiles and runs; it simply
-does not do anything.
+**PCRE2's `D` (dollar end only) modifier has no effect in Zuri.** `$` always
+matches before a trailing newline as well as at the very end of the string,
+and you can't change that. The `D` letter is accepted rather than rejected,
+so a pattern that uses it still compiles and runs. It just doesn't do
+anything.
 
-The same is true of any other unrecognised modifier letter: it is accepted
-and ignored rather than raising. A typo in a modifier is therefore silent,
-which is worth remembering when a pattern behaves as though a flag you
-wrote is not set.
+The same goes for any other modifier letter that Zuri doesn't recognize.
+It's accepted and ignored instead of raising an error. That means a typo in
+a modifier goes unnoticed, so keep it in mind if a pattern behaves as though
+one of its flags isn't set.
 
-Everything else in the table above is supported and behaves exactly as
-PCRE2 documents it.
+All the other modifiers in the table are supported and behave as the PCRE2
+documentation describes.
 
 ### Invalid Patterns
 
-A pattern that PCRE2 cannot compile raises, naming the pattern and the
-engine's own explanation:
+If PCRE2 can't compile a pattern, Zuri raises an error that includes the
+pattern and PCRE2's own explanation:
 
 ```zuri
 catch {
@@ -1195,10 +1205,10 @@ catch {
 invalid regular expression '(unclosed': PCRE2: error compiling pattern at offset 9: missing closing parenthesis
 ```
 
-Patterns are compiled once and reused, so repeating the same pattern in a
-loop costs nothing after the first time through.
+Patterns are compiled once and then reused, so using the same pattern
+repeatedly in a loop has no extra cost after the first time.
 
-## Conversion
+## Converting Strings
 
 ```zuri
 echo '5'.to_number() + 1
@@ -1216,14 +1226,15 @@ H
 (48 69)
 ```
 
-`to_number()` takes an optional base. `ord()` requires a single-character
-string and gives its code point; `chr()` on a number goes the other way.
+`to_number()` accepts an optional base. `ord()` takes a string of exactly
+one character and returns its code point, and `chr()` converts a number back
+into a character.
 
 ### `to_number()` Never Fails
 
-This is the one conversion behaviour worth memorising. `to_number()` does
-not raise, and it does not produce `NaN`. It reads the first number
-written in the string, and text with no number in it at all becomes
+This is the one conversion rule you should memorize. `to_number()` never
+raises an error, and it never returns `NaN`. It reads the first number in
+the string, and if the string doesn't contain a number at all, the result is
 **zero**:
 
 ```zuri
@@ -1248,19 +1259,20 @@ echo '96.3 of 31'.to_number()
 96.3
 ```
 
-Look at the last three. What surrounds the number is ignored, so `'12abc'`
-is `12`, the spaces around `'  7  '` are simply not part of it, and only
-the first number is read however many follow.
+Look at the last three lines. Anything around the number is ignored, so
+`'12abc'` gives `12`, the spaces in `' 7 '` don't matter, and only the first
+number is read, however many follow it.
 
-That cuts both ways. `'3 apples'` giving `3` is usually what was meant;
-`'2026-09-16'` giving `2026` usually is not. A number is taken to start at
-a digit, or at a sign or decimal point directly in front of one, so `'-5'`
-is negative five and `'a - 42'`, where the sign stands apart, is `42`.
+This can work for you or against you. `'3 apples'` giving `3` is usually
+what you want, but `'2026-09-16'` giving `2026` usually isn't. A number
+starts at a digit, or at a sign or decimal point immediately before a digit,
+so `'-5'` is negative five, while `'a - 42'`, where the sign is separated
+from the digits, is `42`.
 
-There is no error to catch and no sentinel to test, so a form field a user
-left blank and a form field they filled with `'0'` produce the same number,
-and so do `'eighty'` and `'0'`. When the difference matters, check the text
-before converting it:
+Since there's no error to catch and no special value to check for, an empty
+form field and a field containing `'0'` give you the same number, and so do
+`'eighty'` and `'0'`. When the difference matters, check the text before you
+convert it:
 
 ```zuri
 def to_count(text) {
@@ -1287,14 +1299,15 @@ catch {
 not a whole number: twelve
 ```
 
-`is_number()` is a narrower test than it looks — it is true only for a
-string of digits, so `'3.5'` and `'-5'` both fail it. A regular expression
-is the reliable check for anything beyond unsigned integers.
+`is_number()` is stricter than its name suggests. It's only true for a
+string made entirely of digits, so `'3.5'` and `'-5'` both fail. For
+anything other than unsigned integers, a regular expression is the more
+reliable check.
 
-## Walking a String
+## Iterating Over a String
 
-A string is iterable, one character at a time, and the same four forms
-available for a list work here.
+Strings are iterable, one character at a time, and you can use the same four
+approaches that work for lists.
 
 ### `for`, One Character at a Time
 
@@ -1310,8 +1323,8 @@ e
 y
 ```
 
-This is the form to reach for by default. Each `ch` is a one-character
-string, not a code point number — use `ord()` when you want the number.
+This is the approach to use by default. Each `ch` is a one-character string,
+not a code point number. Use `ord()` if you need the number.
 
 ### `for` With Two Variables, for the Position
 
@@ -1327,10 +1340,10 @@ for index, ch in 'hey' {
 2: y
 ```
 
-The key comes first and the value second, and for a string the key is the
-character position.
+The key comes first and the value second. For a string, the key is the
+position of the character.
 
-### `iter`, When the Position Drives the Walk
+### `iter`, When You Need Control Over the Position
 
 ```zuri
 var s = 'hey'
@@ -1346,9 +1359,9 @@ e
 h
 ```
 
-`s[i]` indexes by character, not by byte, so this is correct on text that
-is not ASCII. Use `iter` when you need to skip, step backwards, or look at
-`s[i + 1]` from inside the body.
+`s[i]` indexes by character rather than by byte, so this works correctly on
+text that isn't ASCII. Use `iter` when you need to skip ahead, go backward,
+or look at `s[i + 1]` inside the loop.
 
 ### `each()`, With a Function
 
@@ -1363,10 +1376,10 @@ is not ASCII. Use `iter` when you need to skip, step backwards, or look at
 1:i
 ```
 
-As everywhere else, the callback receives the **value first and the index
-second** — the opposite order to `for`.
+As with the other types, the function receives the **value first and the
+index second**. Note that this is the opposite of the order used by `for`.
 
-### `each_line()` and `lines()`, for Text in Lines
+### `each_line()` and `lines()`, for Line-Based Text
 
 ```zuri
 var doc = 'first\nsecond\nthird'
@@ -1385,13 +1398,14 @@ echo doc.lines()
 [first, second, third]
 ```
 
-`each_line()` calls the function once per line; `lines()` hands you the
-whole list so you can `for` over it, filter it, or count it. Both split on
-`\n` and `\r\n`, so both read a file written on any platform.
+`each_line()` calls a function once for each line, and `lines()` gives you
+all of the lines as a list, so you can loop over them, filter them or count
+them. Both split on `\n` and `\r\n`, so they work with files written on any
+platform.
 
-## Ordering and Comparison
+## Comparing Strings
 
-`==` compares two strings by value, which is almost always what you want:
+`==` compares two strings by value, which is nearly always what you want:
 
 ```zuri
 echo 'abc' == 'abc'
@@ -1403,9 +1417,9 @@ true
 false
 ```
 
-The ordering operators are a different story. `<`, `<=`, `>` and `>=` are
-defined for numbers only, and comparing two strings with one raises a
-`TypeError`. Use `compare()`, which returns `-1`, `0` or `1`:
+The ordering operators are different. `<`, `<=`, `>` and `>=` only work with
+numbers, and using one to compare two strings raises a `TypeError`. Use
+`compare()` instead, which returns `-1`, `0` or `1`:
 
 ```zuri
 echo 'abc'.compare('abd')
@@ -1419,13 +1433,14 @@ echo 'abd'.compare('abc')
 1
 ```
 
-That three-way result is exactly the shape a sort comparison wants, and it
-compares by code point, so it is stable and locale-independent.
+A three-way result like this is what a sort comparison function needs.
+`compare()` compares strings by code point, so the result is stable and
+doesn't depend on the locale.
 
 ## Strings Are Immutable
 
-Every method in this section returns a new string. Nothing mutates in
-place:
+Every method in this section returns a new string. None of them change the
+string in place:
 
 ```zuri
 var original = 'hello'
@@ -1440,8 +1455,8 @@ hello
 HELLO
 ```
 
-This is worth internalising, because it is the source of the single most
-common string mistake:
+It's important to keep this in mind, because it leads to the most common
+string mistake of all:
 
 ```zuri
 var name = '  ada  '
@@ -1458,19 +1473,18 @@ echo '[${name}]'
 [ada]
 ```
 
-The first `trim()` produced a trimmed string and threw it away. Assign the
-result, or chain onto it.
+The first `trim()` call created a trimmed string and then threw it away.
+Assign the result to a variable, or chain another call onto it.
 
-Immutability also means you can pass a string anywhere without copying it
-defensively. Nothing you hand a string to can change the one you still
-hold.
+Because strings are immutable, you never need to copy one before passing it
+somewhere. Nothing you pass a string to can change the string you still
+have.
 
-## A Worked Example
+## Example: Parsing a Configuration File
 
-Here is a small parser that puts most of this section together. It takes a
-block of `key = value` configuration text and produces a dictionary,
-skipping blank lines and comments, and tolerating whatever spacing the
-author used.
+Here's a small parser that uses most of what this section has covered. It
+takes `key = value` configuration text and turns it into a dictionary,
+skipping blank lines and comments and accepting any spacing around the `=`.
 
 ```zuri
 def parse_config(text) {
@@ -1521,9 +1535,9 @@ zuri app
 3
 ```
 
-Three things in there are worth naming. `lines()` handles both `\n` and
-`\r\n`, so the same code reads a file written on Windows. `index_of()`
-returning `-1` is checked explicitly rather than relied on for truthiness,
-because `-1` is falsy and so is `0` — and `0` is a legitimate position.
-And every value arrives as a string, because that is what text is;
-`to_number()` is how you leave.
+A few things in this code are worth pointing out. `lines()` handles both
+`\n` and `\r\n`, so the same code can read a file written on Windows. The
+result of `index_of()` is compared with `-1` explicitly rather than tested
+for truthiness, because `0` is falsy and `0` is a valid position. And every
+value starts out as a string, because the input is text. `to_number()` is
+how you turn it into a number.

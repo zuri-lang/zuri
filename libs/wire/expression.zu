@@ -1,15 +1,15 @@
 /**
  * @module wire.expression
  *
- * Wire's expression language: the thing that sits between `{{` and
- * `}}`, and the thing an `x-if` or an `x-for` is given.
+ * Wire's expression language, which is used between `{{` and `}}` and
+ * in the values of directives such as `x-if` and `x-for`.
  *
- * It is deliberately a small language rather than an embedded Zuri.
- * There is no assignment, no statement, no way to define anything and
- * no way to reach a global, because a template is a description of a
- * page and everything else belongs in the code that renders it. What
- * is here is what reading a value out of a dictionary and deciding
- * whether to show a section actually needs:
+ * It's intentionally a small language, not embedded Zuri. There's no
+ * assignment, no statements, no way to define anything and no way to
+ * reach a global, because a template describes a page, and everything
+ * else belongs in the code that renders it. The language has what
+ * reading values out of a dictionary and deciding whether to show a
+ * section actually need:
  *
  * | Kind        | Written as                                     |
  * | ----------- | ---------------------------------------------- |
@@ -25,20 +25,20 @@
  * | ranges      | `0..pages`, `1..10`                            |
  * | filters     | `name|upper`, `price|round(2)`, `name|is='Ada'` |
  *
- * Truthiness is Wire's, not Zuri's: an empty list is false and a
- * negative number is true. `wire.values` explains why, and it matters
- * for every `and`, `or`, `not` and `?` here.
+ * Truthiness follows Wire's rules, not Zuri's: an empty list is false,
+ * and a negative number is true. `wire.values` explains why, and it
+ * affects every `and`, `or`, `not` and `?` here.
  *
  * ### Missing values
  *
- * Reading a name that was never supplied gives `nil` rather than
- * raising, and so does reading a key off it. `{{ user.address.city }}`
- * on a request with no user renders as nothing at all instead of
- * failing three levels down, which is what makes an optional section
- * readable. Ask with `x-if` when the difference matters.
+ * Reading a name that was never supplied gives `nil` instead of raising
+ * an error, and so does reading a key from it. On a request with no
+ * user, `{{ user.address.city }}` renders as nothing instead of failing
+ * three levels down, which keeps optional sections easy to read. Use
+ * `x-if` when the difference matters.
  *
- * Names beginning with an underscore cannot be read. Those are private
- * in Zuri, and a template has no business reaching into them.
+ * Names that start with an underscore can't be read. They're private in
+ * Zuri, and a template has no reason to access them.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
@@ -57,8 +57,8 @@ import .values {
 }
 
 /**
- * The words that are part of the language rather than names a template
- * can bind.
+ * The words that belong to the language and can't be used as names in a
+ * template.
  */
 var KEYWORDS = ['and', 'or', 'not', 'in', 'true', 'false', 'nil']
 
@@ -340,9 +340,9 @@ class ListLiteral < Expression {
 class DictLiteral < Expression {
 
   /**
-   * The entries, as a list of `[key, value]` expression pairs. A list
-   * rather than a dictionary so that a duplicate key behaves the way it
-   * would in Zuri, with the last one winning.
+   * The entries, as a list of `[key, value]` pairs of expressions. It's
+   * a list instead of a dictionary so that a duplicate key behaves as
+   * it would in Zuri, where the last one wins.
    */
   var entries = []
 
@@ -655,15 +655,17 @@ class Filter < Expression {
 # --------------------------------------------------------------------
 
 /**
- * Reads _key_ off _target_, for both `a.b` and `a[b]`.
+ * Reads _key_ from _target_, for both `a.b` and `a[b]`.
  *
  * A dictionary is asked for the key, a list or a string for the index,
- * and an instance for the field or method of that name. Reading off
- * `nil` gives `nil`, so a chain through a variable that was never
- * supplied stops quietly instead of raising partway down.
+ * and an instance for the field or method with that name. Reading from
+ * `nil` gives `nil`, so a chain that starts with a variable that was
+ * never supplied stops quietly instead of raising an error partway
+ * along.
  *
  * A negative index counts from the end, as it does everywhere else in
- * Zuri, and an index past either end gives `nil` rather than raising.
+ * Zuri, and an index past either end gives `nil` instead of raising an
+ * error.
  *
  * @param Scope scope
  * @param any target
@@ -974,9 +976,10 @@ class Token {
 /**
  * Splits _source_ into tokens.
  *
- * _path_, _line_ and _column_ are only used to place the error when the
- * source does not lex, and name the tag the expression was written on
- * rather than anything inside the expression.
+ * _path_, _line_ and _column_ are only used to report where the error
+ * is if the source can't be split into tokens. They refer to the tag
+ * the expression was written on, not to a position inside the
+ * expression.
  *
  * @param string source
  * @param string path
@@ -1100,9 +1103,9 @@ def _scan_string(
 }
 
 /**
- * What a backslash escape stands for. Anything not listed stands for
- * itself, which is what makes `\\'` and `\\\\` work without needing a
- * table entry each.
+ * What a backslash escape stands for. A character that isn't listed
+ * stands for itself, which is why `\\'` and `\\\\` work without an
+ * entry of their own.
  *
  * @param string character
  * @returns string
@@ -1462,8 +1465,9 @@ class Parser {
   /**
    * A value with any filters applied to it.
    *
-   * Filters bind tighter than every operator, so `items|length > 3`
-   * compares the length rather than filtering the comparison.
+   * Filters bind more tightly than any operator, so `items|length > 3`
+   * compares the length, instead of filtering the result of the
+   * comparison.
    *
    * @returns Expression
    */

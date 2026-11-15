@@ -1,7 +1,7 @@
 /**
  * @command info
- * @description Describes the project and its packages, or one package
- *    on a registry.
+ * @description Shows information about the project and its packages,
+ *    or about a package on a registry.
  *
  *   zuri info [options]
  *   zuri info <package[@version]> [options]
@@ -30,25 +30,25 @@ import .._shared.ui
 def parser() {
   var parser = args.Parser('zuri info', false)
 
-  parser.description = 'Describes the project and its packages, or one package on a registry.'
+  parser.description = 'Shows information about the project and its packages, or about a package on a registry.'
 
   parser.add_index(
     'package',
-    'A package on a registry, as name or name@version',
+    'A package on a registry, given as name or name@version',
     { metavar: 'package' },
   )
-  parser.add_option('tree', 'Show what depends on what', { short_name: 't' })
-  parser.add_option('depth', 'How deep the tree goes; all the way by default', {
+  parser.add_option('tree', 'Show the dependency tree', { short_name: 't' })
+  parser.add_option('depth', 'How many levels of the tree to show (all of them by default)', {
     type: args.INT,
     metavar: 'levels',
   })
   parser.add_option(
     'verify',
-    'Check each installed package against what was installed',
+    'Check whether any installed package has changed since it was installed',
     nil,
   )
   parser.add_option('readme', "Print the package's README", nil)
-  parser.add_option('global', 'Describe the packages installed for this user', {
+  parser.add_option('global', 'Show the packages installed for your user', {
     short_name: 'g',
   })
   cli.add_registry_option(parser)

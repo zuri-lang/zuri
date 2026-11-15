@@ -1,15 +1,16 @@
 /**
  * @module record
  *
- * The class every model extends, and what a record does: save itself,
- * delete itself, check itself, and reach the records it is associated
- * with.
+ * The class that every model extends, and what a record can do: save
+ * itself, delete itself, validate itself, and reach the records it's
+ * associated with.
  *
- * A record never holds a connection. Every method that touches the
+ * A record never holds a connection. Every method that uses the
  * database takes the connection or transaction to use, so a record
- * loaded on one connection saves on whichever the code saving it is
- * using, a transaction included, and one kept after its connection was
- * closed or returned to a pool cannot write through it by accident.
+ * loaded on one connection is saved on whichever connection the code
+ * saving it is using, including a transaction. A record kept after its
+ * connection was closed or returned to a pool can't write through it by
+ * accident.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

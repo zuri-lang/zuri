@@ -1,14 +1,14 @@
 # Control Flow
 
-Control flow is how a program decides what to run next: run this only when
-that is true, run this until that stops being true, run this once for every
-item in a collection. Zuri has seven statements for it, and this section
-covers all of them.
+Control flow is how a program decides what to run next. You might want to
+run some code only when a condition is true, keep running it until a
+condition becomes false, or run it once for each item in a collection. Zuri
+has seven statements for this, and this section covers all of them.
 
 ## Blocks and Single Statements
 
-Every control-flow statement takes a **body**. A body is either a block in
-braces, or a single statement:
+Every control flow statement has a **body**, which is either a block in
+braces or a single statement:
 
 ```zuri
 var ready = true
@@ -27,11 +27,11 @@ launching
 launching again
 ```
 
-Both forms are the language. `if`, `else`, `while`, `do`, `for`, and a
-`when` branch inside `using` all accept either one.
+Both forms are valid. `if`, `else`, `while`, `do`, `for` and the `when`
+branches of a `using` statement all accept either one.
 
-`iter` is the exception. Its body must be a block, because the semicolons
-in its header would otherwise be ambiguous with the statement that follows:
+The exception is `iter`. Its body has to be a block, because otherwise the
+semicolons in its header could be confused with the statement that follows:
 
 ```zuri,ignore
 iter var i = 0; i < 3; i++ echo i
@@ -41,11 +41,11 @@ iter var i = 0; i < 3; i++ echo i
 SyntaxError: Expected '{' at the start of iter body.
 ```
 
-> The standard library and the examples in this book brace every body
-> except a short `when` branch. Braces make a one-line body easy to extend
-> into a three-line one later, and they keep the shape of a nested
-> statement obvious at a glance. It is a convention, not a rule — write
-> whichever form reads better in the code you are writing.
+> The standard library and the examples in this book use braces for every
+> body except short `when` branches. With braces, it's easy to turn a
+> one-line body into a three-line one later, and the structure of nested
+> statements is easier to see. This is only a convention, though, so use
+> whichever form reads better in your code.
 
 ## `if` / `else`
 
@@ -65,11 +65,11 @@ if score >= 90 {
 B
 ```
 
-There is no `elif`; `else if` is two keywords, and it works because the
+There's no `elif`. `else if` is simply two keywords, which works because the
 body of an `else` can itself be an `if` statement.
 
-The condition is any expression at all, and it is judged by **truthiness**
-rather than by being a `bool`:
+The condition can be any expression. It's checked for **truthiness**, so it
+doesn't have to be a `bool`:
 
 ```zuri
 var name = ''
@@ -85,15 +85,15 @@ if name {
 no name
 ```
 
-That is convenient and it is also where most bugs in new Zuri code come
-from, because a legitimate `0` is falsy. Re-read the table in
-[Data Types](ch03-02-data-types.md) before you write `if count` or
+This is convenient, but it's also the most common source of bugs in new Zuri
+code, because a perfectly valid `0` is falsy. Look at the table in [Data
+Types](ch03-02-data-types.md) again before you write `if count` or
 `if position`.
 
 ## The Conditional Expression
 
-`? :` is the expression form of `if`. It chooses between two values rather
-than between two statements:
+`? :` is the expression version of `if`. Instead of choosing between two
+statements, it chooses between two values:
 
 ```zuri
 var age = 20
@@ -106,10 +106,10 @@ echo status
 adult
 ```
 
-It nests, and it can span several lines. When breaking one across lines,
-`?` and `:` may either end a line or begin the next, whichever reads
-better; leading each branch with its operator keeps the shape of the
-choice visible:
+Conditional expressions can be nested, and they can span several lines. When
+you split one across lines, `?` and `:` can go at the end of a line or at
+the start of the next one. Putting each operator at the start of its branch
+makes the structure easier to follow:
 
 ```zuri
 var n = 7
@@ -123,13 +123,14 @@ echo size
 medium
 ```
 
-Use `? :` when you are producing a value and `if` when you are performing
-an action. A conditional expression whose branches are both side effects is
-harder to read than the `if` it replaced.
+Use `? :` when you need a value, and `if` when you want to do something. A
+conditional expression whose branches only exist for their side effects is
+harder to read than the `if` statement it replaced.
 
 ## `while`
 
-`while` tests before each pass, so a body may run zero times:
+`while` checks its condition before each pass, so the body might not run at
+all:
 
 ```zuri
 var n = 0
@@ -148,8 +149,9 @@ while 2
 
 ## `do` / `while`
 
-`do` runs the body once and *then* tests, so the body always runs at least
-once. Reach for it when the test depends on something the body produces:
+`do` runs the body once *before* it checks the condition, so the body always
+runs at least once. This is useful when the condition depends on something
+the body computes:
 
 ```zuri
 var m = 10
@@ -164,12 +166,12 @@ do {
 do 10
 ```
 
-The condition was false from the very start, and the body still ran.
+The condition was false from the start, but the body still ran once.
 
 ## `iter`
 
 `iter` is the counting loop. Its header has three clauses separated by
-semicolons: an initialiser, a condition, and an update.
+semicolons: an initializer, a condition and an update.
 
 ```zuri
 iter var i = 0; i < 3; i++ {
@@ -183,13 +185,13 @@ iter 1
 iter 2
 ```
 
-The initialiser runs once. The condition is tested before every pass. The
-update runs after every pass. A variable declared in the initialiser
-belongs to the loop and does not exist after it.
+The initializer runs once. The condition is checked before each pass, and
+the update runs after each pass. A variable declared in the initializer
+belongs to the loop and doesn't exist after the loop ends.
 
-The initialiser may declare several variables and the update may hold
-several expressions, each list separated by commas. The updates run in the
-order they are written:
+The initializer can declare several variables, and the update can contain
+several expressions, separated by commas. The updates run in the order
+they're written:
 
 ```zuri
 iter var i = 0, j = 10; i < 3; i++, j-- {
@@ -203,7 +205,7 @@ iter var i = 0, j = 10; i < 3; i++, j-- {
 2 8
 ```
 
-Every clause is optional:
+All three clauses are optional:
 
 ```zuri
 var k = 0
@@ -219,10 +221,10 @@ bare 0
 bare 1
 ```
 
-`iter ; ; { ... }` loops forever, though `while true` says it more plainly.
+`iter ; ; { ... }` loops forever, but `while true` is easier to read.
 
-The header may be spread over several lines, which is worth doing when the
-condition is long:
+You can spread the header over several lines, which helps when the condition
+is long:
 
 ```zuri
 iter var i = 1; i <= 3; i++ {
@@ -238,10 +240,11 @@ iter var i = 1; i <= 3; i++ {
 
 ## `for` / `in`
 
-`for` walks an iterable: a list, a dictionary, a string, a range, a byte
-stream, or any class that implements the iterator protocol.
+`for` loops over an iterable, such as a list, a dictionary, a string, a
+range, a byte stream, or an instance of any class that implements the
+iterator protocol.
 
-With one variable you get the **value**:
+With one variable, you get each **value**:
 
 ```zuri
 for ch in 'hey' {
@@ -255,7 +258,7 @@ e
 y
 ```
 
-With two, you get the **key first and the value second**:
+With two variables, you get the **key first and the value second**:
 
 ```zuri
 for index, value in ['a', 'b'] {
@@ -274,11 +277,11 @@ x=1
 y=2
 ```
 
-For a list the key is the index, for a dictionary it is the key, and for a
-string it is the character position. Dictionaries iterate in insertion
-order, and so does everything else with an order to preserve.
+For a list, the key is the index. For a dictionary, it's the key, and for a
+string, it's the position of the character. Dictionaries are iterated in
+insertion order, as is anything else whose order is preserved.
 
-Ranges are exclusive at the top:
+Ranges don't include their upper bound:
 
 ```zuri
 for i in 0..3 {
@@ -292,9 +295,8 @@ for i in 0..3 {
 2
 ```
 
-The iterable expression is evaluated exactly **once**, before the first
-pass. Calling a function in that position calls it once, not once per
-element:
+The expression after `in` is evaluated only **once**, before the first pass.
+If you call a function there, it's called once, not once per element:
 
 ```zuri
 def source() {
@@ -314,12 +316,12 @@ source() called
 3
 ```
 
-[Chapter 6](ch06-03-decorated-methods.md) shows how to make your own class
+[Chapter 6](ch06-03-decorated-methods.md) shows how to make your own classes
 work with `for` by defining `@key()` and `@value()`.
 
 ## `break` and `continue`
 
-`continue` skips to the next pass, and `break` leaves the loop entirely:
+`continue` skips to the next pass, and `break` exits the loop completely:
 
 ```zuri
 iter var i = 0; i < 5; i++ {
@@ -340,8 +342,8 @@ iter var i = 0; i < 5; i++ {
 2
 ```
 
-Both apply to the innermost enclosing loop, and there are no loop labels.
-To leave a nested loop you either carry a flag:
+Both apply to the innermost loop, and Zuri doesn't have loop labels. To exit
+a nested loop, you can use a flag:
 
 ```zuri
 var found = false
@@ -365,7 +367,8 @@ iter var i = 1; i < 4; i++ {
 found 2 x 2
 ```
 
-or, more often, put the nested loop in a function and `return` out of it:
+Or, more often, you can move the nested loop into a function and `return`
+from it:
 
 ```zuri
 def first_product(target) {
@@ -389,12 +392,12 @@ echo first_product(99)
 nil
 ```
 
-The second version says what it is looking for in its name, and it has no
-flag to keep in sync. Prefer it.
+The second version is better. Its name says what it's looking for, and
+there's no flag to keep in sync.
 
 ## `using` / `when`
 
-`using` compares one subject against several candidate values:
+`using` compares one value against several possible values:
 
 ```zuri
 var grade = 'B'
@@ -410,16 +413,16 @@ using grade {
 good
 ```
 
-Several values on one `when` are alternatives, not a sequence: this `when`
-matches `'B'` **or** `'C'`. The first branch that matches runs, and then the
-statement is over — there is no fall-through, and no `break` to remember.
+When a `when` lists several values, any one of them can match, so this
+`when` matches `'B'` **or** `'C'`. The first branch that matches runs, and
+then the statement ends. There's no fall-through, so you don't need `break`.
 
-Matching uses the same equality as `==`, which means `using` works on
-numbers, strings and booleans, and compares instances by identity, or
-through `@eq` when their class defines one.
+Matching uses the same equality as `==`. That means `using` works with
+numbers, strings and booleans, and compares instances by identity, or with
+`@eq` if their class defines it.
 
-`default` is optional. When nothing matches and there is no `default`,
-nothing happens:
+`default` is optional. If nothing matches and there's no `default`, nothing
+happens:
 
 ```zuri
 using 99 {
@@ -433,7 +436,7 @@ echo 'nothing ran, and that is not an error'
 nothing ran, and that is not an error
 ```
 
-A `when` branch takes a block when it needs one:
+A `when` branch can use a block when it needs more than one statement:
 
 ```zuri
 var command = 'q'
@@ -453,13 +456,13 @@ saving
 goodbye
 ```
 
-`using` is the right shape whenever you are dispatching on one value to
-many outcomes. A chain of `else if` comparing the same variable over and
-over is the same thing written longer.
+Use `using` whenever you need to choose between many outcomes based on one
+value. A chain of `else if` statements that compares the same variable again
+and again does the same job with more code.
 
 ## `assert`
 
-`assert` checks a condition and raises an `AssertError` when it is false:
+`assert` checks a condition and raises an `AssertError` if it's false:
 
 ```zuri
 var items = [1]
@@ -474,7 +477,7 @@ echo 'both assertions held'
 both assertions held
 ```
 
-The optional second argument is the message the error carries:
+The optional second argument is the message for the error:
 
 ```zuri,ignore
 assert 1 == 2, 'arithmetic is broken'
@@ -484,15 +487,15 @@ assert 1 == 2, 'arithmetic is broken'
 Unhandled AssertError: arithmetic is broken
 ```
 
-Assertions state what you believe is already true. They are for conditions
-that should be impossible, not for checking input that might legitimately
-be wrong — raise a `ValueError` for that.
-[Chapter 7](ch07-00-error-handling.md) draws the line in detail.
+Use assertions for things you believe are already true, meaning conditions
+that should never happen. Don't use them to check input that might really be
+wrong. Raise a `ValueError` for that instead. [Chapter
+7](ch07-00-error-handling.md) explains the difference in more detail.
 
 ## `return`
 
-`return` leaves the current function, with a value if you give it one and
-`nil` if you do not:
+`return` exits the current function. It returns the value you give it, or
+`nil` if you don't give it one:
 
 ```zuri
 def classify(n) {
@@ -518,9 +521,9 @@ zero
 positive
 ```
 
-A function that reaches its closing brace without a `return` yields `nil`.
-There are no implicit returns; the last expression in a body is not its
-value.
+A function that reaches its closing brace without a `return` returns `nil`.
+There are no implicit returns, so the last expression in a function body
+isn't its return value.
 
-`return` is only legal inside a function. At the top level of a script it
-is a syntax error, because there is nothing to return from.
+`return` can only be used inside a function. At the top level of a script,
+it's a syntax error, because there's nothing to return from.

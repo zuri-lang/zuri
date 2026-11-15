@@ -1,13 +1,13 @@
 /**
  * @module util
  *
- * The small, exact pieces of the HTTP specifications that several parts
- * of the module need: date formatting, percent-encoding, quoted strings,
- * header parameter lists, path normalisation and authorization headers.
+ * Small pieces of the HTTP specifications that several parts of the
+ * module need: date formatting, percent-encoding, quoted strings, lists
+ * of header parameters, path normalization and authorization headers.
  *
- * `secure_equals()` and `random_token()` are here because they are used
- * where timing matters: comparing a token in constant time, and
- * generating one that cannot be guessed.
+ * `secure_equals()` and `random_token()` are here because they're used
+ * where timing matters, for comparing a token in constant time and
+ * generating one that can't be guessed.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -37,13 +37,13 @@ var _HEX_DIGITS = '0123456789abcdef'
 
 /**
  * Finds the first occurrence of the byte sequence `needle` in
- * `haystack`, at or after `from`, or `-1` when it does not occur.
+ * `haystack`, at or after `from`, or returns `-1` if it doesn't occur.
  *
  * The built-in `bytes.index_of()` searches for a single byte, which
- * is not enough for the delimiters HTTP is full of - CRLF, the blank
- * line ending a head, a multipart boundary. This finds candidate
- * positions with that fast single-byte search and only then compares
- * the rest.
+ * isn't enough for the delimiters that HTTP uses all the time, such as
+ * CRLF, the blank line at the end of a head, or a multipart boundary.
+ * This function uses that fast single-byte search to find possible
+ * positions, and only then compares the rest.
  *
  * @param bytes haystack
  * @param bytes needle
@@ -264,14 +264,16 @@ def _format_date_calc(timestamp) {
 }
 
 /**
- * Formats a Unix timestamp as an IMF-fixdate, the one date format RFC
- * 9110 §5.6.7 requires every HTTP sender to produce:
+ * Formats a Unix timestamp as an IMF-fixdate, the only date format that
+ * RFC 9110 §5.6.7 requires every HTTP sender to produce, such as
  * `Sun, 06 Nov 1994 08:49:37 GMT`.
  *
- * Always UTC, always fixed-width, never localised. The two obsolete
- * formats are accepted by `parse_date()` but never emitted.
+ * The result is always in UTC, always the same width and never
+ * localized. `parse_date()` accepts the two obsolete formats, but
+ * they're never produced.
  *
- * @param ?number timestamp: seconds since the epoch; defaults to now
+ * @param ?number timestamp: seconds since the epoch. Defaults to the
+ *    current time.
  * @returns string
  */
 def format_date(timestamp) {
@@ -406,14 +408,15 @@ def parse_date(text: string) {
 }
 
 /**
- * Splits a header value that carries parameters - a media type, a
- * `Content-Disposition`, a challenge - into its leading value and a
- * dictionary of lowercased parameter names to values.
+ * Splits a header value that has parameters, such as a media type, a
+ * `Content-Disposition` or a challenge, into its main value and a
+ * dictionary that maps lowercase parameter names to values.
  *
- * Quoted strings are unquoted and their backslash escapes resolved.
- * RFC 5987 extended parameters (`filename*=UTF-8''na%C3%AFve.txt`)
- * are decoded and take precedence over the plain form of the same
- * name, which is what lets a non-ASCII upload filename survive.
+ * Quoted strings are unquoted, and their backslash escapes are
+ * resolved. RFC 5987 extended parameters, such as
+ * `filename*=UTF-8''na%C3%AFve.txt`, are decoded and take priority over
+ * the plain form of the same parameter, which is what lets a file name
+ * with non-ASCII characters survive an upload.
  *
  * ```zuri
  * parse_parameters('text/html; charset=utf-8')
@@ -614,13 +617,13 @@ def _hex_value(c) {
 }
 
 /**
- * Percent-decodes a URI component, turning `+` into a space only when
- * `plus_as_space` is set - which is right for a query string or a form
- * body, and wrong for a path, where `+` is a literal plus.
+ * Percent-decodes a URI component. `+` is only turned into a space when
+ * `plus_as_space` is set, which is right for a query string or a form
+ * body, but wrong for a path, where `+` is a literal plus sign.
  *
- * Invalid escapes are left as-is rather than raising: a malformed `%`
- * in a path is a 404 waiting to happen, not a reason to drop the
- * connection.
+ * Invalid escapes are left unchanged instead of raising an error. An
+ * invalid `%` in a path should lead to a 404, not to the connection
+ * being dropped.
  *
  * @param string text
  * @param ?bool plus_as_space
@@ -759,12 +762,13 @@ def normalize_path(path: string) {
 }
 
 /**
- * Compares two strings without leaking, through how long the
- * comparison takes, where they first differ.
+ * Compares two strings without revealing where they first differ
+ * through how long the comparison takes.
  *
- * Use this for anything an attacker can submit repeatedly and tune -
- * a session token, an API key, an HMAC - where a byte-at-a-time
- * comparison hands over the secret one guess at a time.
+ * Use this for anything an attacker can submit repeatedly while
+ * adjusting it, such as a session token, an API key or an HMAC. A
+ * comparison that stops at the first different byte would reveal the
+ * secret one guess at a time.
  *
  * @param string a
  * @param string b
@@ -815,14 +819,14 @@ def random_token(length) {
 }
 
 /**
- * Parses an HTTP Basic `Authorization` field value into a username
- * and password.
+ * Parses the value of an HTTP Basic `Authorization` field into a
+ * username and password.
  *
  * The scheme name is matched case-insensitively, as RFC 9110 §11.1
- * requires. A header that is not a well-formed Basic credential -
- * wrong scheme, undecodable base64, no colon in the decoded pair -
- * comes back as `nil` rather than raising, since a malformed
- * credential is a `401`, not a crash.
+ * requires. A header that isn't a valid Basic credential, because of
+ * the wrong scheme, base64 that can't be decoded or a decoded value
+ * without a colon, returns `nil` instead of raising an error, because
+ * an invalid credential should lead to a `401`, not a crash.
  *
  * @param ?string header
  * @returns ?list: `[username, password]`, or `nil`

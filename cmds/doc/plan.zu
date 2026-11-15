@@ -35,35 +35,35 @@ def _absolute(path: string, base: string) {
 def parser() {
   var parser = args.Parser('zuri doc', false)
 
-  parser.description = 'Builds a documentation site from pages written in Markdown, ' +
-      'or from the doc blocks in a project.'
-  parser.epilog = 'With no command, the documentation is built. It is the directory holding ' +
-      'doc.toml: the one named, the current directory, or docs or docs/reference in ' +
-      'the project. generate writes to docs/reference unless told otherwise, and ' +
-      'build and serve generate a reference again before building it.'
+  parser.description = 'Builds a documentation site from Markdown pages, or an API reference ' +
+      'from the doc comments in a project.'
+  parser.epilog = 'If no command is given, the documentation is built. The documentation is the ' +
+      'directory that contains doc.toml: the directory named, the current directory, or ' +
+      'docs or docs/reference in the project. generate writes to docs/reference unless you ' +
+      'say otherwise, and build and serve regenerate the reference before building.'
 
-  parser.add_command('build', 'Builds the site')
+  parser.add_command('build', 'Build the site')
   parser.add_command(
     'serve',
-    'Builds and serves the site, rebuilding it as the documentation changes',
+    'Build and serve the site, rebuilding it when the documentation changes',
   )
-  parser.add_command('init', 'Starts new documentation')
+  parser.add_command('init', 'Create new documentation')
   parser.add_command(
     'generate',
-    "Writes an API reference from the project's doc blocks",
+    "Generate an API reference from the project's doc comments",
   )
-  parser.add_command('clean', 'Removes the built site')
+  parser.add_command('clean', 'Remove the built site')
 
-  parser.add_index('dir', 'The documentation: a directory holding doc.toml', {
+  parser.add_index('dir', 'The documentation directory, which contains doc.toml', {
     metavar: 'dir',
   })
 
   parser.add_option(
     'out',
-    'Writes the site here instead of where doc.toml says',
+    'Write the site to this directory instead of the one in doc.toml',
     { short_name: 'o', type: args.STRING, metavar: 'dir' },
   )
-  parser.add_option('open', 'Opens the site in a browser once it is built', nil)
+  parser.add_option('open', 'Open the site in a browser once it\'s built', nil)
   parser.add_option(
     'strict',
     'With build or generate, fails over a warning, such as a link inside the ' +
@@ -78,17 +78,17 @@ def parser() {
   )
   parser.add_option(
     'port',
-    'With serve, the port to listen on; ${DEFAULT_PORT} by default',
+    'With serve, the port to listen on',
     { short_name: 'p', type: args.INT, metavar: 'port' },
   )
   parser.add_option(
     'host',
-    'With serve, the address to listen on; ${DEFAULT_HOST}, this machine only, by default',
+    'With serve, the address to listen on (only this machine by default)',
     { type: args.STRING, metavar: 'address' },
   )
   parser.add_option(
     'title',
-    "With init or generate, the new documentation's title",
+    "With init or generate, the title of the new documentation",
     { type: args.STRING, metavar: 'text' },
   )
 

@@ -3,9 +3,9 @@
 /**
  * @module http.h2.frames
  *
- * The HTTP/2 frame layer (RFC 9113 §4 and §6): a nine-octet header -
- * a 24-bit length, a type, a flags byte, and a 31-bit stream
- * identifier - followed by a payload.
+ * The HTTP/2 frame layer (RFC 9113 §4 and §6). Each frame has a
+ * nine-byte header, made up of a 24-bit length, a type, a byte of flags
+ * and a 31-bit stream identifier, followed by a payload.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -26,7 +26,7 @@ var PREFACE = 'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n'
 var DATA = 0
 /** HEADERS frame. @type int */
 var HEADERS = 1
-/** PRIORITY frame; deprecated by RFC 9113 and ignored here. @type int */
+/** PRIORITY frame. RFC 9113 deprecates it, and it's ignored here. @type int */
 var PRIORITY = 2
 /** RST_STREAM frame. @type int */
 var RST_STREAM = 3
@@ -104,9 +104,9 @@ var HTTP_1_1_REQUIRED = 13
 class Frame {
 
   /**
-   * The frame type - one of the constants above. An unrecognised type
-   * is kept as-is; RFC 9113 §4.1 requires an endpoint to ignore
-   * frames it does not know rather than fail on them.
+   * The frame type, which is one of the constants above. A type that
+   * isn't recognized is kept as it is, because RFC 9113 §4.1 requires
+   * an endpoint to ignore frames it doesn't know instead of failing.
    * @type int
    */
   var type
@@ -118,8 +118,8 @@ class Frame {
   var flags
 
   /**
-   * The stream this frame belongs to; `0` for connection-level
-   * frames.
+   * The stream this frame belongs to, or `0` for a frame that applies
+   * to the whole connection.
    * @type int
    */
   var stream_id
@@ -222,16 +222,16 @@ def frame_ready(connection, max_frame_size: number) {
 }
 
 /**
- * Reads one frame off a connection.
+ * Reads one frame from a connection.
  *
- * Padding is stripped here, so a caller never has to think about it,
- * and a pad length that does not fit inside the frame is rejected -
- * that mismatch is a connection error, not a frame to salvage.
+ * Padding is removed here, so callers never have to deal with it. A pad
+ * length that doesn't fit inside the frame is rejected, because that's
+ * a connection error, not a frame to recover from.
  *
  * @param Connection connection
- * @param number max_frame_size: refuse anything larger
+ * @param number max_frame_size: the largest frame to accept
  * @returns Frame
- * @throws ProtocolError on a malformed or over-large frame
+ * @throws ProtocolError if the frame is malformed or too large
  */
 def read_frame(connection, max_frame_size: number) {
   var header = connection.read_exactly(9)
@@ -327,14 +327,14 @@ def encode_settings(values: dict) {
 /**
  * Parses a SETTINGS payload into a dictionary.
  *
- * Unknown identifiers are kept rather than dropped - an endpoint must
- * ignore settings it does not understand, and keeping them makes that
- * the caller's decision rather than a silent one here.
+ * Unknown identifiers are kept. An endpoint must ignore settings it
+ * doesn't understand, and keeping them leaves that to the caller
+ * instead of discarding them silently here.
  *
  * @param bytes payload
  * @returns dict
- * @throws ProtocolError if the payload is not a whole number of
- *    six-octet entries
+ * @throws ProtocolError if the payload isn't a whole number of six-byte
+ *    entries
  */
 def decode_settings(payload) {
   if payload.length() % 6 != 0 {
@@ -354,10 +354,11 @@ def decode_settings(payload) {
 /**
  * Builds a GOAWAY payload.
  *
- * @param int last_stream_id: the highest stream this endpoint acted on
+ * @param int last_stream_id: the highest-numbered stream this endpoint
+ *    processed
  * @param int error_code
- * @param ?string debug_message: for humans reading a packet capture;
- *    never interpreted by the peer
+ * @param ?string debug_message: for people reading a packet capture.
+ *    The peer never interprets it.
  * @returns bytes
  */
 def encode_goaway(

@@ -1,47 +1,48 @@
 # Parsing the Command Line
 
-A program started from a shell is handed a list of strings and nothing
-else. Everything a user meant by `-v`, `--output report.csv` or
-`commit -m "fix the thing"` has to be recovered from that list, and the
-recovering is where command-line programs quietly rot. The first
-version reads `os.args` and checks a few positions. The second adds a
-flag, and the checks become a chain of conditions. By the fourth nobody
-can say what `-vo` does without running it, the help text has drifted
-from the code that reads the flags, and a typo silently means something
-else instead of saying so.
+A program started from a shell receives a list of strings and nothing else.
+Whatever the user meant by `-v`, `--output report.csv` or
+`commit -m "fix the thing"` has to be worked out from that list, and that's
+where command-line programs tend to slowly fall apart. The first version
+reads `os.args` and checks a few positions. The second adds a flag, and the
+checks become a chain of conditions. By the fourth version, nobody can say
+what `-vo` does without trying it, the help text no longer matches the code
+that reads the flags, and a typo quietly does something else instead of
+reporting an error.
 
-The `args` module takes the declaration instead. You say which options
-exist, what type each one carries and which are required; it works out
-what the user typed, converts it, validates it, writes the help text
-from the same declarations, and refuses anything that does not fit.
+The `args` module takes a declarative approach instead. You declare which
+options exist, what type of value each one takes and which ones are
+required. The module works out what the user typed, converts and validates
+the values, generates the help text from the same declarations, and rejects
+anything that doesn't match.
 
-- [The First Parser](#the-first-parser)
+- [A First Parser](#a-first-parser)
 - [What `parse()` Returns](#what-parse-returns)
 - [Options](#options)
-  - [Attaching a Value](#attaching-a-value)
+  - [Passing a Value](#passing-a-value)
   - [Types](#types)
-  - [Defaults and Absence](#defaults-and-absence)
+  - [Defaults and Missing Options](#defaults-and-missing-options)
   - [Requiring an Option](#requiring-an-option)
-  - [Restricting the Value](#restricting-the-value)
-  - [Collecting Repeats](#collecting-repeats)
-  - [Retiring an Option](#retiring-an-option)
+  - [Restricting the Allowed Values](#restricting-the-allowed-values)
+  - [Repeated Options](#repeated-options)
+  - [Deprecating an Option](#deprecating-an-option)
 - [Positional Arguments](#positional-arguments)
-- [Sub-commands](#sub-commands)
-  - [A Value of Its Own](#a-value-of-its-own)
-  - [Running Something Directly](#running-something-directly)
-- [The Shapes a Command Line Can Take](#the-shapes-a-command-line-can-take)
-  - [Bundling](#bundling)
-  - [Abbreviation](#abbreviation)
+- [Subcommands](#subcommands)
+  - [Commands That Take a Value](#commands-that-take-a-value)
+  - [Attaching an Action](#attaching-an-action)
+- [Command-Line Conventions](#command-line-conventions)
+  - [Combining Flags](#combining-flags)
+  - [Abbreviations](#abbreviations)
   - [End of Options](#end-of-options)
-  - [Arguments From a File](#arguments-from-a-file)
+  - [Reading Arguments From a File](#reading-arguments-from-a-file)
 - [Help](#help)
-- [When It Does Not Fit](#when-it-does-not-fit)
-- [Testing a Command Line](#testing-a-command-line)
+- [Errors](#errors)
+- [Testing Command-Line Parsing](#testing-command-line-parsing)
 - [Module Reference](#module-reference)
 
-## The First Parser
+## A First Parser
 
-Three lines of declaration and a call:
+It takes three lines of declarations and one call:
 
 ```zuri
 import args
@@ -61,14 +62,14 @@ echo parsed.options.name
 Ada
 ```
 
-`parse()` with no argument reads the real command line, which is what a
-program does. Everywhere in this chapter it is given an explicit list
-instead, because that is also how you test one, and because a book
-example cannot rely on how you invoked it.
+`parse()` without an argument reads the real command line, which is what a
+program normally does. Throughout this chapter, it's given an explicit list
+instead, because that's also how you test a parser, and because an example
+in a book can't depend on how you ran it.
 
 ## What `parse()` Returns
 
-One dictionary with three keys, always:
+It always returns a dictionary with three keys:
 
 ```zuri
 import args
@@ -85,19 +86,19 @@ echo parser.parse(['-v', 'check', 'notes.txt'])
 {options: {verbose: true}, command: {name: check, value: nil}, indexes: [notes.txt]}
 ```
 
-`options` holds every option that was supplied or has a default.
-`command` is `nil` or the sub-command that was named. `indexes` holds
-the positional arguments in the order they were declared. The three are
-independent: a program can use one of them and ignore the rest.
+`options` holds every option that was given on the command line or has a
+default. `command` is `nil`, or the subcommand that was given. `indexes`
+holds the positional arguments, in the order they were declared. The three
+are independent, so a program can use one of them and ignore the others.
 
-A declared positional that nobody filled and that has no default keeps
-its place in `indexes` as a `nil`, so the argument after it is still
-found at the index it was declared at rather than sliding down one.
+A declared positional argument that wasn't given and has no default stays in
+`indexes` as `nil`, so the argument after it is still at the index where it
+was declared, instead of moving down one place.
 
 ## Options
 
-An option is declared by its long name. The short name is optional, and
-so is everything else:
+An option is declared by its long name. The short name is optional, and so
+is everything else:
 
 ```zuri
 import args
@@ -118,10 +119,10 @@ echo parser.parse(['-o', 'out.csv', '-f']).options
 
 `--output` and `-o` are the same option.
 
-### Attaching a Value
+### Passing a Value
 
-A long option takes its value either as the next argument or attached
-with `=`. The two spellings mean the same thing:
+A long option takes its value either as the next argument or attached with
+`=`. The two forms mean the same thing:
 
 ```zuri
 import args
@@ -144,11 +145,11 @@ out.csv
 out.csv
 ```
 
-The split is on the first `=`, so `--output=a=b` writes to `a=b` rather
-than losing half the name, and `--output=` is an explicit empty string
-rather than a missing value. The attached form is also the only way to
-pass a value that begins with a dash, because in `--output -5` the
-parser reads `-5` as an option:
+The argument is split at the first `=`, so `--output=a=b` writes to `a=b`
+instead of losing half of the name, and `--output=` sets the value to an
+empty string instead of leaving it missing. The attached form is also the
+only way to pass a value that starts with a dash, because in `--output -5`,
+the parser reads `-5` as an option:
 
 ```zuri
 import args
@@ -163,30 +164,29 @@ echo parser.parse(['--offset=-5']).options.offset
 -5
 ```
 
-A short option takes its value as the next argument only: `-o out.csv`,
-never `-oout.csv` and never `-o=out.csv`. A short token is a bundle of
-single-character flags, and neither `=` nor the letters of a value are
-flags.
+A short option only takes its value as the next argument, as in
+`-o out.csv`, never `-oout.csv` or `-o=out.csv`. A short option token is a
+group of single-character flags, and neither `=` nor the letters of a value
+are flags.
 
 ### Types
 
-The type decides what the string becomes and whether a value is taken
-at all.
+The type determines what the string is converted to, and whether the option
+takes a value at all.
 
-| Constant | The option takes | Becomes |
+| Constant | The option takes | The result is |
 | --- | --- | --- |
-| `args.NONE` | nothing | `true` when present |
-| `args.STRING` | a value | the string itself |
-| `args.INT` | a value | a whole number |
-| `args.NUMBER` | a value | a number, fractions allowed |
-| `args.BOOL` | a value | a boolean |
-| `args.LIST` | a value, repeatable | a list of strings |
-| `args.CHOICE` | a value from a fixed set | the string, or what it maps to |
-| `args.OPTIONAL` | a value, if one is there | the string, or `true` |
+| `args.NONE` | Nothing | `true` when the option is present |
+| `args.STRING` | A value | The string itself |
+| `args.INT` | A value | A whole number |
+| `args.NUMBER` | A value | A number, which can have a fractional part |
+| `args.BOOL` | A value | A boolean |
+| `args.LIST` | A value, and can be repeated | A list of strings |
+| `args.CHOICE` | A value from a fixed set | The string, or the value it maps to |
+| `args.OPTIONAL` | A value, if there is one | The string, or `true` |
 
-`NONE` is the default and is the plain flag. `BOOL` is the one that
-takes an explicit answer, and it accepts every spelling a user is
-likely to reach for:
+`NONE` is the default, and it's a plain flag. `BOOL` takes an explicit
+value, and it accepts every spelling a user is likely to try:
 
 ```zuri
 import args
@@ -208,12 +208,12 @@ false
 false
 ```
 
-`1`, `true`, `yes`, `y` and `on` all mean true; `0`, `false`, `no`, `n`
+`1`, `true`, `yes`, `y` and `on` all mean true, and `0`, `false`, `no`, `n`
 and `off` all mean false.
 
-### Defaults and Absence
+### Defaults and Missing Options
 
-`value` is what the option is worth when nobody supplies it:
+`value` is the option's value when it isn't given on the command line:
 
 ```zuri
 import args
@@ -235,12 +235,11 @@ echo parser.parse(['-c', '5', '-v']).options
 {count: 5, verbose: true}
 ```
 
-An option with no default and no value on the command line is not in
-the dictionary at all. That is the difference between a flag that was
-left off and one that was set to false, and it is why `verbose` is
-missing from the first line rather than sitting there as `false`. Use
-`options.contains('verbose')` to ask, or give the option a default and
-stop having to.
+If an option has no default and isn't given on the command line, it isn't in
+the dictionary at all. That's how you tell a flag that was left out from one
+that was set to false, and it's why `verbose` is missing from the first line
+instead of being `false`. Use `options.contains('verbose')` to check, or
+give the option a default so you don't need to.
 
 ### Requiring an Option
 
@@ -261,13 +260,13 @@ echo parser.parse(['-o', 'out.csv']).options.output
 out.csv
 ```
 
-Leave it off and the program stops with `error: required option
---output is missing`, the usage line, and exit status 1. Nothing else
-runs.
+If the option is left out, the program stops with
+`error: required option --output is missing`, followed by the usage line,
+and exits with status 1. Nothing else runs.
 
-### Restricting the Value
+### Restricting the Allowed Values
 
-`CHOICE` with a list accepts only what is in the list:
+`CHOICE` with a list only accepts the values in the list:
 
 ```zuri
 import args
@@ -285,13 +284,14 @@ echo parser.parse(['--level', 'loud']).options.level
 loud
 ```
 
-Anything else stops the program with `error: --level expects one of
-{'quiet', 'normal', 'loud'}, got "shouty"`, which names the offender
-and lists the alternatives without you writing either.
+Any other value stops the program with
+`error: --level must be one of quiet, normal or loud, not "shouty"`,
+which names the invalid value and lists the alternatives, without you having
+to write either.
 
-Give it a dictionary instead and the user types the key while the
-program receives the value. This is how a short spelling on the command
-line becomes a meaningful value inside:
+If you pass a dictionary instead, the user types the key and the program
+receives the corresponding value. This is how you turn a short name on the
+command line into a more meaningful value inside the program:
 
 ```zuri
 import args
@@ -310,9 +310,9 @@ echo parser.parse(['-m', 'rw']).options.mode
 read-write
 ```
 
-### Collecting Repeats
+### Repeated Options
 
-`LIST` accumulates every time the option appears:
+`LIST` collects a value every time the option appears:
 
 ```zuri
 import args
@@ -327,10 +327,10 @@ echo parser.parse(['-t', 'urgent', '-t', 'docs', '--tag', 'review']).options.tag
 [urgent, docs, review]
 ```
 
-### Retiring an Option
+### Deprecating an Option
 
-An option you no longer want but cannot remove yet keeps working and
-says so on stderr:
+An option that you no longer want, but can't remove yet, keeps working and
+prints a warning:
 
 ```zuri
 import args
@@ -348,12 +348,12 @@ echo parser.parse(['--old-name', 'Ada']).options['old-name']
 Ada
 ```
 
-The warning goes to stderr, so it reaches the person running the
-program without contaminating output that something else is reading.
+The warning goes to standard error, so the person running the program sees
+it, but it doesn't end up in output that another program might be reading.
 
 ## Positional Arguments
 
-A positional argument is declared with `add_index`, and they fill in
+Positional arguments are declared with `add_index`, and they're filled in
 the order they were declared:
 
 ```zuri
@@ -372,14 +372,15 @@ echo parser.parse(['in.csv', 'report.csv']).indexes
 [in.csv, report.csv]
 ```
 
-They take `type`, `choices`, `value`, `required` and `metavar`, the
-same as options do. A positional that is neither declared nor expected
-is an error rather than something quietly ignored, which is what makes
-a mistyped flag fail loudly instead of being swallowed as a filename.
+They accept `type`, `choices`, `value`, `required` and `metavar`, just as
+options do. A positional argument that wasn't declared is an error rather
+than being silently ignored, which means a mistyped flag fails with an error
+instead of being taken as a file name.
 
-## Sub-commands
+## Subcommands
 
-A program with several jobs gives each one a name and its own options:
+A program that does several different jobs can give each one a name and its
+own options:
 
 ```zuri
 import args
@@ -403,21 +404,21 @@ echo parser.parse(['remove', '-f'])
 {options: {force: true}, command: {name: remove, value: nil}, indexes: []}
 ```
 
-`add_command` returns the command, so its options chain straight off
-it. A command's own options land in the same `options` dictionary as
-the global ones; `command.name` is what tells you which job was asked
+`add_command` returns the command, so you can chain its options directly
+after it. A command's options are added to the same `options` dictionary as
+the global options, and `command.name` tells you which job the user asked
 for.
 
-Order matters, and it is the order every tool of this shape uses: the
-parser's own options come before the command name, and the command's
-options come after it. `notes -v list` works and `notes list -v` does
-not, because after `list` the parser is reading `list`'s options and
-`-v` is not one of them.
+The order matters, and it's the same order every tool like this uses: the
+parser's own options come before the command name, and the command's options
+come after it. `notes -v list` works, but `notes list -v` doesn't, because
+after `list`, the parser is reading `list`'s options, and `-v` isn't one of
+them.
 
-### A Value of Its Own
+### Commands That Take a Value
 
-A command can take one value directly, the way `git commit -m` takes a
-message:
+A command can take a single value directly, in the way that `git commit -m`
+takes a message:
 
 ```zuri
 import args
@@ -434,14 +435,13 @@ echo parser.parse(['add', 'buy milk', '-p'])
 {options: {pin: true}, command: {name: add, value: buy milk}, indexes: []}
 ```
 
-The value comes immediately after the command name, before the
-command's own options. `metavar` is the word the help text shows in
-place of the value, so the usage line reads `notes add <text>` rather
-than `notes add <value>`.
+The value comes straight after the command name, before the command's own
+options. `metavar` is the word the help text shows in place of the value, so
+the usage line reads `notes add <text>` instead of `notes add <value>`.
 
-### Running Something Directly
+### Attaching an Action
 
-A command can carry the function that implements it, called after
+A command can include the function that implements it, which is called after
 parsing with the options and the command's value:
 
 ```zuri
@@ -467,19 +467,18 @@ parser.parse(['add', 'buy milk', '-p'])
 [pinned] buy milk
 ```
 
-This is worth reaching for once there are more than two or three
-commands, because the alternative is a chain of comparisons on
-`command.name` that has to be kept in step with the declarations by
-hand.
+This is worth using once you have more than two or three commands.
+Otherwise, you end up with a chain of comparisons on `command.name` that you
+have to keep in sync with the declarations yourself.
 
-## The Shapes a Command Line Can Take
+## Command-Line Conventions
 
-Users type things the parser was not asked about directly. These are
-the conventions it honours.
+Users type things that the parser wasn't explicitly told about. These are
+the conventions it supports.
 
-### Bundling
+### Combining Flags
 
-Several flags behind one dash:
+You can put several flags after a single dash:
 
 ```zuri
 import args
@@ -495,14 +494,13 @@ echo parser.parse(['-vq']).options
 {verbose: true, quiet: true}
 ```
 
-Every character in a bundle has to name an option. `-vqz` is an error
-rather than `-vq` with the `z` quietly dropped, which is the difference
-between a typo you find now and one you find after the run.
+Every character in the group has to be a declared option. `-vqz` is an
+error, rather than `-vq` with the `z` silently ignored, so you find out
+about the typo now and not after the program has run.
 
-### Abbreviation
+### Abbreviations
 
-A long option may be shortened to any prefix that is still
-unambiguous:
+A long option can be shortened to any prefix that's still unambiguous:
 
 ```zuri
 import args
@@ -517,15 +515,15 @@ echo parser.parse(['--verb']).options
 {verbose: true}
 ```
 
-Set `parser.allow_abbrev = false` to turn this off, which is worth
-doing for a program whose option set is still growing: a prefix that is
-unambiguous today stops being so the day somebody adds `--version`, and
-a script written against the short form breaks.
+Set `parser.allow_abbrev = false` to turn this off. That's worth doing for a
+program whose set of options is still growing, because a prefix that's
+unambiguous today stops being unambiguous as soon as someone adds
+`--version`, and any script written with the short form breaks.
 
 ### End of Options
 
-A bare `--` ends option parsing. Everything after it is positional,
-even when it starts with a dash:
+A `--` on its own ends option parsing. Everything after it is a positional
+argument, even if it starts with a dash:
 
 ```zuri
 import args
@@ -542,13 +540,13 @@ echo parser.parse(['-v', '--', 'grep', '-i']).indexes
 [grep, -i]
 ```
 
-This is how a program passes arguments through to another one without
-having to know what they mean.
+This is how a program can pass arguments on to another program without
+needing to understand them.
 
-### Arguments From a File
+### Reading Arguments From a File
 
-A token beginning with `@` is replaced by the contents of that file,
-one argument per line:
+An argument that starts with `@` is replaced by the contents of that file,
+with one argument per line:
 
 ```zuri
 import args
@@ -568,16 +566,16 @@ echo parser.parse(['@greet.args', '--name', 'Grace']).options
 {name: Grace, count: 3}
 ```
 
-The file is expanded in place, so anything after it still wins. This is
-the escape hatch for a command line that has outgrown what a shell will
-comfortably hold, and for arguments a program would rather not put
-where `ps` can read them. Set `parser.allow_atfile = false` to turn it
-off for a program that should treat a leading `@` as ordinary text.
+The file's contents are inserted in place, so any arguments after it still
+take priority. This is useful when a command line becomes too long for a
+shell to handle comfortably, and for arguments that a program would rather
+not put where `ps` can see them. Set `parser.allow_atfile = false` to turn
+it off, for a program that should treat a leading `@` as ordinary text.
 
 ## Help
 
-The help text is written from the declarations, so it cannot drift
-away from what the program accepts:
+The help text is generated from the declarations, so it always matches what
+the program accepts:
 
 ```zuri
 import args
@@ -614,7 +612,7 @@ POSITIONAL ARGUMENTS:
 OPTIONS:
   -h, --help           Show this help message and exit
   -n, --name <name>    Who to greet
-  -c, --count <count>  How many times (default: 1)
+  -c, --count <count>  How many times [default: 1]
 
 COMMANDS:
   history  Show past greetings
@@ -625,49 +623,49 @@ Run "greet --help [COMMAND]" for help on a specific command.
 
 ```
 
-`-h` and `--help` are declared for you and handled wherever they
-appear, including after a command, where they describe that command
-instead of the whole program. `help()` is the same thing called
-directly; both print and exit 0.
+`-h` and `--help` are declared for you and work wherever they appear. After
+a command, they describe that command instead of the whole program. `help()`
+does the same thing when you call it directly. Both print the help text and
+exit with status 0.
 
-Colour is used when stdout is a terminal and `NO_COLOR` is unset, so a
-run whose output is piped or redirected gets plain text rather than
-escape codes. `set_terminal_width()` fixes the wrapping width, which is
-what the example above does so the output is the same on every
-terminal; left alone, the parser asks the terminal and falls back to
-`COLUMNS`, then to 80.
+Colors are used when standard output is a terminal and `NO_COLOR` isn't set,
+so output that's piped or redirected is plain text without escape codes.
+`set_terminal_width()` sets the width the text wraps at, which is what the
+example above does, so that the output is the same in every terminal. If you
+don't set it, the parser asks the terminal for its width, then falls back to
+`COLUMNS`, and then to 80.
 
-A parser whose command line matched nothing at all prints its help and
-carries on. An option with a default counts as a match, so a parser
-that defaults anything never does this; pass `false` as the second
-argument to `args.Parser` to turn the behaviour off outright.
+If a parser's command line didn't match anything at all, it prints its help
+text and continues. An option with a default counts as a match, so this
+never happens for a parser with any defaults. To turn this behavior off
+completely, pass `false` as the second argument to `args.Parser`.
 
-## When It Does Not Fit
+## Errors
 
-Every failure follows the same shape: a line on stderr beginning
-`error:`, the usage text, and exit status 1.
+Every error is reported the same way: a line on standard error starting with
+`error:`, followed by the usage text, and an exit status of 1.
 
-| What happened | What it says |
+| What happened | The message |
 | --- | --- |
-| an option nobody declared | `unknown option: --colour` |
-| a value-taking option at the end | `option --name expects <name>` |
-| a required option left off | `required option --output is missing` |
-| a value outside `choices` | `--level expects one of {'quiet', 'loud'}, got "shouty"` |
-| a required positional left off | `required positional argument <source> is missing` |
-| an argument that fits nothing | `unexpected argument: report.csv` |
+| An option that wasn't declared | `unknown option: --colour` |
+| An option that needs a value was the last argument | `option --name expects <name>` |
+| A required option was left out | `required option --output is missing` |
+| A value that isn't in `choices` | `--level must be one of quiet or loud, not "shouty"` |
+| A required positional argument was left out | `required positional argument <source> is missing` |
+| An argument that doesn't match anything | `unexpected argument: report.csv` |
 
-None of these raise. A command-line program that has been handed
-something it cannot use has nothing useful left to do, and unwinding a
-stack trace into a user's terminal tells them less than one line does.
-The errors that *do* raise are the ones in the declarations — a
-duplicate option name, a short name already taken, a `choices` that is
-neither a list nor a dictionary — because those are bugs in the program
-rather than mistakes by its user, and they raise `ArgsError` or a
-`TypeError` at the `add_option` that caused them.
+None of these raise an exception. When a command-line program receives
+something it can't use, there's nothing useful left for it to do, and a
+stack trace in the user's terminal tells them less than a one-line message.
+The errors that *do* raise an exception are mistakes in the declarations,
+such as a duplicate option name, a short name that's already used, or
+`choices` that's neither a list nor a dictionary. Those are bugs in the
+program rather than mistakes by the user, so they raise an `ArgsError` or a
+`TypeError` from the `add_option` call that caused them.
 
-## Testing a Command Line
+## Testing Command-Line Parsing
 
-`parse()` takes an explicit list, and that is the seam:
+`parse()` accepts an explicit list, which is what makes it testable:
 
 ```zuri
 import args
@@ -699,52 +697,52 @@ echo 'all good'
 all good
 ```
 
-Build the parser in a function so each test gets a clean one; a parser
-carries the results of the last parse, and sharing one between tests
-makes them depend on their order. The paths that end in `os.exit()` —
-help, and every error above — need a real subprocess to observe, which
-is what `os.exec()` is for; [Chapter 23](ch23-00-testing.md) covers the
-rest of testing.
+Create the parser in a function, so that each test gets a new one. A parser
+keeps the results of its last parse, so sharing one between tests makes them
+depend on the order they run in. To test the paths that end in `os.exit()`,
+which are help and every error above, you need to run a real subprocess,
+which is what `os.exec()` is for. [Chapter 23](ch23-00-testing.md) covers
+testing in more detail.
 
 ## Module Reference
 
-Building a parser:
+Creating a parser:
 
-| | |
+| Method | Description |
 | --- | --- |
-| `Parser(name, default_help)` | a new parser |
-| `add_option(name, help, opts)` | an option, global or on a command |
-| `add_command(name, help, opts)` | a sub-command, returned for chaining |
-| `add_index(name, help, opts)` | a positional argument |
-| `parse(custom_args)` | read the command line, or a list |
-| `help()` | print the help text and exit 0 |
-| `set_terminal_width(width)` | fix the wrapping width |
+| `Parser(name, default_help)` | Creates a new parser |
+| `add_option(name, help, opts)` | Adds an option, either globally or to a command |
+| `add_command(name, help, opts)` | Adds a subcommand and returns it, for chaining |
+| `add_index(name, help, opts)` | Adds a positional argument |
+| `parse(custom_args)` | Parses the command line, or the given list |
+| `help()` | Prints the help text and exits with status 0 |
+| `set_terminal_width(width)` | Sets the width that text wraps at |
 
-Properties you can set after construction:
+Properties you can set after creating a parser:
 
-| | |
+| Property | Description |
 | --- | --- |
-| `description`, `epilog` | prose above and below the options |
-| `allow_abbrev` | unambiguous long-option prefixes, default `true` |
-| `allow_atfile` | `@file` expansion, default `true` |
-| `terminal_width` | the wrapping width directly |
+| `description`, `epilog` | Text shown before and after the options |
+| `allow_abbrev` | Whether unambiguous prefixes of long options are accepted. The default is `true`. |
+| `allow_atfile` | Whether `@file` arguments are expanded. The default is `true`. |
+| `terminal_width` | The width that text wraps at |
 
-Keys `opts` understands:
+Keys you can use in `opts`:
 
-| | |
+| Key | Description |
 | --- | --- |
-| `short_name` | the single-character form |
-| `type` | one of the type constants |
-| `value` | what it is worth when absent |
-| `choices` | a list of allowed values, or a map from key to value |
-| `required` | refuse to run without it |
-| `metavar` | the word help shows in place of the value |
-| `deprecated` | warn on stderr when it is used |
-| `action` | on a command, the function to run after parsing |
+| `short_name` | The single-character form of the option |
+| `type` | One of the type constants |
+| `value` | The value when the option isn't given |
+| `choices` | A list of allowed values, or a dictionary that maps keys to values |
+| `required` | Whether the program refuses to run without it |
+| `metavar` | The word the help text shows in place of the value |
+| `deprecated` | Prints a warning to standard error when the option is used |
+| `action` | For a command, the function to run after parsing |
 
 The type constants:
 
-| | |
+| Constants | Description |
 | --- | --- |
-| `NONE`, `STRING`, `INT`, `NUMBER` | a flag, and the three plain values |
-| `BOOL`, `LIST`, `CHOICE`, `OPTIONAL` | an answer, a repeat, a fixed set, a maybe |
+| `NONE`, `STRING`, `INT`, `NUMBER` | A flag, and the three plain value types |
+| `BOOL`, `LIST`, `CHOICE`, `OPTIONAL` | A yes or no answer, a repeated value, a value from a fixed set, and an optional value |

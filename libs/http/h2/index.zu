@@ -3,13 +3,14 @@
  *
  * HTTP/2 (RFC 9113) and the header compression it uses (RFC 7541).
  *
- * `HttpServer` speaks this automatically: over TLS when ALPN
- * negotiates `h2`, and over cleartext when a client opens with the
- * HTTP/2 connection preface. `HttpClient` uses it when a server
- * negotiates `h2` for an HTTPS connection.
+ * `HttpServer` uses HTTP/2 automatically, over TLS when ALPN negotiates
+ * `h2`, and over plain TCP when a client starts with the HTTP/2
+ * connection preface. `HttpClient` uses it when a server negotiates
+ * `h2` for an HTTPS connection.
  *
- * The pieces are here for anything that needs them directly - a
- * gateway, a test harness, or a protocol that borrows HPACK.
+ * The individual parts are available for code that needs them directly,
+ * such as a gateway, a test harness or another protocol that uses
+ * HPACK.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

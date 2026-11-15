@@ -1,50 +1,49 @@
 # Configuration and the Environment
 
-Every program that talks to anything else needs to be told where it is.
-A database address, an API key, a port to bind, a flag that turns
-verbose logging on for one afternoon. None of that belongs in the
-source: it changes between your laptop and the server, and some of it
-must never reach a repository at all.
+Any program that works with other services needs to be told where they are:
+a database address, an API key, a port to listen on, or a flag that turns on
+verbose logging for an afternoon. None of that belongs in the source code.
+It changes between your laptop and the server, and some of it should never
+be committed to a repository at all.
 
-The answer the industry settled on is the process environment.
-Orchestrators set it, CI runners set it, shells set it, and every
-language can read it. What none of them solve is the first machine in
-the chain: yours, where there is no orchestrator and nobody wants to
-prefix every run with eight assignments.
+The industry's standard answer is the process environment. Orchestrators, CI
+runners and shells all set environment variables, and every language can
+read them. What none of them handle is the first machine in the chain, which
+is yours. There's no orchestrator on your laptop, and nobody wants to type
+eight variable assignments in front of every command.
 
-The `env` module closes that gap. It reads a `.env` file into the
-process environment at startup, and it reads values back out already
-converted to the number, boolean or list your program is going to use.
-The file is a development convenience; the environment is the
-interface. A program written against `env` does not know or care which
-one supplied a value, which is exactly what lets it run unchanged in
-both places.
+The `env` module fills that gap. It reads a `.env` file into the process
+environment when the program starts, and it reads values back out already
+converted to the number, boolean or list your program needs. The file is a
+convenience for development, while the environment is the real interface. A
+program written with `env` doesn't know or care where a value came from,
+which is what lets it run unchanged in both places.
 
-- [The First Line](#the-first-line)
+- [Loading the File](#loading-the-file)
 - [Writing a `.env` File](#writing-a-env-file)
   - [Quoting](#quoting)
   - [Comments](#comments)
   - [Values That Span Lines](#values-that-span-lines)
-- [What Is Already Set Wins](#what-is-already-set-wins)
+- [Existing Variables Take Priority](#existing-variables-take-priority)
   - [Overriding](#overriding)
-  - [Empty Means Unconfigured](#empty-means-unconfigured)
+  - [Empty Means Unset](#empty-means-unset)
 - [References Between Values](#references-between-values)
-  - [Fallbacks and Demands](#fallbacks-and-demands)
+  - [Fallbacks and Required Values](#fallbacks-and-required-values)
   - [Literal Dollar Signs](#literal-dollar-signs)
-- [Reading Values Back](#reading-values-back)
-- [Building a Load](#building-a-load)
+- [Reading Values](#reading-values)
+- [Configuring a Load](#configuring-a-load)
   - [Layering Files](#layering-files)
-  - [Text Instead of a File](#text-instead-of-a-file)
-  - [Demanding the File](#demanding-the-file)
-  - [Looking Without Loading](#looking-without-loading)
-- [Writing a File Back Out](#writing-a-file-back-out)
-- [When It Goes Wrong](#when-it-goes-wrong)
+  - [Loading From Text](#loading-from-text)
+  - [Requiring the File](#requiring-the-file)
+  - [Reading Without Loading](#reading-without-loading)
+- [Writing a File](#writing-a-file)
+- [Errors](#errors)
 - [Keeping Secrets Out of Git](#keeping-secrets-out-of-git)
 - [Module Reference](#module-reference)
 
-## The First Line
+## Loading the File
 
-One call, as early in the program as you can put it:
+It takes one call, which should go as early in the program as possible:
 
 ```zuri
 import env
@@ -62,19 +61,19 @@ hello
 8080
 ```
 
-`env.load()` with no argument reads `.env` in the current working
-directory, which is what almost every program wants. The examples in
-this chapter write their file first and name it, so that you can run
-each one as it stands.
+`env.load()` without an argument reads `.env` in the current working
+directory, which is what almost every program wants. The examples in this
+chapter write their file first and pass its name, so that you can run each
+one as it is.
 
-The file is optional. If it is not there, `load()` leaves the
-environment exactly as it found it and the program carries on with
-whatever the shell already provided. That is deliberate: the same
-binary runs on a laptop with a `.env` file and on a server without one.
+The file is optional. If it doesn't exist, `load()` leaves the environment
+exactly as it was, and the program continues with whatever the shell already
+provided. That's intentional, so the same program runs on a laptop with a
+`.env` file and on a server without one.
 
 ## Writing a `.env` File
 
-One name per line, a `=`, and a value:
+Each line has a name, an `=` and a value:
 
 ```dosini
 HOST=127.0.0.1
@@ -83,19 +82,18 @@ DATABASE_URL=postgres://app@localhost/app
 ```
 
 A name is a letter or underscore followed by letters, digits and
-underscores, which is the same rule a shell applies. Anything else
-stops the load with a `ParseError` rather than being silently dropped,
-because a name no shell could ever export is a typo every time.
+underscores, which is the same rule a shell uses. Anything else stops the
+load with a `ParseError` instead of being silently ignored, because a name
+that no shell could export is always a typo.
 
-A leading `export` is allowed and ignored, so the same file can be fed
-to `source` in a terminal when you want the variables in your shell
-too.
+A leading `export` is allowed and ignored, so you can also load the same
+file into your shell with `source` when you want the variables there too.
 
 ### Quoting
 
-An unquoted value is the text up to the end of the line, with the
-whitespace trimmed off both ends. Wrap it in quotes when that is not
-what you want:
+An unquoted value is everything up to the end of the line, with whitespace
+removed from both ends. If that's not what you want, put the value in
+quotes:
 
 ```zuri
 import env
@@ -121,37 +119,37 @@ RAW -> [no \n escape, no expansion]
 COOKED -> [café]
 ```
 
-The three quoting forms differ in exactly one way each:
+Each quoting style differs from the others in exactly one way:
 
 | Written | Means |
 | --- | --- |
-| `KEY=value` | trimmed, ends at a comment or the line |
-| `KEY='value'` | every character as written, nothing resolved |
-| `` KEY=`value` `` | the same, for values containing both other quotes |
-| `KEY="value"` | backslash escapes resolved, `$` references expanded |
+| `KEY=value` | Trimmed, and ends at a comment or the end of the line |
+| `KEY='value'` | Every character exactly as written, with nothing resolved |
+| `` KEY=`value` `` | The same, for values that contain both kinds of quotes |
+| `KEY="value"` | Backslash escapes are resolved, and `$` references are expanded |
 
-Inside double quotes, `\n`, `\r`, `\t`, `\f`, `\v`, `\b`, `\a`, `\e`
-and `\0` mean what they do in Zuri, and `\xHH`, `\uHHHH` and `\u{H...}`
-name a codepoint. A backslash before anything else keeps both
-characters, so `"C:\Users\me"` is the path you meant and not a lesson
-in escaping.
+Inside double quotes, `\n`, `\r`, `\t`, `\f`, `\v`, `\b`, `\a`, `\e` and
+`\0` mean the same as they do in Zuri, and `\xHH`, `\uHHHH` and `\u{H...}`
+specify a code point. A backslash before any other character keeps both
+characters, so `"C:\Users\me"` gives you the path you meant, and you don't
+need to think about escaping.
 
-Reach for single quotes whenever a value is a secret. A generated
-password containing `$` or `\` goes through untouched, and nothing in
-it can accidentally name another variable.
+Use single quotes for any value that's a secret. A generated password that
+contains `$` or `\` is kept exactly as it is, and nothing in it can
+accidentally refer to another variable.
 
 ### Comments
 
-A `#` starts a comment, either on its own line or after a value. Inside
-an unquoted value it only does so when it begins the value or follows a
-space, which is why `PASSWORD=hunter#2` above kept its `#`. Where that
-rule is too subtle to rely on, quote the value and the question does
-not arise.
+A `#` starts a comment, either on a line of its own or after a value. Inside
+an unquoted value, it only starts a comment when it's at the start of the
+value or follows a space, which is why `PASSWORD=hunter#2` above kept its
+`#`. If you'd rather not rely on that rule, quote the value, and the
+question doesn't come up.
 
 ### Values That Span Lines
 
-A quoted value runs until its closing quote, newlines included. This is
-how a private key goes in a file:
+A quoted value continues until its closing quote, including any newlines.
+This is how you put a private key in the file:
 
 ```dosini
 SIGNING_KEY="-----BEGIN PRIVATE KEY-----
@@ -159,13 +157,13 @@ MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7...
 -----END PRIVATE KEY-----"
 ```
 
-Single quotes work the same way and resolve nothing, which is usually
-the better choice for key material.
+Single quotes work the same way and don't resolve anything, which usually
+makes them the better choice for keys.
 
-## What Is Already Set Wins
+## Existing Variables Take Priority
 
-A name that is already set in the process environment is left alone.
-The file fills in the rest:
+If a name is already set in the process environment, it's left as it is, and
+the file only fills in the rest:
 
 ```zuri
 import env
@@ -191,20 +189,21 @@ postgres://production/app
 [DATABASE_URL]
 ```
 
-This is the whole point of the default. The file carries what a
-developer needs to run the program at all; production sets the real
-values through the shell, the orchestrator or the CI runner, and the
-file never has to know that it did.
+This is the reason for the default. The file contains what a developer needs
+to run the program at all. In production, the real values are set through
+the shell, the orchestrator or the CI runner, and the file doesn't need to
+know anything about it.
 
-`load()` returns a `Result` that accounts for every name and every
-file, so a program never has to guess whether its configuration
-arrived. `applied` is what the load set, `skipped` is what was already
-set, `values` is everything the file defined either way, and `files`
-and `missing` say which paths were read and which were not there.
+`load()` returns a `Result` that accounts for every name and every file, so
+a program never has to guess whether its configuration was loaded. `applied`
+contains the variables the load set, `skipped` contains the ones that were
+already set, and `values` contains everything the file defined, either way.
+`files` lists the paths that were read, and `missing` lists the ones that
+didn't exist.
 
 ### Overriding
 
-Where the file genuinely should win, say so:
+When the file really should take priority, say so:
 
 ```zuri
 import env
@@ -223,22 +222,22 @@ echo os.get_env('LOG_LEVEL')
 debug
 ```
 
-### Empty Means Unconfigured
+### Empty Means Unset
 
-Throughout the module, a variable set to the empty string counts as
-unset. `FLAG=` in a file, an empty shell variable, and a name nobody
-ever set all mean the same thing, because that is the one thing anybody
-means by any of them. A load will fill in an empty name, `has()` is
-false for it, `require()` raises on it, and every typed reader returns
-its default.
+Throughout the module, a variable set to an empty string is treated as
+unset. `FLAG=` in a file, an empty shell variable and a variable that was
+never set all mean the same thing, because that's what people mean by all
+three. A load fills in an empty variable, `has()` returns false for it,
+`require()` raises an error for it, and every typed reader returns its
+default value.
 
-`os.get_env()` is the unfiltered view for the rare case that needs to
-tell an empty value apart from an absent one.
+If you need to tell an empty value from a missing one, which is rare, use
+`os.get_env()`, which doesn't treat them the same.
 
 ## References Between Values
 
-A value may refer to another value, or to the environment around it,
-with the syntax a shell uses:
+A value can refer to another value, or to the surrounding environment, using
+the same syntax as a shell:
 
 ```dosini
 HOST=localhost
@@ -261,49 +260,49 @@ echo loaded.values.PUBLIC_URL
 http://localhost:8080
 ```
 
-The split string in that example is a Zuri detail, not a `.env` one: a
-`${` written inside a Zuri literal is an interpolation, so building
-`.env` text in source means keeping the `$` and the `{` apart. A file
-you type in an editor has no such problem, as the `dosini` block above
-shows.
+The split string in that example is because of Zuri, not `.env` files. A
+`${` written inside a Zuri string literal is an interpolation, so when you
+build `.env` text in source code, you have to keep the `$` and the `{`
+apart. A file you write in an editor doesn't have this problem, as the
+`dosini` block above shows.
 
-A reference resolves to the value the name will hold *once the load has
-finished*. That single rule is what makes `PORT=${PORT:-8080}` read the
-way it looks: whatever the environment already says, and 8080 when it
-says nothing. It holds no matter which line of the file the reference
-sits on, and it changes with `override()` exactly as precedence does.
+A reference resolves to the value the variable will have *once the load has
+finished*. That rule is what makes `PORT=${PORT:-8080}` mean what it looks
+like: the value from the environment if there is one, or 8080 if there
+isn't. This is true whichever line of the file the reference is on, and it
+changes with `override()` in the same way that priority does.
 
-A definition may also reach past itself to the value it is replacing,
-which is how a path gets extended rather than clobbered:
+A definition can also refer to the value it's replacing, which is how you
+extend a path instead of overwriting it:
 
 ```dosini
 PATH=${PATH}:/opt/app/bin
 ```
 
-### Fallbacks and Demands
+### Fallbacks and Required Values
 
-The three modifiers are POSIX's, and the leading colon on each widens
-the test from "is it set" to "is it set to something":
+The three modifiers are the ones POSIX defines. Adding a colon in front of
+each one changes the test from "is it set" to "is it set to something":
 
 | Written | Means |
 | --- | --- |
-| `${NAME:-fallback}` | the value, or `fallback` when it is unset or empty |
-| `${NAME-fallback}` | the value, or `fallback` when it is unset |
-| `${NAME:+instead}` | `instead` when the value is set and not empty, otherwise nothing |
-| `${NAME+instead}` | `instead` when the value is set, otherwise nothing |
-| `${NAME:?reason}` | the value, or a `MissingVariable` carrying `reason` |
-| `${NAME?reason}` | the same, counting an empty value as set |
+| `${NAME:-fallback}` | The value, or `fallback` if it's unset or empty |
+| `${NAME-fallback}` | The value, or `fallback` if it's unset |
+| `${NAME:+instead}` | `instead` if the value is set and not empty, and nothing otherwise |
+| `${NAME+instead}` | `instead` if the value is set, and nothing otherwise |
+| `${NAME:?reason}` | The value, or a `MissingVariable` error with `reason` as its message |
+| `${NAME?reason}` | The same, but an empty value counts as set |
 
-The text after a modifier is itself expanded, so a fallback may have a
+The text after a modifier is also expanded, so a fallback can have its own
 fallback:
 
 ```dosini
 CACHE_DIR=${XDG_CACHE_HOME:-${HOME}/.cache}/app
 ```
 
-`:?` is worth knowing. It turns the file itself into the place where a
-deployment's requirements are written down, and the failure arrives at
-startup with the reason attached:
+`:?` is particularly useful. It lets the file itself document what a
+deployment requires, and if something is missing, the program fails when it
+starts, with the reason included:
 
 ```dosini
 SESSION_SECRET=${SESSION_SECRET:?the deploy must supply a session secret}
@@ -311,20 +310,20 @@ SESSION_SECRET=${SESSION_SECRET:?the deploy must supply a session secret}
 
 ### Literal Dollar Signs
 
-`\$` is a dollar sign and nothing else. A `$` that does not name
-anything, as in `PRICE=$5.00`, stands for itself already. A value in
-single quotes or backticks is never expanded at all, so a secret
-containing `${` needs no thought:
+`\$` is a dollar sign and nothing else. A `$` that isn't followed by a name,
+as in `PRICE=$5.00`, already stands for itself. Values in single quotes or
+backticks are never expanded, so you don't need to worry about a secret that
+contains `${`:
 
 ```dosini
 API_KEY='sk_live_${not_a_reference}'
 ```
 
-## Reading Values Back
+## Reading Values
 
-An environment variable is always text, and almost nothing in a program
-wants text. The typed readers convert it and refuse anything that is
-not what it claims to be:
+An environment variable is always text, but programs rarely want text. The
+typed readers convert the value, and reject anything that isn't what it
+claims to be:
 
 ```zuri
 import env
@@ -356,44 +355,44 @@ not configured
 false
 ```
 
-| | |
+| Function | Returns |
 | --- | --- |
-| `get(name, default)` | the text, or the default |
-| `require(name, reason)` | the text, or a `MissingVariable` |
-| `has(name)` | whether it is configured at all |
-| `int(name, default)` | a decimal integer, optionally signed |
-| `float(name, default)` | a number, exponents included |
-| `bool(name, default)` | `1`, `true`, `yes`, `y`, `on` and their opposites |
-| `list(name, separator, default)` | split, trimmed, empty items dropped |
+| `get(name, default)` | The text, or the default |
+| `require(name, reason)` | The text, or raises a `MissingVariable` error |
+| `has(name)` | Whether the variable is set at all |
+| `int(name, default)` | A decimal integer, which can have a sign |
+| `float(name, default)` | A number, including one with an exponent |
+| `bool(name, default)` | True for `1`, `true`, `yes`, `y` and `on`, and false for their opposites |
+| `list(name, separator, default)` | The value split into a list, with each item trimmed and empty items removed |
 
-A value that is set but not convertible is a `ValueError` naming the
-variable, not a silent fall back to the default. `PORT=eighty` is a
-mistake in the configuration, and the moment to hear about it is
-startup rather than the first request that needed a port.
+A value that's set but can't be converted raises a `ValueError` that names
+the variable, instead of silently falling back to the default. `PORT=eighty`
+is a configuration mistake, and the right time to find out about it is when
+the program starts, not on the first request that needs a port.
 
-These read the process environment, not the file. They answer the same
-whether a value came from `.env` or from the shell, which is what lets
-one program run in both places without a branch anywhere in it.
+These functions read the process environment, not the file. They give the
+same answer whether a value came from `.env` or from the shell, which is
+what lets one program run in both places without any special cases.
 
-`require()` deserves its own line in most programs. A setting the code
-cannot invent a default for should stop the program at the top, with
-its own name in the message:
+Most programs should use `require()` for at least one setting. For a setting
+that the code can't make up a default for, the program should stop right at
+the start, with the setting's name in the error message:
 
 ```zuri,ignore
 var secret = env.require('SESSION_SECRET', 'set SESSION_SECRET in .env')
 ```
 
-## Building a Load
+## Configuring a Load
 
-`env.loader()` returns a `Loader` when the one-line form is not enough.
-Every setting returns the loader, so a whole configuration is one
-expression, and nothing about the loader changes when it runs, so the
-same one can be kept and used again.
+When the one-line form isn't enough, `env.loader()` returns a `Loader`.
+Every setting returns the loader, so you can write a whole configuration as
+a single expression. Running a loader doesn't change it, so you can keep one
+and use it again.
 
 ### Layering Files
 
-Sources are read in the order they are added, and the last one to
-define a name is the one that defines it:
+Sources are read in the order they're added, and the last source to define a
+name is the one whose value is used:
 
 ```zuri
 import env
@@ -419,46 +418,47 @@ echo result.missing
 [.env.missing.demo]
 ```
 
-That pairing is the useful one: `.env` holds what the team shares and
-is worth committing as `.env.example`, and `.env.local` holds what one
-machine does differently and is not. A path may begin with `~`, which
-expands to the home directory.
+This combination is the one you'll use most often. `.env` contains what the
+whole team shares, and is worth committing as `.env.example`, while
+`.env.local` contains what's different on one particular machine, and isn't
+committed. A path can start with `~`, which is expanded to the home
+directory.
 
-### Text Instead of a File
+### Loading From Text
 
-`source()` adds text rather than a path, so configuration that arrived
-over the network or out of a secret store goes through exactly the same
-parsing, expansion and precedence as a file on disk:
+`source()` adds text instead of a path, so configuration that came from the
+network or a secret store goes through exactly the same parsing, expansion
+and priority rules as a file on disk:
 
 ```zuri,ignore
 env.loader().path('.env').source(vault.fetch('app/production')).load()
 ```
 
-### Demanding the File
+### Requiring the File
 
-A file that is not there is not an error by default, and its path is
-recorded in `Result.missing`. Where the file is genuinely part of the
-deployment, say so and let it fail loudly:
+By default, a missing file isn't an error, and its path is recorded in
+`Result.missing`. When the file really is part of the deployment, mark it as
+required, so the load fails with a clear error if it's missing:
 
 ```zuri,ignore
 env.loader().path('/etc/app/env').required().load()
 ```
 
-### Looking Without Loading
+### Reading Without Loading
 
-`read()` does everything `load()` does except the last step. Nothing is
-written to the process environment, and `$` references still resolve
-the way they would have, so what comes back is exactly what `load()`
-would have set. It is how a tool inspects a file, and how a test checks
-one without changing the process it is running in.
+`read()` does everything `load()` does except the final step. Nothing is
+written to the process environment, but `$` references are still resolved as
+they would have been, so what you get back is exactly what `load()` would
+have set. It's how a tool can inspect a file, and how a test can check one
+without changing the environment of the process it's running in.
 
-`expand(false)` turns expansion off entirely, for a file of opaque
-secrets where every value should be taken exactly as written.
+`expand(false)` turns off expansion completely, for a file of secrets where
+every value should be used exactly as written.
 
-## Writing a File Back Out
+## Writing a File
 
-`stringify()` is `parse()` backwards, for the program that generates a
-`.env` file rather than reading one:
+`stringify()` is the opposite of `parse()`, for a program that generates a
+`.env` file instead of reading one:
 
 ```zuri
 import env
@@ -480,20 +480,19 @@ GREETING="hello there"
 DEBUG=false
 ```
 
-Values are written bare where that is unambiguous and double-quoted
-where it is not, and a `$` inside a value is escaped so that loading
-the file back does not expand it. The output round-trips: feeding it to
-`parse()` returns the same names and the same values.
+Values are written without quotes where that's unambiguous, and in double
+quotes where it isn't, and a `$` inside a value is escaped so that loading
+the file again doesn't expand it. The output round-trips: passing it to
+`parse()` returns the same names and values.
 
-Numbers, bigints, booleans and bytes are converted to their text.
-Anything else is a `TypeError`, because guessing what a list should
-look like in an environment file is how configuration goes wrong
-quietly.
+Numbers, bigints, booleans and bytes are converted to text. Anything else
+raises a `TypeError`, because guessing how a list should look in an
+environment file is how configuration silently goes wrong.
 
-## When It Goes Wrong
+## Errors
 
-Every error the module raises is an `EnvError`, and each subclass
-carries the detail a message alone cannot:
+Every error the module raises is an `EnvError`, and each subclass includes
+details that the message alone can't:
 
 ```zuri
 import env
@@ -525,21 +524,21 @@ MissingFile: no environment file at .env.nowhere
 MissingVariable: NOTHING_SET_THIS is not set
 ```
 
-| Class | Raised when | Carries |
+| Class | Raised when | Includes |
 | --- | --- | --- |
-| `ParseError` | a source is not a valid environment file | `line`, `column` |
-| `MissingFile` | a required file is not there | `path` |
-| `MissingVariable` | a demanded variable is not configured | `name` |
+| `ParseError` | A source isn't a valid environment file | `line`, `column` |
+| `MissingFile` | A required file doesn't exist | `path` |
+| `MissingVariable` | A required variable isn't set | `name` |
 
-Catching `EnvError` catches all three, and a `ValueError` from a typed
-reader is the ordinary one, so it goes wherever the rest of your
-validation failures go.
+Catching `EnvError` catches all three. A `ValueError` from a typed reader is
+an ordinary `ValueError`, so you can handle it in the same place as the rest
+of your validation errors.
 
 ## Keeping Secrets Out of Git
 
-A `.env` file holds the values that differ between one deployment and
-the next, which is to say it holds the secrets. Three lines of
-housekeeping and the subject never comes up again:
+A `.env` file holds the values that differ from one deployment to the next,
+which means it holds your secrets. Three lines in your `.gitignore` take
+care of that once and for all:
 
 ```console
 $ echo '.env' >> .gitignore
@@ -547,46 +546,46 @@ $ echo '.env.local' >> .gitignore
 $ cp .env .env.example    # then replace every real value
 ```
 
-Commit `.env.example` with every name in it and no real value. It is
-the only documentation of what the program needs that cannot go stale,
-because the day someone adds a setting without adding it there is the
-day a new checkout stops working.
+Commit a `.env.example` that lists every variable but contains no real
+values. It's the only documentation of what the program needs that can't get
+out of date, because as soon as someone adds a setting without adding it
+there, a fresh checkout stops working.
 
-Resist the pull towards a `.env.production` checked in beside a
-`.env.staging`. Configuration varies per deploy, not per named
-environment, and the moment there are two files somebody edits the
-wrong one. Use one file per machine and let `required()` and `:?` say
-out loud what that machine still owes you.
+Avoid committing a `.env.production` alongside a `.env.staging`.
+Configuration varies by deployment, not by environment name, and as soon as
+there are two files, someone will edit the wrong one. Use one file per
+machine, and let `required()` and `:?` make it clear what that machine is
+still missing.
 
 ## Module Reference
 
-The whole surface:
+Here's everything the module provides:
 
-| | |
+| Function | Description |
 | --- | --- |
-| `load(path)` | read a file into the process environment |
-| `loader()` | a `Loader`, for a load that needs more |
-| `parse(source)` | text to names and values, nothing else |
-| `stringify(values)` | names and values back to text |
-| `is_name(name)` | whether a name is a legal variable name |
+| `load(path)` | Reads a file into the process environment |
+| `loader()` | Returns a `Loader`, for loads that need more configuration |
+| `parse(source)` | Converts text into names and values, without changing the environment |
+| `stringify(values)` | Converts names and values back into text |
+| `is_name(name)` | Checks whether a name is a valid variable name |
 
-Reading values back:
+Reading values:
 
-| | |
+| Functions | Description |
 | --- | --- |
-| `get`, `require`, `has` | text, or the absence of it |
-| `int`, `float`, `bool`, `list` | text converted, or a `ValueError` |
+| `get`, `require`, `has` | Read the text, or check whether it's missing |
+| `int`, `float`, `bool`, `list` | Read the text and convert it, or raise a `ValueError` |
 
 The classes:
 
-| | |
+| Class | Members |
 | --- | --- |
 | `Loader` | `path`, `paths`, `source`, `override`, `expand`, `required`, `read`, `load` |
 | `Result` | `values`, `applied`, `skipped`, `files`, `missing` |
 | `EnvError` | `ParseError`, `MissingFile`, `MissingVariable` |
 
-And the piece underneath, for a program that needs it directly:
+And the lower-level module, for programs that need it directly:
 
-| | |
+| Module | Contents |
 | --- | --- |
 | `env.expand` | `expand(value, resolve)`, the `$` reference syntax on its own |

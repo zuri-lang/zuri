@@ -1,12 +1,13 @@
 /**
  * @module files
  *
- * Serving files off disk, with the parts that make it correct rather than
- * merely working: conditional requests, entity tags, and byte ranges.
+ * Serving files from disk, including conditional requests, entity tags
+ * and byte ranges.
  *
  * `StaticFiles` is the handler. `ByteRange` and the range parser
- * implement `Range`/`206 Partial Content`, which is what lets a browser
- * seek within a video without downloading it whole.
+ * implement `Range` requests and `206 Partial Content` responses, which
+ * is what lets a browser seek within a video without downloading all of
+ * it.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -34,7 +35,7 @@ class ByteRange {
   var start
 
   /**
-   * The last byte of the range, inclusive - as `Content-Range` states
+   * The last byte of the range, inclusive, as `Content-Range` states
    * it, not as a length.
    * @type number
    */
@@ -67,12 +68,14 @@ class ByteRange {
 }
 
 /**
- * Parses a `Range` header against a representation of `size` bytes.
+ * Parses a `Range` header for a representation that's `size` bytes
+ * long.
  *
- * Returns a list of `ByteRange`, an empty list when the header names
- * only ranges that fall outside the representation (a `416`), or
- * `nil` when the header is not a byte range at all - which RFC 9110
- * §14.2 says to ignore and answer with the whole thing.
+ * Returns a list of `ByteRange` objects. Returns an empty list if every
+ * range in the header is outside the representation, which calls for a
+ * `416`, or `nil` if the header isn't a byte range at all, in which
+ * case RFC 9110 §14.2 says to ignore it and send the whole
+ * representation.
  *
  * @param ?string header
  * @param number size
@@ -167,12 +170,12 @@ def parse_range(header, size: number) {
 }
 
 /**
- * A weak validator derived from a file's size and modification time.
+ * A weak validator based on a file's size and modification time.
  *
- * Weak rather than strong because two writes within the same second
- * are indistinguishable to it, which is exactly the condition RFC
- * 9110 §8.8.1 reserves the `W/` prefix for. It costs one `stat`,
- * where a strong one costs a full read of the file.
+ * It's weak rather than strong because it can't tell apart two writes
+ * in the same second, which is exactly the situation RFC 9110 §8.8.1
+ * reserves the `W/` prefix for. It only costs one `stat` call, while a
+ * strong validator would mean reading the whole file.
  *
  * @param dict stats: a file's `stats()` dictionary
  * @returns string
@@ -222,14 +225,13 @@ def _strip_weak(tag) {
 }
 
 /**
- * Serves files from a directory, with the conditional-request,
- * range-request and caching behaviour a browser and a CDN both
- * expect.
+ * Serves files from a directory, with the conditional requests, range
+ * requests and caching that browsers and CDNs expect.
  *
- * Every request path is percent-decoded and normalised before it is
- * joined to the root, and the result is checked to still be inside
- * the root afterwards - the decode-then-normalise-then-verify
- * sequence, because doing any two of the three is not enough.
+ * Every request path is percent-decoded and normalized before it's
+ * joined to the root, and the result is then checked to make sure it's
+ * still inside the root. All three steps are needed, because doing only
+ * two of them isn't enough.
  *
  * ```zuri
  * var files = http.StaticFiles('./public', { cache_age: 3600 })
@@ -238,9 +240,9 @@ def _strip_weak(tag) {
  * })
  * ```
  *
- * `HttpServer.serve_files()` wires all of that up for you; this class
- * is what it uses, and is here for applications that want to serve
- * files from somewhere the router does not reach.
+ * `HttpServer.serve_files()` sets all of this up for you, using this
+ * class. The class is available for applications that need to serve
+ * files from somewhere the router doesn't reach.
  */
 class StaticFiles {
 
@@ -265,8 +267,9 @@ class StaticFiles {
   var cache_age = 0
 
   /**
-   * Whether to send an `ETag`. On by default; it is what makes a
-   * conditional request possible, and it costs one `stat`.
+   * Whether to send an `ETag`. This is on by default, because it's what
+   * makes conditional requests possible, and it only costs one `stat`
+   * call.
    * @type bool
    */
   var etag = true

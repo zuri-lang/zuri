@@ -1,13 +1,13 @@
 # Testing
 
-A test is a program that runs your program and says whether it did the
-right thing. The `test` module gives you the pieces: a way to name and
-group tests, a way to state what you expected, and a report that tells
-you which expectation failed and where.
+A test is a program that runs your program and tells you whether it did the
+right thing. The `test` module provides everything you need for this: a way
+to name and group tests, a way to state what you expect, and a report that
+tells you which expectation failed and where.
 
-Nothing needs installing. `import test` and you have it.
+There's nothing to install. Just write `import test` and you can start.
 
-## Your First Test
+## A First Test
 
 ```zuri
 import test { * }
@@ -43,7 +43,7 @@ describe('subtotal', @{
 })
 ```
 
-Run it the way you run anything else:
+Run it the same way you run anything else:
 
 ```console
 $ zuri run cart.zu
@@ -59,27 +59,28 @@ $ zuri run cart.zu
   suites 1   time 1ms
 ```
 
-Three things are worth noticing straight away.
+There are three things to notice right away.
 
-**`import test { * }`.** A test file wants `describe`, `it`, `expect`
-and the rest in scope, not behind a module name. `import test` on its
-own works too, and gives you `test.describe`, `test.expect` and so on;
-use that from code that is not itself a test file.
+**`import test { * }`.** A test file needs `describe`, `it`, `expect` and
+the rest available directly, not behind a module name. `import test` on its
+own also works, and gives you `test.describe`, `test.expect` and so on. Use
+that form in code that isn't itself a test file.
 
-**Nothing says "now run".** `describe` and `it` do not run anything;
-they build a tree, and the tree is run once the file has finished
-declaring it, through `os.at_exit()`. That separation is what lets the
-framework count the tests before the first one starts, focus on one of
-them, filter by name, and run them in a random order. `run()` exists
-for when you want to pass options or read the result, and
-[Controlling a Run](#controlling-a-run) comes back to it.
+**Nothing tells the tests to run.** `describe` and `it` don't run anything.
+They build a tree, which runs once the file has finished declaring it,
+through `os.at_exit()`. That separation is what lets the framework count the
+tests before the first one starts, focus on a single test, filter tests by
+name and run them in random order. `run()` exists for when you want to pass
+options or read the result, which [Controlling a Run](#controlling-a-run)
+covers.
 
-**`@{ ... }` is a function.** `it('name', @{ ... })` hands the
-framework a body to call later, which is why it can decide not to.
+**`@{ ... }` is a function.** `it('name', @{ ... })` gives the framework a
+body to call later, which is why the framework can also choose not to call
+it.
 
-## When It Fails
+## When a Test Fails
 
-Change `850` to `900` and run it again:
+Change `850` to `900` and run the test again:
 
 ```console
   subtotal
@@ -110,12 +111,13 @@ Change `850` to `900` and run it again:
   suites 1   time 4ms
 ```
 
-The message, the two values, the line, and the code around it. The
-process exits with status `1`, which is what a CI system reads.
+You get the message, the two values, the line number and the code around it.
+The process exits with status `1`, which is what a CI system checks.
 
-## Grouping
+## Grouping Tests
 
-`describe` nests as deeply as the thing you are describing:
+You can nest `describe` blocks as deeply as the thing you're describing
+needs:
 
 ```zuri,ignore
 describe('Cart', @{
@@ -132,14 +134,14 @@ describe('Cart', @{
 })
 ```
 
-The nesting shows up in the report and in the name a failure is filed
-under: `Cart > add() > merges a duplicate SKU`. Choose names that read
-as a sentence when joined like that, because that is how you will read
-them.
+The nesting appears in the report and in the name that a failure is reported
+under, such as `Cart > add() > merges a duplicate SKU`. Choose names that
+read as a sentence when they're joined together like that, because that's
+how you'll read them.
 
 ## Expectations
 
-`expect(value)` gives you an object with every matcher on it.
+`expect(value)` returns an object that has every matcher on it.
 
 ```zuri,ignore
 expect(total).to_be(850)
@@ -148,18 +150,19 @@ expect(user).to_match_object({ name: 'Ada' })
 expect(items).not.to_be_empty()
 ```
 
-**`.not` negates any matcher.** There is one implementation behind both
-directions, so `to_contain` and `not.to_contain` can never disagree
-about what containing means.
+**`.not` negates any matcher.** The same implementation handles both
+directions, so `to_contain` and `not.to_contain` can never disagree about
+what "contains" means.
 
-**Matchers chain**, because each returns the object it was called on:
+**Matchers can be chained**, because each one returns the object it was
+called on:
 
 ```zuri,ignore
 expect(port).to_be_int().to_be_between(1024, 65535)
 ```
 
-**A second argument names the value**, which earns its keep the moment
-the number alone would not say which number it was:
+**A second argument gives the value a name**, which is useful as soon as the
+number on its own wouldn't tell you which number it was:
 
 ```zuri,ignore
 expect(response.status, 'status').to_be(200)
@@ -171,28 +174,28 @@ Expected status (404) to be 200
 
 ### Choosing Between `to_be` and `to_equal`
 
-`to_be` is Zuri's `==`. That already compares lists, dictionaries and
-bytes by their contents, so it is the right matcher for most things:
+`to_be` uses Zuri's `==` operator. That already compares lists, dictionaries
+and bytes by their contents, so it's the right matcher for most values:
 
 ```zuri,ignore
 expect([1, 2]).to_be([1, 2]) # passes
 expect({ a: 1 }).to_be({ a: 1 }) # passes
 ```
 
-It compares two **instances** by identity, though, unless their class
-defines `@eq`, because that is what `==` does:
+However, it compares two **instances** by identity, unless their class
+defines `@eq`, because that's what `==` does:
 
 ```zuri,ignore
 expect(Point(1, 2)).to_be(Point(1, 2)) # fails without @eq: two objects
 expect(Point(1, 2)).to_equal(Point(1, 2)) # passes: same contents
 ```
 
-`to_equal` is the structural one. It walks an instance field by field,
-treats `NaN` as equal to itself, and survives a value that contains
-itself. Reach for it whenever the objects are built fresh on both sides
-of the comparison.
+`to_equal` compares structures. It goes through an instance field by field,
+treats `NaN` as equal to itself, and can handle a value that contains
+itself. Use it whenever the objects on both sides of the comparison are
+created separately.
 
-### The Matchers
+### Available Matchers
 
 | Group | Matchers |
 | --- | --- |
@@ -208,20 +211,21 @@ of the comparison.
 | Snapshots | `to_match_snapshot` |
 | Anything else | `to_satisfy` |
 
-Each one's exact behaviour, and what it refuses, is in its doc block.
+Each matcher's doc comment describes exactly how it behaves and what it
+rejects.
 
-A few are worth calling out.
+A few of them are worth pointing out.
 
-**`to_be_close_to`** is how you compare anything that has been through
-floating-point arithmetic. `expect(0.1 + 0.2).to_be(0.3)` fails; the
+**`to_be_close_to`** is how you compare anything that has gone through
+floating-point arithmetic. `expect(0.1 + 0.2).to_be(0.3)` fails, because the
 sum is `0.30000000000000004`.
 
 ```zuri,ignore
 expect(0.1 + 0.2).to_be_close_to(0.3)
 ```
 
-**`to_raise*`** takes a function, not a value, because the framework has
-to be the one to call it:
+**`to_raise`** and the matchers like it take a function rather than a value,
+because the framework has to be the one that calls it:
 
 ```zuri,ignore
 expect(@{
@@ -232,15 +236,15 @@ expect(@{
 }).to_not_raise()
 ```
 
-**`to_have_property`** walks a dotted path through dictionaries,
-instances and list indices alike, which is what a decoded response
-usually is all the way down:
+**`to_have_property`** follows a dotted path through dictionaries, instances
+and list indexes alike, which is what a decoded response usually consists
+of:
 
 ```zuri,ignore
 expect(payload).to_have_property('data.items.0.id', 7)
 ```
 
-**`to_satisfy`** is the escape hatch when nothing else fits:
+**`to_satisfy`** is for when nothing else fits:
 
 ```zuri,ignore
 expect(port).to_satisfy(@(n) {
@@ -248,7 +252,7 @@ expect(port).to_satisfy(@(n) {
 }, 'to be an even port')
 ```
 
-### Failing on Purpose
+### Failing a Test Explicitly
 
 ```zuri,ignore
 using response.status {
@@ -258,8 +262,8 @@ using response.status {
 }
 ```
 
-And when the assertions live inside a callback that might never run,
-say how many you expect:
+When the assertions are inside a callback that might never run, state how
+many assertions you expect:
 
 ```zuri,ignore
 it('reports every error', @{
@@ -272,8 +276,9 @@ it('reports every error', @{
 ```
 
 If the callback ran once instead of twice, the test fails with
-`Expected 2 assertions but 1 ran` rather than passing on a technicality.
-`has_assertions()` is the looser form: at least one.
+`Expected 2 assertions but 1 ran`, instead of passing on a technicality.
+`has_assertions()` is a less strict version that requires at least one
+assertion.
 
 ## Setup and Teardown
 
@@ -321,36 +326,37 @@ disconnecting
   suites 1   time 2ms
 ```
 
-The rules:
+These are the rules:
 
-- `before_all` runs once, immediately before the first test in its suite
-  that is actually going to run. A suite everything was filtered out of
-  never connects to anything.
-- `after_all` runs after the last one, and only if `before_all` ran. It
-  runs when `before_all` raised as well, since a setup that failed part
-  way may already hold a connection or a server, so write it to cope
-  with whatever the setup got as far as.
-- `before_each` runs outermost suite first, `after_each` innermost
-  first, so teardown undoes setup in the order it was done.
+- `before_all` runs once, just before the first test in its suite that's
+  actually going to run. If every test in a suite was filtered out,
+  `before_all` never runs, so nothing connects to anything.
+- `after_all` runs after the last test, and only if `before_all` ran. It
+  also runs if `before_all` raised an error, because a setup that failed
+  partway through might already have opened a connection or started a
+  server. Write it so that it can cope with however far the setup got.
+- `before_each` hooks run starting with the outermost suite, and
+  `after_each` hooks run starting with the innermost, so teardown undoes
+  setup in the reverse order.
 - `after_each` runs even when the test failed, which is exactly when you
-  need it to.
+  need it.
 
-A hook that raises is reported as a hook failure against the test it was
-preparing, rather than taking the run down. A `before_all` that raises
-fails every test in its suite, because none of them got the setup they
-were written against.
+A hook that raises an error is reported as a hook failure for the test it
+was preparing, instead of stopping the whole run. If a `before_all` raises
+an error, every test in its suite fails, because none of them got the setup
+they depend on.
 
-## Focusing, Skipping and Todo
+## Focusing, Skipping and To-Do Tests
 
-While you are working on one thing:
+When you're working on one particular thing:
 
 ```zuri,ignore
 it_only('the one I am fixing', @{ ... })
 describe_only('the area I am in', @{ ... })
 ```
 
-As soon as anything is marked `only`, everything else is skipped and
-still listed, so you cannot forget it is on.
+As soon as anything is marked with `only`, everything else is skipped, but
+still listed, so you can't forget that it's turned on.
 
 ```zuri,ignore
 it_skip('known broken, see #412', @{ ... })
@@ -359,9 +365,9 @@ describe_skip('the old API', @{ ... })
 it_todo('handle an empty payload')
 ```
 
-A todo is a test with no body. `it('name')` with nothing after it means
-the same thing. It counts towards nothing and shows up in the report as
-a reminder that survives being committed.
+A to-do is a test without a body, and `it('name')` with nothing after it
+means the same thing. It doesn't count towards anything, and appears in the
+report as a reminder that stays there after you commit it.
 
 Two options change what a failure means:
 
@@ -370,12 +376,12 @@ it('reproduces issue 412', @{ ... }, { failing: true })
 it('talks to a flaky endpoint', @{ ... }, { retries: 2 })
 ```
 
-`failing: true` passes when the body fails, and fails when the body
-passes, so the day someone fixes the bug the test tells you. `retries`
-runs the body again on failure, and a test that passes on a later
-attempt is reported as flaky rather than quietly green.
+`failing: true` makes the test pass when the body fails and fail when the
+body passes, so on the day someone fixes the bug, the test tells you.
+`retries` runs the body again if it fails, and a test that passes on a later
+attempt is reported as flaky instead of being quietly counted as a pass.
 
-## One Test, Many Inputs
+## Running a Test With Several Inputs
 
 ```zuri
 import test { * }
@@ -409,11 +415,11 @@ $ zuri run slug.zu
   suites 0   time 3ms
 ```
 
-Each row becomes a separate test with its own name and its own place in
-the report, so one bad row does not hide the others. `$0`, `$1` and so
-on stand for the row's values and `$#` for the row number.
-`describe_each` does the same for whole suites, which is how you run one
-set of tests against several implementations of the same interface.
+Each row becomes a separate test, with its own name and its own entry in the
+report, so one bad row doesn't hide the others. `$0`, `$1` and so on stand
+for the row's values, and `$#` for the row number. `describe_each` does the
+same for whole suites, which is how you run one set of tests against several
+implementations of the same interface.
 
 ## Test Doubles
 
@@ -466,26 +472,25 @@ describe('retry', @{
 })
 ```
 
-`mock()` returns a `Mock`, and `mock.fn` is the plain function you hand
-to the code under test. The matchers accept either, so
+`mock()` returns a `Mock`, and `mock.fn` is the plain function that you pass
+to the code under test. The matchers accept either one, so
 `expect(operation)` and `expect(operation.fn)` mean the same thing.
 
-The behaviour is scripted in front-to-back order: everything queued with
-a `_once` suffix runs first, one call each, and then the standing
-behaviour takes over.
+Behavior is used in order. Everything you queue with a `_once` method runs
+first, one call each, and after that the standing behavior takes over.
 
 | Method | Effect |
 | --- | --- |
-| `returns(v)` / `returns_once(v)` | return `v` |
-| `raises(e)` / `raises_once(e)` | raise `e` |
-| `implements(fn)` / `implements_once(fn)` | run `fn` with the real arguments |
-| `reset()` | forget the calls |
-| `clear_behaviour()` | forget the behaviour |
+| `returns(v)` / `returns_once(v)` | Returns `v` |
+| `raises(e)` / `raises_once(e)` | Raises `e` |
+| `implements(fn)` / `implements_once(fn)` | Runs `fn` with the actual arguments |
+| `reset()` | Forgets the recorded calls |
+| `clear_behaviour()` | Forgets the configured behavior |
 
-### Spying on Something That Already Exists
+### Spying on an Existing Function
 
-`spy_on` swaps a function out in place and gives you a `Mock` that both
-records and stands in for it:
+`spy_on` replaces a function in place and gives you a `Mock` that both
+records calls and stands in for the original:
 
 ```zuri
 import test { * }
@@ -512,21 +517,21 @@ it('charges the cart total once', @{
 })
 ```
 
-A spy calls through to the original unless you tell it otherwise, and is
-restored automatically after the test that installed it, even one that
-failed halfway through. Nothing has to be undone by hand.
+A spy calls the original function unless you tell it otherwise, and it's
+restored automatically after the test that installed it, even if the test
+failed partway through. You don't need to undo anything yourself.
 
-It works on a dictionary entry and on an instance property that holds a
-function. It does not work on a class method or a module function: Zuri
-classes are immutable once declared, and a module's members cannot be
-assigned from outside it. Code you want to substitute takes its
-collaborators as arguments or holds them in properties, which is the
-shape worth designing for anyway.
+It works on a dictionary entry, and on an instance property that holds a
+function. It doesn't work on a class method or a module function, because
+Zuri classes can't be changed after they're declared, and a module's members
+can't be assigned from outside the module. If you want to be able to
+substitute something in tests, have the code take its collaborators as
+arguments or store them in properties, which is a good design anyway.
 
 ## Snapshots
 
-For a value too big to write out by hand, record it once and compare
-against the recording from then on:
+For a value that's too large to write out by hand, record it once and
+compare against the recording from then on:
 
 ```zuri,ignore
 def invoice(customer, lines) {
@@ -563,7 +568,7 @@ $ zuri run invoice.zu
   snapshots 1 written
 ```
 
-It lands beside the test file, in `__snapshots__`:
+The file is saved next to the test file, in `__snapshots__`:
 
 ```text
 # Zuri snapshot file v1
@@ -581,11 +586,11 @@ It lands beside the test file, in `__snapshots__`:
   }
 ```
 
-Commit it. Reviewing the change to that file in a pull request is the
-entire value of the technique: an unexplained diff there is exactly the
-thing worth noticing.
+Commit it. Reviewing changes to that file in a pull request is the whole
+point of snapshot testing, because an unexplained change there is exactly
+what you want to notice.
 
-When the value changes, you get the diff:
+When the value changes, you see the difference:
 
 ```console
   1) invoice › builds the document
@@ -608,16 +613,16 @@ When the value changes, you get the diff:
        }
 ```
 
-If the new value is right, rewrite the snapshots:
+If the new value is correct, update the snapshots:
 
 ```console
 $ ZURI_UPDATE_SNAPSHOTS=1 zuri run invoice.zu
 ```
 
-That also deletes entries nothing asks for any more. And on CI, where
-`CI` is set in the environment, writing a *brand new* snapshot is a
-failure rather than a silent pass, because a snapshot nobody has looked
-at asserts nothing.
+This also removes entries that are no longer used. In CI, where the `CI`
+environment variable is set, writing a *new* snapshot counts as a failure
+instead of quietly passing, because a snapshot that nobody has looked at
+doesn't test anything.
 
 ## Testing What Something Prints
 
@@ -630,7 +635,7 @@ expect(@{
 }).to_print_nothing()
 ```
 
-Or take the output and assert on it yourself:
+You can also capture the output and make your own assertions about it:
 
 ```zuri,ignore
 var printed = capture_output(@{
@@ -640,14 +645,14 @@ expect(printed.lines()).to_have_length(4)
 ```
 
 This works because the runtime can redirect everything Zuri writes to
-standard output. The same mechanism is why a passing test's output does
-not clutter the report: it is captured and shown only when the test
-fails. `run({ verbose: true })` shows it either way, and
-`run({ capture: false })` turns it off entirely.
+standard output. The same mechanism keeps output from passing tests out of
+the report. It's captured and only shown when a test fails.
+`run({ verbose: true })` shows it either way, and `run({ capture: false })`
+turns capturing off completely.
 
-## More Than One File
+## Running Several Files
 
-A real project has a directory of them:
+A real project has a whole directory of test files:
 
 ```text
 project/
@@ -656,7 +661,7 @@ project/
     pricing.zu
 ```
 
-`zuri test` runs the lot:
+`zuri test` runs all of them:
 
 ```console
 $ zuri test
@@ -675,30 +680,30 @@ $ zuri test
   time 476ms
 ```
 
-There is nothing to write for this. The command finds the `tests`
-directory you ran it from, and ends the process with `1` when anything
-failed, so a CI job needs nothing added to it either.
+You don't need to write anything for this. The command finds the `tests`
+directory where you ran it, and exits with status `1` if anything failed, so
+a CI job doesn't need any extra setup either.
 
-Each file runs in a process of its own. That is not an implementation
-detail you can ignore, because it is what you are buying:
+Each file runs in a separate process. That's more than an implementation
+detail, because it gives you several guarantees:
 
-- A file that loops forever is killed, and the rest still run.
-  `--timeout 30s` says how long is too long.
-- A file that crashes, or calls `os.exit()` halfway through, is reported
-  as a file that never reported rather than taking the run with it.
-- Global state, a module loaded for its side effect, a changed working
-  directory: none of it leaks from one file into the next.
+- A file that loops forever is stopped, and the other files still run. Use
+  `--timeout 30s` to set how long is too long.
+- A file that crashes, or calls `os.exit()` partway through, is reported as
+  a file that didn't report back, instead of bringing down the whole run.
+- Global state, modules loaded for their side effects and changes to the
+  working directory never leak from one file to the next.
 
-Files are reported in the order they were discovered whatever order they
-finish in, so `--jobs 4` makes a big suite faster without making the
-report move around.
+Files are reported in the order they were found, whatever order they finish
+in, so `--jobs 4` makes a large suite faster without the report jumping
+around.
 
-A test file needs nothing special to be conducted. It declares its
-tests, and is equally runnable on its own.
+A test file doesn't need anything special to run this way. It declares its
+tests, and you can still run it on its own.
 
-### Running One File
+### Running a Single File
 
-Name it, with or without its `.zu`:
+Give its name, with or without the `.zu` extension:
 
 ```console
 $ zuri test pricing
@@ -706,31 +711,31 @@ $ zuri test pricing.zu
 $ zuri test tests/pricing.zu
 ```
 
-All three run `tests/pricing.zu`. A name is looked for under `tests`
-first, so a test keeps its own name even when something else in the
-project shares it, and a name that is nowhere to be found under that
-directory is looked for once more by filename alone anywhere beneath it,
-so a file in a subdirectory answers to its own name.
+All three run `tests/pricing.zu`. A name is looked for under `tests` first,
+so a test keeps its own name even if something else in the project has the
+same name. If the name isn't found directly in that directory, Zuri looks
+for a file with that name anywhere under it, so a file in a subdirectory can
+still be found by its own name.
 
-A directory works too, wherever it sits:
+A directory works too, wherever it is:
 
 ```console
 $ zuri test tests/api
 $ zuri test packages/store/tests
 ```
 
-### The Flags
+### Command-Line Flags
 
 | Flag | What it does |
 | --- | --- |
-| `-j, --jobs <count>` | How many files to run at once. `auto` is one per CPU. Default `1`. |
-| `-t, --timeout <duration>` | How long to give a single file before killing it. `500ms`, `30s`, `2m`, `1h`, or a bare number of milliseconds. Default: no limit. |
-| `-b, --bail [count]` | Stop after this many failing files. On its own, stop at the first. |
-| `-m, --match <pattern...>` | Filename patterns to run, instead of `*.zu`. |
-| `-i, --ignore <pattern...>` | Filename patterns to skip, instead of `_*`, `.*` and `index.zu`. |
-| `--no-recursive` | Only the files directly in the directory. |
-| `-e, --env <assignment...>` | Extra environment for every test process, as `KEY=VALUE`. |
-| `-l, --list` | Print the files that would run, one to a line, and stop. |
+| `-j, --jobs <count>` | The number of files to run at once. `auto` runs one per CPU. The default is `1`. |
+| `-t, --timeout <duration>` | How long a single file can run before it's stopped, such as `500ms`, `30s`, `2m` or `1h`, or a plain number of milliseconds. By default, there's no limit. |
+| `-b, --bail [count]` | Stops after this many files have failed. Without a count, stops at the first failure. |
+| `-m, --match <pattern...>` | File name patterns to run, instead of `*.zu` |
+| `-i, --ignore <pattern...>` | File name patterns to skip, instead of `_*`, `.*` and `index.zu` |
+| `--no-recursive` | Only runs the files directly inside the directory |
+| `-e, --env <assignment...>` | Sets extra environment variables for every test process, written as `KEY=VALUE` |
+| `-l, --list` | Prints the files that would run, one per line, and stops |
 
 ```console
 $ zuri test --jobs auto --timeout 30s
@@ -738,24 +743,24 @@ $ zuri test --bail
 $ zuri test --match '*_test.zu' '*_spec.zu'
 ```
 
-`--bail` and the two pattern flags take as many words as follow them, so
-put the file you are naming ahead of them, or close them with `--`:
+`--bail` and the two pattern flags take every word that follows them, so put
+the file name before them, or end the list with `--`:
 
 ```console
 $ zuri test pricing --bail
 $ zuri test --match '*_test.zu' -- pricing
 ```
 
-A count for `--bail` has to be attached, `--bail=3`, for the same
-reason: a count written as a separate word is indistinguishable from the
-file.
+For the same reason, a count for `--bail` has to be attached, as in
+`--bail=3`, because a count written as a separate word can't be told apart
+from a file name.
 
-### Conducting a Suite Yourself
+### Running a Suite Yourself
 
-`conduct()` is the function `zuri test` is built on, and a project that
-wants the run under its own control can call it directly. A directory
-handed to `zuri run` runs its `index.zu`, so one file makes the suite
-`zuri run tests`:
+`conduct()` is the function that `zuri test` is built on, and a project that
+wants to control the run itself can call it directly. When you pass a
+directory to `zuri run`, it runs that directory's `index.zu`, so a single
+file lets you run the suite with `zuri run tests`:
 
 <span class="filename">Filename: tests/index.zu</span>
 
@@ -766,60 +771,60 @@ import test
 test.conduct(os.dir_name(__file__), { jobs: 4, timeout: 30000 })
 ```
 
-It takes the same choices the flags do, as a dictionary, and returns the
-run rather than only reporting it. `conduct` leaves `index.zu` out of
-discovery, and never runs the script that called it either, so the index
-cannot end up running itself.
+It accepts the same settings as the command-line flags, as a dictionary, and
+returns the run's results instead of only reporting them. `conduct` leaves
+`index.zu` out when it looks for test files, and never runs the script that
+called it, so the index can't end up running itself.
 
 ## Controlling a Run
 
-Call `run()` yourself when you want to change how the run behaves, or
-to read the result. It takes an options dictionary, and calling it
-takes over from the automatic run, so nothing happens twice.
+Call `run()` yourself when you want to change how the run behaves, or to
+read the results. It takes a dictionary of options, and calling it replaces
+the automatic run, so nothing runs twice.
 
-The options you will reach for:
+These are the options you're most likely to use:
 
 | Option | What it does |
 | --- | --- |
-| `filter` | run only tests whose full name contains this, or matches it as a regular expression |
-| `bail` | stop after this many failures |
-| `shuffle` / `seed` | run in a random order, and reproduce that order later |
-| `reporter` | `spec`, `dot`, `tap`, `junit`, `json`, `ndjson`, `silent` |
-| `exit` | exit the process with the run's status when it finishes |
+| `filter` | Only runs tests whose full name contains this text, or matches it as a regular expression |
+| `bail` | Stops after this many failures |
+| `shuffle` / `seed` | Runs the tests in random order, and lets you reproduce that order later |
+| `reporter` | One of `spec`, `dot`, `tap`, `junit`, `json`, `ndjson` or `silent` |
+| `exit` | Exits the process with the run's status when it finishes |
 
 ```zuri,ignore
 run({ filter: 'subtotal', bail: 1 })
 ```
 
-`filter` and `reporter` can also come from `ZURI_TEST_FILTER` and
-`ZURI_TEST_REPORTER`, which is what lets one command be pointed at one
-test without editing the file.
+You can also set `filter` and `reporter` with `ZURI_TEST_FILTER` and
+`ZURI_TEST_REPORTER`, which lets you point the same command at a single test
+without editing the file.
 
-Shuffling is the one worth turning on deliberately. Tests that only pass
-because an earlier test left something behind are a real and common
-problem, and running them in a different order every time is how you
-find out:
+Shuffling is worth turning on deliberately. Tests that only pass because an
+earlier test left something behind are a real and common problem, and
+running them in a different order every time is how you find them:
 
 ```zuri,ignore
 run({ shuffle: true })
 ```
 
-The seed is printed with the summary, and passing it back reproduces
-that exact order.
+The seed is printed along with the summary, and passing it back reproduces
+exactly the same order.
 
-### On CI
+### Running Tests in CI
 
-Nothing to add. A test file exits `0` when everything passed and `1`
-when it did not, whether or not it called `run()`.
+You don't need to add anything. A test file exits with `0` when everything
+passed and `1` when something didn't, whether or not it called `run()`.
 
-For a CI system that wants a machine-readable report,
-`{ reporter: 'junit' }` writes JUnit XML to standard output and
-`{ reporter: 'tap' }` writes TAP version 14.
+If your CI system needs a machine-readable report, `{ reporter: 'junit' }`
+writes JUnit XML to standard output, and `{ reporter: 'tap' }` writes TAP
+version 14.
 
 ## Writing Your Own Reporter
 
-The runner knows nothing about output. It walks the tree and calls
-methods on a reporter, and every method has a do-nothing default:
+The runner doesn't know anything about output. It walks the tree of tests
+and calls methods on a reporter, and every method has a default that does
+nothing:
 
 ```zuri
 import test { * }
@@ -845,26 +850,27 @@ describe('a suite', @{
 run({ reporter: Quiet(), exit: false })
 ```
 
-The objects handed to it are the same ones the built-in reporters see:
-`Case`, `Suite`, `Failure` and `Summary`, documented in
+The objects passed to the reporter are the same ones the built-in reporters
+receive: `Case`, `Suite`, `Failure` and `Summary`, which are documented in
 `test.result`.
 
-## Two Things to Know
+## Two Things to Keep in Mind
 
-**A `timeout` on a test is measured after the body returns.** Zuri runs
-synchronously, so a test runs to completion and is then timed. That
-catches one that got too slow; it does not rescue one that hangs. A hang
-needs a process boundary, which is exactly what `conduct` puts around
-each file, and why its `timeout` is the enforcing one.
+**A test's `timeout` is checked after the body returns.** Zuri runs
+synchronously, so a test runs to completion and then its time is checked.
+That catches a test that has become too slow, but it can't stop one that
+hangs. Handling a hang needs a process boundary, which is exactly what
+`conduct` puts around each file, and why its `timeout` is the one that's
+enforced.
 
-**Everything in one file shares one interpreter.** Reset what you change
-in `before_each`, and reach for `shuffle` to find out whether you missed
+**All the tests in a file share the same interpreter.** Reset whatever you
+change in `before_each`, and use `shuffle` to find out whether you've missed
 anything.
 
-## Where to Go Next
+## Further Reading
 
-The module's own documentation carries the full matcher list with each
-one's edge cases, every option `run()` and `conduct()` accept, and the
-snapshot file format. [Appendix F](appendix-06-stdlib-index.md) lists
-the submodules. [Chapter 24](ch24-00-debugging.md) is what to do once a
-test has told you something is wrong.
+The module's own documentation includes the full list of matchers, with the
+edge cases of each one, every option that `run()` and `conduct()` accept,
+and the format of snapshot files. [Appendix F](appendix-06-stdlib-index.md)
+lists the submodules, and [Chapter 24](ch24-00-debugging.md) explains what
+to do once a test has told you something is wrong.

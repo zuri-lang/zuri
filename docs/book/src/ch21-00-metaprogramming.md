@@ -1,56 +1,57 @@
 # Metaprogramming and Reflection
 
-Zuri's own compiler is available to Zuri programs. The `zuri` module hands
-you the lexer, the parser and the bytecode compiler as ordinary functions,
-alongside a reflection API over live functions, classes, modules and
+Zuri programs have access to Zuri's own compiler. The `zuri` module provides
+the lexer, the parser and the bytecode compiler as ordinary functions, along
+with a reflection API for working with live functions, classes, modules and
 instances.
 
-That is an unusual amount of the language to expose, so it is worth being
-clear about what it is for. This is the machinery behind documentation
-generators, linters, plugin loaders, serialisers, debuggers and editor
-tooling — programs whose subject is other programs. It is not machinery for
-ordinary code, and the chapter ends with the one thing it deliberately
-cannot do.
+That's an unusual amount of the language to expose, so it's worth being
+clear about what it's for. These are the tools behind documentation
+generators, linters, plugin loaders, serializers, debuggers and editor
+tooling, which are all programs that work with other programs. They aren't
+meant for everyday code, and the chapter ends with the one thing they
+intentionally can't do.
 
-## Two Halves That Cannot Answer for Each Other
+## Reflection and the Compiler API
 
-The module divides cleanly, and confusing the halves is the most common
-mistake:
+The module is divided into two clear halves, and confusing them is the most
+common mistake:
 
 | | Reflection | The compiler API |
 | --- | --- | --- |
-| Subject | objects that exist **right now** | **source text** |
+| Works with | Objects that exist **right now** | **Source code** |
 | Entry points | `zuri.reflect.*` | `tokenize()`, `parse()`, `compile()` |
-| Can tell you | a function's arity, a class's fields, an instance's values | a doc block, a comment, a line number, what the compiler emitted |
-| Cannot tell you | anything about the source it came from | anything about a running value |
+| Can tell you | A function's arity, a class's fields, an instance's values | A doc block, a comment, a line number, what the compiler produced |
+| Can't tell you | Anything about the source code it came from | Anything about a running value |
 
-A function's **arity** is a runtime fact: the function object carries it,
-and reflection reads it. That same function's **doc block** is a source
-fact: it exists only in the file, and only the parser can find it. There is
-no call that crosses the gap, which is why a documentation generator parses
-files rather than importing them.
+A function's **arity** is a run-time fact. The function object stores it,
+and reflection reads it. The same function's **doc block** is a fact about
+the source code. It only exists in the file, and only the parser can find
+it. No function bridges the two, which is why a documentation generator
+parses files instead of importing them.
 
-## One Shape for Everything
+## A Common Structure
 
-`tokenize()`, `parse()` and `compile()` all return the same *shape* of
-result: a flat list of small, uniformly tagged records.
+`tokenize()`, `parse()` and `compile()` all return results with the same
+*structure*: a flat list of small records, each tagged in the same way.
 
-| Function | Returns | Tag | Payload |
+| Function | Returns | Tag | Data |
 | --- | --- | --- | --- |
-| `tokenize(source)` | `Token` list | `kind` | `value`, `text` |
-| `parse(source)` | `Node` list | `kind` | `fields` |
-| `compile(source)` | `Instr` list | `op` | `fields` |
+| `tokenize(source)` | A list of `Token` | `kind` | `value`, `text` |
+| `parse(source)` | A list of `Node` | `kind` | `fields` |
+| `compile(source)` | A list of `Instr` | `op` | `fields` |
 
-There is one `Token` class, one `Node` class and one `Instr` class — not
-one class per token kind, grammar rule or opcode. The grammar has around
-fifty shapes and the instruction set around sixty opcodes; a class for each
-would be a hundred-odd near-identical classes to keep in step with the
-compiler forever.
+There's a single `Token` class, a single `Node` class and a single `Instr`
+class, rather than one class for each kind of token, grammar rule or opcode.
+The grammar has about fifty node types and the instruction set has about
+sixty opcodes, so a class for each would mean more than a hundred nearly
+identical classes that would have to be kept in sync with the compiler
+forever.
 
-The cost of that choice is real: nothing tells you which fields a given
-`kind` carries. You cannot autocomplete your way to a `Binary` node's
-`left`, `op` and `right`. So the module leans on a different habit — **run
-it and look**:
+The downside of this choice is real: nothing tells you which fields a
+particular `kind` has. Your editor can't autocomplete a `Binary` node's
+`left`, `op` and `right`. Instead, the module relies on a different habit,
+which is to **run it and look**:
 
 ```zuri
 import zuri
@@ -77,22 +78,22 @@ Stmt@1:1
       is_constant: false
 ```
 
-Everything about that node is in front of you: it is a `Stmt` wrapping a
-`Var`, the initialiser is a `Binary` whose `op` is the string `'Plus'`, and
+Everything about that node is right there. It's a `Stmt` that wraps a `Var`,
+the initializer is a `Binary` node whose `op` is the string `'Plus'`, and
 the literal `1` is an `Integer` node rather than a generic literal. Each
-header names where that node starts, and `name_span` says exactly where the
-name `total` is. Nothing had to be looked up.
+header shows where the node starts, and `name_span` shows exactly where the
+name `total` is. You didn't have to look anything up.
 
-`dump()` is the fastest way to learn any node's shape, and it is the first
-thing to reach for whenever you are unsure. `zuri.dump_file(path)` does the
-same for a whole file.
+`dump()` is the quickest way to learn the structure of any node, and it's
+the first thing to try whenever you're unsure. `zuri.dump_file(path)` does
+the same for a whole file.
 
 ## Runtime Reflection
 
-Reflection answers questions about a value you are holding. Every entry
-point is under `zuri.reflect`.
+Reflection answers questions about a value you have. Every reflection
+function is in `zuri.reflect`.
 
-### What Kind of Thing Is This?
+### What Kind of Value Is This?
 
 ```zuri
 import zuri
@@ -118,10 +119,10 @@ number
 function
 ```
 
-`kind()` is `typeof()`'s more literal cousin. Note the last line: a
-built-in native function reports `'function'`, as does a closure and a
-bound method, because from the language's point of view all three are
-interchangeably callable.
+`kind()` is a more literal version of `typeof()`. Note the last line: a
+built-in native function reports `'function'`, as do closures and bound
+methods, because as far as the language is concerned, all three can be
+called in exactly the same way.
 
 ### Functions
 
@@ -149,10 +150,11 @@ false
 nil
 ```
 
-`function_info()` returns `{ name, arity, variadic, is_method,
-owning_class_name, source_path }`. The last one is the only field that
-reaches back toward the source, and it is a *path*, not content — to read
-the function's doc block you still have to parse that file.
+`function_info()` returns
+`{ name, arity, variadic, is_method, owning_class_name, source_path }`. The
+last field is the only one that refers back to the source code, and it's a
+*path*, not the content. To read the function's doc block, you still have to
+parse that file.
 
 ### Classes
 
@@ -196,22 +198,22 @@ nil
 [@new, area, @to_json, _secret]
 ```
 
-Four things in that output are worth pausing on.
+Four things in that output are worth a closer look.
 
-**`fields` lists `name`**, which was never declared with `var` — it was
+**`fields` includes `name`**, which was never declared with `var`. It was
 created by `self.name = name` inside `@new`. Reflection reports the class's
-real shape, not just what the `var` lines said.
+actual structure, not just what the `var` lines said.
 
-**`statics` is separate from `fields`**, because a static belongs to the
-class and a field belongs to each instance.
+**`statics` is separate from `fields`**, because a static field belongs to
+the class, while a field belongs to each instance.
 
-**Decorated methods appear under their `@` names.** `@new` and `@to_json`
-are in `methods` alongside ordinary ones.
+**Decorated methods are listed under their `@` names.** `@new` and
+`@to_json` appear in `methods` alongside the ordinary methods.
 
-**`_secret` is listed.** Reflection sees private members; more on that
+**`_secret` is listed.** Reflection can see private members, as explained
 below.
 
-Each entry in `methods` is a full `function_info`, so
+Each entry in `methods` is a complete `function_info`, so
 `info.methods.area.arity` works without another call.
 
 `superclass_name` is a **string or `nil`**, not a class:
@@ -265,16 +267,17 @@ true
 10
 ```
 
-`get_props()` lists the field names an instance actually has.
+`get_props()` lists the names of the fields an instance actually has.
 `get_prop()`, `set_prop()`, `has_prop()` and `del_prop()` read and write
-them by computed name — the reflective equivalents of the `getprop` family
-of built-ins from [Chapter 6](ch06-04-encapsulation.md).
+fields by a computed name. They're the reflection equivalents of the
+`getprop` family of built-in functions from [Chapter
+6](ch06-04-encapsulation.md).
 
-They cannot create a field. A class is sealed, so `set_prop()` on a name
-the class never declared returns `false` and changes nothing.
+They can't create a field. Classes are sealed, so `set_prop()` with a name
+that the class never declared returns `false` and doesn't change anything.
 
-`class_of()` goes the other way, from an instance to the class it was
-built from, as the class itself:
+`class_of()` works in the other direction. Given an instance, it returns the
+class it was created from, as the class itself:
 
 ```zuri
 import zuri
@@ -297,15 +300,16 @@ Labelled
 nil
 ```
 
-`typeof()` gives the class's name, and two classes declared with the
-same name in different modules give the same one. Only the class tells
-them apart, and only the class can be called, handed to `class_info()`,
-or used as a dictionary key, which is how a library keeps something
-per class: `sql.model` keeps each model's definition that way.
+`typeof()` returns the class's name, and two classes with the same name
+declared in different modules return the same name. Only the class itself
+can tell them apart, and only the class can be called, passed to
+`class_info()` or used as a dictionary key. That's how a library can store
+something for each class. For example, `sql.model` stores each model's
+definition this way.
 
-### Methods by Name
+### Looking Up Methods by Name
 
-Three calls turn a method name into something callable:
+Three functions turn a method name into something you can call:
 
 ```zuri
 import zuri
@@ -340,11 +344,11 @@ function
 hello ada
 ```
 
-The distinction between the last two matters. **`get_method()` returns the
-unbound function**; calling it needs the instance supplied yourself.
-**`bind_method()` returns it already attached to the instance**, so it can
-be stored, passed around and called with nothing extra — which is what
-makes a dispatch table of methods possible:
+The difference between the last two is important. **`get_method()` returns
+the unbound function**, so you have to pass the instance yourself when you
+call it. **`bind_method()` returns the method already attached to the
+instance**, so it can be stored, passed around and called without anything
+extra. That's what makes a dispatch table of methods possible:
 
 ```zuri
 import zuri
@@ -386,12 +390,12 @@ echo counter.n
 1
 ```
 
-`has_decorator()` and `get_decorator()` do the same for `@`-prefixed
-methods, taking the name **without** the `@`.
+`has_decorator()` and `get_decorator()` do the same for methods whose names
+start with `@`. Pass the name **without** the `@`.
 
-### Reflection Sees Private Members
+### Reflection Can See Private Members
 
-Everything above ignores the leading-underscore rule:
+All of the functions above ignore the leading underscore rule:
 
 ```zuri
 import zuri
@@ -411,15 +415,15 @@ echo zuri.reflect.get_prop(Vault(), '_combination')
 1234
 ```
 
-This is deliberate, and it is the same decision `getprop()` makes. A
-serialiser has to see every field or it writes an incomplete record; a
-debugger has to see every field or it shows a lie. Hiding them would defeat
-the only purpose these functions have.
+This is intentional, and it's the same choice `getprop()` makes. A
+serializer has to see every field, or it writes an incomplete record, and a
+debugger has to see every field, or it shows misleading information. Hiding
+private fields would defeat the only purpose these functions have.
 
-The rule to take from it: **reflection is infrastructure, not a way around
-encapsulation**. Code that reaches for `get_prop()` to read a private field
-it could not otherwise read has not found a loophole; it has written
-something the next reader will not expect.
+The lesson here is that **reflection is for building tools, not for getting
+around encapsulation**. If code uses `get_prop()` to read a private field it
+couldn't otherwise read, it hasn't found a clever loophole. It has written
+something the next person to read it won't expect.
 
 ### Modules
 
@@ -438,13 +442,13 @@ math
 true
 ```
 
-`module_info()` reports a module's name, its path and the members it
+`module_info()` returns a module's name, its path and the members it
 exports.
 
-`import` takes its path as written, so it cannot reach a file whose name
-the program only learns as it runs. `zuri.import_file()` can. It imports
-the module at a path, the way an `import` naming that file would, and
-returns it:
+`import` takes its path exactly as written, so it can't import a file whose
+name the program only learns while it's running. `zuri.import_file()` can.
+It imports the module at a given path, just as an `import` naming that file
+would, and returns it:
 
 ```zuri
 import os
@@ -470,18 +474,18 @@ for name in os.read_dir(plugins).filter(@(entry) => entry.ends_with('.zu')) {
 hello Ada
 ```
 
-That is a plugin loader: import a directory of modules, ask each
-whether it has a known function, and call the ones that do. A relative
-path is taken from the working directory. The module comes from the
-same cache `import` uses, so its top level runs once however many
-times, and by whichever route, it is imported, and two imports of one
-file are the same module, `==` to each other. `sql.migrate` reads its
-migrations this way.
+That's how you build a plugin loader: import a directory of modules, check
+whether each one has a known function, and call the ones that do. A relative
+path is resolved from the working directory. The module comes from the same
+cache that `import` uses, so its top level only runs once, however many
+times and in whatever way it's imported, and two imports of the same file
+return the same module, which are equal (`==`) to each other. `sql.migrate`
+loads its migrations this way.
 
-### The Collector
+### The Garbage Collector
 
-The garbage collector runs on its own as a program allocates. `gc()` runs
-a full collection on the spot:
+The garbage collector runs automatically as a program allocates memory.
+`gc()` runs a full collection immediately:
 
 ```zuri
 import zuri
@@ -497,19 +501,19 @@ echo 'collected'
 collected
 ```
 
-Every object nothing reaches is freed before `gc()` returns, and anything
-that releases a resource when collected releases it then: an `ffi` pointer
-taken over with `own()` runs its destructor. The memory it frees goes back
-to the system before it returns too. No program needs `gc()` to
-stay correct. It is for the moments timing matters, such as releasing
-native resources at a known point, or a test checking what collection
-does. A full collection visits every live object, so calling it in a loop
-is slow.
+Every unreachable object is freed before `gc()` returns, and anything that
+releases a resource when it's collected does so at that point. For example,
+an `ffi` pointer taken over with `own()` runs its destructor. The freed
+memory is also returned to the operating system before `gc()` returns. No
+program needs to call `gc()` to work correctly. It's for situations where
+timing matters, such as releasing native resources at a known point, or a
+test that checks what garbage collection does. A full collection visits
+every live object, so calling it in a loop is slow.
 
 ## Tokens
 
-`tokenize()` is the first stage: text in, a flat list of lexical tokens
-out.
+`tokenize()` is the first stage. It takes source text and returns a flat
+list of tokens.
 
 ```zuri
 import zuri
@@ -528,27 +532,28 @@ Comment at 1:11 -> # note
 Eof at 1:17 -> 
 ```
 
-**Nothing is filtered.** Comments, doc blocks and newlines are all real
-tokens, and the list always ends with one `Eof`. The parser's grammar skips
-trivia when it runs; `tokenize()` reports everything the lexer saw, which
-is exactly what a formatter or a syntax highlighter needs.
+**Nothing is filtered out.** Comments, doc blocks and newlines are all
+returned as tokens, and the list always ends with a single `Eof` token. The
+parser skips comments and whitespace when it runs, but `tokenize()` reports
+everything the lexer saw, which is exactly what a formatter or a syntax
+highlighter needs.
 
-Each `Token` carries:
+Each `Token` has these fields:
 
-| Field | What it is |
+| Field | Description |
 | --- | --- |
-| `kind` | the lexer's own variant name — `'Identifier'`, `'Plus'`, `'Comment'` |
-| `line`, `column` | 1-indexed position; `column` counts characters, not bytes |
-| `start`, `end` | character offsets spanning the token's exact text |
-| `text` | the exact source text, delimiters included |
-| `value` | the payload, where there is one — a literal's value, an identifier's name, a comment's content |
+| `kind` | The lexer's own name for the token type, such as `'Identifier'`, `'Plus'` or `'Comment'` |
+| `line`, `column` | The position, starting from 1. `column` counts characters, not bytes. |
+| `start`, `end` | The character offsets of the token's exact text |
+| `text` | The exact source text, including any delimiters |
+| `value` | The token's data, where it has any, such as a literal's value, an identifier's name or a comment's content |
 
-`start` and `end` are what make edits possible: they let you recover or
-replace a token's original text without re-lexing, which is how a rename
-tool or an automatic formatter works.
+`start` and `end` make it possible to edit source code. They let you recover
+or replace a token's original text without running the lexer again, which is
+how a rename tool or a code formatter works.
 
-`is_trivia()` is true for comments and doc blocks, so filtering them is one
-call:
+`is_trivia()` returns true for comments and doc blocks, so you can filter
+them out with a single call:
 
 ```zuri
 import zuri
@@ -564,10 +569,10 @@ echo tokens.filter(@(t) => !t.is_trivia()).length()
 5
 ```
 
-### Lexing Never Raises
+### The Lexer Never Raises an Error
 
-A malformed input does not throw. It produces a token of kind `'Error'`
-carrying what went wrong:
+Invalid input doesn't raise an error. Instead, it produces a token of kind
+`'Error'` that describes what went wrong:
 
 ```zuri
 import zuri
@@ -583,15 +588,14 @@ echo tokens.find(@(t) => t.kind == 'Error') != nil
 true
 ```
 
-`tokenize()` is therefore **total over any input at all**, which is what
-makes it safe to point at a file you did not write, or at a half-typed
-buffer in an editor. Neither `parse()` nor `compile()` has that property —
-both raise on bad input, because neither can produce a meaningful result
-from it.
+That means `tokenize()` **accepts any input at all**, which makes it safe to
+use on a file you didn't write, or on a half-written buffer in an editor.
+Neither `parse()` nor `compile()` works like that. Both raise an error for
+invalid input, because neither can produce a meaningful result from it.
 
 ## The Syntax Tree
 
-`parse()` is the second stage: tokens become a tree.
+`parse()` is the second stage. It turns tokens into a tree.
 
 ```zuri
 import zuri
@@ -611,17 +615,18 @@ double
 1
 ```
 
-A `Node` has a `kind`, a position and a `fields` dictionary. The fields hold
-more nodes, plain lists, plain dictionaries or scalars and nothing else, so
-walking the tree is uniform no matter which node you are looking at.
+A `Node` has a `kind`, a position and a `fields` dictionary. The fields
+contain other nodes, plain lists, plain dictionaries or simple values and
+nothing else, so you can walk through the tree in the same way, whatever
+node you're looking at.
 
-### Where Each Node Is
+### Node Positions
 
-A node's position covers the whole of the source it was read from.
-`start` and `end` are character offsets, the first character and the one
-just past the last, so slicing the source with them gives back the node's
-own text. `line` and `col` are where it starts and `end_line` and `end_col`
-where it ends, all counted from 1:
+A node's position covers all of the source it was parsed from. `start` and
+`end` are character offsets, of the first character and of the character
+just after the last one, so slicing the source with them gives you the
+node's own text. `line` and `col` give the start of the node, and `end_line`
+and `end_col` give its end, all counted from 1:
 
 ```zuri
 import zuri
@@ -641,11 +646,11 @@ n * 2
 double
 ```
 
-A declaration starts at its keyword, so the function starts at `def`, and
-its name has a `name_span` of its own. That is everything a tool needs to
-underline a mistake, jump to a definition or select a whole statement.
+A declaration starts at its keyword, so a function starts at `def`, and its
+name has its own `name_span`. That's everything a tool needs to underline a
+mistake, jump to a definition or select a whole statement.
 
-### Walking It
+### Walking the Tree
 
 `walk_nodes(tree, visitor)` visits every node, depth first:
 
@@ -666,14 +671,15 @@ echo kinds
 [Function, Argument, TypeHint, Any, Block, Return, Binary, Identifier, Integer]
 ```
 
-That output repays a second look, because it shows how much the parser
-makes explicit. The single unannotated parameter `n` still produced an
-`Argument` wrapping a `TypeHint` wrapping an `Any` — the *absence* of an
-annotation is represented in the tree, not omitted from it. A tool walking
-this never has to special-case "no type was written".
+That output is worth a second look, because it shows how much the parser
+makes explicit. The single parameter `n`, which has no annotation, still
+produced an `Argument` that wraps a `TypeHint` that wraps an `Any`. The
+*absence* of an annotation is represented in the tree rather than left out,
+so a tool that walks the tree never has to handle "no type was written" as a
+special case.
 
-The visitor may also be a **dictionary from kind to handler**, in which
-case only matching nodes are called:
+The visitor can also be a **dictionary that maps node kinds to handlers**,
+in which case only the matching nodes are passed to it:
 
 ```zuri
 import zuri
@@ -698,8 +704,8 @@ echo names
 [a, b]
 ```
 
-`find_nodes(tree, kind)` is the shortcut when you want one kind and nothing
-else:
+`find_nodes(tree, kind)` is a shortcut for when you only want nodes of one
+kind:
 
 ```zuri
 import zuri
@@ -715,11 +721,10 @@ echo zuri.find_nodes(tree, 'Binary')[0].fields.op
 Multiply
 ```
 
-### Comments Survive
+### Comments Are Kept
 
-This is the property that makes documentation tooling possible. Comments
-and doc blocks are kept in the tree, in their original position, as their
-own nodes:
+This is what makes documentation tools possible. Comments and doc blocks are
+kept in the tree, in their original positions, as nodes of their own:
 
 ```zuri
 import zuri
@@ -737,17 +742,17 @@ echo zuri.parse(source).map(@(n) => n.kind)
 [Comment, Function]
 ```
 
-A doc block sits as a sibling immediately before whatever it documents, so
-pairing them is one pass with one variable of state — which is exactly what
-the worked example below does.
+A doc block is a sibling placed immediately before whatever it documents, so
+pairing them up takes a single pass with one variable of state. That's
+exactly what the example below does.
 
-Most parsers throw comments away. Keeping them is what separates a parser
-you can build a formatter or a documentation generator on from one you can
-only build an interpreter on.
+Most parsers throw comments away. Keeping them is what lets you build a
+formatter or a documentation generator on top of a parser, rather than only
+an interpreter.
 
 ## Bytecode
 
-`compile()` is the third stage: the tree becomes VM instructions.
+`compile()` is the third stage. It turns the tree into VM instructions.
 
 ```zuri
 import zuri
@@ -765,14 +770,14 @@ LoadNil from line 1
 Return from line 1
 ```
 
-An `Instr` has an `op`, a `line` and a `fields` dictionary — the same shape
-a `Node` has — and `walk_instrs()` and `find_instrs()` mirror the AST
-walkers exactly.
+An `Instr` has an `op`, a `line` and a `fields` dictionary, which is the
+same structure a `Node` has, and `walk_instrs()` and `find_instrs()` work
+exactly like the tree walkers.
 
-Notice `AddImm`. The compiler folded the constant `2` into the add
-instruction rather than loading it separately. That is the sort of question
-only the bytecode can answer, and reading it is the most direct way to find
-out what the compiler actually made of something:
+Notice the `AddImm` instruction. The compiler included the constant `2` in
+the add instruction instead of loading it separately. Questions like this
+can only be answered by the bytecode, and reading it is the most direct way
+to find out what the compiler actually did with your code:
 
 ```zuri
 import zuri
@@ -784,16 +789,16 @@ echo zuri.compile('var a = 2 * 3 ** 2').map(@(i) => i.op)
 [LoadConst, LoadConst, LoadConst, Pow, Mul, SetGlobal, LoadNil, Return]
 ```
 
-The power comes **before** the multiply, which is `**` binding tighter than
-`*`. One line of bytecode settles an argument that reading the expression
-does not.
+The power comes **before** the multiplication, because `**` binds more
+tightly than `*`. One line of bytecode settles a question that reading the
+expression might not.
 
 ### Resolved Operands
 
-Several opcodes carry only a raw index into the compiler's constant pool,
-which on its own tells you nothing. Rather than make every caller fetch and
-correlate a constants table, each such field arrives with its resolved
-value alongside the index:
+Several opcodes only contain an index into the compiler's constant pool,
+which doesn't tell you much by itself. Instead of making every caller fetch
+and match up a table of constants, each of these fields comes with the
+resolved value next to the index:
 
 ```zuri
 import zuri
@@ -809,31 +814,33 @@ echo load.fields.value
 42
 ```
 
-`const_idx` is the raw index, `value` is what it points at, and `dst` is
-the register the result lands in. The same
-pairing appears on `GetGlobal`, `GetField`, `Invoke` and the rest.
+`const_idx` is the index, `value` is the constant it refers to, and `dst` is
+the register the result is stored in. The same pairing appears on
+`GetGlobal`, `GetField`, `Invoke` and the other opcodes like them.
 
-A `Closure` instruction's resolved value is a nested function prototype
-(`{ name, arity, variadic, instructions }`) whose own `instructions` are
-wrapped the same way, recursively — so compiling a file with functions in
-it exposes their bodies too, not only the code around them.
+The resolved value of a `Closure` instruction is a nested function prototype
+(`{ name, arity, variadic, instructions }`), whose own `instructions` are
+wrapped in the same way, all the way down. So when you compile a file that
+contains functions, you can see their bodies too, not only the code around
+them.
 
-### Line Numbers Are Statement-Grained
+### Line Numbers Only, Not Columns
 
-Every instruction carries the source line it came from, but **never a
-column**. The compiler's own tracking is line-only. A `Token` and a `Node`
-both have real column information from the lexer; an `Instr` does not.
+Every instruction records the source line it came from, but **never a
+column**, because the compiler only tracks lines. Both `Token` and `Node`
+have accurate column information from the lexer, but `Instr` doesn't.
 
 ## Checking Source Without Running It
 
-`parse()` and `compile()` raise on the first sign of bad source, which is
-right for a tool that needs the whole program. A tool working on source as
-it is being written, half a statement at a time, needs the opposite:
-everything that can be read, and an exact account of what is wrong.
+`parse()` and `compile()` raise an error at the first sign of invalid
+source, which is the right behavior for a tool that needs the complete
+program. A tool that works on source while it's being written, half a
+statement at a time, needs the opposite: everything that can be read, and a
+precise description of what's wrong.
 
-`parse_partial()` reads as much as it can. Where a statement fails, the
-parser reports it, skips to where the next statement starts and carries
-on, so one mistake costs one statement and is reported once:
+`parse_partial()` reads as much as it can. When a statement fails, the
+parser reports it, skips ahead to the start of the next statement and
+continues, so each mistake only affects one statement and is reported once:
 
 ```zuri
 import zuri
@@ -855,14 +862,14 @@ false
 [a, , c]
 ```
 
-Each error is a `Diagnostic`: a `message` and the same six-part position a
-node has, so it can be underlined exactly. The statement that failed is
-still in the tree, its missing name an empty string sitting where the name
-belongs.
+Each error is a `Diagnostic`, which has a `message` and the same six-part
+position that a node has, so you can underline it precisely. The statement
+that failed is still in the tree, with an empty string where its missing
+name should be.
 
-`check()` goes one stage further. Source that parses goes on to the
-compiler, which catches what the grammar cannot see, such as a `break`
-with no loop around it or a name declared twice in one scope:
+`check()` goes one step further. Source that parses successfully is passed
+on to the compiler, which catches problems that the grammar can't see, such
+as a `break` outside a loop or a name declared twice in the same scope:
 
 ```zuri
 import zuri
@@ -886,13 +893,13 @@ for problem in zuri.check(source) {
 break
 ```
 
-An empty list from `check()` means the source compiles. Neither function
-runs anything or raises on bad source, so both can be pointed at whatever
-an editor's buffer holds at the time.
+If `check()` returns an empty list, the source compiles. Neither function
+runs any code or raises an error for invalid source, so you can use both of
+them on whatever an editor's buffer contains at any moment.
 
-## Reading a File
+## Reading Files
 
-Each of these has a `_file` counterpart that reads the path first:
+Each of these functions has a `_file` version that reads a file first:
 
 | Source string | File |
 | --- | --- |
@@ -902,21 +909,21 @@ Each of these has a `_file` counterpart that reads the path first:
 | `parse_partial(source)` | `parse_partial_file(path)` |
 | `check(source)` | `check_file(path)` |
 
-There is a fourth with no string equivalent: **`dump_file(path)`** reads,
-parses and returns the `dump()` of every top-level node. It is usually the
-fastest possible answer to "what is actually in this file".
+There's also one with no string version: **`dump_file(path)`** reads and
+parses a file, and returns the `dump()` of every top-level node. It's
+usually the quickest way to find out what's actually in a file.
 
-## A Worked Example: A Documentation Extractor
+## Example: Extracting Documentation
 
-Here is the pattern the book's own reference appendices are built on. It
-takes source text and returns every documented function in it, pairing each
-declaration with the doc block above it.
+Here's the technique that this book's own reference appendices are built
+with. It takes source code and returns every documented function in it,
+pairing each declaration with the doc block above it.
 
-The key fact is that `zuri.parse()` keeps comments in the tree. A doc block
-comes back as its own `DocBlock` node, sitting as a sibling immediately
-before whatever it documents. `zuri.doc.attach()` walks a list of siblings
-and pairs each one with the doc block right above it, and `zuri.doc` reads
-the inside of each block into its prose and its `@tag`s:
+The key is that `zuri.parse()` keeps comments in the tree. A doc block is
+returned as a `DocBlock` node of its own, placed as a sibling immediately
+before whatever it documents. `zuri.doc.attach()` walks through a list of
+siblings and pairs each one with the doc block directly above it, and
+`zuri.doc` parses the contents of each block into its text and its `@` tags:
 
 ```zuri
 import zuri
@@ -956,34 +963,34 @@ add(a, b)
   takes a: number, b: number
 ```
 
-`undocumented` is absent from the output: `attach()` hands it back with
-`documented` false, because no doc block sits above it.
+`undocumented` doesn't appear in the output. `attach()` returns it with
+`documented` set to false, because there's no doc block above it.
 
-Three things make this approach worth preferring over scanning the text
+There are several reasons to prefer this approach over scanning the text
 yourself.
 
 **The parser knows what a declaration is.** A function named `def_handler`,
-a `def` inside a string literal, a doc block inside a block comment — all of
-them fool a text scan and none of them fool the parser.
+a `def` inside a string literal and a doc block inside a block comment would
+all confuse a text scan, but none of them confuse the parser.
 
-**Parameter names and types come from the real nodes.** A parameter's
-`type_hint` node carries its types and whether it is nullable, so a
-generated signature matches what the runtime will actually enforce rather
-than what the source happened to look like.
+**Parameter names and types come from the actual nodes.** A parameter's
+`type_hint` node contains its types and whether it accepts `nil`, so a
+generated signature matches what the runtime will actually enforce, rather
+than what the source code seemed to say.
 
-**It cannot drift.** When the grammar gains something, the parser gains it
-too, and a tool built this way keeps working.
+**It stays up to date.** When the grammar gains a new feature, so does the
+parser, and a tool built this way keeps working.
 
-**The tags are read for you.** `zuri.doc` joins a tag's wrapped lines,
+**The tags are parsed for you.** `zuri.doc` joins a tag's wrapped lines,
 reads its type and the name it documents, and treats `@return` as
-`@returns`. It is the same reading the book's own reference is generated
-with, so a block reads the same here as it does there.
+`@returns`. It's the same parsing that this book's own reference is
+generated with, so a block is read the same way here as it is there.
 
-## A Second Example: A Linter
+## Example: A Linter
 
-The other half of the module's use is checking rather than generating.
-Here is a rule of the kind a team accumulates: flag every function whose
-parameter list is longer than some limit.
+The other common use for this module is checking code rather than generating
+something from it. Here's the kind of rule a team builds up over time:
+report every function that has more than a certain number of parameters.
 
 ```zuri
 import zuri
@@ -1018,28 +1025,27 @@ line 2: large() takes 5
 line 3: also_large() takes 4
 ```
 
-Three properties make this worth doing with the parser rather than with a
+There are three reasons to do this with the parser rather than with a
 regular expression over the text.
 
-**It cannot be fooled by text that looks like code.** A function named
-`def_handler`, the word `def` inside a string literal, a commented-out
-declaration — none of them are `Function` nodes, so none of them are
-counted.
+**It can't be fooled by text that looks like code.** A function named
+`def_handler`, the word `def` inside a string literal and a commented-out
+declaration aren't `Function` nodes, so none of them are counted.
 
-**It reports the real line.** `node.line` comes from the lexer, so the
-message points at the declaration whatever the formatting around it.
+**It reports the correct line.** `node.line` comes from the lexer, so the
+message points to the declaration, however the code around it is formatted.
 
-**It keeps working.** When the grammar gains something, the parser gains it
-too, and a rule written this way does not quietly stop matching.
+**It keeps working.** When the grammar gains a new feature, so does the
+parser, and a rule written this way doesn't silently stop matching.
 
-The dictionary form of the visitor is doing real work here: only `Function`
-nodes reach the handler, so there is no `if node.kind == ...` and no chance
-of matching a kind you did not mean to.
+The dictionary form of the visitor is important here. Only `Function` nodes
+are passed to the handler, so you don't need an `if node.kind == ...` check,
+and you can't accidentally match a kind you didn't mean to.
 
-## Serialising Without a `@to_json`
+## Serializing Without `@to_json`
 
-Reflection covers the case where you would otherwise write the same method
-on every class:
+Reflection is useful when you'd otherwise have to write the same method in
+every class:
 
 ```zuri
 import zuri
@@ -1080,19 +1086,19 @@ echo json.encode(to_record(Product('desk', 120)))
 {"title":"desk","price":120}
 ```
 
-One function, every class, no per-class method to keep in step with the
-fields. Note that this reads private fields too, which is right for a
-debugging dump and wrong for an API response — for the latter, filter on
-the leading underscore, or write a real `@to_json` and let the class decide
-what it exposes.
+A single function works for every class, and there's no method in each class
+to keep in sync with its fields. Note that this also reads private fields,
+which is right for a debugging dump but wrong for an API response. For an
+API response, either filter out names that start with an underscore, or
+write a real `@to_json` and let each class decide what to expose.
 
-## Telling Watch Mode What a Program Reads
+## Telling Watch Mode Which Files a Program Reads
 
-`zuri run --watch` restarts a program when a file it depends on changes.
-The runtime reports every Zuri source file the program reads by itself.
-A library that reads other files the program's behaviour comes from
-declares each one with `zuri.watch.depends_on()`, which is how Wire gets
-its templates watched:
+`zuri run --watch` restarts a program when a file it depends on changes. The
+runtime automatically reports every Zuri source file the program reads. A
+library that reads other files that affect the program's behavior declares
+each one with `zuri.watch.depends_on()`, which is how Wire gets its
+templates watched:
 
 ```zuri
 import zuri.watch
@@ -1115,60 +1121,63 @@ no shouting
 false
 ```
 
-Outside watch mode, `depends_on()` does nothing and `active()` is
-`false`, so a library calls it unconditionally. `zuri.watch` is a module
-of its own, apart from the rest of `zuri`, so importing it does not load
-the parser and compiler.
+Outside watch mode, `depends_on()` does nothing and `active()` returns
+`false`, so a library can always call it. `zuri.watch` is a separate module
+from the rest of `zuri`, so importing it doesn't load the parser and the
+compiler.
 
-## What Else This Is Good For
+## Other Uses
 
-**Plugin systems.** Load modules from a directory, ask each whether it has
-the function your host expects, and call the ones that do. `module_info()`
-answers the question without importing blindly and hoping.
+**Plugin systems.** Load modules from a directory, check whether each one
+has the function your program expects, and call the ones that do.
+`module_info()` lets you check without having to import modules blindly and
+hope for the best.
 
 **Editor tooling.** `tokenize()`, `parse_partial()` and `check()` never
-raise, so they can run against a half-typed buffer. Every token and every
-node carries `start` and `end`, so a rename or a reformat can rewrite exact
-spans, and every problem `check()` finds can be underlined where it is.
+raise errors, so you can run them on a half-written buffer. Every token and
+node has `start` and `end` offsets, so a rename or reformat can rewrite
+exact ranges of text, and you can underline every problem `check()` finds
+exactly where it is.
 
-**Understanding the compiler.** `zuri.compile()` on a snippet is faster
-than reading the compiler's source, and it can never go out of date with
-the compiler you are actually running.
+**Understanding the compiler.** Calling `zuri.compile()` on a snippet is
+quicker than reading the compiler's source code, and it always matches the
+version of the compiler you're actually running.
 
-**Answering questions about this book.** Appendices D and E are generated
-from `libs/` with exactly the techniques above, and the audit that checks
-those stubs is written the same way.
+**Generating parts of this book.** Appendices D and E are generated from
+`libs/` using exactly the techniques described above, and the audit that
+checks those stubs works the same way.
 
-## What This Is Not Good For
+## What You Can't Do
 
-There is no `eval()`. You can compile source to bytecode and inspect it;
-you cannot execute a string as code.
+There's no `eval()`. You can compile source code to bytecode and inspect it,
+but you can't run a string as code.
 
-Zuri leaves it out for security. `eval()` erases the line between data and
-code, and every program that has one eventually runs a string it did not
-mean to: a form field, a query parameter, a config value, a webhook
-payload. The moment any of those reaches an `eval()`, whoever supplied it
-is running code with your program's full permissions. It reads your files,
-opens your sockets and sends your secrets anywhere it likes. This is the
-single most damaging vulnerability class in dynamic languages, and it keeps
-happening because the dangerous call looks harmless in review: one
-function, three characters of input, and nothing in the language warns you.
+Zuri leaves it out for security reasons. `eval()` blurs the line between
+data and code, and sooner or later, every program that uses it runs a string
+it didn't intend to, such as a form field, a query parameter, a
+configuration value or a webhook payload. As soon as one of those reaches
+`eval()`, whoever provided it can run code with your program's full
+permissions. That code can read your files, open network connections and
+send your secrets wherever it likes. This is the most damaging class of
+vulnerability in dynamic languages, and it keeps happening because the
+dangerous call looks harmless in a code review: a single function, a few
+characters of input, and nothing in the language warns you.
 
-So Zuri does not provide one, and every job `eval()` is usually reached for
-has a better answer here:
+So Zuri doesn't provide `eval()`, and every task people usually use it for
+has a better solution:
 
 | Instead of | Use |
 | --- | --- |
-| evaluating a user-supplied expression | a dictionary of handlers keyed by the input |
-| calling a method whose name you computed | `zuri.reflect.bind_method()` |
-| varying behaviour at runtime | pass a function in |
-| turning text into data | `json.decode()` |
+| Evaluating an expression entered by a user | A dictionary of handlers keyed by the input |
+| Calling a method whose name you computed | `zuri.reflect.bind_method()` |
+| Changing behavior at run time | Pass in a function |
+| Turning text into data | `json.decode()` |
 
-Each of those does the job with a fixed, auditable set of things that can
-happen. That is the difference between a program that handles input and a
-program that obeys it.
+Each of these does the job with a fixed set of possible outcomes that you
+can review. That's the difference between a program that handles its input
+and a program that does whatever its input tells it to.
 
-Classes are sealed, so reflection cannot add a method to one at runtime.
-Patterns from other languages that rely on monkey-patching do not
-translate, and the alternative is the one the language wants: express the
-variation as a subclass, or as a function you pass in.
+Classes are sealed, so reflection can't add a method to a class at run time
+either. Techniques from other languages that depend on monkey patching don't
+carry over to Zuri. Instead, express the variation as a subclass, or as a
+function that you pass in.

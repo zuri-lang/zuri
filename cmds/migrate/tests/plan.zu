@@ -159,7 +159,7 @@ describe('limits', @{
       failure(@{
         settings(['down', '--steps', '1', '--to', 'x', '-d', 'a.db'])
       }),
-    ).to_contain('give one')
+    ).to_contain('use either --steps or --to, not both')
   })
 
   it('belong to up and down alone', @{
@@ -167,7 +167,7 @@ describe('limits', @{
       failure(@{
         settings(['reset', '--steps', '1', '-d', 'a.db'])
       }),
-    ).to_contain('go with up and down')
+    ).to_contain('can only be used with up and down')
   })
 
   it('count from one', @{
@@ -175,6 +175,6 @@ describe('limits', @{
       failure(@{
         settings(['down', '--steps', '0', '-d', 'a.db'])
       }),
-    ).to_contain('a count from 1')
+    ).to_contain('--steps must be at least 1')
   })
 })

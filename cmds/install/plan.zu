@@ -22,26 +22,25 @@ import .._shared.semver
 def parser() {
   var parser = args.Parser('zuri install', false)
 
-  parser.description = 'Adds package dependencies to a project.'
-  parser.epilog = 'With no package named, every dependency in project.toml is installed at ' +
-      'the versions project.lock pins, and the lockfile is brought up to date when project.toml ' +
-      'has changed.'
+  parser.description = 'Adds packages to a project.'
+  parser.epilog = 'If no package is named, every dependency in project.toml is installed at ' +
+      'the version project.lock pins, and the lockfile is updated if project.toml has changed.'
 
-  parser.add_index('packages', 'name or name@range, as many as needed', {
+  parser.add_index('packages', 'The packages to add, each as name or name@range', {
     type: args.LIST,
     metavar: 'package',
   })
 
   cli.add_registry_option(parser)
-  parser.add_option('dev', 'Add them as development dependencies', {
+  parser.add_option('dev', 'Add the packages as development dependencies', {
     short_name: 'D',
   })
-  parser.add_option('global', 'Install for this user rather than the project', {
+  parser.add_option('global', 'Install the packages for your user instead of the project', {
     short_name: 'g',
   })
   parser.add_option(
     'exact',
-    'Record the exact version chosen rather than a caret range',
+    'Record the exact version chosen instead of a caret range',
     { short_name: 'E' },
   )
   parser.add_option(
@@ -65,26 +64,26 @@ def parser() {
     type: args.STRING,
     metavar: 'dir',
   })
-  parser.add_option('offline', 'Use only what is already downloaded', nil)
-  parser.add_option('dry-run', 'Show what would change and change nothing', {
+  parser.add_option('offline', 'Only use what\'s already downloaded', nil)
+  parser.add_option('dry-run', 'Show what would change without changing anything', {
     short_name: 'n',
   })
   parser.add_option(
     'force',
-    'Replace directories in .zuri/libs that zuri did not install',
+    'Replace directories in .zuri/libs that weren\'t installed by zuri',
     nil,
   )
   parser.add_option(
     'no-hooks',
-    'Run no install or uninstall scripts at all',
+    'Don\'t run any install or uninstall scripts',
     nil,
   )
   parser.add_option(
     'allow-hooks',
-    'Let these packages run their scripts this time',
+    'Allow these packages to run their scripts this time',
     { type: args.LIST, metavar: 'package' },
   )
-  parser.add_option('quiet', 'Print only the result', { short_name: 'q' })
+  parser.add_option('quiet', 'Only print the result', { short_name: 'q' })
 
   return parser
 }
@@ -153,12 +152,12 @@ def requested(parsed, root: ?string) {
   }
 
   if pins.length() > 1 {
-    raise UsageError('pin a git dependency with one of tag, branch or commit')
+    raise UsageError('pin a git dependency with --tag, --branch or --rev')
   }
 
   if git != nil or path != nil {
     if specs.length() > 1 {
-      raise UsageError('install one package at a time from git or from a path')
+      raise UsageError('only one package can be installed at a time from git or from a path')
     }
 
     var named = specs.is_empty() ? nil : split_spec(specs[0])
