@@ -88,8 +88,8 @@ def _backup(settings: dict, target: string) {
 
   if nyssa.db.engine != 'sqlite' {
     raise UsageError(
-      'backup copies a SQLite database; back up ${nyssa.db.engine} with its own tools, ' +
-          'such as pg_dump or mysqldump',
+      'backup only works with a SQLite database. Back up ${nyssa.db.engine} with its ' +
+          'own tools, such as pg_dump or mysqldump',
     )
   }
 

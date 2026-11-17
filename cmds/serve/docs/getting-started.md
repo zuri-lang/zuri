@@ -1,54 +1,57 @@
 # Getting started
 
-{{site}} holds packages for Zuri. Anything published here can be
-added to a project with one command, and anything you write can be
-published here with another.
+{{site}} is a registry of Zuri packages. You can add any package
+published here to a project with a single command, and publish your own
+packages here with another.
 
-You need an account to publish. You need nothing at all to install.
+You need an account to publish packages, but not to install them.
 
 ## Installing a package
 
-From inside a project, the directory with a `project.toml`:
+Run this from inside a project, which is a directory that contains a
+`project.toml` file:
 
 ```sh
 zuri install http-extra
 ```
 
-That finds the newest version, installs it into `.zuri/libs`, records
-it in `project.toml` and pins the exact version in `project.lock`. Import
-it by its name, with every hyphen made an underscore:
+This finds the newest version of the package, installs it in
+`.zuri/libs`, adds it to `project.toml`, and records the exact version in
+`project.lock`. To use the package, import it by its name, with each
+hyphen replaced by an underscore:
 
 ```zuri
 import http_extra
 ```
 
-A package that is not on the default registry is named by the
-registry it comes from:
+If this isn't your default registry, name it when you install a package
+from it:
 
 ```sh
 zuri install http-extra --registry {{url}}
 ```
 
-## Finding one
+## Finding a package
 
-Search from the box at the top of every page, or from the command
-line. On the site, a single word is also looked for among the names
-every package documents, so `forecast` or `app.forecast` finds the
-function and the package it is in, and leads straight to where it is
-documented:
+Use the search box at the top of every page, or search from the command
+line. On the site, a search for a single word also looks through the
+names that every package documents. For example, `forecast` or
+`app.forecast` finds that function and its package, and links straight
+to its documentation.
 
 ```sh
 zuri search json
 zuri info http-extra
 ```
 
-## Where to go next
+## Next steps
 
-- [Installing packages](/docs/installing) covers versions, the
-  lockfile, and installing for your user rather than one project.
-- [Publishing packages](/docs/publishing) covers what a package needs
-  and how a version is published.
-- [Accounts and tokens](/docs/accounts) covers signing the command line
-  in.
-- [Hosting a repository](/docs/hosting) covers running one of these
-  yourself.
+- [Installing packages](/docs/installing) explains versions, the
+  lockfile, and installing packages for your user instead of a single
+  project.
+- [Publishing packages](/docs/publishing) explains what a package needs,
+  and how to publish a version.
+- [Accounts and tokens](/docs/accounts) explains how to sign in from the
+  command line.
+- [Hosting a registry](/docs/hosting) explains how to run a registry
+  like this one yourself.

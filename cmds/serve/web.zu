@@ -53,7 +53,7 @@ var DOCS = [
   { slug: 'installing', title: 'Installing packages' },
   { slug: 'publishing', title: 'Publishing packages' },
   { slug: 'accounts', title: 'Accounts and tokens' },
-  { slug: 'hosting', title: 'Hosting a repository' },
+  { slug: 'hosting', title: 'Hosting a registry' },
 ]
 
 /**

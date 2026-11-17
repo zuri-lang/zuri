@@ -14,10 +14,13 @@ version fails.
 ## Which files are included
 
 Inside a git repository, the package contains the files that git tracks or
-would track. Outside one, it contains every file in the project. `.zuri`
-and `.git` directories are always left out, at any depth. You can add or
-remove files with the `include` and `exclude` globs in the `[project]`
-table:
+would track. Outside one, it contains every file in the project. Some
+files are always left out: `.git` and `.zuri` directories at any depth, a
+`tmp` directory at the root, log files, and `project.lock`.
+
+The `include` and `exclude` globs in the `[project]` table change this.
+When `include` is set, the package only contains the files it names, plus
+`project.toml`. `exclude` removes the files it names:
 
 ```toml
 [project]

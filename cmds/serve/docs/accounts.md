@@ -1,40 +1,42 @@
 # Accounts and tokens
 
-An account is what you publish with. Installing needs none.
+You need an account to publish packages. You don't need one to install
+them.
 
 ## Creating an account
 
-Create one on the [sign-up page](/signup), or from the command line:
+You can create an account on the [sign-up page](/signup), or from the
+command line:
 
 ```sh
 zuri account create
 ```
 
-You are given a recovery key when the account is made, and shown it
-only once. It is the only way back in if the password is lost, so keep
-it somewhere safe.
+When the account is created, you're given a recovery key, which is only
+shown once. It's the only way to get back into your account if you lose
+your password, so keep it somewhere safe.
 
-## Signing the command line in
+## Signing in from the command line
 
 ```sh
 zuri account login
 zuri account whoami
 ```
 
-`login` asks for your username and password and stores a token,
-readable by you alone. The token is what every later command sends;
-the password is never stored.
+`login` asks for your username and password, and saves a token that only
+your user can read. Every later command sends that token. Your password
+is never stored.
 
-A token made on your [account page](/account) signs in without a
-password, which is how a build server does it. Read it from standard
-input so it never lands in the shell history:
+A token created on your [account page](/account) lets you sign in without
+a password, which is how a build server should sign in. Read the token
+from standard input, so that it doesn't end up in your shell history:
 
 ```sh
 zuri account login --token-stdin < token.txt
 ```
 
-Or set it in the environment, where it takes precedence over anything
-stored:
+Or set it in the environment, where it takes priority over a saved
+token:
 
 ```sh
 ZURI_TOKEN=nys_... zuri publish
@@ -48,18 +50,18 @@ zuri account token ci --scopes publish --days 90
 zuri account revoke <id>
 ```
 
-A token carries scopes that bound what it can do:
+A token's scopes limit what it can do:
 
 | Scope | Allows |
 | --- | --- |
-| `publish` | publishing new versions |
-| `yank` | yanking and restoring versions |
-| `owners` | adding and removing a package's owners |
-| `account` | issuing and revoking tokens |
+| `publish` | Publishing new versions. |
+| `yank` | Yanking versions, and undoing a yank. |
+| `owners` | Adding and removing a package's owners. |
+| `account` | Creating and revoking tokens. |
 
-Give a build server a token with `publish` alone. A token lasts 365
-days unless `--days` says otherwise, and is shown once, when it is
-issued.
+Give a build server a token with only the `publish` scope. A token lasts
+365 days unless you set `--days`, and it's only shown once, when it's
+created.
 
 ## Signing out
 
@@ -67,13 +69,13 @@ issued.
 zuri account logout
 ```
 
-That revokes the token on the registry and forgets it on your machine.
+This revokes the token on the registry, and removes it from your machine.
 
-## Another registry
+## Using another registry
 
-Every command above works with the default registry. For any other,
-this one included when it is not your default, add `--registry` with
-its address:
+Every command on this page uses your default registry. For any other
+registry, including this one if it isn't your default, add `--registry`
+with its address:
 
 ```sh
 zuri account create --registry {{url}}
@@ -81,8 +83,8 @@ zuri account login --registry {{url}}
 zuri account logout --registry {{url}}
 ```
 
-An alias saves typing the address. Name it in `config.toml` in your
-`ZURI_HOME`, which is `~/.zuri` unless you moved it:
+An alias saves you from typing the address. Define it in `config.toml`
+in your `ZURI_HOME`, which is `~/.zuri` unless you've moved it:
 
 ```toml
 [registries]
@@ -93,18 +95,18 @@ company = "{{url}}"
 zuri account login --registry company
 ```
 
-A token for one registry never goes to another. In the environment,
+A token for one registry is never sent to another. In the environment,
 `ZURI_TOKEN_<ALIAS>` holds the token for the registry with that alias,
-the alias in capitals with anything but letters and digits made `_`,
-and wins over `ZURI_TOKEN`:
+and takes priority over `ZURI_TOKEN`. The alias is written in capitals,
+with every character that isn't a letter or a digit replaced by `_`:
 
 ```sh
 ZURI_TOKEN_COMPANY=nys_... zuri publish --registry company
 ```
 
-To make this registry the one every command uses when none is named,
-set `default` under `[registries]`, or `ZURI_REGISTRY` for one shell
-or one build:
+To make this registry the one that every command uses when no registry
+is named, set `default` under `[registries]` in the same file. To do the
+same for a single shell or build, set `ZURI_REGISTRY`:
 
 ```sh
 export ZURI_REGISTRY={{url}}
