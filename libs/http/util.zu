@@ -415,8 +415,8 @@ def parse_date(text: string) {
  * Quoted strings are unquoted, and their backslash escapes are
  * resolved. RFC 5987 extended parameters, such as
  * `filename*=UTF-8''na%C3%AFve.txt`, are decoded and take priority over
- * the plain form of the same parameter, which is what lets a file name
- * with non-ASCII characters survive an upload.
+ * the plain form of the same parameter. This is how a file name with
+ * non-ASCII characters survives an upload.
  *
  * ```zuri
  * parse_parameters('text/html; charset=utf-8')
@@ -887,7 +887,7 @@ def parse_bearer(header) {
 
 /**
  * Whether `value` is a valid HTTP method: a non-empty token, per RFC
- * 9110 §9. Methods are case-sensitive, so no normalisation happens
+ * 9110 §9. Methods are case-sensitive, so no normalization happens
  * here.
  *
  * @param string value

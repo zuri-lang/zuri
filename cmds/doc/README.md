@@ -1,71 +1,74 @@
 # doc
 
-Builds a documentation site from pages written in Markdown, or from the
-doc blocks in a project.
+Builds a documentation site from Markdown pages, or an API reference from
+the doc comments in a project.
 
 ```sh
 zuri doc [build|serve|init|generate|clean] [dir] [options]
 ```
 
-Documentation is a directory holding a `doc.toml` and a `src` directory
-of pages, with `src/SUMMARY.md` listing them in reading order. The site
-has a page for each chapter with the contents beside it, a search box, a
-page that prints all of it at once, light and dark themes, and every code
-block coloured as it is built. Chapter 30 of *The Zuri Programming
-Language* covers writing it.
+Documentation is a directory that contains a `doc.toml` file and a `src`
+directory of pages, with `src/SUMMARY.md` listing the pages in reading
+order. The site has a page for each chapter with the table of contents
+beside it, a search box, a page that prints everything at once, and light
+and dark themes. Code blocks are highlighted when the site is built.
+Chapter 30 of *The Zuri Programming Language*, "Documenting a Project",
+describes how to write it.
 
-An API reference from `generate` is documentation too, with a
-`[reference]` table in its `doc.toml`, and `build` and `serve` write its
-pages again from the doc blocks before building it.
+An API reference created by `generate` is documentation too, with a
+`[reference]` table in its `doc.toml`. `build` and `serve` regenerate its
+pages from the doc comments before they build it.
 
-A directory beside the pages that holds a `doc.toml` of its own, such as
-`docs/reference`, is built along with the documentation around it, into
-the site directory of the same name, and every page links to each site
-from its top bar: Docs, API Reference, or whatever `[site] label` says.
-A link from one to another is written as the path between the two
-Markdown files, and is checked like any other.
+If a directory next to the pages has a `doc.toml` of its own, such as
+`docs/reference`, it's built along with the documentation around it, into
+the site directory of the same name. Every page links to each of these
+sites from its top bar, labeled Docs, API Reference, or whatever the
+site's `[site] label` setting says. To link from one site to another,
+write the relative path between the two Markdown files. These links are
+checked like any other.
 
-With no command, the documentation is built. It is the directory named,
-or the current directory when it holds a `doc.toml`, or the `docs`
-directory of the project, or failing that its `docs/reference`.
+With no command, the documentation is built. `zuri doc` looks for it in
+the directory you name, then in the current directory if it contains a
+`doc.toml`, then in the project's `docs` directory, and finally in
+`docs/reference`.
 
 | Command | What it does |
 | --- | --- |
-| `build` | writes the site, and reports links inside the documentation that lead nowhere |
-| `serve` | builds the site, serves it, and rebuilds it as the documentation changes |
-| `init` | starts documentation: in the project's `docs`, or the directory named |
-| `generate` | writes an API reference from the project's doc blocks, in `docs/reference` or the directory named |
-| `clean` | removes the built site |
+| `build` | Builds the site, and reports links inside the documentation that lead nowhere. |
+| `serve` | Builds and serves the site, and rebuilds it when the documentation changes. |
+| `init` | Creates new documentation, in the project's `docs` directory or in the directory you name. |
+| `generate` | Generates an API reference from the project's doc comments, in `docs/reference` or in the directory you name. |
+| `clean` | Removes the built site. |
 
-## Flags
+## Options
 
-| Flag | What it does |
+| Option | Description |
 | --- | --- |
-| `-o, --out <dir>` | Writes the site here instead of where `doc.toml` says. |
-| `--open` | Opens the site in a browser once it is built. |
-| `--strict` | With `build` or `generate`, fails over a warning, such as a link inside the documentation that leads nowhere. |
-| `--external` | With `build`, also asks for every `http` and `https` address the documentation links to, and warns about each that does not answer. |
-| `-p, --port <port>` | With `serve`, the port to listen on; 3000 by default. |
-| `--host <address>` | With `serve`, the address to listen on; this machine only by default. |
-| `--title <text>` | With `init` or `generate`, the new documentation's title. |
+| `-o, --out <dir>` | Write the site to this directory instead of the one in `doc.toml`. |
+| `--open` | Open the site in a browser once it's built. |
+| `--strict` | With `build` or `generate`, treat warnings as errors, such as a link inside the documentation that leads nowhere. |
+| `--external` | With `build`, also check every `http` and `https` link in the documentation, and warn about any that don't respond. |
+| `-p, --port <port>` | With `serve`, the port to listen on. Defaults to 3000. |
+| `--host <address>` | With `serve`, the address to listen on. By default, only this machine can connect. |
+| `--title <text>` | With `init` or `generate`, the title of the new documentation. |
 
-## Layout
+## Source files
 
-| File | What it holds |
+| File | Contents |
 | --- | --- |
-| `index.zu` | the command itself |
-| `plan.zu` | the parser, and where the documentation is |
-| `build.zu` | building documentation with the documentation inside it, and the links between them |
-| `config.zu` | `doc.toml`, read and checked |
-| `summary.zu` | `SUMMARY.md`, read into the contents |
-| `documentation.zu` | the chapters: numbered, placed, and read with their includes |
-| `render.zu` | a chapter's Markdown as its page's HTML |
-| `site.zu` | the site: every page, the search index, the print page |
-| `serve.zu` | the local server and the rebuilding |
-| `scaffold.zu` | the files `init` writes, and those `generate` starts a reference with |
-| `reference/` | the API reference: which files are modules, their pages, the contents and front page |
-| `highlight/` | colouring each language, at build time |
-| `theme/` | the page template, the stylesheet, the script and the fonts |
+| `index.zu` | The command itself. |
+| `plan.zu` | The argument parser, and the rules for finding the documentation. |
+| `build.zu` | Building documentation that contains other documentation, and the links between them. |
+| `config.zu` | Reading and checking `doc.toml`. |
+| `summary.zu` | Reading `SUMMARY.md` into the table of contents. |
+| `documentation.zu` | The chapters: numbering them, placing them, and reading them with their includes. |
+| `render.zu` | Converting a chapter's Markdown to its page's HTML. |
+| `site.zu` | The site: every page, the search index and the print page. |
+| `serve.zu` | The local server and the rebuilding. |
+| `scaffold.zu` | The files that `init` creates, and the ones that `generate` starts a reference with. |
+| `reference/` | The API reference: which files are modules, their pages, the table of contents and the front page. |
+| `highlight/` | Syntax highlighting for each language, at build time. |
+| `theme/` | The page template, the stylesheet, the script and the fonts. |
 
-The fonts in `theme/fonts` are under the SIL Open Font License; see
-`theme/fonts/LICENSE.txt`.
+The fonts in `theme/fonts` are licensed under the SIL Open Font License.
+See `theme/fonts/LICENSE.txt`.

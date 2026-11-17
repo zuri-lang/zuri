@@ -25,9 +25,8 @@ import .image { Image }
  *
  * Each frame is a whole image, already composited over the frames
  * before it, so you can take frame 5 and use it by itself without
- * replaying the first four. That's what you want almost every time, and
- * it's why the disposal and transparency rules that animated GIFs are
- * built on never show up here.
+ * replaying the first four. This means you never have to deal with the
+ * disposal and transparency rules that animated GIFs use.
  *
  * ```zuri
  * import imagine { Animation }
@@ -53,9 +52,10 @@ import .image { Image }
  * ## Memory
  *
  * Every frame is a whole image, so a 100-frame animation of 500x500
- * pixels takes 100 MB once it's decoded. For a large animation, it's
- * worth processing one frame at a time, which `frames()` lets you do by
- * returning the list itself.
+ * pixels takes 100 MB once it's decoded. For a large animation, avoid
+ * `map()`, which copies every frame, and work through the list that
+ * `frames()` returns one frame at a time. That list is the animation's
+ * own, not a copy.
  *
  * @printable
  */

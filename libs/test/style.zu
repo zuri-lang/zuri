@@ -78,7 +78,7 @@ _enabled = _detect_color()
 _unicode = _detect_unicode()
 
 /**
- * Whether colour is currently being emitted.
+ * Whether color is currently being emitted.
  *
  * @returns bool
  */
@@ -87,7 +87,7 @@ def enabled() {
 }
 
 /**
- * Forces colour on or off, overriding what the environment said.
+ * Forces color on or off, overriding what the environment said.
  *
  * @param bool on
  */
@@ -127,7 +127,7 @@ def _paint(text, code, background) {
 }
 
 /**
- * Emphasis. Returns `text` unchanged when colour is off.
+ * Emphasis. Returns `text` unchanged when color is off.
  *
  * @param string text
  * @returns string
@@ -348,8 +348,8 @@ def pad_left(text: string, width: int, fill: ?string) {
  * with an ellipsis. Returns `text` untouched when it already fits.
  *
  * @note only safe on text with no escape sequences in it, since it
- *    cuts by codepoint and would leave a colour sequence unterminated.
- *    Colour the result, not the input.
+ *    cuts by codepoint and would leave a color sequence unterminated.
+ *    Color the result, not the input.
  * @param string text
  * @param int width
  * @returns string
@@ -404,7 +404,7 @@ def indent(depth: int) {
  *
  * Asks the terminal first, falls back to `COLUMNS`, and finally to a
  * conventional 80. Clamped to 40..120 so neither a one-column pty nor
- * a maximised ultrawide produces an unreadable layout.
+ * a maximized ultrawide produces an unreadable layout.
  *
  * @returns int
  */

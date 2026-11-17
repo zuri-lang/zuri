@@ -36,14 +36,14 @@ def parser() {
   )
   parser.add_option(
     'table',
-    'The table recording migrations; ${DEFAULT_TABLE} by default',
+    'The table that records applied migrations (${DEFAULT_TABLE} by default)',
     { type: args.STRING, metavar: 'name' },
   )
-  parser.add_option('steps', 'With up or down, the maximum number of migrations to apply or roll back', {
-    short_name: 's',
-    type: args.INT,
-    metavar: 'count',
-  })
+  parser.add_option(
+    'steps',
+    'With up or down, the maximum number of migrations to apply or roll back',
+    { short_name: 's', type: args.INT, metavar: 'count' },
+  )
   parser.add_option(
     'to',
     'With up, the last migration to apply. With down, the migration to roll back to.',
@@ -51,8 +51,14 @@ def parser() {
   )
 
   parser.add_command('up', 'Apply pending migrations')
-  parser.add_command('status', 'List every migration and whether it has been applied')
-  parser.add_command('down', 'Roll back the latest batch, or as many as --steps or --to say')
+  parser.add_command(
+    'status',
+    'List every migration and whether it has been applied',
+  )
+  parser.add_command(
+    'down',
+    'Roll back the latest batch, or as many as --steps or --to say',
+  )
   parser.add_command('reset', 'Roll back every migration')
   parser.add_command('new', 'Create a new, empty migration for each <name>', {
     type: args.LIST,
@@ -90,7 +96,9 @@ def settings(parsed) {
   }
 
   if (steps != nil or to != nil) and command != 'up' and command != 'down' {
-    raise UsageError('--steps and --to can only be used with up and down, not with ${command}')
+    raise UsageError(
+      '--steps and --to can only be used with up and down, not with ${command}',
+    )
   }
 
   if steps != nil and steps < 1 {

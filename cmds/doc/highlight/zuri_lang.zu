@@ -1,9 +1,9 @@
 /**
  * Zuri, and transcripts of the REPL.
  *
- * Zuri is coloured from the tokens Zuri's own lexer reads, so what is
+ * Zuri is colored from the tokens Zuri's own lexer reads, so what is
  * shown as a keyword, a string or a number is exactly what the language
- * reads as one. A fragment that does not lex in full is still coloured:
+ * reads as one. A fragment that does not lex in full is still colored:
  * the lexer reports what it could not read as an error token and goes
  * on, and that text is shown plain.
  *
@@ -321,7 +321,7 @@ def output_kind(line: string, plain: ?string) {
 /**
  * A REPL transcript as highlighted markup. A line opening with the `%>`
  * prompt, and the `..` lines continuing it, are Zuri the reader typed,
- * coloured as one piece so a string or comment running across them
+ * colored as one piece so a string or comment running across them
  * stays whole. Every other line is what the REPL printed back.
  *
  * @param string source

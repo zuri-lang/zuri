@@ -215,7 +215,7 @@ class BodyReader {
    * `limit`. Waiting for more of it wouldn't help, and reading it is
    * what reports the problem.
    *
-   * @param number limit: the largest body worth waiting for, in bytes
+   * @param number limit: the largest body to wait for, in bytes
    * @returns bool
    */
   is_buffered(limit) {
@@ -441,7 +441,7 @@ class BodyReader {
    * that point draining it costs more than opening a new connection
    * would, and the caller should close the connection instead.
    *
-   * @param ?number limit: the most worth draining. Defaults to 1 MiB.
+   * @param ?number limit: the most bytes to drain. Defaults to 1 MiB.
    * @returns bool: whether the connection can now be reused
    */
   drain(limit) {
@@ -736,15 +736,13 @@ def _clamped(quality, low, high) {
  *
  * `quality` uses the scale of whichever coding is being applied: brotli
  * from `0` to `11`, deflate from `0` to `9`, or zstd from `1` to `22`.
- * Values outside the range are clamped rather than rejected. If you
- * leave it out, you get each coding's sensible default for compressing
- * a response on every request: `5` for brotli (see
- * `DEFAULT_BROTLI_QUALITY`), and each of the others' native default,
- * which is already well suited to dynamic content.
+ * Values outside the range are clamped to it. If you leave it out, each
+ * coding uses a level suited to compressing a response on every
+ * request: `5` for brotli (see `DEFAULT_BROTLI_QUALITY`), and the
+ * library's own default for the others.
  *
  * @note `gzip` doesn't accept a quality at this level. It always
- *    compresses at zlib's default level of 6, which is what nginx and
- *    CDNs use for dynamic responses anyway.
+ *    compresses at zlib's default level of 6.
  *
  * @param bytes data
  * @param string coding: `'gzip'`, `'deflate'`, `'br'`, `'zstd'` or

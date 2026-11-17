@@ -1,8 +1,9 @@
 # install
 
-Adds packages to a project, or installs everything it declares.
+Adds packages to a project, or installs every package the project
+declares.
 
-## Running it
+## Usage
 
 ```sh
 zuri install [package[@range]...] [options]
@@ -10,22 +11,22 @@ zuri install [package[@range]...] [options]
 
 ```sh
 zuri install http-extra             # the newest release, recorded as ^x.y.z
-zuri install http-extra@^1.4        # the newest 1.x from 1.4.0 up
+zuri install http-extra@^1.4        # the newest 1.x release, from 1.4.0 up
 zuri install http-extra --exact     # recorded as =x.y.z instead
-zuri install fixtures --dev         # for working on the project only
+zuri install fixtures --dev         # only for working on the project
 zuri install                        # everything project.toml declares
 ```
 
-A package comes from the default registry unless `--registry` names
-another, by alias or by address. It installs into `.zuri/libs` under
-its import name, every hyphen made an underscore, so `http-extra` is
-`import http_extra`.
+Packages come from the default registry unless `--registry` names another
+one, as an alias or an address. Each package is installed in `.zuri/libs`
+under its import name, which is its name with each hyphen replaced by an
+underscore. For example, `http-extra` is imported with `import http_extra`.
 
-With nothing named, every declared dependency is installed at the
-version `project.lock` pins. Only what `project.toml` changed since the
-lockfile was written is resolved again.
+If you don't name any packages, every declared dependency is installed at
+the version that `project.lock` records. Only the parts of `project.toml`
+that changed since the lockfile was written are resolved again.
 
-## Git and paths
+## Git repositories and local directories
 
 ```sh
 zuri install --tag v1.2.0 --git https://example.com/tools.git
@@ -33,72 +34,75 @@ zuri install --git git@example.com:acme/tools.git --branch main
 zuri install --path ../shared
 ```
 
-The package's name comes from its own `project.toml`. A git dependency
-is pinned to the commit its tag, branch or revision resolved to, and to
-the checksum of what that commit packs to, so `zuri restore` installs
-the same files a year later. A path dependency is copied again every
-time the project is installed.
+The package's name is read from its own `project.toml`. A git dependency
+is pinned to the commit that its tag, branch or revision resolved to, and
+to the checksum of the files at that commit, so `zuri restore` installs
+the same files a year later. A path dependency is copied again every time
+the project is installed.
 
-## What it guarantees
+## Guarantees
 
-- **One version of each package.** The resolver finds versions that
-  satisfy every requirement at once, preferring what is already locked
-  and then the newest, and says exactly which requirements clash when
-  none do.
-- **Nothing half installed.** New packages are unpacked beside
-  `.zuri/libs` and swapped in together. A failure anywhere, a script
-  included, leaves the installed packages as they were, and a command
-  killed part way is put right by the next one.
-- **Nothing it did not put there.** A directory in `.zuri/libs` that
-  zuri did not install is never replaced unless `--force` says to.
-- **Checked downloads.** Every archive must match the checksum the
+- **One version of each package.** The resolver looks for versions that
+  satisfy every requirement at once, preferring the locked versions and
+  then the newest ones. If there aren't any, it tells you exactly which
+  requirements conflict.
+- **No partial installs.** New packages are unpacked next to `.zuri/libs`
+  and moved into place together. If anything fails, including a script,
+  the installed packages are left as they were. If the command is killed
+  partway through, the next command cleans up.
+- **Your own files are left alone.** A directory in `.zuri/libs` that
+  zuri didn't install is never replaced unless you pass `--force`.
+- **Verified downloads.** Every archive has to match the checksum that the
   registry published with it.
-- **One command at a time.** Two commands working on the same project
-  take turns.
+- **One command at a time.** If two commands work on the same project at
+  the same time, the second waits for the first.
 
-## Scripts
+## Install scripts
 
-A package may name a script to run after it is installed. The
-project's own runs; a dependency's runs only when `project.toml` allows
-it by name:
+A package can name a script to run after it's installed. The project's own
+script runs. A dependency's script only runs if `project.toml`
+allows it by name:
 
 ```toml
 [install]
 allow-hooks = ["native-sqlite"]
 ```
 
-`--allow-hooks` allows more for one run, and `--no-hooks` runs none.
+`--allow-hooks` allows more packages for a single run, and `--no-hooks`
+runs no scripts at all.
 
-## For your user
+## Installing for your user
 
-`--global` installs into `ZURI_HOME` rather than a project. A package
-that provides commands gets a launcher for each in `ZURI_HOME/bin`,
-which is worth adding to your `PATH`.
+`--global` installs packages in `ZURI_HOME` instead of a project. If a
+package provides commands, a launcher for each one is created in
+`ZURI_HOME/bin`. Add that directory to your `PATH` to run them by name.
 
-## The environment
+## Environment variables
 
-| Variable | What it does |
+| Variable | Description |
 | --- | --- |
-| `ZURI_REGISTRY` | The default registry, by alias or address, in place of the one `ZURI_HOME/config.toml` names. A project that names its own default keeps it. |
-| `ZURI_TOKEN_<ALIAS>`, `ZURI_TOKEN` | The token for a registry, before the credentials file. |
-| `ZURI_HOME` | Where global packages, settings and tokens live. Default `~/.zuri`. |
-| `ZURI_CACHE` | Where downloads are kept. Default `ZURI_HOME/cache`. |
+| `ZURI_REGISTRY` | The default registry, as an alias or an address, in place of the one named in `ZURI_HOME/config.toml`. A project that sets its own default registry still uses it. |
+| `ZURI_TOKEN_<ALIAS>`, `ZURI_TOKEN` | The token for a registry. These take priority over the credentials file. |
+| `ZURI_HOME` | Where global packages, settings and tokens are kept. Defaults to `~/.zuri`. |
+| `ZURI_CACHE` | Where downloads are kept. Defaults to `ZURI_HOME/cache`. |
 
-## Flags
+## Options
 
-| Flag | What it does |
+| Option | Description |
 | --- | --- |
-| `-r, --registry <registry>` | The registry, by alias or address. |
-| `-D, --dev` | Add as a development dependency. |
-| `-g, --global` | Install for this user rather than the project. |
-| `-E, --exact` | Record the exact version rather than a caret range. |
-| `--git <url>` | Install from a git repository. |
-| `--tag`, `--branch`, `--rev` | Pin the git repository. |
+| `-r, --registry <registry>` | The registry to use, as an alias or an address. |
+| `--insecure` | Allow sending a token over plain HTTP to another machine. |
+| `-D, --dev` | Add the packages as development dependencies. |
+| `-g, --global` | Install the packages for your user instead of the project. |
+| `-E, --exact` | Record the exact version chosen instead of a caret range. |
+| `--git <url>` | Install from a git repository instead of a registry. |
+| `--tag <tag>` | The git tag to install. |
+| `--branch <branch>` | The git branch to follow. |
+| `--rev <commit>` | The git commit to install. |
 | `--path <dir>` | Install from a directory on this machine. |
-| `--offline` | Use only what is already downloaded. |
-| `-n, --dry-run` | Show what would change. |
-| `--force` | Replace directories zuri did not install. |
-| `--no-hooks` | Run no scripts. |
-| `--allow-hooks <package...>` | Let these packages run their scripts. |
-| `-q, --quiet` | Print only the result. |
-| `--insecure` | Allow a token over plain http to another machine. |
+| `--offline` | Only use what's already downloaded. |
+| `-n, --dry-run` | Show what would change without changing anything. |
+| `--force` | Replace directories in `.zuri/libs` that weren't installed by zuri. |
+| `--no-hooks` | Don't run any install or uninstall scripts. |
+| `--allow-hooks <package...>` | Allow these packages to run their scripts this time. |
+| `-q, --quiet` | Only print the result. |

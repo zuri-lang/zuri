@@ -382,7 +382,7 @@ scores.each(@(value, key) {
 
 **Parameters**
 
-- `callback` (`function`): the function to call for each entry
+- `callback` (`function`): The function to call for each entry.
 
 **Returns** `void`
 
@@ -412,7 +412,7 @@ echo high
 
 **Parameters**
 
-- `callback` (`function`): the function that tests each entry. It
+- `callback` (`function`): The function that tests each entry. It
   returns true to keep the entry, or false to leave it out.
 
 **Returns** `dict`
@@ -443,7 +443,7 @@ echo any_above_two
 
 **Parameters**
 
-- `callback` (`function`): the function that tests each entry
+- `callback` (`function`): The function that tests each entry.
 
 **Returns** `boolean`
 
@@ -473,7 +473,7 @@ echo all_positive
 
 **Parameters**
 
-- `callback` (`function`): the function that tests each entry
+- `callback` (`function`): The function that tests each entry.
 
 **Returns** `boolean`
 
@@ -504,10 +504,10 @@ echo sum
 
 **Parameters**
 
-- `callback` (`function`): the function to call for each entry. It
+- `callback` (`function`): The function to call for each entry. It
   returns the updated accumulated value.
-- `initial` (`any`): the value passed as the accumulated value to the
-  first call of `callback`
+- `initial` (`any`): The value passed as the accumulated value to the
+  first call of `callback`.
 
 **Returns** `any`
 

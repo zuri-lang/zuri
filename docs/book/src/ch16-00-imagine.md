@@ -149,9 +149,9 @@ can keep chaining.
 var original = Image.open('photo.jpg')
 
 var small = original.thumbnail(200, 200) # original is untouched
-small.grayscale() # small is now grey
+small.grayscale() # small is now gray
 
-echo original.size() # still the full size, still colour
+echo original.size() # still the full size, still in color
 ```
 
 This means a chain that mixes both kinds of operation works as you'd expect,
@@ -159,7 +159,7 @@ and that you should call `clone()` when you want to keep a copy of an image
 before applying a filter.
 
 ```zuri,ignore
-var greyed = photo.clone().grayscale() # photo keeps its colour
+var grayed = photo.clone().grayscale() # photo keeps its color
 ```
 
 ## Colors
@@ -504,7 +504,7 @@ visible, use `BICUBIC` instead.
 ```zuri,ignore
 photo.crop(100, 50, 400, 300) # x, y, width, height
 photo.pad(20) # 20 pixels on every side
-photo.pad(10, 20, 10, 20, 'white') # top, right, bottom, left, colour
+photo.pad(10, 20, 10, 20, 'white') # top, right, bottom, left, color
 photo.trim() # remove a uniform border
 photo.trim({ tolerance: 8 }) # allow for JPEG noise in the border
 ```
@@ -566,7 +566,7 @@ photo.grayscale().contrast(15).sharpen(0.5)
 
 ```zuri,ignore
 photo.brightness(20) # -255 to 255, added to each channel
-photo.contrast(15) # -100 to 100, around mid-grey
+photo.contrast(15) # -100 to 100, around mid-gray
 photo.gamma(1.2) # above 1 lifts midtones, below 1 lowers them
 photo.levels(20, 235) # stretch this input range to full scale
 photo.levels(20, 235, 1.1) # ...with a midtone curve
@@ -590,7 +590,7 @@ spaces its levels evenly, while `quantize()` chooses colors that suit the
 image, so a photo still looks good with far fewer colors.
 
 ```zuri,ignore
-photo.quantize(32) # 32 well-chosen colours
+photo.quantize(32) # 32 well-chosen colors
 photo.quantize(16, true) # ...with dithering
 ```
 
@@ -602,12 +602,12 @@ white points for you. It's shown alongside the detail filters below.
 ```zuri,ignore
 photo.grayscale()
 photo.sepia()
-photo.saturate(1.4) # 0 removes colour, 1 is unchanged
+photo.saturate(1.4) # 0 removes color, 1 is unchanged
 photo.hue_rotate(45)
-photo.tint('#ff8800', 0.3) # blend a flat colour in
-photo.colorize('#4f46e5') # monochrome in one colour
+photo.tint('#ff8800', 0.3) # blend a flat color in
+photo.colorize('#4f46e5') # monochrome in one color
 photo.duotone('#1e1b4b', '#fbbf24')
-photo.flatten('white') # composite over a colour, drop alpha
+photo.flatten('white') # composite over a color, drop alpha
 ```
 
 `grayscale()` weights each channel according to how bright it looks to the
@@ -740,7 +740,7 @@ image.fill_circle(cx, cy, r, color)
 image.ellipse(cx, cy, rx, ry, color)
 image.fill_ellipse(cx, cy, rx, ry, color)
 image.arc(cx, cy, rx, ry, start, end, color)
-image.pie(cx, cy, rx, ry, start, end, color) # closed through the centre
+image.pie(cx, cy, rx, ry, start, end, color) # closed through the center
 image.chord(cx, cy, rx, ry, start, end, color) # closed along the chord
 image.bezier(x1, y1, cx1, cy1, cx2, cy2, x2, y2, color)
 ```
@@ -884,7 +884,7 @@ area produces a sharp transition with solid bands on either side.
 # top to bottom
 image.linear_gradient(0, 0, 0, image.height(), ['#0f172a', '#334155'])
 
-# diagonal, three colours
+# diagonal, three colors
 image.linear_gradient(0, 0, 400, 200, ['#4f46e5', '#f472b6', '#fbbf24'])
 ```
 

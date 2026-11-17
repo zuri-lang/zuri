@@ -76,9 +76,9 @@ class ReverseProxy {
 
   /**
    * What to send upstream as the `Host` header. The default, `nil`,
-   * sends the upstream server's own host, which is what a server using
-   * virtual hosting expects. Set it to `'preserve'` to forward the
-   * client's `Host` instead, or to any other value to send that value.
+   * sends the upstream server's own host, as a server that uses virtual
+   * hosting expects. Set it to `'preserve'` to forward the client's
+   * `Host` instead, or to any other value to send that value.
    * @type ?string
    */
   var host_header

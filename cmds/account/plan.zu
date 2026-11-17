@@ -57,11 +57,12 @@ def parser() {
         type: args.OPTIONAL,
         metavar: 'name',
       })
-      .add_option('scopes', 'What it may do: publish, yank, owners, account', {
-        type: args.LIST,
-        metavar: 'scope',
-      })
-      .add_option('days', 'How long it lasts; 365 by default', {
+      .add_option(
+        'scopes',
+        'What the token can do: publish, yank, owners or account',
+        { type: args.LIST, metavar: 'scope' },
+      )
+      .add_option('days', 'How many days the token lasts (365 by default)', {
         type: args.INT,
         metavar: 'days',
       })

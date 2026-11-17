@@ -1,11 +1,11 @@
 /**
  * @module markdown
  *
- * Markdown to HTML, following [CommonMark](https://spec.commonmark.org/0.31.2/)
- * and [GitHub Flavored Markdown](https://github.github.com/gfm/), with
- * the extensions Pandoc made familiar: tables of contents,
- * abbreviations, definition lists, attributes, footnotes, math and
- * more.
+ * Converts Markdown to HTML. It follows
+ * [CommonMark](https://spec.commonmark.org/0.31.2/) and [GitHub
+ * Flavored Markdown](https://github.github.com/gfm/), and supports the
+ * extensions that Pandoc made popular, such as tables of contents,
+ * abbreviations, definition lists, attributes, footnotes and math.
  *
  * ```zuri
  * import markdown
@@ -18,17 +18,18 @@
  * <p>Some <em>emphasis</em> and a <a href="https://example.com">link</a>.</p>
  * ```
  *
- * Every string is a valid document, so neither parsing nor rendering
- * ever fails on the Markdown itself. Text that does not make one
- * construct is text.
+ * Every string is a valid document, so parsing and rendering never fail
+ * because of the Markdown itself. Text that doesn't match any Markdown
+ * syntax is rendered as plain text.
  *
  * ---
  *
- * ### Flavours
+ * ### Flavors
  *
- * `markdown()` takes a dictionary of options and returns a `Markdown`
- * that parses and renders with them. Build one and keep it; the module's
- * own `render()` and `parse()` take the same options for a one-off.
+ * `markdown()` takes a dictionary of options, and returns a `Markdown`
+ * object that parses and renders with them. If you render more than one
+ * document, create one and reuse it. The module's own `render()` and
+ * `parse()` functions take the same options, for a single document.
  *
  * ```zuri
  * import markdown
@@ -38,34 +39,34 @@
  * echo md.render(file('README.md').read())
  * ```
  *
- * `preset` picks where the other options start from:
+ * `preset` sets the starting value of every other option:
  *
  * | Preset | What it turns on |
  * | --- | --- |
  * | `'commonmark'` | Nothing beyond the CommonMark specification. |
  * | `'gfm'` | The default. GitHub's tables, strikethrough, autolinks, task lists, footnotes, tag filter, alerts and emoji. |
- * | `'extended'` | GFM and every extension below but `metadata`, with heading identifiers and smart punctuation. |
+ * | `'extended'` | GFM, plus every extension below except `metadata`, along with heading identifiers and smart punctuation. |
  *
- * Any option named alongside the preset overrides it, so
+ * An option given alongside the preset overrides it, so
  * `{ preset: 'commonmark', tables: true }` is CommonMark with tables.
  *
  * ---
  *
  * ### Raw HTML and links
  *
- * Markdown is most often written by someone other than the person
- * running the site, so the defaults assume it cannot be trusted:
+ * Markdown is often written by someone other than the person running
+ * the site, so by default it's treated as untrusted:
  *
- * - Raw HTML is shown as text rather than passed through. Set `html`
- *   for Markdown you wrote yourself.
- * - A link or image whose destination uses `javascript:`, `vbscript:`,
- *   `file:` or a `data:` URL other than an image gets an empty one.
- *   Set `unsafe_links` to keep them.
- * - An attribute written as `{key=value}` whose name is not on a short
- *   safe list becomes `data-key`, so `{onclick=...}` cannot run script.
- *   `html` lifts this too.
+ * - Raw HTML is shown as text instead of being passed through. Set
+ *   `html` for Markdown that you wrote yourself.
+ * - A link or image whose destination uses `javascript:`, `vbscript:`
+ *   or `file:`, or a `data:` URL that isn't an image, gets an empty
+ *   destination. Set `unsafe_links` to keep them.
+ * - An attribute written as `{key=value}` whose name isn't on a short
+ *   list of safe names is renamed to `data-key`, so `{onclick=...}`
+ *   can't run a script. Setting `html` turns this off too.
  *
- * With `html` on and the `gfm` preset, GFM's tag filter still defuses
+ * With `html` on and the `gfm` preset, GFM's tag filter still escapes
  * `<script>`, `<style>`, `<iframe>`, `<textarea>`, `<title>`, `<xmp>`,
  * `<noembed>`, `<noframes>` and `<plaintext>`. Turn `tag_filter` off to
  * allow them.
@@ -76,23 +77,23 @@
  *
  * | Option | Default | Effect |
  * | --- | --- | --- |
- * | `preset` | `'gfm'` | Where every other option starts from. |
+ * | `preset` | `'gfm'` | The starting values of the other options. |
  * | `html` | `false` | Pass raw HTML through. |
  * | `unsafe_links` | `false` | Keep `javascript:` and similar destinations. |
  * | `breaks` | `false` | Render every line ending in a paragraph as `<br />`, as GitHub does in comments. |
- * | `smart` | `false` | Curly quotes, `--` and `---` as dashes, `...` as an ellipsis. |
+ * | `smart` | `false` | Curly quotes, `--` and `---` as dashes, and `...` as an ellipsis. |
  * | `tables` | GFM | Pipe tables. |
  * | `strikethrough` | GFM | `~~struck~~`. |
  * | `autolinks` | GFM | Bare `www.`, `http://` and email addresses become links. |
  * | `task_lists` | GFM | `- [ ]` and `- [x]` items. |
  * | `footnotes` | GFM | `[^1]` references, `[^1]: ...` footnotes, and Pandoc's `^[inline]` notes. |
- * | `tag_filter` | GFM | Defuse the tags listed above in raw HTML. |
+ * | `tag_filter` | GFM | Escape the tags listed above in raw HTML. |
  * | `alerts` | GFM | `> [!NOTE]` and the other GitHub alerts. |
  * | `emoji` | GFM | `:tada:` and the other GitHub shortcodes. |
- * | `heading_ids` | `false` | Give every heading an `id`: `true` or `'github'` for GitHub's, `'pandoc'` for Pandoc's, or a function from the heading's text to an id. |
- * | `id_prefix` | `''` | Put in front of every generated heading id. |
- * | `toc` | `false` | Replace a paragraph of `[TOC]` with a table of contents. Turns on `heading_ids`. |
- * | `toc_levels` | `[1, 6]` | The lowest and highest heading levels the contents list. |
+ * | `heading_ids` | `false` | Give every heading an `id`. Use `true` or `'github'` for GitHub's style, `'pandoc'` for Pandoc's, or a function that takes the heading's text and returns an id. |
+ * | `id_prefix` | `''` | A prefix for every generated heading id. |
+ * | `toc` | `false` | Replace a paragraph that's just `[TOC]` with a table of contents. Turns on `heading_ids`. |
+ * | `toc_levels` | `[1, 6]` | The lowest and highest heading levels in the table of contents. |
  * | `attributes` | `false` | `{#id .class key=value}` after headings, code, links, images and fenced code, and `[text]{.class}` spans. |
  * | `abbreviations` | `false` | `*[HTML]: HyperText Markup Language` definitions. |
  * | `definition_lists` | `false` | Terms with `: definition` lines under them. |
@@ -103,7 +104,7 @@
  * | `divs` | `false` | `::: name` fenced divs. |
  * | `line_blocks` | `false` | Lines starting with `| ` kept as written. |
  * | `metadata` | `false` | YAML front matter between `---` lines, read into the document's `metadata`. |
- * | `highlight` | `nil` | A function given each code block's text and language, returning its markup or `nil`. |
+ * | `highlight` | `nil` | A function that's given each code block's text and language, and returns its markup or `nil`. |
  * | `renderer` | `HtmlRenderer` | The class that turns the tree into HTML. |
  *
  * ---
@@ -139,17 +140,18 @@
  * Euler: $e^{i\pi} + 1 = 0$
  * ```
  *
- * Math is written for MathJax or KaTeX to typeset: inline math becomes
- * `<span class="math inline">\(...\)</span>` and display math
+ * Math is output for MathJax or KaTeX to typeset. Inline math becomes
+ * `<span class="math inline">\(...\)</span>`, and display math becomes
  * `<span class="math display">\[...\]</span>`.
  *
  * ---
  *
  * ### The tree
  *
- * `parse()` returns the document as a tree of `Node`s, which is where
- * to look when the HTML is not the point: collecting headings,
- * checking links, pulling out the first paragraph for a summary.
+ * `parse()` returns the document as a tree of `Node` objects. Use it
+ * when you need something other than the HTML, such as collecting the
+ * headings, checking the links, or taking the first paragraph as a
+ * summary.
  *
  * ```zuri
  * import markdown
@@ -161,8 +163,8 @@
  * }
  * ```
  *
- * `use()` adds a transform, a function that gets each document after it
- * is parsed and may change it before it is rendered:
+ * `use()` adds a transform. A transform is a function that's given each
+ * document after it's parsed, and can change it before it's rendered:
  *
  * ```zuri
  * import markdown
@@ -176,7 +178,8 @@
  * echo md.render('# Becomes an h2')
  * ```
  *
- * `markdown.renderer` explains how to change the HTML a node becomes.
+ * See `markdown.renderer` for how to change the HTML that a node is
+ * rendered as.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -431,17 +434,17 @@ def _toc_entries(headings: list, start: number, end: number) {
 }
 
 /**
- * Parses and renders Markdown with one set of options.
+ * Parses and renders Markdown with a fixed set of options.
  *
- * Make one with `markdown()`. A `Markdown` keeps no state between
- * documents, so one can serve a whole program.
+ * Create one with `markdown()`. A `Markdown` object keeps no state
+ * between documents, so a program can use one for all of its documents.
  *
  * @printable
  */
 class Markdown {
 
   /**
-   * Every option, as resolved from the ones given and their preset.
+   * Every option, resolved from the options given and their preset.
    *
    * @type dict
    */
@@ -450,7 +453,8 @@ class Markdown {
   var _transforms = []
 
   /**
-   * @param ?dict options: see the module's page for every option.
+   * @param ?dict options: see the module documentation for the full
+   *    list.
    * @throws ValueError When an option is unknown or has the wrong type
    * @constructor
    */
@@ -460,9 +464,9 @@ class Markdown {
   }
 
   /**
-   * Adds _transform_, a function that is given each document after it
-   * is parsed and may change it. Transforms run in the order they were
-   * added. Returns this same `Markdown`.
+   * Adds _transform_, a function that's called with each document after
+   * it's parsed, and can change it. Transforms run in the order they
+   * were added. Returns this `Markdown`, so that calls can be chained.
    *
    * ```zuri
    * import markdown
@@ -485,7 +489,7 @@ class Markdown {
   }
 
   /**
-   * _source_ parsed into a tree of nodes, with the transforms applied.
+   * Parses _source_ into a tree of nodes, and applies the transforms.
    *
    * @param string source
    * @returns Node: a node of type `document`.
@@ -514,7 +518,7 @@ class Markdown {
   }
 
   /**
-   * _source_ as HTML.
+   * Converts _source_ to HTML.
    *
    * @param string source
    * @returns string
@@ -526,9 +530,10 @@ class Markdown {
   }
 
   /**
-   * _source_ as HTML without the paragraph around it, for a line of
-   * Markdown going somewhere a block cannot, such as a title or a table
-   * cell. Block syntax is not recognised: `# x` stays `# x`.
+   * Converts _source_ to HTML without wrapping it in a paragraph. Use
+   * it for a line of Markdown that goes where a block can't, such as a
+   * title or a table cell. Block syntax isn't recognized, so `# x`
+   * stays `# x`.
    *
    * ```zuri
    * import markdown
@@ -558,8 +563,8 @@ class Markdown {
   }
 
   /**
-   * _node_ and everything beneath it as HTML, through the `renderer`
-   * option's class.
+   * Converts _node_ and its descendants to HTML, using the class given
+   * by the `renderer` option.
    *
    * @param Node node
    * @returns string
@@ -573,11 +578,11 @@ class Markdown {
   }
 
   /**
-   * The headings of _doc_ as a table of contents: a list of
-   * dictionaries with `level`, `text`, `id` and `children`, the
-   * headings beneath each one nested in its `children`. Only the levels
-   * the `toc_levels` option names are included. An `id` is `nil` unless
-   * `heading_ids` or `toc` is on.
+   * Returns the headings of _doc_ as a table of contents. The result is
+   * a list of dictionaries with `level`, `text`, `id` and `children`
+   * keys, where `children` holds the headings nested under each one.
+   * Only the levels in the `toc_levels` option are included. `id` is
+   * `nil` unless `heading_ids` or `toc` is on.
    *
    * ```zuri
    * import markdown
@@ -612,7 +617,8 @@ class Markdown {
 }
 
 /**
- * A new `Markdown` with _options_, as described on the module's page.
+ * Creates a `Markdown` object with _options_, which are described in
+ * the module documentation.
  *
  * ```zuri
  * import markdown
@@ -638,10 +644,11 @@ def _with(options: ?dict) {
 }
 
 /**
- * _source_ as HTML, with _options_ or the defaults.
+ * Converts _source_ to HTML, using _options_ or the defaults.
  *
- * Building a `Markdown` with `markdown()` and keeping it saves resolving
- * the same options for every document.
+ * To render several documents with the same options, create a
+ * `Markdown` with `markdown()` and reuse it, so that the options are
+ * only resolved once.
  *
  * @param string source
  * @param ?dict options
@@ -653,7 +660,7 @@ def render(source: string, options: ?dict) {
 }
 
 /**
- * _source_ parsed into a tree, with _options_ or the defaults.
+ * Parses _source_ into a tree, using _options_ or the defaults.
  *
  * @param string source
  * @param ?dict options
@@ -665,8 +672,8 @@ def parse(source: string, options: ?dict) {
 }
 
 /**
- * _source_ as HTML without a paragraph around it, with _options_ or the
- * defaults. See `Markdown.render_inline()`.
+ * Converts _source_ to HTML without wrapping it in a paragraph, using
+ * _options_ or the defaults. See `Markdown.render_inline()`.
  *
  * @param string source
  * @param ?dict options
@@ -677,9 +684,9 @@ def render_inline(source: string, options: ?dict) {
 }
 
 /**
- * The identifier a heading reading _text_ is given, without the
- * numbering that keeps repeated ones apart. _style_ is `'github'`, the
- * default, or `'pandoc'`.
+ * Returns the identifier that a heading with the text _text_ is given.
+ * The number that's added to tell repeated headings apart isn't
+ * included. _style_ is `'github'`, the default, or `'pandoc'`.
  *
  * ```zuri
  * import markdown
@@ -710,9 +717,9 @@ def slug(text: string, style: ?string) {
 var _ESCAPED = '\\`*_{}[]<>()#+-.!|~^=$:&"\''
 
 /**
- * _text_ with a backslash before every character that could make it
- * mean something to Markdown, so it renders as exactly the text it is.
- * Line breaks and indentation are kept.
+ * Returns _text_ with a backslash before each character that Markdown
+ * could treat as syntax, so that it's rendered as plain text. Line
+ * breaks and indentation are kept.
  *
  * ```zuri
  * import markdown

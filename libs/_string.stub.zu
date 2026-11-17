@@ -408,7 +408,7 @@ class string {
    * 'example'
    * ```
    *
-   * @param {?string} chars - the characters to remove. Defaults to
+   * @param {?string} chars The characters to remove. Defaults to
    *    whitespace.
    * @returns {string}
    */
@@ -431,7 +431,7 @@ class string {
    * '12'
    * ```
    *
-   * @param {?string} chars - the characters to remove. Defaults to
+   * @param {?string} chars The characters to remove. Defaults to
    *    whitespace.
    * @returns {string}
    */
@@ -454,18 +454,18 @@ class string {
    * 'line'
    * ```
    *
-   * @param {?string} chars - the characters to remove. Defaults to
+   * @param {?string} chars The characters to remove. Defaults to
    *    whitespace.
    * @returns {string}
    */
   rtrim(chars: ?string) {}
 
   /**
-   * Joins the items of an iterable into one string, with this string as
-   * the separator between them. Items that aren't strings are converted
-   * to strings first. A string is joined character by character.
-   *
-   * `bytes` values are the only iterables that aren't supported.
+   * Joins the items of a list, the values of a dictionary or the
+   * characters of a string into one string, with this string as the
+   * separator between them. Items that aren't strings are converted to
+   * strings first. Any other argument, such as a range or `bytes`,
+   * raises an error.
    *
    * For example:
    *
@@ -478,12 +478,14 @@ class string {
    * 'a'
    * %> ''.join(['a', 'b', 'c'])
    * 'abc'
+   * %> '-'.join({ a: 1, b: 2 })
+   * '1-2'
    * ```
    *
-   * @param {string} string - the iterable to join
+   * @param {list|dict|string} items The items to join.
    * @returns {string}
    */
-  join(string: string) {}
+  join(items: list|dict|string) {}
 
   /**
    * Splits the string at every occurrence of _delimiter_, and returns a
@@ -513,7 +515,7 @@ class string {
    * [who, is, in, the, garden]
    * ```
    *
-   * @param {string} delimiter - the delimiter to split the string at
+   * @param {string} delimiter The delimiter to split the string at.
    * @returns {list}
    */
   split(delimiter: string) {}
@@ -538,8 +540,8 @@ class string {
    * 8
    * ```
    *
-   * @param {string} str - the string to search for
-   * @param {?number} start_index - the index to start searching from
+   * @param {string} str The string to search for.
+   * @param {?number} start_index The index to start searching from.
    * @returns {number}
    */
   index_of(str: string, start_index: ?number) {}
@@ -579,8 +581,8 @@ class string {
    * 'c'
    * ```
    *
-   * @param {string} str - the string to search for
-   * @param {?number} end_index - the highest index a match can start at
+   * @param {string} str The string to search for.
+   * @param {?number} end_index The highest index a match can start at.
    * @returns {number}
    */
   last_index_of(str: string, end_index: ?number) {}
@@ -598,7 +600,7 @@ class string {
    * false
    * ```
    *
-   * @param {string} str - the string to look for
+   * @param {string} str The string to look for.
    * @returns {boolean}
    */
   starts_with(str: string) {}
@@ -616,7 +618,7 @@ class string {
    * false
    * ```
    *
-   * @param {string} str - the string to look for
+   * @param {string} str The string to look for.
    * @returns {boolean}
    */
   ends_with(str: string) {}
@@ -639,7 +641,7 @@ class string {
    * 1
    * ```
    *
-   * @param {string} str - the string to count
+   * @param {string} str The string to count.
    * @returns {number}
    */
   count(str: string) {}
@@ -662,7 +664,7 @@ class string {
    * 0
    * ```
    *
-   * @param {number} base - the base of the digits, from 2 to 36.
+   * @param {number} base The base of the digits, from 2 to 36.
    *    Defaults to `10`. A fractional part is only read in base 10,
    *    because other bases have no way of writing one.
    * @returns {number}
@@ -699,7 +701,7 @@ class string {
    * fractional part is read, because the result is an integer, so
    * `'12.5'.to_bigint()` is `12n`.
    *
-   * @param {number} base - the base of the digits, from 2 to 36.
+   * @param {number} base The base of the digits, from 2 to 36.
    *    Defaults to `10`.
    * @returns {bigint}
    * @raises {RangeError} if `base` is outside 2 to 36.
@@ -758,8 +760,8 @@ class string {
    * 'cat'
    * ```
    *
-   * @param {number} width - the length of the string after padding
-   * @param {?string} fill - the character to pad with
+   * @param {number} width The length of the string after padding.
+   * @param {?string} fill The character to pad with.
    * @returns {string}
    */
   lpad(width: number, fill: ?string) {}
@@ -781,8 +783,8 @@ class string {
    * 'Hmm'
    * ```
    *
-   * @param {number} width - the length of the string after padding
-   * @param {?string} fill - the character to pad with
+   * @param {number} width The length of the string after padding.
+   * @param {?string} fill The character to pad with.
    * @returns {string}
    */
   rpad(width: number, fill: ?string) {}
@@ -817,7 +819,7 @@ class string {
    * {0: 2024-01, 1: 2024, 2: 01, year: 2024}
    * ```
    *
-   * @param {string} str - the string or regular expression to match
+   * @param {string} str The string or regular expression to match.
    * @returns {boolean|dictionary}
    */
   match(str: string) {}
@@ -839,7 +841,7 @@ class string {
    * {0: [who, is, in, the, garden]}
    * ```
    *
-   * @param {string} reg - the regular expression to match
+   * @param {string} reg The regular expression to match.
    * @returns {dictionary}
    */
   matches(reg: string) {}
@@ -869,9 +871,9 @@ class string {
    * @note When the third parameter, _`use_regex`_, is false, _str_ is
    *    never treated as a regular expression, even if it looks like
    *    one.
-   * @param {string} str - the string or regular expression to replace
-   * @param {string} replacement - the replacement string
-   * @param {?bool} use_regex - whether _str_ can be treated as a
+   * @param {string} str The string or regular expression to replace.
+   * @param {string} replacement The replacement string.
+   * @param {?bool} use_regex Whether _str_ can be treated as a
    *    regular expression. Defaults to true.
    * @returns {string}
    */
@@ -931,8 +933,8 @@ class string {
    * will be is not will be
    * ```
    *
-   * @param {string} regex - the regular expression to match
-   * @param {function} callback - the function to call for each match
+   * @param {string} regex The regular expression to match.
+   * @param {function} callback The function to call for each match.
    * @returns {string}
    */
   replace_with(regex: string, callback: function) {}
@@ -990,7 +992,7 @@ class string {
   /**
    * Compares the string with another string.
    *
-   * @param {string} other - the string to compare with
+   * @param {string} other The string to compare with.
    * @throws {Error} if `other` isn't a string.
    * @returns {number} A negative number if this string comes before
    *    `other`, zero if the two are equal, or a positive number if this

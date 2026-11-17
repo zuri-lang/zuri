@@ -1,12 +1,13 @@
 /**
- * The emoji shortcodes GitHub understands, such as `:tada:`, from
- * [gemoji](https://github.com/github/gemoji), GitHub's own list.
- * Data only. The values are written as escapes, so the file reads the
- * same in any editor.
+ * The emoji shortcodes that GitHub supports, such as `:tada:`, taken
+ * from GitHub's own list, [gemoji](https://github.com/github/gemoji).
+ * This file contains only data. The values are written as escapes, so
+ * the file looks the same in any editor.
  *
  * There are 1913 entries.
  *
- * gemoji is Copyright (c) 2019 GitHub, Inc., under the MIT license.
+ * gemoji is Copyright (c) 2019 GitHub, Inc., and is used under the MIT
+ * license.
  */
 
 /** Maps a shortcode, without its colons, to the emoji it stands for. */

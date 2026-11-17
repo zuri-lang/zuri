@@ -1,6 +1,7 @@
 /**
- * Heading identifiers, made the way GitHub and Pandoc make them, so a
- * link written for a page on either still finds its heading here.
+ * Generates heading identifiers the way GitHub and Pandoc do, so that a
+ * link written for a page rendered by either one still finds its
+ * heading here.
  */
 
 import ._text { is_ascii_alnum, is_whitespace }
@@ -28,8 +29,9 @@ def _is_word_character(c: string) {
 }
 
 /**
- * GitHub's identifier for _text_: lower case, with every space made a
- * hyphen and everything but letters, numbers, `-` and `_` dropped.
+ * Returns GitHub's identifier for _text_. The text is lowercased, each
+ * space becomes a hyphen, and everything except letters, numbers, `-`
+ * and `_` is removed.
  */
 def github(text: string) {
   var out = []
@@ -46,9 +48,10 @@ def github(text: string) {
 }
 
 /**
- * Pandoc's identifier for _text_: lower case, with each run of
- * whitespace made one hyphen, everything but letters, numbers, `_`, `-`
- * and `.` dropped, and everything before the first letter dropped too.
+ * Returns Pandoc's identifier for _text_. The text is lowercased, each
+ * run of whitespace becomes a single hyphen, and everything except
+ * letters, numbers, `_`, `-` and `.` is removed, along with everything
+ * before the first letter.
  */
 def pandoc(text: string) {
   var out = []

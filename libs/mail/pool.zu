@@ -155,9 +155,9 @@ class Cluster {
   }
 
   /**
-   * Stops accepting connections, tells the workers that nothing more is
-   * coming, and waits for them to finish the connections they're
-   * handling.
+   * Stops accepting connections, tells the workers that no more
+   * connections are coming, and waits for them to finish the
+   * connections they're handling.
    *
    * @param ?number timeout: the number of milliseconds to wait for each
    *    worker

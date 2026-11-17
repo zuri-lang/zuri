@@ -122,16 +122,16 @@ def default_capabilities() {
 /**
  * Opens connections to one kind of database.
  *
- * A driver holds no connection of its own and no state worth sharing,
- * so one instance for each engine is registered with `sql.register()`
- * and reused for every connection it opens.
+ * A driver holds no connection and no other state of its own, so one
+ * instance for each engine is registered with `sql.register()` and
+ * reused for every connection it opens.
  */
 class Driver {
   /**
    * The name this driver is registered under, such as `'sqlite'`.
    *
    * Appears on every error the adapter raises, so it wants to be the
-   * name a reader would recognise.
+   * name a reader would recognize.
    *
    * @returns string
    */
@@ -166,7 +166,7 @@ class Driver {
 
   /**
    * Turns a connection string or an options dictionary into the
-   * normalised options `connect()` takes.
+   * normalized options `connect()` takes.
    *
    * Each adapter reads the forms its own engine's tooling uses, so a
    * connection string copied from somewhere else works unchanged.

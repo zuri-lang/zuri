@@ -622,8 +622,8 @@ class MaildirStore < MailStore {
   }
 
   /**
-   * Passes credential checks to a function of your own, which is what a
-   * program with its own table of users needs.
+   * Passes credential checks to a function of your own, such as one
+   * that looks users up in your program's own table.
    *
    * A store with an authenticator can't provide passwords any more, so
    * the server stops offering the mechanisms that need them.

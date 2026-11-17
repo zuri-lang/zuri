@@ -59,7 +59,7 @@ class Failure {
   /** What was received. */
   var received = nil
 
-  /** Whether `expected` and `received` are worth printing. */
+  /** Whether `expected` and `received` should be printed. */
   var has_values = false
 
   /** Pre-rendered lines to print under the message. */

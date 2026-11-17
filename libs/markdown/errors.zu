@@ -1,18 +1,18 @@
 /**
  * @module markdown.errors
  *
- * The errors the `markdown` module raises.
+ * The errors that the `markdown` module raises.
  *
- * Markdown itself has no errors: every string is a document, and text
- * that fails to be one construct is simply text. What can fail is what
- * sits around the Markdown, such as front matter that is not valid
- * YAML.
+ * Markdown syntax can't cause an error by itself. Every string is a
+ * valid document, and text that doesn't match any Markdown syntax is
+ * rendered as plain text. Errors come from the parts around the
+ * Markdown, such as front matter that isn't valid YAML.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
 /**
- * Base class for every error this module raises.
+ * The base class of every error that this module raises.
  *
  * @printable
  */
@@ -36,8 +36,8 @@ class MarkdownError < Error {
 }
 
 /**
- * Front matter that could not be read: YAML that does not parse, or
- * YAML that is not a mapping.
+ * Raised when front matter can't be read, because it isn't valid YAML
+ * or it isn't a mapping.
  *
  * ```zuri
  * import markdown
@@ -54,7 +54,7 @@ class MarkdownError < Error {
 class MetadataError < MarkdownError {
 
   /**
-   * The source line the front matter starts on.
+   * The source line that the front matter starts on.
    *
    * @type number
    */

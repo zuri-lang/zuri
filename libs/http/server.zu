@@ -186,8 +186,8 @@ class HttpServer {
   var header_timeout = 10
 
   /**
-   * The largest request body accepted, in bytes. Defaults to 10 MiB.
-   * Raise it deliberately for a service that accepts uploads.
+   * The largest request body accepted, in bytes. Defaults to 10 MiB. A
+   * service that accepts uploads may need to raise it.
    * @type number
    */
   var max_body_size = 10485760
@@ -206,8 +206,8 @@ class HttpServer {
   var compression = true
 
   /**
-   * The smallest response worth compressing, in bytes. Below about the
-   * size of a packet, compression costs more than it saves.
+   * Responses smaller than this many bytes aren't compressed. Below
+   * about the size of a packet, compression costs more than it saves.
    * @type number
    */
   var compression_min_size = 1024
@@ -223,9 +223,9 @@ class HttpServer {
    *    Brotli at its maximum level costs around a hundred times as much
    *    CPU time as level `5`, and the result is often larger. See
    *    `http.body.DEFAULT_BROTLI_QUALITY`. If a response is served
-   *    often enough to be worth compressing hard, it's better to
-   *    compress it ahead of time. `serve_files()` can serve a
-   *    precompressed version of a file with `precompressed`.
+   *    often enough to justify a higher level, compress it ahead of
+   *    time instead. `serve_files()` can serve a precompressed version
+   *    of a file with `precompressed`.
    * @type ?number
    */
   var compression_quality
@@ -430,8 +430,8 @@ class HttpServer {
    *
    * A middleware takes `(request, response, next)` and must call
    * `next()` to let the rest of the chain run. If it doesn't call
-   * `next()`, the request stops there, which is exactly what an
-   * authentication or rate-limiting layer needs.
+   * `next()`, the request stops there. An authentication or
+   * rate-limiting layer does this to turn a request away.
    *
    * ```zuri
    * server.use(@(request, response, next) {
@@ -604,8 +604,8 @@ class HttpServer {
    *
    * @note The certificate and key are parsed when the first handshake
    *    happens, not when this method is called, so an invalid or
-   *    mismatched pair shows up as a failed connection rather than as
-   *    an error from this method.
+   *    mismatched pair shows up as a failed connection, and this method
+   *    doesn't raise an error for it.
    *
    * @param string cert_chain: PEM, starting with the server's own
    *    certificate

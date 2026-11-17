@@ -1,5 +1,5 @@
 /**
- * JavaScript and CSS, read well enough to colour the scripts and styles
+ * JavaScript and CSS, read well enough to color the scripts and styles
  * a page carries: comments, strings, numbers and names. Neither is
  * parsed, so a regular expression literal in JavaScript is shown as the
  * operators and names it is made of.

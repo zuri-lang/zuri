@@ -537,7 +537,7 @@ def is_mathml_text_integration_point(element) {
  * True when _element_ is an HTML integration point.
  *
  * An `<annotation-xml>` qualifies only when its `encoding` attribute
- * names an HTML flavour, which is how MathML embeds real markup.
+ * names an HTML flavor, which is how MathML embeds real markup.
  *
  * @param any element
  * @returns bool
@@ -622,9 +622,8 @@ def _rename_attributes(attributes: dict, renames: dict) {
  * aren't converted to empty strings.
  *
  * Returns `'no-quirks'`, `'limited-quirks'` or `'quirks'`. Nothing in
- * this module behaves differently in the three modes, but knowing which
- * one a browser would have chosen is exactly what you want to find out
- * when you audit an old document.
+ * this module behaves differently in the three modes. The result tells
+ * you how a browser would have rendered the document.
  *
  * @param ?string name
  * @param ?string public_id

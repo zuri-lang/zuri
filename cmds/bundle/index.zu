@@ -47,7 +47,9 @@ def _runtime(target: string, given: ?string) {
 
     if !file(executable).exists() or
         !os.dir_exists(os.join_paths(root, 'libs')) {
-      raise UsageError('${root} doesn\'t contain a ${target} runtime and its libs')
+      raise UsageError(
+        '${root} doesn\'t contain a ${target} runtime and its libs',
+      )
     }
 
     return { executable, libs: os.join_paths(root, 'libs') }

@@ -998,7 +998,7 @@ def max_uuid() {
  *
  * @param string str The UUID string to parse.
  * @return UUID
- * @throws Error If `str` is not a recognisable UUID form.
+ * @throws Error If `str` is not a recognizable UUID form.
  */
 def parse(str: string) {
   return UUID(str)

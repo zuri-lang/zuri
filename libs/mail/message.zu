@@ -632,9 +632,9 @@ class Message {
    * Whether this part should be offered as a file, instead of being
    * shown in place.
    *
-   * A part is an attachment if it says so, and also if it doesn't say
-   * either way but has a file name, which is what older mail programs
-   * do.
+   * A part is an attachment if its `Content-Disposition` says so. It's
+   * also an attachment if it has no `Content-Disposition` but has a
+   * file name, which is how older mail programs mark attachments.
    *
    * @returns bool
    */

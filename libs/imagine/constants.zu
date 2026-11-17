@@ -25,7 +25,7 @@
 # ---------------------------------------------------------------------
 
 /**
- * Nearest-neighbour. Picks the single closest source pixel and copies
+ * Nearest-neighbor. Picks the single closest source pixel and copies
  * it, so it is the fastest filter and the only one that keeps hard
  * edges perfectly hard.
  *
@@ -98,7 +98,7 @@ var LANCZOS = 'lanczos'
 var BLEND_NORMAL = 'normal'
 
 /**
- * Multiplies the two colours. The result is never lighter than either
+ * Multiplies the two colors. The result is never lighter than either
  * input, so white leaves the backdrop alone and black forces black.
  * The usual way to paint a shadow.
  *
@@ -167,7 +167,7 @@ var BLEND_HARD_LIGHT = 'hard_light'
 var BLEND_SOFT_LIGHT = 'soft_light'
 
 /**
- * The absolute difference between the two colours. Identical images
+ * The absolute difference between the two colors. Identical images
  * blended this way come out black, which makes it a quick visual diff.
  *
  * @type string
@@ -282,7 +282,7 @@ var PNG = 'png'
 var JPEG = 'jpeg'
 
 /**
- * GIF. At most 256 colours per frame, one-bit transparency, and the
+ * GIF. At most 256 colors per frame, one-bit transparency, and the
  * only animated format this module can write.
  *
  * @type string
@@ -364,7 +364,7 @@ var PNM = 'pnm'
  * Wireless Bitmap. One bit per pixel, no compression, no alpha.
  *
  * Writing thresholds each pixel on its perceived brightness, so a
- * colour image comes out as a black and white silhouette. Reading
+ * color image comes out as a black and white silhouette. Reading
  * gives opaque black and white pixels.
  *
  * @type string
@@ -436,7 +436,7 @@ var BOTTOM_RIGHT = 'bottom_right'
 var ALIGN_LEFT = 'left'
 
 /**
- * Lines of a multi-line string are centred against each other.
+ * Lines of a multi-line string are centered against each other.
  *
  * @type string
  */

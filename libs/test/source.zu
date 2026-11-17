@@ -139,8 +139,8 @@ def origin(stacktrace: list) {
  * A path written relative to the working directory when it is under
  * it, and left alone when it is not or when it is the working
  * directory itself. On Windows, a path under the working directory is
- * recognised whatever the case of its spelling, as `os.path_contains()`
- * recognises it.
+ * recognized whatever the case of its spelling, as `os.path_contains()`
+ * recognizes it.
  *
  * @param string path
  * @returns string
@@ -186,7 +186,7 @@ def _lines_of(path) {
  * @param Frame frame
  * @param ?int context: lines of surrounding code either side, `2` by
  *    default.
- * @returns list: the lines, already coloured. Empty when the file
+ * @returns list: the lines, already colored. Empty when the file
  *    cannot be read, which is the normal answer for a frame from
  *    somewhere that no longer exists.
  */

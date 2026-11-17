@@ -48,7 +48,7 @@ var _ACCENTS = ['gold', 'red', 'teal', 'purple']
 var _CHEVRON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>'
 
 /**
- * The colour of the part numbered _index_, counting from 1, with the
+ * The color of the part numbered _index_, counting from 1, with the
  * chapters before any part taking the first.
  *
  * @param number index
@@ -889,7 +889,7 @@ def _redirect_page(target: string, canonical: ?string) {
  * is not there.
  *
  * A directory this command built is emptied without question, as is a
- * site some other tool built, which is recognised by its `index.html`.
+ * site some other tool built, which is recognized by its `index.html`.
  * Anything else is refused, so that a mistake in `doc.toml` cannot clear
  * a directory of work.
  *

@@ -296,8 +296,8 @@ class ParseError {
  *   itself, exactly as the standard describes.
  * - When it's used by itself, as `tokenize()` does, the tokenizer
  *   switches state itself on `<script>`, `<style>`, `<title>`,
- *   `<textarea>`, `<plaintext>` and similar elements, which is what the
- *   tree builder would have told it to do anyway.
+ *   `<textarea>`, `<plaintext>` and similar elements. The tree builder
+ *   would have switched it to the same states.
  *
  * The second behavior is controlled by the `auto_content_state` option,
  * which is on by default, so a tokenizer you create yourself does the
@@ -982,7 +982,7 @@ class Tokenizer {
    * text, having already recorded any parse error it raised.
    *
    * The `&` has not been consumed when this is called. Whether the
-   * attribute flavour of the algorithm applies is decided by
+   * attribute flavor of the algorithm applies is decided by
    * _in_attribute_.
    *
    * @param bool in_attribute

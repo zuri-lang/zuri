@@ -1,7 +1,7 @@
 /**
  * Shell scripts, and terminal sessions.
  *
- * A script is read the way a POSIX shell reads one, as far as colour
+ * A script is read the way a POSIX shell reads one, as far as color
  * needs: comments, quoting, variables and substitutions, the word in
  * command position, flags, operators, and here-documents.
  *

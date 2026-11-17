@@ -592,7 +592,7 @@ def reset() {
 }
 
 /**
- * Forces colour in the report on or off, overriding what the
+ * Forces color in the report on or off, overriding what the
  * environment said.
  *
  * @param bool on

@@ -1320,7 +1320,8 @@ class ImapClient {
    * Reading a message this way doesn't mark it as read, because a
    * program that goes through a mailbox shouldn't change what a person
    * sees the next time they open it. Pass `mark_seen` to mark it as
-   * read, which is what a mail client that's showing the message wants.
+   * read, for example when a mail client is showing the message to its
+   * user.
    *
    * ```zuri,ignore
    * echo inbox.fetch_message(uid, true, false).subject()
@@ -1717,8 +1718,8 @@ class ImapClient {
    * Tells the server about this client, and reads what the server says
    * about itself. Either side can choose not to say anything.
    *
-   * @param ?dict fields: `name`, `version` and anything else worth
-   *    saying. The name is `Zuri` if it isn't given.
+   * @param ?dict fields: `name`, `version` and any other fields to
+   *    send. The name is `Zuri` if it isn't given.
    * @returns dict of what the server said about itself.
    */
   id(fields: ?dict) {

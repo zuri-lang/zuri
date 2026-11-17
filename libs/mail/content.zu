@@ -224,8 +224,8 @@ class ContentType {
   /**
    * Reads a `Content-Type` header.
    *
-   * A header that's missing or empty gives `text/plain`, which is what
-   * a part without a type is defined to be.
+   * A header that's missing or empty gives `text/plain`, which RFC 2045
+   * makes the default for a part without a type.
    *
    * @param ?string text
    * @returns ContentType

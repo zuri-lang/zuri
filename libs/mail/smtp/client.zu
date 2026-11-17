@@ -721,7 +721,7 @@ class SmtpClient {
   /**
    * Hands over the message itself and ends the transaction.
    *
-   * Line endings are normalised and a leading dot on any line is
+   * Line endings are normalized and a leading dot on any line is
    * doubled, so a body containing a line with one dot on it cannot end
    * the message early.
    *

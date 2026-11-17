@@ -172,10 +172,10 @@ def parse_range(header, size: number) {
 /**
  * A weak validator based on a file's size and modification time.
  *
- * It's weak rather than strong because it can't tell apart two writes
- * in the same second, which is exactly the situation RFC 9110 §8.8.1
- * reserves the `W/` prefix for. It only costs one `stat` call, while a
- * strong validator would mean reading the whole file.
+ * It's weak because it can't tell apart two writes in the same second,
+ * and RFC 9110 §8.8.1 reserves the `W/` prefix for a validator like
+ * that. It only costs one `stat` call, while a strong validator would
+ * mean reading the whole file.
  *
  * @param dict stats: a file's `stats()` dictionary
  * @returns string

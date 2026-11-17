@@ -46,9 +46,11 @@ def parser() {
     short_name: 'g',
   })
   parser.add_option('offline', 'Only use what\'s already downloaded', nil)
-  parser.add_option('dry-run', 'Show what would change without changing anything', {
-    short_name: 'n',
-  })
+  parser.add_option(
+    'dry-run',
+    'Show what would change without changing anything',
+    { short_name: 'n' },
+  )
   parser.add_option(
     'force',
     'Replace directories in .zuri/libs that weren\'t installed by zuri',

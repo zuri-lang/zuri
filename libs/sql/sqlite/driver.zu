@@ -72,7 +72,7 @@ class SqliteDriver < Driver {
   /**
    * What SQLite supports.
    *
-   * Two of these are worth noting. `concurrent_writers` is false,
+   * Two of these need explaining. `concurrent_writers` is false,
    * because a SQLite database allows one writer at a time, whatever the
    * journal mode, and a pool over it serializes writes instead of
    * running them in parallel. `json` is false, because SQLite has JSON
@@ -144,7 +144,7 @@ class SqliteDriver < Driver {
    * ```
    *
    * Anything after `?` on a non-URI form is read as this adapter's own
-   * options instead. The recognised keys are `mode` (`ro`, `rw`,
+   * options instead. The recognized keys are `mode` (`ro`, `rw`,
    * `rwc` or `memory`), `busy_timeout` in milliseconds,
    * `foreign_keys`, `journal_mode` and `cache` (`shared` or
    * `private`).

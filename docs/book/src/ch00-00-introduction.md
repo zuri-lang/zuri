@@ -101,7 +101,7 @@ though. It lists the places where Zuri behaves differently from the language
 you know, even when the syntax looks the same, and those are the places
 where you're most likely to get stuck.
 
-## How This Book Is Organised
+## How This Book Is Organized
 
 **Getting started**, Chapters 1 and 2. You'll install the language, run some
 code, create and format a project, and then build a small command-line

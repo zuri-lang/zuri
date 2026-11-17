@@ -71,7 +71,7 @@ class Decimal {
    * Decimal(19.99)
    * ```
    *
-   * Or from its parts, which is what the PostgreSQL adapter uses:
+   * Or from its parts, as the PostgreSQL adapter does:
    *
    * ```zuri,ignore
    * Decimal(1999, 2)

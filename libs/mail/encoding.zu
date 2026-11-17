@@ -127,8 +127,7 @@ def is_ascii(data) {
  *
  * @param string|bytes data
  * @param ?number width: the number of characters per line, `76` by
- *    default. Pass `0` for a single unbroken line, which is what a
- *    header needs.
+ *    default. Pass `0` for a single unbroken line, as a header needs.
  * @returns string
  */
 def encode_base64(data, width: ?number) {

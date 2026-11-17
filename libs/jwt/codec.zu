@@ -34,10 +34,10 @@ var HS512 = 'HS512'
 /**
  * The identifier of the RSA-PSS signing algorithm with SHA-256.
  *
- * It's `PS256`, not `RS256`, on purpose. This module's RSA support
- * (`crypto.rsa`) uses RSASSA-PSS, not RSASSA-PKCS1-v1_5, and `PS256`,
- * `PS384` and `PS512` are the names that JOSE registers (RFC 7518 §3.5)
- * for exactly that scheme.
+ * There's no `RS256`, because this module's RSA support (`crypto.rsa`)
+ * uses RSASSA-PSS, and RS256 uses RSASSA-PKCS1-v1_5. `PS256`, `PS384`
+ * and `PS512` are the names that JOSE registers for RSASSA-PSS, in RFC
+ * 7518 §3.5.
  */
 var PS256 = 'PS256'
 

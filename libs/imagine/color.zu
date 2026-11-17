@@ -21,7 +21,7 @@ import .errors { ImageError }
  * Clamps a channel value to 0-255 and rounds it to a whole number.
  *
  * Every entry point that accepts a channel goes through this, so a
- * colour computed from a ratio never has to be pre-clamped by the
+ * color computed from a ratio never has to be pre-clamped by the
  * caller.
  */
 def _channel(value: number) {
@@ -58,7 +58,7 @@ def _channel(value: number) {
  * into a pixel buffer. Anything that `colors` can do to a hexadecimal
  * string can be done to a `Color` through `to_hex()` and `Color.hex()`.
  *
- * That has three consequences worth knowing:
+ * That has three consequences:
  *
  * - Hue is in degrees, and saturation, lightness and value are
  *   percentages from 0 to 100, exactly as in `colors` and in CSS. They
@@ -140,7 +140,7 @@ class Color {
   }
 
   /**
-   * Creates a colour from red, green, blue and alpha channels.
+   * Creates a color from red, green, blue and alpha channels.
    *
    * @param number r
    * @param number g
@@ -164,7 +164,7 @@ class Color {
   }
 
   /**
-   * Creates a colour from a packed `0xRRGGBBAA` integer.
+   * Creates a color from a packed `0xRRGGBBAA` integer.
    *
    * Alpha is in the least significant byte, which is the layout
    * `to_packed()` produces and the one this module passes around
@@ -190,7 +190,7 @@ class Color {
   }
 
   /**
-   * Creates a colour from a CSS-style hexadecimal string.
+   * Creates a color from a CSS-style hexadecimal string.
    *
    * All four CSS lengths are accepted, with or without the leading
    * `#`, in either case: `#rgb`, `#rgba`, `#rrggbb` and `#rrggbbaa`.
@@ -198,7 +198,7 @@ class Color {
    *
    * @param string spec
    * @returns Color
-   * @throws ValueError When _spec_ is not a hexadecimal colour.
+   * @throws ValueError When _spec_ is not a hexadecimal color.
    */
   static hex(spec) {
     # colors reports alpha as a 0-1 ratio; every channel here is a byte.
@@ -208,16 +208,16 @@ class Color {
   }
 
   /**
-   * Looks up one of the CSS named colours.
+   * Looks up one of the CSS named colors.
    *
    * Matching ignores case, spaces, hyphens and underscores, so
-   * `'Dark Sea Green'` and `'darkseagreen'` are the same colour. The
-   * full CSS Color Level 4 list is available, including both
-   * spellings of the greys and `transparent`.
+   * `'Dark Sea Green'` and `'darkseagreen'` are the same color. The
+   * full CSS Color Level 4 list is available, including `transparent`
+   * and both spellings of the gray names, such as `gray` and `grey`.
    *
    * @param string name
    * @returns Color
-   * @throws ValueError When _name_ is not a CSS colour name.
+   * @throws ValueError When _name_ is not a CSS color name.
    */
   static named(name) {
     return Color.hex(colors.named(name))
@@ -335,19 +335,19 @@ class Color {
   /**
    * Turns whatever a caller passed into a `Color`.
    *
-   * Every drawing method calls this on its colour argument, so a
-   * colour can be written the shortest way that reads clearly at the
+   * Every drawing method calls this on its color argument, so a
+   * color can be written the shortest way that reads clearly at the
    * call site. Accepted forms:
    *
    * - a `Color`, returned unchanged
    * - a hexadecimal string, `'#4f46e5'` or `'4f46e5'`
-   * - a CSS colour name, `'rebeccapurple'`
+   * - a CSS color name, `'rebeccapurple'`
    * - a packed `0xRRGGBBAA` number
    * - a list of 3 or 4 channels, `[255, 0, 0]`
    *
    * @param Color|string|number|list value
    * @returns Color
-   * @throws ImageError When _value_ is not a colour in any of those forms.
+   * @throws ImageError When _value_ is not a color in any of those forms.
    */
   static parse(value) {
     if instance_of(value, Color) {
@@ -418,7 +418,7 @@ class Color {
   }
 
   /**
-   * Returns the colour as a packed `0xRRGGBBAA` integer.
+   * Returns the color as a packed `0xRRGGBBAA` integer.
    *
    * @returns number
    */
@@ -453,7 +453,7 @@ class Color {
   }
 
   /**
-   * Returns the colour in HSL, as a dictionary holding `h` (degrees),
+   * Returns the color in HSL, as a dictionary holding `h` (degrees),
    * `s` and `l` (percentage points) and `a` (0-255).
    *
    * @returns dict
@@ -470,7 +470,7 @@ class Color {
   }
 
   /**
-   * Returns the colour in HSV, as a dictionary holding `h` (degrees),
+   * Returns the color in HSV, as a dictionary holding `h` (degrees),
    * `s` and `v` (percentage points) and `a` (0-255).
    *
    * @returns dict
@@ -487,7 +487,7 @@ class Color {
   }
 
   /**
-   * Returns the colour in HWB, as a dictionary holding `h` (degrees),
+   * Returns the color in HWB, as a dictionary holding `h` (degrees),
    * `w` and `b` (percentage points) and `a` (0-255).
    *
    * @returns dict
@@ -504,7 +504,7 @@ class Color {
   }
 
   /**
-   * Returns the colour in CMYK, as a dictionary holding `c`, `m`, `y`
+   * Returns the color in CMYK, as a dictionary holding `c`, `m`, `y`
    * and `k` (percentage points) and `a` (0-255).
    *
    * @returns dict
@@ -522,7 +522,7 @@ class Color {
   }
 
   /**
-   * Returns the colour in CIE XYZ, as a dictionary holding `x`, `y`,
+   * Returns the color in CIE XYZ, as a dictionary holding `x`, `y`,
    * `z` and `a` (0-255).
    *
    * @returns dict
@@ -559,7 +559,7 @@ class Color {
   }
 
   /**
-   * Returns a copy of the colour with a different alpha channel.
+   * Returns a copy of the color with a different alpha channel.
    *
    * @param number a: The new alpha, 0-255.
    * @returns Color
@@ -583,7 +583,7 @@ class Color {
   }
 
   /**
-   * Returns a lighter version of the colour, keeping its hue.
+   * Returns a lighter version of the color, keeping its hue.
    *
    * @param number amount: Percentage points of HSL lightness to add, 0-100.
    * @returns Color
@@ -593,7 +593,7 @@ class Color {
   }
 
   /**
-   * Returns a darker version of the colour, keeping its hue.
+   * Returns a darker version of the color, keeping its hue.
    *
    * @param number amount: Percentage points of HSL lightness to remove, 0-100.
    * @returns Color
@@ -603,7 +603,7 @@ class Color {
   }
 
   /**
-   * Returns a more saturated version of the colour.
+   * Returns a more saturated version of the color.
    *
    * @param number amount: Percentage points of HSL saturation to add, 0-100.
    * @returns Color
@@ -613,9 +613,9 @@ class Color {
   }
 
   /**
-   * Returns a less saturated version of the colour.
+   * Returns a less saturated version of the color.
    *
-   * An amount of 100 removes all colour, which is not the same as
+   * An amount of 100 removes all color, which is not the same as
    * `to_grayscale()`: this keeps HSL lightness, that one weights the
    * channels for perceived brightness.
    *
@@ -627,7 +627,7 @@ class Color {
   }
 
   /**
-   * Returns the colour rotated around the hue wheel.
+   * Returns the color rotated around the hue wheel.
    *
    * @param number degrees: How far to rotate. Negative rotates backwards.
    * @returns Color
@@ -639,13 +639,13 @@ class Color {
   }
 
   /**
-   * Returns a linear blend of this colour and another.
+   * Returns a linear blend of this color and another.
    *
    * All four channels are interpolated, alpha included, so mixing a
-   * transparent colour in also makes the result more transparent.
+   * transparent color in also makes the result more transparent.
    *
-   * @param Color|string|number|list other: The colour to blend toward.
-   * @param number t: 0 returns this colour, 1 returns _other_.
+   * @param Color|string|number|list other: The color to blend toward.
+   * @param number t: 0 returns this color, 1 returns _other_.
    * @returns Color
    */
   mix(other, t) {
@@ -661,11 +661,11 @@ class Color {
   }
 
   /**
-   * Composites this colour over an opaque backdrop and returns the
+   * Composites this color over an opaque backdrop and returns the
    * flattened result.
    *
-   * This is what happens when a translucent colour is drawn onto a
-   * solid background, and it is how a colour has to be resolved before
+   * This is what happens when a translucent color is drawn onto a
+   * solid background, and it is how a color has to be resolved before
    * writing it to a format with no alpha channel, such as JPEG.
    *
    * @param Color|string|number|list backdrop
@@ -688,11 +688,11 @@ class Color {
   }
 
   /**
-   * Returns the relative luminance of the colour, 0 (black) to 1
+   * Returns the relative luminance of the color, 0 (black) to 1
    * (white), as defined by WCAG 2.
    *
    * The alpha channel is ignored: luminance is a property of the
-   * colour itself, and a translucent colour's apparent brightness
+   * color itself, and a translucent color's apparent brightness
    * depends on whatever is behind it. Composite with `over()` first if
    * that matters.
    *
@@ -703,7 +703,7 @@ class Color {
   }
 
   /**
-   * Returns the WCAG 2 contrast ratio between this colour and another,
+   * Returns the WCAG 2 contrast ratio between this color and another,
    * from 1 (identical) to 21 (black against white).
    *
    * Text is generally held to need a ratio of at least 4.5 against its
@@ -719,7 +719,7 @@ class Color {
   }
 
   /**
-   * Returns `true` when the colour is dark enough that light text
+   * Returns `true` when the color is dark enough that light text
    * reads better on it than dark text.
    *
    * The threshold is the luminance at which contrast against white
@@ -762,11 +762,10 @@ class Color {
    * Returns the gray with the same perceived brightness as this color,
    * keeping its alpha.
    *
-   * This uses the Rec. 601 luma weights, which is what image editors
-   * mean by "grayscale", and what `Image.grayscale()` uses. It's
-   * intentionally different from [[colors.grayscale]], which sets the
-   * HSL saturation to zero, and so keeps a bright yellow as bright as a
-   * dark blue.
+   * This uses the Rec. 601 luma weights, as `Image.grayscale()` and
+   * most image editors do. It's intentionally different from
+   * [[colors.grayscale]], which sets the HSL saturation to zero, and so
+   * keeps a bright yellow as bright as a dark blue.
    *
    * @returns Color
    */
@@ -789,7 +788,7 @@ class Color {
   }
 
   /**
-   * Returns `true` when both colours have identical channels.
+   * Returns `true` when both colors have identical channels.
    *
    * @param any other
    * @returns bool
@@ -806,7 +805,7 @@ class Color {
   }
 
   /**
-   * Compares two colours by their channels, so `==`, `!=` and a
+   * Compares two colors by their channels, so `==`, `!=` and a
    * `using` match agree with `equals()`.
    *
    * ```zuri-repl
@@ -817,7 +816,7 @@ class Color {
    * ```
    *
    * Lists, dictionary keys, `contains()` and `index_of()` still hold
-   * colours by identity, as they hold every instance.
+   * colors by identity, as they hold every instance.
    *
    * @param any other
    * @returns bool
@@ -827,7 +826,7 @@ class Color {
   }
 
   /**
-   * Returns the colour as a list of its four channels.
+   * Returns the color as a list of its four channels.
    *
    * @returns list
    */
@@ -836,7 +835,7 @@ class Color {
   }
 
   /**
-   * Returns the colour as a dictionary holding `r`, `g`, `b` and `a`.
+   * Returns the color as a dictionary holding `r`, `g`, `b` and `a`.
    *
    * @returns dict
    */
@@ -895,7 +894,7 @@ var BLACK = Color(0, 0, 0)
 var WHITE = Color(255, 255, 255)
 
 /**
- * Opaque mid grey.
+ * Opaque mid gray.
  *
  * @type Color
  */

@@ -331,9 +331,8 @@ class Poller {
    * ever sleep for the whole timeout for no reason.
    *
    * @note Test the flags with `&`, never with `==`. A socket can be
-   *    readable and hung up at the same time, which is what you see
-   *    when a peer sends a final response and then closes the
-   *    connection.
+   *    readable and hung up at the same time, for example when a peer
+   *    sends a final response and then closes the connection.
    *
    * @param ?number timeout: the number of milliseconds to wait. `0`
    *    polls without waiting, and a negative number waits indefinitely.

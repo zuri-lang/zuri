@@ -751,9 +751,8 @@ def _merge_paths(base, ref_path) {
  * By default, the reserved characters `;/:@&$,#*()`, and `=` and `?` in
  * strict mode, are kept as they are, so an address or a path stays
  * readable. With _reserved_ set to `false`, they're encoded too, and
- * only letters, digits and `-_.~` are kept, which is what a single
- * value in a query string needs, because an `&` or a `#` there would
- * end it.
+ * only letters, digits and `-_.~` are kept. Use this for a single value
+ * in a query string, where an `&` or a `#` would end the value.
  *
  * ```zuri
  * import url

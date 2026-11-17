@@ -251,7 +251,7 @@ class LocalDate {
   /**
    * Returns this date as a `date.Date` at midnight UTC.
    *
-   * The offset is an artefact of the conversion: a `date.Date` always
+   * The offset is an artifact of the conversion: a `date.Date` always
    * has one and a `LocalDate` never did. Use it for calendar
    * arithmetic, not to claim an instant the TOML file did not state.
    *
@@ -361,9 +361,9 @@ class LocalTime {
  * A date and a time of day with no offset, which is TOML's
  * `local-date-time`.
  *
- * It's written as `1979-05-27T07:32:00`. It names a moment on someone's
- * calendar and clock without saying whose, which is what a log format
- * or a schedule written for one place usually means by a timestamp.
+ * It's written as `1979-05-27T07:32:00`. It gives a date and a time of
+ * day without a time zone. Log formats and schedules written for one
+ * place often use timestamps like this.
  *
  * ```zuri
  * import toml

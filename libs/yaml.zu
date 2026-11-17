@@ -379,7 +379,7 @@ def _apply_tag(tag, raw) {
 # ---------------------------------------------------------------------------
 
 /**
- * Tokenises a YAML character stream into a sequence of scanner
+ * Tokenizes a YAML character stream into a sequence of scanner
  * positions. Rather than producing a full token list upfront,
  * the parser calls helper methods on the scanner to consume
  * characters on demand.
@@ -387,14 +387,14 @@ def _apply_tag(tag, raw) {
  * @internal
  */
 class _Scanner {
-  var src = '' # full source text (normalised to LF)
+  var src = '' # full source text (normalized to LF)
   var _pos = 0 # current character index
   var _line = 1 # 1-based current line
   var _col = 1 # 1-based current column
   var len = 0 # source length
 
   @new(source) {
-    # Normalise all line endings to LF for uniform handling.
+    # Normalize all line endings to LF for uniform handling.
     self.src = source.replace('/\\r\\n/', '\n').replace('/\r/', '\n')
     self.len = self.src.length()
   }
@@ -553,7 +553,7 @@ class _Scanner {
 /**
  * Recursive-descent YAML parser.
  *
- * Parses a normalised YAML character stream (already converted
+ * Parses a normalized YAML character stream (already converted
  * to LF line endings) into Zuri values. Implements the Core
  * Schema for implicit type resolution.
  *
@@ -1789,7 +1789,7 @@ class _Parser {
 # ---------------------------------------------------------------------------
 
 /**
- * Serialises Zuri values to YAML text.
+ * Serializes Zuri values to YAML text.
  *
  * The emitter uses block style for collections by default, falling
  * back to flow style for a short, all-scalar collection that fits
@@ -2460,7 +2460,7 @@ def dump(value: any, indent: ?int, width: ?int) {
 }
 
 /**
- * Serialises a list of values as a multi-document YAML stream.
+ * Serializes a list of values as a multi-document YAML stream.
  *
  * Each value is emitted as a separate YAML document, separated
  * by `---`.
@@ -2475,7 +2475,7 @@ def dump(value: any, indent: ?int, width: ?int) {
  * # b: 2
  * ```
  *
- * @param list values List of Zuri values to serialise.
+ * @param list values List of Zuri values to serialize.
  * @param ?int indent Spaces per indentation level (default:
  *    `2`).
  * @param ?int width Target line width (default: `80`).
@@ -2492,7 +2492,7 @@ def dump_all(values: list, indent: ?int, width: ?int) {
 }
 
 /**
- * Serialises `value` to YAML and writes it to the file at
+ * Serializes `value` to YAML and writes it to the file at
  * `path`.
  *
  * Creates or overwrites the file.
@@ -2508,7 +2508,7 @@ def dump_all(values: list, indent: ?int, width: ?int) {
  * ```
  *
  * @param string path Filesystem path to write to.
- * @param any value The value to serialise.
+ * @param any value The value to serialize.
  * @param ?int indent Indentation level (default: `2`).
  * @param ?int width Line width (default: `80`).
  * @throws YamlError On emission error.

@@ -136,7 +136,7 @@ import .mysql
 var _REGISTRY = {}
 
 /**
- * Registers an adapter, so `open()` recognises its connection strings.
+ * Registers an adapter, so `open()` recognizes its connection strings.
  *
  * An adapter is anything implementing `Driver`. Registering one under
  * a name already taken replaces it, which is how a program swaps in an

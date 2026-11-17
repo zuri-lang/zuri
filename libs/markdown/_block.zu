@@ -1,13 +1,13 @@
 /**
- * The block half of the parser: lines in, a tree of blocks out. The
- * text of each paragraph, heading, table cell, term and line is left in
- * the node's `literal` for the inline parser.
+ * The block parser. It reads the lines of a document and builds a tree
+ * of blocks. The text of each paragraph, heading, table cell, term and
+ * line is left in the node's `literal`, for the inline parser to read.
  *
- * The algorithm is the one the CommonMark specification's appendix
- * describes. Each line is matched against the blocks still open, from
- * the document down. Whatever the line does not continue is closed,
- * and what is left of the line may open new blocks before the rest of
- * it is added as text.
+ * It uses the algorithm described in the appendix of the CommonMark
+ * specification. Each line is matched against the blocks that are still
+ * open, starting from the document. Any open block that the line
+ * doesn't continue is closed, and the rest of the line can open new
+ * blocks before what remains of it is added as text.
  */
 
 import ._text { * }

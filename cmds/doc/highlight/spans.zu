@@ -38,7 +38,7 @@ def span(kind: ?string, text: string) {
 }
 
 /**
- * A list of `[kind, text]` pairs as markup. Neighbours of the same kind
+ * A list of `[kind, text]` pairs as markup. Neighbors of the same kind
  * share one span.
  *
  * @param list pieces

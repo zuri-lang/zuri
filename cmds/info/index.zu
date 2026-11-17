@@ -38,10 +38,11 @@ def parser() {
     { metavar: 'package' },
   )
   parser.add_option('tree', 'Show the dependency tree', { short_name: 't' })
-  parser.add_option('depth', 'How many levels of the tree to show (all of them by default)', {
-    type: args.INT,
-    metavar: 'levels',
-  })
+  parser.add_option(
+    'depth',
+    'How many levels of the tree to show (all of them by default)',
+    { type: args.INT, metavar: 'levels' },
+  )
   parser.add_option(
     'verify',
     'Check whether any installed package has changed since it was installed',

@@ -34,7 +34,7 @@ import .errors { ImageError }
 var LUMA = [0.299, 0.587, 0.114]
 
 /**
- * The luma weights the colour-matrix filters use, from the SVG and
+ * The luma weights the color-matrix filters use, from the SVG and
  * CSS filter specifications.
  *
  * Saturation and hue rotation are defined against these, so a
@@ -45,7 +45,7 @@ var LUMA = [0.299, 0.587, 0.114]
 var MATRIX_LUMA = [0.213, 0.715, 0.072]
 
 /**
- * The identity colour matrix: applying it changes nothing.
+ * The identity color matrix: applying it changes nothing.
  *
  * A useful starting point for building one by hand.
  *
@@ -56,7 +56,7 @@ def identity_matrix() {
 }
 
 /**
- * A colour matrix that collapses every colour to its grey of equal
+ * A color matrix that collapses every color to its gray of equal
  * perceived brightness.
  *
  * @returns list
@@ -70,7 +70,7 @@ def grayscale_matrix() {
 }
 
 /**
- * A colour matrix approximating the warm brown cast of a sepia
+ * A color matrix approximating the warm brown cast of a sepia
  * photograph.
  *
  * The coefficients are the widely used Microsoft ones, which are what
@@ -128,7 +128,7 @@ def saturation_matrix(amount: number) {
 }
 
 /**
- * A colour matrix that rotates every hue around the colour wheel by
+ * A color matrix that rotates every hue around the color wheel by
  * an angle in degrees, leaving brightness and saturation alone.
  *
  * This is the rotation from the SVG filter specification, which
@@ -171,14 +171,14 @@ def hue_rotate_matrix(degrees: number) {
 }
 
 /**
- * A colour matrix that replaces every pixel's colour with a blend
- * between two colours chosen by its brightness, a duotone.
+ * A color matrix that replaces every pixel's color with a blend
+ * between two colors chosen by its brightness, a duotone.
  *
  * Dark pixels take _shadow_, light ones take _highlight_, and
  * everything between is interpolated. Alpha is untouched.
  *
- * @param Color|string|number shadow: The colour black maps to.
- * @param Color|string|number highlight: The colour white maps to.
+ * @param Color|string|number shadow: The color black maps to.
+ * @param Color|string|number highlight: The color white maps to.
  * @returns list
  */
 def duotone_matrix(shadow, highlight) {
@@ -220,7 +220,7 @@ def duotone_matrix(shadow, highlight) {
 }
 
 /**
- * Multiplies two colour matrices, giving one matrix with the effect
+ * Multiplies two color matrices, giving one matrix with the effect
  * of applying _first_ and then _second_.
  *
  * Combining matrices this way and applying the result once is both
@@ -319,9 +319,9 @@ def brightness_lut(delta: number) {
 }
 
 /**
- * A lookup table that pushes values away from or toward mid-grey.
+ * A lookup table that pushes values away from or toward mid-gray.
  *
- * The amount runs -100 (everything collapses to grey) through 0 (no
+ * The amount runs -100 (everything collapses to gray) through 0 (no
  * change) to 100 (everything is forced to black or white). This is
  * the contrast curve most image editors use.
  *

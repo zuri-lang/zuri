@@ -571,7 +571,7 @@ def before_or_equal(ref) {
 }
 
 /**
- * The value must be a valid timezone identifier recognised by the `date`
+ * The value must be a valid timezone identifier recognized by the `date`
  * module (e.g. `"UTC"`, `"Africa/Lagos"`, `"America/New_York"`).
  *
  * @returns Validator

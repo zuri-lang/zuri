@@ -32,12 +32,16 @@ def parser() {
     metavar: 'package',
     required: true,
   })
-  parser.add_option('global', 'Remove the packages from your user instead of the project', {
-    short_name: 'g',
-  })
-  parser.add_option('dry-run', 'Show what would change without changing anything', {
-    short_name: 'n',
-  })
+  parser.add_option(
+    'global',
+    'Remove the packages from your user instead of the project',
+    { short_name: 'g' },
+  )
+  parser.add_option(
+    'dry-run',
+    'Show what would change without changing anything',
+    { short_name: 'n' },
+  )
   parser.add_option('no-hooks', 'Don\'t run any uninstall scripts', nil)
   parser.add_option(
     'allow-hooks',

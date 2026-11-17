@@ -58,7 +58,7 @@ import .headers { Headers, fold }
 
 /**
  * Raised when a signature cannot be built: an algorithm this does not
- * implement, a key that will not parse, a canonicalisation that is not
+ * implement, a key that will not parse, a canonicalization that is not
  * one of the two.
  *
  * @printable
@@ -81,7 +81,7 @@ class DkimError < MailError {
 var ALGORITHMS = ['rsa-sha256', 'ed25519-sha256']
 
 /**
- * The canonicalisations this implements, on either headers or body.
+ * The canonicalizations this implements, on either headers or body.
  *
  * `simple` covers the bytes as they are, which means any change at all
  * on the way breaks the signature. `relaxed` forgives the whitespace
@@ -136,7 +136,7 @@ def _raw_bytes(data) {
 }
 
 /**
- * Canonicalises a body.
+ * Canonicalizes a body.
  *
  * @param string|bytes raw
  * @param string method: `simple` or `relaxed`.
@@ -238,7 +238,7 @@ def _drop_trailing_breaks(out) {
 }
 
 /**
- * Canonicalises one header.
+ * Canonicalizes one header.
  *
  * @param string name
  * @param string value: The value as it was written, folding and all.

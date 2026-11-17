@@ -480,10 +480,9 @@ def _write_file(connection, path, offset, length) {
  *
  * `write()` sends data as it's produced, using chunked transfer
  * encoding if that's how the response is framed, and sending it as is
- * otherwise. `flush()` pushes everything written so far all the way to
- * the socket, which is what makes a progress feed or a stream of
- * server-sent events actually reach the client instead of waiting in a
- * buffer.
+ * otherwise. `flush()` pushes everything written so far to the socket.
+ * Call it to make a progress feed or a stream of server-sent events
+ * reach the client instead of waiting in a buffer.
  */
 class ChunkWriter {
 
@@ -602,10 +601,9 @@ def write_request(connection, request, options: ?dict) {
 /**
  * Reads a response from a connection.
  *
- * Interim `1xx` responses are read and skipped, because they're part of
- * the exchange rather than its result. A `101` response is returned as
- * is, because it is the result, and the caller is switching protocols
- * because of it.
+ * Interim `1xx` responses, such as `100 Continue`, are read and
+ * skipped. The exception is `101 Switching Protocols`, which is
+ * returned, because the caller needs it to switch to the new protocol.
  *
  * @param Connection connection
  * @param HttpRequest request: the request being answered. Its method

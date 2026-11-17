@@ -18,7 +18,7 @@ returns, and any behavior you might not expect.
 | [`trim(chars: ?string)`](#trim) | `string` | Returns a copy of the string with characters removed from both ends. |
 | [`ltrim(chars: ?string)`](#ltrim) | `string` | Returns a copy of the string with characters removed from its start only. |
 | [`rtrim(chars: ?string)`](#rtrim) | `string` | Returns a copy of the string with characters removed from its end only. |
-| [`join(string: string)`](#join) | `string` | Joins the items of an iterable into one string, with this string as the separator between them. |
+| [`join(items: list\|dict\|string)`](#join) | `string` | Joins the items of a list, the values of a dictionary or the characters of a string into one string, with this string as the separator between them. |
 | [`split(delimiter: string)`](#split) | `list` | Splits the string at every occurrence of _delimiter_, and returns a list of the parts. |
 | [`index_of(str: string, start_index: ?number)`](#index_of) | `number` | Returns the index of the first occurrence of _`str`_ in the string, or -1 if it doesn't occur. |
 | [`last_index_of(str: string, end_index: ?number)`](#last_index_of) | `number` | Returns the index of the last occurrence of _`str`_ in the string, searching from the end, or -1 if it doesn't occur. |
@@ -309,7 +309,7 @@ For example:
 
 **Parameters**
 
-- `chars` (`?string`): the characters to remove. Defaults to whitespace.
+- `chars` (`?string`): The characters to remove. Defaults to whitespace.
 
 **Returns** `string`
 
@@ -337,7 +337,7 @@ For example:
 
 **Parameters**
 
-- `chars` (`?string`): the characters to remove. Defaults to whitespace.
+- `chars` (`?string`): The characters to remove. Defaults to whitespace.
 
 **Returns** `string`
 
@@ -365,21 +365,20 @@ For example:
 
 **Parameters**
 
-- `chars` (`?string`): the characters to remove. Defaults to whitespace.
+- `chars` (`?string`): The characters to remove. Defaults to whitespace.
 
 **Returns** `string`
 
 ## `join()`
 
 ```zuri,ignore
-join(string: string) -> string
+join(items: list|dict|string) -> string
 ```
 
-Joins the items of an iterable into one string, with this string as the
-separator between them. Items that aren't strings are converted to
-strings first. A string is joined character by character.
-
-`bytes` values are the only iterables that aren't supported.
+Joins the items of a list, the values of a dictionary or the characters
+of a string into one string, with this string as the separator between
+them. Items that aren't strings are converted to strings first. Any
+other argument, such as a range or `bytes`, raises an error.
 
 For example:
 
@@ -392,11 +391,13 @@ For example:
 'a'
 %> ''.join(['a', 'b', 'c'])
 'abc'
+%> '-'.join({ a: 1, b: 2 })
+'1-2'
 ```
 
 **Parameters**
 
-- `string` (`string`): the iterable to join
+- `items` (`list|dict|string`): The items to join.
 
 **Returns** `string`
 
@@ -435,7 +436,7 @@ For example:
 
 **Parameters**
 
-- `delimiter` (`string`): the delimiter to split the string at
+- `delimiter` (`string`): The delimiter to split the string at.
 
 **Returns** `list`
 
@@ -466,8 +467,8 @@ For example:
 
 **Parameters**
 
-- `str` (`string`): the string to search for
-- `start_index` (`?number`): the index to start searching from
+- `str` (`string`): The string to search for.
+- `start_index` (`?number`): The index to start searching from.
 
 **Returns** `number`
 
@@ -513,8 +514,8 @@ The most common use is to split a path at its last separator:
 
 **Parameters**
 
-- `str` (`string`): the string to search for
-- `end_index` (`?number`): the highest index a match can start at
+- `str` (`string`): The string to search for.
+- `end_index` (`?number`): The highest index a match can start at.
 
 **Returns** `number`
 
@@ -537,7 +538,7 @@ false
 
 **Parameters**
 
-- `str` (`string`): the string to look for
+- `str` (`string`): The string to look for.
 
 **Returns** `boolean`
 
@@ -560,7 +561,7 @@ false
 
 **Parameters**
 
-- `str` (`string`): the string to look for
+- `str` (`string`): The string to look for.
 
 **Returns** `boolean`
 
@@ -589,7 +590,7 @@ For example:
 
 **Parameters**
 
-- `str` (`string`): the string to count
+- `str` (`string`): The string to count.
 
 **Returns** `number`
 
@@ -618,7 +619,7 @@ For example:
 
 **Parameters**
 
-- `base` (`number`): the base of the digits, from 2 to 36. Defaults to
+- `base` (`number`): The base of the digits, from 2 to 36. Defaults to
   `10`. A fractional part is only read in base 10, because other bases
   have no way of writing one.
 
@@ -662,7 +663,7 @@ is `12n`.
 
 **Parameters**
 
-- `base` (`number`): the base of the digits, from 2 to 36. Defaults to
+- `base` (`number`): The base of the digits, from 2 to 36. Defaults to
   `10`.
 
 **Returns** `bigint`
@@ -734,8 +735,8 @@ For example:
 
 **Parameters**
 
-- `width` (`number`): the length of the string after padding
-- `fill` (`?string`): the character to pad with
+- `width` (`number`): The length of the string after padding.
+- `fill` (`?string`): The character to pad with.
 
 **Returns** `string`
 
@@ -763,8 +764,8 @@ For example:
 
 **Parameters**
 
-- `width` (`number`): the length of the string after padding
-- `fill` (`?string`): the character to pad with
+- `width` (`number`): The length of the string after padding.
+- `fill` (`?string`): The character to pad with.
 
 **Returns** `string`
 
@@ -803,7 +804,7 @@ false
 
 **Parameters**
 
-- `str` (`string`): the string or regular expression to match
+- `str` (`string`): The string or regular expression to match.
 
 **Returns** `boolean|dictionary`
 
@@ -830,7 +831,7 @@ For example:
 
 **Parameters**
 
-- `reg` (`string`): the regular expression to match
+- `reg` (`string`): The regular expression to match.
 
 **Returns** `dictionary`
 
@@ -863,9 +864,9 @@ For example:
 
 **Parameters**
 
-- `str` (`string`): the string or regular expression to replace
-- `replacement` (`string`): the replacement string
-- `use_regex` (`?bool`): whether _str_ can be treated as a regular
+- `str` (`string`): The string or regular expression to replace.
+- `replacement` (`string`): The replacement string.
+- `use_regex` (`?bool`): Whether _str_ can be treated as a regular
   expression. Defaults to true.
 
 **Returns** `string`
@@ -934,8 +935,8 @@ will be is not will be
 
 **Parameters**
 
-- `regex` (`string`): the regular expression to match
-- `callback` (`function`): the function to call for each match
+- `regex` (`string`): The regular expression to match.
+- `callback` (`function`): The function to call for each match.
 
 **Returns** `string`
 
@@ -1004,7 +1005,7 @@ Compares the string with another string.
 
 **Parameters**
 
-- `other` (`string`): the string to compare with
+- `other` (`string`): The string to compare with.
 
 **Returns** `number`: A negative number if this string comes before
 `other`, zero if the two are equal, or a positive number if this string

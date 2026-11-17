@@ -81,9 +81,8 @@ def supports(plugin: string) {
  *
  * @param string password
  * @param bytes scramble The 20 bytes from the greeting.
- * @returns bytes The 20-byte response, or nothing for an empty
- *    password, which is what the server expects for an account without
- *    a password.
+ * @returns bytes The 20-byte response, or empty bytes for an empty
+ *    password, as the server expects for an account without a password.
  */
 def native_password(password: string, scramble) {
   if password.is_empty() {

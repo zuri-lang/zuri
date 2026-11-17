@@ -28,10 +28,16 @@ def parser() {
     'Remove the download cache: archives, registry indexes and git checkouts',
     { short_name: 'c' },
   )
-  parser.add_option('runtimes', 'Remove the runtimes that zuri bundle downloaded', nil)
-  parser.add_option('logs', 'Remove the logs left by install and uninstall scripts', {
-    short_name: 'l',
-  })
+  parser.add_option(
+    'runtimes',
+    'Remove the runtimes that zuri bundle downloaded',
+    nil,
+  )
+  parser.add_option(
+    'logs',
+    'Remove the logs left by install and uninstall scripts',
+    { short_name: 'l' },
+  )
   parser.add_option(
     'libs',
     "Remove the project's installed packages, which zuri restore can bring back",
@@ -48,9 +54,11 @@ def parser() {
     "With --libs, remove your user's packages instead of the project's",
     { short_name: 'g' },
   )
-  parser.add_option('dry-run', 'Show what would be removed without removing anything', {
-    short_name: 'n',
-  })
+  parser.add_option(
+    'dry-run',
+    'Show what would be removed without removing anything',
+    { short_name: 'n' },
+  )
 
   return parser
 }

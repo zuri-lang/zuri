@@ -252,7 +252,7 @@ class Mock {
   }
 
   /**
-   * Restores the original behaviour, dropping the standing one and
+   * Restores the original behavior, dropping the standing one and
    * anything still queued. Recorded calls are kept.
    *
    * @returns Mock
@@ -320,7 +320,7 @@ class Mock {
   }
 
   /**
-   * Forgets every recorded call. The behaviour is left alone.
+   * Forgets every recorded call. The behavior is left alone.
    *
    * @returns Mock
    */
@@ -486,7 +486,7 @@ def restore_all() {
 
 /**
  * Forgets the calls recorded by every live mock, leaving the mocks
- * themselves and their behaviours in place.
+ * themselves and their behaviors in place.
  */
 def reset_all() {
   for entry in _mocks {

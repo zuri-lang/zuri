@@ -1,7 +1,7 @@
 /**
- * Colouring the code blocks of a page.
+ * Coloring the code blocks of a page.
  *
- * Every block is coloured as the page is built, so a reader's browser
+ * Every block is colored as the page is built, so a reader's browser
  * does no work and a page reads the same with scripts turned off. The
  * markup names each piece of code by what it is, with classes such as
  * `kw`, `str` and `com`, and the stylesheet decides how each one looks.
@@ -120,7 +120,7 @@ def language_of(info: ?string) {
 }
 
 /**
- * Whether a block in _language_ is coloured.
+ * Whether a block in _language_ is colored.
  *
  * @param string language
  * @returns bool
@@ -130,11 +130,11 @@ def is_known(language: string) {
 }
 
 /**
- * The name a block in _language_ is labelled with on the page: the
- * language's own name for one this colours, the fence name as written
+ * The name a block in _language_ is labeled with on the page: the
+ * language's own name for one this colors, the fence name as written
  * for one it does not, and `nil` for plain text.
  *
- * A terminal session is labelled by what it shows: `Terminal` when
+ * A terminal session is labeled by what it shows: `Terminal` when
  * commands were typed in it, and `Output` when it holds only what a
  * program printed.
  *
@@ -163,7 +163,7 @@ def label(language: string, code: ?string) {
 /**
  * _code_ as highlighted markup for a block in _language_, which is a
  * fence name as `language_of()` gives it. Code in a language this does
- * not colour is escaped and returned as it is.
+ * not color is escaped and returned as it is.
  *
  * @param string code
  * @param string language

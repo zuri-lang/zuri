@@ -463,9 +463,9 @@ def _tidy(lines: list) {
  *
  * Each line is read from just after the `*` at the start of a line of a
  * doc block, removing that `*` and the space after it, so any
- * indentation after that is what marks a continuation. A line without a
- * `*` is read from its first character that isn't whitespace, and so
- * never continues a tag.
+ * indentation after that marks a continuation. A line without a `*` is
+ * read from its first character that isn't whitespace, and so never
+ * continues a tag.
  *
  * @param list lines: the block's text, one string per line
  * @returns Block

@@ -10,8 +10,8 @@
  * reading order. `zuri doc` turns it into a site: one page for each
  * chapter, with the contents beside it, a search box, a page for
  * printing all of it at once, light and dark themes, and every code
- * block coloured. Zuri, REPL sessions, HTML and Wire, XML, JSON, shell
- * scripts and terminal sessions, TOML and INI are coloured as the site
+ * block colored. Zuri, REPL sessions, HTML and Wire, XML, JSON, shell
+ * scripts and terminal sessions, TOML and INI are colored as the site
  * is built, so a page reads the same with scripts turned off.
  *
  * `serve` builds the site, serves it on this machine, and builds it

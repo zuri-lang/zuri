@@ -36,7 +36,7 @@ var L = (2n ** 252n) + 27742317777372353535851937790883648493n
 /** The curve constant, -121665/121666. */
 var D = 37095705934669439343138083508754565189542113879843219016388785533085940283555n
 
-/** Twice the curve constant, which is what the addition uses. */
+/** Twice the curve constant, used by point addition. */
 var D2 = (2n * D) % P
 
 # The base point, in the affine coordinates RFC 8032 publishes.

@@ -152,8 +152,7 @@ class Protocol {
   }
 
   /**
-   * The ID that the server gave this connection, which is what `KILL`
-   * takes.
+   * The ID that the server gave this connection, as used by `KILL`.
    *
    * @returns number
    */
@@ -634,8 +633,9 @@ class Protocol {
   }
 
   /**
-   * Resets the session to the state it was in when it was opened, which
-   * is what a pool needs before lending a connection to someone else.
+   * Resets the session to the state it was in when it was opened. A
+   * pool needs to do this before it lends the connection to someone
+   * else.
    */
   reset_connection() {
     self.send_command(COMMANDS.RESET_CONNECTION, nil)

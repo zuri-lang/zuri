@@ -283,10 +283,10 @@ def _is_inline(host) {
 }
 
 /**
- * True when neither of _child_'s neighbours is inline, so whitespace
+ * True when neither of _child_'s neighbors is inline, so whitespace
  * between them separates nothing.
  *
- * A missing neighbour counts as not inline: the edge of a block level
+ * A missing neighbor counts as not inline: the edge of a block level
  * element is as good a boundary as another block.
  *
  * @param Node child

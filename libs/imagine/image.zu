@@ -464,9 +464,8 @@ class Image < Canvas {
    *
    * The result is no larger than the box in either direction, and it's
    * usually smaller in one of them. An image that already fits is
-   * returned at its original size, not enlarged, which is what you want
-   * for thumbnails: enlarging a small image to fill a thumbnail box
-   * only makes it blurry.
+   * returned at its original size, because enlarging a small image to
+   * fill a thumbnail box only makes it blurry.
    *
    * @param number max_width
    * @param number max_height
@@ -552,7 +551,7 @@ class Image < Canvas {
    *
    * @param number width
    * @param number height
-   * @param ?dict options: `background` (the padding colour, default
+   * @param ?dict options: `background` (the padding color, default
    *    transparent), `anchor` (default `CENTER`), `filter`.
    * @returns Image
    */
@@ -840,7 +839,7 @@ class Image < Canvas {
   }
 
   /**
-   * Rewrites every pixel through a 4x5 colour matrix.
+   * Rewrites every pixel through a 4x5 color matrix.
    *
    * The matrix is a flat list of 20 numbers, laid out row by row, and
    * is the same shape SVG and CSS filters use. The last entry of each
@@ -866,7 +865,7 @@ class Image < Canvas {
   }
 
   /**
-   * Adds a fixed amount to every colour channel.
+   * Adds a fixed amount to every color channel.
    *
    * @param number delta: -255 to 255. Positive brightens.
    * @returns self
@@ -878,9 +877,9 @@ class Image < Canvas {
   }
 
   /**
-   * Pushes colours away from or toward mid-grey.
+   * Pushes colors away from or toward mid-gray.
    *
-   * @param number amount: -100 (flat grey) through 0 (unchanged) to
+   * @param number amount: -100 (flat gray) through 0 (unchanged) to
    *    100 (hard black and white).
    * @returns self
    */
@@ -1013,7 +1012,7 @@ class Image < Canvas {
   /**
    * Scales the image's saturation.
    *
-   * @param number amount: 0 removes all colour, 1 leaves it alone,
+   * @param number amount: 0 removes all color, 1 leaves it alone,
    *    above 1 intensifies.
    * @returns self
    */
@@ -1022,7 +1021,7 @@ class Image < Canvas {
   }
 
   /**
-   * Rotates every hue around the colour wheel, leaving brightness and
+   * Rotates every hue around the color wheel, leaving brightness and
    * saturation alone.
    *
    * @param number degrees
@@ -1033,7 +1032,7 @@ class Image < Canvas {
   }
 
   /**
-   * Maps the image's brightness onto a two-colour ramp.
+   * Maps the image's brightness onto a two-color ramp.
    *
    * Dark pixels take `shadow`, light ones take `highlight`, and
    * everything between is interpolated.
@@ -1087,8 +1086,8 @@ class Image < Canvas {
   }
 
   /**
-   * Converts to grey and then tints, producing a monochrome image in
-   * a single colour.
+   * Converts to gray and then tints, producing a monochrome image in
+   * a single color.
    *
    * @param Color|string|number color
    * @returns self
@@ -1128,7 +1127,7 @@ class Image < Canvas {
   }
 
   /**
-   * Multiplies the colour channels by alpha.
+   * Multiplies the color channels by alpha.
    *
    * `imagine` keeps straight alpha everywhere, so this is for handing
    * pixels to something that expects them premultiplied. It loses
@@ -1161,8 +1160,8 @@ class Image < Canvas {
    *
    * The kernel is a flat list of `size * size` numbers, where `size` is
    * odd. The default divisor of 0 means "divide by the sum of the
-   * kernel", which is what almost every published kernel expects. Pass
-   * an explicit divisor for kernels whose weights add up to zero.
+   * kernel", as almost every published kernel expects. Pass an explicit
+   * divisor for kernels whose weights add up to zero.
    *
    * Alpha goes through the kernel along with the color channels, unless
    * `keep_alpha` is set, so blurring a shape softens its edge, instead
@@ -1250,7 +1249,7 @@ class Image < Canvas {
   }
 
   /**
-   * Turns the image into a grey relief, as if stamped into metal.
+   * Turns the image into a gray relief, as if stamped into metal.
    *
    * @returns self
    */
@@ -1410,10 +1409,10 @@ class Image < Canvas {
   /**
    * Uses another image as an alpha mask.
    *
-   * Each of this image's pixels keeps its colour and takes its
+   * Each of this image's pixels keeps its color and takes its
    * transparency from the mask: where the mask is opaque white this
    * image shows through fully, where the mask is black or transparent
-   * this image disappears, and greys give partial transparency.
+   * this image disappears, and grays give partial transparency.
    *
    * The mask's own alpha counts too, so a shape drawn on a transparent
    * background works as a mask without being filled in first.
@@ -1463,7 +1462,7 @@ class Image < Canvas {
    *
    * Returns a dictionary of four 256-entry lists: `red`, `green`,
    * `blue` and `luma`, where luma is perceived brightness. Fully
-   * transparent pixels are skipped, since their colour is not visible
+   * transparent pixels are skipped, since their color is not visible
    * and would otherwise pile up at whatever the buffer happens to
    * hold there.
    *
@@ -1622,7 +1621,7 @@ class Image < Canvas {
   /**
    * How different two images are, from 0 (identical) to 1.
    *
-   * The score is the mean difference across the colour channels,
+   * The score is the mean difference across the color channels,
    * weighted by how opaque each pixel is in either image, so
    * transparent regions do not count as agreement. Images of different
    * sizes are never comparable and return 1.
@@ -1952,7 +1951,7 @@ class Image < Canvas {
 
   /**
    * Encodes the image as a single-frame GIF, quantized to 256
-   * colours.
+   * colors.
    *
    * @param ?dict options
    * @returns bytes
@@ -2043,8 +2042,8 @@ class Image < Canvas {
  * Applies an EXIF orientation, and returns the upright image.
  *
  * The image is returned unchanged for orientation 1, which means it's
- * already upright, and for 0, which is what the reader reports when
- * there's no tag at all.
+ * already upright, and for 0, which the reader reports when there's no
+ * tag at all.
  */
 def _apply_orientation(image, orientation) {
   var recipe = _ORIENTATIONS.get('${orientation}')
@@ -2166,7 +2165,7 @@ def _scan_opaque(pixels: bytes) {
 }
 
 /**
- * Composites every pixel over an opaque colour, in place.
+ * Composites every pixel over an opaque color, in place.
  */
 def _flatten_buffer(pixels: bytes, r: number, g: number, b: number) {
   var total = pixels.length()
@@ -2203,7 +2202,7 @@ def _apply_mask(pixels: bytes, mask: bytes) {
 }
 
 /**
- * Replaces one rectangular block with its own average colour.
+ * Replaces one rectangular block with its own average color.
  */
 def _average_block(
   pixels: bytes,
@@ -2344,7 +2343,7 @@ def _score_difference(mine: bytes, theirs: bytes) {
 }
 
 /**
- * The bounding box of everything differing from a border colour by
+ * The bounding box of everything differing from a border color by
  * more than `tolerance`, as `[left, right, top, bottom]`. A right edge
  * of -1 means nothing in the image differed from it.
  */
@@ -2397,7 +2396,7 @@ def _content_bounds(
 }
 
 /**
- * Counts how often each visible colour occurs, keyed by its channels.
+ * Counts how often each visible color occurs, keyed by its channels.
  */
 def _tally_colors(pixels: bytes) {
   var counts = {}

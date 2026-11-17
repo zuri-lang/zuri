@@ -313,8 +313,8 @@ var RANGE_NOT_SATISFIABLE = 416
 var EXPECTATION_FAILED = 417
 
 /**
- * 418 I'm a teapot (RFC 2324). Reserved, and not meant to be taken
- * seriously, but used often enough to be worth naming.
+ * 418 I'm a teapot (RFC 2324). It started as a joke and is reserved,
+ * but it's used often enough to have a name here.
  * @type int
  */
 var IM_A_TEAPOT = 418

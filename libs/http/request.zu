@@ -194,7 +194,7 @@ class HttpRequest {
    * Sets the request target and re-derives `path`, `query_string` and
    * `query` from it.
    *
-   * The path is percent-decoded and then normalised, in that order.
+   * The path is percent-decoded and then normalized, in that order.
    * Doing it the other way round is the classic traversal hole:
    * `%2e%2e%2f` looks like an ordinary segment until it is decoded.
    *

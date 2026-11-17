@@ -63,8 +63,8 @@ class MySqlSchema < SchemaAdapter {
    * The columns of `table`, in order.
    *
    * The type is the one the table was declared with, such as
-   * `varchar(64)`, not just `varchar`, because on MySQL the width is
-   * often the part worth knowing.
+   * `varchar(64)`, not just `varchar`, because on MySQL the width often
+   * matters.
    *
    * @param string table
    * @param string|nil schema

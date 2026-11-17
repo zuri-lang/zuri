@@ -1631,8 +1631,8 @@ def _peek(characters: list, at: number, count: number) {
  * The nodes inside _element_.
  *
  * A `<template>` element keeps its content in a separate fragment
- * instead of among its children, which is what stops it from affecting
- * the tree around it, so that's where Wire has to look.
+ * instead of among its children, so that the content doesn't affect the
+ * tree around it. Wire has to look in that fragment.
  *
  * @param Node element
  * @returns list

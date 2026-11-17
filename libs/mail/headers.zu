@@ -67,8 +67,8 @@ var ADDRESS_HEADERS = [
  * Puts a folded header value back together.
  *
  * A header can be split across lines by starting each continuation line
- * with whitespace. Unfolding removes the line break and keeps the
- * whitespace, which is what it stood for.
+ * with whitespace. Unfolding removes each line break and keeps the
+ * whitespace after it.
  *
  * @param string text
  * @returns string

@@ -41,7 +41,7 @@ def import_name(name: string) {
 
 /**
  * The form two names are compared in: two packages whose names
- * normalise the same are the same package.
+ * normalize the same are the same package.
  *
  * @param string name
  * @returns string

@@ -1,5 +1,5 @@
 /**
- * Refactorings that keep behaviour: extracting an expression into a
+ * Refactorings that keep behavior: extracting an expression into a
  * variable or statements into a function, and inlining a variable or
  * a function. Each is offered only when the change provably leaves
  * what the program does as it was, and not offered otherwise.

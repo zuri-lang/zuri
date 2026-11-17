@@ -321,8 +321,8 @@ def connect(host: string, port: number, options: dict) {
 }
 
 /**
- * Wraps a connection that started unencrypted in TLS, which is what
- * every `STARTTLS` amounts to.
+ * Wraps a connection that started unencrypted in TLS. This is the step
+ * that every `STARTTLS` command leads to.
  *
  * @param LineStream stream
  * @param string server_name: the name to check the certificate against

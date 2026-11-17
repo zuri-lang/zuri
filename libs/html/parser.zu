@@ -4469,9 +4469,8 @@ def _same_formatting_shape(a, b) {
  *
  * - `scripting`, a bool that defaults to `false`: whether to parse as
  *   if scripting were enabled. With the default, the content of
- *   `<noscript>` is parsed as real markup, which is what you want when
- *   reading a page instead of rendering it. Nothing is ever run, either
- *   way.
+ *   `<noscript>` is parsed as markup, which suits a program that reads
+ *   a page instead of rendering it. Nothing is ever run, either way.
  *
  * The source is treated as UTF-8 text that has already been decoded.
  * There's no character set detection, byte order mark handling or

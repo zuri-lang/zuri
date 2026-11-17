@@ -167,7 +167,7 @@ class Cookie {
   /**
    * Renders the cookie as a `Set-Cookie` field value.
    *
-   * The name prefixes defined in RFC 6265bis §4.1.3 are honoured
+   * The name prefixes defined in RFC 6265bis §4.1.3 are honored
    * here: a `__Secure-` cookie is forced `Secure`, and a `__Host-`
    * cookie is forced `Secure`, pinned to `Path=/`, and stripped of
    * any `Domain`. Browsers reject cookies that carry a prefix without

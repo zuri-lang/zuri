@@ -1,12 +1,12 @@
 /**
  * @module markdown.node
  *
- * The tree `markdown.parse()` builds.
+ * The tree that `markdown.parse()` builds.
  *
- * Every node is a `Node`, told apart by its `type`. A node carries
- * only the fields its type uses and leaves the rest `nil`, so a
- * heading has a `level`, a link a `destination` and a `title`, and a
- * paragraph neither.
+ * Every node is a `Node`, and its `type` says what kind of node it is.
+ * A node only has the fields that its type uses, and the rest are
+ * `nil`. For example, a heading has a `level`, a link has a
+ * `destination` and a `title`, and a paragraph has neither.
  *
  * ```zuri
  * import markdown
@@ -60,14 +60,14 @@
  * | `superscript`, `subscript` | |
  * | `link`, `image` | `destination`, `title`, `attributes` |
  * | `html_inline` | `literal` |
- * | `footnote_reference` | `label`; an inline note also holds its text as children |
+ * | `footnote_reference` | `label`. An inline note also has its text as children. |
  * | `span` | `attributes` |
  * | `math` | `literal`, `display` |
  * | `abbreviation` | `title` |
  * | `emoji` | `literal`, `label` |
  *
- * `line` and `end_line` hold the source lines a block came from,
- * counting from 1. Inline nodes leave them `nil`.
+ * `line` and `end_line` are the first and last source lines of a block,
+ * counting from 1. They're `nil` for inline nodes.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -100,27 +100,27 @@ var _BLOCKS = {
 }
 
 /**
- * One node of a parsed Markdown document.
+ * A node in a parsed Markdown document.
  *
- * Treat `children` as read-only and change the tree through
- * `append_child()` and the methods beside it, which keep every
- * child's `parent_node` right.
+ * Treat `children` as read-only. To change the tree, use
+ * `append_child()` and the other methods of this class, which keep each
+ * child's `parent_node` up to date.
  *
  * @printable
  */
 class Node {
 
   /**
-   * What the node is: `'paragraph'`, `'link'`, `'text'` and so on.
-   * The module's page lists every type and the fields it uses.
+   * The kind of node, such as `'paragraph'`, `'link'` or `'text'`. The
+   * module documentation lists every type and the fields it uses.
    *
    * @type string
    */
   var type = ''
 
   /**
-   * The node this one belongs to, or `nil` for a document and for a
-   * node that has been detached.
+   * The node that this one belongs to, or `nil` for a document or a
+   * detached node.
    *
    * @type ?Node
    */
@@ -149,9 +149,9 @@ class Node {
   var level
 
   /**
-   * A fenced code block's info string, the text after the opening
-   * fence, with escapes and entities resolved. An indented code block
-   * has none.
+   * The info string of a fenced code block, which is the text after the
+   * opening fence, with escapes and entities resolved. It's `nil` for
+   * an indented code block.
    *
    * @type ?string
    */
@@ -165,8 +165,8 @@ class Node {
   var destination
 
   /**
-   * A link's or image's title, or an abbreviation's expansion. Empty
-   * when the source gave none.
+   * The title of a link or image, or the expansion of an abbreviation.
+   * It's empty if the source didn't give one.
    *
    * @type ?string
    */
@@ -187,15 +187,15 @@ class Node {
   var start
 
   /**
-   * What follows an ordered list's numbers: `'.'` or `')'`.
+   * The character after each number in an ordered list: `'.'` or `')'`.
    *
    * @type ?string
    */
   var delimiter
 
   /**
-   * The character a bullet list's items start with: `'-'`, `'*'` or
-   * `'+'`.
+   * The character that each item of a bullet list starts with: `'-'`,
+   * `'*'` or `'+'`.
    *
    * @type ?string
    */
@@ -211,8 +211,8 @@ class Node {
   var tight
 
   /**
-   * A task list item's state: `true` when checked, `false` when not.
-   * `nil` for an item that is not a task.
+   * Whether a task list item is checked. It's `nil` for an item that
+   * isn't a task.
    *
    * @type ?bool
    */
@@ -227,15 +227,15 @@ class Node {
   var align
 
   /**
-   * A footnote's label, as written between `[^` and `]`, or an
-   * emoji's shortcode without its colons.
+   * The label of a footnote, as written between `[^` and `]`, or the
+   * shortcode of an emoji without its colons.
    *
    * @type ?string
    */
   var label
 
   /**
-   * An alert's kind: `'note'`, `'tip'`, `'important'`, `'warning'` or
+   * The kind of alert: `'note'`, `'tip'`, `'important'`, `'warning'` or
    * `'caution'`.
    *
    * @type ?string
@@ -243,39 +243,39 @@ class Node {
   var kind
 
   /**
-   * Whether a `math` node was written with `$$`, and is shown on a line
-   * of its own instead of within the text.
+   * Whether a `math` node was written with `$$`, in which case it's
+   * shown on a line of its own instead of in the text.
    *
    * @type ?bool
    */
   var display
 
   /**
-   * HTML attributes for the node's element, from a `{#id .class
-   * key=value}` block or a generated heading id. `class` holds every
-   * class, space separated.
+   * The HTML attributes of the node's element, from a
+   * `{#id .class key=value}` block or a generated heading id. `class`
+   * holds all the classes, separated by spaces.
    *
    * @type dict
    */
   var attributes = {}
 
   /**
-   * The front matter a document opened with, decoded, or `nil` when
-   * it had none.
+   * The decoded front matter at the start of a document, or `nil` if it
+   * has none.
    *
    * @type ?dict
    */
   var metadata
 
   /**
-   * The source line a block starts on, counting from 1.
+   * The source line that a block starts on, counting from 1.
    *
    * @type ?number
    */
   var line
 
   /**
-   * The source line a block ends on, counting from 1.
+   * The source line that a block ends on, counting from 1.
    *
    * @type ?number
    */
@@ -292,8 +292,7 @@ class Node {
   }
 
   /**
-   * Whether the node is a block, such as a paragraph or a list, as
-   * opposed to something inside one.
+   * Whether the node is a block, such as a paragraph or a list.
    *
    * @returns bool
    */
@@ -302,8 +301,8 @@ class Node {
   }
 
   /**
-   * Whether the node sits inside a block's text, such as emphasis or a
-   * link.
+   * Whether the node is inline, meaning part of a block's text, such as
+   * emphasis or a link.
    *
    * @returns bool
    */
@@ -312,7 +311,7 @@ class Node {
   }
 
   /**
-   * The first child, or `nil` when there are none.
+   * Returns the first child, or `nil` if there are no children.
    *
    * @returns ?Node
    */
@@ -321,7 +320,7 @@ class Node {
   }
 
   /**
-   * The last child, or `nil` when there are none.
+   * Returns the last child, or `nil` if there are no children.
    *
    * @returns ?Node
    */
@@ -330,8 +329,8 @@ class Node {
   }
 
   /**
-   * Where this node sits among its parent's children, or `-1` when it
-   * has no parent.
+   * Returns the index of this node among its parent's children, or `-1`
+   * if it has no parent.
    *
    * @returns number
    */
@@ -352,7 +351,8 @@ class Node {
   }
 
   /**
-   * The node after this one in its parent, or `nil`.
+   * Returns the next node in the same parent, or `nil` if this is the
+   * last one.
    *
    * @returns ?Node
    */
@@ -367,7 +367,8 @@ class Node {
   }
 
   /**
-   * The node before this one in its parent, or `nil`.
+   * Returns the previous node in the same parent, or `nil` if this is
+   * the first one.
    *
    * @returns ?Node
    */
@@ -382,8 +383,8 @@ class Node {
   }
 
   /**
-   * Adds _node_ as the last child, taking it from wherever it was.
-   * Returns _node_.
+   * Adds _node_ as the last child, removing it from its current parent
+   * first. Returns _node_.
    *
    * @param Node node
    * @returns Node
@@ -397,8 +398,8 @@ class Node {
   }
 
   /**
-   * Adds _node_ as the first child, taking it from wherever it was.
-   * Returns _node_.
+   * Adds _node_ as the first child, removing it from its current parent
+   * first. Returns _node_.
    *
    * @param Node node
    * @returns Node
@@ -412,13 +413,13 @@ class Node {
   }
 
   /**
-   * Adds _node_ as a child just before _reference_, or last when
-   * _reference_ is `nil`. Returns _node_.
+   * Inserts _node_ as a child immediately before _reference_, or as the
+   * last child if _reference_ is `nil`. Returns _node_.
    *
    * @param Node node
    * @param ?Node reference: a child of this node.
    * @returns Node
-   * @throws ValueError When _reference_ is not a child of this node
+   * @throws ValueError If _reference_ isn't a child of this node.
    */
   insert_before(node: Node, reference: ?Node) {
     if reference == nil {
@@ -437,12 +438,13 @@ class Node {
   }
 
   /**
-   * Adds _node_ as a child just after _reference_. Returns _node_.
+   * Inserts _node_ as a child immediately after _reference_. Returns
+   * _node_.
    *
    * @param Node node
    * @param Node reference: a child of this node.
    * @returns Node
-   * @throws ValueError When _reference_ is not a child of this node
+   * @throws ValueError If _reference_ isn't a child of this node.
    */
   insert_after(node: Node, reference: Node) {
     if reference.parent_node != self {
@@ -457,8 +459,8 @@ class Node {
   }
 
   /**
-   * Puts _node_ where this node is and detaches this one. Returns
-   * _node_.
+   * Puts _node_ in this node's place in the tree, and detaches this
+   * node. Returns _node_.
    *
    * @param Node node
    * @returns Node
@@ -481,7 +483,7 @@ class Node {
   }
 
   /**
-   * Takes this node out of its parent. Returns this node.
+   * Removes this node from its parent, and returns it.
    *
    * @returns Node
    */
@@ -500,11 +502,12 @@ class Node {
   }
 
   /**
-   * Calls _callback_ with every node beneath this one, in document
-   * order. Returning `false` from it skips that node's children.
+   * Calls _callback_ for each node below this one, in document order.
+   * If the callback returns `false`, the children of that node are
+   * skipped.
    *
-   * Do not add or remove nodes from inside the callback. Collect them
-   * with `find_all()` and change the tree afterwards.
+   * Don't add or remove nodes inside the callback. Find them with
+   * `find_all()` first, and then change the tree.
    *
    * @param function callback
    */
@@ -519,7 +522,7 @@ class Node {
   }
 
   /**
-   * Every node beneath this one, in document order.
+   * Returns every node below this one, in document order.
    *
    * @returns list[Node]
    */
@@ -532,7 +535,7 @@ class Node {
   }
 
   /**
-   * Every node beneath this one of the given _type_, in document
+   * Returns every node of the given _type_ below this one, in document
    * order.
    *
    * @param string type
@@ -547,7 +550,8 @@ class Node {
   }
 
   /**
-   * The first node beneath this one of the given _type_, or `nil`.
+   * Returns the first node of the given _type_ below this one, or `nil`
+   * if there isn't one.
    *
    * @param string type
    * @returns ?Node
@@ -569,8 +573,9 @@ class Node {
   }
 
   /**
-   * The text beneath this node with every bit of markup taken away.
-   * Breaks become spaces, and an image counts as its description.
+   * Returns the text of this node and its descendants, with all markup
+   * removed. Line breaks become spaces, and an image is replaced by its
+   * description.
    *
    * ```zuri
    * import markdown
@@ -591,7 +596,8 @@ class Node {
   }
 
   /**
-   * A copy of this node and everything beneath it, with no parent.
+   * Returns a copy of this node and all its descendants. The copy has
+   * no parent.
    *
    * @returns Node
    */
@@ -629,8 +635,9 @@ class Node {
   }
 
   /**
-   * The tree beneath and including this node as indented text, one
-   * node a line, for reading while working on a transform.
+   * Returns this node and its descendants as indented text, with one
+   * node on each line. It's useful for seeing the tree while you write
+   * a transform.
    *
    * ```zuri
    * import markdown
@@ -654,7 +661,7 @@ class Node {
   }
 
   /**
-   * The node's type and its main field, such as `heading 2`.
+   * Returns the node's type and its main field, such as `heading 2`.
    *
    * @returns string
    */

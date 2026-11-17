@@ -1,13 +1,14 @@
 /**
  * @module markdown.renderer
  *
- * Turning a parsed document into HTML.
+ * Converts a parsed document to HTML.
  *
- * `HtmlRenderer` writes the markup the CommonMark reference
- * implementation writes, byte for byte, so its output can be compared
- * with any other conforming renderer's. Each node type has a method of
- * its own name, and a subclass changes how one kind of node looks by
- * overriding that method alone:
+ * `HtmlRenderer` produces the same markup as the CommonMark reference
+ * implementation, byte for byte, so its output can be compared with
+ * that of any other conforming renderer. Each node type is rendered by
+ * its own method, which in most cases has the same name as the type. A
+ * subclass can change how one kind of node is rendered by overriding
+ * just that method:
  *
  * ```zuri
  * import markdown
@@ -25,9 +26,10 @@
  * echo md.render('[Zuri](https://zuri-lang.github.io/zuri/)')
  * ```
  *
- * Inside a method, `write()` adds markup as it is, `text()` adds text
- * escaped, `cr()` starts a new line unless one was just started, and
- * `render_children()` renders what the node holds.
+ * Inside a method, `write()` adds markup unchanged, `text()` adds
+ * escaped text, `cr()` starts a new line unless the output is already
+ * at the start of one, and `render_children()` renders the node's
+ * children.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -89,17 +91,17 @@ var _ALERT_TITLES = {
 /**
  * Renders a parsed document as HTML.
  *
- * One renderer renders one document at a time. `markdown()` makes a
- * fresh one for every call to `render()`, so a subclass may keep
- * whatever state it likes in fields of its own.
+ * A renderer renders one document at a time. A `Markdown` object
+ * creates a new renderer for each document it renders, so a subclass
+ * can keep any state it needs in its own fields.
  *
  * @printable
  */
 class HtmlRenderer {
 
   /**
-   * The options the document was parsed with, as `markdown()` resolved
-   * them: every option is present.
+   * The options that the document was parsed with, after `markdown()`
+   * resolved them. Every option is present.
    *
    * @type dict
    */
@@ -117,8 +119,8 @@ class HtmlRenderer {
   var _toc = []
 
   /**
-   * @param dict options: the resolved options of the `Markdown` doing
-   *    the rendering.
+   * @param dict options: the resolved options of the `Markdown` object
+   *    that's rendering the document.
    * @constructor
    */
   @new(options: dict) {
@@ -127,8 +129,8 @@ class HtmlRenderer {
   }
 
   /**
-   * The HTML for _node_ and everything beneath it. A document's
-   * footnotes follow it.
+   * Returns the HTML for _node_ and its descendants. For a document,
+   * the footnotes are added at the end.
    *
    * @param Node node
    * @returns string
@@ -153,8 +155,8 @@ class HtmlRenderer {
   }
 
   /**
-   * Adds _markup_ to the output as it is. Inside an image's description,
-   * where only text is allowed, nothing is added.
+   * Adds _markup_ to the output unchanged. Inside an image's
+   * description, where only text is allowed, it adds nothing.
    *
    * @param string markup
    */
@@ -191,7 +193,7 @@ class HtmlRenderer {
   }
 
   /**
-   * _text_ escaped for HTML.
+   * Returns _text_ escaped for HTML.
    *
    * @param string text
    * @returns string
@@ -201,10 +203,11 @@ class HtmlRenderer {
   }
 
   /**
-   * _destination_ as it may go in an `href` or `src`, or `''` when it
-   * uses a scheme a page should not follow: `javascript:`, `vbscript:`,
-   * `file:`, or `data:` other than a PNG, GIF, JPEG or WebP image. The
-   * `unsafe_links` option lets everything through.
+   * Returns _destination_ in a form that can go in an `href` or `src`
+   * attribute. Returns `''` if it uses a scheme that a page shouldn't
+   * follow: `javascript:`, `vbscript:`, `file:`, or a `data:` URL that
+   * isn't a PNG, GIF, JPEG or WebP image. With the `unsafe_links`
+   * option, every destination is allowed.
    *
    * @param string destination
    * @returns string
@@ -218,10 +221,10 @@ class HtmlRenderer {
   }
 
   /**
-   * _node_'s attributes, and _extra_ before them, as markup to follow a
-   * tag name, starting with a space. A class in both is merged. When raw
-   * HTML is off, a name an author could use to run script is written
-   * with `data-` in front.
+   * Returns the attributes of _node_, with _extra_ before them, as
+   * markup to follow a tag name, starting with a space. If both have a
+   * `class`, the classes are merged. When raw HTML is off, an attribute
+   * name that could be used to run a script gets a `data-` prefix.
    *
    * @param Node node
    * @param ?dict extra
@@ -258,8 +261,9 @@ class HtmlRenderer {
   }
 
   /**
-   * Renders _node_ by calling the method named after its type. A type
-   * this class does not know goes to `unknown()`.
+   * Renders _node_ by calling the method for its type, which usually
+   * has the same name as the type. A type that this class doesn't know
+   * is passed to `unknown()`.
    *
    * @param Node node
    */
@@ -395,7 +399,7 @@ class HtmlRenderer {
   }
 
   /**
-   * Renders each of _node_'s children in turn.
+   * Renders the children of _node_, in order.
    *
    * @param Node node
    */
@@ -406,8 +410,8 @@ class HtmlRenderer {
   }
 
   /**
-   * A node of a type no method is named for, such as one a transform
-   * added. Its children are rendered and nothing else.
+   * Renders a node of a type that has no method, such as one added by a
+   * transform. Only its children are rendered.
    *
    * @param Node node
    */
@@ -421,8 +425,8 @@ class HtmlRenderer {
   }
 
   /**
-   * A paragraph, without its `<p>` when it is in a tight list or a
-   * tight definition.
+   * Renders a paragraph. The `<p>` tags are left out in a tight list or
+   * a tight definition.
    *
    * @param Node node
    */
@@ -481,7 +485,7 @@ class HtmlRenderer {
   }
 
   /**
-   * A GitHub alert, in the markup GitHub gives it.
+   * Renders a GitHub alert, using the same markup as GitHub.
    *
    * @param Node node
    */
@@ -523,7 +527,8 @@ class HtmlRenderer {
   }
 
   /**
-   * A list item, with a disabled checkbox first when it is a task.
+   * Renders a list item. A task list item starts with a disabled
+   * checkbox.
    *
    * @param Node node
    */
@@ -542,9 +547,9 @@ class HtmlRenderer {
   }
 
   /**
-   * A code block. Its info string's first word becomes a
-   * `language-` class on the `<code>`, and the `highlight` option, when
-   * set, may give the markup for the code itself.
+   * Renders a code block. The first word of the info string becomes a
+   * `language-` class on the `<code>` element. If the `highlight`
+   * option is set, its function can supply the markup for the code.
    *
    * @param Node node
    */
@@ -608,7 +613,7 @@ class HtmlRenderer {
   }
 
   /**
-   * Raw HTML on its own lines. It is written as it is when the `html`
+   * Renders a block of raw HTML. It's written unchanged when the `html`
    * option is on, and shown as text otherwise.
    *
    * @param Node node
@@ -639,7 +644,7 @@ class HtmlRenderer {
   }
 
   /**
-   * A table's `<thead>` or `<tbody>`.
+   * Renders a table's `<thead>` or `<tbody>`.
    *
    * @param Node node
    */
@@ -684,8 +689,8 @@ class HtmlRenderer {
   }
 
   /**
-   * Where a footnote is defined, nothing: footnotes are written together
-   * at the end, by `footnotes()`.
+   * Renders nothing. Footnotes are written together at the end of the
+   * document, by `footnotes()`.
    *
    * @param Node node
    */
@@ -769,7 +774,8 @@ class HtmlRenderer {
   }
 
   /**
-   * A ```` ```math ```` block, in the markup MathJax and KaTeX look for.
+   * Renders a ```` ```math ```` block, in the markup that MathJax and
+   * KaTeX look for.
    *
    * @param Node node
    */
@@ -782,7 +788,8 @@ class HtmlRenderer {
   }
 
   /**
-   * The document's table of contents, where `[TOC]` was written.
+   * Renders the document's table of contents, where `[TOC]` was
+   * written.
    *
    * @param Node node
    */
@@ -853,8 +860,8 @@ class HtmlRenderer {
   }
 
   /**
-   * A line ending inside a paragraph: a newline, or a `<br />` when the
-   * `breaks` option is on.
+   * Renders a line ending inside a paragraph, as a newline, or as
+   * `<br />` when the `breaks` option is on.
    *
    * @param Node node
    */
@@ -943,8 +950,8 @@ class HtmlRenderer {
   }
 
   /**
-   * An image. Its description becomes the `alt` text, with every bit of
-   * markup in it dropped.
+   * Renders an image. Its description becomes the `alt` text, with all
+   * markup removed.
    *
    * @param Node node
    */
@@ -963,8 +970,8 @@ class HtmlRenderer {
   }
 
   /**
-   * Raw HTML inside a paragraph. It is written as it is when the `html`
-   * option is on, and shown as text otherwise.
+   * Renders raw HTML inside a paragraph. It's written unchanged when
+   * the `html` option is on, and shown as text otherwise.
    *
    * @param Node node
    */
@@ -977,7 +984,7 @@ class HtmlRenderer {
   }
 
   /**
-   * A footnote reference: its number, linking to the footnote.
+   * Renders a footnote reference as its number, linked to the footnote.
    *
    * @param Node node
    */
@@ -1011,8 +1018,8 @@ class HtmlRenderer {
   }
 
   /**
-   * Math, in the markup MathJax and KaTeX look for: `\(...\)` inline and
-   * `\[...\]` on its own line.
+   * Renders math in the markup that MathJax and KaTeX look for:
+   * `\(...\)` for inline math, and `\[...\]` for display math.
    *
    * @param Node node
    */
@@ -1047,8 +1054,8 @@ class HtmlRenderer {
   }
 
   /**
-   * The footnotes the document referred to, in the order it first
-   * referred to them, as a list at the end.
+   * Renders the footnotes that the document refers to, as a list at the
+   * end, in the order of their first reference.
    */
   footnotes() {
     if self._footnote_order.is_empty() {

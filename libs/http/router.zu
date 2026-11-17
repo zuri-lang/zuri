@@ -90,9 +90,9 @@ class RouteMatch {
   var params
 
   /**
-   * When the path matched but the method didn't, the methods the path
-   * *does* accept, which is what the `Allow` header of a `405` response
-   * must contain. Empty otherwise.
+   * When the path matched but the method didn't, the methods that the
+   * path accepts, for the `Allow` header of a `405` response.
+   * Otherwise, it's empty.
    * @type list
    */
   var allowed

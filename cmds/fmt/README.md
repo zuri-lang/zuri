@@ -1,171 +1,181 @@
 # fmt
 
-Formats all Zuri files in the given path, or the current directory, in
-the project's own style: two spaces to a level, one statement to a line,
-explicit blocks, the spacing a reader expects between tokens, and long
-lines broken where their expressions hold together least.
+Formats the Zuri files in a path, or in the current directory, in the
+project's code style. That means two spaces per indentation level, one
+statement per line, braces around every block, consistent spacing between
+tokens, and long lines broken at the points where their expressions are
+least tightly bound.
 
-## Running it
+## Usage
 
 ```sh
 zuri fmt [path]
 ```
 
 `path` is either a single `.zu` file, which is formatted in place, or a
-directory, in which case every `.zu` file inside it is formatted,
-subdirectories included. If no path is given, the current directory is
+directory, in which case every `.zu` file in it and in its subdirectories
+is formatted. If you don't give a path, the current directory is
 formatted.
 
 ```sh
 # format one file
 zuri fmt libs/date.zu
 
-# format a whole tree
+# format a whole directory tree
 zuri fmt libs
 
 # format the current directory
 zuri fmt
 
-# report what would change without writing anything (exit 1 if any would)
+# report what would change without writing anything (exits with 1 if anything would)
 zuri fmt --dry-run libs
 ```
 
-`--dry-run` (or `-n`) is what a commit hook or CI wants: it names the
-files that are not already formatted and exits non-zero if there are any.
+Use `--dry-run` (or `-n`) in a commit hook or a CI job. It lists the files
+that aren't formatted yet, and exits with a non-zero status if there are
+any.
 
-## What it does
+## How it formats code
 
-It reads the program the way the compiler does, from its parse tree,
-and lays every statement, declaration and expression out in the
-project's style. It knows what each piece of code is, so a sign is never
-mistaken for an operator, a type's `:` for a dictionary's, or a
+The formatter reads the program from its parse tree, the same way the
+compiler does, and lays out every statement, declaration and expression in
+the project's style. Because it knows what each piece of code is, it never
+mistakes a sign for an operator, a type's `:` for a dictionary's, or a
 subscript for a list.
 
-Where a long line breaks follows the rules of the Dart formatter, as
-closely as Zuri's grammar allows. The layout depends on the code alone:
-where the source broke a line inside an expression makes no difference,
-so the same code always comes out the same way.
+Long lines are broken following the rules of the Dart formatter, as
+closely as Zuri's grammar allows. The layout depends only on the code. It
+doesn't matter where the source broke a line inside an expression, so the
+same code is always formatted the same way.
 
-- **Indents** two spaces per level of nesting. A block's body, and the
-  items of a list that opens out, sit one level in. An expression
-  continued onto another line sits two levels past the line it
-  continues, so a broken `if` condition never lines up with the body
-  under it.
-- **Opens every block.** The statements inside a block each get their
-  own line, and `;` between two statements becomes a line break. An
-  empty block closes up to `{}`. `else`, `while` after a `do`, and `as`
-  after a `catch` follow the `}` before them on its line.
-- **Braces every body.** `if x y = 1` becomes a block, and so does the
-  body of an `else`, a `while`, a `for` and a `do`. A body that declares
-  a name, `if x var y = 1`, is left as it is, since braces would give the
-  name a scope of its own. A `when` or `default` arm keeps an unbraced
-  body on its line while the line is at most 60 characters wide, and
-  braces it otherwise.
-- **Sets declarations apart.** A function, method or class that spans
-  several lines has a blank line on either side of it, ahead of the
-  comments that lead into it. A blank line the source left between two
-  statements is kept, one at most.
-- **Spaces** by what each token is: around binary operators, after
-  commas, none around `.` or inside a call's parentheses, none around `|`
-  in a type, `{ a: 1 }` with spaces inside its braces. An empty `iter`
-  clause keeps the space that shows it is there: `iter ; i < n; i++`.
-- **Keeps a list on one line, or opens it one item to a line.** This
-  holds for arguments, parameters, list and dictionary literals and an
-  import's names. One that does not fit opens out with each item on a
-  line of its own and a trailing comma after the last, its closer back
-  on the line it opened on. A blank line the source left between two
-  items is kept once the list opens out.
-- **Opens a list or dictionary that holds another**, at any depth and
-  through any call, even when it would fit on one line, so a tree of
-  data reads as a tree: `[[3, 4], [5, 6]]` takes a row to a line, and so
-  does `[Window('Main', { size: Size(720, 420) })]`. An empty `[]` or
-  `{}` inside does not count.
-- **Lets one argument open out on its own.** When a call's arguments
-  hold a single function with a body, or failing that a single list or
-  dictionary, and at most one argument follows it, that argument opens
-  out while the rest stay on the call's line: `each(items, @{`,
-  `Text(label, {`. When the arguments before it do not fit on that line,
-  every argument opens out instead. A call is never the argument that
-  opens out, so a call inside a call that does not fit moves to a line
-  of its own under `f(`, rather than opening as `f(g(`.
-- **Breaks an operator chain after every operator** of the loosest
-  precedence in it, `or` before `and` before `==` before `+`, leaving
-  the tighter ones on their lines while they fit. The operator ends its
-  line, which also keeps a line from opening with `-`, the start of a
-  statement of its own.
-- **Breaks a conditional before its `?` and `:`**, each branch on a
-  line of its own. A conditional in the last branch joins the chain, so
-  a run of them reads as a list of cases.
-- **Breaks a method chain before each call**, one call to a line, the
-  property reads it opens with kept beside the value it starts from.
-  Before that, a chain whose calls before the last take no arguments,
-  or whose last call takes a function or collection that opens out on
-  its own, opens only that call's arguments; and a chain that starts
-  from a call or a collection opens that instead when the rest of the
-  chain fits after its closing bracket. A call on a capitalized name,
-  `Color.of(x)`, counts as part of the value it is made on.
-- **Moves a value made of operators onto a line of its own** after the
-  `:` of a dictionary entry that does not fit. Nothing else breaks
-  after a `:`, and nothing breaks after an `=` or a `=>`, which the
-  language does not allow.
-- **Fills a list of numbers**, with or without `nil` among them, as
-  many to a line as fit, rather than one to a line.
-- **Keeps the rows of a list or dictionary holding a `#` comment**
-  between its items, each row laid out like a list of its own, so a
-  table stays a table when one of its lines carries a comment.
-- **Never adds or drops a subscript's commas.** `s[1]`, `s[1,]`, `s[,3]`
-  and `s[1,3]` are four different reads, written `s[1]`, `s[1,]`,
-  `s[,3]` and `s[1, 3]`.
-- **Keeps comments where they were written**: one that trails code stays
-  at the end of its line, one on a line of its own keeps that line, and
-  a doc block moves along with the code it documents. A `#` comment
-  inside a list or a call opens it out, since the comment ends its line.
-- **Writes strings and numbers exactly as the source does**, and import
-  paths with their dots as written: `.. ..shared` and `....shared` both
-  stay.
-- **Rewrites `name: name` to `name`** inside a dictionary, the shorthand
-  the project prefers, and drops what the language allows but the
-  project never writes: the parentheses an `iter` may be written with,
-  and `def` before a method name.
+- **Indentation.** Each level of nesting is indented two spaces. The body
+  of a block, and the items of a list that's split across lines, are
+  indented one level. An expression that continues onto another line is
+  indented two levels past the line it continues, so a long `if`
+  condition never lines up with the body below it.
+- **Blocks.** Each statement inside a block goes on its own line, and a
+  `;` between two statements becomes a line break. An empty block is
+  written as `{}`. `else`, a `while` after a `do`, and an `as` after a
+  `catch` go on the same line as the `}` before them.
+- **Braces.** `if x y = 1` gets braces around its body, and so does the
+  body of an `else`, a `while`, a `for` and a `do`. A body that declares a
+  name, such as `if x var y = 1`, is left as it is, because braces would
+  give the name a scope of its own. A `when` or `default` arm keeps an
+  unbraced body on its line as long as the line is at most 60 characters
+  wide, and gets braces otherwise.
+- **Blank lines around declarations.** A function, method or class that
+  spans several lines gets a blank line before and after it, placed above
+  any comments that introduce it. A blank line that the source left
+  between two statements is kept, but several are reduced to one.
+- **Spacing.** Spaces depend on what each token is: around binary
+  operators, after commas, none around `.` or inside a call's
+  parentheses, none around `|` in a type, and spaces inside the braces of
+  `{ a: 1 }`. An empty `iter` clause keeps the space that shows it's
+  there: `iter ; i < n; i++`.
+- **Lists of items.** Arguments, parameters, list and dictionary literals,
+  and an import's names are kept on one line if they fit. If they don't,
+  each item goes on a line of its own, with a trailing comma after the
+  last one and the closing bracket back at the start of the line where the
+  list opened. Once a list is split across lines, a blank line that the
+  source left between two items is kept.
+- **Nested collections.** A list or dictionary that contains another list
+  or dictionary is always split across lines, at any depth and through any
+  call, even if it would fit on one line, so a tree of data is laid out
+  as a tree. For example, `[[3, 4], [5, 6]]` puts each row on its own
+  line, and so does `[Window('Main', { size: Size(720, 420) })]`. An
+  empty `[]` or `{}` inside doesn't count.
+- **A single argument split on its own.** When a call's arguments include
+  a single function with a body, or otherwise a single list or
+  dictionary, and at most one argument comes after it, only that argument
+  is split across lines, while the others stay on the call's line, as in
+  `each(items, @{` or `Text(label, {`. If the arguments before it don't
+  fit on that line, every argument is split onto its own line instead. A
+  call is never the argument that gets split this way, so a call inside a
+  call that doesn't fit moves to a line of its own under `f(`, instead of
+  being written as `f(g(`.
+- **Operator chains.** A chain of operators is broken after every
+  operator of the lowest precedence in it (`or` before `and`, before `==`,
+  before `+`), and the higher-precedence parts stay on their lines as long
+  as they fit. The operator ends the line, which also means a line never
+  starts with `-`, which would begin a new statement.
+- **Conditionals.** A conditional expression is broken before its `?` and
+  its `:`, with each branch on a line of its own. A conditional in the
+  last branch continues the same chain, so a series of them reads as a
+  list of cases.
+- **Method chains.** A method chain is broken before each call, with one
+  call per line, and any property reads at the start of the chain stay
+  next to the value they start from. Before that happens, two simpler
+  layouts are tried. If the calls before the last one take no arguments,
+  or the last call takes a function or a collection that can be split on
+  its own, only that call's arguments are split. If the chain starts from
+  a call or a collection, that is split instead, as long as the rest of
+  the chain fits after its closing bracket. A call on a capitalized name,
+  such as `Color.of(x)`, is treated as part of the value it's called on.
+- **Dictionary values.** If a dictionary entry doesn't fit, and its value
+  is made of operators, the value moves to a line of its own after the
+  `:`. Nothing else is broken after a `:`, and nothing is broken after an
+  `=` or a `=>`, because the language doesn't allow it.
+- **Lists of numbers.** A list of numbers, which can include `nil`, is
+  filled with as many items per line as fit, instead of one per line.
+- **Commented rows.** If a list or dictionary has a `#` comment between
+  its items, each row is laid out like a list of its own, so a table stays
+  a table even when one of its lines has a comment.
+- **Subscripts.** Commas in a subscript are never added or removed.
+  `s[1]`, `s[1,]`, `s[,3]` and `s[1,3]` mean four different things, and
+  they're written as `s[1]`, `s[1,]`, `s[,3]` and `s[1, 3]`.
+- **Comments.** Comments stay where they were written. A comment at the
+  end of a line of code stays at the end of that line, a comment on its
+  own line stays on its own line, and a doc block moves with the code it
+  documents. A `#` comment inside a list or a call splits it across
+  lines, because the comment ends its line.
+- **Strings, numbers and imports.** Strings and numbers are written
+  exactly as they are in the source, and so are the dots in import paths:
+  `.. ..shared` and `....shared` both stay as they are.
+- **Rewrites.** Inside a dictionary, `name: name` is rewritten as `name`,
+  the shorthand the project prefers. Two other things that the language
+  allows but the project never uses are removed: parentheses around an
+  `iter` clause, and `def` before a method name.
 
-## What it will not do
+## Safety
 
-It never changes what a program does. Before writing a file, it parses
-its own result and checks that the tree is the one it started from and
-that every comment is still there, in order. The only differences it
-accepts are its own rewrites: the dictionary shorthand, and a body it
-braced. If anything else differs, that file is left as it was and
-reported as skipped. This is why it can be run across a whole tree
-without fear.
+The formatter never changes what a program does. Before it writes a file,
+it parses its own output and checks that the tree is the same one it
+started with, and that every comment is still there, in the same order.
+The only differences it accepts are its own rewrites: the dictionary
+shorthand, and the braces it adds around a body. If anything else is
+different, the file is left unchanged and reported as skipped. This makes
+it safe to run on a whole directory tree.
 
-A file that does not parse is skipped too, with the line and column
-of the first syntax error: there is no tree to lay out.
+A file that doesn't parse is skipped too, and the line and column of the
+first syntax error are reported, because there's no tree to lay out.
 
-## How it is built
+## Source files
 
-- `source.zu`: the tokens of the source, for what the tree does not
-  keep: the blank lines the author left, every comment, and the
+- `source.zu`: the tokens of the source, for the things the parse tree
+  doesn't keep: the blank lines the author left, every comment, and the
   operators and commas between two nodes.
-- `doc.zu`: the layout document, text and the places it may break.
-- `layout.zu`: the parse tree turned into a layout document, in source
-  order so every comment is placed where it was written.
-- `printer.zu`: the document turned into lines, each group kept on one
-  line when it fits, and of the layouts offered for one piece of code,
-  the first that fits taken.
-- `verify.zu`: the comparison of two trees and their comments.
+- `doc.zu`: the layout document, made of text and the places where it
+  can break.
+- `layout.zu`: converts the parse tree into a layout document, in source
+  order, so that every comment is placed where it was written.
+- `printer.zu`: converts the layout document into lines. Each group is
+  kept on one line if it fits, and when several layouts are possible for a
+  piece of code, the first one that fits is used.
+- `verify.zu`: compares two trees and their comments.
 - `engine.zu`: `format(source)` and the checks around it.
-- `index.zu`: the command itself, the entry point `zuri fmt` runs.
+- `index.zu`: the command itself, which `zuri fmt` runs.
 
-The parser is Zuri's own (`zuri.parse` and `zuri.tokenize`), not a
-second one to keep in step with the language.
+The formatter uses Zuri's own parser, through `zuri.parse` and
+`zuri.tokenize`, so there's no second parser to keep in sync with the
+language.
 
 ## Tests
 
-A test file sits beside each source file under `tests/`, written with
-the `test` module. Run the lot with:
+Each source file has a test file in `tests/`, written
+with the `test` module. To run them all:
 
 ```sh
 zuri test cmds/fmt/tests
 ```
 
-or, from this directory, just `zuri test`.
+Or, from this directory, just run `zuri test`.

@@ -53,7 +53,7 @@ with lowercase letters for digits above nine.
 
 **Parameters**
 
-- `radix` (`number`): the base to use, from 2 to 36. Defaults to 10.
+- `radix` (`number`): The base to use, from 2 to 36. Defaults to 10.
 
 **Returns** `string`
 
@@ -272,7 +272,7 @@ Raises the bigint to the power `exponent`. This is the method form of
 
 **Parameters**
 
-- `exponent` (`number|bigint`): an integer from 0 to 2^32 - 1. A
+- `exponent` (`number|bigint`): An integer from 0 to 2^32 - 1. A
   negative exponent has no integer result, so it's rejected instead of
   being truncated to zero.
 
@@ -332,7 +332,7 @@ Returns the integer `n`th root, truncated toward zero.
 
 **Parameters**
 
-- `n` (`number|bigint`): an integer from 1 to 2^32 - 1.
+- `n` (`number|bigint`): An integer from 1 to 2^32 - 1.
 
 **Returns** `bigint`
 
@@ -400,7 +400,7 @@ so it works with the very large exponents that cryptography uses.
 **Parameters**
 
 - `exponent` (`bigint`)
-- `modulus` (`bigint`): must not be zero.
+- `modulus` (`bigint`): Must not be zero.
 
 **Returns** `bigint`
 
@@ -431,7 +431,7 @@ nil
 
 **Parameters**
 
-- `modulus` (`bigint`): must not be zero.
+- `modulus` (`bigint`): Must not be zero.
 
 **Returns** `bigint|nil`
 
@@ -480,7 +480,7 @@ false
 
 **Parameters**
 
-- `index` (`number`): a non-negative integer.
+- `index` (`number`): A non-negative integer.
 
 **Returns** `boolean`
 
@@ -506,7 +506,7 @@ original bigint isn't changed.
 
 **Parameters**
 
-- `index` (`number`): a non-negative integer.
+- `index` (`number`): A non-negative integer.
 - `value` (`boolean`)
 
 **Returns** `bigint`

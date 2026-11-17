@@ -52,8 +52,8 @@ import .values {
  *
  * This is the only way to output live HTML from a variable, and using
  * it is a promise that the value is safe where it's written. Using it
- * on anything a user supplied creates a cross-site scripting hole.
- * Using it on markup that your own code built is exactly what it's for.
+ * on anything a user supplied creates a cross-site scripting hole. It's
+ * meant for markup that your own code built.
  *
  * ```wire
  * <div class="body">{{ article.rendered_html|raw }}</div>
@@ -180,8 +180,8 @@ def title(value) {
 /**
  * The value with its first letter in upper case and the rest unchanged.
  *
- * Unlike `title`, this only changes the first character, which is what
- * you want for a sentence.
+ * Unlike `title`, this only changes the first character, so it suits a
+ * sentence.
  *
  * ```wire
  * {{ 'hello THERE'|capitalize }}   {# Hello THERE #}
@@ -393,8 +393,8 @@ def slug(value) {
 /**
  * The value percent-encoded for use in a URL, in the same way as
  * `url.encode()`. Reserved characters such as `/`, `&` and `#` are kept
- * unless _reserved_ is `false`, which is what you need for a single
- * value in a query string: `/search?q={{ query|url_encode(false) }}`.
+ * unless _reserved_ is `false`. Pass `false` for a single value in a
+ * query string: `/search?q={{ query|url_encode(false) }}`.
  *
  * @param any value
  * @param ?bool reserved: whether to keep the reserved characters as

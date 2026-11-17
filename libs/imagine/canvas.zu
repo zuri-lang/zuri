@@ -27,9 +27,9 @@ import .errors { BoundsError, ImageError }
  * row of pixels.
  *
  * Coverage is exact horizontally, because the fractional ends of a span
- * are measured, not sampled, so this only controls vertical quality.
- * Four is the point where a nearly horizontal edge stops looking
- * stepped. Eight doesn't look any better and takes twice as long.
+ * are measured, not sampled, so this only controls vertical quality. At
+ * four samples, a nearly horizontal edge no longer looks stepped. Eight
+ * doesn't look any better and takes twice as long.
  */
 var _SUBSAMPLES = 4
 
@@ -48,7 +48,7 @@ var _MAX_ELLIPSE_SEGMENTS = 512
  * `Canvas` is the lower half of `Image`. It owns the pixel buffer and
  * knows how to put color into it, but knows nothing about files,
  * formats or resizing. It's separate mainly so that the drawing code
- * can be read by itself, and it's rarely worth using directly, because
+ * can be read by itself. You'll rarely need to use it directly, because
  * `Image` inherits all of it.
  *
  * ## How drawing works
@@ -156,10 +156,10 @@ class Canvas {
    * stored as red, green, blue and alpha, with straight alpha, not
    * premultiplied.
    *
-   * The buffer is made available on purpose. Reading and writing bytes
-   * directly is far faster than calling a method for each pixel, so an
-   * operation that this module doesn't provide can still be written
-   * efficiently in Zuri.
+   * The buffer is public. Reading and writing bytes directly is far
+   * faster than calling a method for each pixel, so an operation that
+   * this module doesn't provide can still be written efficiently in
+   * Zuri.
    *
    * @returns bytes
    */
@@ -273,7 +273,7 @@ class Canvas {
   /**
    * Sets the stroke width in pixels for lines and outlines.
    *
-   * Strokes are centred on the path, so a thickness of 4 puts 2 pixels
+   * Strokes are centered on the path, so a thickness of 4 puts 2 pixels
    * on each side. The default is 1.
    *
    * @param number thickness
@@ -295,9 +295,9 @@ class Canvas {
    * ends in a square. Both extend half the stroke's width past the end
    * point. `CAP_BUTT` stops exactly at the end point.
    *
-   * Use `CAP_BUTT` when the coordinates have to mean exactly what they
-   * say, such as for segments that meet end to end, a scale bar of a
-   * known length, or the pieces of a dashed line. The joins between the
+   * Use `CAP_BUTT` when a line has to end exactly at its end points,
+   * such as for segments that meet end to end, a scale bar of a known
+   * length, or the pieces of a dashed line. The joins between the
    * segments of a path are always round, and this doesn't affect them.
    *
    * ```zuri
@@ -411,7 +411,7 @@ class Canvas {
   }
 
   /**
-   * Composites a colour over the pixel already there, the way every
+   * Composites a color over the pixel already there, the way every
    * drawing operation does.
    *
    * Coordinates outside the image or outside the clip are ignored.
@@ -464,9 +464,9 @@ class Canvas {
    *
    * It steps along whichever axis the segment covers more of, one
    * column of pixels at a time, and works out each column's coverage
-   * directly. The work is proportional to the length of the segment,
-   * not to the area of its bounding box, which is what the general
-   * scanline path would cost for a shape this thin.
+   * directly. The work is proportional to the length of the segment.
+   * The general scanline path would take time proportional to the area
+   * of the bounding box, which is large for a shape this thin.
    *
    * The stroke modeled here is the same one the rasterizer would fill:
    * a quadrilateral one pixel wide, measured at right angles to the
@@ -823,8 +823,8 @@ class Canvas {
   /**
    * Every point where an edge crosses the horizontal line at
    * `sample_y`, as `[x, direction]` pairs sorted by x. The direction is
-   * +1 for an edge going down and -1 for an edge going up, which is
-   * what the non-zero rule counts.
+   * +1 for an edge going down and -1 for an edge going up, for the
+   * non-zero winding rule to count.
    *
    * A vertex exactly on the sample line would otherwise be counted
    * twice. The half-open test, `y0 <= sample_y < y1`, prevents that,
@@ -1142,7 +1142,7 @@ class Canvas {
 
   /**
    * A filled circle used for stroke joints, kept private so it can
-   * take an already-parsed colour.
+   * take an already-parsed color.
    */
   _fill_disc(cx, cy, radius, paint) {
     if radius <= 0.5 {
@@ -1163,7 +1163,7 @@ class Canvas {
   /**
    * Draws a straight line between two points.
    *
-   * The line is `thickness()` pixels wide, centred on the path, and
+   * The line is `thickness()` pixels wide, centered on the path, and
    * anti-aliased unless that has been turned off.
    *
    * @param number x1
@@ -1181,7 +1181,7 @@ class Canvas {
   /**
    * Draws the outline of a rectangle.
    *
-   * The stroke is centred on the rectangle's edge, so half of a thick
+   * The stroke is centered on the rectangle's edge, so half of a thick
    * outline falls inside it and half outside.
    *
    * @param number x
@@ -1314,8 +1314,8 @@ class Canvas {
   /**
    * Draws the outline of a circle.
    *
-   * @param number cx: The centre's x coordinate.
-   * @param number cy: The centre's y coordinate.
+   * @param number cx: The center's x coordinate.
+   * @param number cy: The center's y coordinate.
    * @param number radius
    * @param Color|string|number color
    * @param ?dict options: `thickness`.
@@ -1341,8 +1341,8 @@ class Canvas {
   /**
    * Draws the outline of an ellipse.
    *
-   * @param number cx: The centre's x coordinate.
-   * @param number cy: The centre's y coordinate.
+   * @param number cx: The center's x coordinate.
+   * @param number cy: The center's y coordinate.
    * @param number rx: The horizontal radius.
    * @param number ry: The vertical radius.
    * @param Color|string|number color
@@ -1414,7 +1414,7 @@ class Canvas {
   }
 
   /**
-   * Fills a pie slice: an arc closed back through the centre.
+   * Fills a pie slice: an arc closed back through the center.
    *
    * @param number cx
    * @param number cy
@@ -1464,7 +1464,7 @@ class Canvas {
    *
    * The segment count scales with the arc's size so a small circle is
    * not paying for detail nobody can see and a large one does not go
-   * visibly polygonal. `to_center` adds the centre point, turning the
+   * visibly polygonal. `to_center` adds the center point, turning the
    * arc into a pie slice.
    */
   _ellipse_points(cx, cy, rx, ry, start, end, to_center) {
@@ -1705,7 +1705,7 @@ class Canvas {
   }
 
   /**
-   * True when a pixel is close enough to the flood fill's seed colour.
+   * True when a pixel is close enough to the flood fill's seed color.
    */
   _matches(px, py, seed, limit) {
     if px < 0 or py < 0 or px >= self._width or py >= self._height {
@@ -1771,7 +1771,7 @@ class Canvas {
   }
 
   /**
-   * Fills a rectangle with a radial gradient spreading from a centre.
+   * Fills a rectangle with a radial gradient spreading from a center.
    *
    * ```zuri
    * # a soft vignette
@@ -1781,10 +1781,10 @@ class Canvas {
    * ], { blend: true })
    * ```
    *
-   * @param number cx: The centre's x coordinate.
-   * @param number cy: The centre's y coordinate.
+   * @param number cx: The center's x coordinate.
+   * @param number cy: The center's y coordinate.
    * @param number radius: Where the last stop lands.
-   * @param list stops: Colours, or `[offset, colour]` pairs.
+   * @param list stops: Colors, or `[offset, colour]` pairs.
    * @param ?dict options: `rect`, `blend`. The same as
    *    `linear_gradient()`.
    * @returns self
@@ -1824,7 +1824,7 @@ class Canvas {
 
   /**
    * Walks a rectangle, asking `position` where each pixel falls along
-   * the gradient and painting the colour the ramp holds there.
+   * the gradient and painting the color the ramp holds there.
    *
    * The ramp is precomputed, so the inner loop is one call, one index
    * and four byte writes: interpolating between stops per pixel would
@@ -1883,11 +1883,11 @@ class Canvas {
   # ------------------------------------------------------------------
 
   /**
-   * Paints a colour through an 8-bit coverage mask.
+   * Paints a color through an 8-bit coverage mask.
    *
    * The mask is one byte per pixel, 0 for nothing and 255 for full
    * coverage, laid out row-major with no padding. Coverage scales the
-   * colour's alpha, so this is how anti-aliased text and any
+   * color's alpha, so this is how anti-aliased text and any
    * externally rasterized shape reach the surface.
    *
    * @param bytes mask
@@ -2043,7 +2043,7 @@ def _build_ramp(stops: list) {
 /**
  * Source-over compositing of one pixel already known to be in range.
  *
- * The single place colour reaches a buffer. Straight (not
+ * The single place color reaches a buffer. Straight (not
  * premultiplied) alpha, everything in 0-255 fixed point.
  */
 def _blend_at(
@@ -2157,7 +2157,7 @@ def _blend_mask_row(
 }
 
 /**
- * Writes one colour over every pixel of a buffer.
+ * Writes one color over every pixel of a buffer.
  */
 def _fill_buffer(pixels: bytes, r: number, g: number, b: number, a: number) {
   var total = pixels.length()
@@ -2243,7 +2243,7 @@ def _paint_linear(
 
 /**
  * Paints a radial gradient over the given area, the ramp running from
- * the centre outwards and clamping past `radius`.
+ * the center outwards and clamping past `radius`.
  */
 def _paint_radial(
   buffer: bytes,

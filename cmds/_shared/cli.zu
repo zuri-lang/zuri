@@ -43,11 +43,7 @@ def add_registry_option(parser) {
  * @param parser
  */
 def add_json_option(parser) {
-  parser.add_option(
-    'json',
-    'Print the result as JSON',
-    nil,
-  )
+  parser.add_option('json', 'Print the result as JSON', nil)
 }
 
 /**

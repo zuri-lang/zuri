@@ -384,7 +384,7 @@ def _spelling_fixes(
 
 /**
  * How many single-character insertions, deletions, substitutions and
- * swaps of neighbours turn `a` into `b`.
+ * swaps of neighbors turn `a` into `b`.
  *
  * @param string a
  * @param string b

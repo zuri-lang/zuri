@@ -598,7 +598,7 @@ class Manifest {
 
   /**
    * The packages whose hooks may run when they are installed, as
-   * normalised names.
+   * normalized names.
    *
    * @returns list[string]
    */

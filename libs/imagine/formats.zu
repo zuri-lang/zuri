@@ -166,7 +166,7 @@ def mime_for(format: string) {
 }
 
 /**
- * Normalises a format name, accepting the common aliases.
+ * Normalizes a format name, accepting the common aliases.
  *
  * `'JPG'`, `'jpeg'` and `'.jpg'` all come back as `'jpeg'`.
  *
@@ -221,7 +221,7 @@ def detect(data: bytes) {
  * Reads an image's format and dimensions without decoding its pixels.
  *
  * Returns a dictionary holding `format`, `width` and `height`, or
- * `nil` when the data is not a recognisable image. Reading a
+ * `nil` when the data is not a recognizable image. Reading a
  * multi-megapixel JPEG's header costs a few microseconds where
  * decoding it costs tens of milliseconds, so this is the right way to
  * reject an oversized upload before committing to it.

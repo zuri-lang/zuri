@@ -825,7 +825,7 @@ class Node {
    *
    * A document with duplicate IDs is invalid, but it can still be
    * parsed, and this returns the first element with the ID in document
-   * order, which is what browsers do.
+   * order, as browsers do.
    *
    * @param string value
    * @returns ?Element
@@ -1268,8 +1268,8 @@ class Document < Node {
    * The tree construction algorithm decides the value from the
    * doctype's name and identifiers. Nothing in this module behaves
    * differently because of it, but it tells you whether a browser would
-   * have rendered the page in quirks mode, which is worth knowing when
-   * you audit markup.
+   * have rendered the page in quirks mode, which helps when you audit
+   * markup.
    */
   var mode = 'no-quirks'
 

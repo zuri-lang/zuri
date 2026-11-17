@@ -2,7 +2,7 @@
  * The Zuri files of a workspace folder.
  *
  * Inside a git work tree they are what git tracks and what it would,
- * so `.gitignore` is honoured; elsewhere they are every `.zu` file
+ * so `.gitignore` is honored; elsewhere they are every `.zu` file
  * under the folder. Either way, anything under a `.git`, `.zuri` or
  * `node_modules` directory is left out, and so is what the
  * `zuri.exclude` globs name.

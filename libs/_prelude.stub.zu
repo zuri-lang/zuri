@@ -17,9 +17,9 @@
  */
 
 /**
- * The base class of every error. Raise it for a general failure when
- * there's nothing more specific to say, and extend it to define an
- * error of your own.
+ * The base class of every error. Raise it for a general failure that no
+ * more specific error class describes, and extend it to define an error
+ * of your own.
  *
  * `instance_of(e, Error)` is true for every error, and a parameter
  * typed `Error` accepts any of them.

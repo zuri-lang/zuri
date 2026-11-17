@@ -178,8 +178,8 @@ def _admit_waiting(loop, connections) {
  * letting the kernel's own listen backlog apply backpressure.
  *
  * `on_ready` is called once on this isolate, with the bound address and
- * a function that stops the server, which is what a signal handler
- * needs to shut down cleanly:
+ * a function that stops the server. A signal handler can call that
+ * function to shut down cleanly:
  *
  * ```zuri
  * http.serve(app.setup, {

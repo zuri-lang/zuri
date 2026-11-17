@@ -369,8 +369,7 @@ class Session {
    * Empties the session without ending it. The ID, the cookie and the
    * stored record all remain, and only the contents are removed.
    *
-   * Use `destroy()` to end the session itself, which is what signing
-   * out needs.
+   * To sign a user out, use `destroy()`, which ends the session itself.
    *
    * @returns Session: this same instance, for chaining
    */
@@ -396,9 +395,9 @@ class Session {
    * This attack is called session fixation, and a new ID is the
    * complete defense against it.
    *
-   * It's also worth doing whenever the meaning of the session changes,
-   * such as when a user is given administrator rights or completes a
-   * step-up authentication.
+   * Call it too whenever the meaning of the session changes, such as
+   * when a user is given administrator rights or completes a step-up
+   * authentication.
    *
    * The absolute `lifetime` starts again here, because a new ID begins
    * a new session. The contents are kept.
@@ -483,7 +482,7 @@ class Session {
    * value. If a page accesses the session without reading the message,
    * the message isn't kept for the following page. A request that never
    * touches its session, such as a request for a static file or an
-   * image, leaves the message in place, which is what keeps it for the
+   * image, leaves the message in place, so it's still there for the
    * page it was meant for.
    *
    * @param string name

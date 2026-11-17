@@ -100,7 +100,7 @@ class Options {
   var frozen = false
 
   /**
-   * Normalised names free to move off their locked version, or `true`
+   * Normalized names free to move off their locked version, or `true`
    * for all of them.
    * @type list|bool
    */
@@ -988,7 +988,9 @@ def _check_staged(entry, dir: string) {
   var manifest_path = os.join_paths(dir, paths.MANIFEST)
 
   if !file(manifest_path).exists() {
-    raise CommandError('${entry.name} ${entry.version} doesn\'t contain a project.toml')
+    raise CommandError(
+      '${entry.name} ${entry.version} doesn\'t contain a project.toml',
+    )
   }
 
   var found = manifest_module.load(manifest_path)

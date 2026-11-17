@@ -193,13 +193,13 @@ import args
 
 def parser() {
   var p = args.Parser('tool')
-  p.add_option('colour', 'Use colour', { short_name: 'c', type: args.BOOL })
+  p.add_option('color', 'Use color', { short_name: 'c', type: args.BOOL })
   return p
 }
 
-echo parser().parse(['-c', 'yes']).options.colour
-echo parser().parse(['-c', 'off']).options.colour
-echo parser().parse(['-c', '0']).options.colour
+echo parser().parse(['-c', 'yes']).options.color
+echo parser().parse(['-c', 'off']).options.color
+echo parser().parse(['-c', '0']).options.color
 ```
 
 ```console
@@ -583,7 +583,7 @@ import args
 var parser = args.Parser('greet')
 parser.set_terminal_width(68)
 parser.description = 'Greet somebody, once or several times.'
-parser.epilog = 'Set NO_COLOR to turn off colour.'
+parser.epilog = 'Set NO_COLOR to turn off color.'
 
 parser.add_option('name', 'Who to greet', {
   short_name: 'n',
@@ -617,7 +617,7 @@ OPTIONS:
 COMMANDS:
   history  Show past greetings
 
-Set NO_COLOR to turn off colour.
+Set NO_COLOR to turn off color.
 
 Run "greet --help [COMMAND]" for help on a specific command.
 
@@ -647,7 +647,7 @@ Every error is reported the same way: a line on standard error starting with
 
 | What happened | The message |
 | --- | --- |
-| An option that wasn't declared | `unknown option: --colour` |
+| An option that wasn't declared | `unknown option: --color` |
 | An option that needs a value was the last argument | `option --name expects <name>` |
 | A required option was left out | `required option --output is missing` |
 | A value that isn't in `choices` | `--level must be one of quiet or loud, not "shouty"` |

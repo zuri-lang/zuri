@@ -631,9 +631,9 @@ class Wire {
   /**
    * Keeps HTML comments in the output when _comments_ is true.
    *
-   * Comments are left out by default, which is what makes an HTML
-   * comment a note for the server. Nothing inside a comment is
-   * evaluated either way.
+   * Comments are left out by default, so an HTML comment in a template
+   * is a note that never reaches the browser. Nothing inside a comment
+   * is evaluated either way.
    *
    * @param bool comments
    * @returns Wire

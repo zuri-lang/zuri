@@ -255,7 +255,7 @@ def find_instrs(instrs, op) {
 /**
  * Compiles `source` as a standalone script, and returns its
  * instructions as a flat list of {Instr} objects. See this module's
- * documentation for exactly what each instruction contains.
+ * documentation for what each instruction contains.
  *
  * If there's a lexer, parser or compiler error, this raises an error,
  * instead of returning partial bytecode.

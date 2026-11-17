@@ -218,8 +218,8 @@ def _is_control(code: number) {
  * Null, out-of-range and surrogate code points become U+FFFD. Code
  * points in the C1 range are mapped through Windows-1252. Noncharacters
  * and control characters are parse errors, but they decode to
- * themselves, which is what browsers do, and what round-tripping
- * malformed documents depends on.
+ * themselves, as they do in browsers, so that a malformed document
+ * survives a round trip.
  *
  * @param number code
  * @returns string
@@ -610,7 +610,7 @@ def encode(text: string, options: ?dict) {
  * legacy reference written without its semicolon is not decoded if the
  * next character is `=` or alphanumeric. It is what keeps
  * `?a=1&copy=2` from becoming `?a=1©=2`. The default is `false`, the
- * element-content behaviour.
+ * element-content behavior.
  *
  * ```zuri-repl
  * %> import html

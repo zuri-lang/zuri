@@ -303,7 +303,7 @@ def strict() {
 }
 
 /**
- * Turns the strict, new-snapshots-fail behaviour on or off.
+ * Turns the strict, new-snapshots-fail behavior on or off.
  *
  * @param bool on
  */

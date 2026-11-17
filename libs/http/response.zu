@@ -254,9 +254,9 @@ class HttpResponse {
    * Serves the file at `path`, streamed from disk instead of read into
    * memory, with a `Content-Type` based on the file's extension.
    *
-   * `offset` and `length` send only part of the file, which is what a
-   * `Range` request needs. The caller is responsible for setting the
-   * `206` status and the `Content-Range` header that go with it.
+   * `offset` and `length` send only part of the file, for answering a
+   * `Range` request. The caller is responsible for setting the `206`
+   * status and the `Content-Range` header that go with it.
    *
    * @param string path
    * @param ?number offset: the byte offset to start from. Defaults to

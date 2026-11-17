@@ -497,7 +497,7 @@ class Headers {
   }
 
   /**
-   * The number of bytes this block would occupy once serialised,
+   * The number of bytes this block would occupy once serialized,
    * counting the `': '` and `CRLF` around every value. Servers use
    * this to enforce a header-size limit as fields arrive.
    *
@@ -551,10 +551,10 @@ class Headers {
 
   /**
    * Removes the hop-by-hop fields listed in RFC 9110 §7.6.1, which
-   * describe a single connection rather than the message, and must
-   * never be forwarded to another connection. This includes any field
-   * named in the message's own `Connection` field, which is how an
-   * endpoint declares an extra hop-by-hop field.
+   * apply only to a single connection and must not be forwarded to the
+   * next one. This includes any field named in the message's own
+   * `Connection` field, which is how an endpoint declares an extra
+   * hop-by-hop field.
    *
    * If a reverse proxy forgets to do this, a client's
    * `Transfer-Encoding` can reach an upstream server that frames the
@@ -590,7 +590,7 @@ class Headers {
   }
 
   /**
-   * Serialises the block in wire format: `Name: value\r\n` per
+   * Serializes the block in wire format: `Name: value\r\n` per
    * occurrence, with no terminating blank line (the caller decides
    * where the block ends, since a trailer section ends differently to
    * a head).

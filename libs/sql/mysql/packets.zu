@@ -107,8 +107,8 @@ class Writer {
    * Appends a little-endian 32-bit integer.
    *
    * Values are written unsigned. A negative number is written as its
-   * two's complement, which is what the protocol expects wherever a
-   * field is signed.
+   * two's complement, as the protocol expects wherever a field is
+   * signed.
    *
    * @param number value
    * @returns Writer
@@ -611,8 +611,8 @@ class PacketStream {
   }
 
   /**
-   * Turns on compression for everything sent and received from now on,
-   * which is the point where the server switches too.
+   * Turns on compression for everything sent and received from now on.
+   * The server switches at the same point.
    *
    * @param string algorithm `'zlib'` or `'zstd'`.
    * @param number level The zstd level. It's ignored for zlib.

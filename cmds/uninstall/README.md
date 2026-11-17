@@ -1,25 +1,31 @@
 # uninstall
 
-Removes packages from a project, along with anything only they needed.
+Removes packages from a project, along with any dependencies that only
+they need.
 
 ```sh
 zuri uninstall <package...> [options]
 ```
 
-Each package is taken out of `project.toml`, the project is resolved
-again with every other package held at its locked version, and whatever
-nothing needs any more leaves `.zuri/libs`. A package another
-dependency still needs stays installed, and the command says which one
-needs it. A name that is not declared is refused, with the packages
-that pulled it in named when there are any.
+Each package is removed from `project.toml`, and the project is resolved
+again with every other package kept at its locked version. Anything that's
+no longer needed is then removed from `.zuri/libs`. If another dependency
+still needs one of the packages, that package stays installed, and the
+command tells you which dependency needs it.
 
-A package's `pre-uninstall` script runs before it goes, under the same
-rules as install scripts.
+You can only uninstall a package that's declared in `project.toml`. If you
+name one that was installed because another package depends on it, the
+error tells you which packages those are.
 
-| Flag | What it does |
+If a package has a `pre-uninstall` script, it runs before the package is
+removed, under the same rules as install scripts.
+
+## Options
+
+| Option | Description |
 | --- | --- |
-| `-g, --global` | Remove from this user rather than the project. |
-| `-n, --dry-run` | Show what would change. |
-| `--no-hooks` | Run no scripts. |
-| `--allow-hooks <package...>` | Let these packages run their scripts. |
-| `-q, --quiet` | Print only the result. |
+| `-g, --global` | Remove the packages from your user instead of the project. |
+| `-n, --dry-run` | Show what would change without changing anything. |
+| `--no-hooks` | Don't run any uninstall scripts. |
+| `--allow-hooks <package...>` | Allow these packages to run their scripts this time. |
+| `-q, --quiet` | Only print the result. |

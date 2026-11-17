@@ -90,7 +90,7 @@ def row(panels, gap) {
  *
  * Generated rather than shipped so the figures need no binary asset
  * and stay reproducible, and built with enough tonal range that the
- * tone and colour filters have something real to act on.
+ * tone and color filters have something real to act on.
  */
 def sample_photo(width, height) {
   var photo = Image(width, height)

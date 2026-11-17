@@ -181,7 +181,7 @@ def create(width, height, fill) {
  * decoding any pixels.
  *
  * Returns `{format, width, height}`, or `nil` when the data is not a
- * recognisable image. Reading a large JPEG's header costs microseconds
+ * recognizable image. Reading a large JPEG's header costs microseconds
  * where decoding it costs tens of milliseconds, which makes this the
  * right way to size up an upload before committing to it.
  *
@@ -207,9 +207,9 @@ def detect(data) {
  * What this build can do, as a dictionary with `decode`, `encode` and
  * `animated`, each a list of format names.
  *
- * It's worth checking this instead of assuming. AVIF appears under
- * `encode` but not under `decode`, and the formats that are compiled in
- * can differ between builds.
+ * Check this instead of assuming that a format is available. AVIF
+ * appears under `encode` but not under `decode`, and the formats that
+ * are compiled in can differ between builds.
  *
  * @returns dict
  */

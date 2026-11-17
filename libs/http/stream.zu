@@ -51,9 +51,9 @@ var _TIMEOUT_MARKERS = [
 ]
 
 /**
- * Whether a transport error message describes a timeout, or a
- * would-block, which a socket with a receive timeout reports as the
- * same thing, rather than a real failure.
+ * Whether a transport error message describes a timeout instead of a
+ * real failure. A would-block counts as a timeout, because a socket
+ * with a receive timeout reports both the same way.
  *
  * @param string message
  * @returns bool
@@ -409,8 +409,8 @@ class Connection {
    * those waits, which a readiness loop can't afford.
    *
    * A connection that fails counts as one that has closed. Either way,
-   * there's nothing more to read, and what has already been read can
-   * still be answered.
+   * no more data is coming, and what was already read can still be
+   * answered.
    *
    * @returns ?number: the number of bytes added, `0` when the peer has
    *    closed its write half, or `nil` when nothing has arrived

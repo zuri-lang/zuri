@@ -454,9 +454,8 @@ def _encode_name(name: string) {
 /**
  * Reads a message from the start, one field at a time.
  *
- * Every read is bounds-checked, because a message that claims to
- * contain more than it does is exactly what a hostile answer looks
- * like.
+ * Every read is bounds-checked, because a hostile answer is likely to
+ * claim that it contains more than it does.
  */
 class _Reader {
 

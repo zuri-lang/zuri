@@ -1,7 +1,7 @@
 /**
- * Semantic tokens: every name in a file, coloured by what it resolves
+ * Semantic tokens: every name in a file, colored by what it resolves
  * to rather than by how it is spelt. A name imported from another
- * module is coloured as what it is there, a member by the declaration
+ * module is colored as what it is there, a member by the declaration
  * its receiver's type gives it, and anything the standard library
  * defines is marked as such.
  *

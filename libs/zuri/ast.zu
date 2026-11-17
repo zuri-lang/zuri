@@ -476,9 +476,8 @@ def _dump_lines(value, indent) {
 
 /**
  * Parses all of `source`, and returns its top-level declarations as a
- * list of {Node} objects. See this module's documentation for exactly
- * what they look like, and in particular for what's kept around
- * comments.
+ * list of {Node} objects. See this module's documentation for what they
+ * look like, and in particular for what's kept around comments.
  *
  * If there's a syntax error, this raises an error, instead of returning
  * a partial result, because there's no meaningful syntax tree to return
@@ -516,7 +515,7 @@ class ParseResult {
 
   /**
    * True if the source parsed without any errors, in which case `nodes`
-   * is exactly what `parse()` returns.
+   * is the same as what `parse()` returns.
    *
    * @returns bool
    */

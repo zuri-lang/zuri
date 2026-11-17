@@ -25,8 +25,8 @@
  * raise.
  *
  * Catch it to catch anything a database can raise. The subclasses below
- * distinguish the cases worth handling differently, and every one of
- * them is a `SqlError`, so a broad catch never misses one.
+ * distinguish the cases that a program usually handles differently, and
+ * every one of them is a `SqlError`, so a broad catch never misses one.
  *
  * @printable
  */
@@ -67,9 +67,8 @@ class SqlError < Error {
    * The statement that failed, as it was sent to the engine.
    *
    * This is the translated statement, with the adapter's own
-   * placeholders in it, not the `?` form that was written. That's
-   * intentional: it's the text that the engine actually rejected, and
-   * that's the text worth logging.
+   * placeholders in it, not the `?` form that was written. It's the
+   * text that the engine rejected, so it's the text to log.
    *
    * `nil` for errors raised outside the execution of a statement.
    *
@@ -127,8 +126,7 @@ class ConnectionError < SqlError {}
  * The server rejected the credentials.
  *
  * It's a `ConnectionError`, because the connection is what failed, but
- * it's worth distinguishing, because retrying never fixes a wrong
- * password.
+ * it has its own class, because retrying never fixes a wrong password.
  *
  * @printable
  */
@@ -138,7 +136,7 @@ class AuthenticationError < ConnectionError {}
  * The server sent something the adapter couldn't make sense of.
  *
  * It's a `ConnectionError` because that's what it means in practice.
- * The exchange has lost its place, so nothing more on this connection
+ * The exchange has lost its place, so nothing else on this connection
  * can be trusted, and a pool holding the connection should discard it
  * instead of lending it out again.
  *

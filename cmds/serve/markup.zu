@@ -6,7 +6,7 @@
  * way GitHub reads it: tables, task lists, strikethrough, footnotes,
  * alerts, emoji shortcodes, addresses made into links, and raw HTML.
  * Headings get GitHub's ids, so a README's own contents links reach
- * them. Zuri code blocks are coloured by the language's own lexer.
+ * them. Zuri code blocks are colored by the language's own lexer.
  *
  * Everything it produces is passed through `sanitize.clean()` before
  * it is returned, so what a README can do to the page it is shown on

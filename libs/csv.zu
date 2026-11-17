@@ -785,7 +785,7 @@ def _has_bom(text) {
  */
 class Reader {
   /**
-   * The dialect governing parsing behaviour.
+   * The dialect governing parsing behavior.
    * @type Dialect
    */
   var dialect
@@ -1046,7 +1046,7 @@ class Reader {
  */
 class Writer {
   /**
-   * The dialect governing encoding behaviour.
+   * The dialect governing encoding behavior.
    * @type Dialect
    */
   var dialect

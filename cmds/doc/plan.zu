@@ -54,9 +54,11 @@ def parser() {
   )
   parser.add_command('clean', 'Remove the built site')
 
-  parser.add_index('dir', 'The documentation directory, which contains doc.toml', {
-    metavar: 'dir',
-  })
+  parser.add_index(
+    'dir',
+    'The documentation directory, which contains doc.toml',
+    { metavar: 'dir' },
+  )
 
   parser.add_option(
     'out',
@@ -66,21 +68,21 @@ def parser() {
   parser.add_option('open', 'Open the site in a browser once it\'s built', nil)
   parser.add_option(
     'strict',
-    'With build or generate, fails over a warning, such as a link inside the ' +
-        'documentation that leads nowhere',
+    'With build or generate, treat warnings as errors, such as a link inside ' +
+        'the documentation that leads nowhere',
     nil,
   )
   parser.add_option(
     'external',
-    'With build, also asks for every http and https address the documentation ' +
-        'links to, and warns about each that does not answer',
+    'With build, also check every http and https link in the documentation, ' +
+        'and warn about any that don\'t respond',
     nil,
   )
-  parser.add_option(
-    'port',
-    'With serve, the port to listen on',
-    { short_name: 'p', type: args.INT, metavar: 'port' },
-  )
+  parser.add_option('port', 'With serve, the port to listen on', {
+    short_name: 'p',
+    type: args.INT,
+    metavar: 'port',
+  })
   parser.add_option(
     'host',
     'With serve, the address to listen on (only this machine by default)',

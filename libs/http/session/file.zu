@@ -37,12 +37,11 @@ var FILE_MODE = 0c600
  * temporary directory, named after the working directory of the
  * program.
  *
- * The temporary directory itself is deliberately not used. Anyone can
- * write to it, and on a shared machine anyone can read it, so a session
- * file placed directly in it could be read by every other account on
- * the host. That's the oldest way there is of being logged in as
- * somebody else. The subdirectory is created with mode `0700` and
- * checked before it's used.
+ * The temporary directory itself isn't used. Anyone can write to it,
+ * and on a shared machine anyone can read it, so a session file placed
+ * directly in it could be read by every other account on the host, and
+ * used to sign in as somebody else. The subdirectory is created with
+ * mode `0700` and checked before it's used.
  *
  * Naming it after the working directory stops two programs on the same
  * machine from sharing sessions by accident, and lets a program keep

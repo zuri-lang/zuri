@@ -3,7 +3,7 @@
  * uploads, what a git dependency installs, and what `bundle` ships.
  *
  * In a git work tree the candidates are what git tracks plus what it
- * would track, so `.gitignore` is honoured; elsewhere they are every
+ * would track, so `.gitignore` is honored; elsewhere they are every
  * file under the root. From those:
  *
  * - `.git` and `.zuri` are always left out, wherever they are, and so

@@ -7,7 +7,7 @@
  * above them; `zuri.doc` reads the inside of a block and pairs it with
  * the declaration under it. What is left for
  * this file is the question the parser cannot answer on its own:
- * given a package whose entry point re-exports its neighbours in four
+ * given a package whose entry point re-exports its neighbors in four
  * different ways, what is the name a reader actually types to reach
  * each thing?
  *
@@ -386,7 +386,7 @@ def _binding(node) {
 
 /**
  * Reads one source file into a `Module`, without resolving anything
- * that depends on its neighbours.
+ * that depends on its neighbors.
  *
  * @param string name: the dotted module path
  * @param string path: the file, relative to the modules' directory and

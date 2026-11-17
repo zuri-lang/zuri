@@ -2,10 +2,10 @@
  * HTML, Wire and XML.
  *
  * One scanner reads all three. HTML adds what a browser treats
- * specially: the contents of `<script>` and `<style>`, coloured as
+ * specially: the contents of `<script>` and `<style>`, colored as
  * JavaScript and CSS. Wire adds what a Wire template is made of on top
  * of HTML: `{{ ... }}` values and `x-` directives, whose expressions are
- * coloured as Zuri, and the `<include>`, `<extend>`, `<declare>`,
+ * colored as Zuri, and the `<include>`, `<extend>`, `<declare>`,
  * `<define>` and `<super>` elements. HTML highlighting reads Wire too,
  * since a Wire template is an HTML document. XML adds processing
  * instructions and `CDATA` sections, and leaves scripts alone.

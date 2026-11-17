@@ -398,11 +398,11 @@ class Date {
    * @note When the date fields are given, the time zone is always UTC,
    *    whatever the system time zone is, and whether or not a
    *    `gmt_offset` is given.
-   * @note `year_day` on the result counts January 1 as day 1, which is
-   *    what `to_ordinal()` and `format('z')` expect. The raw
-   *    dictionaries from `localtime()` and `gmtime()` are the only
-   *    place where it's different: those have the platform's own
-   *    `tm_yday`, which counts January 1 as day 0.
+   * @note `year_day` on the result counts January 1 as day 1, as
+   *    `to_ordinal()` and `format('z')` expect. The raw dictionaries
+   *    from `localtime()` and `gmtime()` are the only place where it's
+   *    different: those have the platform's own `tm_yday`, which counts
+   *    January 1 as day 0.
    * @param ?number year
    * @param ?number month
    * @param ?number day
@@ -2952,11 +2952,11 @@ def _format_parse(s, fmt) {
  * Parses a date string into a `Date` instance, automatically
  * detecting the format.
  *
- * `parse` recognises a broad set of standard date and datetime
+ * `parse` recognizes a broad set of standard date and datetime
  * formats without requiring the caller to specify the format
  * string:
  *
- * ### Recognised formats
+ * ### Recognized formats
  *
  * | Category              | Examples                                          |
  * |-----------------------|---------------------------------------------------|

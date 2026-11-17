@@ -14,9 +14,8 @@ import crypto
 
 /**
  * Parses a JSON Web Key Set document and finds individual keys by their
- * `kid`. The document is a dictionary shaped like `{ keys: [...] }`,
- * which is exactly what `json.decode()` produces from a fetched JWKS
- * document.
+ * `kid`. The document is a dictionary shaped like `{ keys: [...] }`, as
+ * `json.decode()` returns it for a fetched JWKS document.
  *
  * ### Example
  *

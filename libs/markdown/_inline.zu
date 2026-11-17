@@ -1,12 +1,12 @@
 /**
- * The inline half of the parser: the text of a paragraph, heading, cell
- * or term in, a run of inline nodes out.
+ * The inline parser. It reads the text of a paragraph, heading, table
+ * cell or term, and turns it into a sequence of inline nodes.
  *
- * Emphasis and links follow the specification's delimiter stack
- * algorithm. While a block's text is being parsed its inlines are kept
- * in a linked list, so wrapping a run of them in emphasis or a link
- * costs nothing per node, and the list becomes `children` lists once
- * the block is done.
+ * Emphasis and links are handled with the delimiter stack algorithm
+ * from the specification. While a block's text is being parsed, its
+ * inline nodes are kept in a linked list, so wrapping a run of them in
+ * emphasis or a link doesn't have to touch each node. The list is
+ * turned into `children` lists when the block is finished.
  */
 
 import ._text { * }
@@ -1568,9 +1568,9 @@ class InlineParser {
   }
 
   /**
-   * Reads link reference definitions off the start of _text_ into
-   * _refmap_. Returns how many characters the first one took, or 0 when
-   * the text does not start with one.
+   * Reads the link reference definition at the start of _text_ into
+   * _refmap_. Returns the number of characters it used, or 0 if the
+   * text doesn't start with one.
    */
   parse_reference(text: string, refmap: dict) {
     self._reset(text)

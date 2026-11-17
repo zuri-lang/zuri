@@ -54,7 +54,9 @@ def _discover_name(dependency, workspace) {
   }
 
   if dependency.name == nil {
-    raise UsageError('the package at ${dependency.describe()} doesn\'t have a name in its project.toml')
+    raise UsageError(
+      'the package at ${dependency.describe()} doesn\'t have a name in its project.toml',
+    )
   }
 
   names.check_name(dependency.name)

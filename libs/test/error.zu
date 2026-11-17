@@ -49,7 +49,7 @@ class AssertionError < Error {
   var received = nil
 
   /**
-   * Whether `expected` and `received` are worth showing.
+   * Whether `expected` and `received` should be shown.
    *
    * It's `false` for a matcher whose message already explains the
    * failure completely, such as `to_be_nil()`, where printing "expected
@@ -60,7 +60,7 @@ class AssertionError < Error {
   /**
    * Pre-rendered lines to print underneath the message: a structural
    * diff, the calls a mock actually received, a hint about a likely
-   * mistake. Each is one line, already coloured, with no indent of
+   * mistake. Each is one line, already colored, with no indent of
    * its own.
    */
   var details = []

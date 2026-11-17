@@ -145,31 +145,52 @@ import io
 # Public type constants
 # ---------------------------------------------------------------------------
 
-/** value type none: the option is a boolean flag */
+/**
+ * Value type for an option that takes no value. The option is `true`
+ * when it's given.
+ */
 var NONE = 0
 
-/** value type integer (accepts numbers, floors to integer) */
+/**
+ * Value type for an integer. A value such as `3.7` has its fractional
+ * part dropped.
+ */
 var INT = 1
 
-/** value type number */
+/** Value type for a number, which can have a fractional part. */
 var NUMBER = 2
 
 /**
- * value type boolean (accepts `1`/`0`, `true`/`false`,
- * `yes`/`no`, `on`/`off`).
+ * Value type for a boolean. The value can be `true`, `false`, `1`, `0`,
+ * `yes`, `no`, `on` or `off`, in any case.
  */
 var BOOL = 3
 
-/** value type string */
+/**
+ * Value type for a string. This is the default type of a positional
+ * argument.
+ */
 var STRING = 4
 
-/** value type list: the option may be supplied multiple times */
+/**
+ * Value type for a list. The option takes every word after it up to the
+ * next word that starts with `-`, and it can be given more than once to
+ * add to the list.
+ */
 var LIST = 5
 
-/** value type choice: value must be one of the `choices` list/dict */
+/**
+ * Value type for a value that has to be one of the `choices`. If
+ * `choices` is a dictionary, the value given has to be one of its keys,
+ * and the result is the value that the key maps to.
+ */
 var CHOICE = 6
 
-/** value type optional: value is consumed if the next token is not a flag */
+/**
+ * Value type for an option whose value can be left out. The option
+ * takes the next word as its value unless that word starts with `-`,
+ * and it's `true` when it has no value.
+ */
 var OPTIONAL = 7
 
 var _type_name = {
@@ -210,7 +231,7 @@ def _asks_for_help(words, index) {
 }
 
 # ---------------------------------------------------------------------------
-# ANSI / colour helpers
+# ANSI color helpers
 # ---------------------------------------------------------------------------
 
 # We emit ANSI only when stdout is a real terminal and NO_COLOR isn't
@@ -398,20 +419,18 @@ def _wrap_lines(text, width) {
 # ---------------------------------------------------------------------------
 
 /**
- * Coerces an `opts.get('type', ...)` result down to a plain integer
- * type constant (`NONE`, `INT`, `NUMBER`, ...), falling back to
- * _fallback_ if it isn't a number at all.
+ * Returns _raw_ as an integer type constant, such as `NONE` or `INT`,
+ * or _fallback_ if _raw_ isn't a number.
  */
 def _coerce_type(raw, fallback) {
   return is_number(raw) ? raw.int() : fallback
 }
 
 /**
- * Parses _value_ (always a raw string from the command line) as a
- * number, returning `nil` rather than `0` when it isn't one. Plain
- * `.to_number()` can't tell "0" from "not a number at all" apart
- * (both return `0`), which is exactly the distinction argument
- * coercion needs to raise a useful error.
+ * Parses _value_, a string from the command line, as a number. Returns
+ * `nil` if it isn't a number, so that the caller can report it.
+ * `to_number()` can't be used for this, because it returns `0` for a
+ * string that isn't a number.
  */
 def _parse_number(value) {
   if is_number(value) {
@@ -474,7 +493,13 @@ def _get_real_value(item, value) {
 # ---------------------------------------------------------------------------
 
 /**
- * Error raised for argument parsing errors.
+ * Raised when a parser is set up incorrectly, such as when two options
+ * have the same name, or when a default value can't be converted to its
+ * option's type.
+ *
+ * Mistakes on the command line aren't raised. The parser prints the
+ * error and the help text instead, and ends the program with exit
+ * status 1.
  */
 class ArgsError < Error {}
 
@@ -515,18 +540,23 @@ class _Optionable {
   var options = []
 
   /**
-   * Adds an option (flag) to this parser or command.
+   * Adds an option to this command, and returns the command so that
+   * calls can be chained.
    *
-   * `opts` keys:
+   * These keys can be given in `opts`:
    *
-   * - `short_name` (string): single-character alias (`-x`).
-   * - `type` (int): one of the type constants; default `NONE`.
-   * - `value` (any): default value when the option is absent.
-   * - `choices` (list|dict): restrict allowed values.
-   * - `required` (bool): error if the option is absent.
-   * - `metavar` (string): placeholder shown in help, defaulting to
-   *   the option's own name, lower-cased.
-   * - `deprecated` (bool): print a warning when the option is used.
+   * - `short_name` (string): a single-character alias, used as `-x`.
+   * - `type` (int): one of the value types, such as `INT` or `LIST`.
+   *   Defaults to `NONE`.
+   * - `value` (any): the value to use when the option isn't given.
+   * - `choices` (list or dict): the values allowed for an option of
+   *   type `CHOICE`.
+   * - `required` (bool): whether `parse()` reports an error when the
+   *   option isn't given.
+   * - `metavar` (string): the placeholder for the value in the help
+   *   text. Defaults to the option's name in lowercase.
+   * - `deprecated` (bool): whether to print a warning when the option
+   *   is used.
    *
    * @param string name
    * @param ?string help
@@ -648,27 +678,30 @@ class _Positional < _Optionable {
 # ---------------------------------------------------------------------------
 
 /**
- * A configurable command-line parser.
+ * A command-line parser.
  *
- * ### Properties you can set after construction
+ * ### Properties
  *
- * - `description` (string): paragraph shown between USAGE and
- *   OPTIONS.
- * - `epilog` (string): paragraph shown after all sections.
- * - `allow_abbrev` (bool): allow unambiguous long-option prefix
- *   matching. Defaults to `true`, like Python's argparse.
- * - `allow_atfile` (bool): expand `@filename` tokens by reading
- *   arguments from that file. Defaults to `true`.
+ * These can be set after the parser is created:
+ *
+ * - `description` (string): a paragraph shown in the help text, after
+ *   the usage line.
+ * - `epilog` (string): a paragraph shown at the end of the help text.
+ * - `allow_abbrev` (bool): whether a long option can be shortened to
+ *   any prefix that matches only one option, as in Python's argparse.
+ *   Defaults to `true`.
+ * - `allow_atfile` (bool): whether an argument such as `@args.txt` is
+ *   replaced by the arguments read from that file. Defaults to `true`.
  */
 class Parser < _Optionable {
 
   /**
-   * List of sub-commands registered with `add_command`.
+   * The commands added with `add_command()`.
    */
   var commands = []
 
   /**
-   * List of positional arguments registered with `add_index`.
+   * The positional arguments added with `add_index()`.
    */
   var indexes = []
 
@@ -681,19 +714,23 @@ class Parser < _Optionable {
   var allow_atfile = true
 
   /**
-   * The column width help text wraps to. Defaults to the `COLUMNS`
-   * environment variable, or 80 if that isn't set; see
-   * `_terminal_width()`. Override this directly if a fixed width is
-   * preferable to the environment-based guess.
+   * The width that the help text wraps to, in columns.
+   *
+   * The parser sets it when it's created, to the width of the terminal.
+   * If that can't be read, it uses the `COLUMNS` environment variable,
+   * and if that isn't set either, it uses 80. The detected width is
+   * kept between 40 and 120. You can set this to a fixed width
+   * yourself, or call `set_terminal_width()`, which also checks the
+   * value.
    */
   var terminal_width = 80
 
   /**
-   * Creates a new parser instance.
+   * Creates a parser.
    *
-   * @param string name The program name shown in usage lines.
-   * @param ?bool default_help Show help when invoked with no
-   *    arguments. Defaults to `true`.
+   * @param string name The program name shown in the usage line.
+   * @param ?bool default_help Whether to show the help text when the
+   *    program is run without arguments. Defaults to `true`.
    * @constructor
    */
   @new(name, default_help) {
@@ -723,17 +760,12 @@ class Parser < _Optionable {
   # -------------------------------------------------------------------------
 
   /**
-   * Overrides the column width help text wraps to, in place of the
-   * `terminal_width` this parser auto-detected at construction time
-   * (a real query of the terminal, the `COLUMNS` environment
-   * variable, or 80, in that order of preference; see
-   * `_terminal_width()`). Useful both for a program that wants a
-   * fixed layout regardless of environment, and for tests that need
-   * deterministic wrapping independent of whatever terminal actually
-   * ran them.
+   * Sets the width that the help text wraps to, in place of the width
+   * that the parser detected when it was created. Use it to get the
+   * same layout in any terminal, which tests usually need.
    *
-   * Equivalent to setting `terminal_width` directly; this exists
-   * purely for discoverability and to validate its argument.
+   * This does the same as setting `terminal_width`, except that it
+   * raises a `TypeError` if _width_ isn't a positive number.
    *
    * @param number width
    */
@@ -745,18 +777,23 @@ class Parser < _Optionable {
   }
 
   /**
-   * Adds an option (flag) to the top-level parser.
+   * Adds a global option to the parser. A global option can be given
+   * before or after a command.
    *
-   * `opts` keys can include any of:
+   * These keys can be given in `opts`:
    *
-   * - `short_name` (string): single-character alias (`-x`).
-   * - `type` (int): one of the type constants; default `NONE`.
-   * - `value` (any): default value when the option is absent.
-   * - `choices` (list|dict): restrict allowed values.
-   * - `required` (bool): error if the option is absent.
-   * - `metavar` (string): placeholder shown in help, defaulting to
-   *   the option's own name, lower-cased.
-   * - `deprecated` (bool): print a warning when the option is used.
+   * - `short_name` (string): a single-character alias, used as `-x`.
+   * - `type` (int): one of the value types, such as `INT` or `LIST`.
+   *   Defaults to `NONE`.
+   * - `value` (any): the value to use when the option isn't given.
+   * - `choices` (list or dict): the values allowed for an option of
+   *   type `CHOICE`.
+   * - `required` (bool): whether `parse()` reports an error when the
+   *   option isn't given.
+   * - `metavar` (string): the placeholder for the value in the help
+   *   text. Defaults to the option's name in lowercase.
+   * - `deprecated` (bool): whether to print a warning when the option
+   *   is used.
    *
    * @param string name
    * @param ?string help
@@ -769,20 +806,19 @@ class Parser < _Optionable {
   /**
    * Adds a subcommand.
    *
-   * `opts` can contain:
+   * These keys can be given in `opts`:
    *
-   * - `type` (int): the type expected for the command's value
-   * - `action` (function): called with `(options [, value])` after
-   *   parsing
-   * - `choices` (list|dict): the allowed values, when `type` is
-   *   `CHOICE`
-   * - `metavar` (string): the placeholder shown in help for the
-   *   command's value, such as `'message'` for
-   *   `git commit -m <message>`. Defaults to the name of the value's
-   *   type, in lowercase.
+   * - `type` (int): the type of the command's value, if it takes one.
+   * - `action` (function): a function to call after parsing, with the
+   *   options and the command's value.
+   * - `choices` (list or dict): the values allowed when `type` is
+   *   `CHOICE`.
+   * - `metavar` (string): the placeholder for the command's value in
+   *   the help text, such as `'message'` for `git commit -m <message>`.
+   *   Defaults to the name of the value's type, in lowercase.
    *
-   * Returns the `_Command` object, so that you can chain `add_option()`
-   * calls:
+   * Returns the new command. Its `add_option()` returns the command
+   * too, so the calls can be chained:
    *
    * ```zuri
    * parser.add_command('push', 'Push changes').
@@ -824,27 +860,33 @@ class Parser < _Optionable {
   }
 
   /**
-   * Adds a positional (index-based) argument.
+   * Adds a positional argument.
    *
-   * `opts` keys: - `type` {int}: coercion type; default
-   * `STRING` - `value` {any}: default when argument is absent -
-   * `choices` {list|dict}: restrict allowed values - `required`
-   * {bool}: error if argument is absent (default `false`) -
-   * `metavar` {string}: display name in help
+   * These keys can be given in `opts`:
    *
-   * Without a `value`, a positional nobody supplied is simply missing
-   * from `parse()`'s `indexes` rather than sitting there as nil.
+   * - `type` (int): one of the value types. Defaults to `STRING`.
+   * - `value` (any): the value to use when the argument isn't given.
+   * - `choices` (list or dict): the values allowed when `type` is
+   *   `CHOICE`.
+   * - `required` (bool): whether `parse()` reports an error when the
+   *   argument isn't given. Defaults to `false`.
+   * - `metavar` (string): the name shown for the argument in the help
+   *   text.
    *
-   * A positional of type `LIST` takes every positional word from where
-   * it starts to the end of the command line, flags in between or not,
-   * and arrives in `indexes` as one list. It has to be the last
-   * positional declared, since nothing after it could ever receive a
-   * word.
+   * If a positional argument has no `value` and isn't given, it's left
+   * out of the `indexes` that `parse()` returns. It isn't added as
+   * `nil`.
+   *
+   * A positional argument of type `LIST` takes every remaining
+   * positional word on the command line, including words that come
+   * after options, and it appears in `indexes` as a single list. It has
+   * to be the last positional argument added.
    *
    * @param string name
    * @param ?string help
    * @param ?dict opts
-   * @raises ArgsError when a positional is added after a `LIST` one.
+   * @raises ArgsError if a positional argument is added after one of
+   *    type `LIST`.
    */
   add_index(name, help, opts) {
     if !is_string(name) {
@@ -878,29 +920,31 @@ class Parser < _Optionable {
   }
 
   /**
-   * Parses command-line arguments and returns a dictionary of
-   * command, options, and indexes.
+   * Parses the command line, and returns a dictionary with the options,
+   * the command and the positional arguments.
    *
-   * By default this reads the real process arguments (`os.args`,
-   * skipping the interpreter and script path). Pass _custom_args_
-   * (a list of strings) to parse something else instead, e.g. a
-   * config-driven argument list, or a fixed list in a test.
+   * By default, this reads the arguments the program was started with,
+   * from `os.args`, leaving out the interpreter and the script path.
+   * Pass _custom_args_, a list of strings, to parse a different list,
+   * such as one built from a configuration file or a fixed list in a
+   * test.
    *
-   * Result shape:
+   * The result looks like this:
    * ```
    * {
-   *   options: dict,                # collected option values
-   *   command: nil | {name, value}, # command name and value (if any)
-   *   indexes: list                 # collected positional values
+   *   options: dict,                # the option values
+   *   command: nil | {name, value}, # the command and its value, if one was given
+   *   indexes: list                 # the positional argument values
    * }
    * ```
    *
-   * `indexes` holds one entry per positional that has a value, in the
-   * order they were declared: what the user supplied, then the declared
-   * default of any that follow. A positional that was not supplied and
-   * has no default is absent rather than nil, so `indexes.is_empty()`
-   * and `indexes.length()` answer what they look like they answer, and
-   * a program that wants its own fallback can reach for it:
+   * `indexes` has one entry for each positional argument that has a
+   * value, in the order they were added. That's each argument that was
+   * given, followed by the default value of any that weren't. An
+   * argument that wasn't given and has no default value is left out
+   * instead of being added as `nil`. This means that `indexes.length()`
+   * is the number of values you actually have, so a program can supply
+   * its own fallback:
    *
    * ```zuri
    * var path = parsed.indexes.is_empty() ? os.cwd() : parsed.indexes[0]
@@ -1223,7 +1267,7 @@ class Parser < _Optionable {
         continue
       }
 
-      # --- unrecognised token ---
+      # --- unrecognized token ---
       if command_found {
         self._command_error(command.name, 'unexpected argument: ${arg}')
       } else {
@@ -1334,7 +1378,7 @@ class Parser < _Optionable {
   }
 
   /**
-   * Print the full help text and exit(0).
+   * Prints the full help text and ends the program with exit status 0.
    */
   help() {
     self._usage_hint()
@@ -1556,12 +1600,10 @@ class Parser < _Optionable {
   }
 
   /**
-   * Formats a single positional argument's own column, e.g.
-   * `<source>` or `[dest]`. A coercion type is only spelled out
-   * when it adds information beyond the name itself: INT/NUMBER/
-   * BOOL: since STRING (the default) says nothing a reader
-   * doesn't already know, and CHOICE's allowed values are already
-   * listed separately as a suffix.
+   * Formats the left-hand column of a positional argument's help row,
+   * such as `<source>` or `[dest]`. The type is shown only for `INT`,
+   * `NUMBER` and `BOOL`. `STRING` is the default and doesn't need to be
+   * stated, and the allowed values of a `CHOICE` are listed separately.
    */
   _positional_left(idx) {
     var word = idx.metavar ? idx.metavar : idx.name
@@ -1578,14 +1620,15 @@ class Parser < _Optionable {
   }
 
   /**
-   * Renders one two-column help row: `left` (already indented, such as
-   * `'  -n, --name <name>'`) padded out to the shared flag column,
-   * followed by `help_text` wrapped to the width left over, with
-   * continuation lines aligned under the description column.
+   * Renders one help row in two columns. `left` is the already indented
+   * first column, such as `' -n, --name <name>'`, and it's padded to
+   * the shared column width. `help_text` is wrapped to the remaining
+   * width, with each continuation line starting under the description
+   * column.
    *
-   * `notes` are plain annotations such as `[default: 1]`. They are
-   * shown muted after the text, on the last line when they fit there
-   * and on a line of their own when they do not.
+   * `notes` are short annotations such as `[default: 1]`. They're shown
+   * muted after the text, on its last line if they fit, or on a line of
+   * their own if they don't.
    */
   _render_row(left, help_text, notes, col_width) {
     var indent_width = col_width + 4
@@ -1650,7 +1693,12 @@ class Parser < _Optionable {
       tags.append('deprecated')
     }
 
-    return self._render_row('  ' + flag, help_text, self._notes(opt, tags, false), col_width)
+    return self._render_row(
+      '  ' + flag,
+      help_text,
+      self._notes(opt, tags, false),
+      col_width,
+    )
   }
 
   # Render a command row
@@ -1661,12 +1709,11 @@ class Parser < _Optionable {
   }
 
   /**
-   * A compact, single-line usage summary: `[OPTIONS]` stands in for
-   * the full flag list (spelled out in its own OPTIONS section
-   * instead) the way modern CLIs (`git`, `docker`, `gh`, ...) do,
-   * rather than cramming every flag inline; only positionals and the
-   * command slot, which affect the actual calling syntax directly,
-   * are still shown individually.
+   * Prints the one-line usage summary. `[OPTIONS]` stands in for the
+   * options, which have their own section in the help text, as they do
+   * in `git`, `docker` and `gh`. Only the positional arguments and the
+   * command are shown individually, because they decide the order of
+   * the words on the command line.
    */
   _usage_hint(command) {
     if !command {

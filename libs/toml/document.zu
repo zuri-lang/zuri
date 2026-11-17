@@ -294,8 +294,8 @@ def spell_float(value) {
  *
  * `kind` is the TOML type. `value` is the decoded Zuri value for a
  * scalar, or the `Array` or `InlineTable` node for a container. `raw`
- * is the exact source text of a scalar, which is what keeps `0x1F` as
- * `0x1F` through a round trip, instead of turning it into `31`.
+ * is the exact source text of a scalar, so that `0x1F` is still `0x1F`
+ * after a round trip, and isn't turned into `31`.
  *
  * `prefix` and `suffix` hold the text on each side: whatever was
  * between the `=` and the value, and whatever followed the value on the

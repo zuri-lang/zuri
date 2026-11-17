@@ -227,10 +227,10 @@ class Loader {
    * Sets whether a name that's already in the process environment is
    * replaced by the value from the sources.
    *
-   * It's off by default, which is what makes a `.env` file a set of
-   * defaults: whatever the shell, the orchestrator or the CI runner
-   * already set is kept, and the file fills in the rest. Turn it on to
-   * make the file take priority.
+   * It's off by default, so a `.env` file acts as a set of defaults.
+   * Variables that the shell, the orchestrator or the CI runner already
+   * set are kept, and the file fills in the rest. Turn it on to make
+   * the file take priority.
    *
    * A variable set to an empty string counts as unset either way.
    *
@@ -248,7 +248,7 @@ class Loader {
    * Sets whether `$` references inside values are resolved.
    *
    * It's on by default. Turn it off to use every value exactly as
-   * written, which is what you want for a file of opaque secrets.
+   * written, for example in a file of secrets that can contain `$`.
    *
    * @param ?bool enabled Defaults to `true` if the argument is left
    *    out.

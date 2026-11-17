@@ -807,8 +807,8 @@ class Expect {
 
   /**
    * Asserts that the subject contains an element that's structurally
-   * equal to `item`, which is what you need to find an object in a
-   * list.
+   * equal to `item`. Use it to look for an object in a list, because
+   * `to_contain()` compares objects by identity.
    *
    * @param any item
    * @returns Expect

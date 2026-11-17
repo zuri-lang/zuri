@@ -50,9 +50,9 @@ class EventStream {
    * Sends a single event.
    *
    * `data` can be a string, or any other value, in which case it's
-   * encoded as JSON, which is what a browser's `EventSource` handler
-   * almost always parses it as anyway. A string with several lines is
-   * split across several `data:` lines, as the format requires.
+   * encoded as JSON, the format that a browser's `EventSource` handler
+   * usually parses. A string with several lines is split across several
+   * `data:` lines, as the format requires.
    *
    * @param any data
    * @param ?string event: the event name, which the browser dispatches

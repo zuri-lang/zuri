@@ -26,8 +26,8 @@ var _MAX_PARTS = 1000
  * A single file received in a `multipart/form-data` body.
  *
  * The content is held in memory. `HttpServer`'s `max_body_size` limits
- * how large it can be, so a service that accepts large uploads should
- * raise that limit deliberately rather than by accident.
+ * how large it can be, so a service that accepts large uploads has to
+ * raise that limit, and should raise it only as far as it needs.
  *
  * @printable
  */
@@ -476,7 +476,7 @@ class MultipartBuilder {
   }
 
   /**
-   * Serialises every part added so far into a complete body.
+   * Serializes every part added so far into a complete body.
    *
    * @returns bytes
    */

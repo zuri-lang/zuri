@@ -604,7 +604,7 @@ def block(value, options: ?dict) {
 }
 
 /**
- * `block()` with colour suppressed and dictionary keys sorted, which
+ * `block()` with color suppressed and dictionary keys sorted, which
  * together make the output stable enough to commit to a repository.
  *
  * This is the exact text a snapshot file holds.

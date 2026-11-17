@@ -4,7 +4,7 @@
  * None of them is parsed. Each is scanned for what can be told apart at
  * a glance (keys, strings, numbers, the literal words, comments and
  * section headers) so that a fragment, or a file with a mistake in it,
- * is coloured as far as it goes rather than not at all.
+ * is colored as far as it goes rather than not at all.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -26,7 +26,7 @@ def _followed_by(text: string, start: number, c: string) {
 
 /**
  * JSON as highlighted markup. A string followed by `:` is a key. The
- * comments of JSON with comments are recognised as well.
+ * comments of JSON with comments are recognized as well.
  *
  * @param string source
  * @returns string

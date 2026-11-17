@@ -58,7 +58,7 @@ def accent(text) {
 }
 
 /**
- * Something said in passing: dark grey.
+ * Something said in passing: dark gray.
  *
  * @param text
  * @returns string

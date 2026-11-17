@@ -501,7 +501,7 @@ class Dot < Reporter {
  * TAP version 14: one `ok`/`not ok` line per test, with failure
  * detail in a YAML block underneath.
  *
- * The output carries no colour, whatever the terminal supports, since
+ * The output carries no color, whatever the terminal supports, since
  * something else is going to parse it.
  */
 class Tap < Reporter {

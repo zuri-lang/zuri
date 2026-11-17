@@ -1,4 +1,4 @@
-// The landing page's behaviour: Zuri highlighting for the code samples,
+// The landing page's behavior: Zuri highlighting for the code samples,
 // the tab sets, the copy buttons, and the terminal that plays a project
 // from `zuri init` to a shipped executable. Everything here is an
 // enhancement; without it the page shows every sample and every step.

@@ -57,9 +57,9 @@ def id(value) {
  * - **BLAKE family**: `blake2s256` and `blake2b512`
  * - **SM family**: `sm3`
  *
- * By default, this returns the hash as a hexadecimal string, which is
- * what most programs want. Pass `true` as the third argument,
- * `as_bytes`, to get the raw digest as bytes instead.
+ * By default, this returns the hash as a hexadecimal string. Pass
+ * `true` as the third argument, `as_bytes`, to get the raw digest as
+ * bytes instead.
  *
  * @note Algorithm names aren't case-sensitive.
  * @param string algorithm
@@ -860,7 +860,7 @@ def pbkdf2(algorithm, password, salt, iterations, dk_len, as_bytes) {
   # -------------------------------------------------------------------------
   # 2.  Coerce password and salt to bytes
   #
-  #     hmac_* accepts string | bytes for both key and data.  We normalise
+  #     hmac_* accepts string | bytes for both key and data.  We normalize
   #     to bytes here so the rest of the function is type-uniform and the
   #     bytes concatenation operator (+) works correctly when building the
   #     U_1 data argument (salt + block_counter).

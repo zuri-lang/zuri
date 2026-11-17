@@ -15,8 +15,8 @@
 /**
  * The base class of every error that Wire raises.
  *
- * Catching it catches all of them, which is what a web handler should
- * do if it wants to turn any template failure into a 500 page.
+ * Catch it to catch all of them, for example in a web handler that
+ * turns any template failure into a 500 page.
  *
  * ```zuri
  * import wire

@@ -124,7 +124,7 @@ For example:
 
 **Parameters**
 
-- `size` (`int`): the step size of the range
+- `size` (`int`): The step size of the range.
 
 **Returns** `range`
 

@@ -365,7 +365,7 @@ class dict {
    * Calls `callback` for each entry in the dictionary, with the value
    * and the key as arguments.
    *
-   * @param {function} callback - the function to call for each entry
+   * @param {function} callback The function to call for each entry.
    * @throws {Error} If the callback isn't a function.
    * @returns {void}
    *
@@ -390,7 +390,7 @@ class dict {
    * `callback` returns true. The callback is called with the value and
    * the key as arguments.
    *
-   * @param {function} callback - the function that tests each entry. It
+   * @param {function} callback The function that tests each entry. It
    *    returns true to keep the entry, or false to leave it out.
    * @throws {Error} If the callback isn't a function.
    * @returns {dict}
@@ -414,7 +414,7 @@ class dict {
    * the dictionary, and false otherwise. The callback is called with
    * the value and the key as arguments.
    *
-   * @param {function} callback - the function that tests each entry
+   * @param {function} callback The function that tests each entry.
    * @throws {Error} If the callback isn't a function.
    * @returns {boolean}
    *
@@ -437,7 +437,7 @@ class dict {
    * dictionary, and false otherwise. The callback is called with the
    * value and the key as arguments.
    *
-   * @param {function} callback - the function that tests each entry
+   * @param {function} callback The function that tests each entry.
    * @throws {Error} If the callback isn't a function.
    * @returns {boolean}
    *
@@ -462,10 +462,10 @@ class dict {
    * and returns the new accumulated value. The method returns the final
    * accumulated value.
    *
-   * @param {function} callback - the function to call for each entry.
+   * @param {function} callback The function to call for each entry.
    *    It returns the updated accumulated value.
-   * @param {any} initial - the value passed as the accumulated value to
-   *    the first call of `callback`
+   * @param {any} initial The value passed as the accumulated value to
+   *    the first call of `callback`.
    * @throws {Error} If the callback isn't a function.
    * @returns {any}
    *

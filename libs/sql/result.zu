@@ -47,9 +47,9 @@ class ResultSet {
   /**
    * The rows, each one a dictionary keyed by column name.
    *
-   * If two columns have the same name, the later one wins, which is
-   * worth knowing before you select `id` from both sides of a join. To
-   * avoid it, give one of them an alias in the query. If you can't, use
+   * If two columns have the same name, the later one wins. Keep this in
+   * mind when you select `id` from both sides of a join. To avoid it,
+   * give one of them an alias in the query. If you can't, use
    * `tuples()`.
    *
    * @type list[dict]

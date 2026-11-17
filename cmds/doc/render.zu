@@ -8,7 +8,7 @@
  * module's own rendering, a page here gets:
  *
  * - a link beside each heading, to that heading;
- * - every code block coloured, labelled with its language, and a block
+ * - every code block colored, labeled with its language, and a block
  *   of program output joined to the code above it;
  * - a file name written just above a code block, as
  *   `<span class="filename">Filename: main.zu</span>`, shown as the
@@ -196,7 +196,7 @@ class PageRenderer < HtmlRenderer {
   }
 
   /**
-   * A code block, coloured and labelled. A block of output directly
+   * A code block, colored and labeled. A block of output directly
    * after code is marked so the two are shown as one.
    *
    * @param Node node

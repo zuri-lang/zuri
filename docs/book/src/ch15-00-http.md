@@ -722,7 +722,7 @@ server.routes().url_for('user.show', { id: 42 }) # '/users/42'
 ```zuri,ignore
 server.post('/items', @(request, response) {
   request.method # 'POST'
-  request.path # decoded and normalised
+  request.path # decoded and normalized
   request.target # exactly as it arrived on the wire
   request.version # '1.1' or '2'
   request.secure # whether it came over TLS

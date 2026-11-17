@@ -94,7 +94,7 @@ class bigint {
    * @note The `n` that `echo` and string interpolation show is part of
    *    how a bigint is displayed, not part of the conversion.
    *    `to_string()` never includes it.
-   * @param {number} radix - the base to use, from 2 to 36. Defaults to
+   * @param {number} radix The base to use, from 2 to 36. Defaults to
    *    10.
    * @returns {string}
    * @raises {RangeError} if `radix` is outside 2 to 36.
@@ -150,7 +150,7 @@ class bigint {
    * (ff)
    * ```
    *
-   * @param {string} order - `'big'` or `'little'`. Defaults to `'big'`.
+   * @param {string} order `'big'` or `'little'`. Defaults to `'big'`.
    * @returns {bytes}
    * @raises {RangeError} if `order` is neither `'big'` nor `'little'`.
    */
@@ -261,7 +261,7 @@ class bigint {
    * 1267650600228229401496703205376n
    * ```
    *
-   * @param {number|bigint} exponent - an integer from 0 to 2^32 - 1. A
+   * @param {number|bigint} exponent An integer from 0 to 2^32 - 1. A
    *    negative exponent has no integer result, so it's rejected
    *    instead of being truncated to zero.
    * @returns {bigint}
@@ -307,7 +307,7 @@ class bigint {
    * 100n
    * ```
    *
-   * @param {number|bigint} n - an integer from 1 to 2^32 - 1.
+   * @param {number|bigint} n An integer from 1 to 2^32 - 1.
    * @returns {bigint}
    * @raises {RangeError} if `n` is zero, negative, fractional or too
    *    large, or if `n` is even and the bigint is negative.
@@ -361,7 +361,7 @@ class bigint {
    *    `exponent` is only allowed if the receiver has an inverse modulo
    *    `modulus`.
    * @param {bigint} exponent
-   * @param {bigint} modulus - must not be zero.
+   * @param {bigint} modulus Must not be zero.
    * @returns {bigint}
    * @raises {TypeError} if either argument isn't a bigint.
    * @raises {RangeError} if `modulus` is zero, or if `exponent` is
@@ -384,7 +384,7 @@ class bigint {
    *    `nil` instead of raising an error, because having no inverse is
    *    an ordinary result, not a mistake by the caller. The result has
    *    the sign of `modulus`.
-   * @param {bigint} modulus - must not be zero.
+   * @param {bigint} modulus Must not be zero.
    * @returns {bigint|nil}
    * @raises {TypeError} if `modulus` isn't a bigint.
    * @raises {RangeError} if `modulus` is zero.
@@ -420,7 +420,7 @@ class bigint {
    * @note The bigint is read as two's complement, so a negative bigint
    *    reports `true` for every index above its magnitude, instead of
    *    running out of bits.
-   * @param {number} index - a non-negative integer.
+   * @param {number} index A non-negative integer.
    * @returns {boolean}
    * @raises {RangeError} if `index` is negative or fractional.
    */
@@ -435,7 +435,7 @@ class bigint {
    * 7n
    * ```
    *
-   * @param {number} index - a non-negative integer.
+   * @param {number} index A non-negative integer.
    * @param {boolean} value
    * @returns {bigint}
    * @raises {RangeError} if `index` is negative or fractional.
