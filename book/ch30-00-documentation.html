@@ -1,0 +1,800 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Documenting a Project · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch30-00-documentation.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=5550658799">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="red" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print every page" aria-label="Print every page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html" aria-current="page"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Chapter 30 · Tooling</p>
+        <div class="content"><h1 id="documenting-a-project">Documenting a Project</h1>
+<p><code>zuri doc</code> turns a directory of Markdown files into a website, with a page
+for each chapter and a table of contents next to it, a search box, a page
+that prints everything at once, light and dark themes, and syntax
+highlighting for every code block. It can also generate an API reference
+from the doc comments in a project's code. This book is built with it, and
+so is the standard library reference.</p>
+<p>The output is a directory of plain files. Any web server can serve it,
+GitHub Pages can publish it as it is, and a browser can open it straight
+from disk.</p>
+<ul>
+<li><a href="#starting-documentation">Starting Documentation</a></li>
+<li><a href="#the-table-of-contents">The Table of Contents</a></li>
+<li><a href="#writing-pages">Writing Pages</a>
+<ul>
+<li><a href="#links-and-files">Links and Files</a></li>
+<li><a href="#code">Code</a></li>
+<li><a href="#including-files">Including Files</a></li>
+</ul>
+</li>
+<li><a href="#building-and-serving">Building and Serving</a></li>
+<li><a href="#generating-an-api-reference">Generating an API Reference</a></li>
+<li><a href="#nested-documentation">Nested Documentation</a></li>
+<li><a href="#settings">Settings</a></li>
+<li><a href="#customizing-the-appearance">Customizing the Appearance</a></li>
+<li><a href="#publishing">Publishing</a></li>
+</ul>
+<h2 id="starting-documentation"><a class="anchor" href="#starting-documentation" aria-hidden="true" tabindex="-1"></a>Starting Documentation</h2>
+<p>Inside a project, <code>zuri doc init</code> starts documentation in its <code>docs</code>
+directory:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> doc init
+<span class="out">Started weather in docs</span>
+<span class="out">  doc.toml</span>
+<span class="out">  .gitignore</span>
+<span class="out">  src/SUMMARY.md</span>
+<span class="out">  src/introduction.md</span>
+<span class="out">  src/getting-started.md</span>
+
+<span class="out">Build it with zuri doc build, or read it as you write with zuri doc serve.</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>The documentation uses the project's name as its title, unless you give it a
+different one with <code>--title</code>. Outside a project, it's created in the current
+directory, and if you name a directory, it's created there instead, as in
+<code>zuri doc init manual</code>.</p>
+<p>Documentation is organized like this:</p>
+<figure class="code"><pre><code class="language-text">docs/
+  doc.toml              the settings
+  src/
+    SUMMARY.md          the contents
+    introduction.md
+    getting-started.md
+  site/                 the built site, which .gitignore leaves out
+</code></pre></figure>
+<p>Every command finds the documentation in the same way. It uses the directory
+named on the command line, or otherwise the current directory if it contains
+a <code>doc.toml</code>, or otherwise the <code>docs</code> directory of the project you're in, or
+failing that its <code>docs/reference</code>. That means <code>zuri doc build</code> works from
+anywhere inside the project.</p>
+<h2 id="the-table-of-contents"><a class="anchor" href="#the-table-of-contents" aria-hidden="true" tabindex="-1"></a>The Table of Contents</h2>
+<p><code>src/SUMMARY.md</code> lists the pages in reading order. A page that isn't listed
+there isn't part of the documentation.</p>
+<figure class="code"><pre><code class="language-markdown"># Summary
+
+[Introduction](introduction.md)
+
+# Using It
+
+- [Getting Started](getting-started.md)
+  - [Installing](getting-started/installing.md)
+  - [Configuring](getting-started/configuring.md)
+- [Forecasts](forecasts.md)
+- [Alerts]()
+
+# Reference {.unnumbered}
+
+- [Settings](settings.md)
+
+---
+
+[Changelog](changelog.md)
+</code></pre><span class="code-label">markdown</span></figure>
+<ul>
+<li>The first heading is the title of the summary itself, and isn't shown.
+Every other heading starts a part, which is a titled group of chapters
+that the table of contents marks with its own color.</li>
+<li>A link in a list is a numbered chapter. A list nested inside its item
+contains its sections, which are numbered beneath it as 1.1, 1.2 and so
+on.</li>
+<li>A link outside any list is an unnumbered chapter, such as an introduction
+before the numbered chapters or a changelog after them.</li>
+<li>A link without an address, like <code>[Alerts]()</code>, is a draft. It's listed,
+grayed out, until it has a page.</li>
+<li><code>---</code> draws a line across the table of contents.</li>
+<li><code>{.unnumbered}</code> after a part's heading leaves that part's chapters
+unnumbered, which suits appendices. After a single link, as in
+<code>[Settings](settings.md){.unnumbered}</code>, it does the same for that chapter
+and its sections.</li>
+</ul>
+<p>Each page is written to the same place as its Markdown file, with <code>.html</code>
+instead of <code>.md</code>, so <code>getting-started/installing.md</code> becomes
+<code>getting-started/installing.html</code>. A <code>README.md</code> becomes its directory's
+<code>index.html</code>. The front page, <code>index.html</code>, is the first chapter.</p>
+<h2 id="writing-pages"><a class="anchor" href="#writing-pages" aria-hidden="true" tabindex="-1"></a>Writing Pages</h2>
+<p>Pages are written in CommonMark, with GitHub's extensions: tables, task
+lists, strikethrough, footnotes, automatic links, emoji shortcodes such as
+<code>:rocket:</code>, and alerts written as <code>&gt; [!NOTE]</code>, <code>&gt; [!TIP]</code>, <code>&gt; [!IMPORTANT]</code>,
+<code>&gt; [!WARNING]</code> or <code>&gt; [!CAUTION]</code>. You can also write HTML directly in a
+page.</p>
+<p>Every heading gets an ID: the heading in lowercase, with each space replaced
+by a dash and other punctuation removed, so <code>## Running in Production</code>
+becomes <code>#running-in-production</code>, the same ID GitHub gives it. A heading
+that repeats an earlier one gets <code>-1</code> added to it, then <code>-2</code>, and so on.
+Braces after a heading let you give it an ID of your own choosing, and
+classes:</p>
+<figure class="code"><pre><code class="language-markdown">## Running in Production {#production .advanced}
+</code></pre><span class="code-label">markdown</span></figure>
+<p>When you hover over a heading, a <code>§</code> appears that links to it, and the
+headings on a page are listed next to it under &quot;On this page&quot;.</p>
+<p>The <code>[markdown]</code> table in <code>doc.toml</code> changes how pages are read. Its keys
+are the options of the standard library's <code>markdown</code> module, so
+<code>smart = true</code> gives you curly quotes and proper dashes, and <code>math = true</code>
+reads <code>$...$</code> as mathematics and typesets it on the page. The <code>markdown</code>
+page of the library reference lists all of the options.</p>
+<h3 id="links-and-files"><a class="anchor" href="#links-and-files" aria-hidden="true" tabindex="-1"></a>Links and Files</h3>
+<p>To link to another page, link to its Markdown file, as you would on GitHub:
+<code>[the units](settings.md#units)</code>. The link is updated to point to the page
+when the site is built, so it works both on GitHub and on the site.</p>
+<p>Images, and any other files in <code>src</code> that aren't Markdown, are copied into
+the site next to the pages, at the same paths, so an image written as
+<code>![a chart](images/rain.png)</code> appears in both places too.</p>
+<p>Building the site checks every link within the documentation, and reports
+any link that leads to a page not listed in <code>SUMMARY.md</code>, to a heading that
+doesn't exist on the page, or to a file that doesn't exist, along with the
+line it's on.</p>
+<h3 id="code"><a class="anchor" href="#code" aria-hidden="true" tabindex="-1"></a>Code</h3>
+<p>Code blocks are highlighted when the site is built, so a page looks the same
+with JavaScript turned off. The first word of the fence names the language:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Language</th>
+<th>Fence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Zuri</td>
+<td><code>zuri</code></td>
+</tr>
+<tr>
+<td>A REPL session</td>
+<td><code>zuri-repl</code></td>
+</tr>
+<tr>
+<td>HTML and Wire</td>
+<td><code>html</code>, <code>wire</code></td>
+</tr>
+<tr>
+<td>XML</td>
+<td><code>xml</code>, <code>svg</code></td>
+</tr>
+<tr>
+<td>JSON</td>
+<td><code>json</code></td>
+</tr>
+<tr>
+<td>Shell scripts</td>
+<td><code>sh</code>, <code>bash</code>, <code>shell</code></td>
+</tr>
+<tr>
+<td>Terminal sessions</td>
+<td><code>console</code>, <code>terminal</code></td>
+</tr>
+<tr>
+<td>TOML</td>
+<td><code>toml</code></td>
+</tr>
+<tr>
+<td>INI and <code>.env</code> files</td>
+<td><code>ini</code>, <code>env</code></td>
+</tr>
+<tr>
+<td>JavaScript and CSS</td>
+<td><code>js</code>, <code>css</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Anything after the first word is ignored, so a block fenced as <code>zuri,ignore</code>
+is highlighted as Zuri. A block in any other language is shown as plain
+text, labeled with the name given in its fence.</p>
+<p>In a <code>console</code> block, a line starting with a <code>$ </code> prompt is a command, and
+is highlighted as one. Every other line is the output of the commands. A
+<code>console</code> block without any prompt is a program's output on its own, and
+when it comes directly after a code block, the two are shown joined
+together, as the code and the output it printed. Every example in this book
+is written this way, as a <code>zuri</code> block followed by a <code>console</code> block:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">echo</span> <span class="str">'hello'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">hello
+</code></pre><span class="code-label">Output</span></figure>
+<p>A paragraph that only contains
+<code>&lt;span class=&quot;filename&quot;&gt;Filename: main.zu&lt;/span&gt;</code>, written just before a
+code block, becomes a caption on the block that names the file it shows.</p>
+<p>Every code block has a button that copies it. On a terminal session, it only
+copies the commands, without their prompts or their output.</p>
+<h3 id="including-files"><a class="anchor" href="#including-files" aria-hidden="true" tabindex="-1"></a>Including Files</h3>
+<p><code>{{#include path}}</code> is replaced by the contents of the file at <em>path</em>,
+relative to the page. When it's the only line inside a code block, the block
+shows that file, so an example always matches the file it comes from, and
+can't get out of sync with code that's tested elsewhere:</p>
+<figure class="code"><pre><code class="language-markdown">{{#include ../../examples/forecast.zu}}
+</code></pre><span class="code-label">markdown</span></figure>
+<p>A colon after the path selects part of the file: <code>forecast.zu:12</code> is line 12
+on its own, <code>forecast.zu:5:20</code> is lines 5 to 20, <code>forecast.zu:5:</code> is line 5
+to the end, and <code>forecast.zu::20</code> is up to line 20. A name instead of
+numbers, as in <code>forecast.zu:today</code>, selects the lines between two comments
+in the file that mark them, so the file can still be a complete program that
+runs:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="com"># ANCHOR: today</span>
+<span class="kw">var</span> today <span class="op">=</span> <span class="str">'Rain, then sun'</span>
+<span class="com"># ANCHOR_END: today</span>
+
+<span class="kw">echo</span> today
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Rain, then sun
+</code></pre><span class="code-label">Output</span></figure>
+<p>The marker lines themselves are never included, whichever part of the file
+you select.</p>
+<p><code>{{#title text}}</code> sets the title shown in the browser tab for a page,
+instead of the one the table of contents gives it. To write either of these
+literally, put a backslash in front, as in <code>\{{#include x}}</code>.</p>
+<h2 id="building-and-serving"><a class="anchor" href="#building-and-serving" aria-hidden="true" tabindex="-1"></a>Building and Serving</h2>
+<p><code>zuri doc build</code> builds the site:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> doc build
+<span class="out">weather: 5 pages in 0.04s</span>
+<span class="out">  docs/site</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>When a link within the documentation doesn't lead anywhere, it tells you
+where the link is:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> doc build <span class="attr">--strict</span>
+<span class="out">warning: docs/src/getting-started.md:10: introduction.md has no heading or id #installing</span>
+<span class="out">warning: docs/src/getting-started.md:10: links to forecasts.md, which SUMMARY.md does not list</span>
+<span class="out">weather: 5 pages in 0.03s</span>
+<span class="out">  docs/site</span>
+<span class="out">doc: 2 links inside the documentation lead nowhere</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>Without <code>--strict</code>, the warnings are printed and the build succeeds. With
+it, the command fails, which is how a CI job can make sure the links stay
+valid. <code>--out</code> writes the site somewhere other than the location in
+<code>doc.toml</code>, and <code>--open</code> opens it in a browser once it's built.</p>
+<p><code>--external</code> also requests every <code>http</code> and <code>https</code> address the pages link
+to, once for each address, however many pages link to it, and warns about
+any address that responds with an error or can't be reached, after trying
+once more. A response asking it to slow down counts as a successful
+response. Addresses are requested a few at a time, so it takes seconds
+rather than minutes, but it needs network access, so it only runs when you
+ask for it rather than on every build:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> doc build <span class="attr">--external</span>
+<span class="out">warning: docs/src/getting-started.md:6: https://example.com/old-page answered 404</span>
+<span class="out">weather: 5 pages in 0.04s</span>
+<span class="out">  docs/site</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>With <code>--strict</code> as well, a broken address also fails the build.</p>
+<p>While you're writing, <code>zuri doc serve</code> builds the site, serves it on your
+machine, and rebuilds it every time the documentation changes:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> doc serve
+<span class="out">Built 5 pages in 0.03s</span>
+
+<span class="out">  weather at http://127.0.0.1:3000/</span>
+
+<span class="out">  Changes to the documentation rebuild it, and open pages reload. Ctrl+C stops.</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>A page that's open in a browser reloads itself after every rebuild. If a
+build fails, it tells you why and keeps the last working version of the
+site, and the next save tries again. <code>--port</code> serves the site on a port
+other than 3000, <code>--host 0.0.0.0</code> lets other machines access it, and
+<code>--open</code> opens it in a browser.</p>
+<p><code>zuri doc clean</code> removes the built site.</p>
+<h2 id="generating-an-api-reference"><a class="anchor" href="#generating-an-api-reference" aria-hidden="true" tabindex="-1"></a>Generating an API Reference</h2>
+<p><code>zuri doc generate</code> creates a reference for the project from its doc
+comments, with a page for every public module, showing each function,
+constant and class it contains, what they accept and what they return, with
+links between them.</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> doc generate
+<span class="out">Started weather API Reference in docs/reference</span>
+<span class="out">  doc.toml</span>
+<span class="out">  .gitignore</span>
+
+<span class="out">weather API Reference: 2 modules, 2 names documented</span>
+<span class="out">  docs/reference/src</span>
+
+<span class="out">Build it with zuri doc build docs/reference, or read it with zuri doc serve docs/reference.</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>The reference is documentation like any other, with its own <code>doc.toml</code>, in
+<code>docs/reference</code> unless you name a different directory. Its pages are
+Markdown files in <code>src</code>, which are written again from scratch on every run,
+so its <code>.gitignore</code> excludes them along with the site. <code>zuri doc build</code> and
+<code>zuri doc serve</code> regenerate them before building, and <code>serve</code> rebuilds
+whenever a module changes, so the reference is never out of date with the
+code. Edit the doc comments, never the generated pages.</p>
+<p>Every <code>.zu</code> file in the project is treated as a module, except:</p>
+<ul>
+<li>A file with any part of its path starting with an underscore, which the
+compiler keeps private.</li>
+<li>Tests, meaning <code>*.test.zu</code> files, and the <code>tests</code>, <code>docs</code>, <code>examples</code>,
+<code>benchmarks</code> and <code>cmds</code> directories at the top level of the project.</li>
+<li>Anything that <code>[project] include</code> and <code>exclude</code> in <code>project.toml</code> leave
+out of the package, and anything that <code>.gitignore</code> ignores.</li>
+</ul>
+<p>A module is named the way it's imported. The project's <code>index.zu</code> is the
+package itself, such as <code>weather</code>, <code>app/index.zu</code> is <code>weather.app</code>, and
+<code>app/forecast.zu</code> would be <code>weather.app.forecast</code>. Each name is documented
+on the page for the file that declares it, and written with the path a
+reader would use to reach it. When <code>index.zu</code> re-exports <code>app</code> with
+<code>import @.app { * }</code>, the <code>greet</code> function in <code>app</code> is documented as
+<code>weather.greet</code>. A package's own page also lists every public name that can
+be reached through it, wherever it's declared.</p>
+<p>A module's description is its doc comment tagged with <code>@module</code>, or if there
+isn't one, the doc comment at the top of the file, if an import comes after
+it. The tags in a declaration's doc comment become the sections of its
+entry: <code>@param</code>, <code>@returns</code>, <code>@throws</code>, <code>@note</code>, <code>@deprecated</code> and <code>@see</code>. A
+name in braces in the text, such as <code>{Forecast}</code> or <code>{greet()}</code>, links to
+where that name is documented, and <code>@internal</code> leaves a declaration out of
+the reference completely.</p>
+<p>The <code>[reference]</code> table in <code>doc.toml</code> is what makes a set of documentation a
+reference:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>modules</code></td>
+<td>The project containing <code>doc.toml</code></td>
+<td>The directory of modules to document</td>
+</tr>
+<tr>
+<td><code>package</code></td>
+<td>The project's name, with each <code>-</code> replaced by <code>_</code></td>
+<td>The name the modules are imported under, or <code>&quot;&quot;</code> for none</td>
+</tr>
+<tr>
+<td><code>exclude</code></td>
+<td><code>[]</code></td>
+<td>Patterns for files to leave out, relative to <code>modules</code></td>
+</tr>
+<tr>
+<td><code>intro</code></td>
+<td>None</td>
+<td>A Markdown file to show at the start of the front page, instead of the description</td>
+</tr>
+<tr>
+<td><code>groups</code></td>
+<td>None</td>
+<td>Parts of the table of contents, each with a <code>title</code>, a <code>description</code> and its <code>modules</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Without groups, all the modules are shown in a single list, each one under
+the module it belongs to. With groups, each group becomes a part of the
+table of contents:</p>
+<figure class="code"><pre><code class="language-toml"><span class="sect">[[reference.groups]]</span>
+<span class="key">title</span> <span class="op">=</span> <span class="str">"Forecasts"</span>
+<span class="key">description</span> <span class="op">=</span> <span class="str">"Asking about the weather."</span>
+<span class="key">modules</span> <span class="op">=</span> [<span class="str">"weather"</span>, <span class="str">"weather.app"</span>]
+</code></pre><span class="code-label">TOML</span></figure>
+<p>A module that isn't in any group is listed at the end, under Other Modules,
+with a warning, and <code>--strict</code> fails the build because of it, so a new
+module can't silently go missing from the table of contents. The standard
+library reference is generated this way.</p>
+<h2 id="nested-documentation"><a class="anchor" href="#nested-documentation" aria-hidden="true" tabindex="-1"></a>Nested Documentation</h2>
+<p>A directory next to <code>src</code> that contains its own <code>doc.toml</code> is also
+documentation, and it's built along with the documentation around it, into
+the directory of the site with the same name. The most common case is the
+reference that <code>zuri doc generate</code> writes to <code>docs/reference</code>. If there's
+also a guide in <code>docs</code>, <code>zuri doc build</code> builds both,</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> doc build
+<span class="out">weather: 5 pages in 0.39s</span>
+<span class="out">  docs/site</span>
+<span class="out">weather API Reference: 5 pages in 0.36s</span>
+<span class="out">  docs/site/reference</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>and <code>zuri doc serve</code> serves both, rebuilding whenever a page or a module
+changes.</p>
+<p>The top of every page then links to each set of documentation, and
+highlights the one the page belongs to. The outer documentation is labeled
+Docs, a reference is labeled API Reference, and anything else is labeled
+with its title. You can set a different label with <code>label</code> in a site's own
+<code>[site]</code> table:</p>
+<figure class="code"><pre><code class="language-toml"><span class="sect">[site]</span>
+<span class="key">label</span> <span class="op">=</span> <span class="str">"Guide"</span>
+</code></pre><span class="code-label">TOML</span></figure>
+<p>Any of the logo, favicon, repository, <code>[site.home]</code>, <code>[[site.links]]</code>, <code>css</code>
+and <code>js</code> that a nested site doesn't set itself are taken from the site
+around it, so the whole thing reads as a single site, and its <code>url</code> is the
+outer <code>url</code> with the directory's name added. If you build it on its own, as
+in <code>zuri doc build docs/reference</code>, it's a separate site and doesn't inherit
+any of these settings.</p>
+<p>A link from one set of documentation to another is written the same way it
+would be on GitHub, as the path from one Markdown file to the other. From
+<code>docs/src/guide.md</code>, <code>[greet](../reference/src/weather-app.md#greet)</code> links
+to the heading for <code>greet()</code> on the reference page for <code>weather.app</code>. The
+link is updated to point to the page that file becomes, and the build checks
+it along with all the others, naming the documentation it leads into if it
+doesn't lead anywhere.</p>
+<h2 id="settings"><a class="anchor" href="#settings" aria-hidden="true" tabindex="-1"></a>Settings</h2>
+<p><code>doc.toml</code> has five tables, and every key in them is optional. A key that a
+table doesn't support, or a value of the wrong type, stops the build with an
+error that names the key.</p>
+<figure class="code"><pre><code class="language-toml"><span class="sect">[documentation]</span>
+<span class="key">title</span> <span class="op">=</span> <span class="str">"Weather"</span>
+<span class="key">description</span> <span class="op">=</span> <span class="str">"Forecasts in your terminal."</span>
+<span class="key">authors</span> <span class="op">=</span> [<span class="str">"Ada"</span>]
+<span class="key">language</span> <span class="op">=</span> <span class="str">"en"</span>
+<span class="key">source</span> <span class="op">=</span> <span class="str">"src"</span>
+<span class="key">output</span> <span class="op">=</span> <span class="str">"site"</span>
+
+<span class="sect">[site]</span>
+<span class="key">url</span> <span class="op">=</span> <span class="str">"https://example.com/weather/"</span>
+<span class="key">repository</span> <span class="op">=</span> <span class="str">"https://github.com/ada/weather"</span>
+<span class="key">edit</span> <span class="op">=</span> <span class="str">"https://github.com/ada/weather/edit/main/docs/src/{path}"</span>
+<span class="key">logo</span> <span class="op">=</span> <span class="str">"logo.svg"</span>
+<span class="key">fold</span> <span class="op">=</span> <span class="num">1</span>
+
+<span class="sect">[site.home]</span>
+<span class="key">url</span> <span class="op">=</span> <span class="str">"../"</span>
+<span class="key">label</span> <span class="op">=</span> <span class="str">"Home"</span>
+
+<span class="sect">[[site.links]]</span>
+<span class="key">label</span> <span class="op">=</span> <span class="str">"API"</span>
+<span class="key">url</span> <span class="op">=</span> <span class="str">"../api/"</span>
+
+<span class="sect">[markdown]</span>
+<span class="key">smart</span> <span class="op">=</span> <span class="lit">true</span>
+
+<span class="sect">[redirects]</span>
+<span class="key">"setup.html"</span> <span class="op">=</span> <span class="str">"getting-started/installing.html"</span>
+</code></pre><span class="code-label">TOML</span></figure>
+<p><code>[documentation]</code> describes the documentation:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>title</code></td>
+<td>The directory's name</td>
+<td>The title, shown at the top of every page</td>
+</tr>
+<tr>
+<td><code>description</code></td>
+<td>None</td>
+<td>A one-sentence description, for search engines</td>
+</tr>
+<tr>
+<td><code>authors</code></td>
+<td>None</td>
+<td>The authors' names</td>
+</tr>
+<tr>
+<td><code>language</code></td>
+<td><code>&quot;en&quot;</code></td>
+<td>The language it's written in</td>
+</tr>
+<tr>
+<td><code>source</code></td>
+<td><code>&quot;src&quot;</code></td>
+<td>The directory that contains the pages</td>
+</tr>
+<tr>
+<td><code>output</code></td>
+<td><code>&quot;site&quot;</code></td>
+<td>Where the site is written</td>
+</tr>
+<tr>
+<td><code>create-missing</code></td>
+<td><code>false</code></td>
+<td>Whether to create an empty page for a chapter whose file is missing, instead of stopping</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><code>[site]</code> describes how the site looks and where it's published:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>url</code></td>
+<td>None</td>
+<td>The address the site is published at</td>
+</tr>
+<tr>
+<td><code>repository</code></td>
+<td>None</td>
+<td>The source code repository, linked from every page</td>
+</tr>
+<tr>
+<td><code>edit</code></td>
+<td>None</td>
+<td>An address for editing a page, with <code>{path}</code> standing for the page's file</td>
+</tr>
+<tr>
+<td><code>logo</code></td>
+<td>None</td>
+<td>An image shown next to the title</td>
+</tr>
+<tr>
+<td><code>favicon</code></td>
+<td>None</td>
+<td>The icon shown in the browser tab</td>
+</tr>
+<tr>
+<td><code>theme</code></td>
+<td><code>&quot;system&quot;</code></td>
+<td>How a page first looks: <code>&quot;system&quot;</code>, <code>&quot;light&quot;</code> or <code>&quot;dark&quot;</code></td>
+</tr>
+<tr>
+<td><code>fold</code></td>
+<td><code>false</code></td>
+<td>How many levels of the table of contents are expanded at first. <code>false</code> expands every level.</td>
+</tr>
+<tr>
+<td><code>numbers</code></td>
+<td><code>true</code>, or <code>false</code> for a reference</td>
+<td>Whether chapters are numbered</td>
+</tr>
+<tr>
+<td><code>search</code></td>
+<td><code>true</code></td>
+<td>Whether the site can be searched</td>
+</tr>
+<tr>
+<td><code>print</code></td>
+<td><code>true</code></td>
+<td>Whether the site has a page that prints everything at once</td>
+</tr>
+<tr>
+<td><code>css</code></td>
+<td><code>[]</code></td>
+<td>Stylesheets added to every page</td>
+</tr>
+<tr>
+<td><code>js</code></td>
+<td><code>[]</code></td>
+<td>Scripts added to every page</td>
+</tr>
+<tr>
+<td><code>cname</code></td>
+<td>None</td>
+<td>The domain that GitHub Pages serves the site at</td>
+</tr>
+<tr>
+<td><code>label</code></td>
+<td><code>&quot;Docs&quot;</code>, <code>&quot;API Reference&quot;</code> or the title</td>
+<td>What the links at the top call this site when it's built with others</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The table of contents is always expanded as far as the current page,
+whatever <code>fold</code> is set to. <code>[site.home]</code> adds a link back to a parent site
+next to the title, and each <code>[[site.links]]</code> entry adds a link to the top of
+every page. An address that isn't absolute is relative to the front page.
+<code>[markdown]</code> is described in <a href="#writing-pages">Writing Pages</a>, <code>[reference]</code>
+in <a href="#generating-an-api-reference">Generating an API Reference</a>, and
+<code>[redirects]</code> keeps an old address working by redirecting it to a new one.</p>
+<p>Every path in the file is relative to the directory that contains it.</p>
+<h2 id="customizing-the-appearance"><a class="anchor" href="#customizing-the-appearance" aria-hidden="true" tabindex="-1"></a>Customizing the Appearance</h2>
+<p>Readers can choose light or dark mode, or follow their system setting, from
+the menu at the top of every page, and their choice is remembered. The
+<code>theme</code> setting only decides how a page looks before they've chosen.</p>
+<p>Every page is rendered from a single Wire template, <code>page.html</code>, styled by
+<code>doc.css</code>, with its behavior provided by <code>doc.js</code>. A directory called
+<code>theme</code> next to <code>doc.toml</code> can replace any of these three files with a file
+of the same name. The versions that <code>zuri doc</code> uses are in <code>cmds/doc/theme</code>
+next to the <code>zuri</code> executable, and a copy of one of them is a good place to
+start. The <code>css</code> and <code>js</code> settings add to them instead of replacing them,
+which is usually all you need:</p>
+<figure class="code"><pre><code class="language-css">:<span class="tag">root</span> {
+  <span class="attr">--measure</span>: <span class="num">50rem</span>;
+}
+</code></pre><span class="code-label">CSS</span></figure>
+<h2 id="publishing"><a class="anchor" href="#publishing" aria-hidden="true" tabindex="-1"></a>Publishing</h2>
+<p>The site is a directory of plain files without anything to run, so
+publishing it just means copying it somewhere a web server can read it.</p>
+<p>GitHub Pages can serve it as it is. <code>zuri doc</code> writes the <code>.nojekyll</code> file
+that stops GitHub from leaving out files it doesn't expect, and a <code>CNAME</code>
+file when <code>cname</code> is set. Set <code>url</code> as well. It gives every page its
+canonical address, generates a <code>sitemap.xml</code> for search engines, and lets
+<code>404.html</code>, the page shown for a missing address, work at any depth of the
+site, not only at the top level.</p>
+<p>You can use every site without a mouse. <code>/</code>, <code>s</code>, or Ctrl+K (⌘K on a Mac)
+opens the search box, the up and down arrow keys move through the results,
+and the left and right arrow keys go to the previous and next chapter.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch30-00-documentation.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch29-00-editors.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">29</span>Editor Support</span>
+          </a>
+          <a class="turn-next" rel="next" href="appendix-01-keywords.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title">A - Keywords</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#starting-documentation">Starting Documentation</a>
+        </li><li class="level-2">
+          <a href="#the-table-of-contents">The Table of Contents</a>
+        </li><li class="level-2">
+          <a href="#writing-pages">Writing Pages</a>
+        </li><li class="level-3">
+          <a href="#links-and-files">Links and Files</a>
+        </li><li class="level-3">
+          <a href="#code">Code</a>
+        </li><li class="level-3">
+          <a href="#including-files">Including Files</a>
+        </li><li class="level-2">
+          <a href="#building-and-serving">Building and Serving</a>
+        </li><li class="level-2">
+          <a href="#generating-an-api-reference">Generating an API Reference</a>
+        </li><li class="level-2">
+          <a href="#nested-documentation">Nested Documentation</a>
+        </li><li class="level-2">
+          <a href="#settings">Settings</a>
+        </li><li class="level-2">
+          <a href="#customizing-the-appearance">Customizing the Appearance</a>
+        </li><li class="level-2">
+          <a href="#publishing">Publishing</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=5550658799" defer=""></script>
+  
+  
+
+
+</body></html>

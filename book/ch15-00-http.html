@@ -1,0 +1,2912 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HTTP · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch15-00-http.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=5550658799">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="purple" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print every page" aria-label="Print every page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html" aria-current="page"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Chapter 15 · The Big Modules</p>
+        <div class="content"><h1 id="http">HTTP</h1>
+<p>The <code>http</code> module is Zuri's HTTP stack. It contains a client, a server and
+the building blocks they share. It supports HTTP/1.1 and HTTP/2, over plain
+connections or TLS, and it's designed to be exposed directly to the
+internet.</p>
+<p>That last point is a deliberate design decision. Many language runtimes
+include an HTTP server that's fine for development, but expect you to put a
+reverse proxy in front of it in production to terminate TLS, serve static
+files, compress responses, enforce request limits and speak HTTP/2 to
+browsers. All of those features are built into this module.</p>
+<ul>
+<li><a href="#introduction">Introduction</a>
+<ul>
+<li><a href="#a-first-request">A First Request</a></li>
+<li><a href="#a-first-server">A First Server</a></li>
+</ul>
+</li>
+<li><a href="#making-requests">Making Requests</a>
+<ul>
+<li><a href="#the-shared-client">The Shared Client</a></li>
+<li><a href="#creating-a-client">Creating a Client</a></li>
+<li><a href="#request-methods">Request Methods</a></li>
+<li><a href="#request-bodies">Request Bodies</a></li>
+<li><a href="#uploading-files">Uploading Files</a></li>
+<li><a href="#reading-a-response">Reading a Response</a></li>
+<li><a href="#query-parameters-and-headers">Query Parameters and Headers</a></li>
+<li><a href="#authentication">Authentication</a></li>
+<li><a href="#redirects">Redirects</a></li>
+<li><a href="#cookies">Cookies</a></li>
+<li><a href="#timeouts-and-retries">Timeouts and Retries</a></li>
+<li><a href="#streaming-a-response">Streaming a Response</a></li>
+<li><a href="#tls-and-certificates">TLS and Certificates</a></li>
+<li><a href="#proxies">Proxies</a></li>
+</ul>
+</li>
+<li><a href="#serving-requests">Serving Requests</a>
+<ul>
+<li><a href="#routing">Routing</a></li>
+<li><a href="#the-request-object">The Request Object</a></li>
+<li><a href="#forms-and-file-uploads">Forms and File Uploads</a></li>
+<li><a href="#request-validation">Request Validation</a></li>
+<li><a href="#the-response-object">The Response Object</a></li>
+<li><a href="#middleware">Middleware</a></li>
+<li><a href="#errors">Errors</a></li>
+<li><a href="#static-files">Static Files</a></li>
+<li><a href="#compression">Compression</a></li>
+<li><a href="#streaming-a-response-body">Streaming a Response Body</a></li>
+<li><a href="#setting-cookies">Setting Cookies</a></li>
+<li><a href="#content-negotiation">Content Negotiation</a></li>
+</ul>
+</li>
+<li><a href="#built-in-middleware">Built-in Middleware</a>
+<ul>
+<li><a href="#logger"><code>logger()</code></a></li>
+<li><a href="#request_id"><code>request_id()</code></a></li>
+<li><a href="#security_headers"><code>security_headers()</code></a></li>
+<li><a href="#cors"><code>cors()</code></a></li>
+<li><a href="#basic_auth"><code>basic_auth()</code></a></li>
+<li><a href="#bearer_auth"><code>bearer_auth()</code></a></li>
+<li><a href="#jwt_auth"><code>jwt_auth()</code></a></li>
+<li><a href="#rate_limit"><code>rate_limit()</code></a></li>
+<li><a href="#etag"><code>etag()</code></a></li>
+<li><a href="#force_https"><code>force_https()</code></a></li>
+<li><a href="#ordering">Ordering</a></li>
+</ul>
+</li>
+<li><a href="#sessions">Sessions</a>
+<ul>
+<li><a href="#sessions-are-created-on-first-use">Sessions Are Created on First Use</a></li>
+<li><a href="#signing-in">Signing In</a></li>
+<li><a href="#flash-messages">Flash Messages</a></li>
+<li><a href="#where-sessions-are-kept">Where Sessions Are Kept</a></li>
+<li><a href="#when-a-session-ends">When a Session Ends</a></li>
+<li><a href="#the-cookie">The Cookie</a></li>
+<li><a href="#signing-the-cookie">Signing the Cookie</a></li>
+<li><a href="#what-a-session-may-hold">What a Session May Hold</a></li>
+<li><a href="#sessions-across-workers">Sessions Across Workers</a></li>
+<li><a href="#session-limitations">Session Limitations</a></li>
+</ul>
+</li>
+<li><a href="#tls">TLS</a></li>
+<li><a href="#http2">HTTP/2</a></li>
+<li><a href="#websockets">WebSockets</a></li>
+<li><a href="#server-sent-events">Server-Sent Events</a></li>
+<li><a href="#reverse-proxying">Reverse Proxying</a></li>
+<li><a href="#running-in-production">Running in Production</a>
+<ul>
+<li><a href="#using-more-than-one-core">Using More Than One Core</a></li>
+<li><a href="#limits">Limits</a></li>
+<li><a href="#graceful-shutdown">Graceful Shutdown</a></li>
+<li><a href="#running-behind-a-proxy">Running Behind a Proxy</a></li>
+</ul>
+</li>
+<li><a href="#requests-the-module-rejects">Requests the Module Rejects</a></li>
+<li><a href="#module-reference">Module Reference</a></li>
+</ul>
+<h2 id="introduction"><a class="anchor" href="#introduction" aria-hidden="true" tabindex="-1"></a>Introduction</h2>
+<h3 id="a-first-request"><a class="anchor" href="#a-first-request" aria-hidden="true" tabindex="-1"></a>A First Request</h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http
+
+<span class="kw">echo</span> http.<span class="fn">get</span>(<span class="str">'https://example.com'</span>).<span class="fn">as_text</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>get()</code>, <code>post()</code>, <code>put()</code>, <code>patch()</code>, <code>delete()</code>, <code>head()</code>, <code>options()</code> and
+<code>trace()</code> are all available as module-level functions. They all use one
+shared client, which keeps its connections open between calls. <a href="#request-methods">Request
+Methods</a> describes each of them.</p>
+<h3 id="a-first-server"><a class="anchor" href="#a-first-server" aria-hidden="true" tabindex="-1"></a>A First Server</h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http
+
+<span class="kw">var</span> server <span class="op">=</span> http.<span class="fn">server</span>(<span class="num">3000</span>)
+
+server.<span class="fn">get</span>(<span class="str">'/'</span>, <span class="meta">@</span>(request, response) {
+  response.<span class="fn">html</span>(<span class="str">'&lt;h1&gt;Hello&lt;/h1&gt;'</span>)
+})
+
+server.<span class="fn">get</span>(<span class="str">'/users/:id'</span>, <span class="meta">@</span>(request, response) {
+  response.<span class="fn">json</span>({ <span class="bi">id</span><span class="op">:</span> request.<span class="fn">param</span>(<span class="str">'id'</span>) })
+})
+
+server.<span class="fn">listen</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>This server already does two things worth noticing. <code>GET /users/42</code> matches
+the second route and passes <code>'42'</code> to the handler. And a <code>HEAD /</code> request is
+handled by the first route, which responds with the headers a <code>GET</code> would
+have produced but no body, because that's what HEAD means.</p>
+<blockquote>
+<p>Code blocks in this chapter that list several calls together, such as
+three ways to save, four filters or a family of methods, are <strong>reference
+listings</strong>, not programs. They show the form of each call, not a sequence
+you could run, and some of them would conflict if you pasted them into one
+file. Anything shown as a complete program in this chapter runs as
+written.</p>
+</blockquote>
+<h2 id="a-complete-example-you-can-run"><a class="anchor" href="#a-complete-example-you-can-run" aria-hidden="true" tabindex="-1"></a>A Complete Example You Can Run</h2>
+<p>Most of the examples in this chapter call a host that doesn't exist, or
+start a server that never returns, so you can't paste them into a terminal
+and watch them work. This one is different. It runs a real server on a real
+port and sends real requests to it, using two files.</p>
+<p>The server goes in its own file, because a function that uses an imported
+module can't be spawned from the file that imported it. See <a href="ch11-00-isolates.html">Concurrency
+with Isolates</a> for the details.</p>
+<figure class="code has-caption"><figcaption>service.zu</figcaption><pre><code class="language-zuri"><span class="kw">import</span> http
+
+<span class="kw">def</span> <span class="def">serve</span>(port_channel) {
+  <span class="kw">var</span> server <span class="op">=</span> http.<span class="fn">server</span>(<span class="num">0</span>, <span class="str">'127.0.0.1'</span>)
+
+  server.<span class="fn">get</span>(<span class="str">'/health'</span>, <span class="meta">@</span>(request, response) {
+    response.<span class="fn">json</span>({ status<span class="op">:</span> <span class="str">'ok'</span> })
+  })
+
+  server.<span class="fn">post</span>(<span class="str">'/echo'</span>, <span class="meta">@</span>(request, response) {
+    response.<span class="fn">json</span>({ heard<span class="op">:</span> request.<span class="fn">json_body</span>().<span class="prop">message</span> }, <span class="num">201</span>)
+  })
+
+  <span class="com"># Bind first so the port is known, hand it back, then serve.</span>
+  server.<span class="fn">bind</span>()
+  port_channel.<span class="fn">send</span>(server.<span class="prop">socket</span>.<span class="fn">local_address</span>().<span class="fn">port</span>())
+  server.<span class="fn">listen</span>()
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code has-caption"><figcaption>main.zu</figcaption><pre><code class="language-zuri"><span class="kw">import</span> http
+<span class="kw">import</span> isolate
+<span class="kw">import</span> .<span class="prop">service</span>
+
+<span class="kw">var</span> channel <span class="op">=</span> isolate.<span class="fn">channel</span>(<span class="num">1</span>)
+<span class="kw">var</span> task <span class="op">=</span> isolate.<span class="fn">spawn</span>(service.<span class="prop">serve</span>, channel)
+<span class="kw">var</span> port <span class="op">=</span> channel.<span class="fn">recv</span>()
+
+<span class="kw">var</span> api <span class="op">=</span> http.<span class="fn">client</span>(<span class="str">'http://127.0.0.1:</span><span class="subst">${</span>port<span class="subst">}</span><span class="str">'</span>)
+
+<span class="kw">echo</span> api.<span class="fn">get</span>(<span class="str">'/health'</span>).<span class="fn">as_dict</span>()
+<span class="kw">echo</span> api.<span class="fn">post</span>(<span class="str">'/echo'</span>, { message<span class="op">:</span> <span class="str">'hello'</span> }).<span class="prop">status</span>
+
+task.<span class="fn">cancel</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">zuri</span> run main.zu
+<span class="out">{status: ok}</span>
+<span class="out">201</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>There are four details here that are worth using in your own code.</p>
+<p><strong>Port <code>0</code> asks the operating system for a free port.</strong> <code>listen()</code> would
+bind the port for you, but then there'd be no way to find out which port it
+got. So the example calls <code>bind()</code> explicitly, reads the bound address, and
+only then starts accepting connections. Use this pattern for tests and for
+any process that runs more than one server.</p>
+<p><strong>The port is sent over a channel.</strong> The client can't know the port in
+advance, and the two halves run in different isolates with separate heaps,
+so a shared variable isn't an option.</p>
+<p><strong><code>request.json_body()</code> parses the request body</strong>, and
+<code>response.json(value, status)</code> writes the response. The names don't match
+because the two methods do different jobs: one decodes what arrived, and the
+other encodes the response and sets a status.</p>
+<p><strong><code>task.cancel()</code> stops the server.</strong> <code>listen()</code> runs until the server is
+closed, so without that call, the program would never exit.</p>
+<h2 id="making-requests"><a class="anchor" href="#making-requests" aria-hidden="true" tabindex="-1"></a>Making Requests</h2>
+<h3 id="the-shared-client"><a class="anchor" href="#the-shared-client" aria-hidden="true" tabindex="-1"></a>The Shared Client</h3>
+<p>The module-level functions use a single <code>HttpClient</code> that exists for the
+lifetime of the program. It reuses connections, so a second request to a
+host it has already connected to skips the TCP handshake, and for HTTPS, the
+TLS handshake as well.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http
+
+<span class="kw">var</span> page <span class="op">=</span> http.<span class="fn">get</span>(<span class="str">'https://example.com'</span>)
+
+<span class="kw">echo</span> page.<span class="prop">status</span> <span class="com"># 200</span>
+<span class="kw">echo</span> page.<span class="prop">headers</span>.<span class="fn">get</span>(<span class="str">'content-type'</span>)
+<span class="kw">echo</span> page.<span class="fn">as_text</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Use <code>http.shared_client()</code> to get that client when you want a setting to
+apply to every simple request in a program, and create your own client for
+anything more specific.</p>
+<h3 id="creating-a-client"><a class="anchor" href="#creating-a-client" aria-hidden="true" tabindex="-1"></a>Creating a Client</h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> api <span class="op">=</span> http.<span class="fn">client</span>(<span class="str">'https://api.example.com'</span>, {
+  headers<span class="op">:</span> { <span class="str">'Authorization'</span><span class="op">:</span> <span class="str">'Bearer '</span> <span class="op">+</span> token },
+  read_timeout<span class="op">:</span> <span class="num">5000</span>,
+})
+
+<span class="kw">var</span> me <span class="op">=</span> api.<span class="fn">get</span>(<span class="str">'/users/me'</span>).<span class="fn">raise_for_status</span>().<span class="fn">as_dict</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>If you give a client a base URL, it's added to the front of any target that
+isn't already an absolute URL, so the rest of your program can refer to the
+service by path alone. Every key in the options dictionary is a field of
+<code>HttpClient</code>, apart from <code>headers</code>, and you can also set any of them later:</p>
+<figure class="code"><pre><code class="language-zuri">api.<span class="prop">user_agent</span> <span class="op">=</span> <span class="str">'my-service/2.1'</span>
+api.<span class="prop">max_redirects</span> <span class="op">=</span> <span class="num">3</span>
+api.<span class="fn">set_header</span>(<span class="str">'X-Client-Version'</span>, <span class="str">'2.1'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<blockquote>
+<p><strong>Note</strong>
+Create a client once and reuse it. Creating a new client for each request
+throws away its connection pool, its cookie jar and its TLS configuration,
+which is most of what a client is for.</p>
+</blockquote>
+<h3 id="request-methods"><a class="anchor" href="#request-methods" aria-hidden="true" tabindex="-1"></a>Request Methods</h3>
+<p>Each HTTP method has its own function. Every function is available in two
+places, with the same signature: on the module, where it uses the shared
+client, and on any <code>HttpClient</code> you create.</p>
+<p>The three methods that send a body take it as their second argument. The
+others take the options dictionary in that position.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Call</th>
+<th>Sends a body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>get(url, options)</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>post(url, data, options)</code></td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>put(url, data, options)</code></td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>patch(url, data, options)</code></td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>delete(url, options)</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>head(url, options)</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>options(url, options)</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>trace(url, options)</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>request(method, url, options)</code></td>
+<td>If <code>options</code> includes one</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Every argument after the first is optional, so all the short forms work:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http
+
+<span class="com"># Reading</span>
+http.<span class="fn">get</span>(<span class="str">'https://example.com/items'</span>)
+http.<span class="fn">get</span>(<span class="str">'https://example.com/items'</span>, {
+  query<span class="op">:</span> { page<span class="op">:</span> <span class="num">2</span> },
+})
+
+<span class="com"># Creating and updating</span>
+http.<span class="fn">post</span>(<span class="str">'https://example.com/items'</span>, { name<span class="op">:</span> <span class="str">'Widget'</span> })
+http.<span class="fn">put</span>(<span class="str">'https://example.com/items/1'</span>, { name<span class="op">:</span> <span class="str">'Widget'</span>, price<span class="op">:</span> <span class="num">9</span> })
+http.<span class="fn">patch</span>(<span class="str">'https://example.com/items/1'</span>, { price<span class="op">:</span> <span class="num">11</span> })
+
+<span class="com"># Removing</span>
+http.<span class="fn">delete</span>(<span class="str">'https://example.com/items/1'</span>)
+
+<span class="com"># Asking about a resource without fetching it</span>
+<span class="kw">var</span> probe <span class="op">=</span> http.<span class="fn">head</span>(<span class="str">'https://example.com/large.iso'</span>)
+<span class="kw">echo</span> probe.<span class="prop">headers</span>.<span class="fn">get</span>(<span class="str">'content-length'</span>)
+
+<span class="com"># Asking what a resource supports</span>
+<span class="kw">echo</span> http.<span class="fn">options</span>(<span class="str">'https://example.com/items'</span>).<span class="prop">headers</span>.<span class="fn">get</span>(<span class="str">'allow'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Here are the same calls on your own client, which is what you should use for
+anything that runs more than once:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> api <span class="op">=</span> http.<span class="fn">client</span>(<span class="str">'https://api.example.com'</span>)
+
+api.<span class="fn">get</span>(<span class="str">'/items'</span>)
+api.<span class="fn">post</span>(<span class="str">'/items'</span>, { name<span class="op">:</span> <span class="str">'Widget'</span> })
+api.<span class="fn">delete</span>(<span class="str">'/items/1'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>request()</code> takes the method as an argument, so you can use it to send a
+method that doesn't have its own function, such as a WebDAV <code>PROPFIND</code> or a
+custom method a service has defined:</p>
+<figure class="code"><pre><code class="language-zuri">api.<span class="fn">request</span>(<span class="str">'PROPFIND'</span>, <span class="str">'/files/'</span>, {
+  headers<span class="op">:</span> { <span class="str">'Depth'</span><span class="op">:</span> <span class="str">'1'</span> },
+  body<span class="op">:</span> <span class="str">'&lt;propfind xmlns="DAV:"&gt;&lt;allprop/&gt;&lt;/propfind&gt;'</span>,
+  content_type<span class="op">:</span> <span class="str">'application/xml'</span>,
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>HTTP method names are case-sensitive, and all the registered methods are
+uppercase. If you pass a lowercase name, it's converted to uppercase for
+you.</p>
+<blockquote>
+<p><strong>Note</strong>
+<code>head()</code> doesn't follow redirects by default, and <code>delete()</code>, <code>options()</code>
+and <code>trace()</code> don't send a body. If you need to send a <code>DELETE</code> with a
+body, because an API wants a reason in it for example, use
+<code>request('DELETE', url, { json: ... })</code>.</p>
+</blockquote>
+<h3 id="request-bodies"><a class="anchor" href="#request-bodies" aria-hidden="true" tabindex="-1"></a>Request Bodies</h3>
+<p>The second argument to <code>post()</code>, <code>put()</code> and <code>patch()</code> is the body, and its
+type determines how it's sent:</p>
+<figure class="code"><pre><code class="language-zuri">api.<span class="fn">post</span>(<span class="str">'/items'</span>, { name<span class="op">:</span> <span class="str">'Widget'</span>, price<span class="op">:</span> <span class="num">9</span> }) <span class="com"># JSON</span>
+api.<span class="fn">post</span>(<span class="str">'/items'</span>, [<span class="str">'a'</span>, <span class="str">'b'</span>]) <span class="com"># JSON</span>
+api.<span class="fn">post</span>(<span class="str">'/items'</span>, <span class="str">'raw text'</span>) <span class="com"># sent as-is</span>
+api.<span class="fn">post</span>(<span class="str">'/items'</span>, <span class="bi">file</span>(<span class="str">'photo.jpg'</span>, <span class="str">'rb'</span>).<span class="fn">read</span>()) <span class="com"># sent as-is</span>
+api.<span class="fn">post</span>(<span class="str">'/items'</span>, form_builder) <span class="com"># multipart</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A dictionary or a list is sent as JSON, with the matching <code>Content-Type</code>. A
+string or bytes value is sent exactly as it is, with no content type unless
+you set one.</p>
+<p>For other kinds of body, or to be explicit, set it in the options
+dictionary:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Sends</th>
+<th>Content-Type</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>body</code></td>
+<td>A string or bytes, exactly as given</td>
+<td>None, unless <code>content_type</code> is set</td>
+</tr>
+<tr>
+<td><code>json</code></td>
+<td>Any value, encoded as JSON</td>
+<td><code>application/json</code></td>
+</tr>
+<tr>
+<td><code>form</code></td>
+<td>A dictionary</td>
+<td><code>application/x-www-form-urlencoded</code></td>
+</tr>
+<tr>
+<td><code>multipart</code></td>
+<td>A <code>MultipartBuilder</code></td>
+<td><code>multipart/form-data</code>, including the boundary</td>
+</tr>
+<tr>
+<td><code>content_type</code></td>
+<td>Nothing by itself</td>
+<td>Overrides the content type set by any of the above</td>
+</tr>
+</tbody>
+</table>
+</div>
+<figure class="code"><pre><code class="language-zuri"><span class="com"># A login form</span>
+api.<span class="fn">post</span>(<span class="str">'/login'</span>, <span class="lit">nil</span>, {
+  form<span class="op">:</span> { username<span class="op">:</span> <span class="str">'ada'</span>, password<span class="op">:</span> secret },
+})
+
+<span class="com"># An explicit content type over a raw body</span>
+api.<span class="fn">put</span>(<span class="str">'/documents/1'</span>, <span class="lit">nil</span>, {
+  body<span class="op">:</span> markdown_source,
+  content_type<span class="op">:</span> <span class="str">'text/markdown; charset=utf-8'</span>,
+})
+
+<span class="com"># A form whose field repeats</span>
+api.<span class="fn">post</span>(<span class="str">'/search'</span>, <span class="lit">nil</span>, {
+  form<span class="op">:</span> {
+    tag<span class="op">:</span> [<span class="str">'new'</span>, <span class="str">'featured'</span>],
+    q<span class="op">:</span> <span class="str">'zuri'</span>,
+  },
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>Content-Length</code> is set for you based on the body, and you can't override
+it. If the client and server disagree about how long a body is, that's a
+request smuggling vulnerability, not a matter of formatting.</p>
+<h3 id="uploading-files"><a class="anchor" href="#uploading-files" aria-hidden="true" tabindex="-1"></a>Uploading Files</h3>
+<p>A file upload is a <code>multipart/form-data</code> body, and <code>MultipartBuilder</code> puts
+one together for you:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http
+
+<span class="kw">var</span> form <span class="op">=</span> http.<span class="fn">MultipartBuilder</span>()
+
+form.<span class="fn">add_field</span>(<span class="str">'title'</span>, <span class="str">'Holiday'</span>)
+form.<span class="fn">add_field</span>(<span class="str">'album'</span>, <span class="str">'2026'</span>)
+form.<span class="fn">add_file</span>(
+  <span class="str">'photo'</span>,
+  <span class="str">'beach.jpg'</span>,
+  <span class="bi">file</span>(<span class="str">'beach.jpg'</span>, <span class="str">'rb'</span>).<span class="fn">read</span>(),
+  <span class="str">'image/jpeg'</span>,
+)
+
+<span class="kw">var</span> response <span class="op">=</span> http.<span class="fn">post</span>(<span class="str">'https://example.com/photos'</span>, form)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Passing the builder as the body is all you need to do. The <code>Content-Type</code>,
+its boundary parameter and the <code>Content-Length</code> are all derived from it.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>add_field(name, value)</code></td>
+<td>Adds a plain form field. Numbers and booleans are converted to strings.</td>
+</tr>
+<tr>
+<td><code>add_file(name, filename, content, content_type)</code></td>
+<td>Adds a file. <code>content</code> is bytes or a string, and <code>content_type</code> defaults to <code>application/octet-stream</code>.</td>
+</tr>
+<tr>
+<td><code>content_type()</code></td>
+<td>Returns the value of the <code>Content-Type</code> header, including the boundary</td>
+</tr>
+<tr>
+<td><code>boundary()</code></td>
+<td>Returns the boundary string</td>
+</tr>
+<tr>
+<td><code>build()</code></td>
+<td>Returns the complete body, as bytes</td>
+</tr>
+<tr>
+<td><code>length()</code></td>
+<td>Returns how many parts have been added</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>To send several files under the same field name, call <code>add_file()</code> several
+times. That's what an <code>&lt;input type=&quot;file&quot; multiple&gt;</code> sends:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">for</span> path <span class="kw">in</span> paths {
+  form.<span class="fn">add_file</span>(<span class="str">'attachments'</span>, os.<span class="fn">base_name</span>(path), <span class="bi">file</span>(path, <span class="str">'rb'</span>).<span class="fn">read</span>())
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A filename that isn't plain ASCII is sent twice: once as a transliterated
+<code>filename</code>, and once as an RFC 5987 <code>filename*</code>. That way, the real name
+survives even if the recipient only understands one of the two.</p>
+<p>If you need the body on its own, for example to sign it, log its size or
+send it somewhere other than through this client, build it yourself:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> body <span class="op">=</span> form.<span class="fn">build</span>()
+
+api.<span class="fn">post</span>(<span class="str">'/photos'</span>, <span class="lit">nil</span>, { body, content_type<span class="op">:</span> form.<span class="fn">content_type</span>() })
+</code></pre><span class="code-label">Zuri</span></figure>
+<blockquote>
+<p><strong>Note</strong>
+<code>build()</code> assembles the entire body in memory. For an upload that's large
+enough for this to matter, send the file as a raw body with its own
+content type instead. <code>multipart/form-data</code> is only worth its overhead
+when there are other fields alongside the file.</p>
+</blockquote>
+<p>The boundary is generated from the platform's secure random number
+generator, not from a timestamp or a counter. If someone else could predict
+the boundary, they could include it in a field value to forge extra parts.</p>
+<h3 id="reading-a-response"><a class="anchor" href="#reading-a-response" aria-hidden="true" tabindex="-1"></a>Reading a Response</h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> response <span class="op">=</span> api.<span class="fn">get</span>(<span class="str">'/items/1'</span>)
+
+response.<span class="prop">status</span> <span class="com"># 200</span>
+response.<span class="fn">reason_phrase</span>() <span class="com"># 'OK'</span>
+response.<span class="prop">version</span> <span class="com"># '1.1' or '2'</span>
+response.<span class="prop">headers</span>.<span class="fn">get</span>(<span class="str">'etag'</span>)
+
+response.<span class="fn">as_text</span>() <span class="com"># the body, decoded as UTF-8</span>
+response.<span class="fn">as_dict</span>() <span class="com"># the body, parsed as JSON</span>
+response.<span class="fn">as_bytes</span>() <span class="com"># the body, untouched</span>
+
+response.<span class="fn">is_ok</span>() <span class="com"># 2xx</span>
+response.<span class="fn">is_redirect</span>() <span class="com"># 3xx</span>
+response.<span class="fn">is_error</span>() <span class="com"># 4xx or 5xx</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>raise_for_status()</code> raises a <code>StatusError</code> for a 4xx or 5xx status, and
+otherwise returns the response, so you can use it inline. The response is
+still available on the error, which matters because that's usually where an
+API explains what went wrong:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">catch</span> {
+  <span class="kw">var</span> data <span class="op">=</span> api.<span class="fn">get</span>(<span class="str">'/items/1'</span>).<span class="fn">raise_for_status</span>().<span class="fn">as_dict</span>()
+} <span class="kw">as</span> error {
+  <span class="kw">echo</span> error.<span class="prop">response</span>.<span class="prop">status</span>
+  <span class="kw">echo</span> error.<span class="prop">response</span>.<span class="fn">as_text</span>()
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Compressed response bodies are decompressed automatically, whether they use
+gzip, deflate, brotli or zstd. Once a body has been decompressed, the
+<code>Content-Encoding</code> header is removed, so nothing later on tries to decode it
+again.</p>
+<h3 id="query-parameters-and-headers"><a class="anchor" href="#query-parameters-and-headers" aria-hidden="true" tabindex="-1"></a>Query Parameters and Headers</h3>
+<figure class="code"><pre><code class="language-zuri">api.<span class="fn">get</span>(<span class="str">'/search'</span>, {
+  query<span class="op">:</span> {
+    q<span class="op">:</span> <span class="str">'zuri'</span>,
+    page<span class="op">:</span> <span class="num">2</span>,
+    tag<span class="op">:</span> [<span class="str">'new'</span>, <span class="str">'featured'</span>],
+  },
+  headers<span class="op">:</span> { <span class="str">'Accept-Language'</span><span class="op">:</span> <span class="str">'en-GB'</span> },
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A list value repeats the parameter, which is how a query string sends more
+than one value with the same name. Headers set for a request are merged with
+the client's own headers, and take priority over them.</p>
+<h3 id="authentication"><a class="anchor" href="#authentication" aria-hidden="true" tabindex="-1"></a>Authentication</h3>
+<figure class="code"><pre><code class="language-zuri">api.<span class="fn">get</span>(<span class="str">'/me'</span>, {
+  auth<span class="op">:</span> [<span class="str">'bearer'</span>, token],
+})
+api.<span class="fn">get</span>(<span class="str">'/me'</span>, {
+  auth<span class="op">:</span> [<span class="str">'basic'</span>, <span class="str">'ada'</span>, <span class="str">'lovelace'</span>],
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Credentials passed this way only apply to the origin you sent the request
+to. If the response redirects to a different scheme, host or port, the
+credentials are dropped. Otherwise, a redirect to a host chosen by someone
+else would be a way to collect your <code>Authorization</code> header.</p>
+<h3 id="redirects"><a class="anchor" href="#redirects" aria-hidden="true" tabindex="-1"></a>Redirects</h3>
+<p>Redirects are followed by default, up to <code>max_redirects</code> (10 by default),
+and the response records how many were followed:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> final <span class="op">=</span> http.<span class="fn">get</span>(<span class="str">'https://example.com/old'</span>)
+
+final.<span class="prop">redirects</span> <span class="com"># how many were followed</span>
+final.<span class="prop">responder</span> <span class="com"># the URL that finally answered</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>When a <code>303</code> is followed, the request becomes a <code>GET</code> without a body, and in
+practice the same happens for a <code>301</code> or <code>302</code>. That's what browsers and
+other clients do. A server that wants the method and body to be kept should
+send a <code>307</code> or <code>308</code>, and both of those are followed with the method and
+body unchanged.</p>
+<p>You can turn off redirect following for a single request or for a whole
+client:</p>
+<figure class="code"><pre><code class="language-zuri">http.<span class="fn">get</span>(url, { follow_redirects<span class="op">:</span> <span class="lit">false</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>head()</code> doesn't follow redirects by default, because a HEAD request is
+usually meant to look at the exact response that a redirect would hide.</p>
+<h3 id="cookies"><a class="anchor" href="#cookies" aria-hidden="true" tabindex="-1"></a>Cookies</h3>
+<p>A client with a cookie jar keeps cookies between requests, so logging in and
+the requests that follow behave as they would in a browser:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> session <span class="op">=</span> http.<span class="fn">client</span>(<span class="str">'https://example.com'</span>)
+session.<span class="fn">enable_cookies</span>()
+
+session.<span class="fn">post</span>(<span class="str">'/login'</span>, <span class="lit">nil</span>, {
+  form<span class="op">:</span> { user<span class="op">:</span> <span class="str">'ada'</span>, password<span class="op">:</span> secret },
+})
+session.<span class="fn">get</span>(<span class="str">'/dashboard'</span>) <span class="com"># sends the session cookie</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The cookie jar follows the matching rules in RFC 6265. A cookie without a
+<code>Domain</code> is only sent to the host that set it, a cookie with a <code>Domain</code> is
+also sent to subdomains, a path matches every path below it, and a <code>Secure</code>
+cookie is never sent over an unencrypted connection. If a server tries to
+set a cookie for a domain it doesn't control, the cookie is rejected.</p>
+<h3 id="timeouts-and-retries"><a class="anchor" href="#timeouts-and-retries" aria-hidden="true" tabindex="-1"></a>Timeouts and Retries</h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> api <span class="op">=</span> http.<span class="fn">client</span>(<span class="str">'https://api.example.com'</span>, {
+  connect_timeout<span class="op">:</span> <span class="num">5000</span>,
+  read_timeout<span class="op">:</span> <span class="num">10000</span>,
+  write_timeout<span class="op">:</span> <span class="num">10000</span>,
+})
+
+api.<span class="fn">get</span>(<span class="str">'/slow'</span>, { timeout<span class="op">:</span> <span class="num">30000</span> }) <span class="com"># this one request</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>All timeouts are in milliseconds. <code>max_retries</code> retries a failed request,
+but only for idempotent methods. Repeating a <code>POST</code> could mean charging
+someone's card twice, so <code>GET</code>, <code>HEAD</code>, <code>PUT</code>, <code>DELETE</code>, <code>OPTIONS</code> and
+<code>TRACE</code> are retried, and nothing else is.</p>
+<p>If the server closed a pooled connection while it was idle, the next write
+on that connection fails in a way that looks exactly like a network failure.
+In that specific case, an idempotent request is retried once, even with the
+default <code>max_retries</code> of zero. Otherwise, every connection that a server
+closes for being idle would show up as an error.</p>
+<h3 id="streaming-a-response"><a class="anchor" href="#streaming-a-response" aria-hidden="true" tabindex="-1"></a>Streaming a Response</h3>
+<p>You don't have to hold a large response in memory:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> response <span class="op">=</span> api.<span class="fn">get</span>(<span class="str">'/exports/large.csv'</span>, { stream<span class="op">:</span> <span class="lit">true</span> })
+<span class="kw">var</span> out <span class="op">=</span> <span class="bi">file</span>(<span class="str">'large.csv'</span>, <span class="str">'wb'</span>)
+
+<span class="kw">while</span> <span class="lit">true</span> {
+  <span class="kw">var</span> chunk <span class="op">=</span> response.<span class="prop">body_reader</span>.<span class="fn">read</span>(<span class="num">65536</span>)
+  <span class="kw">if</span> chunk.<span class="fn">length</span>() <span class="op">==</span> <span class="num">0</span> {
+    <span class="kw">break</span>
+  }
+  out.<span class="fn">write</span>(chunk)
+}
+
+out.<span class="fn">close</span>()
+api.<span class="fn">finish</span>(response)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>finish()</code> returns the connection to the pool once you've finished with the
+body. Until then, the connection belongs to you, because the client has no
+way of knowing when you've finished reading.</p>
+<h3 id="tls-and-certificates"><a class="anchor" href="#tls-and-certificates" aria-hidden="true" tabindex="-1"></a>TLS and Certificates</h3>
+<p>By default, certificates are verified against the platform's trusted
+certificates. To connect to a service with an internal or self-signed
+certificate, add its certificate authority:</p>
+<figure class="code"><pre><code class="language-zuri">api.<span class="fn">add_ca</span>(<span class="bi">file</span>(<span class="str">'/etc/ssl/internal-ca.pem'</span>).<span class="fn">read</span>())
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>There's also <code>verify = false</code>, which turns off verification completely. It's
+meant for local development only. With it, the connection is encrypted but
+not authenticated, which means anyone in the middle can easily intercept it.
+Everywhere else, use <code>add_ca()</code>.</p>
+<h3 id="proxies"><a class="anchor" href="#proxies" aria-hidden="true" tabindex="-1"></a>Proxies</h3>
+<p>A client uses the proxy set in the environment, the same way command-line
+tools do: <code>HTTPS_PROXY</code> for <code>https</code> addresses, <code>HTTP_PROXY</code> for <code>http</code>
+addresses, and <code>ALL_PROXY</code> for both. Each variable can be written in
+uppercase or lowercase. <code>NO_PROXY</code> is a comma-separated list of hosts that
+are reached directly. A name in the list also covers every name under it, an
+entry with a port only covers that port, and <code>*</code> covers everything. The
+machine's own loopback addresses are never reached through a proxy.</p>
+<p>A client you create yourself can specify its own proxy, or ignore the
+environment completely:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> api <span class="op">=</span> http.<span class="fn">client</span>(<span class="str">'https://api.example.com'</span>, {
+  proxy<span class="op">:</span> <span class="str">'http://ada:secret@proxy.internal:3128'</span>,
+})
+
+<span class="kw">var</span> direct <span class="op">=</span> http.<span class="fn">client</span>(<span class="str">'https://api.example.com'</span>, { trust_env<span class="op">:</span> <span class="lit">false</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>An <code>https</code> request is tunneled through the proxy with <code>CONNECT</code>, so the
+proxy only passes the encrypted bytes along and can't read them, and the
+certificate that's checked belongs to the destination. An <code>http</code> request is
+passed to the proxy in full. Any credentials in the proxy address are only
+sent to the proxy, as a <code>Proxy-Authorization</code> header. The connection to the
+proxy itself uses plain HTTP, and an <code>https://</code> proxy address is rejected.</p>
+<h2 id="serving-requests"><a class="anchor" href="#serving-requests" aria-hidden="true" tabindex="-1"></a>Serving Requests</h2>
+<h3 id="routing"><a class="anchor" href="#routing" aria-hidden="true" tabindex="-1"></a>Routing</h3>
+<p>A route pattern consists of literal segments, <code>:name</code> parameters and an
+optional catch-all at the end:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Pattern</th>
+<th>Matches</th>
+<th>Captures</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/users</code></td>
+<td><code>/users</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>/users/:id</code></td>
+<td><code>/users/42</code></td>
+<td><code>id</code> = <code>'42'</code></td>
+</tr>
+<tr>
+<td><code>/users/:id/posts/:post</code></td>
+<td><code>/users/4/posts/7</code></td>
+<td><code>id</code>, <code>post</code></td>
+</tr>
+<tr>
+<td><code>/files/</code> + <code>*path</code></td>
+<td><code>/files/css/site.css</code></td>
+<td><code>path</code> = <code>'css/site.css'</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">get</span>(<span class="str">'/users/:id'</span>, <span class="meta">@</span>(request, response) {
+  response.<span class="fn">json</span>({ <span class="bi">id</span><span class="op">:</span> request.<span class="fn">param</span>(<span class="str">'id'</span>) })
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A literal segment always takes priority over a parameter, and a parameter
+always takes priority over a catch-all. So <code>/users/new</code> and <code>/users/:id</code> can
+both exist, and the more specific route wins, whichever was registered
+first. Routes are matched using a trie, so a router with a thousand routes
+costs the same per request as one with ten.</p>
+<p><code>get()</code>, <code>post()</code>, <code>put()</code>, <code>patch()</code>, <code>delete()</code>, <code>head()</code> and <code>options()</code>
+each register a route for one method. <code>any()</code> registers <code>GET</code>, <code>POST</code>,
+<code>PUT</code>, <code>PATCH</code>, <code>DELETE</code> and <code>OPTIONS</code> all at once. <code>handle()</code> takes the
+method as an argument, which is how you add a route for a method that
+doesn't have its own function, such as <code>PROPFIND</code> or a custom method:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">handle</span>(<span class="str">'PROPFIND'</span>, <span class="str">'/files/'</span> <span class="op">+</span> <span class="str">'*path'</span>, list_properties)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Three kinds of request are answered without a handler:</p>
+<ul>
+<li><code>HEAD</code> uses the <code>GET</code> route for the same path, and the body is removed
+from the response.</li>
+<li><code>OPTIONS</code> gets a <code>204</code> response with an <code>Allow</code> header that lists the
+methods the path accepts.</li>
+<li>A request for a path that only exists for other methods gets a <code>405</code>
+response, again with an <code>Allow</code> header, rather than a <code>404</code>, which would
+be wrong.</li>
+</ul>
+<p>Give a route a name so you can build URLs from it later:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">get</span>(<span class="str">'/users/:id'</span>, show_user, <span class="str">'user.show'</span>)
+
+server.<span class="fn">routes</span>().<span class="fn">url_for</span>(<span class="str">'user.show'</span>, { <span class="bi">id</span><span class="op">:</span> <span class="num">42</span> }) <span class="com"># '/users/42'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<h3 id="the-request-object"><a class="anchor" href="#the-request-object" aria-hidden="true" tabindex="-1"></a>The Request Object</h3>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">post</span>(<span class="str">'/items'</span>, <span class="meta">@</span>(request, response) {
+  request.<span class="prop">method</span> <span class="com"># 'POST'</span>
+  request.<span class="prop">path</span> <span class="com"># decoded and normalized</span>
+  request.<span class="prop">target</span> <span class="com"># exactly as it arrived on the wire</span>
+  request.<span class="prop">version</span> <span class="com"># '1.1' or '2'</span>
+  request.<span class="prop">secure</span> <span class="com"># whether it came over TLS</span>
+
+  request.<span class="fn">param</span>(<span class="str">'id'</span>) <span class="com"># a route parameter</span>
+  request.<span class="fn">query_param</span>(<span class="str">'page'</span>, <span class="str">'1'</span>) <span class="com"># a query parameter, with a default</span>
+  request.<span class="fn">header</span>(<span class="str">'accept'</span>) <span class="com"># a header field</span>
+  request.<span class="fn">cookie</span>(<span class="str">'session'</span>) <span class="com"># a cookie</span>
+  request.<span class="fn">bearer_token</span>() <span class="com"># the token from an Authorization header</span>
+
+  request.<span class="fn">text</span>() <span class="com"># the body as text</span>
+  request.<span class="fn">json_body</span>() <span class="com"># the body parsed as JSON</span>
+  request.<span class="fn">form</span>() <span class="com"># urlencoded or multipart fields</span>
+  request.<span class="fn">file</span>(<span class="str">'avatar'</span>) <span class="com"># an uploaded file</span>
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>path</code> is percent-decoded and then normalized, in that order. That's the
+only order that works, because <code>%2e%2e%2f</code> is <code>../</code> encoded to get past a
+naive check. Route on <code>path</code>. <code>target</code> is the raw form, and matching on it
+is how directory traversal attacks get through.</p>
+<p>An uploaded file is represented by an <code>UploadedFile</code>:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> upload <span class="op">=</span> request.<span class="fn">file</span>(<span class="str">'avatar'</span>)
+
+upload.<span class="prop">filename</span> <span class="com"># what the client claimed</span>
+upload.<span class="fn">safe_name</span>() <span class="com"># that, reduced to one path-safe segment</span>
+upload.<span class="prop">content_type</span> <span class="com"># what the client declared</span>
+upload.<span class="fn">size</span>()
+upload.<span class="fn">save_to</span>(<span class="str">'/var/uploads/'</span> <span class="op">+</span> upload.<span class="fn">safe_name</span>())
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>filename</code> and <code>content_type</code> are both controlled by the client, and neither
+tells you anything reliable about the contents. <code>safe_name()</code> removes any
+directory part, including a Windows one, and reduces the rest to letters,
+digits, <code>.</code>, <code>-</code> and <code>_</code>.</p>
+<h3 id="forms-and-file-uploads"><a class="anchor" href="#forms-and-file-uploads" aria-hidden="true" tabindex="-1"></a>Forms and File Uploads</h3>
+<p>A submitted form arrives as the request body in one of two encodings, and
+you read both through the same methods. The <code>enctype</code> attribute on the
+<code>&lt;form&gt;</code> decides which one a browser sends: the default,
+<code>application/x-www-form-urlencoded</code>, for a form with only plain fields, and
+<code>multipart/form-data</code> for a form that includes a file.</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">post</span>(<span class="str">'/signup'</span>, <span class="meta">@</span>(request, response) {
+  <span class="kw">var</span> email <span class="op">=</span> request.<span class="fn">form_field</span>(<span class="str">'email'</span>, <span class="str">''</span>)
+  <span class="kw">var</span> password <span class="op">=</span> request.<span class="fn">form_field</span>(<span class="str">'password'</span>, <span class="str">''</span>)
+
+  <span class="kw">if</span> email.<span class="fn">is_empty</span>() {
+    response.<span class="fn">json</span>({ error<span class="op">:</span> <span class="str">'email is required'</span> }, <span class="num">422</span>)
+    <span class="kw">return</span>
+  }
+
+  <span class="fn">create_account</span>(email, password)
+  response.<span class="fn">redirect</span>(<span class="str">'/welcome'</span>, <span class="num">303</span>)
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>form()</code></td>
+<td>Every field as <code>name -&gt; value</code>, keeping the first value of a repeated name</td>
+</tr>
+<tr>
+<td><code>form_all()</code></td>
+<td>Every field as <code>name -&gt; [value, ...]</code></td>
+</tr>
+<tr>
+<td><code>form_field(name, fallback)</code></td>
+<td>The first value of one field</td>
+</tr>
+<tr>
+<td><code>files()</code></td>
+<td>The uploaded files as <code>name -&gt; [UploadedFile, ...]</code></td>
+</tr>
+<tr>
+<td><code>file(name)</code></td>
+<td>The first file uploaded under <code>name</code>, or <code>nil</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The body is parsed the first time you use it and then cached, so reading
+<code>form()</code> in a middleware and again in the handler only parses it once. A
+body in neither encoding gives you an empty dictionary instead of raising an
+error. Use <code>request.json_body()</code> for a JSON body and <code>request.text()</code> for
+anything else.</p>
+<p>A field that can appear more than once, such as a group of checkboxes or a
+multiple select, needs <code>form_all()</code>, because <code>form()</code> only keeps the first
+value:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> tags <span class="op">=</span> request.<span class="fn">form_all</span>().<span class="fn">get</span>(<span class="str">'tags'</span>, [])
+</code></pre><span class="code-label">Zuri</span></figure>
+<blockquote>
+<p><strong>Note</strong>
+After a successful <code>POST</code>, redirect with <code>303 See Other</code>, as shown above.
+That stops the browser from submitting the form again if the user reloads
+the resulting page.</p>
+</blockquote>
+<h4 id="receiving-an-upload"><a class="anchor" href="#receiving-an-upload" aria-hidden="true" tabindex="-1"></a>Receiving an Upload</h4>
+<figure class="code"><pre><code class="language-html"><span class="tag">&lt;form</span> <span class="attr">method</span><span class="op">=</span><span class="str">"post"</span> <span class="attr">action</span><span class="op">=</span><span class="str">"/avatar"</span> <span class="attr">enctype</span><span class="op">=</span><span class="str">"multipart/form-data"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;input</span> <span class="attr">type</span><span class="op">=</span><span class="str">"text"</span> <span class="attr">name</span><span class="op">=</span><span class="str">"caption"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;input</span> <span class="attr">type</span><span class="op">=</span><span class="str">"file"</span> <span class="attr">name</span><span class="op">=</span><span class="str">"avatar"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;button</span><span class="tag">&gt;</span>Upload<span class="tag">&lt;/button</span><span class="tag">&gt;</span>
+<span class="tag">&lt;/form</span><span class="tag">&gt;</span>
+</code></pre><span class="code-label">HTML</span></figure>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> os
+
+server.<span class="fn">post</span>(<span class="str">'/avatar'</span>, <span class="meta">@</span>(request, response) {
+  <span class="kw">var</span> upload <span class="op">=</span> request.<span class="fn">file</span>(<span class="str">'avatar'</span>)
+
+  <span class="kw">if</span> upload <span class="op">==</span> <span class="lit">nil</span> {
+    response.<span class="fn">json</span>({ error<span class="op">:</span> <span class="str">'no file was submitted'</span> }, <span class="num">400</span>)
+    <span class="kw">return</span>
+  }
+
+  <span class="kw">if</span> upload.<span class="fn">size</span>() <span class="op">&gt;</span> <span class="num">2</span> <span class="op">*</span> <span class="num">1024</span> <span class="op">*</span> <span class="num">1024</span> {
+    response.<span class="fn">json</span>({ error<span class="op">:</span> <span class="str">'the image must be under 2 MB'</span> }, <span class="num">413</span>)
+    <span class="kw">return</span>
+  }
+
+  <span class="kw">var</span> destination <span class="op">=</span> os.<span class="fn">join_paths</span>(<span class="str">'./uploads'</span>, upload.<span class="fn">safe_name</span>())
+  upload.<span class="fn">save_to</span>(destination)
+
+  response.<span class="fn">json</span>({
+    saved<span class="op">:</span> upload.<span class="fn">safe_name</span>(),
+    caption<span class="op">:</span> request.<span class="fn">form_field</span>(<span class="str">'caption'</span>, <span class="str">''</span>),
+    <span class="bi">bytes</span><span class="op">:</span> upload.<span class="fn">size</span>(),
+  })
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>An <code>UploadedFile</code> has these members:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Member</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>filename</code></td>
+<td>The name the client sent, exactly as it was sent</td>
+</tr>
+<tr>
+<td><code>safe_name()</code></td>
+<td>That name reduced to a single segment that's safe to use in a path</td>
+</tr>
+<tr>
+<td><code>content_type</code></td>
+<td>The type the client declared, or <code>application/octet-stream</code></td>
+</tr>
+<tr>
+<td><code>content</code></td>
+<td>The contents, as bytes</td>
+</tr>
+<tr>
+<td><code>size()</code></td>
+<td>The number of bytes</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>The form field the file was uploaded under</td>
+</tr>
+<tr>
+<td><code>headers</code></td>
+<td>All the headers on that part of the body</td>
+</tr>
+<tr>
+<td><code>save_to(path)</code></td>
+<td>Writes the contents to <code>path</code> and returns the number of bytes written</td>
+</tr>
+<tr>
+<td><code>to_text()</code></td>
+<td>The contents decoded as UTF-8</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>An <code>&lt;input type=&quot;file&quot; multiple&gt;</code> sends several parts under one name, which
+is why <code>files()</code> returns a list for each name:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">for</span> upload <span class="kw">in</span> request.<span class="fn">files</span>().<span class="fn">get</span>(<span class="str">'attachments'</span>, []) {
+  upload.<span class="fn">save_to</span>(os.<span class="fn">join_paths</span>(<span class="str">'./uploads'</span>, upload.<span class="fn">safe_name</span>()))
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<h4 id="what-a-handler-shouldnt-trust"><a class="anchor" href="#what-a-handler-shouldnt-trust" aria-hidden="true" tabindex="-1"></a>What a Handler Shouldn't Trust</h4>
+<p><strong>The filename.</strong> The client controls it, and it often contains a full local
+path from a Windows client, <code>..</code> segments from a malicious one, or a NUL
+byte intended to cut off a later check. Never join it to a path directly:</p>
+<figure class="code"><pre><code class="language-zuri">os.<span class="fn">join_paths</span>(<span class="str">'./uploads'</span>, upload.<span class="prop">filename</span>) <span class="com"># no</span>
+os.<span class="fn">join_paths</span>(<span class="str">'./uploads'</span>, upload.<span class="fn">safe_name</span>()) <span class="com"># yes</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>safe_name()</code> removes every directory part, with either kind of separator,
+and reduces the rest to letters, digits, <code>.</code>, <code>-</code> and <code>_</code>. If nothing usable
+is left, it returns <code>'unnamed'</code>. Better still, choose the file name yourself
+and keep the client's name as a label:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> stored <span class="op">=</span> <span class="str">'</span><span class="subst">${</span>uuid.<span class="fn">v4</span>()<span class="subst">}</span><span class="str">.jpg'</span>
+upload.<span class="fn">save_to</span>(os.<span class="fn">join_paths</span>(<span class="str">'./uploads'</span>, stored))
+<span class="fn">record_upload</span>(stored, upload.<span class="prop">filename</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><strong>The content type.</strong> <code>content_type</code> is whatever the client wrote in the
+part's header, and it doesn't tell you anything about the actual contents. A
+file that claims to be <code>image/png</code> could be anything. When the difference
+matters, check the bytes themselves. <code>mime.detect_from_header()</code> reads the
+first bytes of a real file, so to check an upload, you need to write it
+somewhere first:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> mime
+<span class="kw">import</span> os
+
+<span class="kw">var</span> staged <span class="op">=</span> os.<span class="fn">join_paths</span>(os.<span class="fn">temp_dir</span>(), uuid.<span class="fn">v4</span>())
+upload.<span class="fn">save_to</span>(staged)
+
+<span class="kw">var</span> actual <span class="op">=</span> mime.<span class="fn">detect_from_header</span>(<span class="bi">file</span>(staged, <span class="str">'rb'</span>))
+
+<span class="kw">if</span> actual <span class="op">!=</span> <span class="str">'image/png'</span> <span class="kw">and</span> actual <span class="op">!=</span> <span class="str">'image/jpeg'</span> {
+  <span class="bi">file</span>(staged).<span class="fn">delete</span>()
+  response.<span class="fn">json</span>({ error<span class="op">:</span> <span class="str">'that is not an image'</span> }, <span class="num">415</span>)
+  <span class="kw">return</span>
+}
+
+os.<span class="fn">rename</span>(staged, os.<span class="fn">join_paths</span>(<span class="str">'./uploads'</span>, stored_name))
+</code></pre><span class="code-label">Zuri</span></figure>
+<h4 id="size-limits"><a class="anchor" href="#size-limits" aria-hidden="true" tabindex="-1"></a>Size Limits</h4>
+<p>The body is read into memory, up to the server's <code>max_body_size</code>, which is
+10 MiB by default. That's intentionally small:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="prop">max_body_size</span> <span class="op">=</span> <span class="num">50</span> <span class="op">*</span> <span class="num">1024</span> <span class="op">*</span> <span class="num">1024</span> <span class="com"># accept uploads up to 50 MB</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>If a request <em>declares</em> a body larger than the limit, it's rejected with
+<code>413 Content Too Large</code> before any of the body is read, which is exactly
+what <code>Content-Length</code> is for. A request that gives a false length is cut off
+at the limit and also rejected. Either way, the connection is then closed,
+since a partly read body leaves nothing that can safely be parsed after it.</p>
+<p>A client that asks for permission first with <code>Expect: 100-continue</code> gets an
+answer before it sends anything. The server checks the declared length
+against the limit and either responds with <code>100 Continue</code> or rejects the
+request straight away, so a rejected upload only costs one round trip
+instead of a whole transfer.</p>
+<p>For an upload that's too large to hold in memory, accept it as a raw body
+and stream it, rather than as a form field. <code>multipart/form-data</code> is only
+worth its overhead when there are other fields alongside the file.</p>
+<h3 id="request-validation"><a class="anchor" href="#request-validation" aria-hidden="true" tabindex="-1"></a>Request Validation</h3>
+<p>You can validate a request against a <code>validate</code> schema:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http
+<span class="kw">import</span> validate
+
+<span class="kw">var</span> create_user <span class="op">=</span> validate.<span class="fn">schema</span>({
+  name<span class="op">:</span> validate.<span class="fn">required</span>().<span class="fn">string</span>().<span class="fn">max_length</span>(<span class="num">100</span>),
+  email<span class="op">:</span> validate.<span class="fn">required</span>().<span class="fn">string</span>().<span class="fn">email</span>(),
+  age<span class="op">:</span> validate.<span class="fn">required</span>().<span class="fn">integer</span>().<span class="fn">gte</span>(<span class="num">18</span>).<span class="fn">lte</span>(<span class="num">120</span>),
+})
+
+server.<span class="fn">post</span>(<span class="str">'/users'</span>, <span class="meta">@</span>(request, response) {
+  <span class="kw">catch</span> {
+    <span class="kw">var</span> data <span class="op">=</span> request.<span class="fn">validate</span>(create_user)
+    response.<span class="fn">json</span>(<span class="fn">create_account</span>(data), <span class="num">201</span>)
+  } <span class="kw">as</span> error {
+    response.<span class="fn">json</span>({ errors<span class="op">:</span> create_user.<span class="fn">group_errors</span>(error.<span class="prop">errors</span>) }, <span class="num">422</span>)
+  }
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>validate()</code> returns the input it checked, so the success path takes one
+line, and the data you go on to use is the data that was validated. If
+validation fails, it raises the schema's own <code>validate.ValidationError</code>,
+which has an <code>errors</code> list of <code>{ field, message }</code> entries. <code>group_errors()</code>
+turns that list into a dictionary keyed by field, which is the format most
+front ends want:</p>
+<figure class="code"><pre><code class="language-json"><span class="punct">{</span>
+  <span class="key">"errors"</span><span class="punct">:</span> <span class="punct">{</span>
+    <span class="key">"email"</span><span class="punct">:</span> <span class="punct">[</span><span class="str">"The email field must be a valid email address."</span><span class="punct">]</span><span class="punct">,</span>
+    <span class="key">"age"</span><span class="punct">:</span> <span class="punct">[</span><span class="str">"The age field must be greater than or equal to 18."</span><span class="punct">]</span>
+  <span class="punct">}</span>
+<span class="punct">}</span>
+</code></pre><span class="code-label">JSON</span></figure>
+<p>If you'd rather branch than catch an error, validate the input yourself.
+There's no separate API for it:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> result <span class="op">=</span> create_user.<span class="fn">check</span>(request.<span class="fn">input</span>())
+
+<span class="kw">if</span> <span class="op">!</span>result.<span class="prop">valid</span> {
+  response.<span class="fn">json</span>({ errors<span class="op">:</span> result.<span class="prop">errors</span> }, <span class="num">422</span>)
+  <span class="kw">return</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The rules themselves, of which there are around eighty, including rules that
+compare fields such as <code>confirmed()</code> and <code>required_if()</code>, are part of the
+<code>validate</code> module, not this one.</p>
+<h4 id="what-gets-validated"><a class="anchor" href="#what-gets-validated" aria-hidden="true" tabindex="-1"></a>What Gets Validated</h4>
+<p><code>request.input()</code> is the dictionary that <code>validate()</code> checks. It merges
+three sources, each overriding the one before it:</p>
+<ol>
+<li>Route parameters from the pattern that matched</li>
+<li>Query string parameters</li>
+<li>The body: the keys of a JSON object, or the submitted form fields</li>
+</ol>
+<p>That means one schema works for <code>POST /users</code> with a JSON body,
+<code>GET /users?…</code> with a query string and <code>/users/:id</code> with a route parameter,
+and the handler doesn't need to care which one it got.</p>
+<p>To use only one of the sources, name it:</p>
+<figure class="code"><pre><code class="language-zuri">request.<span class="fn">validate</span>(schema, <span class="str">'body'</span>) <span class="com"># only the body</span>
+request.<span class="fn">validate</span>(schema, <span class="str">'query'</span>) <span class="com"># only the query string</span>
+request.<span class="fn">validate</span>(schema, <span class="str">'params'</span>) <span class="com"># only the route parameters</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Two things are intentionally left out of the merged input:</p>
+<ul>
+<li><strong>Uploaded files.</strong> There's nothing a schema rule could usefully say about
+a file's bytes. Get files with <code>request.file()</code> and check them as
+described in <a href="#forms-and-file-uploads">Forms and File Uploads</a>.</li>
+<li><strong>A JSON body that isn't an object.</strong> An array or a plain string has no
+names to merge, so it doesn't contribute anything. Read it with
+<code>request.json_body()</code>.</li>
+</ul>
+<p>A body that can't be parsed as JSON also contributes nothing, instead of
+raising an error. The schema's <code>required</code> rules then report what's missing,
+which is a more helpful response to a client than a parser error.</p>
+<h4 id="values-from-requests-are-strings"><a class="anchor" href="#values-from-requests-are-strings" aria-hidden="true" tabindex="-1"></a>Values From Requests Are Strings</h4>
+<p>Query strings and URL-encoded forms only contain text. <code>?age=36</code> gives you
+the string <code>'36'</code>, not the number <code>36</code>, and that affects which rules apply:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Rule</th>
+<th>On <code>'36'</code></th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>integer()</code>, <code>numeric()</code>, <code>gt()</code>, <code>gte()</code>, <code>lt()</code>, <code>lte()</code></td>
+<td>Treats it as 36</td>
+<td>These rules convert the value</td>
+</tr>
+<tr>
+<td><code>size()</code>, <code>min()</code>, <code>max()</code>, <code>between()</code></td>
+<td>Treats it as 2</td>
+<td>These rules measure <em>size</em>, which for a string is its number of characters</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>That's how <code>validate</code> is documented to work, not a quirk of this module.
+<code>min(8)</code> on a password means eight characters. It's only surprising when a
+schema written for a JSON body is later used for a query string.</p>
+<p>If a schema has to work with both, use the rules that check values:</p>
+<figure class="code"><pre><code class="language-zuri">age<span class="op">:</span> validate.<span class="fn">required</span>().<span class="fn">integer</span>().<span class="fn">gte</span>(<span class="num">18</span>).<span class="fn">lte</span>(<span class="num">120</span>)   <span class="com"># both</span>
+age<span class="op">:</span> validate.<span class="fn">required</span>().<span class="fn">integer</span>().<span class="fn">between</span>(<span class="num">18</span>, <span class="num">120</span>)   <span class="com"># JSON bodies only</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>input()</code> doesn't convert anything for you. It would have to guess, and
+silently turning a postcode like <code>'01234'</code> or a version like <code>'1.0'</code> into a
+number would be worse than having to choose the right rule.</p>
+<h4 id="repeated-fields"><a class="anchor" href="#repeated-fields" aria-hidden="true" tabindex="-1"></a>Repeated fields</h4>
+<p>A name can legitimately appear more than once in a query string or a form,
+so those sources arrive as <code>name -&gt; [values]</code>. <code>input()</code> replaces a list
+holding exactly one value with that value, and leaves a list of several
+values as it is:</p>
+<figure class="code"><pre><code>?tag=a           -&gt;  { tag: 'a' }
+?tag=a&amp;tag=b     -&gt;  { tag: ['a', 'b'] }
+</code></pre></figure>
+<p>That way, a rule for a single value sees a single value. If a field must
+<em>always</em> be a list, however many values arrived, read it with <code>form_all()</code>
+or from <code>request.query</code> directly, and validate it with <code>validate</code>'s <code>.*</code>
+wildcard.</p>
+<blockquote>
+<p><strong>Note</strong>
+The <code>http</code> module doesn't import <code>validate</code>. <code>validate()</code> accepts any
+object that has a <code>check_or_raise()</code> method and calls it, so a server that
+doesn't validate anything never has to load a schema engine, and your own
+schema objects, or ones from another library, work just as well.</p>
+</blockquote>
+<h3 id="the-response-object"><a class="anchor" href="#the-response-object" aria-hidden="true" tabindex="-1"></a>The Response Object</h3>
+<figure class="code"><pre><code class="language-zuri">response.<span class="fn">text</span>(<span class="str">'plain'</span>) <span class="com"># text/plain</span>
+response.<span class="fn">html</span>(<span class="str">'&lt;h1&gt;hi&lt;/h1&gt;'</span>) <span class="com"># text/html</span>
+response.<span class="fn">json</span>({ ok<span class="op">:</span> <span class="lit">true</span> }) <span class="com"># application/json</span>
+response.<span class="fn">xml</span>(<span class="str">'&lt;doc/&gt;'</span>) <span class="com"># application/xml</span>
+response.<span class="fn">write</span>(<span class="str">'more'</span>) <span class="com"># append, no content type</span>
+
+response.<span class="fn">file</span>(<span class="str">'/var/www/report.pdf'</span>) <span class="com"># streamed from disk</span>
+response.<span class="fn">download</span>(<span class="str">'/var/www/report.pdf'</span>) <span class="com"># ...as an attachment</span>
+response.<span class="fn">render</span>(<span class="str">'pages/home'</span>, { user }) <span class="com"># a Wire template</span>
+
+response.<span class="fn">redirect</span>(<span class="str">'/elsewhere'</span>) <span class="com"># 302 by default</span>
+response.<span class="fn">redirect</span>(<span class="str">'/elsewhere'</span>, <span class="num">308</span>) <span class="com"># method-preserving</span>
+
+response.<span class="prop">status</span> <span class="op">=</span> <span class="num">201</span>
+response.<span class="fn">header</span>(<span class="str">'X-Thing'</span>, <span class="str">'value'</span>)
+response.<span class="fn">content_type</span>(<span class="str">'text/csv'</span>)
+response.<span class="fn">content_disposition</span>(<span class="str">'attachment'</span>, <span class="str">'Résumé.pdf'</span>)
+response.<span class="fn">cache_for</span>(<span class="num">3600</span>)
+response.<span class="fn">no_cache</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Every method that writes a body also sets a suitable <code>Content-Type</code>, and
+each one returns the response, so you can chain them.</p>
+<p><code>file()</code> streams the file from disk instead of reading it into memory, so
+serving a large file takes only one line.</p>
+<p><code>content_disposition()</code> tells the browser whether to display the body or
+save it, and under what name. A name with characters outside printable
+ASCII, or one that contains a quote, a backslash or a percent sign, is sent
+as RFC 6266 describes: in full in <code>filename*</code>, with a plain ASCII substitute
+in <code>filename</code>. <code>download()</code> sends its file name the same way, so a body
+written from memory and a file from disk are saved under the same name.</p>
+<h3 id="middleware"><a class="anchor" href="#middleware" aria-hidden="true" tabindex="-1"></a>Middleware</h3>
+<p>A middleware function takes <code>(request, response, next)</code> and decides whether
+the rest of the chain runs:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(<span class="meta">@</span>(request, response, next) {
+  <span class="kw">var</span> started <span class="op">=</span> <span class="bi">time</span>()
+  <span class="fn">next</span>()
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>request.<span class="prop">method</span><span class="subst">}</span><span class="str"> </span><span class="subst">${</span>request.<span class="prop">path</span><span class="subst">}</span><span class="str"> </span><span class="subst">${</span>response.<span class="prop">status</span><span class="subst">}</span><span class="str"> '</span> <span class="op">+</span>
+      <span class="str">'</span><span class="subst">${</span>(<span class="bi">time</span>() <span class="op">-</span> started) <span class="op">*</span> <span class="num">1000</span><span class="subst">}</span><span class="str">ms'</span>
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>If a middleware doesn't call <code>next()</code>, the request stops there, which is
+exactly what an authentication or rate-limiting layer needs:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(<span class="meta">@</span>(request, response, next) {
+  <span class="kw">if</span> request.<span class="fn">header</span>(<span class="str">'x-api-key'</span>) <span class="op">!=</span> expected {
+    response.<span class="fn">json</span>({ error<span class="op">:</span> <span class="str">'unauthorized'</span> }, <span class="num">401</span>)
+    <span class="kw">return</span>
+  }
+  <span class="fn">next</span>()
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Middleware runs in the order it was added, with the first one added on the
+outside, so it wraps everything added after it.</p>
+<p>Code after <code>next()</code> only runs if the rest of the chain returned normally. If
+a handler raises an error, control never comes back there, and the server's
+error handling later decides on the <code>500</code> that's sent to the client. A
+middleware that needs to report on the response the client actually receives
+should register a callback with <code>response.on_finish()</code> instead. It runs once
+the response is final, including when the request failed:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(<span class="meta">@</span>(request, response, next) {
+  <span class="kw">var</span> started <span class="op">=</span> <span class="bi">time</span>()
+
+  response.<span class="fn">on_finish</span>(<span class="meta">@</span>{
+    <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>request.<span class="prop">method</span><span class="subst">}</span><span class="str"> </span><span class="subst">${</span>request.<span class="prop">path</span><span class="subst">}</span><span class="str"> </span><span class="subst">${</span>response.<span class="prop">status</span><span class="subst">}</span><span class="str"> '</span> <span class="op">+</span>
+        <span class="str">'</span><span class="subst">${</span>(<span class="bi">time</span>() <span class="op">-</span> started) <span class="op">*</span> <span class="num">1000</span><span class="subst">}</span><span class="str">ms'</span>
+  })
+
+  <span class="fn">next</span>()
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Each callback runs once, in the order it was registered, and a callback that
+raises an error is skipped instead of costing the client its response.
+<code>middleware.logger()</code> works this way.</p>
+<p>If a middleware wants to pass something to the handler, it puts it in
+<code>request.context</code>, which is a plain dictionary meant for exactly that:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(<span class="meta">@</span>(request, response, next) {
+  request.<span class="prop">context</span>[<span class="str">'started_at'</span>] <span class="op">=</span> <span class="bi">time</span>()
+  <span class="fn">next</span>()
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A middleware that needs to work with the <em>response</em> calls <code>next()</code> first,
+and then works with the result:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(<span class="meta">@</span>(request, response, next) {
+  <span class="fn">next</span>()
+  response.<span class="fn">header</span>(<span class="str">'X-Served-By'</span>, hostname)
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The middleware that most services need is already available. See <a href="#built-in-middleware">Built-in
+Middleware</a>.</p>
+<h3 id="errors"><a class="anchor" href="#errors" aria-hidden="true" tabindex="-1"></a>Errors</h3>
+<p>If a handler raises an error, the client gets a <code>500</code>, and the error message
+is never sent to it. Error messages often contain a file path, a query or
+part of the data being processed, and none of that should be sent to whoever
+caused the error.</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">on_error</span>(<span class="meta">@</span>(error, connection) {
+  log.<span class="fn">error</span>(<span class="str">'</span><span class="subst">${</span>error.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>)
+})
+
+server.<span class="fn">error_handler</span>(<span class="meta">@</span>(request, response, error) {
+  response.<span class="prop">status</span> <span class="op">=</span> <span class="num">500</span>
+  response.<span class="fn">render</span>(<span class="str">'errors/500'</span>)
+})
+
+server.<span class="fn">not_found</span>(<span class="meta">@</span>(request, response) {
+  response.<span class="prop">status</span> <span class="op">=</span> <span class="num">404</span>
+  response.<span class="fn">render</span>(<span class="str">'errors/404'</span>)
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>on_error()</code> listeners see every error, including failures on the connection
+that never reached a handler. <code>error_handler()</code> creates the response body
+for a failed request. Without one, the server sends a plain <code>500</code>.</p>
+<h3 id="static-files"><a class="anchor" href="#static-files" aria-hidden="true" tabindex="-1"></a>Static Files</h3>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">serve_files</span>(<span class="str">'/static'</span>, <span class="str">'./public'</span>, {
+  cache_age<span class="op">:</span> <span class="num">86400</span>,
+  precompressed<span class="op">:</span> <span class="lit">true</span>,
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>That one call handles everything a static file needs to work properly with a
+browser or a CDN:</p>
+<ul>
+<li><code>ETag</code> and <code>Last-Modified</code> headers, and <code>304 Not Modified</code> for a
+conditional request that still matches</li>
+<li><code>Range</code> requests, answered with <code>206</code> and a <code>Content-Range</code> header, and
+<code>416</code> for a range outside the file</li>
+<li><code>If-Match</code>, <code>If-Unmodified-Since</code>, <code>If-None-Match</code>, <code>If-Modified-Since</code>
+and <code>If-Range</code>, evaluated in the order RFC 9110 specifies</li>
+<li><code>Content-Type</code> based on the file extension</li>
+<li><code>index.html</code> for a request that names a directory</li>
+<li>With <code>precompressed</code>, a <code>.br</code> or <code>.gz</code> file next to the original, served
+instead of it when the client accepts that encoding</li>
+</ul>
+<p>Every request path is percent-decoded, normalized and joined to the root,
+and then checked to make sure it's still inside the root. All of these steps
+are needed, because doing only some of them isn't enough. Dotfiles aren't
+served at all. Files like <code>.env</code>, <code>.git</code> and <code>.htpasswd</code> end up in a web
+root at some point in most projects, and none of them should ever be served.</p>
+<p>For a single-page application, <code>fallback</code> serves the application's shell for
+any path that doesn't name a file, so client-side routes work when the page
+is reloaded:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">serve_files</span>(<span class="str">'/'</span>, <span class="str">'./dist'</span>, { fallback<span class="op">:</span> <span class="str">'index.html'</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<h3 id="compression"><a class="anchor" href="#compression" aria-hidden="true" tabindex="-1"></a>Compression</h3>
+<p>Responses are compressed on the way out, and compression is on by default. A
+response is compressed when all of these conditions are met:</p>
+<ul>
+<li><code>server.compression</code> is on, which it is by default.</li>
+<li>The body is at least <code>server.compression_min_size</code> bytes, which is 1024 by
+default.</li>
+<li>Its media type benefits from compression. That includes anything starting
+with <code>text/</code>, as well as JSON, JavaScript, XML, SVG, WebAssembly and the
+<code>+json</code> and <code>+xml</code> types.</li>
+<li>The client's <code>Accept-Encoding</code> header accepts <code>br</code> or <code>gzip</code>.</li>
+<li>Nothing has already set a <code>Content-Encoding</code>.</li>
+<li>The compressed body is actually smaller than the original.</li>
+</ul>
+<p>When the client accepts both, Brotli is used instead of gzip.
+<code>Vary: Accept-Encoding</code> is added either way, so a shared cache in front of
+the server can't send a compressed body to a client that didn't ask for one.</p>
+<p>To turn compression off, or change the threshold:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="prop">compression</span> <span class="op">=</span> <span class="lit">false</span> <span class="com"># off entirely</span>
+server.<span class="prop">compression_min_size</span> <span class="op">=</span> <span class="num">4096</span> <span class="com"># only bodies over 4 KiB</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The list of media types is an allowlist rather than a denylist on purpose. A
+JPEG, an MP4 or a zip file is already compressed, and running it through
+Brotli would use CPU time only to make it slightly larger.</p>
+<blockquote>
+<p><strong>Note</strong>
+Responses created with <code>response.file()</code>, which includes everything
+<code>serve_files()</code> serves, are <strong>not</strong> compressed on the fly. They're
+streamed from disk instead of being held in memory, and compressing them
+for each request would mean reading them into memory first. Compress those
+files ahead of time, and let the static file handler pick up the
+compressed versions:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">serve_files</span>(<span class="str">'/static'</span>, <span class="str">'./public'</span>, { precompressed<span class="op">:</span> <span class="lit">true</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>With this option on, a request for <code>site.css</code> from a client that accepts
+Brotli is answered with <code>site.css.br</code> if that file exists, or with
+<code>site.css.gz</code> if that exists and the client accepts gzip. This costs no
+CPU time per request, and the response gets the correct <code>Content-Encoding</code>
+and <code>Vary</code> headers.</p>
+</blockquote>
+<p>On the client side, there's nothing to configure.
+<code>Accept-Encoding: gzip, br, deflate, zstd</code> is sent by default, and
+compressed response bodies are decoded before you see them.</p>
+<h3 id="streaming-a-response-body"><a class="anchor" href="#streaming-a-response-body" aria-hidden="true" tabindex="-1"></a>Streaming a Response Body</h3>
+<p>A response body can be produced by a callback instead of being held in
+memory:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">get</span>(<span class="str">'/export.csv'</span>, <span class="meta">@</span>(request, response) {
+  response.<span class="fn">content_type</span>(<span class="str">'text/csv'</span>)
+
+  response.<span class="fn">stream</span>(<span class="meta">@</span>(writer) {
+    writer.<span class="fn">write</span>(<span class="str">'id,name\n'</span>)
+
+    <span class="kw">for</span> row <span class="kw">in</span> rows {
+      writer.<span class="fn">write</span>(<span class="str">'</span><span class="subst">${</span>row.<span class="prop">id</span><span class="subst">}</span><span class="str">,</span><span class="subst">${</span>row.<span class="prop">name</span><span class="subst">}</span><span class="str">\n'</span>)
+      writer.<span class="fn">flush</span>()
+    }
+  })
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Unless a <code>Content-Length</code> was set beforehand, the body is sent with chunked
+transfer encoding over HTTP/1.1, and as an ordinary DATA stream over HTTP/2.
+The handler doesn't need to know which one is being used.</p>
+<h3 id="setting-cookies"><a class="anchor" href="#setting-cookies" aria-hidden="true" tabindex="-1"></a>Setting Cookies</h3>
+<figure class="code"><pre><code class="language-zuri">response.<span class="fn">set_cookie</span>(<span class="str">'theme'</span>, <span class="str">'dark'</span>, {
+  max_age<span class="op">:</span> <span class="num">86400</span>,
+  secure<span class="op">:</span> <span class="lit">true</span>,
+  same_site<span class="op">:</span> <span class="str">'Strict'</span>,
+})
+
+response.<span class="fn">clear_cookie</span>(<span class="str">'theme'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>http_only</code> defaults to <code>true</code> and <code>same_site</code> defaults to <code>'Lax'</code>, which is
+what a cookie containing anything sensitive should have. Pass them
+explicitly if you want something else. If a cookie's name starts with the
+<code>__Secure-</code> or <code>__Host-</code> prefix, the rules for that prefix are applied
+automatically, so the cookie isn't sent in a form that the browser would
+silently refuse to store.</p>
+<p>For state that belongs to a visitor rather than to the browser, use a
+session. A session keeps the state on the server and only puts an identifier
+in the cookie. <a href="#sessions">Sessions</a> covers them.</p>
+<h3 id="content-negotiation"><a class="anchor" href="#content-negotiation" aria-hidden="true" tabindex="-1"></a>Content Negotiation</h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http.<span class="prop">negotiate</span>
+
+<span class="kw">var</span> type <span class="op">=</span> negotiate.<span class="fn">best_match</span>(request.<span class="fn">header</span>(<span class="str">'accept'</span>), [
+  <span class="str">'application/json'</span>,
+  <span class="str">'text/html'</span>,
+])
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>best_match()</code> chooses the format the client would most like from the ones
+you can produce. It takes quality weights into account, and your own order
+breaks ties. <code>request.accepts('text/html')</code> and <code>request.wants_json()</code> cover
+the most common cases.</p>
+<h2 id="built-in-middleware"><a class="anchor" href="#built-in-middleware" aria-hidden="true" tabindex="-1"></a>Built-in Middleware</h2>
+<p><code>http.middleware</code> contains the middleware that almost every public service
+ends up needing. Each function <em>returns</em> a middleware, so you call it at the
+point where you register it:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http
+<span class="kw">import</span> http.<span class="prop">middleware</span>
+
+<span class="kw">var</span> server <span class="op">=</span> http.<span class="fn">server</span>(<span class="num">3000</span>)
+
+server.<span class="fn">use</span>(middleware.<span class="fn">request_id</span>())
+server.<span class="fn">use</span>(middleware.<span class="fn">logger</span>())
+server.<span class="fn">use</span>(middleware.<span class="fn">security_headers</span>())
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>They're ordinary middleware with no special privileges, so you can read any
+of them as an example of how to write your own.</p>
+<p>None of them raise an error when they're created. That matters for the three
+that take a verifier, <a href="#basic_auth"><code>basic_auth()</code></a>,
+<a href="#bearer_auth"><code>bearer_auth()</code></a> and <a href="#jwt_auth"><code>jwt_auth()</code></a>. For these,
+<strong>passing no verifier disables the middleware</strong>. It lets every request
+through, instead of rejecting requests or failing when you register it.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="com"># Authentication, off. Everything else in the chain is untouched.</span>
+server.<span class="fn">use</span>(middleware.<span class="fn">jwt_auth</span>(<span class="lit">nil</span>))
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>This is intentional, and it's useful. Setting a verifier to <code>nil</code> turns off
+its middleware without changing the rest of the chain, which is what you
+want when you're tracking down which middleware in a stack is causing a
+request to fail.</p>
+<p>A middleware is only disabled when you ask for it, never as a fallback. A
+verifier that's <em>present</em> and rejects a request still rejects it.</p>
+<h3 id="logger"><a class="anchor" href="#logger" aria-hidden="true" tabindex="-1"></a><code>logger()</code></h3>
+<p>Writes one line for each request, after the response has finished.</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(middleware.<span class="fn">logger</span>())
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code"><pre><code>127.0.0.1 - [Wed, 09 Sep 2026 20:09:17 GMT] "GET /static/big.txt HTTP/1.1" 200 320 3.07ms
+</code></pre></figure>
+<p>This is the Common Log Format with the response time added, which every log
+analysis tool already understands. The size is taken from <code>Content-Length</code>
+when the body comes from a file or is streamed, so a static file is logged
+with its real size, not zero.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sink</code></td>
+<td><code>echo</code></td>
+<td>A function that receives each finished line</td>
+</tr>
+<tr>
+<td><code>format</code></td>
+<td>The format shown above</td>
+<td>A function <code>(request, response, milliseconds)</code> that returns the line</td>
+</tr>
+<tr>
+<td><code>trust_proxy</code></td>
+<td><code>false</code></td>
+<td>Logs the forwarded client address instead of the address of the connection</td>
+</tr>
+</tbody>
+</table>
+</div>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(
+  middleware.<span class="fn">logger</span>({
+    sink<span class="op">:</span> <span class="meta">@</span>(line) {
+      log_file.<span class="fn">puts</span>(line <span class="op">+</span> <span class="str">'\n'</span>)
+    },
+    trust_proxy<span class="op">:</span> <span class="lit">true</span>,
+  }),
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>For structured logging, use a <code>format</code> that returns JSON:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(
+  middleware.<span class="fn">logger</span>({
+    format<span class="op">:</span> <span class="meta">@</span>(request, response, elapsed) {
+      <span class="kw">return</span> json.<span class="fn">encode</span>({
+        method<span class="op">:</span> request.<span class="prop">method</span>,
+        path<span class="op">:</span> request.<span class="prop">path</span>,
+        status<span class="op">:</span> response.<span class="prop">status</span>,
+        ms<span class="op">:</span> elapsed,
+        <span class="bi">id</span><span class="op">:</span> request.<span class="prop">context</span>.<span class="fn">get</span>(<span class="str">'request_id'</span>, <span class="lit">nil</span>),
+      })
+    },
+  }),
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Requests that raise an error are logged too, with the status the client was
+sent after the server handled the failure. That's either the <code>500</code> from the
+default error handling, or whatever status the error handler chose.</p>
+<h3 id="request_id"><a class="anchor" href="#request_id" aria-hidden="true" tabindex="-1"></a><code>request_id()</code></h3>
+<p>Gives every request an identifier, so you can follow a single request
+through a log file and across services.</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(middleware.<span class="fn">request_id</span>())
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The identifier is stored in <code>request.context['request_id']</code> and sent in the
+response's <code>X-Request-Id</code> header. If the client sends its own identifier,
+that one is used instead of a new one, which lets a trace continue across
+services.</p>
+<p>The only optional argument is the header name:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(middleware.<span class="fn">request_id</span>(<span class="str">'X-Correlation-Id'</span>))
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>An identifier from outside your service ends up in your logs, so it's
+limited to 64 characters, and anything that isn't plainly printable is
+removed before it's used.</p>
+<h3 id="security_headers"><a class="anchor" href="#security_headers" aria-hidden="true" tabindex="-1"></a><code>security_headers()</code></h3>
+<p>Adds the response headers that tell a browser to apply extra security
+measures to a page.</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(middleware.<span class="fn">security_headers</span>())
+</code></pre><span class="code-label">Zuri</span></figure>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Header</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>content_type_options</code></td>
+<td><code>'nosniff'</code></td>
+<td><code>X-Content-Type-Options</code>, which stops the browser from guessing a different content type from the one declared</td>
+</tr>
+<tr>
+<td><code>frame_options</code></td>
+<td><code>'DENY'</code></td>
+<td><code>X-Frame-Options</code>, which stops the page from being shown in a frame, as clickjacking requires</td>
+</tr>
+<tr>
+<td><code>referrer_policy</code></td>
+<td><code>'strict-origin-when-cross-origin'</code></td>
+<td><code>Referrer-Policy</code>, which keeps paths and query strings out of the referrer sent to other sites</td>
+</tr>
+<tr>
+<td><code>hsts_max_age</code></td>
+<td><code>31536000</code></td>
+<td><code>Strict-Transport-Security</code></td>
+</tr>
+<tr>
+<td><code>hsts_subdomains</code></td>
+<td><code>false</code></td>
+<td>Adds <code>includeSubDomains</code></td>
+</tr>
+<tr>
+<td><code>content_security_policy</code></td>
+<td>Not set</td>
+<td><code>Content-Security-Policy</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(
+  middleware.<span class="fn">security_headers</span>({
+    content_security_policy<span class="op">:</span> <span class="str">"default-src 'self'; img-src 'self' data:"</span>,
+    hsts_subdomains<span class="op">:</span> <span class="lit">true</span>,
+    frame_options<span class="op">:</span> <span class="str">'SAMEORIGIN'</span>,
+  }),
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Pass <code>nil</code> for any option to leave that header out.</p>
+<p><code>Content-Security-Policy</code> has no default, because a wrong policy breaks the
+page and an overly permissive one doesn't protect anything. The right policy
+depends on what your application actually loads.</p>
+<p><code>Strict-Transport-Security</code> is only sent over HTTPS. Over an unencrypted
+connection, browsers ignore it at best, and at worst it can lock clients out
+of a host that doesn't have a certificate.</p>
+<p>Every header is set with <code>set_default</code>, so a handler that sets its own value
+keeps it.</p>
+<h3 id="cors"><a class="anchor" href="#cors" aria-hidden="true" tabindex="-1"></a><code>cors()</code></h3>
+<p>Responds to CORS preflight requests, and adds the headers a browser needs
+before it lets a script read a response from another origin.</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(
+  middleware.<span class="fn">cors</span>({
+    origins<span class="op">:</span> [<span class="str">'https://app.example.com'</span>],
+    credentials<span class="op">:</span> <span class="lit">true</span>,
+  }),
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>origins</code></td>
+<td><code>['*']</code></td>
+<td>The allowed origins, matched exactly. <code>'*'</code> allows any origin.</td>
+</tr>
+<tr>
+<td><code>methods</code></td>
+<td>The seven usual methods</td>
+<td>The methods a preflight response says are allowed</td>
+</tr>
+<tr>
+<td><code>headers</code></td>
+<td>The headers the request asked for</td>
+<td>The request headers a script may set</td>
+</tr>
+<tr>
+<td><code>expose</code></td>
+<td>None</td>
+<td>The response headers a script may read</td>
+</tr>
+<tr>
+<td><code>credentials</code></td>
+<td><code>false</code></td>
+<td>Whether cookies and <code>Authorization</code> headers may be sent</td>
+</tr>
+<tr>
+<td><code>max_age</code></td>
+<td><code>86400</code></td>
+<td>How long a preflight response may be cached, in seconds</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>A request without an <code>Origin</code> header isn't a cross-origin request, so it's
+passed straight through. If the <code>Origin</code> isn't in the list, the response
+gets no CORS headers at all. The browser then won't let the script see the
+response, which is the right outcome. Responding with an error instead would
+reveal whether the resource exists.</p>
+<blockquote>
+<p><strong>Note</strong>
+You can't combine a wildcard with <code>credentials</code>, because every browser
+rejects that combination. When <code>credentials</code> is set, the requesting origin
+is sent back instead, which makes the <code>origins</code> list the only thing
+standing between an attacker's page and an authenticated response.
+Whenever you use credentials, list the allowed origins explicitly.</p>
+</blockquote>
+<p><code>Vary: Origin</code> is added whenever the response depends on the request's
+origin, so a shared cache can't serve one origin's response to another.</p>
+<h3 id="basic_auth"><a class="anchor" href="#basic_auth" aria-hidden="true" tabindex="-1"></a><code>basic_auth()</code></h3>
+<p>Requires HTTP Basic authentication.</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(
+  middleware.<span class="fn">basic_auth</span>(<span class="meta">@</span>(user, password) {
+    <span class="kw">return</span> user <span class="op">==</span> <span class="str">'admin'</span> <span class="kw">and</span> http.<span class="prop">util</span>.<span class="fn">secure_equals</span>(password, secret)
+  }, <span class="str">'Admin area'</span>),
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The first argument is a function that's called with the username and
+password, and returns whether they're valid. The second argument is the
+realm named in the challenge, which defaults to <code>'Restricted'</code>.</p>
+<p>If authentication succeeds, the username is stored in
+<code>request.context['user']</code>. If it fails, the response is a <code>401</code> with a
+<code>WWW-Authenticate</code> header, which makes the browser show its login prompt.</p>
+<p>Passing <code>nil</code> instead of a verifier disables the middleware completely, as
+described in <a href="#built-in-middleware">the note above</a>.</p>
+<p>Compare secrets with <code>http.util.secure_equals()</code> instead of <code>==</code>. It
+compares in constant time, so a wrong guess and an almost correct guess take
+the same amount of time, and the comparison can't be used to discover the
+secret one character at a time.</p>
+<p>To protect only part of a site, wrap the middleware:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> guard <span class="op">=</span> middleware.<span class="fn">basic_auth</span>(check_credentials)
+
+server.<span class="fn">use</span>(<span class="meta">@</span>(request, response, next) {
+  <span class="kw">if</span> request.<span class="prop">path</span>.<span class="fn">starts_with</span>(<span class="str">'/admin'</span>) {
+    <span class="fn">guard</span>(request, response, next)
+    <span class="kw">return</span>
+  }
+  <span class="fn">next</span>()
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Note that when a guard succeeds, the <code>next()</code> it calls continues the
+<em>entire</em> rest of the chain, not just the handler. If you register two
+authentication middleware globally, both apply to every request. When
+they're meant for different parts of the site, limit each one to a path
+prefix, as shown above.</p>
+<h3 id="bearer_auth"><a class="anchor" href="#bearer_auth" aria-hidden="true" tabindex="-1"></a><code>bearer_auth()</code></h3>
+<p>Requires a bearer token, which is the usual approach for an API.</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(
+  middleware.<span class="fn">bearer_auth</span>(<span class="meta">@</span>(token) {
+    <span class="kw">var</span> claims <span class="op">=</span> <span class="fn">verify_jwt</span>(token)
+    <span class="kw">return</span> claims <span class="op">==</span> <span class="lit">nil</span> <span class="op">?</span> <span class="lit">false</span> <span class="op">:</span> claims.<span class="prop">subject</span>
+  }),
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The verifier is called with the token. It returns a falsy value to reject
+the token, or a value to attach to the request, which is stored in
+<code>request.context['user']</code>. You can return the subject, the claims or a
+complete user record.</p>
+<p>A failure produces a <code>401</code> with a <code>WWW-Authenticate: Bearer</code> challenge and a
+JSON body. The realm is the optional second argument, and defaults to
+<code>'api'</code>. As with <code>basic_auth()</code>, a <code>nil</code> verifier disables the middleware.</p>
+<p><code>middleware.parse_bearer(header)</code> and <code>middleware.parse_basic(header)</code> are
+also exported, for code that needs to read an <code>Authorization</code> header without
+installing a middleware, and <code>request.bearer_token()</code> reads the token
+directly from a request.</p>
+<p>For JSON Web Tokens in particular, use <a href="#jwt_auth"><code>jwt_auth()</code></a>, which
+handles the verification, the claims and the RFC 6750 challenges for you,
+instead of leaving them to the verifier you write here.</p>
+<h3 id="jwt_auth"><a class="anchor" href="#jwt_auth" aria-hidden="true" tabindex="-1"></a><code>jwt_auth()</code></h3>
+<p>Requires a valid JSON Web Token, verified with the <code>jwt</code> module.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http.<span class="prop">middleware</span>
+<span class="kw">import</span> jwt
+
+server.<span class="fn">use</span>(
+  middleware.<span class="fn">jwt_auth</span>(
+    jwt.<span class="fn">Verifier</span>(secret, {
+      algorithms<span class="op">:</span> [<span class="str">'HS256'</span>],
+      audience<span class="op">:</span> <span class="str">'api'</span>,
+    }),
+  ),
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The first argument is either a <code>jwt.Verifier</code>, or a function that takes the
+token and returns its claims. The function form lets you use a key set
+selected by <code>kid</code>, or anything else the <code>jwt</code> module can do that a fixed
+verifier can't:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(
+  middleware.<span class="fn">jwt_auth</span>(<span class="meta">@</span>(token) {
+    <span class="kw">return</span> jwt.<span class="fn">verify_with_jwks</span>(token, keys, { audience<span class="op">:</span> <span class="str">'api'</span> })
+  }),
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>realm</code></td>
+<td><code>'api'</code></td>
+<td>The realm named in the challenge</td>
+</tr>
+<tr>
+<td><code>optional</code></td>
+<td><code>false</code></td>
+<td>Attaches the claims when a valid token is present, but doesn't reject requests without one</td>
+</tr>
+<tr>
+<td><code>scopes</code></td>
+<td>None</td>
+<td>A list of scopes that every token must include</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>If verification succeeds, the claims are stored in
+<code>request.context['claims']</code>, and the <code>sub</code> claim, which is where an issuer
+usually puts the account the token represents, is stored in
+<code>request.context['user']</code>:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">get</span>(<span class="str">'/me'</span>, <span class="meta">@</span>(request, response) {
+  response.<span class="fn">json</span>({
+    account<span class="op">:</span> request.<span class="prop">context</span>.<span class="fn">get</span>(<span class="str">'user'</span>, <span class="lit">nil</span>),
+    issued_at<span class="op">:</span> request.<span class="prop">context</span>.<span class="fn">get</span>(<span class="str">'claims'</span>, {}).<span class="fn">get</span>(<span class="str">'iat'</span>, <span class="lit">nil</span>),
+  })
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Failures follow section 3 of RFC 6750:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>Response</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>No token at all</td>
+<td><code>401</code>, with <code>WWW-Authenticate: Bearer realm=&quot;api&quot;</code></td>
+</tr>
+<tr>
+<td>The token can't be verified</td>
+<td><code>401</code>, with <code>error=&quot;invalid_token&quot;</code></td>
+</tr>
+<tr>
+<td>The token is valid but is missing a required scope</td>
+<td><code>403</code>, with <code>error=&quot;insufficient_scope&quot;</code> and the scope that was needed</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The last row is the reason for <code>scopes</code>. A token that failed authentication
+and a token that's authenticated but not allowed to do something are
+different problems. Responding to both with <code>401</code> tells the client to get a
+new token, when a new token won't help.</p>
+<blockquote>
+<p><strong>Note</strong>
+A challenge never says <em>which</em> check a token failed. An expired token and
+a forged one get exactly the same <code>error_description</code>. Knowing which it
+was is useful for your logs and for an attacker, and nobody else. If you
+need the reason, log it from the verifier you passed in.</p>
+</blockquote>
+<p><code>optional</code> is for a route that behaves differently when it knows who's
+making the request, but doesn't require it, such as a public page that shows
+an edit button to its author:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(middleware.<span class="fn">jwt_auth</span>(verifier, { optional<span class="op">:</span> <span class="lit">true</span> }))
+
+server.<span class="fn">get</span>(<span class="str">'/posts/:id'</span>, <span class="meta">@</span>(request, response) {
+  <span class="kw">var</span> viewer <span class="op">=</span> request.<span class="prop">context</span>.<span class="fn">get</span>(<span class="str">'user'</span>, <span class="lit">nil</span>)
+  response.<span class="fn">json</span>(<span class="fn">render_post</span>(request.<span class="fn">param</span>(<span class="str">'id'</span>), viewer))
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>With <code>optional</code>, a token that's <em>present</em> but invalid is still rejected. If
+a bad token were ignored, a client could tamper with a token and get the
+anonymous view instead of an error, which would hide exactly the kind of
+problem you want to know about.</p>
+<p>A <code>nil</code> verifier disables the middleware. Every request passes through
+without authentication, and <code>request.context['claims']</code> is never set.
+Nothing here raises an error when it's created, so you never need a <code>catch</code>
+around the registration.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> verifier <span class="op">=</span> production <span class="op">?</span> jwt.<span class="fn">Verifier</span>(secret, options) <span class="op">:</span> <span class="lit">nil</span>
+
+server.<span class="fn">use</span>(middleware.<span class="fn">jwt_auth</span>(verifier))
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Like <code>HttpRequest.validate()</code>, this middleware doesn't import the <code>jwt</code>
+module. The caller creates the verifier, which leaves the choice of token
+format to the application, and means a server that doesn't authenticate
+anything never has to load the module.</p>
+<h3 id="rate_limit"><a class="anchor" href="#rate_limit" aria-hidden="true" tabindex="-1"></a><code>rate_limit()</code></h3>
+<p>Limits how many requests a single client can make in a given period of time.</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(middleware.<span class="fn">rate_limit</span>({ limit<span class="op">:</span> <span class="num">100</span>, window<span class="op">:</span> <span class="num">60</span> }))
+</code></pre><span class="code-label">Zuri</span></figure>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>limit</code></td>
+<td><code>60</code></td>
+<td>The number of requests allowed per window</td>
+</tr>
+<tr>
+<td><code>window</code></td>
+<td><code>60</code></td>
+<td>The length of the window, in seconds</td>
+</tr>
+<tr>
+<td><code>key</code></td>
+<td>The client's address</td>
+<td>A function that takes the request and returns the key to count it under</td>
+</tr>
+<tr>
+<td><code>trust_proxy</code></td>
+<td><code>false</code></td>
+<td>Takes the address from the forwarding headers</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Every response includes the current state of the limit, so a well-behaved
+client can slow down before it's rejected:</p>
+<figure class="code"><pre><code>RateLimit-Limit: 100
+RateLimit-Remaining: 87
+RateLimit-Reset: 41
+</code></pre></figure>
+<p>A client over the limit gets <code>429 Too Many Requests</code> with a <code>Retry-After</code>
+header.</p>
+<p>To limit requests per API key instead of per address, provide a <code>key</code>
+function:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(
+  middleware.<span class="fn">rate_limit</span>({
+    limit<span class="op">:</span> <span class="num">1000</span>,
+    window<span class="op">:</span> <span class="num">3600</span>,
+    key<span class="op">:</span> <span class="meta">@</span>(request) {
+      <span class="kw">return</span> request.<span class="fn">header</span>(<span class="str">'x-api-key'</span>, <span class="lit">nil</span>) <span class="kw">or</span>
+          request.<span class="fn">client_ip</span>() <span class="kw">or</span>
+          <span class="str">'anonymous'</span>
+    },
+  }),
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<blockquote>
+<p><strong>Note</strong>
+The counter is kept in memory, so each worker has its own. Running with
+<code>workers: 4</code> makes the effective limit four times <code>limit</code>. This is a
+deliberate trade-off. A shared counter would need shared state, and this
+middleware is meant to slow down a runaway client, not to meter usage for
+billing. If the exact number matters, divide <code>limit</code> by the number of
+workers, or keep the count somewhere all the workers can see it.</p>
+</blockquote>
+<h3 id="etag"><a class="anchor" href="#etag" aria-hidden="true" tabindex="-1"></a><code>etag()</code></h3>
+<p>Computes a weak <code>ETag</code> for the finished response body, and responds with
+<code>304 Not Modified</code> when the client already has that version.</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(middleware.<span class="fn">etag</span>())
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The only optional argument is the smallest body size worth tagging, in
+bytes. It defaults to <code>128</code>, because for smaller bodies, the validator costs
+more than the body it would save.</p>
+<p>If a handler has already set its own <code>ETag</code>, it's left alone, because the
+handler knows something about the resource that hashing the bytes doesn't.
+Responses backed by files are also left alone, because <code>serve_files()</code>
+already tags them using the file's size and modification time.</p>
+<p>Because it works with the finished body, it works with any kind of response,
+such as a rendered template, a JSON document or a generated report.</p>
+<h3 id="force_https"><a class="anchor" href="#force_https" aria-hidden="true" tabindex="-1"></a><code>force_https()</code></h3>
+<p>Redirects every request that arrived over an unencrypted connection to the
+same URL over HTTPS.</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(middleware.<span class="fn">force_https</span>())
+</code></pre><span class="code-label">Zuri</span></figure>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>status</code></td>
+<td><code>308</code></td>
+<td>The redirect status. <code>308</code> keeps the method and the body.</td>
+</tr>
+<tr>
+<td><code>port</code></td>
+<td>The default port</td>
+<td>The HTTPS port, if it isn't 443</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Use this on the unencrypted listener, which usually only exists to perform
+this redirect:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="com"># port 80: redirect and nothing else</span>
+<span class="kw">var</span> redirector <span class="op">=</span> http.<span class="fn">server</span>(<span class="num">80</span>, <span class="str">'0.0.0.0'</span>)
+redirector.<span class="fn">use</span>(middleware.<span class="fn">force_https</span>())
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Combine it with <code>security_headers()</code>'s <code>Strict-Transport-Security</code> on the
+TLS listener, so that after the first visit, the browser stops making
+unencrypted requests altogether.</p>
+<h3 id="ordering"><a class="anchor" href="#ordering" aria-hidden="true" tabindex="-1"></a>Ordering</h3>
+<p>Middleware runs from the outside in, so the order in which you register it
+is the order in which it wraps the request. Here's a reasonable default:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(middleware.<span class="fn">request_id</span>()) <span class="com"># so everything after can log it</span>
+server.<span class="fn">use</span>(middleware.<span class="fn">logger</span>()) <span class="com"># so it sees the final status</span>
+server.<span class="fn">use</span>(middleware.<span class="fn">force_https</span>()) <span class="com"># before any work is done</span>
+server.<span class="fn">use</span>(middleware.<span class="fn">security_headers</span>())
+server.<span class="fn">use</span>(middleware.<span class="fn">cors</span>({ origins<span class="op">:</span> allowed }))
+server.<span class="fn">use</span>(middleware.<span class="fn">rate_limit</span>({ limit<span class="op">:</span> <span class="num">100</span> }))
+server.<span class="fn">use</span>(middleware.<span class="fn">jwt_auth</span>(verifier)) <span class="com"># after the cheap refusals</span>
+server.<span class="fn">use</span>(middleware.<span class="fn">etag</span>()) <span class="com"># innermost: it needs the finished body</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Here's the reasoning behind each position. Identifiers come before anything
+that might log. Logging wraps everything else so that it records what
+actually happened. Cheap checks that might reject a request come before
+expensive ones. And anything that looks at the response body goes on the
+inside, where the body exists.</p>
+<h2 id="sessions"><a class="anchor" href="#sessions" aria-hidden="true" tabindex="-1"></a>Sessions</h2>
+<p>A session is state that belongs to a single visitor. It's kept on the server
+and found again through a cookie that the browser sends back. Only the
+identifier is sent to the browser, so a visitor can't read or change what
+the session contains, and the cookie is useless to anyone who can't present
+the exact value that was issued.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http
+
+<span class="kw">var</span> server <span class="op">=</span> http.<span class="fn">server</span>(<span class="num">3000</span>)
+
+server.<span class="fn">use</span>(http.<span class="fn">session</span>())
+
+server.<span class="fn">get</span>(<span class="str">'/'</span>, <span class="meta">@</span>(request, response) {
+  <span class="kw">var</span> seen <span class="op">=</span> request.<span class="fn">session</span>().<span class="fn">get</span>(<span class="str">'seen'</span>, <span class="num">0</span>) <span class="op">+</span> <span class="num">1</span>
+
+  request.<span class="fn">session</span>().<span class="fn">set</span>(<span class="str">'seen'</span>, seen)
+  response.<span class="fn">text</span>(<span class="str">'visit </span><span class="subst">${</span>seen<span class="subst">}</span><span class="str">'</span>)
+})
+
+server.<span class="fn">listen</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>session()</code> is a middleware. Register it once, before anything that reads a
+session, and every handler after it can get its session with
+<code>request.session()</code>.</p>
+<h3 id="sessions-are-created-on-first-use"><a class="anchor" href="#sessions-are-created-on-first-use" aria-hidden="true" tabindex="-1"></a>Sessions Are Created on First Use</h3>
+<p>A request that never uses its session costs nothing: the store isn't read or
+written, and no <code>Set-Cookie</code> header is sent. The session record is only
+created the first time something is written to the session, which stops a
+crawler working through a public site from filling the store with empty
+sessions.</p>
+<p>A request that only reads an existing session doesn't write anything back
+either, except to move the idle expiry time forward, at most once every
+<code>touch_interval</code> seconds.</p>
+<h3 id="signing-in"><a class="anchor" href="#signing-in" aria-hidden="true" tabindex="-1"></a>Signing In</h3>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">post</span>(<span class="str">'/login'</span>, <span class="meta">@</span>(request, response) {
+  <span class="kw">var</span> account <span class="op">=</span> <span class="fn">authenticate</span>(request.<span class="fn">form</span>())
+
+  <span class="kw">if</span> account <span class="op">==</span> <span class="lit">nil</span> {
+    response.<span class="prop">status</span> <span class="op">=</span> <span class="num">401</span>
+    response.<span class="fn">html</span>(<span class="fn">render_login</span>(<span class="str">'Those details do not match.'</span>))
+
+    <span class="kw">return</span>
+  }
+
+  request.<span class="fn">session</span>().<span class="fn">regenerate</span>()
+  request.<span class="fn">session</span>().<span class="fn">set</span>(<span class="str">'account'</span>, account.<span class="prop">id</span>)
+
+  response.<span class="fn">redirect</span>(<span class="str">'/'</span>)
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>regenerate()</code> is the line you need to get right. It gives the session a new
+identifier and deletes the record stored under the old one, while keeping
+everything the session contains.</p>
+<p>Without it, an attacker who manages to set a cookie in the victim's browser
+beforehand, through a forgotten subdomain, an open redirect or a shared
+computer, knows which identifier the victim will be signed in under, and can
+simply use it afterwards. This attack is called session fixation, and a new
+identifier is the entire defense against it. Call <code>regenerate()</code> whenever
+the meaning of the session changes, such as when a user signs in, becomes an
+administrator or completes an extra authentication step.</p>
+<p>To sign out, call <code>destroy()</code>, which deletes the record and tells the
+response to expire the cookie:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">post</span>(<span class="str">'/logout'</span>, <span class="meta">@</span>(request, response) {
+  request.<span class="fn">session</span>().<span class="fn">destroy</span>()
+  response.<span class="fn">redirect</span>(<span class="str">'/'</span>)
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>clear()</code> is the other option. It empties the session without ending it,
+keeping the identifier and the cookie.</p>
+<h3 id="flash-messages"><a class="anchor" href="#flash-messages" aria-hidden="true" tabindex="-1"></a>Flash Messages</h3>
+<p>A handler that does some work and then redirects can't render a message
+describing what happened. A flash message carries that message to the page
+that can:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">post</span>(<span class="str">'/posts'</span>, <span class="meta">@</span>(request, response) {
+  <span class="fn">create_post</span>(request.<span class="fn">form</span>())
+
+  request.<span class="fn">session</span>().<span class="fn">flash</span>(<span class="str">'notice'</span>, <span class="str">'Your post is up.'</span>)
+  response.<span class="fn">redirect</span>(<span class="str">'/posts'</span>)
+})
+
+server.<span class="fn">get</span>(<span class="str">'/posts'</span>, <span class="meta">@</span>(request, response) {
+  response.<span class="fn">html</span>(<span class="fn">render</span>(<span class="fn">posts</span>(), request.<span class="fn">session</span>().<span class="fn">take_flash</span>(<span class="str">'notice'</span>)))
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A flash message is used up by the next request that touches the session in
+any way, whether or not that request reads this particular message. If a
+page looks at the session without reading the message, the message isn't
+kept for the page after it. A request that never touches its session, such
+as a request for a static file or an image, leaves the message waiting.</p>
+<h3 id="where-sessions-are-kept"><a class="anchor" href="#where-sessions-are-kept" aria-hidden="true" tabindex="-1"></a>Where Sessions Are Kept</h3>
+<p>There are four places a session can be stored, and switching between them
+means changing one line.</p>
+<p><strong><code>FileStore</code> keeps one file per session.</strong> This is the default, because it
+doesn't need any setup and it's shared between the workers that
+<code>http.serve()</code> starts. If you don't give it a directory, it uses a private
+subdirectory of the platform's temporary directory, created with permissions
+<code>0700</code>:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(http.<span class="fn">session</span>())
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The platform clears that directory on its own schedule, which on most
+systems means every reboot. For sessions that need to survive a restart of
+the host, specify your own directory:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use</span>(
+  http.<span class="fn">session</span>({ store<span class="op">:</span> http.<span class="prop">session</span>.<span class="fn">FileStore</span>(<span class="str">'/var/lib/app/sessions'</span>) }),
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A session file is a credential, just like the cookie. The directory is
+created with permissions <code>0700</code> and each file with <code>0600</code>, and a directory
+that every user on the machine can access is rejected instead of used.
+That's why the temporary directory itself is never the default. Pass
+<code>strict_permissions: false</code> to accept such a directory anyway.</p>
+<p><strong><code>SqlStore</code> keeps one row per session.</strong> It has its own import, so a
+program that uses the default store never loads the <code>sql</code> module:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http.<span class="prop">session</span>.<span class="prop">sql</span> { <span class="type">SqlStore</span> }
+<span class="kw">import</span> sql
+
+<span class="kw">var</span> store <span class="op">=</span> <span class="type">SqlStore</span>(sql.<span class="fn">pool</span>(<span class="str">'postgres://localhost/app'</span>))
+store.<span class="fn">migrate</span>()
+
+server.<span class="fn">use</span>(http.<span class="fn">session</span>({ store }))
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>migrate()</code> creates the table and its index if they don't already exist, and
+it's safe to call every time the program starts. It accepts a
+<code>sql.Connection</code> or a <code>sql.Pool</code>, and a server should use a pool.</p>
+<p><strong><code>MemoryStore</code> is for tests.</strong> Nothing survives a restart, and nothing is
+shared between workers, so if a browser's next request goes to a different
+worker, that worker has never heard of its session. It's the right store for
+tests and the wrong one for real traffic.</p>
+<p><strong>You can write your own store.</strong> A store has five methods, and none of them
+sees a session identifier or needs to understand the contents of a session:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">RedisStore</span> <span class="op">&lt;</span> http.<span class="prop">session</span>.<span class="prop">SessionStore</span> {
+  <span class="meta">@new</span>(client) {
+    <span class="self">self</span>.<span class="prop">_client</span> <span class="op">=</span> client
+  }
+
+  <span class="fn">read</span>(key) {
+    <span class="kw">return</span> <span class="self">self</span>.<span class="prop">_client</span>.<span class="fn">get</span>(<span class="str">'session:'</span> <span class="op">+</span> key)
+  }
+
+  <span class="fn">write</span>(key, payload, expires_at) {
+    <span class="self">self</span>.<span class="prop">_client</span>.<span class="fn">set_with_ttl</span>(
+      <span class="str">'session:'</span> <span class="op">+</span> key,
+      payload,
+      (expires_at <span class="op">-</span> <span class="bi">time</span>()).<span class="fn">ceil</span>(),
+    )
+  }
+
+  <span class="fn">destroy</span>(key) {
+    <span class="self">self</span>.<span class="prop">_client</span>.<span class="fn">remove</span>(<span class="str">'session:'</span> <span class="op">+</span> key)
+  }
+
+  <span class="fn">gc</span>(now) {
+    <span class="com"># Redis expires keys itself.</span>
+    <span class="kw">return</span> <span class="num">0</span>
+  }
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>touch()</code> has a default implementation built on <code>read()</code> and <code>write()</code>.
+Override it if your backend can update an expiry time by itself.</p>
+<p>The key passed to a store is the SHA-256 hash of the identifier, not the
+identifier itself. Someone who can read the directory, the table or a backup
+of either can see what's in the sessions, but can't resume one, because they
+don't have the value the browser presents.</p>
+<h3 id="when-a-session-ends"><a class="anchor" href="#when-a-session-ends" aria-hidden="true" tabindex="-1"></a>When a Session Ends</h3>
+<p>A session has two time limits, and it ends when either one runs out:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>idle_timeout</code></td>
+<td><code>7200</code></td>
+<td>Seconds of inactivity allowed. The limit moves forward while the visitor is active.</td>
+</tr>
+<tr>
+<td><code>lifetime</code></td>
+<td><code>86400</code></td>
+<td>Seconds the session can last, however active the visitor is</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>You can set either one to <code>nil</code> to remove that limit, but not both.</p>
+<p>The absolute lifetime is what makes a user sign in again after leaving a tab
+open overnight.</p>
+<p><code>touch_interval</code> is how often a request that only reads the session updates
+the idle expiry time. It's the difference between writing to the store on
+every request and writing once a minute. It defaults to sixty seconds, or
+half of the idle timeout if that's shorter. If you set it yourself, it has
+to be less than <code>idle_timeout</code>. Otherwise, even a session that's constantly
+in use would expire, because nothing would ever move its expiry time
+forward.</p>
+<p>Nothing schedules a regular cleanup of expired sessions, so cleanup happens
+as part of ordinary traffic. <code>gc_probability</code> (<code>0.01</code> by default) is the
+chance that a write also cleans up expired sessions. If you'd rather run
+<code>store.gc()</code> from a cron job, set it to <code>0</code>.</p>
+<h3 id="the-cookie"><a class="anchor" href="#the-cookie" aria-hidden="true" tabindex="-1"></a>The Cookie</h3>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td><code>'zuri_session'</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td><code>'/'</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>domain</code></td>
+<td><code>nil</code></td>
+<td><code>nil</code> limits the cookie to the exact host, which is the more restrictive choice</td>
+</tr>
+<tr>
+<td><code>secure</code></td>
+<td><code>nil</code></td>
+<td><code>nil</code> follows the scheme of the request</td>
+</tr>
+<tr>
+<td><code>http_only</code></td>
+<td><code>true</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>same_site</code></td>
+<td><code>'Lax'</code></td>
+<td><code>'Strict'</code>, <code>'Lax'</code> or <code>'None'</code></td>
+</tr>
+<tr>
+<td><code>persistent</code></td>
+<td><code>false</code></td>
+<td>Whether the cookie lasts after the browser closes</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Because <code>secure</code> follows the request by default, development over plain HTTP
+works, while production over TLS gets the <code>Secure</code> attribute automatically.
+A deployment behind a proxy that terminates TLS should set <code>secure: true</code>
+itself.</p>
+<p><code>persistent: false</code> sends a cookie that ends when the browser session ends,
+which is what a sign-in should usually do. <code>persistent: true</code> sends a
+<code>Max-Age</code> instead, and moves it forward on every request.</p>
+<h3 id="signing-the-cookie"><a class="anchor" href="#signing-the-cookie" aria-hidden="true" tabindex="-1"></a>Signing the Cookie</h3>
+<p>An identifier is 32 bytes from the platform's cryptographic random number
+generator, which is far too large to guess. Signing doesn't add any
+protection against guessing, but it helps a lot against high volumes of fake
+cookies. With a secret set, a cookie that this server didn't issue is
+rejected after a single HMAC calculation, instead of after a disk read or a
+database query.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> env
+
+server.<span class="fn">use</span>(http.<span class="fn">session</span>({ secret<span class="op">:</span> env.<span class="fn">require</span>(<span class="str">'SESSION_SECRET'</span>) }))
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Set a secret on any server that's exposed to the internet, and give every
+worker the same secret, because otherwise a cookie issued by one worker is
+rejected by the next. Turning on signing rejects all cookies issued before
+it, so everyone is signed out once.</p>
+<h3 id="what-a-session-may-hold"><a class="anchor" href="#what-a-session-may-hold" aria-hidden="true" tabindex="-1"></a>What a Session May Hold</h3>
+<p>A session can hold anything JSON can represent: strings, numbers, booleans,
+<code>nil</code>, and lists and dictionaries of those values. A class instance can't be
+represented as JSON, so storing one raises an error when the session is
+written.</p>
+<p>Sessions are meant for identity and small amounts of state, such as who's
+signed in, which steps of a form have been completed, or what message to
+show on the next page. If the contents are larger than <code>max_size</code> (65536
+bytes by default), a <code>SessionError</code> is raised. If you need to store more
+than that, put it in a database row and keep the row's key in the session.</p>
+<h3 id="sessions-across-workers"><a class="anchor" href="#sessions-across-workers" aria-hidden="true" tabindex="-1"></a>Sessions Across Workers</h3>
+<p><code>http.serve()</code> runs each worker in its own isolate, so create the store
+inside <code>setup</code> instead of passing it in from outside:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="com"># app.zu</span>
+<span class="kw">import</span> http
+<span class="kw">import</span> http.<span class="prop">session</span>
+
+<span class="kw">def</span> <span class="def">setup</span>(server) {
+  server.<span class="fn">use</span>(
+    http.<span class="fn">session</span>({
+      store<span class="op">:</span> http.<span class="prop">session</span>.<span class="fn">FileStore</span>(<span class="str">'/var/lib/app/sessions'</span>),
+      secret<span class="op">:</span> os.<span class="fn">get_env</span>(<span class="str">'SESSION_SECRET'</span>),
+    }),
+  )
+
+  server.<span class="fn">get</span>(<span class="str">'/'</span>, <span class="meta">@</span>(request, response) {
+    response.<span class="fn">text</span>(request.<span class="fn">session</span>().<span class="fn">get</span>(<span class="str">'account'</span>, <span class="str">'nobody'</span>))
+  })
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A <code>sql</code> connection belongs to the isolate that opened it, so a worker that
+uses <code>SqlStore</code> also opens its own pool in <code>setup</code>.</p>
+<h3 id="session-limitations"><a class="anchor" href="#session-limitations" aria-hidden="true" tabindex="-1"></a>Session Limitations</h3>
+<p>If two requests write the same session at the same time, which usually means
+parallel requests from the same browser tab, both succeed, and whichever
+finishes last wins. The file store writes by renaming a file, so a reader
+never sees half a session, and the SQL store writes in a single statement,
+but neither one takes a lock. Don't use a session as a counter that several
+requests increment at the same time.</p>
+<h2 id="tls"><a class="anchor" href="#tls" aria-hidden="true" tabindex="-1"></a>TLS</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> server <span class="op">=</span> http.<span class="fn">server</span>(<span class="num">443</span>, <span class="str">'0.0.0.0'</span>)
+server.<span class="fn">load_certs</span>(<span class="str">'/etc/certs/site.crt'</span>, <span class="str">'/etc/certs/site.key'</span>)
+server.<span class="fn">listen</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Or from strings, which gives you more control:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="fn">use_tls</span>(cert_chain_pem, private_key_pem, {
+  min_version<span class="op">:</span> <span class="str">'1.2'</span>,
+  client_ca<span class="op">:</span> internal_ca_pem,
+  require_client_cert<span class="op">:</span> <span class="lit">true</span>,
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>cert_chain</code> must contain the server certificate followed by any
+intermediate certificates. Leaving out the intermediates is the most common
+TLS mistake, and it only fails for clients that don't already have them
+cached. That means it often looks fine from your own browser.</p>
+<blockquote>
+<p><strong>Note</strong>
+The certificate and key are parsed when the first handshake happens, not
+when you set them, so an invalid or mismatched pair shows up as a failed
+connection rather than as an error from <code>use_tls()</code>. If you want to find
+out early, make a request to the server as part of starting it.</p>
+</blockquote>
+<p>Turning on TLS also advertises <code>h2</code> through ALPN, so browsers get HTTP/2
+without any other configuration.</p>
+<h2 id="http2"><a class="anchor" href="#http2" aria-hidden="true" tabindex="-1"></a>HTTP/2</h2>
+<p>You don't need to turn HTTP/2 on. <code>HttpServer</code> uses it when ALPN negotiates
+<code>h2</code> over TLS, and when a client on an unencrypted connection starts with
+the HTTP/2 connection preface. <code>HttpClient</code> uses it whenever a server
+negotiates <code>h2</code> for an HTTPS connection. Routes, middleware and handlers are
+the same code either way, and <code>request.version</code> is <code>'2'</code> when HTTP/2 is in
+use.</p>
+<p>With HTTP/2, a single connection carries every request, headers are
+compressed with HPACK, and flow control is built in, instead of the six
+parallel connections a browser has to open with HTTP/1.1.</p>
+<p>To turn it off, set <code>server.http2 = false</code>, which also stops <code>h2</code> from being
+advertised through ALPN.</p>
+<p><code>http.h2</code> provides the lower-level pieces, including the frame codec, HPACK
+and its Huffman coding, for code that needs to work with the protocol
+directly.</p>
+<blockquote>
+<p><strong>Note</strong>
+Streams are multiplexed on the connection, but they're handled in the
+order they complete. Each connection is served by one isolate, so a
+request that arrives while another is being handled is read, buffered and
+answered next, not in parallel. This affects throughput, not correctness,
+and <code>http.serve()</code> is how you handle more than one request at a time.</p>
+</blockquote>
+<h2 id="websockets"><a class="anchor" href="#websockets" aria-hidden="true" tabindex="-1"></a>WebSockets</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http.<span class="prop">websocket</span> <span class="kw">as</span> ws
+
+server.<span class="fn">get</span>(<span class="str">'/ws'</span>, <span class="meta">@</span>(request, response) {
+  <span class="kw">var</span> socket <span class="op">=</span> ws.<span class="fn">accept</span>(request, response, {
+    protocols<span class="op">:</span> [<span class="str">'chat'</span>],
+  })
+
+  <span class="kw">while</span> socket.<span class="fn">is_open</span>() {
+    <span class="kw">var</span> message <span class="op">=</span> socket.<span class="fn">receive</span>()
+
+    <span class="kw">if</span> message <span class="op">==</span> <span class="lit">nil</span> <span class="kw">or</span> message.<span class="fn">is_close</span>() {
+      <span class="kw">break</span>
+    }
+
+    socket.<span class="fn">send</span>(<span class="str">'you said: '</span> <span class="op">+</span> message.<span class="fn">text</span>())
+  }
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>accept()</code> completes the RFC 6455 handshake and takes over the connection,
+so the server doesn't write anything else on it. Fragmented messages are
+reassembled, ping frames are answered automatically, and when the other side
+sends a close frame, it's answered and then returned to you so that you can
+see the code and reason.</p>
+<p>On the client side, use <code>ws.connect()</code>:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> socket <span class="op">=</span> ws.<span class="fn">connect</span>(<span class="str">'wss://example.com/ws'</span>)
+
+socket.<span class="fn">send</span>(<span class="str">'hello'</span>)
+<span class="kw">echo</span> socket.<span class="fn">receive</span>().<span class="fn">text</span>()
+socket.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>As the RFC requires, client frames are masked with a key from the platform's
+secure random number generator. The mask is what stops a malicious page from
+tricking a proxy into caching a forged response.</p>
+<h2 id="server-sent-events"><a class="anchor" href="#server-sent-events" aria-hidden="true" tabindex="-1"></a>Server-Sent Events</h2>
+<p>A WebSocket gives you a two-way connection. Server-sent events give you a
+long-lived response body and nothing else, which is all you need for a live
+feed of updates, and they work through proxies that would refuse a
+connection upgrade.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> http.<span class="prop">sse</span>
+
+server.<span class="fn">get</span>(<span class="str">'/events'</span>, <span class="meta">@</span>(request, response) {
+  sse.<span class="fn">stream</span>(response, <span class="meta">@</span>(events) {
+    <span class="kw">for</span> update <span class="kw">in</span> updates {
+      events.<span class="fn">send</span>(update, <span class="str">'update'</span>, update.<span class="prop">id</span>)
+    }
+  })
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A browser's <code>EventSource</code> reconnects automatically and sends the last event
+ID it received. <code>sse.last_event_id(request)</code> reads it, so a stream can
+continue where it left off instead of starting over.</p>
+<h2 id="reverse-proxying"><a class="anchor" href="#reverse-proxying" aria-hidden="true" tabindex="-1"></a>Reverse Proxying</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> api <span class="op">=</span> http.<span class="fn">ReverseProxy</span>(<span class="str">'http://127.0.0.1:9000'</span>, { strip_prefix<span class="op">:</span> <span class="str">'/api'</span> })
+
+server.<span class="fn">any</span>(<span class="str">'/api/'</span> <span class="op">+</span> <span class="str">'*path'</span>, <span class="meta">@</span>(request, response) {
+  api.<span class="fn">handle</span>(request, response)
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Hop-by-hop headers are removed in both directions, including any field named
+in the message's own <code>Connection</code> header, which is how an endpoint declares
+an additional hop-by-hop header. Passing a client's <code>Transfer-Encoding</code> on
+to an upstream server that frames the message differently is the classic
+setup for request smuggling, so this step can't be turned off.</p>
+<p><code>X-Forwarded-For</code>, <code>X-Forwarded-Proto</code>, <code>X-Forwarded-Host</code> and the RFC 7239
+<code>Forwarded</code> header are added, and the response body is streamed instead of
+buffered.</p>
+<p>For several upstream servers, use a <code>LoadBalancer</code>. It uses round-robin, and
+when an upstream fails, it's taken out of the rotation for a while instead
+of being retried on every request:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> pool <span class="op">=</span> http.<span class="fn">LoadBalancer</span>(
+  [<span class="str">'http://10.0.0.1:9000'</span>, <span class="str">'http://10.0.0.2:9000'</span>],
+  { recovery_time<span class="op">:</span> <span class="num">30</span> },
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<h2 id="running-in-production"><a class="anchor" href="#running-in-production" aria-hidden="true" tabindex="-1"></a>Running in Production</h2>
+<h3 id="using-more-than-one-core"><a class="anchor" href="#using-more-than-one-core" aria-hidden="true" tabindex="-1"></a>Using More Than One Core</h3>
+<p><code>listen()</code> serves every connection on the isolate that called it. It watches
+all of the connections and only does the work for each one that can be done
+without waiting, so a client that goes quiet, sends half a request or stops
+reading doesn't hold up anyone else. A handler does run until it finishes,
+though, so a slow handler delays every other connection, and a streamed body
+or a WebSocket keeps the isolate busy until it's done.</p>
+<p><code>http.serve()</code> runs the same pipeline across a pool of isolates. A single
+accept loop hands each connection to whichever worker takes it next.</p>
+<figure class="code"><pre><code class="language-zuri"><span class="com"># app.zu</span>
+<span class="kw">import</span> http
+
+<span class="kw">def</span> <span class="def">setup</span>(server) {
+  server.<span class="fn">get</span>(<span class="str">'/'</span>, <span class="meta">@</span>(request, response) {
+    response.<span class="fn">text</span>(<span class="str">'hello'</span>)
+  })
+
+  server.<span class="fn">serve_files</span>(<span class="str">'/static'</span>, <span class="str">'./public'</span>, { cache_age<span class="op">:</span> <span class="num">86400</span> })
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code"><pre><code class="language-zuri"><span class="com"># main.zu</span>
+<span class="kw">import</span> http
+<span class="kw">import</span> .<span class="prop">app</span>
+
+http.<span class="fn">serve</span>(app.<span class="prop">setup</span>, { host<span class="op">:</span> <span class="str">'0.0.0.0'</span>, port<span class="op">:</span> <span class="num">3000</span>, workers<span class="op">:</span> <span class="num">8</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>setup</code> is called once inside each worker, with that worker's own
+<code>HttpServer</code>. It can be defined in the main script or in a module, and it
+can use anything it imports. A module it uses is loaded again inside the
+worker, not shared with it. Once <code>setup</code> registers more than a few routes,
+it's better to put it in its own module, as shown above.</p>
+<p>Isolates don't share memory, so anything a worker needs, such as a cache, a
+connection pool or a counter, exists separately in each worker. That's the
+trade-off this model makes: no locks and no garbage collection pauses on a
+shared heap, in exchange for state that has to be kept either per worker or
+somewhere outside the process.</p>
+<p><code>backlog</code> limits how many accepted connections can wait for a free worker.
+The limit is intentional. With an unlimited queue, a server under load would
+accept connections faster than it could serve them and then answer all of
+them late, instead of letting the kernel's own listen backlog apply
+backpressure.</p>
+<h3 id="limits"><a class="anchor" href="#limits" aria-hidden="true" tabindex="-1"></a>Limits</h3>
+<p>Every part of a request whose size the client controls has a limit:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>Limits</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>max_line_size</code></td>
+<td>8 KiB</td>
+<td>The request line, and each header line</td>
+</tr>
+<tr>
+<td><code>max_header_size</code></td>
+<td>64 KiB</td>
+<td>The header section</td>
+</tr>
+<tr>
+<td><code>max_header_count</code></td>
+<td>100</td>
+<td>The number of header fields</td>
+</tr>
+<tr>
+<td><code>max_body_size</code></td>
+<td>10 MiB</td>
+<td>The request body</td>
+</tr>
+<tr>
+<td><code>header_timeout</code></td>
+<td>10s</td>
+<td>How long the client can take to send the whole request head</td>
+</tr>
+<tr>
+<td><code>keep_alive_timeout</code></td>
+<td>5s</td>
+<td>How long an idle connection is kept open</td>
+</tr>
+<tr>
+<td><code>max_keep_alive_requests</code></td>
+<td>0 (unlimited)</td>
+<td>How many requests a single connection can serve</td>
+</tr>
+<tr>
+<td><code>max_open_connections</code></td>
+<td>1024</td>
+<td>How many connections <code>listen()</code> keeps open at once</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><code>header_timeout</code> is the easiest one to forget, and the most important.
+Without it, a client that sends one byte every few seconds can keep a
+connection open forever without ever exceeding the timeout of any single
+read. That's how a slowloris attack works.</p>
+<p>If a service accepts uploads, raise <code>max_body_size</code> deliberately, rather
+than finding out about the limit by accident:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="prop">max_body_size</span> <span class="op">=</span> <span class="num">100</span> <span class="op">*</span> <span class="num">1024</span> <span class="op">*</span> <span class="num">1024</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>A request that declares a body larger than the limit is rejected with <code>413</code>
+before any of the body is read, which is exactly what the header is for.</p>
+<h3 id="graceful-shutdown"><a class="anchor" href="#graceful-shutdown" aria-hidden="true" tabindex="-1"></a>Graceful Shutdown</h3>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> os
+
+http.<span class="fn">serve</span>(app.<span class="prop">setup</span>, {
+  port<span class="op">:</span> <span class="num">3000</span>,
+  on_ready<span class="op">:</span> <span class="meta">@</span>(address, stop) {
+    <span class="kw">echo</span> <span class="str">'listening on </span><span class="subst">${</span>address<span class="subst">}</span><span class="str">'</span>
+    os.<span class="fn">on_signal</span>(<span class="str">'INT'</span>, <span class="meta">@</span>() {
+      <span class="fn">stop</span>()
+      <span class="kw">return</span> <span class="lit">true</span>
+    })
+    os.<span class="fn">on_signal</span>(<span class="str">'TERM'</span>, <span class="meta">@</span>() {
+      <span class="fn">stop</span>()
+      <span class="kw">return</span> <span class="lit">true</span>
+    })
+  },
+})
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>stop()</code> closes the listener, which ends the accept loop. Each worker then
+closes its connections, after giving any data already queued on each one a
+chance to be sent, and then <code>serve()</code> returns. A handler can do the same by
+calling <code>close()</code> on the server its worker was given:</p>
+<figure class="code"><pre><code class="language-zuri">http.<span class="fn">serve</span>(<span class="meta">@</span>(server) {
+  server.<span class="fn">post</span>(<span class="str">'/shutdown'</span>, <span class="meta">@</span>(request, response) {
+    response.<span class="fn">text</span>(<span class="str">'stopping'</span>)
+    server.<span class="fn">close</span>()
+  })
+}, { port<span class="op">:</span> <span class="num">3000</span> })
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>For a server running on a single isolate, <code>close()</code> ends the accept loop as
+well, and <code>listen()</code> closes its remaining connections in the same way.</p>
+<h3 id="running-behind-a-proxy"><a class="anchor" href="#running-behind-a-proxy" aria-hidden="true" tabindex="-1"></a>Running Behind a Proxy</h3>
+<p>If there really is something in front of the server, such as a CDN or a load
+balancer you control, tell the server about it, and tell it which addresses
+to trust:</p>
+<figure class="code"><pre><code class="language-zuri">server.<span class="prop">trust_proxy</span> <span class="op">=</span> <span class="lit">true</span>
+server.<span class="prop">trusted_proxies</span> <span class="op">=</span> [<span class="str">'10.0.0.1'</span>, <span class="str">'10.0.0.2'</span>]
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>request.client_ip(true, server.trusted_proxies)</code> then works through the
+forwarding chain starting from the proxy's end, and returns the rightmost
+address that isn't a trusted proxy. Taking the leftmost address instead,
+which is a common shortcut, lets an attacker claim any client address they
+like. That matters as soon as you use an address for rate limiting, an
+allowlist or an audit log.</p>
+<p>If you don't configure this, forwarding headers are ignored completely and
+the connection's address is treated as the client's. That's the right
+default, because those headers are ordinary request headers, which anyone
+can fill with anything.</p>
+<h2 id="requests-the-module-rejects"><a class="anchor" href="#requests-the-module-rejects" aria-hidden="true" tabindex="-1"></a>Requests the Module Rejects</h2>
+<p>Part of this module's job is to reject certain requests. It's worth listing
+them explicitly, because other implementations would accept each of these:</p>
+<ul>
+<li>A header field name with whitespace before the colon. Some parsers read
+<code>Content-Length : 5</code> as a length and others as an unknown field, and that
+disagreement can be used to smuggle a request.</li>
+<li>Two <code>Content-Length</code> fields with different values, for the same reason.</li>
+<li>A <code>Content-Length</code> together with a <code>Transfer-Encoding</code>.</li>
+<li>A <code>Transfer-Encoding</code> whose last coding isn't <code>chunked</code>.</li>
+<li>An obsolete folded header line. RFC 9112 deprecated them, and
+intermediaries unfold them in different ways.</li>
+<li>An HTTP/1.1 request with no <code>Host</code> header, or with two.</li>
+<li>A header value containing CR, LF or NUL, which is rejected at the point
+it's set. A value that can insert a newline can cause response splitting
+wherever it ends up.</li>
+<li>An uppercase header field name in HTTP/2, and any of the
+connection-specific fields there.</li>
+<li>A static file path that resolves to somewhere outside the root, before or
+after percent-decoding, and any dotfile.</li>
+</ul>
+<h2 id="module-reference"><a class="anchor" href="#module-reference" aria-hidden="true" tabindex="-1"></a>Module Reference</h2>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>http</code></td>
+<td>The main interface: <code>get()</code>, <code>post()</code>, <code>server()</code>, <code>client()</code>, <code>serve()</code></td>
+</tr>
+<tr>
+<td><code>http.status</code></td>
+<td>Status codes, reason phrases and checks</td>
+</tr>
+<tr>
+<td><code>http.headers</code></td>
+<td><code>Headers</code>, field validation and canonical names</td>
+</tr>
+<tr>
+<td><code>http.cookies</code></td>
+<td><code>Cookie</code>, <code>CookieJar</code> and both cookie header formats</td>
+</tr>
+<tr>
+<td><code>http.session</code></td>
+<td><code>Session</code>, <code>SessionStore</code>, <code>FileStore</code>, <code>MemoryStore</code></td>
+</tr>
+<tr>
+<td><code>http.session.sql</code></td>
+<td><code>SqlStore</code>, for sessions stored in a database</td>
+</tr>
+<tr>
+<td><code>http.request</code></td>
+<td><code>HttpRequest</code>, and encoding and decoding query strings</td>
+</tr>
+<tr>
+<td><code>http.response</code></td>
+<td><code>HttpResponse</code></td>
+</tr>
+<tr>
+<td><code>http.router</code></td>
+<td><code>Router</code>, <code>Route</code>, <code>RouteMatch</code></td>
+</tr>
+<tr>
+<td><code>http.middleware</code></td>
+<td>CORS, logging, security headers, authentication, rate limiting</td>
+</tr>
+<tr>
+<td><code>http.files</code></td>
+<td><code>StaticFiles</code>, byte ranges and validators</td>
+</tr>
+<tr>
+<td><code>http.multipart</code></td>
+<td><code>MultipartBuilder</code>, <code>UploadedFile</code> and the parser</td>
+</tr>
+<tr>
+<td><code>http.negotiate</code></td>
+<td>Parsing and matching <code>Accept</code> headers</td>
+</tr>
+<tr>
+<td><code>http.body</code></td>
+<td>Message framing, chunked encoding and content codings</td>
+</tr>
+<tr>
+<td><code>http.h1</code></td>
+<td>The HTTP/1.1 wire format</td>
+</tr>
+<tr>
+<td><code>http.loop</code></td>
+<td><code>ConnectionLoop</code>, for many connections on one thread</td>
+</tr>
+<tr>
+<td><code>http.h2</code></td>
+<td>HTTP/2: frames, HPACK and connections</td>
+</tr>
+<tr>
+<td><code>http.websocket</code></td>
+<td>RFC 6455, client and server</td>
+</tr>
+<tr>
+<td><code>http.sse</code></td>
+<td>Server-sent events</td>
+</tr>
+<tr>
+<td><code>http.proxy</code></td>
+<td><code>ReverseProxy</code>, <code>LoadBalancer</code></td>
+</tr>
+<tr>
+<td><code>http.stream</code></td>
+<td>The buffered connection that both protocols read from and write to</td>
+</tr>
+<tr>
+<td><code>http.util</code></td>
+<td>Dates, header parameters, percent-encoding and path normalization</td>
+</tr>
+<tr>
+<td><code>http.errors</code></td>
+<td>The error hierarchy</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Two other standard library modules work with this one without it depending
+on either of them. <code>HttpRequest.validate()</code> accepts a schema from
+<code>validate</code>, and <code>middleware.jwt_auth()</code> accepts a verifier from <code>jwt</code>. Both
+rely on duck typing, so a server that doesn't use them never loads either
+module.</p>
+<p>Every error this module raises descends from <code>HttpError</code>:
+<code>ProtocolError</code> for a malformed message, <code>ConnectionError</code> for a
+connection that failed, <code>TimeoutError</code>, <code>TooLargeError</code>,
+<code>TooManyRedirectsError</code>, <code>StatusError</code>, <code>UnsupportedProtocolError</code> and
+<code>SessionError</code>.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch15-00-http.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch14-00-wire.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">14</span>Wire: Templating</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch16-00-imagine.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">16</span>Imagine: Images</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#introduction">Introduction</a>
+        </li><li class="level-3">
+          <a href="#a-first-request">A First Request</a>
+        </li><li class="level-3">
+          <a href="#a-first-server">A First Server</a>
+        </li><li class="level-2">
+          <a href="#a-complete-example-you-can-run">A Complete Example You Can Run</a>
+        </li><li class="level-2">
+          <a href="#making-requests">Making Requests</a>
+        </li><li class="level-3">
+          <a href="#the-shared-client">The Shared Client</a>
+        </li><li class="level-3">
+          <a href="#creating-a-client">Creating a Client</a>
+        </li><li class="level-3">
+          <a href="#request-methods">Request Methods</a>
+        </li><li class="level-3">
+          <a href="#request-bodies">Request Bodies</a>
+        </li><li class="level-3">
+          <a href="#uploading-files">Uploading Files</a>
+        </li><li class="level-3">
+          <a href="#reading-a-response">Reading a Response</a>
+        </li><li class="level-3">
+          <a href="#query-parameters-and-headers">Query Parameters and Headers</a>
+        </li><li class="level-3">
+          <a href="#authentication">Authentication</a>
+        </li><li class="level-3">
+          <a href="#redirects">Redirects</a>
+        </li><li class="level-3">
+          <a href="#cookies">Cookies</a>
+        </li><li class="level-3">
+          <a href="#timeouts-and-retries">Timeouts and Retries</a>
+        </li><li class="level-3">
+          <a href="#streaming-a-response">Streaming a Response</a>
+        </li><li class="level-3">
+          <a href="#tls-and-certificates">TLS and Certificates</a>
+        </li><li class="level-3">
+          <a href="#proxies">Proxies</a>
+        </li><li class="level-2">
+          <a href="#serving-requests">Serving Requests</a>
+        </li><li class="level-3">
+          <a href="#routing">Routing</a>
+        </li><li class="level-3">
+          <a href="#the-request-object">The Request Object</a>
+        </li><li class="level-3">
+          <a href="#forms-and-file-uploads">Forms and File Uploads</a>
+        </li><li class="level-3">
+          <a href="#request-validation">Request Validation</a>
+        </li><li class="level-3">
+          <a href="#the-response-object">The Response Object</a>
+        </li><li class="level-3">
+          <a href="#middleware">Middleware</a>
+        </li><li class="level-3">
+          <a href="#errors">Errors</a>
+        </li><li class="level-3">
+          <a href="#static-files">Static Files</a>
+        </li><li class="level-3">
+          <a href="#compression">Compression</a>
+        </li><li class="level-3">
+          <a href="#streaming-a-response-body">Streaming a Response Body</a>
+        </li><li class="level-3">
+          <a href="#setting-cookies">Setting Cookies</a>
+        </li><li class="level-3">
+          <a href="#content-negotiation">Content Negotiation</a>
+        </li><li class="level-2">
+          <a href="#built-in-middleware">Built-in Middleware</a>
+        </li><li class="level-3">
+          <a href="#logger"><code>logger()</code></a>
+        </li><li class="level-3">
+          <a href="#request_id"><code>request_id()</code></a>
+        </li><li class="level-3">
+          <a href="#security_headers"><code>security_headers()</code></a>
+        </li><li class="level-3">
+          <a href="#cors"><code>cors()</code></a>
+        </li><li class="level-3">
+          <a href="#basic_auth"><code>basic_auth()</code></a>
+        </li><li class="level-3">
+          <a href="#bearer_auth"><code>bearer_auth()</code></a>
+        </li><li class="level-3">
+          <a href="#jwt_auth"><code>jwt_auth()</code></a>
+        </li><li class="level-3">
+          <a href="#rate_limit"><code>rate_limit()</code></a>
+        </li><li class="level-3">
+          <a href="#etag"><code>etag()</code></a>
+        </li><li class="level-3">
+          <a href="#force_https"><code>force_https()</code></a>
+        </li><li class="level-3">
+          <a href="#ordering">Ordering</a>
+        </li><li class="level-2">
+          <a href="#sessions">Sessions</a>
+        </li><li class="level-3">
+          <a href="#sessions-are-created-on-first-use">Sessions Are Created on First Use</a>
+        </li><li class="level-3">
+          <a href="#signing-in">Signing In</a>
+        </li><li class="level-3">
+          <a href="#flash-messages">Flash Messages</a>
+        </li><li class="level-3">
+          <a href="#where-sessions-are-kept">Where Sessions Are Kept</a>
+        </li><li class="level-3">
+          <a href="#when-a-session-ends">When a Session Ends</a>
+        </li><li class="level-3">
+          <a href="#the-cookie">The Cookie</a>
+        </li><li class="level-3">
+          <a href="#signing-the-cookie">Signing the Cookie</a>
+        </li><li class="level-3">
+          <a href="#what-a-session-may-hold">What a Session May Hold</a>
+        </li><li class="level-3">
+          <a href="#sessions-across-workers">Sessions Across Workers</a>
+        </li><li class="level-3">
+          <a href="#session-limitations">Session Limitations</a>
+        </li><li class="level-2">
+          <a href="#tls">TLS</a>
+        </li><li class="level-2">
+          <a href="#http2">HTTP/2</a>
+        </li><li class="level-2">
+          <a href="#websockets">WebSockets</a>
+        </li><li class="level-2">
+          <a href="#server-sent-events">Server-Sent Events</a>
+        </li><li class="level-2">
+          <a href="#reverse-proxying">Reverse Proxying</a>
+        </li><li class="level-2">
+          <a href="#running-in-production">Running in Production</a>
+        </li><li class="level-3">
+          <a href="#using-more-than-one-core">Using More Than One Core</a>
+        </li><li class="level-3">
+          <a href="#limits">Limits</a>
+        </li><li class="level-3">
+          <a href="#graceful-shutdown">Graceful Shutdown</a>
+        </li><li class="level-3">
+          <a href="#running-behind-a-proxy">Running Behind a Proxy</a>
+        </li><li class="level-2">
+          <a href="#requests-the-module-rejects">Requests the Module Rejects</a>
+        </li><li class="level-2">
+          <a href="#module-reference">Module Reference</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=5550658799" defer=""></script>
+  
+  
+
+
+</body></html>
