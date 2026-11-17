@@ -27,12 +27,9 @@ class ScriptedStream {
   feed(payload, sequence) {
     var size = payload.length()
 
-    self._incoming.extend(bytes([
-      size & 0xff,
-      (size >> 8) & 0xff,
-      (size >> 16) & 0xff,
-      sequence,
-    ]))
+    self._incoming.extend(
+      bytes([size & 0xff, (size >> 8) & 0xff, (size >> 16) & 0xff, sequence]),
+    )
 
     self._incoming.extend(payload)
 
@@ -83,8 +80,9 @@ def sent_packets(stream) {
   var at = 0
 
   while at + 4 <= stream.written.length() {
-    var size = stream.written[at] + stream.written[at + 1] * 256 +
-      stream.written[at + 2] * 65536
+    var size = stream.written[at] +
+        stream.written[at + 1] * 256 +
+        stream.written[at + 2] * 65536
 
     out.append({
       sequence: stream.written[at + 3],
@@ -98,8 +96,8 @@ def sent_packets(stream) {
 }
 
 var SCRAMBLE = bytes([
-  0x0a, 0x1b, 0x2c, 0x3d, 0x4e, 0x5f, 0x60, 0x71, 0x02, 0x13,
-  0x24, 0x35, 0x46, 0x57, 0x68, 0x79, 0x0a, 0x1b, 0x2c, 0x3d,
+  0x0a, 0x1b, 0x2c, 0x3d, 0x4e, 0x5f, 0x60, 0x71, 0x02, 0x13, 0x24, 0x35, 0x46,
+  0x57, 0x68, 0x79, 0x0a, 0x1b, 0x2c, 0x3d,
 ])
 
 # A handshake v10 greeting, as a server opens with.
@@ -158,13 +156,18 @@ def column_packet(name, type, flags, charset) {
 
 # The capabilities a modern server advertises.
 var SERVER_CAPS = proto.CAPABILITIES.PROTOCOL_41 |
-  proto.CAPABILITIES.SECURE_CONNECTION | proto.CAPABILITIES.PLUGIN_AUTH |
-  proto.CAPABILITIES.PLUGIN_AUTH_LENENC_DATA |
-  proto.CAPABILITIES.DEPRECATE_EOF | proto.CAPABILITIES.CONNECT_WITH_DB |
-  proto.CAPABILITIES.TRANSACTIONS | proto.CAPABILITIES.SESSION_TRACK |
-  proto.CAPABILITIES.CONNECT_ATTRS | proto.CAPABILITIES.MULTI_RESULTS |
-  proto.CAPABILITIES.PS_MULTI_RESULTS | proto.CAPABILITIES.LONG_FLAG |
-  proto.CAPABILITIES.LONG_PASSWORD
+    proto.CAPABILITIES.SECURE_CONNECTION |
+    proto.CAPABILITIES.PLUGIN_AUTH |
+    proto.CAPABILITIES.PLUGIN_AUTH_LENENC_DATA |
+    proto.CAPABILITIES.DEPRECATE_EOF |
+    proto.CAPABILITIES.CONNECT_WITH_DB |
+    proto.CAPABILITIES.TRANSACTIONS |
+    proto.CAPABILITIES.SESSION_TRACK |
+    proto.CAPABILITIES.CONNECT_ATTRS |
+    proto.CAPABILITIES.MULTI_RESULTS |
+    proto.CAPABILITIES.PS_MULTI_RESULTS |
+    proto.CAPABILITIES.LONG_FLAG |
+    proto.CAPABILITIES.LONG_PASSWORD
 
 def connected(stream, options) {
   var protocol = proto.Protocol(p.PacketStream(stream))
@@ -247,8 +250,8 @@ def test_framing() {
   p.PacketStream(exact).write_packet(bytes(p.MAX_PAYLOAD))
 
   assert exact.written.length() == 4 + p.MAX_PAYLOAD + 4
-  assert exact.written[p.MAX_PAYLOAD + 4, p.MAX_PAYLOAD + 8]
-    == bytes([0, 0, 0, 1])
+  assert exact.written[p.MAX_PAYLOAD + 4, p.MAX_PAYLOAD + 8] ==
+      bytes([0, 0, 0, 1])
 
   var rejoined = ScriptedStream().replay(exact.written)
   assert p.PacketStream(rejoined).read_packet().length() == p.MAX_PAYLOAD
@@ -340,7 +343,7 @@ def test_auth_plugins() {
 
   assert refused
   assert auth.response_for(auth.CLEAR, 'secret', SCRAMBLE, true) ==
-    auth.clear_password('secret')
+      auth.clear_password('secret')
 
   # A plugin this adapter cannot answer names itself.
   var unknown = false
@@ -369,11 +372,11 @@ def test_ed25519() {
   var expanded = hash.sha512(seed, true)
 
   assert _hex(ed.public_key(expanded)) ==
-    'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a'
+      'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a'
 
   assert _hex(ed.sign(expanded, bytes(0))) ==
-    'e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155' +
-      '5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b'
+      'e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155' +
+          '5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b'
 
   # And it agrees with the implementation the rest of the language
   # uses, over keys neither of them chose.
@@ -382,10 +385,12 @@ def test_ed25519() {
     var key = hash.sha512(_seed_of(pair.private_pem), true)
     var message = crypto.random_bytes(1 + round * 17)
 
-    assert ed.sign(key, message)
-      == crypto.ed25519.sign(pair.private_pem, message)
+    assert ed.sign(key, message) ==
+        crypto.ed25519.sign(pair.private_pem, message)
     assert crypto.ed25519.verify(
-      pair.public_pem, message, ed.sign(key, message),
+      pair.public_pem,
+      message,
+      ed.sign(key, message),
     )
   }
 
@@ -659,7 +664,8 @@ def test_server_errors_map_to_classes() {
   var protocol = connected(stream, { user: 'alice', password: '' })
 
   stream.feed(
-    err_packet(1062, '23000', "Duplicate entry 'a' for key 't.name'"), 1,
+    err_packet(1062, '23000', "Duplicate entry 'a' for key 't.name'"),
+    1,
   )
 
   var raised = nil
@@ -759,18 +765,19 @@ def test_types_round_trip() {
   assert round_trip(42, t.TYPES.LONGLONG) == 42
   assert round_trip(-42, t.TYPES.LONGLONG) == -42
   assert round_trip(42.5, t.TYPES.DOUBLE) == 42.5
-  assert round_trip(9223372036854775807n, t.TYPES.LONGLONG)
-    == 9223372036854775807n
-  assert round_trip(-9223372036854775808n, t.TYPES.LONGLONG)
-    == -9223372036854775808n
+  assert round_trip(9223372036854775807n, t.TYPES.LONGLONG) ==
+      9223372036854775807n
+  assert round_trip(-9223372036854775808n, t.TYPES.LONGLONG) ==
+      -9223372036854775808n
 
   var w = p.Writer()
   t.write_parameter(w, 18446744073709551615n)
 
   assert t.decode_binary(
-    p.Cursor(w.payload()),
-    column(t.TYPES.LONGLONG, t.FLAGS.UNSIGNED, nil),
-  ) == 18446744073709551615n
+        p.Cursor(w.payload()),
+        column(t.TYPES.LONGLONG, t.FLAGS.UNSIGNED, nil),
+      ) ==
+      18446744073709551615n
 
   var moment = date.Date(2026, 9, 16, 14, 30, 45, 123456, 0, false)
   var back = round_trip(moment, t.TYPES.DATETIME)
@@ -787,36 +794,48 @@ def test_types_round_trip() {
     sql.time(25, 1, 2, 0, false),
     sql.time(0, 0, 1, 500000, true),
   ] {
-    assert round_trip(span, t.TYPES.TIME).total_seconds()
-      == span.total_seconds(),
-      span.to_string()
+    assert round_trip(span, t.TYPES.TIME).total_seconds() ==
+        span.total_seconds(),
+        span.to_string()
     assert round_trip(span, t.TYPES.TIME) == span, span.to_string()
   }
 
   # Text decoding, which is what an unprepared statement produces.
   assert t.decode_text(nil, column(t.TYPES.LONG, nil, nil)) == nil
-  assert t.decode_text('18446744073709551615'.to_bytes(),
-    column(t.TYPES.LONGLONG, t.FLAGS.UNSIGNED, nil)) == 18446744073709551615n
-  assert t.decode_text('12.75'.to_bytes(),
-    column(t.TYPES.NEWDECIMAL, nil, nil)).to_string() == '12.75'
-  assert t.decode_text('-838:59:59'.to_bytes(),
-    column(t.TYPES.TIME, nil, nil)).to_string() == '-838:59:59'
+  assert t.decode_text(
+        '18446744073709551615'.to_bytes(),
+        column(t.TYPES.LONGLONG, t.FLAGS.UNSIGNED, nil),
+      ) ==
+      18446744073709551615n
+  assert t
+          .decode_text('12.75'.to_bytes(), column(t.TYPES.NEWDECIMAL, nil, nil))
+          .to_string() ==
+      '12.75'
+  assert t
+          .decode_text('-838:59:59'.to_bytes(), column(t.TYPES.TIME, nil, nil))
+          .to_string() ==
+      '-838:59:59'
 
   # A date the calendar does not have is not a date.
-  assert t.decode_text('0000-00-00'.to_bytes(),
-    column(t.TYPES.DATE, nil, nil)) == nil
+  assert t.decode_text(
+        '0000-00-00'.to_bytes(),
+        column(t.TYPES.DATE, nil, nil),
+      ) ==
+      nil
 
   # A blob and a text column share a type byte; only the collation
   # separates them.
-  assert is_bytes(t.decode_text('x'.to_bytes(),
-    column(t.TYPES.BLOB, nil, t.BINARY_CHARSET)))
+  assert is_bytes(
+    t.decode_text('x'.to_bytes(), column(t.TYPES.BLOB, nil, t.BINARY_CHARSET)),
+  )
   assert is_string(t.decode_text('x'.to_bytes(), column(t.TYPES.BLOB, nil, 33)))
   assert t.type_name_of(column(t.TYPES.BLOB, nil, t.BINARY_CHARSET)) == 'blob'
   assert t.type_name_of(column(t.TYPES.BLOB, nil, 33)) == 'text'
   assert t.type_name_of(column(t.TYPES.STRING, t.FLAGS.ENUM, nil)) == 'enum'
   assert t.type_name_of(
-    column(t.TYPES.LONGLONG, t.FLAGS.UNSIGNED | t.FLAGS.NUM, nil),
-  ) == 'bigint unsigned'
+        column(t.TYPES.LONGLONG, t.FLAGS.UNSIGNED | t.FLAGS.NUM, nil),
+      ) ==
+      'bigint unsigned'
 
   echo 'test_types_round_trip passed'
 }
@@ -844,7 +863,9 @@ def test_dsn() {
 
   # Keywords, as my.cnf spells them, and the other spellings tooling
   # uses for the same things.
-  var kw = d.parse_dsn('host=db port=3307 user=alice password=secret database=app')
+  var kw = d.parse_dsn(
+    'host=db port=3307 user=alice password=secret database=app',
+  )
   assert kw.host == 'db' and kw.port == 3307 and kw.database == 'app'
   assert d.parse_dsn('host=db dbname=app').database == 'app'
   assert d.parse_dsn('host=db username=bob').user == 'bob'
@@ -856,11 +877,13 @@ def test_dsn() {
 
   # A query string has no types, so flags arrive as text.
   assert d.parse_dsn('mysql://h/?found_rows=yes').found_rows == true
-  assert d.parse_dsn('host=db multiple_statements=0').multiple_statements
-    == false
+  assert d.parse_dsn('host=db multiple_statements=0').multiple_statements ==
+      false
 
   for bad in [
-    'host=db sslmode=maybe', 'host=db compression=gzip', 'host=db oops',
+    'host=db sslmode=maybe',
+    'host=db compression=gzip',
+    'host=db oops',
   ] {
     var caught = false
 

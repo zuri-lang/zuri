@@ -1,11 +1,12 @@
 /**
  * @module animation
  *
- * `Animation`: an ordered set of frames with per-frame delays, which is
- * what an animated GIF or WebP decodes to and encodes from.
+ * `Animation`, an ordered list of frames with a delay for each one.
+ * It's what an animated GIF or WebP is decoded to and encoded from.
  *
- * Frames are full images rather than deltas, so each can be edited on
- * its own and the encoder works out what actually changed.
+ * Each frame is a complete image, not a difference from the frame
+ * before it, so each frame can be edited by itself, and the encoder
+ * works out what actually changed.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -19,14 +20,13 @@ import .formats
 import .image { Image }
 
 /**
- * A sequence of images with a delay between each, read from or
+ * A sequence of images with a delay after each one, read from or
  * written to an animated format.
  *
- * Frames are whole images, already composited against whatever came
- * before them, so frame 5 can be pulled out and used on its own
- * without replaying the first four. That is the useful shape almost
- * all of the time, and it is why the disposal and transparency rules
- * an animated GIF is built from never surface here.
+ * Each frame is a whole image, already composited over the frames
+ * before it, so you can take frame 5 and use it by itself without
+ * replaying the first four. This means you never have to deal with the
+ * disposal and transparency rules that animated GIFs use.
  *
  * ```zuri
  * import imagine { Animation }
@@ -42,19 +42,20 @@ import .image { Image }
  *   .save('loading-grey.gif')
  * ```
  *
- * ## What can be read and written
+ * ## Reading and writing
  *
- * Animated GIF and animated WebP can both be read. Only GIF can be
- * written; an animation saved as WebP raises `EncodeError` rather
- * than quietly writing one frame. [[imagine.capabilities]] lists what
- * is available under `animated`.
+ * Animated GIF and animated WebP can both be read, but only GIF can be
+ * written. Saving an animation as WebP raises an `EncodeError` instead
+ * of silently writing a single frame. [[imagine.capabilities]] lists
+ * what's available under `animated`.
  *
  * ## Memory
  *
- * Every frame is a full image, so a 100-frame 500x500 animation is
- * 100 MB decoded. Animations are worth streaming frame by frame when
- * they are large, which `frames()` allows by handing back the list
- * itself.
+ * Every frame is a whole image, so a 100-frame animation of 500x500
+ * pixels takes 100 MB once it's decoded. For a large animation, avoid
+ * `map()`, which copies every frame, and work through the list that
+ * `frames()` returns one frame at a time. That list is the animation's
+ * own, not a copy.
  *
  * @printable
  */
@@ -68,17 +69,19 @@ class Animation {
   /**
    * Creates an animation from a list of images.
    *
-   * Every frame must be the same size, since animated formats have one
-   * canvas that each frame paints into.
+   * Every frame must be the same size, because animated formats have a
+   * single canvas that each frame is drawn on.
    *
-   * @param list frames: A list of [[imagine.Image]].
-   * @param ?number|list delay: Milliseconds per frame, either one
-   *    number for all of them or one per frame - Default: 100.
-   * @param ?number repeat: How many times to loop, 0 for forever
-   *    - Default: 0.
-   * @param ?string format: The format these frames were decoded from,
-   *    recorded as metadata - Default: nil.
-   * @throws ImageError When the frames are not all images of one size.
+   * @param list frames: a list of [[imagine.Image]]
+   * @param ?number|list delay: the delay after each frame in
+   *    milliseconds, either one number for every frame or one for each
+   *    frame. Defaults to 100.
+   * @param ?number repeat: how many times to loop, or 0 to loop
+   *    forever. Defaults to 0.
+   * @param ?string format: the format the frames were decoded from,
+   *    kept as metadata. Defaults to nil.
+   * @throws ImageError when the frames aren't all images of the same
+   *    size.
    */
   @new(frames: list, delay, repeat, format) {
     if frames.length() == 0 {
@@ -99,7 +102,7 @@ class Animation {
       } else if frame.width() != width or frame.height() != height {
         raise ImageError(
           'every frame must be the same size; found ${frame.width()}x${frame.height()} ' +
-            'among ${width}x${height} frames',
+              'among ${width}x${height} frames',
         )
       }
     }
@@ -113,12 +116,13 @@ class Animation {
   /**
    * Opens an animated image file.
    *
-   * A still image opens as a one-frame animation rather than an
-   * error, so code that handles both does not need to branch.
+   * A still image opens as an animation with one frame, not as an
+   * error, so code that handles both doesn't need to check which it
+   * has.
    *
    * @param string|file source
    * @returns Animation
-   * @throws DecodeError When the file is not a readable image.
+   * @throws DecodeError when the file isn't an image that can be read.
    */
   static open(source) {
     var handle = source
@@ -189,10 +193,10 @@ class Animation {
   /**
    * The frames, as a list of [[imagine.Image]].
    *
-   * This is the live list, not a copy: changing an image in it changes
-   * the animation, which is what makes frame-by-frame editing possible
-   * without duplicating everything. Use `map()` when you want the
-   * original left alone.
+   * This is the list itself, not a copy, so changing an image in it
+   * changes the animation. That's what lets you edit frames one at a
+   * time without copying everything. Use `map()` when you want to leave
+   * the original unchanged.
    *
    * @returns list
    */
@@ -209,7 +213,9 @@ class Animation {
    */
   frame(index: number) {
     if index < 0 or index >= self._frames.length() {
-      raise ImageError('no frame ${index}; the animation has ${self._frames.length()}')
+      raise ImageError(
+        'no frame ${index}; the animation has ${self._frames.length()}',
+      )
     }
 
     return self._frames[index.floor()]
@@ -294,13 +300,13 @@ class Animation {
   }
 
   /**
-   * Applies a function to every frame, returning a new animation.
+   * Calls a function on every frame, and returns a new animation.
    *
-   * Each frame is copied before the function sees it, so a filter
-   * chain works directly as the body and this animation is left
-   * alone. That copy is the reason `map()` costs as much memory again
-   * as the animation itself; to filter in place instead, walk
-   * `frames()` and change each image directly.
+   * Each frame is copied before the function receives it, so a chain of
+   * filters can be used directly as the body, and this animation is
+   * left unchanged. Because of that copy, `map()` needs as much memory
+   * again as the animation itself. To filter the frames in place
+   * instead, go through `frames()` and change each image directly.
    *
    * ```zuri
    * var grey = animation.map(@(frame) {
@@ -310,7 +316,8 @@ class Animation {
    *
    * @param function(1) fn
    * @returns Animation
-   * @throws ImageError When the function returns anything but an image.
+   * @throws ImageError when the function returns anything other than an
+   *    image.
    */
   map(fn: function) {
     var mapped = []
@@ -331,10 +338,10 @@ class Animation {
   /**
    * Returns a new animation with the frames in reverse order.
    *
-   * The frames themselves are shared with this animation rather than
-   * copied, since reordering them changes nothing about them. Editing
-   * one afterwards therefore shows up in both; `map()` is the one that
-   * copies.
+   * The frames themselves are shared with this animation, not copied,
+   * because changing their order doesn't change the frames. If you edit
+   * a frame afterwards, the change shows in both animations. `map()` is
+   * the method that copies.
    *
    * @returns Animation
    */
@@ -359,10 +366,10 @@ class Animation {
   /**
    * Encodes the animation and returns the bytes.
    *
-   * @param ?string format: - Default: `GIF`.
+   * @param ?string format: defaults to `GIF`.
    * @param ?dict options
    * @returns bytes
-   * @throws EncodeError When the format cannot hold an animation.
+   * @throws EncodeError when the format can't hold an animation.
    */
   encode(format, options) {
     var target = formats.normalize(format == nil ? 'gif' : format)
@@ -441,5 +448,7 @@ def _expand_delays(delay, count) {
     return delay.clone()
   }
 
-  raise ImageError('frame delay must be a number or a list, ${typeof(delay)} given')
+  raise ImageError(
+    'frame delay must be a number or a list, ${typeof(delay)} given',
+  )
 }

@@ -47,7 +47,11 @@ def iso(timestamp) {
  * @param ?dict details: more fields for the error.
  */
 def fail(
-  response, status: number, code: string, message: string, details: ?dict,
+  response,
+  status: number,
+  code: string,
+  message: string,
+  details: ?dict,
 ) {
   var error = { code, message }
 
@@ -139,8 +143,8 @@ class Nyssa {
    * @returns bool
    */
   mail_enabled() {
-    return self.settings.get('mail_url', nil) != nil
-      and self.settings.get('mail_from', nil) != nil
+    return self.settings.get('mail_url', nil) != nil and
+        self.settings.get('mail_from', nil) != nil
   }
 
   /**
@@ -151,11 +155,12 @@ class Nyssa {
    * @param string body
    */
   send_mail(to: string, subject: string, body: string) {
-    var message = mail.message()
-      .set_from(self.settings.mail_from)
-      .add_to(to)
-      .set_subject('${self.settings.name}: ${subject}')
-      .set_text(body)
+    var message = mail
+        .message()
+        .set_from(self.settings.mail_from)
+        .add_to(to)
+        .set_subject('${self.settings.name}: ${subject}')
+        .set_text(body)
 
     var options = {}
 
@@ -211,7 +216,10 @@ class Nyssa {
     self.db.transaction(@{
       for key, entry in pending {
         self.db.add_downloads(
-          entry.version_id, entry.package_id, entry.count, day,
+          entry.version_id,
+          entry.package_id,
+          entry.count,
+          day,
         )
       }
     })
@@ -290,7 +298,9 @@ class Nyssa {
 
     if scope != nil and !token.scopes.split(' ').contains(scope) {
       fail(
-        response, 403, 'insufficient_scope',
+        response,
+        403,
+        'insufficient_scope',
         "this token does not carry the '${scope}' scope",
       )
 
@@ -310,7 +320,9 @@ class Nyssa {
     if self.settings.read_only == true {
       response.header('Retry-After', '300')
       fail(
-        response, 503, 'read_only',
+        response,
+        503,
+        'read_only',
         'this repository is read-only at the moment',
       )
 

@@ -1,13 +1,12 @@
 /**
  * @module token
  *
- * The {Token} type `zuri.tokenize()` returns: one entry per
- * lexical token the lexer found in a source file, in source
- * order, with nothing filtered out. Comments, doc blocks, and
- * newlines are all ordinary tokens here, exactly as the lexer
- * itself produces them. The parser's own grammar quietly skips
- * those when it runs, but `tokenize()` reports everything the
- * lexer actually saw.
+ * The {Token} type that `zuri.tokenize()` returns, with one entry for
+ * each token the lexer found in a source file, in source order, with
+ * nothing filtered out. Comments, doc blocks and line breaks are all
+ * ordinary tokens here, exactly as the lexer produces them. The
+ * parser's grammar skips those, but `tokenize()` reports everything the
+ * lexer saw.
  *
  * ```zuri
  * import zuri
@@ -23,26 +22,26 @@
 import _zuri_lex
 
 /**
- * One lexical token from a Zuri source file.
+ * One token from a Zuri source file.
  *
- * Every instance has:
+ * Every token has:
  *
- * - `kind` (string): the token's kind, e.g. `'Identifier'`,
- *   `'Plus'`, `'Comment'`, `'Eof'`, the exact variant name from the
- *   lexer's own token kind enum.
- * - `line` / `column` (number): 1-indexed source position this token
- *   starts at; `column` counts characters, not bytes.
- * - `start` / `end` (number): character offsets into the source
- *   string spanning this token's exact text.
- * - `text` (string): this token's exact source text,
- *   `source[start, end]`, delimiters included: a string literal's
- *   quotes, a doc block's opening and closing markers, and so on.
- * - `value` (any): this token's own payload, where it has one, a
- *   literal, identifier, comment, or doc block's string content, a
- *   number, or a bigint. `nil` for every
- * fixed symbol or keyword, and for `Newline`/`Eof`. An
- * `Error`-kind token instead carries `{ message, line, offset }`
- * describing what went wrong.
+ * - `kind` (string): the kind of token, such as `'Identifier'`,
+ *   `'Plus'`, `'Comment'` or `'Eof'`, which is the exact name of the
+ *   variant in the lexer's token kind enum.
+ * - `line` and `column` (number): the position where the token starts,
+ *   counting from 1. `column` counts characters, not bytes.
+ * - `start` and `end` (number): the character offsets of the token's
+ *   exact text in the source string.
+ * - `text` (string): the token's exact source text,
+ *   `source[start, end]`, including any delimiters, such as a string
+ *   literal's quotes, or a doc block's opening and closing markers.
+ * - `value` (any): the token's own value, if it has one. For a literal,
+ *   an identifier, a comment or a doc block, that's its string content,
+ *   and for a number, it's a number or a bigint. It's `nil` for every
+ *   fixed symbol or keyword, and for `Newline` and `Eof`. A token of
+ *   kind `Error` has `{ message, line, offset }`, which describes what
+ *   went wrong.
  *
  * @printable
  */
@@ -91,20 +90,19 @@ class Token {
 }
 
 /**
- * Lexes `source` in full and returns every token it contains, in
- * source order, as a list of {Token}.
+ * Lexes all of `source`, and returns every token in it, in source
+ * order, as a list of {Token} objects.
  *
- * Nothing is filtered: `Comment`, `DocBlock`, and `Newline`
- * tokens are all included, and the list always ends with one
- * `Eof` token.
+ * Nothing is filtered out: `Comment`, `DocBlock` and `Newline` tokens
+ * are all included, and the list always ends with one `Eof` token.
  *
- * A lexer-level problem in `source`, an unterminated string, an
- * unbalanced doc block, an unexpected character, does not raise;
- * it surfaces as an ordinary token with `kind` `'Error'`
- * instead, so this function is total over any input, including
+ * A problem in `source` at the lexer level, such as an unterminated
+ * string, an unbalanced doc block or an unexpected character, doesn't
+ * raise an error. Instead, it appears as an ordinary token whose `kind`
+ * is `'Error'`, so this function works with any input, including
  * malformed source.
  *
- * @param string source: The Zuri source to lex
+ * @param string source: the Zuri source to lex
  * @returns list[Token]
  */
 def tokenize(source) {
@@ -112,12 +110,11 @@ def tokenize(source) {
 }
 
 /**
- * Reads the file at `path` and lexes its contents; exactly
- * `tokenize(file(path).read())`, for the common case of lexing a
- * real file rather than a source string you've already got in
- * hand.
+ * Reads the file at `path`, and lexes its contents. This is the same as
+ * `tokenize(file(path).read())`, for the common case of lexing a file
+ * instead of a string of source.
  *
- * @param string path: Path to the Zuri source file to lex
+ * @param string path: the path of the Zuri source file to lex
  * @returns list[Token]
  * @throws Error if `path` can't be opened or read
  */

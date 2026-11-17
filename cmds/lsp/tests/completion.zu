@@ -11,24 +11,29 @@ var SCRATCH = os.join_paths(FIXTURE, 'scratch.zu')
 var client = nil
 
 var UNION = 'import sql { Blueprint, Connection, Transaction }\n\n' +
-  'def up(db: Transaction|Connection) {\n' +
-  "  db.schema.create_table('posts', @(table: Blueprint) {\n" +
-  '    table.id()\n' +
-  '  })\n' +
-  "  db.exec('select 1', nil)\n" +
-  '}\n'
+    'def up(db: Transaction|Connection) {\n' +
+    "  db.schema.create_table('posts', @(table: Blueprint) {\n" +
+    '    table.id()\n' +
+    '  })\n' +
+    "  db.exec('select 1', nil)\n" +
+    '}\n'
 
 # The labels completion offers at the end of `source`, or just past
 # `marker` when one is given.
 def labels_at(source: string, marker) {
   var address = client.open(SCRATCH, source)
   var at = marker == nil
-    ? position(source, source, 0)
-    : position(source, marker, 0)
-  var asked = { textDocument: { uri: address }, position: at }
+      ? position(source, source, 0)
+      : position(source, marker, 0)
+  var asked = {
+    textDocument: { uri: address },
+    position: at,
+  }
   var answer = client.request('textDocument/completion', asked)
 
-  client.notify('textDocument/didClose', { textDocument: { uri: address } })
+  client.notify('textDocument/didClose', {
+    textDocument: { uri: address },
+  })
 
   return answer.items.map(@(item) => item.label)
 }
@@ -37,16 +42,23 @@ def labels_at(source: string, marker) {
 def items_at(source: string, marker: string) {
   var address = client.open(SCRATCH, source)
   var at = position(source, marker, 0)
-  var asked = { textDocument: { uri: address }, position: at }
+  var asked = {
+    textDocument: { uri: address },
+    position: at,
+  }
   var answer = client.request('textDocument/completion', asked)
 
-  client.notify('textDocument/didClose', { textDocument: { uri: address } })
+  client.notify('textDocument/didClose', {
+    textDocument: { uri: address },
+  })
 
   return answer.items
 }
 
 before_all(@{
-  client = Client(FIXTURE, { diagnostics: { delay: 0 } })
+  client = Client(FIXTURE, {
+    diagnostics: { delay: 0 },
+  })
   client.initialize(nil)
   client.wait_indexed()
 })
@@ -58,12 +70,12 @@ after_all(@{
 describe('members', @{
   it('offers an instance its fields and methods, inherited ones too', @{
     var found = labels_at(
-      'import .shapes { Circle }\nvar ring = Circle(0, 0, 1)\necho ring.', nil,
+      'import .shapes { Circle }\nvar ring = Circle(0, 0, 1)\necho ring.',
+      nil,
     )
 
-    expect(found).to_contain_all([
-      'radius', 'distance', 'move', 'x', 'y', 'to_string',
-    ])
+    expect(found)
+        .to_contain_all(['radius', 'distance', 'move', 'x', 'y', 'to_string'])
     expect(found).not.to_contain('@new')
   })
 
@@ -75,42 +87,44 @@ describe('members', @{
   })
 
   it('offers a string its methods', @{
-    expect(labels_at(
-      "echo 'text'.", nil,
-    )).to_contain_all(['upper', 'split', 'trim'])
+    expect(labels_at("echo 'text'.", nil))
+        .to_contain_all(['upper', 'split', 'trim'])
   })
 
   it('offers a dictionary written out the keys it was given', @{
-    expect(labels_at(
-      'var point = { x: 1, y: 2 }\necho point.', nil,
-    )).to_contain_all(['x', 'y'])
+    expect(labels_at('var point = { x: 1, y: 2 }\necho point.', nil))
+        .to_contain_all(['x', 'y'])
   })
 
   it('offers a union the members every one of its types has', @{
     var found = labels_at(UNION, '  db.')
 
     expect(found).to_contain_all([
-      'exec', 'fetch_all', 'insert', 'count', 'schema', 'model',
+      'exec',
+      'fetch_all',
+      'insert',
+      'count',
+      'schema',
+      'model',
     ])
     expect(found).not.to_contain('commit')
     expect(found).not.to_contain('close')
   })
 
   it('follows a member both types of a union declare alike', @{
-    expect(labels_at(UNION, 'db.schema.')).to_contain_all([
-      'create_table', 'alter_table', 'drop_table', 'has_table',
-    ])
+    expect(
+      labels_at(UNION, 'db.schema.'),
+    ).to_contain_all(['create_table', 'alter_table', 'drop_table', 'has_table'])
   })
 
   it('offers a callback parameter the members of its class', @{
-    expect(labels_at(UNION, '    table.')).to_contain_all([
-      'id', 'string', 'timestamps', 'foreign',
-    ])
+    expect(labels_at(UNION, '    table.'))
+        .to_contain_all(['id', 'string', 'timestamps', 'foreign'])
   })
 
   it('offers self its private members, and other receivers not', @{
     var source = 'class A {\n  var _hidden = 1\n  show() {\n    return self.\n  }\n}\n' +
-      'echo A()._'
+        'echo A()._'
     var inside = labels_at(source, 'return self.')
     var outside = labels_at(source, 'A().')
 
@@ -128,9 +142,8 @@ describe('names', @{
         'inner = a\n  ',
       )
 
-      expect(found).to_contain_all([
-        'total', 'add', 'a', 'inner', 'print', 'Error',
-      ])
+      expect(found)
+          .to_contain_all(['total', 'add', 'a', 'inner', 'print', 'Error'])
       expect(found).to_contain_all(['if', 'return', 'nil'])
     },
   )
@@ -139,7 +152,8 @@ describe('names', @{
     var items = items_at('echo Circ', 'Circ')
     var circle = items.find(@(item) => item.label == 'Circle')
 
-    expect(circle.additionalTextEdits[0].newText).to_equal('import .shapes { Circle }\n')
+    expect(circle.additionalTextEdits[0].newText)
+        .to_equal('import .shapes { Circle }\n')
   })
 
   it('offers a standard library module to be imported whole', @{
@@ -152,9 +166,8 @@ describe('names', @{
 
 describe('imports', @{
   it('offers the modules beside the file', @{
-    expect(labels_at(
-      'import .', nil,
-    )).to_contain_all(['shapes', 'main', 'geometry'])
+    expect(labels_at('import .', nil))
+        .to_contain_all(['shapes', 'main', 'geometry'])
   })
 
   it('offers what a module exports between the braces', @{
@@ -186,9 +199,8 @@ describe('other places', @{
   it('offers doc tags, and the parameters after @param', @{
     var source = '/**\n * @\n * @param \n */\ndef f(first, second) {\n}\n'
 
-    expect(labels_at(
-      source, ' * @',
-    )).to_contain_all(['param', 'returns', 'throws'])
+    expect(labels_at(source, ' * @'))
+        .to_contain_all(['param', 'returns', 'throws'])
     expect(labels_at(source, '@param ')).to_equal(['first', 'second'])
   })
 
@@ -200,9 +212,10 @@ describe('other places', @{
   it('tells code, strings and comments apart deep inside a class', @{
     # `${` is kept apart so this file does not interpolate it.
     var open = '$' + '{'
-    var source = "class Box {\n  var name\n\n  f() {\n    var s = 'a " + open +
-      "self.} b.'\n" +
-      "    # self.\n    return self.\n  }\n}\n"
+    var source = "class Box {\n  var name\n\n  f() {\n    var s = 'a " +
+        open +
+        "self.} b.'\n" +
+        "    # self.\n    return self.\n  }\n}\n"
 
     expect(labels_at(source, open + 'self.')).to_contain_all(['name', 'f'])
     expect(labels_at(source, '} b.')).to_equal([])
@@ -214,7 +227,8 @@ describe('other places', @{
 describe('resolve', @{
   it('fills in the signature and documentation of the item looked at', @{
     var items = items_at(
-      'import .shapes { Point }\nvar p = Point(1, 2)\necho p.dis', 'p.dis',
+      'import .shapes { Point }\nvar p = Point(1, 2)\necho p.dis',
+      'p.dis',
     )
     var item = items.find(@(each) => each.label == 'distance')
     var resolved = client.request('completionItem/resolve', item)

@@ -1,0 +1,72 @@
+/**
+ * @module markdown.errors
+ *
+ * The errors that the `markdown` module raises.
+ *
+ * Markdown syntax can't cause an error by itself. Every string is a
+ * valid document, and text that doesn't match any Markdown syntax is
+ * rendered as plain text. Errors come from the parts around the
+ * Markdown, such as front matter that isn't valid YAML.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+/**
+ * The base class of every error that this module raises.
+ *
+ * @printable
+ */
+class MarkdownError < Error {
+
+  /**
+   * @param string message
+   */
+  @new(message) {
+    parent(message)
+    self.type = 'MarkdownError'
+  }
+
+  to_string() {
+    return '<${self.type}: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Raised when front matter can't be read, because it isn't valid YAML
+ * or it isn't a mapping.
+ *
+ * ```zuri
+ * import markdown
+ *
+ * catch {
+ *   markdown.parse('---\n- a list\n---\n', { metadata: true })
+ * } as error {
+ *   echo error.message
+ * }
+ * ```
+ *
+ * @printable
+ */
+class MetadataError < MarkdownError {
+
+  /**
+   * The source line that the front matter starts on.
+   *
+   * @type number
+   */
+  var line = 1
+
+  /**
+   * @param string message
+   * @param ?number line
+   */
+  @new(message, line) {
+    parent(message)
+    self.type = 'MetadataError'
+    self.line = line == nil ? 1 : line
+  }
+}

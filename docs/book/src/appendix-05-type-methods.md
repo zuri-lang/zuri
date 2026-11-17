@@ -1,9 +1,9 @@
 # Appendix E: Built-in Type Methods
 
-Every method on every built-in type, with its signature, what it
-returns, and its edge cases. This is the reference; the chapters in
-[Text, Numbers and Collections](ch04-00-collections.md) are the
-introduction.
+Every method of every built-in type, with its signature, what it
+returns, and its edge cases. This appendix is the reference. For an
+introduction, see the chapters in [Text, Numbers and
+Collections](ch04-00-collections.md).
 
 Methods are called with a dot, on the value itself:
 

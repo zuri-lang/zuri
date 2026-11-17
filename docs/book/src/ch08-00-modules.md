@@ -1,13 +1,13 @@
 # The Module System
 
-A module is a `.zu` file. It runs at most once per program, it gets its own
+A module is a `.zu` file. It runs at most once per program, it has its own
 global namespace, and nothing it declares is visible anywhere else until
-someone imports it.
+another file imports it.
 
-That is the whole model. The rest of this chapter is the syntax and the
-resolution rules.
+That's all there is to the model. The rest of this chapter covers the syntax
+and the rules for finding modules.
 
-## Importing
+## Importing a Module
 
 ```zuri
 import math
@@ -17,9 +17,10 @@ echo math.PI
 echo os.cwd()
 ```
 
-`import name` binds the module under that name. Reach into it with a dot.
+`import name` makes the module available under that name. Use a dot to
+access what's inside it.
 
-### Picking Out Members
+### Importing Specific Members
 
 ```zuri
 import math { PI, E }
@@ -27,9 +28,10 @@ import math { PI, E }
 echo PI
 ```
 
-The named members are bound directly, and the module name itself is not.
+The members you name are bound directly, and the module name itself isn't
+bound.
 
-`{ * }` brings in everything public:
+`{ * }` imports every public member:
 
 ```zuri
 import math { * }
@@ -38,18 +40,18 @@ echo PI
 echo ROOT_2
 ```
 
-### Renaming
+### Renaming a Module
 
 ```zuri
 import http.websocket as ws
 ```
 
-Use this when the natural name is long, or when it would collide.
+This is useful when the module's name is long, or when it would clash with
+another name.
 
-`as` renames the **module**, not a member. There is no way to rename an
-individual name in a member list — `import math { PI as pi }` does not
-parse. When you want a different name for one imported thing, bind it
-yourself:
+`as` renames the **module**, not a member. You can't rename individual names
+in a member list, so `import math { PI as pi }` doesn't parse. If you want
+to use a different name for something you've imported, assign it yourself:
 
 ```zuri
 import math { PI }
@@ -63,11 +65,11 @@ echo pi
 3.141592653589793
 ```
 
-### Calling a Module
+### Calling a Module Directly
 
-A module with a function of its own name can be called. `set` declares a
-function called `set`, so the module and the function answer to the same
-call:
+If a module contains a function with the same name as the module, you can
+call the module itself. `set` declares a function called `set`, so calling
+the module calls that function:
 
 ```zuri
 import set
@@ -81,13 +83,14 @@ echo set.set([1, 2, 2]).length()
 2
 ```
 
-Prefer the short form. `wire()`, `date()`, `log()`, `hash()`, `enum()` and
-`compress()` work the same way, and so does a module of your own: a
-`greet.zu` holding `def greet(name)` is called as `greet('Ada')` once it is
-imported. A class of the module's own name is called the same way.
+The short form is usually preferred. `wire()`, `date()`, `log()`, `hash()`,
+`enum()` and `compress()` work the same way, and so do your own modules:
+once you've imported a `greet.zu` that contains `def greet(name)`, you can
+call it as `greet('Ada')`. A class with the same name as its module can be
+called in the same way.
 
-The call goes by the name the module is bound to, so renaming a module loses
-it, and the function stays reachable as a member:
+The call relies on the name the module is bound to, so it stops working if
+you rename the module. The function is still available as a member:
 
 ```zuri
 import set as collection
@@ -106,8 +109,8 @@ module 'collection' is not callable
 2
 ```
 
-The name still holds a module rather than a function. `typeof()` says so, and
-a method that wants a function needs the member itself:
+The name still refers to a module, not a function. `typeof()` confirms this,
+and a method that expects a function needs the member itself:
 
 ```zuri
 import hash
@@ -121,62 +124,64 @@ module
 [32, 40]
 ```
 
-Calling a module that has no such function is a `TypeError`.
+Calling a module that doesn't have a matching function raises a `TypeError`.
 
 ## Relative Imports
 
-A path starting with `.` or `..` is resolved against the directory of the
-file doing the importing, and is never searched for anywhere else.
+A path that starts with `.` or `..` is resolved relative to the directory of
+the file that contains the import, and Zuri never looks for it anywhere
+else.
 
 ```zuri,ignore
-import .helpers             # next to this file
-import .models.user         # models/ next to this file, then user
-import ..shared.config      # up one directory, then shared/, then config
-import .. ..shared.config   # up two directories, then shared/, then config
+import .helpers # next to this file
+import .models.user # models/ next to this file, then user
+import ..shared.config # up one directory, then shared/, then config
+import .. ..shared.config # up two directories, then shared/, then config
 ```
 
-Each `..` climbs one directory, so `.. ..` climbs two and `.. .. ..` three.
-The dots may also be written together, `....shared.config`, and it is the
-same import: a run of dots counts two for each directory up. `zuri fmt`
-leaves whichever way the path is written as it is.
+Each `..` goes up one directory, so `.. ..` goes up two, and `.. .. ..` goes
+up three. You can also write the dots together, as in `....shared.config`,
+which means the same thing: every two dots in a row go up one directory.
+`zuri fmt` keeps whichever form you used.
 
-Each segment resolves the same way a bare name does: `name.zu` is tried
-first, then `name/index.zu`. So `import .helpers` finds either
+Each part of the path is resolved the same way as a bare name: Zuri tries
+`name.zu` first, then `name/index.zu`. So `import .helpers` finds either
 `helpers.zu` or `helpers/index.zu`, and `import .models.user` finds
-`models/user.zu` or `models/user/index.zu`, with `models` itself being a
-directory either way.
+`models/user.zu` or `models/user/index.zu`, where `models` is a directory in
+both cases.
 
-Which one it finds is invisible at the import site, and that is what lets a
-module grow into a package: split `helpers.zu` into `helpers/index.zu` plus
-some siblings, and every `import .helpers` keeps working untouched.
+You can't tell from the import which of the two it found, and that's what
+allows a module to grow into a package. If you split `helpers.zu` into
+`helpers/index.zu` and a few other files, every `import .helpers` keeps
+working without changes.
 
-Inside a package, a sibling is always `import .sibling`, never the full
-path from the project root. Writing `import myapp.models.user` from inside
-`myapp/models/` sends the resolver out to the library search path and it
-will not find anything.
+Inside a package, always import a sibling module with `import .sibling`, not
+with the full path from the project root. If you write
+`import myapp.models.user` inside `myapp/models/`, Zuri searches the library
+path for it and won't find anything.
 
-## Exporting
+## Re-exporting Imports
 
-**Imports are local by default.** If `a.zu` imports `b.zu`, a third file
-that imports `a` does not see `b`'s contents through it.
+**Imports are private by default.** If `a.zu` imports `b.zu`, a third file
+that imports `a` can't see what's in `b` through it.
 
-Prefix the path with `@` to re-export:
+To re-export a module, put `@` in front of its path:
 
 ```zuri,ignore
 import @.util { * }
 ```
 
-Now everything `util.zu` exposed is part of this module's public surface
-too. All three forms take the prefix:
+Everything that `util.zu` exports is now part of this module's public API as
+well. All three forms of import accept the prefix:
 
 ```zuri,ignore
-import @.module            # the module itself is re-exported
-import @.module { item }   # just that item
-import @.module { * }      # everything
+import @.module # the module itself is re-exported
+import @.module { item } # just that item
+import @.module { * } # everything
 ```
 
-This is how a package's `index.zu` assembles a public API out of several
-private files:
+This is how a package's `index.zu` builds a public API from several private
+files:
 
 <span class="filename">Filename: pkg/index.zu</span>
 
@@ -189,12 +194,12 @@ def hello() {
 }
 ```
 
-`util`'s members are re-exported. `deep_slug` is imported for this file's
-own use and stays private.
+`util`'s members are re-exported, while `deep_slug` is imported for this
+file's own use and stays private.
 
-## Privacy
+## Private Members
 
-A member whose name starts with `_` is private to its module and cannot be
+A member whose name starts with `_` is private to its module and can't be
 imported by name:
 
 ```zuri,ignore
@@ -209,13 +214,14 @@ SyntaxError: Cannot import private items from module
   |                    ^
 ```
 
-`{ * }` skips private members too. Prefix anything that is an
-implementation detail and the module system will keep it that way.
+`{ * }` skips private members as well. If something is an implementation
+detail, give it a leading underscore and the module system will keep it
+private.
 
 ## Packages
 
-A directory with an `index.zu` is a package, and importing the directory
-runs its `index.zu`:
+A directory that contains an `index.zu` is a package. Importing the
+directory runs its `index.zu`:
 
 ```text
 pkg/
@@ -226,39 +232,40 @@ pkg/
 ```
 
 ```zuri,ignore
-import .pkg            # runs pkg/index.zu
-import .pkg.util       # runs pkg/util.zu
-import .pkg.sub.deep   # runs pkg/sub/deep.zu
+import .pkg # runs pkg/index.zu
+import .pkg.util # runs pkg/util.zu
+import .pkg.sub.deep # runs pkg/sub/deep.zu
 ```
 
-The same rule applies to `zuri run pkg` on the command line, which is what
-makes a package runnable as well as importable.
+The same rule applies to `zuri run pkg` on the command line, which is why a
+package can be run as well as imported.
 
-## How a Bare Name Is Resolved
+## Resolving Bare Names
 
-`import http`, with no leading dot, is searched for in this order:
+For an import with no leading dot, such as `import http`, Zuri looks in
+these places, in order:
 
 1. `.zuri/libs/http` in the **project**
-2. `$ZURI_ROOT/libs/http`, or `libs/http` beside the `zuri` executable:
-   the standard library
-3. a built-in native module named `http`
-4. `$ZURI_HOME/libs/http`, the packages installed for your user, which
-   is `~/.zuri/libs` unless `ZURI_HOME` moves it
+2. `$ZURI_ROOT/libs/http`, or `libs/http` next to the `zuri` executable,
+   which is the standard library
+3. A built-in native module named `http`
+4. `$ZURI_HOME/libs/http`, the packages installed for your user, which are
+   in `~/.zuri/libs` unless you set `ZURI_HOME` to something else
 
-At each step, `http.zu` is tried first and then `http/index.zu`.
+At each step, `http.zu` is tried first, and then `http/index.zu`.
 
-The project is the nearest directory holding a `project.toml`, looking
-upwards from the script `zuri run` was given, or from the working
-directory for a command or the REPL. A program run from anywhere inside
-a project imports that project's packages, and a program in no project
-uses `.zuri/libs` in the working directory. The project is found once,
-when the program starts, so changing directory part way through does
-not change where imports come from.
+The project is the nearest directory containing a `project.toml`, found by
+searching upward from the script given to `zuri run`, or from the working
+directory for a command or the REPL. A program run from anywhere inside a
+project imports that project's packages, and a program that isn't in a
+project uses `.zuri/libs` in the working directory. The project is found
+once, when the program starts, so changing directory while it runs doesn't
+change where imports come from.
 
-`zuri install` fills `.zuri/libs`, and
-[Packages and Nyssa](ch27-00-packages.md) covers it in full. Step one is
-also what makes vendoring work. Dropping a file into `.zuri/libs/`
-shadows a standard library module of the same name:
+`zuri install` puts packages in `.zuri/libs`, and [Packages and
+Nyssa](ch27-00-packages.md) covers it in full. The first step in the search
+is also what makes vendoring possible. A file you put in `.zuri/libs/` takes
+priority over a standard library module with the same name:
 
 ```console
 $ cat .zuri/libs/mylib.zu
@@ -272,10 +279,11 @@ $ zuri run uses.zu
 from user libs
 ```
 
-## Modules Run Once
+## Modules Run Only Once
 
-A module's top level executes the first time it is imported, and never
-again. Every later import of the same file gets the same module object:
+A module's top-level code runs the first time the module is imported, and
+never again. Every later import of the same file gets the same module
+object:
 
 ```zuri,ignore
 import .once
@@ -287,18 +295,19 @@ import .once
 side effect ran
 ```
 
-One line of output, three imports. Identity is by canonical filesystem
-path, so two different relative paths to the same file are the same module.
+There's one line of output for three imports. Modules are identified by
+their canonical file path, so two different relative paths to the same file
+refer to the same module.
 
-This makes a module's top level the natural place for setup that must
-happen exactly once: opening a connection pool, reading a config file,
-registering handlers.
+That makes a module's top level the natural place for setup that should
+happen exactly once, such as opening a connection pool, reading a
+configuration file or registering handlers.
 
 ## Circular Imports
 
-A circular import works. A module is registered before its body runs, so
-when `b.zu` imports `a.zu` while `a.zu` is still loading, it gets the
-partially built module rather than looping forever:
+Circular imports work. A module is registered before its body runs, so when
+`b.zu` imports `a.zu` while `a.zu` is still loading, `b` gets the partly
+loaded module instead of looping forever:
 
 <span class="filename">Filename: a.zu</span>
 
@@ -326,27 +335,27 @@ a loaded
 a
 ```
 
-The catch is visible in that output: `b` finished loading before `a` did,
-so anything `b` reads from `a` **at its top level** is not there yet.
-Reading it from inside a function is fine, because by then `a` has
-finished.
+The output shows the catch: `b` finished loading before `a` did, so anything
+`b` reads from `a` **at its top level** doesn't exist yet. Reading it inside
+a function is fine, because by the time the function runs, `a` has finished
+loading.
 
-If a module fails while loading, it is dropped from the cache rather than
-left behind half built, so a later import genuinely retries.
+If a module fails while it's loading, it's removed from the cache instead of
+being left half loaded, so a later import really does try again.
 
 ## Module Variables
 
-Every module gets two names for free:
+Every module automatically has two variables:
 
 ```zuri
 echo __file__
 echo __root__
 ```
 
-`__file__` is this module's own canonical path. `__root__` is the entry
-file the program was started from, and it is the same in every module. Use
-them to locate files relative to your source rather than relative to
-whatever directory the user happened to run from:
+`__file__` is the canonical path of the module itself. `__root__` is the
+entry file the program was started with, and it's the same in every module.
+Use them to find files relative to your source code, rather than relative to
+whatever directory the user ran the program from:
 
 ```zuri
 import os
@@ -354,8 +363,8 @@ import os
 var templates = os.join_paths(os.dir_name(__file__), 'templates')
 ```
 
-In the REPL both are defined, with placeholder values standing in for the
-file that does not exist:
+Both are also defined in the REPL, with placeholder values in place of a
+real file:
 
 ```zuri
 %> __file__
@@ -364,15 +373,15 @@ file that does not exist:
 @.repl.root
 ```
 
-They differ from each other there, so the `__root__ == __file__` check
-below is `false` at the prompt — a REPL session is never the entry point of
-a program.
+In the REPL, they're different from each other, so the
+`__root__ == __file__` check below is `false` at the prompt. A REPL session
+is never the entry point of a program.
 
-### Running as a Program, Importing as a Module
+### Running a Module as a Program
 
-Because `__root__` is the entry file and `__file__` is this one, comparing
-them tells a module whether it is the program being run or something being
-imported:
+Since `__root__` is the entry file and `__file__` is the current one,
+comparing them tells a module whether it's being run as the program or
+imported by something else:
 
 <span class="filename">Filename: tool.zu</span>
 
@@ -400,14 +409,13 @@ echo tool.add(10, 20)
 30
 ```
 
-The same file is a clean, side-effect-free library when imported and a
-runnable command-line program when launched directly. Put the argument
-parsing and the entry point behind that check, and everything else above
-it.
+When imported, the same file is a library with no side effects, and when run
+directly, it's a command-line program. Put the argument parsing and the
+entry point behind that check, and everything else above it.
 
-These two names describe *which file this is*, so they are not exports. A
-wildcard import copies every public name out of the module it names, and
-`__file__` and `__root__` are deliberately excluded from that:
+These two variables describe *which file this is*, so they aren't exported.
+A wildcard import copies every public name from the module it imports, but
+`__file__` and `__root__` are always left out:
 
 ```zuri
 import math { * }
@@ -419,14 +427,14 @@ echo __file__ == __root__
 true
 ```
 
-That guarantee is what makes the `__root__ == __file__` check above
-reliable in every file, including one that wildcard-imports a sibling.
+That's what makes the `__root__ == __file__` check reliable in every file,
+even in a file that uses a wildcard import of a sibling module.
 
-## Structuring a Project
+## Organizing a Project
 
-A small program is one file. Past that, the shape that works is a package
-per area of responsibility, each with an `index.zu` that re-exports what is
-public:
+A small program can be a single file. Beyond that, a good structure is one
+package for each area of responsibility, each with an `index.zu` that
+re-exports its public members:
 
 ```text
 myapp/
@@ -445,13 +453,13 @@ myapp/
     _json_store.zu  # private: the leading underscore says so
 ```
 
-Run it with `zuri run myapp`. The capstone in [Chapter 25](ch25-00-task-board.md)
-is laid out exactly this way.
+Run it with `zuri run myapp`. The capstone project in [Chapter
+25](ch25-00-task-board.md) uses exactly this layout.
 
-### A Package, End to End
+### A Complete Package
 
-Here is the smallest complete version of that shape. Three files, one
-package, one public entry point.
+Here's the smallest complete example of that structure: three files, one
+package and one public entry point.
 
 <span class="filename">Filename: greet/english.zu</span>
 
@@ -501,26 +509,26 @@ Bonjour, Ada
 Hello, Grace
 ```
 
-Four things to take from it.
+There are four things to notice.
 
 **`greet/index.zu` is what `import .greet` loads.** A directory with an
 `index.zu` is a package, and importing the directory runs that file.
 
-**The `@` on `import @.english` is what re-exports it.** Without it,
-`greet.english` would not be reachable from outside `greet/index.zu`, even
-though `greet()` itself would still work — which is often exactly what you
-want.
+**The `@` in `import @.english` is what re-exports the module.** Without it,
+`greet.english` wouldn't be accessible outside `greet/index.zu`, although
+`greet()` itself would still work, which is often what you want.
 
-**Both submodules define `hello`, and they do not collide.** Each lives in
-its own namespace, reached through its own module name. That is the whole
-reason to use `import @.english` rather than `import @.english { * }` here.
+**Both submodules define `hello`, and they don't clash.** Each one lives in
+its own namespace and is accessed through its own module name. That's the
+reason to use `import @.english` here rather than `import @.english { * }`.
 
-**`_shout` is unreachable from outside.** Writing `greet.english._shout(x)`
-anywhere else is a compile error, not a runtime one:
+**`_shout` can't be accessed from outside.** Writing
+`greet.english._shout(x)` anywhere else is a compile-time error, not a
+run-time one:
 
 ```console
 SyntaxError: '_shout' is private and can only be accessed via 'self' or 'parent'
 ```
 
-The leading underscore is the only declaration of privacy there is, and it
-is checked before the program runs.
+The leading underscore is the only way to declare something private, and
+it's checked before the program runs.

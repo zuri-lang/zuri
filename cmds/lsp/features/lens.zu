@@ -44,8 +44,8 @@ def lenses(server, params: dict) {
   var index = 0
 
   for symbol in summary.symbols {
-    var counted = _COUNTED.contains(symbol.kind)
-      and !symbol.get('anonymous', false)
+    var counted = _COUNTED.contains(symbol.kind) and
+        !symbol.get('anonymous', false)
 
     if counted and !symbol.name.is_empty() and !symbol.name.starts_with('@') {
       found.append({
@@ -88,9 +88,9 @@ def resolve(server, lens: dict, context) {
   var uses = references.find(server, target, false, context)
   var count = uses.length()
   var title = count == 1 ? '1 reference' : '${count} references'
-  var position = server.range(
-    document.key, symbol.name_start, symbol.name_end,
-  ).start
+  var position = server
+      .range(document.key, symbol.name_start, symbol.name_end)
+      .start
 
   lens.command = {
     title,

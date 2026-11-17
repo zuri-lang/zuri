@@ -1,12 +1,13 @@
 /**
  * @module schema
  *
- * What is in a database, and changing it.
+ * Lists what's in a database, and changes it.
  *
- * Every engine can list its tables and describe its columns, and every
- * engine does it differently: PostgreSQL has `information_schema`,
+ * Every engine can list its tables and describe its columns, but each
+ * one does it differently. PostgreSQL has `information_schema`, and
  * SQLite has `PRAGMA table_info`. The queries have nothing in common,
- * so each adapter writes its own and they all return the same shape.
+ * so each adapter writes its own, and they all return results in the
+ * same form.
  *
  * ```zuri,ignore
  * for table in db.schema.tables() {
@@ -18,15 +19,15 @@
  * }
  * ```
  *
- * This is what makes `insert()` portable: on an engine with no last
- * insert id, the insert needs a `RETURNING` clause, and the column to
- * return is the table's primary key, which is asked for here.
+ * This is also what makes `insert()` portable. On an engine with no
+ * last insert ID, an insert needs a `RETURNING` clause, and the column
+ * to return is the table's primary key, which is looked up here.
  *
- * ### Changing it
+ * ### Changing the schema
  *
  * Tables are created, altered, renamed and dropped through the same
- * object, described once in a `Blueprint` that the adapter turns into
- * its own engine's statements:
+ * object. Each change is described once in a `Blueprint`, which the
+ * adapter turns into its engine's own statements:
  *
  * ```zuri,ignore
  * db.schema.create_table('posts', @(table: Blueprint) {
@@ -41,11 +42,12 @@
  * })
  * ```
  *
- * A change made with no transaction open runs as a whole: inside a
- * transaction of its own on SQLite and PostgreSQL, where a failure part
- * way leaves nothing behind. MySQL and MariaDB commit at every schema
- * change, so there each statement stands once it has run. A change
- * made inside a transaction runs in it, as part of it.
+ * A change made with no transaction open runs as a single unit. On
+ * SQLite and PostgreSQL, it runs in a transaction of its own, so a
+ * failure partway through leaves nothing behind. MySQL and MariaDB
+ * commit after every schema change, so there each statement is
+ * permanent once it has run. A change made inside a transaction runs as
+ * part of that transaction.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -53,15 +55,15 @@
 import .blueprint { Blueprint }
 
 /**
- * The description of one column, as every adapter returns it.
+ * The description of one column, in the form every adapter returns it.
  *
  * | Key | Meaning |
  * | - | - |
  * | `name` | The column's name. |
  * | `type` | The engine's own name for its type. |
  * | `nullable` | Whether it accepts NULL. |
- * | `default_value` | Its default as SQL text, or nil for none. |
- * | `primary_key` | Whether it is part of the primary key. |
+ * | `default_value` | Its default as SQL text, or nil if it has none. |
+ * | `primary_key` | Whether it's part of the primary key. |
  * | `position` | Its position in the table, counting from one. |
  *
  * @returns dict
@@ -80,11 +82,11 @@ def column_shape() {
 /**
  * Introspection for one connection.
  *
- * The methods here delegate to the adapter, which is where the queries
- * that differ per engine live. An adapter that has not implemented
- * introspection raises `NotSupportedError` rather than returning
- * something empty, so "this engine cannot tell you" never looks like
- * "there is nothing there".
+ * The methods here pass the work to the adapter, which contains the
+ * queries that differ between engines. An adapter that hasn't
+ * implemented introspection raises a `NotSupportedError` instead of
+ * returning an empty result, so "this engine can't tell you" never
+ * looks like "there's nothing there".
  *
  * @printable
  */
@@ -231,8 +233,8 @@ class Schema {
   /**
    * Creates a table.
    *
-   * `body` is called with a `Blueprint` to describe the table on, and
-   * the table is created once it returns.
+   * `body` is called with a `Blueprint` to describe the table with, and
+   * the table is created when it returns.
    *
    * ```zuri,ignore
    * db.schema.create_table('comments', @(table: Blueprint) {
@@ -245,11 +247,11 @@ class Schema {
    *
    * @param string name
    * @param function body Called with the `Blueprint`.
-   * @param dict|nil options `{ if_not_exists }`, false by default:
-   *    when true, a table of that name that exists already is left as
-   *    it is, indexes included, rather than an error.
-   * @throws QueryError if the description is not a table, or the
-   *    engine refuses it.
+   * @param dict|nil options `{ if_not_exists }`, false by default. When
+   *    it's true, a table with that name that already exists is left as
+   *    it is, including its indexes, instead of causing an error.
+   * @throws QueryError if the description isn't a valid table, or the
+   *    engine rejects it.
    */
   create_table(name: string, body: function, options) {
     var blueprint = Blueprint(name, true)
@@ -304,15 +306,16 @@ class Schema {
   /**
    * Drops a table.
    *
-   * A table another table refers to through a foreign key is refused,
-   * rather than taking the referring rows with it.
+   * A table that another table refers to through a foreign key can't be
+   * dropped, because dropping it would also remove the rows that refer
+   * to it.
    *
    * @param string name
-   * @param dict|nil options `{ if_exists }`, false by default: when
-   *    true, a table that is not there is left alone rather than an
-   *    error.
-   * @throws QueryError if the table is not there, or another refers to
-   *    it.
+   * @param dict|nil options `{ if_exists }`, false by default. When
+   *    it's true, a table that doesn't exist is ignored instead of
+   *    causing an error.
+   * @throws QueryError if the table doesn't exist, or another table
+   *    refers to it.
    */
   drop_table(name: string, options) {
     var settings = options or {}
@@ -323,8 +326,8 @@ class Schema {
   }
 
   /**
-   * Renames a table. Foreign keys referring to it follow it; its
-   * indexes keep the names they had.
+   * Renames a table. Foreign keys that refer to it follow it, and its
+   * indexes keep their names.
    *
    * @param string from
    * @param string to

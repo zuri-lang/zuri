@@ -119,7 +119,12 @@ def _name_arguments(server, document, call: dict, every: bool, found: list) {
 }
 
 def _show_types(
-  server, document, summary: dict, start: int, end: int, found: list,
+  server,
+  document,
+  summary: dict,
+  start: int,
+  end: int,
+  found: list,
 ) {
   var linker = server.linker
   var index = 0
@@ -128,12 +133,13 @@ def _show_types(
     var shown = symbol.kind == 'variable' and symbol.get('hint', nil) == nil
     var inside = symbol.name_end >= start and symbol.name_start <= end
 
-    if shown
-      and inside
-      and !symbol.get('caught', false)
-      and symbol.name_end > symbol.name_start {
+    if shown and
+        inside and
+        !symbol.get('caught', false) and
+        symbol.name_end > symbol.name_start {
       var type = common.describe(
-        linker, linker.type_of({ path: document.key, index }),
+        linker,
+        linker.type_of({ path: document.key, index }),
       )
 
       if type != nil and type != 'nil' {

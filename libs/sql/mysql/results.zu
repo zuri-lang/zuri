@@ -1,12 +1,12 @@
 /**
  * @module results
  *
- * Turning what the server answered into the shapes the shared contract
- * asks for.
+ * Converts the server's answers into the forms the shared interface
+ * expects.
  *
- * These live apart from the connection so the statement can use them
- * too. A statement that reached for them through the connection, which
- * already reaches for the statement, would be a circular import.
+ * These are kept separate from the connection so that the statement can
+ * use them too. If the statement got them through the connection, which
+ * already imports the statement, the imports would be circular.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -53,9 +53,9 @@ def select_result(response: dict, known) {
     return { columns: [], rows: [] }
   }
 
-  var columns = known != nil and id(response.columns) == id(known.columns) ?
-    known.described :
-    describe_columns(response.columns)
+  var columns = known != nil and id(response.columns) == id(known.columns)
+      ? known.described
+      : describe_columns(response.columns)
 
   return { columns, rows: response.rows }
 }

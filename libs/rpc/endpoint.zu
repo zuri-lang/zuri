@@ -1,13 +1,13 @@
 /**
  * @module endpoint
  *
- * {Endpoint}: one side of a JSON-RPC connection. It is a {Service} on
- * a connection: it answers the requests and notifications the other
- * side sends, and sends its own. JSON-RPC makes no difference between
- * a client and a server, so the same endpoint can do both on one
- * connection.
+ * {Endpoint}, one side of a JSON-RPC connection. An endpoint is a
+ * {Service} on a connection: it answers the requests and notifications
+ * that the other side sends, and sends its own. JSON-RPC doesn't
+ * distinguish between a client and a server, so the same endpoint can
+ * be both on one connection.
  *
- * Re-exported by `rpc`.
+ * The `rpc` module re-exports it.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -60,10 +60,10 @@ def _read(transport, framing, inbox) {
  * One side of a JSON-RPC connection over a transport.
  *
  * An endpoint is a {Service}, so its handlers, its fallback and its
- * batch limit work exactly as a service's do. The connection adds the
- * other direction: an endpoint calls the other side with `request()`,
- * `request_batch()`, `send_request()` and `notify()`, and a handler
- * on one can `defer()` its answer and send it later.
+ * batch limit work exactly as they do for a service. The connection
+ * adds the other direction. An endpoint calls the other side with
+ * `request()`, `request_batch()`, `send_request()` and `notify()`, and
+ * a handler can `defer()` its answer and send it later.
  *
  * ```zuri
  * import rpc
@@ -87,15 +87,15 @@ def _read(transport, framing, inbox) {
  * client.close()
  * ```
  *
- * An endpoint reads its transport in one of three ways. `serve()`
- * reads and answers until the connection ends, on the isolate that
- * calls it. `listen()` reads on an isolate of its own and returns a
- * `Channel` of what arrives, for a program that waits on other things
- * as well; it passes each one to `dispatch()` when it is ready to
- * handle it. A program that reads the transport itself, such as one
- * polling many connections, hands what it reads to `feed()`. Every
- * handler runs on the isolate that owns the endpoint, and everything
- * is sent from there.
+ * An endpoint can read its transport in three ways. `serve()` reads and
+ * answers until the connection ends, on the isolate that calls it.
+ * `listen()` reads on an isolate of its own, and returns a `Channel` of
+ * what arrives, for a program that waits on other things as well. The
+ * program passes each item to `dispatch()` when it's ready to handle
+ * it. A program that reads the transport itself, for example because it
+ * polls many connections, passes what it reads to `feed()`. Every
+ * handler runs on the isolate that owns the endpoint, and everything is
+ * sent from there.
  *
  * @printable
  */
@@ -103,11 +103,11 @@ class Endpoint < Service {
 
   /**
    * Returns a new {Endpoint} over `transport`. Its messages are framed
-   * the way the transport keeps them apart: with the transport's own
-   * `framing()` when it has one, as a WebSocket does, and with a
+   * in the way the transport keeps them apart: with the transport's own
+   * `framing()` if it has one, as a WebSocket does, and with a
    * {HeaderFraming} otherwise.
    *
-   * @param any transport: A transport; see `rpc.transport`.
+   * @param any transport: a transport. See `rpc.transport`.
    */
   @new(transport) {
     parent()
@@ -151,18 +151,18 @@ class Endpoint < Service {
   }
 
   /**
-   * Sends a request and returns at once; `callback` is called with
-   * the answer when it arrives, on the isolate that owns the
-   * endpoint, while it serves, waits on a request, or dispatches.
+   * Sends a request and returns immediately. `callback` is called with
+   * the answer when it arrives, on the isolate that owns the endpoint,
+   * while the endpoint is serving, waiting on a request or dispatching.
    *
    * @param string method
    * @param list|dict|nil params
-   * @param function(2) callback: Called with the result and `nil`, or
-   *    with `nil` and the error: an {RpcError} the other side
-   *    answered with, or an {RpcClosedError} when the connection
+   * @param function(2) callback: called with the result and `nil`, or
+   *    with `nil` and the error, which is an {RpcError} that the other
+   *    side answered with, or an {RpcClosedError} if the connection
    *    ended first.
-   * @returns int: The request's `id`.
-   * @throws RpcClosedError when the endpoint has been closed.
+   * @returns int: the request's `id`.
+   * @throws RpcClosedError if the endpoint has been closed.
    */
   send_request(method: string, params, callback: function) {
     var id = self._take_id()
@@ -174,28 +174,29 @@ class Endpoint < Service {
   }
 
   /**
-   * Sends a request and waits for its answer, handling whatever else
-   * arrives in the meantime as `serve()` would.
+   * Sends a request and waits for its answer, handling anything else
+   * that arrives in the meantime, as `serve()` would.
    *
    * ```zuri,ignore
    * var sum = endpoint.request('add', [2, 3])
    * ```
    *
-   * An error answer that names no request, which the other side sends
-   * for a message it cannot read at all, goes to `on_error()` rather
-   * than to any one request.
+   * An error answer that doesn't name a request, which the other side
+   * sends for a message it can't read at all, goes to `on_error()`, not
+   * to any particular request.
    *
    * @param string method
    * @param list|dict|nil params
-   * @param ?number timeout: The most seconds to wait. Default `nil`,
-   *    which waits until the answer comes or the connection ends. A
-   *    timeout needs the endpoint to be listening; one reading its
-   *    transport itself waits as long as the transport's reads do.
-   * @returns any: The result the other side answered with.
-   * @throws RpcError when the other side answers with an error.
-   * @throws RpcClosedError when the endpoint has been closed, or the
-   *    connection ends before the answer.
-   * @throws RpcTimeoutError when `timeout` runs out first.
+   * @param ?number timeout: the maximum number of seconds to wait.
+   *    Defaults to `nil`, which waits until the answer arrives or the
+   *    connection ends. A timeout requires the endpoint to be
+   *    listening. An endpoint that reads its transport itself waits as
+   *    long as the transport's reads do.
+   * @returns any: the result that the other side answered with.
+   * @throws RpcError if the other side answers with an error.
+   * @throws RpcClosedError if the endpoint has been closed, or the
+   *    connection ends before the answer arrives.
+   * @throws RpcTimeoutError if `timeout` passes first.
    */
   request(method: string, params, timeout: ?number) {
     var call = Request(method, params, self._take_id())
@@ -213,25 +214,25 @@ class Endpoint < Service {
   }
 
   /**
-   * Sends several requests as one batch and waits for every answer,
-   * handling whatever else arrives in the meantime as `request()`
-   * does. The other side may answer them in any order; they come
-   * back in the order of `calls`.
+   * Sends several requests as a single batch, and waits for every
+   * answer, handling anything else that arrives in the meantime, as
+   * `request()` does. The other side can answer them in any order, but
+   * they're returned in the order of `calls`.
    *
    * ```zuri,ignore
    * var sums = endpoint.request_batch([['add', [1, 2]], ['add', [3, 4]]])
    * ```
    *
-   * @param list calls: Each call as a pair, `[method, params]`.
-   * @param ?number timeout: The most seconds to wait for every
-   *    answer, as for `request()`.
-   * @returns list: For each call, in order, the result the other
+   * @param list calls: each call as a pair, `[method, params]`.
+   * @param ?number timeout: the maximum number of seconds to wait for
+   *    every answer, as for `request()`.
+   * @returns list: for each call, in order, the result that the other
    *    side answered with, or the {RpcError} it answered with.
-   * @throws ValueError when `calls` is empty, or a call is not a
+   * @throws ValueError if `calls` is empty, or a call isn't a
    *    `[method, params]` pair.
-   * @throws RpcClosedError when the endpoint has been closed, or the
-   *    connection ends before every answer.
-   * @throws RpcTimeoutError when `timeout` runs out first.
+   * @throws RpcClosedError if the endpoint has been closed, or the
+   *    connection ends before every answer arrives.
+   * @throws RpcTimeoutError if `timeout` passes first.
    */
   request_batch(calls: list, timeout: ?number) {
     if calls.is_empty() {
@@ -311,9 +312,9 @@ class Endpoint < Service {
   }
 
   /**
-   * Starts reading the transport on an isolate of its own, and
-   * returns the `Channel` each message is put on as it arrives,
-   * already decoded from JSON. Pass each item taken from it to
+   * Starts reading the transport on an isolate of its own, and returns
+   * the `Channel` that each message is put on as it arrives, already
+   * decoded from JSON. Pass each item you take from the channel to
    * `dispatch()`, on the isolate that owns the endpoint, when the
    * program is ready to handle it.
    *
@@ -333,18 +334,18 @@ class Endpoint < Service {
    *
    * - `{ kind: 'message', text, value }`: a message, as its JSON text
    *   and the value decoded from it.
-   * - `{ kind: 'unreadable', text, message }`: a message that is not
-   *   valid JSON, with `text` `nil` when it is not valid UTF-8
-   *   either, and the parse error it is answered with.
+   * - `{ kind: 'unreadable', text, message }`: a message that isn't
+   *   valid JSON, with the parse error it's answered with. `text` is
+   *   `nil` if the message isn't valid UTF-8 either.
    * - `{ kind: 'closed' }`: the end of the connection.
-   * - `{ kind: 'failed', message }`: a failure reading the
-   *   transport, which ends the connection.
+   * - `{ kind: 'failed', message }`: a failure reading the transport,
+   *   which ends the connection.
    *
    * Calling `listen()` again returns the same `Channel`.
    *
    * @returns isolate.Channel
-   * @throws ValueError when the transport cannot be read from
-   *    another isolate; see `can_listen()` in `rpc.transport`.
+   * @throws ValueError if the transport can't be read from another
+   *    isolate. See `can_listen()` in `rpc.transport`.
    */
   listen() {
     if self._inbox != nil {
@@ -354,7 +355,9 @@ class Endpoint < Service {
     var shared = zuri.reflect.has_method(self._transport, 'can_listen')
 
     if !shared or !self._transport.can_listen() {
-      raise ValueError('${self._transport} is read by the isolate that holds it; use serve()')
+      raise ValueError(
+        '${self._transport} is read by the isolate that holds it; use serve()',
+      )
     }
 
     var inbox = isolate.channel()
@@ -381,7 +384,8 @@ class Endpoint < Service {
       when 'closed' self._end()
       when 'failed' {
         self._report(
-          RpcClosedError('the connection failed: ${item.message}'), nil,
+          RpcClosedError('the connection failed: ${item.message}'),
+          nil,
         )
         self._end()
       }
@@ -404,14 +408,13 @@ class Endpoint < Service {
   }
 
   /**
-   * Handles every message `data` completes, for a program that reads
-   * the transport itself rather than through `serve()` or `listen()`,
-   * such as one polling many connections. Empty `data` ends the
-   * connection, as an empty read does.
+   * Handles every message that `data` completes, for a program that
+   * reads the transport itself instead of with `serve()` or `listen()`,
+   * for example because it polls many connections. Empty `data` ends
+   * the connection, as an empty read does.
    *
-   * @param bytes data: The next bytes read from the transport.
-   * @throws RpcFramingError when the stream cannot be read past a
-   *    message.
+   * @param bytes data: the next bytes read from the transport.
+   * @throws RpcFramingError if the stream can't be read past a message.
    */
   feed(data: bytes) {
     if data.is_empty() {
@@ -486,7 +489,9 @@ class Endpoint < Service {
     self._callbacks = {}
 
     for id in waiting.keys() {
-      var ended = RpcClosedError('the connection ended before #${id} was answered')
+      var ended = RpcClosedError(
+        'the connection ended before #${id} was answered',
+      )
       self._call_back(waiting[id], nil, ended)
     }
   }

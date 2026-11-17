@@ -1,23 +1,22 @@
 /**
  * @module wire.compile
  *
- * Turning a parsed template into the instruction tree the renderer
- * walks.
+ * Compiles a parsed template into the tree of instructions that the
+ * renderer walks.
  *
- * Wire compiles rather than substitutes. A template is parsed once,
- * every expression in it is parsed once, every directive is resolved
- * once, and what comes out is a tree of plain instructions that holds no
- * reference back to the document it came from. Rendering that tree is
- * then a walk with no parsing in it at all, which is what lets the same
- * page be rendered thousands of times from one compile, and what lets
- * the renderer know the exact escaping context of every interpolation
- * instead of guessing at it.
+ * Wire compiles templates instead of substituting text into them. A
+ * template is parsed once, each expression in it is parsed once, and
+ * each directive is resolved once. The result is a tree of plain
+ * instructions with no reference back to the document it came from.
+ * Rendering it involves no parsing at all, so the same page can be
+ * rendered thousands of times from one compile, and the renderer knows
+ * the exact escaping context of every interpolation instead of having
+ * to guess.
  *
- * Compiling is also where a template's mistakes are found. An unknown
- * directive, an expression that does not parse, an `x-else` with no
- * `x-if` in front of it, the same region defined twice: all of them are
- * reported here, once, rather than on the request that happens to reach
- * them.
+ * Compiling is also where mistakes in a template are found. An unknown
+ * directive, an expression that doesn't parse, an `x-else` without an
+ * `x-if` in front of it, or a region defined twice are all reported
+ * here, once, instead of on whichever request happens to reach them.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
@@ -195,8 +194,8 @@ class Attribute {
   var context = escape.CONTEXT_ATTRIBUTE
 
   /**
-   * True when the attribute holds several URLs rather than one, so each
-   * has to be checked on its own.
+   * True when the attribute holds several URLs instead of one, so that
+   * each one has to be checked separately.
    */
   var url_list = false
 
@@ -280,8 +279,8 @@ class Element < Instruction {
 }
 
 /**
- * A run of instructions with nothing of its own, which is what a
- * `<template>` carrying a directive leaves behind.
+ * A sequence of instructions with nothing of its own. This is what a
+ * `<template>` element with a directive on it becomes.
  */
 class Group < Instruction {
 
@@ -311,8 +310,8 @@ class Branch {
   var test = nil
 
   /**
-   * True when the arm renders on a falsy test, which is what `x-not`
-   * means.
+   * True when the branch renders if the test is falsy, which is how
+   * `x-not` works.
    */
   var negate = false
 
@@ -538,12 +537,12 @@ class Template {
   var fingerprint = nil
 
   /**
-   * The parse errors the HTML parser found in the source.
+   * The parse errors that the HTML parser found in the source.
    *
    * HTML has no fatal errors, so these never stop a template from
-   * rendering. They are worth looking at when a template renders into a
-   * shape you did not expect, because a browser would have made the same
-   * corrections the parser did.
+   * rendering. They're useful when a template renders in a shape you
+   * didn't expect, because a browser would have made the same
+   * corrections as the parser.
    */
   var errors = []
 
@@ -566,10 +565,10 @@ class Template {
 # --------------------------------------------------------------------
 
 /**
- * Compiles one template's source.
+ * Compiles the source of one template.
  *
- * There is one of these per compile and it is thrown away afterwards;
- * the `Template` it produces holds nothing that points back at it.
+ * A new instance is created for each compile and thrown away
+ * afterwards. The `Template` it produces holds no reference to it.
  */
 class Compiler {
 
@@ -629,7 +628,8 @@ class Compiler {
 
     if extend != nil {
       template.extends = self.path_segments(
-        _directive(extend, EXTEND_ATTR), extend,
+        _directive(extend, EXTEND_ATTR),
+        extend,
       )
       template.blocks = self._definitions(extend)
 
@@ -642,18 +642,18 @@ class Compiler {
   }
 
   /**
-   * The nodes of a document parse, with the `<html>`, `<head>` and
-   * `<body>` the parser supplied unwrapped.
+   * The nodes of a parsed document, with the `<html>`, `<head>` and
+   * `<body>` elements that the parser added unwrapped.
    *
-   * The tree construction algorithm builds all three whether the source
-   * had them or not, so emitting them unconditionally would wrap every
-   * partial in a whole page. The normalizer watched the token stream go
-   * past and knows which ones the author really wrote; the rest are
-   * replaced by their contents.
+   * The tree construction algorithm creates all three whether or not
+   * the source had them, so always writing them out would wrap every
+   * partial in a whole page. The normalizer watched the tokens as they
+   * were read and knows which ones the author actually wrote. The
+   * others are replaced by their contents.
    *
-   * Unwrapping does not reorder anything. The parser only ever moves a
-   * node forward into `<head>`, so reading `<head>` and then `<body>`
-   * gives the source order back.
+   * Unwrapping doesn't change the order of anything. The parser only
+   * ever moves a node forward into `<head>`, so reading `<head>` and
+   * then `<body>` gives back the order of the source.
    *
    * @param dict parsed
    * @returns list
@@ -682,7 +682,7 @@ class Compiler {
 
       for section in child.children {
         var implied = section.is_element() and
-          (section.tag_name == 'head' or section.tag_name == 'body')
+            (section.tag_name == 'head' or section.tag_name == 'body')
 
         var written = parsed.saw_head
         if implied and section.tag_name == 'body' {
@@ -720,7 +720,9 @@ class Compiler {
         if found != nil {
           raise TemplateSyntaxError(
             'a template can extend only one base',
-            self.path, element.source_line, element.source_column,
+            self.path,
+            element.source_line,
+            element.source_column,
           )
         }
 
@@ -755,9 +757,11 @@ class Compiler {
       if !_has_directive(node, DEFINE_ATTR) {
         raise TemplateSyntaxError(
           '<${node.tag_name}> is not allowed directly inside an extending ' +
-            'template, since the base decides the structure; put it in an ' +
-            'x-define',
-          self.path, node.source_line, node.source_column,
+              'template, since the base decides the structure; put it in an ' +
+              'x-define',
+          self.path,
+          node.source_line,
+          node.source_column,
         )
       }
 
@@ -769,8 +773,10 @@ class Compiler {
       if blocks.contains(name) and !_has_directive(node, OVERRIDE_ATTR) {
         raise TemplateSyntaxError(
           '"${name}" is defined twice; add x-override to the second one to ' +
-            'replace the first on purpose',
-          self.path, node.source_line, node.source_column,
+              'replace the first on purpose',
+          self.path,
+          node.source_line,
+          node.source_column,
         )
       }
 
@@ -810,8 +816,10 @@ class Compiler {
 
         raise TemplateSyntaxError(
           '<${node.tag_name}> is outside the x-extend and would never be ' +
-            'rendered; the base template decides what surrounds a definition',
-          self.path, node.source_line, node.source_column,
+              'rendered; the base template decides what surrounds a definition',
+          self.path,
+          node.source_line,
+          node.source_column,
         )
       }
 
@@ -837,8 +845,10 @@ class Compiler {
 
     raise TemplateSyntaxError(
       'text in an extending template would never be rendered; put it in an ' +
-        'x-define',
-      self.path, extend.source_line, extend.source_column,
+          'x-define',
+      self.path,
+      extend.source_line,
+      extend.source_column,
     )
   }
 
@@ -878,7 +888,9 @@ class Compiler {
 
         raise TemplateSyntaxError(
           '${which} has no x-if in front of it',
-          self.path, node.source_line, node.source_column,
+          self.path,
+          node.source_line,
+          node.source_column,
         )
       }
 
@@ -897,11 +909,11 @@ class Compiler {
   }
 
   /**
-   * Compiles the conditional chain beginning at _at_, returning the
-   * instruction and the position just past the chain.
+   * Compiles the chain of conditions that starts at _at_, and returns
+   * the instruction and the position just after the chain.
    *
-   * An `x-for` on the opening element makes the condition part of each
-   * iteration rather than a choice between siblings, so a chain cannot
+   * An `x-for` on the first element makes the condition part of each
+   * iteration, instead of a choice between siblings, so the chain can't
    * be continued from there.
    *
    * @param list nodes
@@ -920,7 +932,8 @@ class Compiler {
     if _has_directive(opener, FOR_ATTR) {
       var repeated = Conditional(
         [self._branch(opener, false)],
-        opener.source_line, opener.source_column,
+        opener.source_line,
+        opener.source_column,
       )
 
       return [self._loop(opener, repeated), next]
@@ -946,7 +959,9 @@ class Compiler {
         if closed {
           raise TemplateSyntaxError(
             'x-elif comes after the x-else that closed the chain',
-            self.path, candidate.source_line, candidate.source_column,
+            self.path,
+            candidate.source_line,
+            candidate.source_column,
           )
         }
 
@@ -968,16 +983,18 @@ class Compiler {
     }
 
     return [
-      Conditional(branches, opener.source_line, opener.source_column), next,
+      Conditional(branches, opener.source_line, opener.source_column),
+      next,
     ]
   }
 
   /**
-   * One arm of a chain, built from the element carrying its condition.
+   * One branch of a chain, built from the element that has its
+   * condition.
    *
-   * _wrap_ is false for an element whose repetition is being applied
-   * around the chain rather than inside it, so that the body is compiled
-   * without the loop it would otherwise carry.
+   * _wrap_ is false for an element whose loop is applied around the
+   * chain instead of inside it, so that the body is compiled without
+   * the loop it would otherwise have.
    *
    * @param Element node
    * @param bool wrap
@@ -1082,7 +1099,9 @@ class Compiler {
     var raw_literal = html.RAW_TEXT_ELEMENTS.contains(tag)
 
     return Text(
-      self.segments(node.data, context, node.parent_node), context, raw_literal,
+      self.segments(node.data, context, node.parent_node),
+      context,
+      raw_literal,
     )
   }
 
@@ -1125,7 +1144,8 @@ class Compiler {
       return Slot(
         self.name_of(node, SLOT_ATTR),
         self.children(_children_of(node)),
-        node.source_line, node.source_column,
+        node.source_line,
+        node.source_column,
       )
     }
 
@@ -1136,7 +1156,9 @@ class Compiler {
     if _has_directive(node, DEFINE_ATTR) {
       raise TemplateSyntaxError(
         'x-define is only meaningful directly inside an x-extend',
-        self.path, node.source_line, node.source_column,
+        self.path,
+        node.source_line,
+        node.source_column,
       )
     }
 
@@ -1166,7 +1188,8 @@ class Compiler {
 
       out.attributes.append(
         Attribute(
-          name, self.segments(value, escape.attribute_context(name), node),
+          name,
+          self.segments(value, escape.attribute_context(name), node),
         ),
       )
     }
@@ -1207,7 +1230,9 @@ class Compiler {
 
     var include = Include(
       self.path_segments(_directive(node, INCLUDE_ATTR), node),
-      context, node.source_line, node.source_column,
+      context,
+      node.source_line,
+      node.source_column,
     )
 
     if _has_directive(node, WITH_ATTR) {
@@ -1231,7 +1256,8 @@ class Compiler {
   _loop(node, body) {
     var loop = Loop(
       self.expression_of(node, FOR_ATTR),
-      node.source_line, node.source_column,
+      node.source_line,
+      node.source_column,
     )
 
     if _has_directive(node, VALUE_ATTR) {
@@ -1270,17 +1296,22 @@ class Compiler {
       if !DIRECTIVES.contains(name) {
         raise TemplateSyntaxError(
           '"${name}" is not a Wire directive',
-          self.path, node.source_line, node.source_column,
+          self.path,
+          node.source_line,
+          node.source_column,
         )
       }
 
       var needs_value = EXPRESSION_DIRECTIVES.contains(name) or
-        NAME_DIRECTIVES.contains(name) or PATH_DIRECTIVES.contains(name)
+          NAME_DIRECTIVES.contains(name) or
+          PATH_DIRECTIVES.contains(name)
 
       if needs_value and is_blank(value) {
         raise TemplateSyntaxError(
           '${name} needs a value',
-          self.path, node.source_line, node.source_column,
+          self.path,
+          node.source_line,
+          node.source_column,
         )
       }
     }
@@ -1296,8 +1327,10 @@ class Compiler {
    */
   expression_of(node, directive: string) {
     return expression.parse(
-      _directive(node, directive), self.path,
-      node.source_line, node.source_column,
+      _directive(node, directive),
+      self.path,
+      node.source_line,
+      node.source_column,
     )
   }
 
@@ -1315,14 +1348,18 @@ class Compiler {
     if name.match('/^[A-Za-z_][A-Za-z0-9_\\-]*$/') == false {
       raise TemplateSyntaxError(
         '${directive} needs a plain name, not "${name}"',
-        self.path, node.source_line, node.source_column,
+        self.path,
+        node.source_line,
+        node.source_column,
       )
     }
 
     if name.starts_with('_') {
       raise TemplateSyntaxError(
         '"${name}" cannot start with an underscore',
-        self.path, node.source_line, node.source_column,
+        self.path,
+        node.source_line,
+        node.source_column,
       )
     }
 
@@ -1330,12 +1367,12 @@ class Compiler {
   }
 
   /**
-   * Splits a template path into its literal and interpolated pieces.
+   * Splits a template path into its literal and interpolated parts.
    *
-   * A path is read as text rather than as an expression, so
-   * `x-include="header.html"` names a file instead of reading a `html`
-   * key off a `header` variable. Use `{{ }}` where part of it is
-   * computed.
+   * A path is read as text, not as an expression, so
+   * `x-include="header.html"` names a file instead of reading an `html`
+   * key from a `header` variable. Use `{{ }}` for any part of it that
+   * has to be computed.
    *
    * @param string value
    * @param Element node
@@ -1346,7 +1383,9 @@ class Compiler {
     if is_blank(value) {
       raise TemplateSyntaxError(
         'a template path cannot be empty',
-        self.path, node.source_line, node.source_column,
+        self.path,
+        node.source_line,
+        node.source_column,
       )
     }
 
@@ -1427,7 +1466,10 @@ def _split(value: string, path: string, line: number, column: number) {
 
       if end < 0 {
         raise TemplateSyntaxError(
-          '"${here}" was never closed with "${closing}"', path, line, column,
+          '"${here}" was never closed with "${closing}"',
+          path,
+          line,
+          column,
         )
       }
 
@@ -1474,14 +1516,21 @@ def _split(value: string, path: string, line: number, column: number) {
  * @returns string
  * @throws TemplateSyntaxError when it is not a bare name.
  */
-def _call_source(source: string, closing: string, path: string, line: number,
-  column: number) {
+def _call_source(
+  source: string,
+  closing: string,
+  path: string,
+  line: number,
+  column: number,
+) {
 
   if source.match('/^[A-Za-z_][A-Za-z0-9_]*$/') == false {
     raise TemplateSyntaxError(
       '"${CALL_OPEN} ${CALL_CLOSE}" calls a function by name; write ' +
-        '"${VAR_OPEN} ${source} ${VAR_CLOSE}" for anything else',
-      path, line, column,
+          '"${VAR_OPEN} ${source} ${VAR_CLOSE}" for anything else',
+      path,
+      line,
+      column,
     )
   }
 
@@ -1579,11 +1628,11 @@ def _peek(characters: list, at: number, count: number) {
 # --------------------------------------------------------------------
 
 /**
- * The nodes _element_ holds.
+ * The nodes inside _element_.
  *
- * A `<template>` keeps its content in a separate fragment rather than
- * among its children, which is what stops it from disturbing the tree
- * around it, so that is where Wire has to look.
+ * A `<template>` element keeps its content in a separate fragment
+ * instead of among its children, so that the content doesn't affect the
+ * tree around it. Wire has to look in that fragment.
  *
  * @param Node element
  * @returns list

@@ -57,9 +57,9 @@ def hover(server, params: dict) {
 def _markup(server, value: string) {
   var formats = server.supports('textDocument.hover.contentFormat')
 
-  if is_list(formats)
-    and !formats.is_empty()
-    and !formats.contains('markdown') {
+  if is_list(formats) and
+      !formats.is_empty() and
+      !formats.contains('markdown') {
     var plain = value.replace('```zuri\n', '', false).replace('```', '', false)
 
     return { kind: 'plaintext', value: plain }
@@ -139,8 +139,8 @@ def declaration_text(server, target: dict) {
   var owner = common.owner_name(linker, target.path, symbol)
   var type = nil
 
-  if ['variable', 'field', 'parameter'].contains(symbol.kind)
-    and symbol.get('hint', nil) == nil {
+  if ['variable', 'field', 'parameter'].contains(symbol.kind) and
+      symbol.get('hint', nil) == nil {
     type = common.describe(linker, linker.type_of(target))
   }
 

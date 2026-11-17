@@ -117,18 +117,33 @@ def imap_server(channel) {
   var store = MemoryStore(['INBOX', 'Archive'])
 
   store.add_account('ann', 'secret')
-  store.append('ann', 'INBOX', mail.message()
-    .set_from('ann@example.com')
-    .add_to('bob@example.com')
-    .set_subject('Hello there')
-    .set_text('the first message').to_bytes(), nil, nil)
-  store.append('ann', 'INBOX', mail.message()
-    .set_from('reports@example.com')
-    .add_to('ann@example.com')
-    .set_subject('Quarterly report')
-    .set_text('the second message')
-    .attach(mail.attachment('attached bytes').set_filename('figures.txt'))
-    .to_bytes(), nil, nil)
+  store.append(
+    'ann',
+    'INBOX',
+    mail
+        .message()
+        .set_from('ann@example.com')
+        .add_to('bob@example.com')
+        .set_subject('Hello there')
+        .set_text('the first message')
+        .to_bytes(),
+    nil,
+    nil,
+  )
+  store.append(
+    'ann',
+    'INBOX',
+    mail
+        .message()
+        .set_from('reports@example.com')
+        .add_to('ann@example.com')
+        .set_subject('Quarterly report')
+        .set_text('the second message')
+        .attach(mail.attachment('attached bytes').set_filename('figures.txt'))
+        .to_bytes(),
+    nil,
+    nil,
+  )
 
   var server = ImapServer({ port: 0 }, store)
 
@@ -146,11 +161,19 @@ def maildir_server(channel, root) {
   var store = MaildirStore(root)
 
   store.add_account('ann', 'secret')
-  store.append('ann', 'INBOX', mail.message()
-    .set_from('ann@example.com')
-    .add_to('bob@example.com')
-    .set_subject('On disk')
-    .set_text('kept in a file').to_bytes(), nil, nil)
+  store.append(
+    'ann',
+    'INBOX',
+    mail
+        .message()
+        .set_from('ann@example.com')
+        .add_to('bob@example.com')
+        .set_subject('On disk')
+        .set_text('kept in a file')
+        .to_bytes(),
+    nil,
+    nil,
+  )
 
   var server = ImapServer({ port: 0 }, store)
 
@@ -256,9 +279,9 @@ def pop3_server(channel) {
     if verb == 'RETR' or verb == 'TOP' {
       var number = (verb == 'TOP' ? rest.split(' ')[0] : rest).to_number()
 
-      if number < 1
-        or number > _POP3_MESSAGES.length()
-        or deleted.contains(number) {
+      if number < 1 or
+          number > _POP3_MESSAGES.length() or
+          deleted.contains(number) {
         _say(stream, '-ERR no such message')
         continue
       }
@@ -327,8 +350,7 @@ def refusing_server(channel, greeting) {
   client.set_read_timeout(3000)
 
   catch {
-    while client.read(1024).length() > 0 {
-    }
+    while client.read(1024).length() > 0 {}
 
     outcome = 'closed'
   } as error {
@@ -382,8 +404,8 @@ def utf8_imap_server(channel) {
 
       if name.starts_with('{') {
         name = stream
-          .read_bytes(name[1, name.length() - 2].to_number())
-          .to_string()
+            .read_bytes(name[1, name.length() - 2].to_number())
+            .to_string()
         stream.read_line(nil)
       }
 
@@ -452,11 +474,19 @@ def build_pooled_imap() {
   var store = MemoryStore(nil)
 
   store.add_account('ann', 'secret')
-  store.append('ann', 'INBOX', mail.message()
-    .set_from('a@example.com')
-    .add_to('ann@example.com')
-    .set_subject('Pooled')
-    .set_text('served by a worker').to_bytes(), nil, nil)
+  store.append(
+    'ann',
+    'INBOX',
+    mail
+        .message()
+        .set_from('a@example.com')
+        .add_to('ann@example.com')
+        .set_subject('Pooled')
+        .set_text('served by a worker')
+        .to_bytes(),
+    nil,
+    nil,
+  )
 
   return ImapServer({}, store)
 }

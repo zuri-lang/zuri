@@ -7,9 +7,14 @@ var parts = os.target.split('-')
 
 assert parts.length() >= 3, '${os.target} is not a target triple'
 assert [
-  'x86_64', 'aarch64', 'arm', 'armv7', 'i686', 'riscv64',
+  'x86_64',
+  'aarch64',
+  'arm',
+  'armv7',
+  'i686',
+  'riscv64',
 ].contains(parts[0]),
-  '${os.target} names no architecture this runtime builds for'
+    '${os.target} names no architecture this runtime builds for'
 
 using os.platform {
   when 'linux' {

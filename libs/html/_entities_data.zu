@@ -1,23 +1,23 @@
 /**
  * @module html._entities_data
  *
- * The complete HTML5 named character reference table, as published in
- * the WHATWG HTML Living Standard's "Named character references"
- * section. This file is data only; the matching and escaping logic
- * that consumes it lives in `html.entities`.
+ * The complete table of HTML5 named character references, as published
+ * in the "Named character references" section of the WHATWG HTML Living
+ * Standard. This file only contains data. The code that matches and
+ * escapes references is in `html.entities`.
  *
- * There are 2231 entries. Every key is the reference name exactly as
- * it appears after the ampersand, including the trailing semicolon
- * where the standard requires one. The 106 keys that carry no
- * semicolon are the legacy references browsers still accept
- * unterminated; the tokenizer only honours those in the narrow
- * situations the standard allows.
+ * There are 2231 entries. Each key is the reference name exactly as it
+ * appears after the ampersand, including the trailing semicolon where
+ * the standard requires one. The 106 keys without a semicolon are the
+ * legacy references that browsers still accept without one, and the
+ * tokenizer only accepts those in the specific situations the standard
+ * allows.
  *
- * Values are written as escape sequences rather than literal
- * characters so the file stays readable in any editor and diffs stay
- * meaningful; several entries expand to combining marks or invisible
- * formatting characters that would otherwise be impossible to review.
- * A handful expand to two code points (for example `NotEqualTilde;`).
+ * The values are written as escape sequences instead of literal
+ * characters, so that the file is readable in any editor and diffs are
+ * meaningful. Several entries expand to combining marks or invisible
+ * formatting characters, which would be impossible to review otherwise.
+ * A few expand to two code points, for example `NotEqualTilde;`.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */

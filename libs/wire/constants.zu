@@ -1,25 +1,27 @@
 /**
  * @module wire.constants
  *
- * The names Wire reserves: its directive attributes, the pseudo
- * elements that are sugar for them, and the handful of defaults the
- * `Wire` class starts out with.
+ * The names that Wire reserves: its directive attributes, the pseudo
+ * elements that stand in for them, and the few defaults that the `Wire`
+ * class starts with.
  *
- * Everything a template author can type that Wire treats specially is
- * named here rather than spelled inline, so the answer to "is this
- * attribute mine?" only ever has one place to live.
+ * Everything a template author can write that Wire treats specially is
+ * named here, instead of being written out where it's used, so there's
+ * only one place to look to find out whether an attribute belongs to
+ * Wire.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
 
 /**
- * The prefix every Wire directive attribute carries.
+ * The prefix that every Wire directive attribute starts with.
  *
- * Wire owns this prefix outright: an attribute starting with `x-` that
- * Wire does not recognize is a compile error rather than a passthrough,
- * which is what turns a typo like `x-fi` into a message instead of a
- * silently missing section. Markup that genuinely needs an `x-` prefixed
- * attribute in the output can emit one through `x-attr`.
+ * Wire reserves this prefix completely. An attribute starting with `x-`
+ * that Wire doesn't recognize is a compile error instead of being
+ * passed through, so a typo like `x-fi` produces an error message
+ * instead of a section that silently goes missing. If the output really
+ * needs an attribute that starts with `x-`, it can be written with
+ * `x-attr`.
  */
 var DIRECTIVE_PREFIX = 'x-'
 
@@ -150,28 +152,46 @@ var SUPER_ATTR = 'x-super'
  * rejected at compile time.
  */
 var DIRECTIVES = [
-  IF_ATTR, ELIF_ATTR, ELSE_ATTR, NOT_ATTR,
-  FOR_ATTR, VALUE_ATTR, KEY_ATTR, LOOP_ATTR,
-  TEXT_ATTR, HTML_ATTR, ATTR_ATTR,
-  INCLUDE_ATTR, WITH_ATTR, ONLY_ATTR,
-  EXTEND_ATTR, SLOT_ATTR, DEFINE_ATTR, OVERRIDE_ATTR, SUPER_ATTR,
+  IF_ATTR,
+  ELIF_ATTR,
+  ELSE_ATTR,
+  NOT_ATTR,
+  FOR_ATTR,
+  VALUE_ATTR,
+  KEY_ATTR,
+  LOOP_ATTR,
+  TEXT_ATTR,
+  HTML_ATTR,
+  ATTR_ATTR,
+  INCLUDE_ATTR,
+  WITH_ATTR,
+  ONLY_ATTR,
+  EXTEND_ATTR,
+  SLOT_ATTR,
+  DEFINE_ATTR,
+  OVERRIDE_ATTR,
+  SUPER_ATTR,
 ]
 
 /**
  * The directives whose value is a Wire expression.
  */
 var EXPRESSION_DIRECTIVES = [
-  IF_ATTR, ELIF_ATTR, NOT_ATTR, FOR_ATTR,
-  TEXT_ATTR, HTML_ATTR, ATTR_ATTR, WITH_ATTR,
+  IF_ATTR,
+  ELIF_ATTR,
+  NOT_ATTR,
+  FOR_ATTR,
+  TEXT_ATTR,
+  HTML_ATTR,
+  ATTR_ATTR,
+  WITH_ATTR,
 ]
 
 /**
- * The directives whose value names a variable or a region, and is read
- * as a bare identifier rather than evaluated.
+ * The directives whose value is a variable name or a region name, read
+ * as a plain identifier instead of being evaluated.
  */
-var NAME_DIRECTIVES = [
-  VALUE_ATTR, KEY_ATTR, LOOP_ATTR, SLOT_ATTR, DEFINE_ATTR,
-]
+var NAME_DIRECTIVES = [VALUE_ATTR, KEY_ATTR, LOOP_ATTR, SLOT_ATTR, DEFINE_ATTR]
 
 /**
  * The directives whose value is a template path, read as literal text
@@ -207,16 +227,13 @@ var PSEUDO_ELEMENTS = {
 }
 
 /**
- * Attributes a pseudo element may carry that become valueless
- * directives rather than the directive its name maps to.
+ * Attributes on a pseudo element that become directives without a
+ * value, instead of the directive that the element's name maps to.
  *
- * Only `<define name="x" override>` uses this today, which is why the
- * mapping is a single entry rather than a per-element table.
+ * Only `<define name="x" override>` uses this at present, which is why
+ * the mapping has a single entry instead of a table for each element.
  */
-var PSEUDO_FLAGS = {
-  override: OVERRIDE_ATTR,
-  only: ONLY_ATTR,
-}
+var PSEUDO_FLAGS = { override: OVERRIDE_ATTR, only: ONLY_ATTR }
 
 # --------------------------------------------------------------------
 # Interpolation

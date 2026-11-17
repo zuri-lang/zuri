@@ -1,31 +1,31 @@
 # Making a Class Iterable
 
-Any class can be walked with `for ... in`. It takes two decorated methods
-and no other ceremony: no interface to declare, no iterator object to
-return, and no state kept between passes.
+You can loop over an instance of any class with `for ... in`. All it takes
+is two decorated methods. You don't need to declare an interface, return an
+iterator object or keep any state between passes.
 
-This section covers the protocol, the two shapes it usually takes, what
-happens when a piece is missing, and the rules that keep a custom iterator
-well behaved.
+This section explains the protocol, the two forms it usually takes, what
+happens when part of it is missing, and the rules that keep a custom
+iterator well behaved.
 
-## The Protocol
+## How It Works
 
-`for value in thing` is not magic. Zuri evaluates `thing` **once**, then
-repeats three steps:
+There's nothing magic about `for value in thing`. Zuri evaluates `thing`
+**once**, and then repeats these steps:
 
-1. `key = thing.@key(key)`, starting from `nil`
-2. stop if `key` is `nil`
+1. `key = thing.@key(key)`, starting with `key` set to `nil`
+2. If `key` is `nil`, stop
 3. `value = thing.@value(key)`, and run the body
 
-So the two methods answer two separate questions:
+So the two methods answer two different questions:
 
-- **`@key(previous)`** — "given the last position, what is the next one?"
-  It receives `nil` on the first call and must return `nil` when there is
-  nothing left.
-- **`@value(key)`** — "what is stored at this position?"
+- **`@key(previous)`** answers "given the last position, what's the next
+  one?" It receives `nil` on the first call, and it must return `nil` when
+  there's nothing left.
+- **`@value(key)`** answers "what's stored at this position?"
 
-The loop never stores a cursor of its own. The key *is* the cursor, which
-is why `@key` gets the previous one back each time.
+The loop doesn't keep track of its position itself. The key *is* the
+position, which is why `@key` receives the previous key each time.
 
 ## A Counting Example
 
@@ -64,14 +64,14 @@ for value in Countdown(3) {
 10
 ```
 
-Trace it once and the protocol stops being abstract. `@key(nil)` returned
-`3`, so the first value is `@value(3)`, which is `30`. `@key(3)` returned
-`2`, then `@key(2)` returned `1`, then `@key(1)` returned `nil` and the
-loop ended.
+If you trace through it once, the protocol becomes much less abstract.
+`@key(nil)` returned `3`, so the first value is `@value(3)`, which is `30`.
+Next, `@key(3)` returned `2`, then `@key(2)` returned `1`, and finally
+`@key(1)` returned `nil`, which ended the loop.
 
-Note that the key and the value are genuinely different things here: the
-key counts down from three, the value is ten times it. Two variables in the
-loop give you both:
+Notice that the key and the value really are different here. The key counts
+down from three, and the value is ten times the key. If you use two loop
+variables, you get both:
 
 ```zuri
 for key, value in Countdown(3) {
@@ -87,8 +87,8 @@ for key, value in Countdown(3) {
 
 ## Wrapping a Collection
 
-The more common case is a class holding a list, where the key is an index.
-The shape is always the same three checks:
+More often, the class wraps a list and the key is an index. The structure is
+always the same, with three checks:
 
 ```zuri
 class Stack {
@@ -143,17 +143,18 @@ c
 2: c
 ```
 
-Each of the three checks in `@key` earns its place:
+Each of the three checks in `@key` is needed:
 
-**The empty check comes first.** Without it, `@key(nil)` would return `0`
-for an empty stack and `@value(0)` would index past the end.
+**The check for an empty collection comes first.** Without it, `@key(nil)`
+would return `0` for an empty stack, and `@value(0)` would read past the
+end.
 
-**`previous == nil` starts the walk**, and `0` is the first index.
+**`previous == nil` starts the iteration**, with `0` as the first index.
 
-**`previous >= length() - 1` ends it.** Using `>=` rather than `==` means a
-collection that shrank mid-loop still terminates.
+**`previous >= length() - 1` ends it.** Using `>=` instead of `==` means the
+loop still ends if the collection gets shorter partway through.
 
-An empty collection iterates zero times rather than failing:
+An empty collection doesn't fail. The loop just runs zero times:
 
 ```zuri
 for value in Stack() {
@@ -167,10 +168,10 @@ echo 'done'
 done
 ```
 
-## What You Get for Free
+## What You Get
 
-Defining both methods makes `is_iterable()` answer `true`, and makes the
-class usable everywhere `for` is:
+Once you've defined both methods, `is_iterable()` returns `true` for your
+class, and you can use it anywhere `for` works:
 
 ```zuri
 echo is_iterable(Stack().push('a'))
@@ -182,10 +183,10 @@ true
 true
 ```
 
-## Both Are Required
+## Both Methods Are Required
 
-`for` calls `@key` and then `@value`. Defining only one produces an error
-naming the one that is missing:
+`for` calls `@key` and then `@value`. If you only define one of them, you
+get an error that names the missing one:
 
 ```zuri
 class OnlyKey {
@@ -208,7 +209,7 @@ catch {
 PropertyError: undefined property '@value' on instance of 'OnlyKey'
 ```
 
-A class with neither fails on `@key` instead:
+A class that defines neither fails on `@key`:
 
 ```zuri
 class Plain {}
@@ -226,20 +227,20 @@ catch {
 PropertyError: undefined property '@key' on instance of 'Plain'
 ```
 
-## Rules Worth Knowing
+## Rules to Keep in Mind
 
-**A `nil` key ends the loop, always.** That means a collection whose keys
-could legitimately *be* `nil` cannot use them as keys. Use indices and look
-the real key up in `@value`.
+**A `nil` key always ends the loop.** So if `nil` could be a valid key in
+your collection, you can't use those keys directly. Use indexes instead, and
+look up the real key in `@value`.
 
-**The instance is evaluated once.** `for x in build_thing()` calls
-`build_thing()` a single time, before the first pass, so `@key` and
-`@value` are always called on the same object.
+**The instance is evaluated only once.** `for x in build_thing()` calls
+`build_thing()` a single time, before the first pass, so `@key` and `@value`
+are always called on the same object.
 
-**Neither method should mutate.** They are called once per pass, in a loop
-you do not control, and a `@key` with a side effect is a loop whose
-behaviour depends on how many times something asked for the next key.
+**Neither method should change anything.** They're called on every pass, in
+a loop you don't control, and if `@key` has a side effect, the loop's
+behavior depends on how many times something asked for the next key.
 
-**Iteration order is whatever `@key` says.** There is no requirement to
-count upwards, or to visit everything; `Countdown` walks backwards, and a
-class could just as well skip, filter or repeat.
+**The iteration order is whatever `@key` returns.** There's no rule that you
+have to count upward or visit every element. `Countdown` goes backward, and
+a class could just as easily skip, filter or repeat elements.

@@ -2925,19 +2925,19 @@ pub struct Heap {
   /// or room left to bump-allocate into). Checked before creating a new
   /// chunk; entries are popped once exhausted or found reclaimed.
   candidates: Vec<usize>,
-  /// Running total of `approx_size()` across every live object --
-  /// compared against `next_gc` to decide when the VM should pause and
-  /// collect. Recomputed from scratch on every sweep rather than
-  /// incrementally decremented on free, so it can never drift out of
-  /// sync with what's actually still on the heap.
-  bytes_allocated: usize,
-  /// The `bytes_allocated` threshold that triggers the next collection.
+  /// Running total of `approx_size()` across every object outside the
+  /// young generation, compared against `next_gc` to decide when the VM
+  /// should pause and collect. Young objects are counted in
+  /// `young_bytes_allocated` alone, so allocating one, which compiled
+  /// code does inline, updates a single count.
+  old_bytes: usize,
+  /// The `old_bytes` threshold that triggers the next collection.
   /// Grows with live heap size after each sweep (see `sweep`), the same
   /// self-tuning strategy clox uses, so steady-state programs settle
   /// into collecting roughly every time the heap doubles rather than
   /// thrashing on a fixed budget.
   next_gc: usize,
-  /// `bytes_allocated` as the last full collection left it: the live
+  /// `bytes_allocated()` as the last full collection left it: the live
   /// heap, since a full collection empties the nursery first.
   live_after_collection: usize,
   /// The most this heap ever lets its young generation grow to before a
@@ -2961,13 +2961,15 @@ pub struct Heap {
   /// when the heap was made. How long a cycle takes to fill tells
   /// `resize_young` whether the program still needs its budget.
   cycle_start: std::time::Instant,
-  live_count: usize,
+  /// Young objects carried into this cycle: the survivors the last minor
+  /// collection kept young. With the slots filled in the nursery since,
+  /// they make up the whole young generation; see `young_objects`.
+  young_carried: usize,
   /// Bytes allocated into the young generation since the last minor
   /// (or major) collection, counted up from `young_offset`; deliberately
-  /// tracked separately from `bytes_allocated`, which is the whole-heap
-  /// total major collection already keys off. This is what lets a minor
-  /// collection trigger far more often, on a far smaller budget. Use
-  /// `young_bytes` for the bytes themselves.
+  /// tracked apart from `old_bytes`, which major collection keys off.
+  /// This is what lets a minor collection trigger far more often, on a
+  /// far smaller budget. Use `young_bytes` for the bytes themselves.
   young_bytes_allocated: usize,
   /// Mirror of needs_minor_gc() || needs_major_gc() for JIT safepoints
   pub jit_gc_needed: bool,
@@ -3050,8 +3052,8 @@ pub struct Heap {
   /// bump-allocates inline stores this word as-is rather than
   /// rebuilding it.
   young_header: u64,
-  /// Objects in the old generation, the part of `live_count` a minor
-  /// collection leaves alone. After one, `live_count` is exactly this.
+  /// Objects in the old generation, which a minor collection leaves
+  /// alone; `object_count` adds the young ones.
   old_live_count: usize,
   /// What this cycle's minor collection has promoted so far, in
   /// objects and in `approx_size` bytes. A reset keeps these and
@@ -3210,6 +3212,10 @@ impl YoungSlots {
   /// The start of the buffer, good for every slot up to `capacity`,
   /// written or not.
   fn as_mut_ptr(&mut self) -> *mut GcBox {
+    self.ptr.as_ptr()
+  }
+
+  fn as_ptr(&self) -> *const GcBox {
     self.ptr.as_ptr()
   }
 
@@ -3483,17 +3489,14 @@ pub(crate) const fn elements_outside_slot(len: usize) -> usize {
   }
 }
 
-/// Byte offsets of `Heap::bytes_allocated`/`next_gc`; combined with
-/// `vm::VM_HEAP_OFFSET` in `crate::jit` so compiled code can inline
-/// `needs_major_gc()`'s check directly instead of an FFI call at every
-/// safepoint. See `vm::VM_HEAP_OFFSET`'s own docs for why this is sound.
+/// Byte offsets of the `Heap` fields compiled code reads and writes;
+/// combined with `vm::VM_HEAP_OFFSET` in `crate::jit`. See
+/// `vm::VM_HEAP_OFFSET`'s own docs for why this is sound.
 pub(crate) const HEAP_JIT_GC_NEEDED_OFFSET: usize = std::mem::offset_of!(Heap, jit_gc_needed);
 pub(crate) const HEAP_NURSERY_CUR_OFFSET: usize = std::mem::offset_of!(Heap, nursery_cur);
 pub(crate) const HEAP_NURSERY_END_OFFSET: usize = std::mem::offset_of!(Heap, nursery_end);
 pub(crate) const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: usize =
   std::mem::offset_of!(Heap, young_bytes_allocated);
-pub(crate) const HEAP_BYTES_ALLOCATED_OFFSET: usize = std::mem::offset_of!(Heap, bytes_allocated);
-pub(crate) const HEAP_LIVE_COUNT_OFFSET: usize = std::mem::offset_of!(Heap, live_count);
 pub(crate) const HEAP_YOUNG_HEADER_OFFSET: usize = std::mem::offset_of!(Heap, young_header);
 pub(crate) const HEAP_FINALIZE_CUR_OFFSET: usize = std::mem::offset_of!(Heap, finalize_cur);
 pub(crate) const HEAP_FINALIZE_END_OFFSET: usize = std::mem::offset_of!(Heap, finalize_end);
@@ -3664,7 +3667,7 @@ impl Heap {
     Heap {
       chunks: Vec::new(),
       candidates: Vec::new(),
-      bytes_allocated: 0,
+      old_bytes: 0,
       next_gc: Self::MIN_NEXT_GC,
       live_after_collection: 0,
       young_ceiling,
@@ -3672,7 +3675,7 @@ impl Heap {
       young_budget: young_floor,
       young_offset,
       cycle_start: std::time::Instant::now(),
-      live_count: 0,
+      young_carried: 0,
       young_bytes_allocated: young_offset,
       jit_gc_needed: false,
       nursery_chunks: Vec::new(),
@@ -3771,7 +3774,7 @@ impl Heap {
   }
 
   pub fn bytes_allocated(&self) -> usize {
-    self.bytes_allocated
+    self.old_bytes + self.young_bytes()
   }
 
   /// The live heap as the last full collection left it, in the same
@@ -3785,9 +3788,27 @@ impl Heap {
     self.next_gc
   }
 
-  #[inline]
   pub fn object_count(&self) -> usize {
-    self.live_count
+    self.old_live_count + self.young_objects()
+  }
+
+  /// Objects in the young generation: those carried from the last cycle
+  /// and one for every nursery slot filled since. Every chunk before the
+  /// active one is full and every one after it is empty, and the active
+  /// chunk's length is only brought up to date when the nursery moves
+  /// on, so its cursor says how far it is filled.
+  fn young_objects(&self) -> usize {
+    let mut filled = 0;
+    for (i, chunk) in self.nursery_chunks.iter().enumerate() {
+      filled += if i == self.nursery_fill_idx && !self.nursery_cur.is_null() {
+        // SAFETY: `nursery_cur` was derived from this chunk's buffer by
+        // `refill_nursery` and only ever bumped forward within it.
+        unsafe { self.nursery_cur.offset_from(chunk.slots.as_ptr()) as usize }
+      } else {
+        chunk.slots.len()
+      };
+    }
+    self.young_carried + filled
   }
 
   /// Bytes allocated into the young generation this cycle.
@@ -3796,13 +3817,10 @@ impl Heap {
     self.young_bytes_allocated - self.young_offset
   }
 
-  /// Live bytes outside the nursery. The young count is only ever
-  /// bumped alongside `bytes_allocated` (see `alloc`), and reset
-  /// together with the nursery it accounts for (see `reset_nursery`),
-  /// so this can never underflow.
+  /// Live bytes outside the nursery.
   #[inline]
   pub fn old_bytes_allocated(&self) -> usize {
-    self.bytes_allocated - self.young_bytes()
+    self.old_bytes
   }
 
   /// Has the OLD generation grown enough since the last collection that
@@ -3982,7 +4000,7 @@ impl Heap {
   /// size, skipping `approx_size`'s 17-arm match entirely.
   ///
   /// `size` must equal what `approx_size` would return for `obj` --
-  /// it feeds `bytes_allocated`/`young_bytes_allocated` and therefore
+  /// it feeds `young_bytes_allocated` and therefore
   /// GC scheduling, so a wrong value skews collection timing (it is
   /// not a memory-safety input). Worth having because instance
   /// allocation, the hottest allocation site on object-oriented code,
@@ -4002,9 +4020,7 @@ impl Heap {
     // write cannot invalidate any pointer already handed out.
     let slot = self.nursery_cur;
     self.nursery_cur = unsafe { slot.add(1) };
-    self.bytes_allocated += size;
     self.young_bytes_allocated += size;
-    self.live_count += 1;
     self.update_jit_gc_needed();
 
     unsafe {
@@ -4253,8 +4269,7 @@ impl Heap {
   /// instead of the promotion worklist) the very next minor collection.
   pub fn alloc_old(&mut self, obj: Obj) -> Value {
     let size = Self::approx_size(&obj);
-    self.bytes_allocated += size;
-    self.live_count += 1;
+    self.old_bytes += size;
     self.old_live_count += 1;
     self.update_jit_gc_needed();
     let gcbox_ptr = self.promote_into_old(obj);
@@ -4274,7 +4289,7 @@ impl Heap {
   /// even one instant, since it only exists because it already
   /// survived a full minor collection.
   ///
-  /// Deliberately does NOT touch `bytes_allocated`/`live_count`: this
+  /// Deliberately does NOT touch the heap's byte or object counts: this
   /// object was already counted once, when `alloc` first created it
   /// in the nursery: relocating it during a collection isn't a new
   /// allocation event, so counting it again here would double-count
@@ -4585,6 +4600,7 @@ impl Heap {
   /// from the start, and everything else allocated since the last reset
   /// gone.
   pub(crate) fn reset_nursery(&mut self) {
+    let young_objects = self.young_objects();
     let pool_budget = self.field_storage_pool_budget();
     let finalize_len = self.finalize_len();
     let entries = self.finalize_buf.as_ptr();
@@ -4595,6 +4611,13 @@ impl Heap {
       let gcbox = unsafe { *entries.add(i) } as *mut GcBox;
       unsafe {
         if !(*gcbox).marked.get() {
+          // A list whose elements are still inline owns nothing outside
+          // its slot, so there is nothing to release.
+          if let Obj::List(items) = &(*gcbox).obj
+            && !(*items.as_ptr()).owns_buffer()
+          {
+            continue;
+          }
           // Never forwarded, so `obj` still owns its payload; this is
           // its one and only move.
           let obj = std::ptr::read(&(*gcbox).obj);
@@ -4653,12 +4676,9 @@ impl Heap {
 
     self.advance_epoch();
 
-    let young_bytes = self.young_bytes();
-    let young_objects = self.live_count - self.old_live_count;
-    self.bytes_allocated =
-      self.bytes_allocated - young_bytes + self.promoted_bytes + self.survivor_bytes;
+    self.old_bytes += self.promoted_bytes;
     self.old_live_count += self.promoted_count;
-    self.live_count = self.old_live_count + self.survivor_count;
+    self.young_carried = self.survivor_count;
     let now = std::time::Instant::now();
     if !self.promote_all {
       self.resize_young(young_objects, now.duration_since(self.cycle_start));
@@ -4889,7 +4909,6 @@ impl Heap {
     // and the buffer it will be assembled into are real memory, so they
     // count towards the next collection too.
     let added = b_text.len() * 2;
-    self.bytes_allocated += added;
     self.young_bytes_allocated += added;
     self.alloc(Obj::Str(ObjStr::rope(rope)))
   }
@@ -5171,7 +5190,7 @@ impl Heap {
   }
 
   /// Drop every object whose address isn't in `reachable`, then
-  /// recompute `bytes_allocated` and re-arm `next_gc` off the resulting
+  /// recompute `old_bytes` and re-arm `next_gc` off the resulting
   /// live size. Returns how many objects were freed.
   ///
   /// This only performs the sweep half of mark-and-sweep; `reachable`
@@ -5211,9 +5230,7 @@ impl Heap {
           if gcbox.marked.get() {
             gcbox.marked.set(false);
           } else {
-            self.bytes_allocated = self
-              .bytes_allocated
-              .saturating_sub(Self::approx_size(&gcbox.obj));
+            self.old_bytes = self.old_bytes.saturating_sub(Self::approx_size(&gcbox.obj));
             // Route through the same FieldStorage-recycling path
             // `reset_nursery` uses instead of a plain assignment-drop:
             // most of a binary-tree-shaped workload's garbage survives
@@ -5249,9 +5266,8 @@ impl Heap {
       }
     }
 
-    self.live_count -= freed;
     self.old_live_count -= freed;
-    self.live_after_collection = self.bytes_allocated;
+    self.live_after_collection = self.bytes_allocated();
     // Re-armed against the surviving OLD set specifically; the same
     // quantity `needs_major_gc` now tests, so `GC_HEAP_GROW_FACTOR`
     // means what it says: allow the long-lived set to grow by half
@@ -5388,5 +5404,39 @@ mod young_shedding_tests {
       heap.young_floor / YOUNG_CHUNK_BYTES + 1
     );
     assert_eq!(heap.young_bytes(), 0);
+  }
+}
+
+#[cfg(test)]
+mod young_count_tests {
+  use super::*;
+
+  /// Every young object fills one nursery slot, so the count follows the
+  /// cursor through a chunk and into the next, and a reset that keeps
+  /// nothing young leaves only the old generation counted.
+  #[test]
+  fn counts_follow_the_nursery() {
+    let mut heap = Heap::with_young_ceiling(64 * 1024 * 1024);
+    heap.alloc_old(Obj::Range {
+      lower: 0.0,
+      upper: 1.0,
+      step: Cell::new(1.0),
+    });
+    let old_bytes = heap.bytes_allocated();
+    assert_eq!(heap.object_count(), 1);
+
+    let made = YOUNG_CHUNK_SLOTS + 10;
+    for i in 0..made {
+      heap.alloc_range(0.0, 1.0);
+      assert_eq!(heap.object_count(), i + 2);
+    }
+    assert!(heap.nursery_fill_idx > 0);
+    assert_eq!(heap.bytes_allocated(), old_bytes + heap.young_bytes());
+    assert_eq!(heap.old_bytes_allocated(), old_bytes);
+
+    heap.promote_all = true;
+    heap.reset_nursery();
+    assert_eq!(heap.object_count(), 1);
+    assert_eq!(heap.bytes_allocated(), old_bytes);
   }
 }

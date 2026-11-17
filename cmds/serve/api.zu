@@ -115,7 +115,9 @@ def routes(server, nyssa) {
 
     if found == nil {
       fail(
-        response, 404, 'not_found',
+        response,
+        404,
+        'not_found',
         "there is no package called '${request.param("name")}' here",
       )
 
@@ -139,11 +141,15 @@ def routes(server, nyssa) {
   })
 
   server.get('/api/v1/packages/:name', @(request, response) {
-    var package = nyssa.db.package_by_name(names.normalized(request.param('name')))
+    var package = nyssa.db.package_by_name(
+      names.normalized(request.param('name')),
+    )
 
     if package == nil {
       fail(
-        response, 404, 'not_found',
+        response,
+        404,
+        'not_found',
         "there is no package called '${request.param("name")}' here",
       )
 
@@ -191,7 +197,9 @@ def routes(server, nyssa) {
   })
 
   server.get('/api/v1/packages/:name/:version/archive', @(request, response) {
-    var package = nyssa.db.package_by_name(names.normalized(request.param('name')))
+    var package = nyssa.db.package_by_name(
+      names.normalized(request.param('name')),
+    )
     var wanted = request.param('version')
 
     if package == nil or !semver.is_valid(wanted) {
@@ -225,13 +233,17 @@ def routes(server, nyssa) {
     var query = request.query_param('q', '')
     var page = _count(request, 'page', 1).min(MAX_PAGE)
     var per_page = _count(
-      request, 'per_page', DEFAULT_PER_PAGE,
+      request,
+      'per_page',
+      DEFAULT_PER_PAGE,
     ).min(MAX_PER_PAGE)
     var sort = request.query_param('sort', 'relevance')
 
     if !['relevance', 'downloads', 'updated', 'name'].contains(sort) {
       fail(
-        response, 400, 'bad_sort',
+        response,
+        400,
+        'bad_sort',
         'sort by relevance, downloads, updated or name',
       )
 
@@ -271,8 +283,12 @@ def routes(server, nyssa) {
     var raw_metadata = request.form_field('metadata', nil)
 
     if upload == nil or raw_metadata == nil {
-      fail(response, 400, 'bad_request',
-        "send the archive as 'archive' and its details as 'metadata'")
+      fail(
+        response,
+        400,
+        'bad_request',
+        "send the archive as 'archive' and its details as 'metadata'",
+      )
 
       return
     }
@@ -293,7 +309,11 @@ def routes(server, nyssa) {
 
     _guard(response, @{
       var published = service.publish(
-        nyssa, token, upload.content, metadata, nyssa.address_of(request),
+        nyssa,
+        token,
+        upload.content,
+        metadata,
+        nyssa.address_of(request),
       )
 
       response.json(published, 201)
@@ -312,10 +332,16 @@ def routes(server, nyssa) {
     }
 
     _guard(response, @{
-      response.json(service.yank(
-        nyssa, token.publisher_id, request.param('name'),
-        request.param('version'), undo, nyssa.address_of(request),
-      ))
+      response.json(
+        service.yank(
+          nyssa,
+          token.publisher_id,
+          request.param('name'),
+          request.param('version'),
+          undo,
+          nyssa.address_of(request),
+        ),
+      )
     })
   }
 
@@ -347,8 +373,11 @@ def routes(server, nyssa) {
 
     _guard(response, @{
       var owners = service.add_owner(
-        nyssa, token.publisher_id, request.param('name'),
-        body.get('username', '').to_string(), nyssa.address_of(request),
+        nyssa,
+        token.publisher_id,
+        request.param('name'),
+        body.get('username', '').to_string(),
+        nyssa.address_of(request),
       )
 
       response.json({ owners })
@@ -356,7 +385,8 @@ def routes(server, nyssa) {
   })
 
   server.delete(
-    '/api/v1/packages/:name/owners/:username', @(request, response) {
+    '/api/v1/packages/:name/owners/:username',
+    @(request, response) {
       if nyssa.refuse_if_read_only(response) {
         return
       }
@@ -369,8 +399,11 @@ def routes(server, nyssa) {
 
       _guard(response, @{
         var owners = service.remove_owner(
-          nyssa, token.publisher_id, request.param('name'),
-          request.param('username'), nyssa.address_of(request),
+          nyssa,
+          token.publisher_id,
+          request.param('name'),
+          request.param('username'),
+          nyssa.address_of(request),
         )
 
         response.json({ owners })
@@ -391,7 +424,9 @@ def routes(server, nyssa) {
 
     _guard(response, @{
       var created = service.create_account(
-        nyssa, body, nyssa.address_of(request),
+        nyssa,
+        body,
+        nyssa.address_of(request),
       )
 
       response.json({
@@ -417,8 +452,10 @@ def routes(server, nyssa) {
 
       if body.contains('password') {
         var publisher = service.sign_in(
-          nyssa, body.get('username', '').to_string(),
-          body.get('password', '').to_string(), nyssa.address_of(request),
+          nyssa,
+          body.get('username', '').to_string(),
+          body.get('password', '').to_string(),
+          nyssa.address_of(request),
         )
 
         publisher_id = publisher.id
@@ -441,8 +478,12 @@ def routes(server, nyssa) {
 
         for scope in asked {
           if !allowed.contains(scope) {
-            fail(response, 403, 'insufficient_scope',
-              "this token cannot issue one with the '${scope}' scope")
+            fail(
+              response,
+              403,
+              'insufficient_scope',
+              "this token cannot issue one with the '${scope}' scope",
+            )
 
             return
           }
@@ -452,13 +493,16 @@ def routes(server, nyssa) {
       }
 
       var issued = service.create_token(
-        nyssa, publisher_id, body.get(
-          'name', nil,
-        ), scopes, body.get('expires_in_days', nil),
+        nyssa,
+        publisher_id,
+        body.get('name', nil),
+        scopes,
+        body.get('expires_in_days', nil),
       )
 
-      nyssa.db.audit(publisher_id, 'create_token', issued.name,
-        { id: issued.id }, nyssa.address_of(request))
+      nyssa.db.audit(publisher_id, 'create_token', issued.name, {
+        id: issued.id,
+      }, nyssa.address_of(request))
 
       response.json(issued, 201)
     })
@@ -475,7 +519,9 @@ def routes(server, nyssa) {
   server.delete('/api/v1/tokens/:id', @(request, response) {
     var wanted = request.param('id')
     var token = nyssa.require_token(
-      request, response, wanted == 'current' ? nil : 'account',
+      request,
+      response,
+      wanted == 'current' ? nil : 'account',
     )
 
     if token == nil {
@@ -491,7 +537,11 @@ def routes(server, nyssa) {
     }
 
     nyssa.db.audit(
-      token.publisher_id, 'revoke_token', id, nil, nyssa.address_of(request),
+      token.publisher_id,
+      'revoke_token',
+      id,
+      nil,
+      nyssa.address_of(request),
     )
     response.json({ revoked: id })
   })

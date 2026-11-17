@@ -119,7 +119,10 @@ def _keyword_target(server, at: dict) {
 # for a member reached through a value of a union type.
 def _target(server, at: dict) {
   var found = common.target_at(
-    server.linker, at.key, at.analysis.summary, at.offset,
+    server.linker,
+    at.key,
+    at.analysis.summary,
+    at.offset,
   )
 
   if found != nil {
@@ -193,9 +196,9 @@ def declaration(server, params: dict) {
     if symbol != nil and (symbol.kind == 'import' or symbol.kind == 'module') {
       var origin = server.range(at.key, occurrence.start, occurrence.end)
 
-      return _answer(
-        server, 'declaration', origin, [_location_of(server, local)],
-      )
+      return _answer(server, 'declaration', origin, [
+        _location_of(server, local),
+      ])
     }
   }
 
@@ -251,9 +254,10 @@ def type_definition(server, params: dict) {
       var stub = server.builtins.type_class(type.name)
 
       if stub != nil {
-        place = _location_of(
-          server, { path: stub.summary.path, index: stub.index },
-        )
+        place = _location_of(server, {
+          path: stub.summary.path,
+          index: stub.index,
+        })
       }
     }
     default {

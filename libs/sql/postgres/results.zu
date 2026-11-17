@@ -1,11 +1,11 @@
 /**
  * @module results
  *
- * Reading what the server says about a result it has just produced.
+ * Reads the server's description of a result it has just produced.
  *
- * These live apart from the connection so the statement can use them
- * too. A statement that reached for them through the connection, which
- * already reaches for the statement, would be a circular import.
+ * These are kept separate from the connection so that the statement can
+ * use them too. If the statement got them through the connection, which
+ * already imports the statement, the imports would be circular.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -39,9 +39,9 @@ def affected_rows(tag) {
 var _NAMES = {}
 
 /**
- * The name of the type an OID stands for, or the OID as text for one
- * this adapter has no name for, which is what an extension's type will
- * be.
+ * The name of the type that an OID stands for, or the OID as text if
+ * this adapter has no name for it, as with a type added by an
+ * extension.
  *
  * @param number oid
  * @returns string

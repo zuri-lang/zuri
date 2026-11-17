@@ -3,19 +3,21 @@
 /**
  * @module http.session.store
  *
- * What a session store is, and the error every one of them raises.
+ * The interface that session stores implement, and the error they all
+ * raise.
  *
- * A store is the only part of a session that touches durable state.
- * It never sees a session identifier, only the key derived from one,
- * and it never sees the session's contents, only the opaque string
- * the session layer serialised them into. That split is what lets a
- * store be swapped without the rest of the stack knowing, and what
- * lets a leaked store - a directory listing, a database dump, a
- * backup tape - hand over nothing that can be replayed as a cookie.
+ * A store is the only part of the session system that touches durable
+ * state. It never sees a session ID, only the key derived from one, and
+ * it never sees the session's contents, only the string the session
+ * layer serialized them into. That separation lets you replace the
+ * store without the rest of the stack knowing about it. It also means
+ * that a leaked store, whether it's a directory listing, a database
+ * dump or a backup, doesn't give away anything that can be used as a
+ * cookie.
  *
- * Implementing one means five methods: `read()`, `write()`,
- * `destroy()`, `gc()`, and optionally `touch()`, which has a working
- * default built on the first two.
+ * To implement a store, you write `read()`, `write()`, `destroy()` and
+ * `gc()`. You can also override `touch()`, which has a working default
+ * built on the first two.
  *
  * ```zuri,ignore
  * class RedisStore < session.SessionStore {
@@ -73,18 +75,18 @@ class SessionError < HttpError {
 }
 
 /**
- * The key a store files a session under: the SHA-256 of the session
- * identifier, as 64 lowercase hex characters.
+ * The key that a store files a session under, which is the SHA-256
+ * digest of the session ID as 64 lowercase hexadecimal characters.
  *
- * Storing the digest rather than the identifier means the contents of
- * a store cannot be turned back into cookies. Someone who reads the
- * directory, the table, or a backup of either learns what is in the
- * sessions but cannot resume one, because the value the browser
- * presents is the preimage.
+ * Storing the digest instead of the ID means that the contents of a
+ * store can't be turned back into cookies. Someone who reads the
+ * directory, the table or a backup of either can learn what's in the
+ * sessions, but can't resume one, because the browser has to present
+ * the original ID, and the digest can't be reversed to get it.
  *
- * It also settles the shape of a key once and for all: 64 hex
- * characters make a safe filename and a fixed-width primary key,
- * whatever a client put in its cookie.
+ * It also fixes the form of a key. 64 hexadecimal characters always
+ * make a safe file name and a fixed-width primary key, whatever a
+ * client put in its cookie.
  *
  * @param string id
  * @returns string
@@ -94,12 +96,13 @@ def storage_key(id: string) {
 }
 
 /**
- * What every session store implements.
+ * The interface that every session store implements.
  *
- * The methods here raise `SessionError`, so a store that forgets one
- * fails where the gap is rather than somewhere further down.
+ * The methods here raise a `SessionError`, so a store that's missing
+ * one fails at the missing method, not somewhere further on.
  *
- * Every timestamp is epoch seconds, as `time()` reports them.
+ * All timestamps are in seconds since the epoch, as returned by
+ * `time()`.
  */
 class SessionStore {
 
@@ -118,11 +121,11 @@ class SessionStore {
   var gc_probability = 0.01
 
   /**
-   * The payload stored under `key`, or `nil` when there is none or
-   * the one there has expired.
+   * The payload stored under `key`, or `nil` if there's none or it has
+   * expired.
    *
-   * A store that finds an expired entry removes it rather than
-   * leaving it for the sweep.
+   * A store that finds an expired entry removes it, instead of leaving
+   * it for the next sweep.
    *
    * @param string key
    * @returns ?string
@@ -144,17 +147,18 @@ class SessionStore {
   }
 
   /**
-   * Moves the expiry of an existing entry without rewriting its
-   * contents, which is what a rolling idle timeout does on a request
-   * that only read the session.
+   * Changes the expiry time of an existing entry without rewriting its
+   * contents. A rolling idle timeout needs this for a request that only
+   * read the session.
    *
-   * The default reads the payload and writes it back. A store whose
-   * backend can change the expiry on its own - a single-column
-   * `UPDATE`, a `TTL` command - overrides this with that.
+   * The default implementation reads the payload and writes it back. A
+   * store whose backend can change the expiry on its own, with a
+   * single-column `UPDATE` or a `TTL` command for example, overrides
+   * this to do that.
    *
    * @param string key
    * @param number expires_at
-   * @returns bool: whether an entry was there to touch
+   * @returns bool: whether there was an entry to update
    */
   touch(key: string, expires_at: number) {
     var payload = self.read(key)
@@ -217,6 +221,5 @@ class SessionStore {
    * Releases whatever the store holds open. The default does nothing,
    * which is right for a store that holds nothing.
    */
-  close() {
-  }
+  close() {}
 }

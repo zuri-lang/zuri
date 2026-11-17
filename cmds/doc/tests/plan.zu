@@ -1,0 +1,221 @@
+# Tests for the planning layer: what the command line asks for, and
+# where the documentation it is asked about is.
+
+import os
+import os.tempfile { create_temp_dir }
+import test { * }
+
+import ..plan {
+  DEFAULT_HOST,
+  DEFAULT_PORT,
+  default_title,
+  find_documentation,
+  init_target,
+  parser,
+  reference_target,
+  settings,
+}
+import ..scaffold { files, reference_files }
+
+var DIR = nil
+
+def put(path: string, text: string) {
+  var full = os.join_paths(DIR, path)
+
+  os.create_dir(os.dir_name(full), 0c755, true)
+  file(full, 'w').write(text)
+}
+
+def chosen(words: list) {
+  return settings(parser().parse(words), DIR)
+}
+
+def refusal(work: function) {
+  var message = nil
+
+  catch {
+    work()
+  } as error {
+    message = error.message
+  }
+
+  expect(message).not.to_be_nil()
+
+  return message
+}
+
+before_each(@{
+  DIR = os.real_path(create_temp_dir('zuri-doc-plan-'))
+})
+
+after_each(@{
+  os.remove_dir(DIR, true)
+})
+
+describe('settings', @{
+  it('builds when no command is given', @{
+    var given = chosen([])
+
+    expect(given.command).to_be('build')
+    expect(given.dir).to_be_nil()
+    expect(given.port).to_be(DEFAULT_PORT)
+    expect(given.host).to_be(DEFAULT_HOST)
+  })
+
+  it('takes the documentation after the command', @{
+    var given = chosen(['serve', 'manual', '-p', '4000'])
+
+    expect(given.command).to_be('serve')
+    expect(given.dir).to_be('manual')
+    expect(given.port).to_be(4000)
+  })
+
+  it('makes the output directory absolute', @{
+    expect(chosen(['build', '-o', 'out']).out).to_be(os.join_paths(DIR, 'out'))
+  })
+
+  it('refuses an option that does not go with the command', @{
+    expect(
+      refusal(@{
+        chosen(['build', '--port', '80'])
+      }),
+    ).to_contain('--port goes with serve')
+    expect(
+      refusal(@{
+        chosen(['serve', '--strict'])
+      }),
+    ).to_contain('--strict goes with build')
+  })
+
+  it('refuses a port out of range', @{
+    expect(
+      refusal(@{
+        chosen(['serve', '-p', '70000'])
+      }),
+    ).to_contain('--port')
+  })
+})
+
+describe('find_documentation', @{
+  it('takes the directory named, or the doc.toml in it', @{
+    put('manual/doc.toml', '')
+
+    var manual = os.join_paths(DIR, 'manual')
+
+    expect(find_documentation('manual', DIR)).to_be(manual)
+    expect(find_documentation('manual/doc.toml', DIR)).to_be(manual)
+  })
+
+  it('takes the current directory when it holds documentation', @{
+    put('doc.toml', '')
+    expect(find_documentation(nil, DIR)).to_be(DIR)
+  })
+
+  it("takes the project's docs from anywhere in the project", @{
+    put('project.toml', '[project]\nname = "weather"\n')
+    put('docs/doc.toml', '')
+    put('app/index.zu', '')
+
+    expect(find_documentation(nil, os.join_paths(DIR, 'app')))
+        .to_be(os.join_paths(DIR, 'docs'))
+  })
+
+  it("takes the project's generated reference when it has no other", @{
+    put('project.toml', '[project]\nname = "weather"\n')
+    put('docs/reference/doc.toml', '[reference]\n')
+
+    expect(find_documentation(nil, DIR))
+        .to_be(os.join_paths(DIR, 'docs', 'reference'))
+  })
+
+  it('says how to start documentation when there is none', @{
+    expect(
+      refusal(@{
+        find_documentation(nil, DIR)
+      }),
+    ).to_contain('zuri doc init')
+    expect(
+      refusal(@{
+        find_documentation('nowhere', DIR)
+      }),
+    ).to_contain('nowhere')
+  })
+})
+
+describe('init', @{
+  it("starts documentation in the project's docs", @{
+    put('project.toml', '[project]\nname = "weather"\n')
+
+    var target = init_target(nil, DIR)
+
+    expect(target).to_be(os.join_paths(DIR, 'docs'))
+    expect(default_title(target)).to_be('weather')
+  })
+
+  it('starts documentation where it is told to, named after the directory', @{
+    var target = init_target('manual', DIR)
+
+    expect(target).to_be(os.join_paths(DIR, 'manual'))
+    expect(default_title(target)).to_be('manual')
+  })
+
+  it('writes documentation that builds', @{
+    var written = files('Weather "Now"')
+
+    expect(written.keys()).to_contain('src/SUMMARY.md')
+    expect(written['doc.toml']).to_contain('title = "Weather \\"Now\\""')
+  })
+})
+
+describe('generate', @{
+  it("writes to the project's docs/reference", @{
+    put('project.toml', '[project]\nname = "weather"\n')
+    put('app/index.zu', '')
+
+    expect(reference_target(nil, os.join_paths(DIR, 'app')))
+        .to_be(os.join_paths(DIR, 'docs', 'reference'))
+  })
+
+  it('writes to the current directory when it holds a reference', @{
+    put('api/doc.toml', '[reference]\n')
+
+    var api = os.join_paths(DIR, 'api')
+
+    expect(reference_target(nil, api)).to_be(api)
+    expect(reference_target('api/doc.toml', DIR)).to_be(api)
+  })
+
+  it('will not write over documentation written by hand', @{
+    put('project.toml', '[project]\nname = "weather"\n')
+    put('docs/doc.toml', '[documentation]\ntitle = "Guide"\n')
+
+    expect(
+      refusal(@{
+        reference_target('docs', DIR)
+      }),
+    ).to_contain('written by hand')
+  })
+
+  it('needs a project to document', @{
+    expect(
+      refusal(@{
+        reference_target(nil, DIR)
+      }),
+    ).to_contain('no project here')
+  })
+
+  it('takes --strict and --title', @{
+    var given = chosen(['generate', '--strict', '--title', 'API'])
+
+    expect(given.command).to_be('generate')
+    expect(given.strict).to_be_true()
+    expect(given.title).to_be('API')
+  })
+
+  it('starts a reference whose pages are left out of git', @{
+    var written = reference_files('Weather API')
+
+    expect(written['doc.toml']).to_contain('[reference]')
+    expect(written['.gitignore']).to_contain('/src/')
+  })
+})

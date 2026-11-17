@@ -32,32 +32,29 @@ describe('targets', @{
   })
 
   it('refuses a platform zuri is not released for', @{
-    expect(failure(@{
-      plan.targets(['riscv64-unknown-linux-gnu'], HOST)
-    })).to_contain('is not a platform zuri is released for')
+    expect(
+      failure(@{
+        plan.targets(['riscv64-unknown-linux-gnu'], HOST)
+      }),
+    ).to_contain('is not a platform zuri is released for')
   })
 })
 
 describe('names', @{
   it('names each format for its platform', @{
-    expect(plan.output_name(
-      'tool', '1.0.0', HOST, 'archive',
-    )).to_equal('tool-1.0.0-${HOST}.tar.gz')
-    expect(plan.output_name(
-      'tool', '1.0.0', 'x86_64-pc-windows-msvc', 'archive',
-    ))
-      .to_equal('tool-1.0.0-x86_64-pc-windows-msvc.zip')
+    expect(plan.output_name('tool', '1.0.0', HOST, 'archive'))
+        .to_equal('tool-1.0.0-${HOST}.tar.gz')
+    expect(
+      plan.output_name('tool', '1.0.0', 'x86_64-pc-windows-msvc', 'archive'),
+    ).to_equal('tool-1.0.0-x86_64-pc-windows-msvc.zip')
     expect(plan.output_name('tool', '1.0.0', 'x86_64-pc-windows-msvc', 'exe'))
-      .to_equal('tool-1.0.0-x86_64-pc-windows-msvc.exe')
-    expect(plan.output_name(
-      'tool', '1.0.0', HOST, 'exe',
-    )).to_equal('tool-1.0.0-${HOST}')
-    expect(plan.output_name(
-      'tool', '1.0.0', HOST, 'dir',
-    )).to_equal('tool-1.0.0-${HOST}')
-    expect(plan.output_name(
-      'tool', '1.0.0', 'aarch64-apple-darwin', 'app',
-    )).to_equal('tool.app')
+        .to_equal('tool-1.0.0-x86_64-pc-windows-msvc.exe')
+    expect(plan.output_name('tool', '1.0.0', HOST, 'exe'))
+        .to_equal('tool-1.0.0-${HOST}')
+    expect(plan.output_name('tool', '1.0.0', HOST, 'dir'))
+        .to_equal('tool-1.0.0-${HOST}')
+    expect(plan.output_name('tool', '1.0.0', 'aarch64-apple-darwin', 'app'))
+        .to_equal('tool.app')
   })
 
   it('knows which platforms are which', @{
@@ -70,20 +67,26 @@ describe('names', @{
 
 describe('formats', @{
   it('makes a macOS application only for macOS', @{
-    expect(failure(@{
-      plan.check_format('app', HOST)
-    })).to_contain('is not macOS')
+    expect(
+      failure(@{
+        plan.check_format('app', HOST)
+      }),
+    ).to_contain('is not macOS')
 
-    expect(failure(@{
-      plan.check_format('app', 'aarch64-apple-darwin')
-    })).to_be_nil()
+    expect(
+      failure(@{
+        plan.check_format('app', 'aarch64-apple-darwin')
+      }),
+    ).to_be_nil()
   })
 
   it('makes a single file for every platform', @{
     for target in plan.TARGETS {
-      expect(failure(@{
-        plan.check_format('exe', target)
-      })).to_be_nil()
+      expect(
+        failure(@{
+          plan.check_format('exe', target)
+        }),
+      ).to_be_nil()
     }
   })
 

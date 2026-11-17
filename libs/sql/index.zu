@@ -1,13 +1,13 @@
 /**
  * @module sql
  *
- * One way to talk to a relational database, whichever one it is.
+ * A single interface for relational databases, whichever one you use.
  *
- * `sql` is the entry point for every database Zuri supports. It
- * defines what a database adapter has to provide, supplies everything
- * that is the same whichever engine answers, and picks the adapter
- * from the connection string. Changing database means changing that
- * string, and whatever SQL the engines genuinely spell differently.
+ * `sql` is the entry point for every database that Zuri supports. It
+ * defines what a database adapter has to provide, implements everything
+ * that's the same whatever engine is underneath, and chooses the
+ * adapter from the connection string. To change databases, you change
+ * that string, along with any SQL that the engines write differently.
  *
  * ```zuri
  * import sql
@@ -27,34 +27,34 @@
  *
  * The only line above that names an engine is the first. Point it at
  * `postgres://localhost/app` or `mysql://localhost/app` and the rest
- * runs unchanged: the `?` becomes `$1` on PostgreSQL and stays `?` on
- * MySQL, the insert gets a `RETURNING` clause where the engine has no
- * last insert id, and a unique key violation still arrives as
+ * runs unchanged. The `?` becomes `$1` on PostgreSQL and stays `?` on
+ * MySQL, the insert gets a `RETURNING` clause on an engine with no last
+ * insert ID, and a unique key violation is still raised as a
  * `UniqueViolation`.
  *
- * ### What is here
+ * ### Contents
  *
  * | | |
  * | - | - |
  * | `open()` | opens a connection from a connection string |
- * | `pool()` | opens a pool of them |
+ * | `pool()` | opens a pool of connections |
  * | `register()` | adds an adapter of your own |
- * | `Connection` | what a program holds and runs statements on |
+ * | `Connection` | the object a program holds and runs statements on |
  * | `Transaction` | an open transaction, and the savepoints inside it |
  * | `Statement` | a statement compiled once and run many times |
- * | `Cursor` | a result read a row at a time |
+ * | `Cursor` | a result read one row at a time |
  * | `ResultSet` | the rows a query returned |
- * | `Decimal` | an exact decimal, for a column a float must not hold |
- * | `Time` | a signed span of time, as a `TIME` column holds one |
- * | `Schema` | what tables exist and what is in them, and changing them |
- * | `Blueprint` | a table's shape, described once for every engine |
- * | `SqlError` | the root of every error a database raises |
+ * | `Decimal` | an exact decimal number, for a column that a float can't hold |
+ * | `Time` | a signed length of time, like the value of a `TIME` column |
+ * | `Schema` | lists the tables in a database and what's in them, and changes them |
+ * | `Blueprint` | describes the structure of a table once, for every engine |
+ * | `SqlError` | the base class of every error a database raises |
  *
  * ### Parameters
  *
- * Values are bound, never pasted into the statement. Write `?` for
- * positional parameters or `:name` for named ones and `sql` translates
- * them into whatever the adapter wants:
+ * Values are always bound, never inserted into the text of the
+ * statement. Write `?` for positional parameters or `:name` for named
+ * ones, and `sql` translates them into whatever the adapter needs:
  *
  * ```zuri,ignore
  * db.query('select * from posts where author = ? and year = ?', [name, 2026])
@@ -64,8 +64,8 @@
  * ### Errors
  *
  * Every error is a `SqlError`. The subclasses are the same on every
- * engine, so the code that handles a duplicate key does not change
- * when the engine does:
+ * engine, so the code that handles a duplicate key doesn't have to
+ * change when the engine does:
  *
  * ```zuri,ignore
  * catch {
@@ -81,21 +81,35 @@
  *
  * ### Isolates
  *
- * A connection belongs to the isolate that opened it and cannot be
- * shared with another. An isolate that needs a database opens its own
- * connection or its own pool.
+ * A connection belongs to the isolate that opened it, and can't be
+ * shared with another isolate. An isolate that needs a database opens
+ * its own connection or its own pool.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
 import @.errors { * }
 import @.driver {
-  Driver, DriverConnection, DriverStatement, DriverCursor, SchemaAdapter,
+  Driver,
+  DriverConnection,
+  DriverStatement,
+  DriverCursor,
+  SchemaAdapter,
   default_capabilities,
-  READ_UNCOMMITTED, READ_COMMITTED, REPEATABLE_READ, SERIALIZABLE,
+  READ_UNCOMMITTED,
+  READ_COMMITTED,
+  REPEATABLE_READ,
+  SERIALIZABLE,
 }
-import @.params { translate, scan, split_statements, placeholder,
-  QUESTION, NUMBERED, INDEXED }
+import @.params {
+  translate,
+  scan,
+  split_statements,
+  placeholder,
+  QUESTION,
+  NUMBERED,
+  INDEXED,
+}
 import @.decimal { Decimal, decimal }
 import @.types { Time, time, time_from_seconds, parse_time }
 import @.result { ResultSet, ExecResult }
@@ -122,7 +136,7 @@ import .mysql
 var _REGISTRY = {}
 
 /**
- * Registers an adapter, so `open()` recognises its connection strings.
+ * Registers an adapter, so `open()` recognizes its connection strings.
  *
  * An adapter is anything implementing `Driver`. Registering one under
  * a name already taken replaces it, which is how a program swaps in an
@@ -172,8 +186,8 @@ def driver(name: string) {
   if found == nil {
     raise SqlError(
       'no database adapter called ${name} is registered; there ' +
-        '${_REGISTRY.length() == 1 ? "is" : "are"} ' +
-        '${', '.join(_REGISTRY.keys())}',
+          '${_REGISTRY.length() == 1 ? "is" : "are"} ' +
+          '${', '.join(_REGISTRY.keys())}',
     )
   }
 
@@ -206,8 +220,8 @@ def driver_for(dsn: string) {
 
   raise SqlError(
     'no database adapter handles ${scheme}:// connection strings; ' +
-      '${', '.join(_REGISTRY.keys())} ${_REGISTRY.length() == 1 ? "is" : "are"} ' +
-      'registered',
+        '${', '.join(_REGISTRY.keys())} ${_REGISTRY.length() == 1 ? "is" : "are"} ' +
+        'registered',
   )
 }
 
@@ -236,8 +250,8 @@ def driver_for(dsn: string) {
  */
 def open(dsn, options) {
   var chosen = is_dict(dsn)
-    ? driver(dsn.get('driver', 'sqlite'))
-    : driver_for(dsn)
+      ? driver(dsn.get('driver', 'sqlite'))
+      : driver_for(dsn)
   var settings = chosen.parse_dsn(dsn)
 
   if options != nil {
@@ -259,8 +273,8 @@ def open(dsn, options) {
  */
 def pool(dsn, options) {
   var chosen = is_dict(dsn)
-    ? driver(dsn.get('driver', 'sqlite'))
-    : driver_for(dsn)
+      ? driver(dsn.get('driver', 'sqlite'))
+      : driver_for(dsn)
 
   return Pool(chosen, chosen.parse_dsn(dsn), options or {})
 }

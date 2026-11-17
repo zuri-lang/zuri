@@ -1,8 +1,8 @@
 # Server-Rendered Pages with Wire
 
-The browser side is two templates and four routes. Wire's full reference is
-[its own chapter](ch14-00-wire.md); this section uses the parts a real page
-needs.
+The browser side of the application consists of two templates and four
+routes. Wire has [its own chapter](ch14-00-wire.md) with the full reference,
+and this section uses the parts a real page needs.
 
 ## The Layout
 
@@ -36,13 +36,14 @@ needs.
 </html>
 ```
 
-This is a valid HTML5 document. Open it in a browser and you get a page
-with a heading and a paragraph. That is the whole point of Wire's design:
-the directives are attributes, so the template is still the thing it
+This is a valid HTML5 document. If you open it in a browser, you get a page
+with a heading and a paragraph. That's the whole idea behind Wire's design:
+the directives are attributes, so the template still looks like the page it
 renders.
 
-`x-slot="content"` declares a region an extending template may replace. The
-content inside it is the default, used when nothing replaces it.
+`x-slot="content"` declares a region that an extending template can replace.
+The content inside it is the default, which is used when nothing replaces
+it.
 
 ## The Page
 
@@ -94,35 +95,36 @@ content inside it is the default, used when nothing replaces it.
 </extend>
 ```
 
-Six directives carry the whole page.
+Six directives make up the whole page.
 
-**`x-for` with `x-value`** repeats an element once per entry, binding each
-one to a name. The nested `x-for="column.tasks"` inside
-`x-for="columns"` is an ordinary nested loop, and the inner one can still
-see `columns` from the outer scope, which is how the move dropdown lists
-every column.
+**`x-for` with `x-value`** repeats an element once for each item and gives
+each item a name. The `x-for="column.tasks"` nested inside `x-for="columns"`
+is an ordinary nested loop, and the inner loop can still see `columns` from
+the outer one, which is how the dropdown for moving a task lists every
+column.
 
-**`x-text`** replaces an element's children with escaped text. Nothing a
-task's title contains can become markup.
+**`x-text`** replaces an element's children with escaped text, so nothing in
+a task's title can turn into markup.
 
-**`x-attr`** takes a dictionary and spreads it onto the element, which is
-how a form's `action` gets built from a task id.
+**`x-attr`** takes a dictionary and adds its entries to the element as
+attributes, which is how a form's `action` is built from a task's ID.
 
-**`x-if` / `x-not`** render an element conditionally. `x-not="column.tasks"`
-shows the "Nothing here." line when the list is empty, because in Wire an
-empty list is falsy. That is not Zuri's rule, where `[]` is truthy; Wire
-uses its own, friendlier one for template authoring.
+**`x-if` and `x-not`** render an element only under a condition.
+`x-not="column.tasks"` shows the "Nothing here." line when the list is
+empty, because an empty list is falsy in Wire. That's not Zuri's rule, since
+`[]` is truthy in Zuri, but Wire uses its own rule, which is more convenient
+for templates.
 
-**`{{ column.tasks|length }}`** is an interpolation through a filter.
-`length` is one of Wire's built-in filters, and it works on strings, lists,
+**`{{ column.tasks|length }}`** is an interpolation with a filter. `length`
+is one of Wire's built-in filters, and it works on strings, lists,
 dictionaries and bytes.
 
 ## The Routes
 
 `routes/pages.zu` registers four routes: one that renders the board, and
-three that handle the forms on it. Here it is a piece at a time.
+three that handle its forms. Let's go through it one piece at a time.
 
-### The Shape of the File
+### The Structure of the File
 
 <span class="filename">Filename: routes/pages.zu</span>
 
@@ -139,77 +141,80 @@ import ..config
 def register(server, board, view) {
 ```
 
-The whole file is one `register()` function that takes its dependencies as
-arguments. Nothing here reaches for a global board or a global template
-engine, which is what makes the routes testable: hand `register()` a board
-backed by a temporary directory and the same code runs against it.
+The whole file is a single `register()` function that takes its dependencies
+as arguments. Nothing here uses a global board or a global template engine,
+which is what makes the routes testable. Pass `register()` a board that uses
+a temporary directory, and the same code runs against it.
 
 This is the "pass dependencies in" habit from
-[Debugging](ch24-00-debugging.md), applied at the layer where it costs
-nothing and buys the most.
+[Debugging](ch24-00-debugging.md), applied to the layer where it costs
+nothing and helps the most.
 
 ### Rendering the Board
 
 ```zuri,ignore
-  server.get('/', @(request, response) {
-    response.html(view.render('board.html', {
+server.get('/', @(request, response) {
+  response.html(
+    view.render('board.html', {
       title: 'Task Board',
       tagline: _tagline(board),
       columns: board.columns(),
       error: request.query_param('error', nil),
-    }))
-  })
+    }),
+  )
+})
 ```
 
-One route, one call, no logic. Everything it hands the template is either a
-constant or a method call on the board — there is no loop, no formatting
-and no branching in this handler, because all of that already happened
-somewhere better suited to it.
+This route makes one call and contains no logic. Everything it passes to the
+template is either a constant or the result of a method call on the board.
+There's no loop, no formatting and no branching in this handler, because all
+of that has already been done somewhere better suited to it.
 
-`board.columns()` does the grouping. `_tagline()` does the counting.
-`to_view()`, back in the domain model, did the date formatting. By the time
-the template runs, every value it needs is sitting in front of it.
+`board.columns()` does the grouping and `_tagline()` does the counting,
+while `to_view()`, in the domain model, has already formatted the dates. By
+the time the template runs, every value it needs is ready.
 
 `request.query_param('error', nil)` is the other half of the redirect
-pattern below: a failed form redirects with `?error=...`, and this is where
-that message comes back in to be rendered.
+pattern described below. When a form fails, it redirects with `?error=...`,
+and this is where the message comes back to be displayed.
 
 ### Handling a Form
 
 ```zuri,ignore
-  server.post('/tasks', @(request, response) {
-    var form = request.form()
+server.post('/tasks', @(request, response) {
+  var form = request.form()
 
-    catch {
-      board.add(form.get('title', nil), { column: form.get('column', nil) })
-    } as error {
-      response.redirect('/?error=' + _escape(error.message))
-      return
-    }
+  catch {
+    board.add(form.get('title', nil), { column: form.get('column', nil) })
+  } as error {
+    response.redirect('/?error=' + _escape(error.message))
+    return
+  }
 
-    response.redirect('/')
-  })
+  response.redirect('/')
+})
 ```
 
-All three form handlers follow this exact shape, so it is worth reading
-once carefully.
+All three form handlers follow exactly this structure, so it's worth reading
+carefully once.
 
-`request.form()` parses a URL-encoded body into a dictionary.
-`form.get('title', nil)` rather than `form.title`, because a browser can
-post a body with any fields at all — or none — and `form.title` would raise
-`undefined key` on a request that simply omitted it. With `get()`, a
-missing field arrives as `nil`, and `_clean_title()` turns that into a
-proper `TaskError`.
+`request.form()` parses a URL-encoded body into a dictionary. The code uses
+`form.get('title', nil)` instead of `form.title`, because a browser can send
+a body with any fields at all, or none, and `form.title` would raise an
+`undefined key` error for a request that simply left it out. With `get()`, a
+missing field becomes `nil`, and `_clean_title()` turns that into a proper
+`TaskError`.
 
-The `catch` wraps **only** the board call. `response.redirect('/')` on the
-success path sits outside it, so a mistake in the redirect is not reported
-as a validation failure. That is the "keep the catch block small" rule from
-[Chapter 7](ch07-00-error-handling.md).
+The `catch` wraps **only** the call to the board. `response.redirect('/')`,
+on the success path, is outside it, so a mistake in the redirect isn't
+reported as a validation failure. That's the "keep the catch block small"
+rule from [Chapter 7](ch07-00-error-handling.md).
 
-The `return` inside the handler is what stops execution falling through to
-the success redirect. Without it, a failed add would issue two redirects.
+The `return` inside the handler stops execution from continuing to the
+redirect on the success path. Without it, a failed add would send two
+redirects.
 
-### The Other Two
+### The Other Two Form Handlers
 
 ```zuri,ignore
   server.post('/tasks/:id/move', @(request, response) {
@@ -238,17 +243,19 @@ the success redirect. Without it, a failed add would issue two redirects.
 }
 ```
 
-`:id` in the path is a route parameter, and `request.param('id')` reads it.
+`:id` in the path is a route parameter, which `request.param('id')` reads.
 
-Notice what is **not** in these handlers. Neither checks that the id names
-a real task — `board.get()` raises `NotFoundError` and the `catch` picks it
-up. Neither validates the column — `_clean_column()` does. Neither checks
-that the task exists before deleting it — `remove()` calls `get()` first.
+Notice what these handlers **don't** do. Neither one checks that the ID
+belongs to a real task, because `board.get()` raises a `NotFoundError` and
+the `catch` handles it. Neither one validates the column, because
+`_clean_column()` does that. And neither one checks that the task exists
+before deleting it, because `remove()` calls `get()` first.
 
-That is the payoff for putting the rules in the domain model. A route
-handler is four lines because there is nothing left for it to do.
+That's the benefit of putting the rules in the domain model. Each route
+handler is only four lines long, because there's nothing else left for it to
+do.
 
-### The Two Helpers
+### The Two Helper Functions
 
 ```zuri,ignore
 def _tagline(board) {
@@ -262,60 +269,59 @@ def _escape(message) {
 }
 ```
 
-`_tagline()` turns the board's counts into the line under the heading. It
-lives here rather than in `Board` because it is a presentation decision:
-another front end would word it differently, and the board should not have
-an opinion.
+`_tagline()` turns the board's counts into the line shown under the heading.
+It's defined here rather than in `Board` because it's a presentation
+decision. A different front end would word it differently, and the board
+shouldn't care.
 
-`_escape()` is doing something more careful than it looks. The message is
-about to be put into a URL, so it strips everything that is not a letter,
-digit, space or basic punctuation, then turns spaces into `+`.
+`_escape()` is more careful than it looks. The message is about to be put
+into a URL, so it removes everything except letters, digits, spaces and
+basic punctuation, and then replaces spaces with `+`.
 
-Two details in that one line. The first `replace()` uses a **regular
-expression**; the second passes `false` as the third argument to turn
-pattern handling **off**, so the single space is matched literally rather
-than as a pattern. And stripping rather than percent-encoding is the
-deliberate choice: this is a message we generated, not user input echoed
-back, so a conservative allow-list is simpler than encoding and cannot
-produce a malformed URL.
+There are two details in that one line. The first `replace()` uses a
+**regular expression**, and the second passes `false` as its third argument
+to turn pattern matching **off**, so the single space is matched literally
+instead of as a pattern. And removing characters instead of percent-encoding
+them is a deliberate choice. This is a message the program generated, not
+user input being sent back, so a conservative list of allowed characters is
+simpler than encoding, and it can't produce an invalid URL.
 
-## Redirect After Post
+## Redirecting After a Post
 
-Every form handler ends in a redirect rather than rendering a page. That is
-the **post/redirect/get** pattern, and it exists because a browser that
-rendered a page in response to a `POST` will re-submit that `POST` when the
-user presses refresh. Adding a task twice because someone hit F5 is not a
-bug you want to explain.
+Every form handler ends with a redirect instead of rendering a page. This is
+the **post/redirect/get** pattern. It exists because if a browser displays a
+page in response to a `POST`, it submits the `POST` again when the user
+refreshes the page. Adding a task twice because someone pressed F5 isn't a
+bug you want to have to explain.
 
-The failure path redirects too, carrying the message as a query parameter
-that the next `GET` renders into the error banner. So both outcomes leave
-the browser sitting on a plain `GET /`, which is refreshable, bookmarkable
-and safe to go back to.
+The failure path redirects too, passing the message as a query parameter,
+which the next `GET` displays in the error banner. Either way, the browser
+ends up on a plain `GET /`, which is safe to refresh, bookmark or go back
+to.
 
-## Why These Handlers Catch and the API's Do Not
+## Why These Handlers Catch Errors and the API's Handlers Don't
 
 The API handlers in [The JSON API](ch25-04-api.md) let errors propagate,
-because the middleware turns them into status codes. These catch, because a
-browser submitting a form does not want a 422 page — it wants the board
-back with a message on it.
+because the middleware turns them into status codes. These handlers catch
+them, because a browser submitting a form doesn't want a 422 page. It wants
+the board back, with a message on it.
 
-Same domain errors, two presentations, and the choice is made at the layer
-that knows which kind of client it is talking to. Neither the `Board` nor
-the `Task` has to know that a browser is involved.
+The same domain errors are presented in two different ways, and the choice
+is made by the layer that knows what kind of client it's talking to. Neither
+`Board` nor `Task` needs to know that a browser is involved.
 
 ## The Stylesheet
 
-`server.serve_files('/static', config.STATIC_DIR)` mounts the directory.
-The static-file handler deals with content types, `ETag`s, conditional
-requests and range requests on its own, so `app.css` is a plain file with
-nothing around it:
+`server.serve_files('/static', config.STATIC_DIR)` serves the directory. The
+static file handler takes care of content types, `ETag` headers, conditional
+requests and range requests by itself, so `app.css` is just a plain file:
 
 ```console
 $ curl -s -o /dev/null -w '%{http_code} %{content_type}\n' localhost:8000/static/app.css
 200 text/css
 ```
 
-## What It Renders
+## The Result
 
 ```html
 <!DOCTYPE html><html lang="en"><head>
@@ -346,5 +352,6 @@ $ curl -s -o /dev/null -w '%{http_code} %{content_type}\n' localhost:8000/static
             ...
 ```
 
-Server-rendered HTML, no JavaScript, and every value escaped by the engine
-rather than by the person who wrote the template.
+The result is HTML rendered on the server, without any JavaScript, and with
+every value escaped by the template engine rather than by whoever wrote the
+template.

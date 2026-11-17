@@ -1,20 +1,24 @@
 # Anonymous Functions and Closures
 
-## The Spellings
+## Syntax
 
-An anonymous function has two halves you can vary independently: how it
-opens, and how its body is written. That gives a small grid rather than a
-list to memorise.
+There are two parts of an anonymous function that you can vary
+independently: how it starts and how its body is written. That gives you a
+small grid of options rather than a list to memorize.
 
-**Opening.** `def` is the keyword; `@` is its shorthand. They are the same
-thing.
+**The start.** `def` is the keyword, and `@` is its shorthand. They mean the
+same thing.
 
-**Body.** A block in braces returns with `return`. An arrow returns the one
-expression after it.
+**The body.** A block in braces returns a value with `return`. An arrow
+returns the single expression that follows it.
 
 ```zuri
-var block_long = def(x) { return x * x }
-var block_short = @(x) { return x * x }
+var block_long = def(x) {
+  return x * x
+}
+var block_short = @(x) {
+  return x * x
+}
 
 var arrow_long = def(x) => x * x
 var arrow_short = @(x) => x * x
@@ -26,17 +30,25 @@ echo [block_long(3), block_short(3), arrow_long(3), arrow_short(3)]
 [9, 9, 9, 9]
 ```
 
-When there are **no parameters**, the empty parentheses may be dropped as
-well:
+When there are **no parameters**, you can also leave out the empty
+parentheses:
 
 ```zuri
-var a = @() { return 1 }
+var a = @() {
+  return 1
+}
 var b = @() => 2
-var c = def() { return 3 }
+var c = def() {
+  return 3
+}
 var d = def() => 4
 var e = @ => 5
-var f = @{ return 6 }
-var g = def { return 7 }
+var f = @{
+  return 6
+}
+var g = def {
+  return 7
+}
 var h = def => 8
 
 echo [a(), b(), c(), d(), e(), f(), g(), h()]
@@ -46,17 +58,17 @@ echo [a(), b(), c(), d(), e(), f(), g(), h()]
 [1, 2, 3, 4, 5, 6, 7, 8]
 ```
 
-All eight are the same construct. Which to use:
+All eight forms create the same thing. Here's when to use each:
 
-- **`@(x) => expr`** for a one-expression callback. This is what most Zuri
-  code uses, and what the standard library is written in.
+- **`@(x) => expr`** for a callback that's a single expression. This is what
+  most Zuri code uses, including the standard library.
 - **`@(x) { ... }`** when the body needs more than one statement.
 - **`def(x) { ... }`** when the function is long enough that you want it to
   look like the declarations around it.
-- **`@ => expr`** for a thunk — a value computed on demand, with nothing
-  passed in.
+- **`@ => expr`** for a thunk, a value that's computed when it's needed and
+  takes no arguments.
 
-Compare the two common ones where they actually turn up:
+Here are the two most common forms as you'd typically see them:
 
 ```zuri
 echo ['  a ', ' b'].map(@(t) => t.trim())
@@ -75,12 +87,13 @@ echo [1, 2, 3].filter(@(n) {
 [1, 3]
 ```
 
-The arrow form has no `return` because the expression *is* the return
-value. Adding one is a mistake the compiler will not catch: `@(x) => return x`
-does not parse, but `@(x) { x }` parses and returns `nil`.
+The arrow form doesn't use `return`, because the expression *is* the return
+value. Mixing the two up is a mistake the compiler won't always catch.
+`@(x) => return x` doesn't parse, but `@(x) { x }` parses fine and returns
+`nil`.
 
-Anonymous functions take variadic parameters and type annotations exactly
-like named ones:
+Anonymous functions accept variadic parameters and type annotations in the
+same way as named functions:
 
 ```zuri
 var sum = @(...numbers) => numbers.reduce(@(a, b) => a + b, 0)
@@ -102,16 +115,16 @@ catch {
 @anonN() expects parameter 'n' (argument 1) to be a number, got string
 ```
 
-The real message carries a number rather than the `N` shown here. An
-anonymous function is named `@anonN` in the order the compiler met it in
-the file, which is worth knowing when one turns up in a stack trace — and
-worth not depending on, since inserting another anonymous function above it
-renumbers everything below.
+The real error message contains a number instead of the `N` shown here.
+Anonymous functions are named `@anonN`, numbered in the order the compiler
+finds them in the file. This helps when one shows up in a stack trace, but
+don't rely on the number, because adding another anonymous function earlier
+in the file changes the numbers of all the ones after it.
 
 ## Closures
 
-A function carries the variables it referenced from its surroundings, and
-keeps them alive after the enclosing function has returned:
+A function keeps the variables it uses from its surroundings, and keeps them
+alive even after the enclosing function has returned:
 
 ```zuri
 def make_counter() {
@@ -137,17 +150,20 @@ echo b()
 1
 ```
 
-`a` and `b` each closed over their **own** `n`. Each call to
-`make_counter()` created a fresh one.
+`a` and `b` each have their **own** `n`, because each call to
+`make_counter()` created a new one.
 
-## Capture Is by Reference
+## Closures Capture Variables, Not Values
 
-A closure captures the variable, not a snapshot of its value:
+A closure captures the variable itself, not a copy of its value at that
+moment:
 
 ```zuri
 def demo() {
   var total = 0
-  var add = @(n) { total += n }
+  var add = @(n) {
+    total += n
+  }
 
   add(5)
   add(10)
@@ -162,9 +178,9 @@ echo demo()
 15
 ```
 
-This is what makes accumulator patterns work, and it is what makes loop
-variables surprising. If you want a per-iteration capture, declare a fresh
-variable inside the loop body:
+That's what makes accumulators work, and it's also why closures over loop
+variables can be surprising. If you want each iteration to capture its own
+value, declare a new variable inside the loop body:
 
 ```zuri
 var fns = []
@@ -181,11 +197,12 @@ echo fns.map(@(f) => f())
 [0, 1, 2]
 ```
 
-`captured` is a new variable on each pass, so each closure gets its own.
+`captured` is a new variable on each pass through the loop, so each closure
+gets its own.
 
-## Closures over Parameters
+## Closures Over Parameters
 
-Parameters are captured the same way, which is the basis of partial
+Parameters are captured in the same way, which is the basis of partial
 application:
 
 ```zuri
@@ -205,9 +222,10 @@ echo add_ten(1)
 11
 ```
 
-## Recursion in an Anonymous Function
+## Recursive Anonymous Functions
 
-An anonymous function has no name to call itself by. Bind it first:
+An anonymous function doesn't have a name it can use to call itself. Assign
+it to a variable first:
 
 ```zuri
 var factorial
@@ -227,9 +245,9 @@ echo factorial(5)
 ```
 
 The variable is captured by reference, so by the time the body runs,
-`factorial` is bound.
+`factorial` has been assigned.
 
-## Functions Compare by Identity
+## Comparing Functions
 
 ```zuri
 def f() {}
@@ -244,15 +262,15 @@ true
 false
 ```
 
-Two separately written functions are never equal, even with identical
-bodies.
+Functions are compared by identity, so two functions written separately are
+never equal, even if their bodies are identical.
 
-## A Worked Example
+## Example: A Rate Limiter
 
-Closures are at their most useful when a function needs to remember
-something between calls without that something becoming a global. Here is a
-rate limiter: it hands back a function that answers "may I do this now?",
-and keeps its own tally where nothing else can reach it.
+Closures are most useful when a function needs to remember something between
+calls without storing it in a global variable. Here's a rate limiter. It
+returns a function that answers the question "am I allowed to do this now?",
+and it keeps its own count where nothing else can get at it.
 
 ```zuri
 def make_limiter(max_per_window: number) {
@@ -298,10 +316,10 @@ false
 true
 ```
 
-Three separate functions share one `used`, because all three closed over
-the same variable in the same call to `make_limiter`. A second call to
-`make_limiter` would produce a second, independent trio.
+The three functions share a single `used` variable, because they all closed
+over the same variable in the same call to `make_limiter`. Calling
+`make_limiter` again would create a second, independent set of three.
 
-This is the closest Zuri gets to a private field without a class, and it is
-worth knowing for exactly that reason: there is no way for a caller to read
-or write `used` except through the three functions you gave them.
+This is the closest you can get to a private field in Zuri without writing a
+class. A caller has no way to read or change `used` except through the three
+functions you gave them.

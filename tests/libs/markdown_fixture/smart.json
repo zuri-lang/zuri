@@ -1,0 +1,92 @@
+[
+  {
+    "markdown": "\"Hello,\" said the spider.\n\"'Shelob' is my name.\"\n",
+    "html": "<p>“Hello,” said the spider.\n“‘Shelob’ is my name.”</p>\n",
+    "example": 1,
+    "section": "Smart punctuation"
+  },
+  {
+    "markdown": "'A', 'B', and 'C' are letters.\n",
+    "html": "<p>‘A’, ‘B’, and ‘C’ are letters.</p>\n",
+    "example": 2,
+    "section": "Smart punctuation"
+  },
+  {
+    "markdown": "'Oak,' 'elm,' and 'beech' are names of trees.\nSo is 'pine.'\n",
+    "html": "<p>‘Oak,’ ‘elm,’ and ‘beech’ are names of trees.\nSo is ‘pine.’</p>\n",
+    "example": 3,
+    "section": "Smart punctuation"
+  },
+  {
+    "markdown": "'He said, \"I want to go.\"'\n",
+    "html": "<p>‘He said, “I want to go.”’</p>\n",
+    "example": 4,
+    "section": "Smart punctuation"
+  },
+  {
+    "markdown": "Were you alive in the 70's?\n",
+    "html": "<p>Were you alive in the 70’s?</p>\n",
+    "example": 5,
+    "section": "Smart punctuation"
+  },
+  {
+    "markdown": "Here is some quoted '`code`' and a \"[quoted link](url)\".\n",
+    "html": "<p>Here is some quoted ‘<code>code</code>’ and a “<a href=\"url\">quoted link</a>”.</p>\n",
+    "example": 6,
+    "section": "Smart punctuation"
+  },
+  {
+    "markdown": "'tis the season to be 'jolly'\n",
+    "html": "<p>’tis the season to be ‘jolly’</p>\n",
+    "example": 7,
+    "section": "Smart punctuation"
+  },
+  {
+    "markdown": "'We'll use Jane's boat and John's truck,' Jenna said.\n",
+    "html": "<p>‘We’ll use Jane’s boat and John’s truck,’ Jenna said.</p>\n",
+    "example": 8,
+    "section": "Smart punctuation"
+  },
+  {
+    "markdown": "\"A paragraph with no closing quote.\n\n\"Second paragraph by same speaker, in fiction.\"\n",
+    "html": "<p>“A paragraph with no closing quote.</p>\n<p>“Second paragraph by same speaker, in fiction.”</p>\n",
+    "example": 9,
+    "section": "Smart punctuation"
+  },
+  {
+    "markdown": "\\\"This is not smart.\\\"\nThis isn\\'t either.\n5\\'8\\\"\n",
+    "html": "<p>&quot;This is not smart.&quot;\nThis isn't either.\n5'8&quot;</p>\n",
+    "example": 10,
+    "section": "Smart punctuation"
+  },
+  {
+    "markdown": "Some dashes:  em---em\nen--en\nem --- em\nen -- en\n2--3\n",
+    "html": "<p>Some dashes:  em—em\nen–en\nem — em\nen – en\n2–3</p>\n",
+    "example": 11,
+    "section": "Smart punctuation"
+  },
+  {
+    "markdown": "one-\ntwo--\nthree---\nfour----\nfive-----\nsix------\nseven-------\neight--------\nnine---------\nthirteen-------------.\n",
+    "html": "<p>one-\ntwo–\nthree—\nfour––\nfive—–\nsix——\nseven—––\neight––––\nnine———\nthirteen———––.</p>\n",
+    "example": 12,
+    "section": "Smart punctuation"
+  },
+  {
+    "markdown": "Escaped hyphens: \\-- \\-\\-\\-.\n",
+    "html": "<p>Escaped hyphens: -- ---.</p>\n",
+    "example": 13,
+    "section": "Smart punctuation"
+  },
+  {
+    "markdown": "Ellipses...and...and....\n",
+    "html": "<p>Ellipses…and…and….</p>\n",
+    "example": 14,
+    "section": "Smart punctuation"
+  },
+  {
+    "markdown": "No ellipses\\.\\.\\.\n",
+    "html": "<p>No ellipses...</p>\n",
+    "example": 15,
+    "section": "Smart punctuation"
+  }
+]

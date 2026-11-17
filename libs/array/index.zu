@@ -1,23 +1,23 @@
 /**
  * @module array
  *
- * This module provides fixed-width typed array classes: twos-
- * complement integers (`Int8Array`/`UInt8Array` through
- * `Int64Array`/`UInt64Array`) and IEEE-754 floating-point numbers
- * (`FloatArray`, `DoubleArray`), each storing its elements packed
- * in the platform byte order. They complement the `bytes` object
- * and allow higher-level binary data manipulation without giving
- * up direct access to the underlying bytes (`to_bytes()`).
+ * Typed arrays with fixed-width elements: two's complement integers,
+ * from `Int8Array` and `UInt8Array` up to `Int64Array` and
+ * `UInt64Array`, and IEEE 754 floating-point numbers, in `FloatArray`
+ * and `DoubleArray`. Each one stores its elements packed together, in
+ * the platform's byte order. They work alongside `bytes`, and let you
+ * work with binary data at a higher level, while still giving you
+ * direct access to the underlying bytes with `to_bytes()`.
  *
- * All ten classes share the same interface (indexing, `append()`/
- * `insert()`/`remove_at()`/`set()`/`pop()`, `slice()`, `fill()`,
- * `equals()`, iteration via `for x in arr`, and conversion via
- * `to_list()`/`to_bytes()`): see [[array.Int16Array]] for the
- * fully documented shape every other class in this module follows.
+ * All ten classes have the same interface: indexing, `append()`,
+ * `insert()`, `remove_at()`, `set()`, `pop()`, `slice()`, `fill()`,
+ * `equals()`, iteration with `for x in arr`, and conversion with
+ * `to_list()` and `to_bytes()`. [[array.Int16Array]] has the full
+ * documentation, and every other class in this module follows it.
  *
- * `Int64Array`/`UInt64Array` accept and return `bigint` values (in
- * addition to plain integers) for anything past what a regular
- * `number` can hold exactly: see `is_bigint()`.
+ * `Int64Array` and `UInt64Array` accept and return `bigint` values, as
+ * well as plain integers, for anything too large for a `number` to hold
+ * exactly. See `is_bigint()`.
  *
  * ### Example
  *

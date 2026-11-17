@@ -4,20 +4,20 @@
 
 | Operator | Meaning | Example |
 | --- | --- | --- |
-| `+` | addition | `2 + 3` is `5` |
-| `-` | subtraction | `5 - 2` is `3` |
-| `*` | multiplication | `4 * 3` is `12` |
-| `/` | division, always floating point | `7 / 2` is `3.5` |
-| `//` | floor division | `7 // 2` is `3` |
-| `%` | remainder | `7 % 3` is `1` |
-| `**` | exponentiation | `2 ** 10` is `1024` |
+| `+` | Addition | `2 + 3` is `5` |
+| `-` | Subtraction | `5 - 2` is `3` |
+| `*` | Multiplication | `4 * 3` is `12` |
+| `/` | Division (always floating point) | `7 / 2` is `3.5` |
+| `//` | Floor division | `7 // 2` is `3` |
+| `%` | Remainder | `7 % 3` is `1` |
+| `**` | Exponentiation | `2 ** 10` is `1024` |
 
 `/` never truncates. `7 / 2` is `3.5` even though both operands look like
-integers, because there is only one numeric type. When you want the
-integer, ask for it with `//`.
+integers, because Zuri has only one number type. If you want an integer
+result, use `//`.
 
-`//` rounds **towards negative infinity**, while `%` keeps the sign of the
-left operand:
+`//` rounds **toward negative infinity**, and the result of `%` has the same
+sign as the left operand:
 
 ```zuri
 echo -7 // 2
@@ -33,24 +33,24 @@ echo 7 % -3
 1
 ```
 
-`%` works on non-integers too: `7.5 % 2` is `1.5`.
+`%` also works with numbers that aren't whole: `7.5 % 2` is `1.5`.
 
 ## Comparison
 
 | Operator | Meaning |
 | --- | --- |
-| `==` | equal |
-| `!=` | not equal |
-| `<` `<=` `>` `>=` | ordering, numbers only |
+| `==` | Equal |
+| `!=` | Not equal |
+| `<` `<=` `>` `>=` | Ordering (numbers only) |
 
-`==` compares by value for numbers, strings, lists and dictionaries, and by
-identity for everything else. A class changes that for its instances with
-[`@eq`](ch06-03-decorated-methods.md#equality).
+`==` compares numbers, strings, lists and dictionaries by value, and
+everything else by identity. A class can change how its instances are
+compared by defining [`@eq`](ch06-03-decorated-methods.md#equality).
 
 ```zuri
 echo 1 == 1.0
 echo [1, 2] == [1, 2]
-echo {a: 1} == {a: 1}
+echo { a: 1 } == { a: 1 }
 echo '1' == 1
 ```
 
@@ -61,10 +61,11 @@ true
 false
 ```
 
-There is no coercion in `==`. A string is never equal to a number.
+`==` never converts types, so a string is never equal to a number.
 
-The ordering operators are for numbers. Comparing two strings with `<`
-raises a `TypeError`; use `compare()`, which returns `-1`, `0` or `1`:
+The ordering operators only work with numbers. Comparing two strings with
+`<` raises a `TypeError`. Use `compare()` instead, which returns `-1`, `0`
+or `1`:
 
 ```zuri
 echo 'abc'.compare('abd')
@@ -74,18 +75,18 @@ echo 'abc'.compare('abd')
 -1
 ```
 
-## Logic
+## Logical Operators
 
-Zuri spells these as words:
+Zuri uses words for these:
 
 | Operator | Meaning |
 | --- | --- |
-| `and` | true when both sides are truthy |
-| `or` | true when either side is truthy |
-| `!` | negation |
+| `and` | True when both sides are truthy |
+| `or` | True when either side is truthy |
+| `!` | Negation |
 
-`and` and `or` short-circuit, and they return **the operand**, not a
-boolean:
+`and` and `or` short-circuit, and they return **one of their operands**
+rather than a boolean:
 
 ```zuri
 echo 1 and 2
@@ -97,9 +98,9 @@ echo nil or 'fallback'
 fallback
 ```
 
-That is what makes `var name = given or 'anonymous'` work. Remember that
-`0`, `NaN`, `''` and `false` are falsy, so this idiom is only safe when
-those are not legitimate values.
+That's why `var name = given or 'anonymous'` works. Keep in mind that `0`,
+`NaN`, `''` and `false` are all falsy, so only use this idiom when none of
+those are valid values.
 
 ## The Conditional Operator
 
@@ -111,19 +112,20 @@ echo true ? 'yes' : 'no'
 yes
 ```
 
-`cond ? a : b` evaluates `cond`, then exactly one of the branches.
+`cond ? a : b` evaluates `cond`, and then evaluates only one of the two
+branches.
 
-## Bitwise
+## Bitwise Operators
 
 | Operator | Meaning |
 | --- | --- |
-| `&` | and |
-| `\|` | or |
-| `^` | xor |
-| `~` | not |
-| `<<` | left shift |
-| `>>` | arithmetic right shift, sign preserving |
-| `>>>` | logical right shift, zero filling |
+| `&` | And |
+| `\|` | Or |
+| `^` | Exclusive or |
+| `~` | Not |
+| `<<` | Left shift |
+| `>>` | Arithmetic right shift (keeps the sign) |
+| `>>>` | Logical right shift (fills with zeros) |
 
 ```zuri
 echo ~5
@@ -141,7 +143,8 @@ Bitwise operators work on the integer value of a number, and on bigints.
 
 ## Concatenation and Repetition
 
-`+` on a string concatenates, and a number on either side is converted:
+When one side of `+` is a string, `+` concatenates, and a number on the
+other side is converted to a string:
 
 ```zuri
 echo 'n=' + 5
@@ -151,7 +154,7 @@ echo 'n=' + 5
 n=5
 ```
 
-`+` on a list concatenates; `*` repeats:
+With lists, `+` concatenates and `*` repeats:
 
 ```zuri
 echo [1, 2] + [3]
@@ -163,10 +166,10 @@ echo [1, 2] * 2
 [1, 2, 1, 2]
 ```
 
-Dictionaries do not support `+`. Use `extend()`.
+Dictionaries don't support `+`. Use `extend()` instead.
 
-Anything the language does not define raises a `TypeError` that names the
-exact signature:
+If you use an operator with types it doesn't support, you get a `TypeError`
+that shows the exact combination of types:
 
 ```zuri
 catch {
@@ -180,30 +183,31 @@ catch {
 operator '+' not defined for call signature (nil, number)
 ```
 
-Classes can define what `+` and every other operator mean for their own
-instances. That is [Chapter 6](ch06-03-decorated-methods.md).
+Classes can define what `+` and the other operators do for their instances.
+That's covered in [Chapter 6](ch06-03-decorated-methods.md).
 
-## Member, Index and Slice
+## Member Access, Indexing and Slicing
 
 | Syntax | Meaning |
 | --- | --- |
-| `x.name` | member of an object, dictionary or module |
-| `x[key]` | index with a computed key |
-| `x[a, b]` | slice from `a` up to but not including `b` |
-| `x[, b]` | slice from the start |
-| `x[a, ]` | slice to the end |
-| `a..b` | a range value |
+| `x.name` | A member of an object, dictionary or module |
+| `x[key]` | Index with a computed key |
+| `x[a, b]` | Slice from `a` up to but not including `b` |
+| `x[, b]` | Slice from the start |
+| `x[a, ]` | Slice to the end |
+| `a..b` | A range |
 
-Negative indices count back from the end, for both strings and lists.
+Negative indexes count back from the end, for both strings and lists.
 
 ## Precedence
 
-From tightest to loosest. Everything on one row binds equally and
-associates left to right, except `**`, which associates right to left.
+The table lists operators from highest to lowest precedence. Operators on
+the same row have equal precedence and associate from left to right, except
+for `**`, which associates from right to left.
 
 | Level | Operators |
 | --- | --- |
-| 1 | literals, `(...)`, `[...]`, `{...}`, `self`, `parent` |
+| 1 | Literals, `(...)`, `[...]`, `{...}`, `self`, `parent` |
 | 2 | `..` |
 | 3 | `.` `()` `[]` |
 | 4 | `++` `--` |
@@ -219,11 +223,11 @@ associates left to right, except `**`, which associates right to left.
 | 14 | `and` |
 | 15 | `or` |
 | 16 | `? :` |
-| 17 | `=` and every compound assignment |
+| 17 | `=` and the compound assignment operators |
 
-**`**` follows the mathematical convention.** It binds tighter than
-multiplication and tighter than a unary operator written before it, and it
-groups from the right:
+**`**` follows the usual mathematical convention.** It binds more tightly
+than multiplication and more tightly than a unary operator in front of it,
+and it groups from the right:
 
 ```zuri
 echo 2 * 3 ** 2
@@ -239,17 +243,18 @@ echo 2 ** -1
 0.5
 ```
 
-`2 * 3 ** 2` is `2 * (3 ** 2)`, `2 ** 3 ** 2` is `2 ** (3 ** 2)`, and
-`-2 ** 2` is `-(2 ** 2)`. The exponent itself may carry a sign, so
-`2 ** -1` needs no parentheses. Write `(-2) ** 2` to raise a negative
-number.
+`2 * 3 ** 2` means `2 * (3 ** 2)`, `2 ** 3 ** 2` means `2 ** (3 ** 2)`, and
+`-2 ** 2` means `-(2 ** 2)`. The exponent can have its own sign, so
+`2 ** -1` doesn't need parentheses. To raise a negative number to a power,
+write `(-2) ** 2`.
 
-**`..` binds very tightly**, to primaries only. `1 + 2..5` parses as
-`1 + (2..5)`. Parenthesise any range whose endpoints are expressions.
+**`..` binds very tightly**, to primary expressions only. `1 + 2..5` is
+parsed as `1 + (2..5)`, so put parentheses around a range whose endpoints
+are expressions.
 
-## Operators Zuri Does Not Have
+## Operators Zuri Doesn't Have
 
-There is no `in` operator for membership; use `contains()`. There is no
-`?.` optional chaining and no `??` null coalescing; `or` covers the common
-case. There is no comma operator, and no `+=` on a member that does not
-already exist.
+There's no `in` operator for checking membership, so use `contains()`
+instead. There's no optional chaining with `?.` and no null coalescing with
+`??`, but `or` handles the most common case. There's also no comma operator,
+and you can't use `+=` on a member that doesn't exist yet.

@@ -54,7 +54,11 @@ http.serve(http_concurrency_app.routes, {
     isolate.spawn(http_concurrency_client.hold_half_a_request, ready, at, 3)
 
     isolate.spawn(
-      http_concurrency_client.time_a_latecomer, ready, results, at, holders + 1,
+      http_concurrency_client.time_a_latecomer,
+      ready,
+      results,
+      at,
+      holders + 1,
     )
   },
 })
@@ -64,9 +68,9 @@ var timing = results.recv(30000)
 assert timing != nil, 'the latecomer got an answer at all'
 assert timing[0] == 200, 'and was served properly'
 assert timing[1] < 1000,
-  'a client arriving while every connection is parked and idle is served ' +
-    'promptly, in ${timing[1] // 1}ms, rather than after an idle peer ' +
-    'releases the worker'
+    'a client arriving while every connection is parked and idle is served ' +
+        'promptly, in ${timing[1] // 1}ms, rather than after an idle peer ' +
+        'releases the worker'
 
 echo '  [PASS] one worker serves many connections at once (${timing[1] // 1}ms)'
 echo ''

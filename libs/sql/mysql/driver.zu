@@ -1,9 +1,8 @@
 /**
  * @module driver
  *
- * Opening MySQL and MariaDB connections: reading a connection string,
- * establishing the socket, upgrading it to TLS when asked, and
- * authenticating.
+ * Opens MySQL and MariaDB connections: reads a connection string, opens
+ * the socket, upgrades it to TLS if requested, and authenticates.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -14,8 +13,12 @@ import net.unix
 import url
 
 import ..driver {
-  Driver, default_capabilities, READ_COMMITTED, REPEATABLE_READ,
-  SERIALIZABLE, READ_UNCOMMITTED,
+  Driver,
+  default_capabilities,
+  READ_COMMITTED,
+  REPEATABLE_READ,
+  SERIALIZABLE,
+  READ_UNCOMMITTED,
 }
 import ..errors { ConnectionError, NotSupportedError }
 import ..params { QUESTION }
@@ -35,28 +38,28 @@ var DEFAULT_PORT = 3306
 var DEFAULT_TIMEOUT = 30000
 
 /**
- * Most parameters one statement can bind. The protocol counts them in
- * a 16 bit field, so this is a hard limit rather than a configured
- * one.
+ * The largest number of parameters one statement can bind. The protocol
+ * counts them in a 16-bit field, so this is a hard limit, not a
+ * setting.
  */
 var MAX_PARAMETERS = 65535
 
 /**
- * What `sslmode` can be.
+ * The values that `sslmode` can have.
  *
  * | Mode | Meaning |
  * | - | - |
  * | `disable` | Never use TLS. |
- * | `prefer` | Where the server offers it, unverified; in the clear where it does not. |
- * | `require` | Insist on TLS, without checking who the server is. |
- * | `verify` | Insist on TLS and check the server's certificate and host name. |
+ * | `prefer` | Use TLS without verification if the server offers it, and plain text if it doesn't. |
+ * | `require` | Require TLS, without checking who the server is. |
+ * | `verify` | Require TLS, and check the server's certificate and host name. |
  *
- * MySQL's own spellings are accepted too. `DISABLED`, `PREFERRED` and
- * `REQUIRED` mean what they say; `VERIFY_CA` and `VERIFY_IDENTITY`
- * both become `verify`. That makes `VERIFY_CA` stricter here than on
- * the command line, where it checks the certificate but not the name:
- * the difference can only cause a connection to be refused, never to
- * be wrongly trusted.
+ * MySQL's own names are accepted too. `DISABLED`, `PREFERRED` and
+ * `REQUIRED` mean what they say, and `VERIFY_CA` and `VERIFY_IDENTITY`
+ * both become `verify`. That makes `VERIFY_CA` stricter here than in
+ * the MySQL command-line client, where it checks the certificate but
+ * not the host name. The difference can only cause a connection to be
+ * refused, never to be wrongly trusted.
  */
 var SSL_MODES = ['disable', 'prefer', 'require', 'verify']
 
@@ -114,13 +117,13 @@ class MySqlDriver < Driver {
   }
 
   /**
-   * What MySQL can do.
+   * What MySQL supports.
    *
-   * `last_insert_id` is true and `returning` is false, which together
-   * are the most visible difference from PostgreSQL: an insert that
-   * wants its id back reads it from what the server reported rather
-   * than from a `RETURNING` clause, and `Connection.insert()` picks
-   * between the two on its own.
+   * `last_insert_id` is true and `returning` is false. Together, these
+   * are the most visible difference from PostgreSQL. An insert that
+   * needs its ID back reads the ID the server reported, instead of
+   * using a `RETURNING` clause, and `Connection.insert()` chooses
+   * between the two automatically.
    *
    * @returns dict
    */
@@ -136,7 +139,10 @@ class MySqlDriver < Driver {
     # around it, on MariaDB as much as MySQL.
     caps.set('transactional_ddl', false)
     caps.set('isolation_levels', [
-      READ_UNCOMMITTED, READ_COMMITTED, REPEATABLE_READ, SERIALIZABLE,
+      READ_UNCOMMITTED,
+      READ_COMMITTED,
+      REPEATABLE_READ,
+      SERIALIZABLE,
     ])
     caps.set('server_side_cursors', true)
     caps.set('json', true)
@@ -203,7 +209,7 @@ class MySqlDriver < Driver {
     if !is_string(dsn) {
       raise ConnectionError(
         'a ${self.name()} connection string is a string or a ' +
-          'dictionary, not ${typeof(dsn)}',
+            'dictionary, not ${typeof(dsn)}',
         { driver: self.name() },
       )
     }
@@ -231,9 +237,9 @@ class MySqlDriver < Driver {
   connect(options: dict) {
     var socket = self._socket_path(options)
 
-    var stream = socket != nil ?
-      self._open_unix(socket, options) :
-      self._open_socket(options)
+    var stream = socket != nil
+        ? self._open_unix(socket, options)
+        : self._open_socket(options)
 
     var protocol = Protocol(PacketStream(stream))
 
@@ -298,7 +304,7 @@ class MySqlDriver < Driver {
     if !unix.is_supported() {
       raise NotSupportedError(
         'this platform has no unix domain sockets; connect over TCP ' +
-          'by giving a host name or address instead of ${path}',
+            'by giving a host name or address instead of ${path}',
         { driver: self.name() },
       )
     }
@@ -310,10 +316,9 @@ class MySqlDriver < Driver {
       stream.set_read_timeout(options.timeout)
       stream.set_write_timeout(options.timeout)
     } as error {
-      raise ConnectionError(
-        'could not connect to ${path}: ${error.message}',
-        { driver: self.name() },
-      )
+      raise ConnectionError('could not connect to ${path}: ${error.message}', {
+        driver: self.name(),
+      })
     }
 
     return stream
@@ -349,8 +354,8 @@ class MySqlDriver < Driver {
       config.add_ca_pem(options.ssl_ca)
     }
 
-    if options.get('ssl_cert', nil) != nil
-      and options.get('ssl_key', nil) != nil {
+    if options.get('ssl_cert', nil) != nil and
+        options.get('ssl_key', nil) != nil {
       config.set_cert_chain(options.ssl_cert, options.ssl_key)
     }
 
@@ -385,8 +390,7 @@ class MySqlDriver < Driver {
         connection.close()
 
         raise ConnectionError(
-          'could not set the session time zone to ${zone}: ' +
-            error.message,
+          'could not set the session time zone to ${zone}: ' + error.message,
           { driver: self.name() },
         )
       }
@@ -448,9 +452,9 @@ class MySqlDriver < Driver {
     # is the one meant.
     if parsed.query != nil and !parsed.query.is_empty() {
       for key, values in url.parse_query(parsed.query) {
-        var value = is_list(values) ?
-          (values.is_empty() ? '' : values[values.length() - 1]) :
-          values
+        var value = is_list(values)
+            ? (values.is_empty() ? '' : values[values.length() - 1])
+            : values
 
         options.set(key, value)
       }
@@ -472,7 +476,7 @@ class MySqlDriver < Driver {
       if mark == -1 {
         raise ConnectionError(
           'the connection string has "${pair}" where a name=value pair ' +
-            'was expected',
+              'was expected',
           { driver: self.name() },
         )
       }
@@ -501,9 +505,9 @@ class MySqlDriver < Driver {
       }
     }
 
-    if !options.contains('host')
-      or options.host == nil
-      or options.host.is_empty() {
+    if !options.contains('host') or
+        options.host == nil or
+        options.host.is_empty() {
       options.set('host', '127.0.0.1')
     }
 
@@ -511,10 +515,12 @@ class MySqlDriver < Driver {
     # that has to be a number or a flag is converted once, here.
     options.set('port', _number_of(options.get('port', nil), DEFAULT_PORT))
     options.set(
-      'timeout', _number_of(options.get('timeout', nil), DEFAULT_TIMEOUT),
+      'timeout',
+      _number_of(options.get('timeout', nil), DEFAULT_TIMEOUT),
     )
     options.set(
-      'compress_level', _number_of(options.get('compress_level', nil), 3),
+      'compress_level',
+      _number_of(options.get('compress_level', nil), 3),
     )
 
     if !options.contains('user') or options.user == nil {
@@ -522,7 +528,8 @@ class MySqlDriver < Driver {
     }
 
     options.set(
-      'sslmode', _ssl_mode_of(options.get('sslmode', nil), self.name()),
+      'sslmode',
+      _ssl_mode_of(options.get('sslmode', nil), self.name()),
     )
 
     for flag in ['multiple_statements', 'found_rows'] {

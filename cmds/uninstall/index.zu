@@ -1,7 +1,7 @@
 /**
  * @command uninstall
- * @description Removes packages from the project, along with 
- *    dependencies that are only needed by them.
+ * @description Removes packages from a project, along with any
+ *    dependencies that only they need.
  *
  *   zuri uninstall <package...> [options]
  *
@@ -25,22 +25,30 @@ import .._shared.ui
 def parser() {
   var parser = args.Parser('zuri uninstall', true)
 
-  parser.description = 'Removes packages from the project, along with dependencies that are only needed by them.'
+  parser.description = 'Removes packages from a project, along with any dependencies that only they need.'
 
-  parser.add_index('packages', 'The packages to remove',
-    { type: args.LIST, metavar: 'package', required: true })
+  parser.add_index('packages', 'The packages to remove', {
+    type: args.LIST,
+    metavar: 'package',
+    required: true,
+  })
   parser.add_option(
-    'global', 'Remove from this user rather than the project',
+    'global',
+    'Remove the packages from your user instead of the project',
     { short_name: 'g' },
   )
   parser.add_option(
-    'dry-run', 'Show what would change and change nothing', { short_name: 'n' },
+    'dry-run',
+    'Show what would change without changing anything',
+    { short_name: 'n' },
   )
-  parser.add_option('no-hooks', 'Run no uninstall scripts at all', nil)
-  parser.add_option('allow-hooks',
-    'Let these packages run their scripts this time',
-    { type: args.LIST, metavar: 'package' })
-  parser.add_option('quiet', 'Print only the result', { short_name: 'q' })
+  parser.add_option('no-hooks', 'Don\'t run any uninstall scripts', nil)
+  parser.add_option(
+    'allow-hooks',
+    'Allow these packages to run their scripts this time',
+    { type: args.LIST, metavar: 'package' },
+  )
+  parser.add_option('quiet', 'Only print the result', { short_name: 'q' })
 
   return parser
 }
@@ -65,7 +73,9 @@ def main() {
   var parsed = parser().parse()
   var options = cli.sync_options(parsed)
   var workspace = cli.workspace(
-    'uninstall', parsed.options.get('global', false) == true, options,
+    'uninstall',
+    parsed.options.get('global', false) == true,
+    options,
   )
   var removed = []
 
@@ -80,12 +90,14 @@ def main() {
 
     if !who.is_empty() {
       raise UsageError(
-        "'${name}' is not declared in project.toml; it is installed because "
-          + '${", ".join(who)} ${who.length() == 1 ? "needs" : "need"} it',
+        "'${name}' is not declared in project.toml; it is installed because " +
+            '${", ".join(who)} ${who.length() == 1 ? "needs" : "need"} it',
       )
     }
 
-    raise UsageError("'${name}' is not a dependency of ${workspace.display_name()}")
+    raise UsageError(
+      "'${name}' is not a dependency of ${workspace.display_name()}",
+    )
   }
 
   var resolved = sync.resolve(workspace)
@@ -98,8 +110,10 @@ def main() {
     if lock.has(name) {
       var who = _needed_by(lock, name)
 
-      echo ui.muted('${name} stays installed, because ${", ".join(who)} '
-        + '${who.length() == 1 ? "needs" : "need"} it.')
+      echo ui.muted(
+        '${name} stays installed, because ${", ".join(who)} ' +
+            '${who.length() == 1 ? "needs" : "need"} it.',
+      )
     }
   }
 }

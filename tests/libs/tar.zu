@@ -54,7 +54,7 @@ var archive = t.get_archive()
 
 assert typeof(archive) == 'bytes', 'get_archive() must return raw bytes'
 assert archive.length() % 512 == 0,
-  'a tar archive must be block-aligned to 512 bytes'
+    'a tar archive must be block-aligned to 512 bytes'
 ok('in-memory Tar build produces a block-aligned archive')
 
 var archive_path = os.join_paths(_root, 'plain.tar')
@@ -66,9 +66,9 @@ var entries = reader.contents()
 assert entries.length() == 2, 'contents() must list both entries'
 assert entries[0].filename == 'a.txt', 'first entry filename must round-trip'
 assert entries[0].size == 'hello world'.length(),
-  'first entry size must round-trip'
+    'first entry size must round-trip'
 assert entries[1].filename == 'sub/b.txt',
-  'second entry filename (with a directory component) must round-trip'
+    'second entry filename (with a directory component) must round-trip'
 ok('contents() lists entries with correct filename and size, uncompressed')
 
 var out_dir = os.join_paths(_root, 'plain_out')
@@ -76,13 +76,15 @@ var extractor = tar.Tar()
 extractor.open(archive_path)
 var extracted = extractor.extract(out_dir)
 assert extracted.length() == 2, 'extract() must report both entries extracted'
-assert file(os.join_paths(out_dir, 'a.txt'), 'rb').read().to_string()
-  == 'hello world',
-  'extracted top-level file content must match exactly'
-assert file(os.join_paths(out_dir, 'sub/b.txt'), 'rb').read().to_string()
-  == 'second file content',
-  'extracted nested file content must match exactly'
-ok('extract() writes correct content for both a top-level and a nested entry, uncompressed')
+assert file(os.join_paths(out_dir, 'a.txt'), 'rb').read().to_string() ==
+    'hello world',
+    'extracted top-level file content must match exactly'
+assert file(os.join_paths(out_dir, 'sub/b.txt'), 'rb').read().to_string() ==
+    'second file content',
+    'extracted nested file content must match exactly'
+ok(
+  'extract() writes correct content for both a top-level and a nested entry, uncompressed',
+)
 
 # ---------------------------------------------------------------------------
 # Checksum validation actually runs (was previously disabled entirely)
@@ -99,7 +101,7 @@ corrupt_reader.open(corrupt_path)
 assert raises(@() {
   corrupt_reader.contents()
 }),
-  'a header whose checksum no longer matches its (now corrupted) content must raise, not silently pass'
+    'a header whose checksum no longer matches its (now corrupted) content must raise, not silently pass'
 ok('checksum validation actually rejects a corrupted header')
 
 # ---------------------------------------------------------------------------
@@ -115,11 +117,13 @@ t_gz.close()
 var gz_out = os.join_paths(_root, 'gz_out')
 var gz_extracted = tar.extract(gz_path, gz_out)
 assert gz_extracted.length() == 1,
-  'gzip-compressed archive must extract its one entry'
-assert file(os.join_paths(gz_out, 'gz.txt'), 'rb').read().to_string()
-  == 'gzip compressed content',
-  'content extracted from a gzip-compressed archive must match exactly'
-ok('gzip-compressed tar: create() + close() then extract() round-trips correctly')
+    'gzip-compressed archive must extract its one entry'
+assert file(os.join_paths(gz_out, 'gz.txt'), 'rb').read().to_string() ==
+    'gzip compressed content',
+    'content extracted from a gzip-compressed archive must match exactly'
+ok(
+  'gzip-compressed tar: create() + close() then extract() round-trips correctly',
+)
 
 # ---------------------------------------------------------------------------
 # BZIP2 compression
@@ -134,22 +138,24 @@ t_bz.close()
 var bz_out = os.join_paths(_root, 'bz_out')
 var bz_extracted = tar.extract(bz_path, bz_out)
 assert bz_extracted.length() == 1,
-  'bzip2-compressed archive must extract its one entry'
-assert file(os.join_paths(bz_out, 'bz.txt'), 'rb').read().to_string()
-  == 'bzip2 compressed content',
-  'content extracted from a bzip2-compressed archive must match exactly'
-ok('bzip2-compressed tar: create() + close() then extract() round-trips correctly')
+    'bzip2-compressed archive must extract its one entry'
+assert file(os.join_paths(bz_out, 'bz.txt'), 'rb').read().to_string() ==
+    'bzip2 compressed content',
+    'content extracted from a bzip2-compressed archive must match exactly'
+ok(
+  'bzip2-compressed tar: create() + close() then extract() round-trips correctly',
+)
 
 # ---------------------------------------------------------------------------
 # Auto-detection of compression from file extension / magic bytes
 # ---------------------------------------------------------------------------
 var auto_reader = tar.Tar()
 assert auto_reader.file_type(gz_path) == tar.COMPRESS_GZIP,
-  'file_type() must detect gzip from real magic bytes'
+    'file_type() must detect gzip from real magic bytes'
 assert auto_reader.file_type(bz_path) == tar.COMPRESS_BZIP,
-  'file_type() must detect bzip2 from real magic bytes'
+    'file_type() must detect bzip2 from real magic bytes'
 assert auto_reader.file_type(archive_path) == tar.COMPRESS_NONE,
-  'file_type() on a plain .tar must fall back to no compression'
+    'file_type() on a plain .tar must fall back to no compression'
 ok('file_type() auto-detects compression from magic bytes')
 
 # ---------------------------------------------------------------------------
@@ -170,7 +176,7 @@ var bin_out = os.join_paths(_root, 'binary_out')
 tar.extract(bin_path, bin_out)
 var bin_result = file(os.join_paths(bin_out, 'binary.dat'), 'rb').read()
 assert bin_result == binary_data,
-  'every byte value 0..255 must survive the archive round trip unchanged'
+    'every byte value 0..255 must survive the archive round trip unchanged'
 ok('binary content (all 256 byte values) survives compress/extract unchanged')
 
 # ---------------------------------------------------------------------------
@@ -187,7 +193,7 @@ var dir_reader = tar.Tar()
 dir_reader.open(dir_path)
 var dir_entries = dir_reader.contents()
 assert dir_entries[0].typeflag == 0,
-  'a regular file entry must have typeflag 0, not be mistaken for a directory'
+    'a regular file entry must have typeflag 0, not be mistaken for a directory'
 ok('a regular file is never misclassified as a directory (typeflag check)')
 
 # ---------------------------------------------------------------------------
@@ -195,7 +201,7 @@ ok('a regular file is never misclassified as a directory (typeflag check)')
 # ---------------------------------------------------------------------------
 var long_name = 'a/' * 60 + 'file.txt' # well over the 100-char ustar limit
 assert long_name.length() > 100,
-  'the test filename itself must actually exceed 100 characters'
+    'the test filename itself must actually exceed 100 characters'
 
 var t_long = tar.Tar()
 t_long.create()
@@ -208,18 +214,18 @@ var long_reader = tar.Tar()
 long_reader.open(long_path)
 var long_entries = long_reader.contents()
 assert long_entries.length() == 1,
-  'a GNU-longlink entry must still be read back as exactly one entry'
+    'a GNU-longlink entry must still be read back as exactly one entry'
 assert long_entries[0].filename == long_name,
-  'the full long filename must survive the GNU longlink round trip, not just the first 100 characters'
+    'the full long filename must survive the GNU longlink round trip, not just the first 100 characters'
 ok('GNU longlink correctly round-trips a filename over 100 characters')
 
 var long_out = os.join_paths(_root, 'longname_out')
 var long_extracted = tar.extract(long_path, long_out)
 assert long_extracted.length() == 1,
-  'extract() must recover the one long-named entry'
-assert file(os.join_paths(long_out, long_name), 'rb').read().to_string()
-  == 'content behind a long name',
-  'extracted content for a long-named entry must match exactly'
+    'extract() must recover the one long-named entry'
+assert file(os.join_paths(long_out, long_name), 'rb').read().to_string() ==
+    'content behind a long name',
+    'extracted content for a long-named entry must match exactly'
 ok('GNU longlink entry extracts to the correct path with correct content')
 
 # ---------------------------------------------------------------------------
@@ -230,18 +236,19 @@ fresh_dir(src_dir)
 file(os.join_paths(src_dir, 'one.txt'), 'wb').write('first file'.to_bytes())
 os.create_dir(os.join_paths(src_dir, 'nested'), nil, true)
 file(
-  os.join_paths(src_dir, 'nested/two.txt'), 'wb',
+  os.join_paths(src_dir, 'nested/two.txt'),
+  'wb',
 ).write('second file'.to_bytes())
 
 var free_dest = os.join_paths(_root, 'free_fn.tar.gz')
 tar.compress(src_dir, free_dest)
 assert file(free_dest, 'rb').exists(),
-  'compress() must produce the requested destination archive'
+    'compress() must produce the requested destination archive'
 
 var free_out = os.join_paths(_root, 'free_fn_out')
 var free_extracted = tar.extract(free_dest, free_out)
 assert free_extracted.length() == 2,
-  'extract() via the free function must recover both files'
+    'extract() via the free function must recover both files'
 ok('free compress()/extract() helpers round-trip a directory tree')
 
 # ---------------------------------------------------------------------------
@@ -250,22 +257,25 @@ ok('free compress()/extract() helpers round-trip a directory tree')
 assert raises(@() {
   tar.Tar().extract(os.join_paths(_root, 'nope_out'))
 }),
-  'extract() on a Tar that was never open()ed or create()d must raise, not silently do nothing'
+    'extract() on a Tar that was never open()ed or create()d must raise, not silently do nothing'
 ok('extract() without a prior open() raises')
 
 assert raises(@() {
   tar.extract(
-    os.join_paths(_root, 'does-not-exist.tar.gz'), os.join_paths(_root, 'x'),
+    os.join_paths(_root, 'does-not-exist.tar.gz'),
+    os.join_paths(_root, 'x'),
   )
 }),
-  'extracting a nonexistent archive must raise'
+    'extracting a nonexistent archive must raise'
 ok('extract() on a nonexistent file raises')
 
 # ---------------------------------------------------------------------------
 # Entries that would land outside the output directory
 # ---------------------------------------------------------------------------
 for escaping in [
-  '../escaped.txt', 'inside/../../escaped.txt', '/tmp/escaped-absolute.txt',
+  '../escaped.txt',
+  'inside/../../escaped.txt',
+  '/tmp/escaped-absolute.txt',
 ] {
   var slip_archive = os.join_paths(_root, 'slip.tar')
   var slip_out = os.join_paths(_root, 'slip_out')
@@ -288,9 +298,9 @@ for escaping in [
   }
 
   assert refused,
-    'an entry named "${escaping}" must be refused with TarCorruptedError'
+      'an entry named "${escaping}" must be refused with TarCorruptedError'
   assert !file(os.join_paths(_root, 'escaped.txt')).exists(),
-    'nothing may be written outside the output directory'
+      'nothing may be written outside the output directory'
 }
 ok('extract() refuses entries that climb out of the output directory')
 

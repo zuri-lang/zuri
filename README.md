@@ -7,8 +7,8 @@
 </p>
 
 <p align="center">
-  Stop learning an entire constellation of third-party tools just to
-  build on the web.
+  A dynamic language for building web applications, with the standard
+  library and the tools you need included in the install.
 </p>
 
 <p align="center">
@@ -23,14 +23,16 @@
   <a href="LICENSE">BSD 2-Clause</a>
 </p>
 
-<p align="center">
-  The runtime, a standard library for the whole stack, a JIT compiler,
-  a test runner, a formatter, a language server, a package manager, a
-  package registry and a bundler that ships your program to machines
-  without Zuri. One download.
-</p>
+Every Zuri installation comes packed with the runtime and its JIT
+compiler, a standard library that covers everything from HTTP to
+databases to image processing, and the tools you would normally install
+one by one: a test runner, a formatter, a language server, a package
+manager, a package registry and a bundler for shipping your program to
+machines that don't have Zuri installed.
 
 ## Install
+
+On Linux and macOS:
 
 ```sh
 curl -fsSL https://zuri-lang.github.io/zuri/install.sh | sh
@@ -42,56 +44,50 @@ On Windows, in PowerShell:
 powershell -c "irm https://zuri-lang.github.io/zuri/install.ps1 | iex"
 ```
 
-Releases cover Linux and macOS on x86-64 and ARM, and Windows on
-x86-64. `zuri upgrade` keeps an installation current, and
-[Installation](docs/book/src/ch01-01-installation.md) covers choosing
-a version and building from source.
+Prebuilt releases are available for Linux and macOS on x86-64 and ARM,
+and for Windows on x86-64. There are two Linux builds: one for glibc 2.28
+or later, and one for musl-based systems such as Alpine.
 
-## From `zuri init` to a Shipped Executable
+Run `zuri upgrade` to update Zuri itself. The
+[installation guide](docs/book/src/ch01-01-installation.md) explains how
+to install a specific version or build Zuri from source.
 
-The whole lifecycle of a project, with nothing installed but Zuri:
+## A Quick Tour
+
+Here is the life of a project, from creating it to shipping it, using
+nothing but the `zuri` command:
 
 ```console
-$ zuri init weather --yes       # a project, with tests and a README
+$ zuri init weather --yes       # create a project with a test and a README
 $ cd weather
-$ zuri install thermo           # a dependency, resolved into a lockfile
-$ zuri run                      # run it
-$ zuri run -w                   # and again on every change
-$ zuri test                     # every test file, each in its own process
-$ zuri fmt                      # one house style
-$ zuri bundle --format exe      # one file that runs where Zuri is not installed
-$ zuri publish                  # share it
+$ zuri install thermo           # add a dependency
+$ zuri run                      # run the project
+$ zuri run -w                   # run it again whenever a file changes
+$ zuri test                     # run the tests
+$ zuri fmt                      # format the code
+$ zuri bundle --format exe      # build a standalone executable
+$ zuri publish                  # publish the package to a registry
 ```
 
-## Philosophy
+## Why Zuri?
 
-Software creation has become buried beneath endless layers of glue code,
-external configs and shifting package ecosystems. Zuri brings the focus
-back to writing software: one cohesive platform, one documentation site,
-and zero framework fatigue.
+In most languages, the language is only the start. Before you can serve
+a web page or save a record to a database, you have to choose a package
+manager, an HTTP framework, an ORM, a validation library, a template
+engine and a test runner. Each one comes from a different author, has
+its own conventions and its own documentation, and you spend more time
+learning how they fit together than learning the language.
 
-## The Ecosystem Tax
+Zuri is built the other way around. The runtime, the HTTP server, the
+database layer and the tooling were designed together. They follow the
+same naming conventions, report errors the same way, and are documented
+in one book and one reference.
 
-When you pick up a modern language, you do not just learn that language.
+## Example
 
-To serve a single web page or persist a record, you must research,
-evaluate and configure dozens of disconnected third-party libraries. You
-learn a package manager. You choose an HTTP framework, select an ORM,
-find a validation library, wire up a template engine, pick a test
-runner. Every piece comes from a different author, follows conflicting
-conventions, and keeps its own documentation in its own shape.
-
-You spend twenty percent of your time learning core concepts and eighty
-percent wrestling with arbitrary tool churn.
-
-**Zuri removes that tax.** The runtime, the server, the data layer and
-the utility toolchain were designed together and speak the same
-conceptual dialect. When you learn Zuri, you already know the stack.
-
-## Everything Speaks the Same Dialect
-
-This is a whole application. Every import below is in the box: nothing
-was installed, nothing was resolved, nothing was configured.
+The following program is a small web service that validates sign-ups.
+Everything it imports is part of the standard library, so you can run it
+straight after installing Zuri.
 
 ```zuri
 import http
@@ -120,63 +116,65 @@ server.post('/signup', @(request, response) {
 server.listen()
 ```
 
-There is one binary and the library that ships beside it. Zuri has
-first-class language-level support for package management and vendoring,
-so the code you bring in from outside needs no third-party tooling
-either.
+When you do need code from outside the standard library, package
+management is built into the language and the `zuri` command, along with
+support for vendoring, so you don't need any other tools for that either.
 
-Every module in it was built by the same hands:
+## The Standard Library
 
-| | |
+| Area | Modules |
 | --- | --- |
-| **The web** | `http` (server, client, HTTP/2, WebSocket), `wire` (templates), `html` (HTML5 parser, CSS selectors), `url`, `mime` |
-| **Mail** | `mail` (SMTP, IMAP and POP3, clients and servers) |
+| **Web** | `http` (server, client, HTTP/2, WebSocket), `wire` (templates), `html` (HTML5 parser, CSS selectors), `url`, `mime` |
+| **Mail** | `mail` (SMTP, IMAP and POP3 clients and servers) |
 | **Networking** | `net` (TCP, UDP, TLS, DTLS, addresses, polling), `rpc` (JSON-RPC 2.0) |
 | **Data** | `sql` (SQLite, PostgreSQL, MySQL, MariaDB), `json`, `yaml`, `toml`, `csv`, `struct`, `base64`, `convert` |
-| **Correctness** | `validate`, `types`, `enum` |
+| **Validation and types** | `validate`, `types`, `enum` |
 | **Security** | `crypto`, `hash`, `bcrypt`, `jwt`, `uuid` |
-| **The machine** | `os`, `env`, `io`, `args`, `log`, `stat`, `date` (with the IANA time zones) |
-| **Concurrency** | `isolate` (real OS threads, separate heaps, message passing) |
-| **Numbers** | `math`, `array` (typed arrays), `set` |
-| **Archives** | `compress` (gzip, zlib, deflate, bzip2, brotli, zstd, lz4, tar, zip) |
-| **Images and colour** | `imagine` (decode, draw, filter, encode), `colors` (colour spaces, terminal colour) |
+| **System** | `os`, `env`, `io`, `args`, `log`, `stat`, `date` (with IANA time zones) |
+| **Concurrency** | `isolate` (OS threads with separate heaps and message passing) |
+| **Numbers and collections** | `math`, `array` (typed arrays), `set` |
+| **Compression** | `compress` (gzip, zlib, deflate, bzip2, brotli, zstd, lz4, tar, zip) |
+| **Images and color** | `imagine` (decoding, drawing, filters, encoding), `colors` (color spaces, terminal colors) |
 | **Interop** | `ffi` (C and Rust libraries, callbacks) |
 | **Testing** | `test` (suites, expectations, mocks and spies) |
 | **Metaprogramming** | `zuri` (lexer, parser, compiler, reflection) |
 
-Because every one of them was designed together, moving between a
-database query, a hash and an HTTP response costs you no mental
-friction. The naming is the same. The error types are the same. The
-documentation is one book.
+Because these modules were written together, switching from a database
+query to a hash to an HTTP response doesn't mean switching styles. The
+names, the error types and the documentation all follow the same
+patterns.
 
-## The Toolchain Is in the Binary
+## The Toolchain
 
-Every tool below ships inside `zuri`, was designed alongside the
-language it serves, and is documented in the same book.
+The whole toolchain is built into the `zuri` binary, so there's nothing
+extra to install.
 
-| Command | What it gives you |
+| Command | Description |
 | --- | --- |
-| `zuri` | the REPL |
-| `zuri run` | runs a script, a package, or a whole directory; with `-w`, runs it again whenever a file it uses changes |
-| `zuri init` | starts a project: a manifest, an app module, a test and a README |
-| `zuri test` | runs the tests, every file in a process of its own, as many at once as `--jobs` allows |
-| `zuri fmt` | lays out Zuri source in one house style; `--dry-run` is the check a commit hook or CI job runs |
-| `zuri lsp` | a language server: completion, navigation, diagnostics, refactoring and test running in any editor |
-| `zuri install`, `update`, `restore`, `uninstall` | dependencies from version ranges, resolved into a lockfile with one version of every package |
-| `zuri publish`, `yank`, `owner`, `account` | sharing your own packages on a registry |
-| `zuri serve` | Nyssa, a complete package repository with its own website |
-| `zuri bundle` | your program and the runtime, as a directory, an archive, a single executable or a macOS app |
-| `zuri upgrade` | moves the installation to a newer release, checked against its published checksum |
-| `zuri <yours>` | commands of your own, from a project's `.zuri/cmds` or from a package |
+| `zuri` | Starts the interactive REPL. |
+| `zuri run` | Runs a script, a package or a directory. With `-w`, runs it again whenever a file it uses changes. |
+| `zuri init` | Creates a new project with a manifest, an app module, a test and a README. |
+| `zuri test` | Runs the tests. Each test file runs in its own process, and `--jobs` sets how many run at once. |
+| `zuri fmt` | Formats Zuri source code. Use `--dry-run` in a commit hook or CI job to check formatting without changing anything. |
+| `zuri lsp` | Starts the language server, which provides completion, navigation, diagnostics, refactoring and test running. |
+| `zuri doc` | Builds a documentation site from Markdown and an API reference from doc comments. |
+| `zuri migrate` | Applies and rolls back database migrations. |
+| `zuri install`, `update`, `restore`, `uninstall` | Manage dependencies. Version ranges are resolved into a lockfile that pins one version of each package. |
+| `zuri publish`, `yank`, `owner`, `account` | Publish and manage your packages on a registry. |
+| `zuri serve` | Runs Nyssa, a package registry with its own website. |
+| `zuri bundle` | Packages your program and the runtime as a directory, an archive, a single executable or a macOS app. |
+| `zuri upgrade` | Upgrades Zuri to a newer release, after checking it against the published checksum. |
+| `zuri <name>` | Runs a custom command from the project's `.zuri/cmds` directory or from an installed package. |
 
-Every one of them answers `--help`, and every package command that
-changes a project shows exactly what it would do with `--dry-run`.
+Every command accepts `--help`. The package commands that modify a
+project also accept `--dry-run`, which prints what would change without
+changing it.
 
-## Ship It Anywhere
+## Shipping Your Program
 
-`zuri bundle` packs your program, the packages it uses, the standard
-library and the runtime into one thing you can hand to anyone. It runs
-the same on every machine it lands on, with nothing to install first.
+`zuri bundle` packages your program together with its dependencies, the
+standard library and the runtime. The result runs on machines that don't
+have Zuri installed.
 
 ```console
 $ zuri bundle --format exe
@@ -185,24 +183,22 @@ $ ./dist/weather-0.1.0-x86_64-unknown-linux-gnu
 Lagos: 31°C, 87.8°F
 ```
 
-| Format | What it makes |
+| Format | Output |
 | --- | --- |
-| `archive` | a `.tar.gz`, or a `.zip` for Windows |
-| `dir` | the bundle directory, ready for a container image |
-| `exe` | a single executable |
-| `app` | a macOS application |
+| `archive` | A `.tar.gz` file, or a `.zip` file for Windows |
+| `dir` | A plain directory, useful for container images |
+| `exe` | A single executable |
+| `app` | A macOS application |
 
-`zuri bundle --target all` builds for Linux and macOS on x86-64 and
-ARM, and Windows on x86-64, from whichever of them you are on.
-Single-file macOS bundles come out signed ad hoc, which is all an Apple
-silicon Mac needs to run them, and
-[Bundles and Upgrades](docs/book/src/ch27-05-bundles.md) walks through
-Developer ID signing and notarization.
+You can build for any supported platform from any other with
+`zuri bundle --target`, and `--target all` builds for all of them at
+once. Single-file macOS bundles are signed ad hoc, which is enough for
+them to run on Apple silicon. For Developer ID signing and notarization,
+see [Bundles and Upgrades](docs/book/src/ch27-05-bundles.md).
 
 ## Packages and Nyssa
 
-When you share code, the package manager is already installed, and so
-is the registry it talks to.
+The package manager is part of the `zuri` command:
 
 ```console
 $ zuri install thermo
@@ -212,12 +208,11 @@ Installing thermo 0.1.0
 Installed 1 package.
 ```
 
-**Nyssa** is the package repository in every installation: the API the
-package commands talk to, and a website for finding packages, reading
-their documentation and managing accounts and tokens. `zuri serve`
-starts one for a team, a company or the public, on SQLite with nothing
-to set up, or on PostgreSQL, MySQL or MariaDB, with HTTPS, closed
-sign-up, a read-only mode and live backups.
+The registry it talks to is part of every installation too. **Nyssa**
+serves the API that the package commands use, along with a website where
+people can browse packages, read their documentation and manage their
+accounts and API tokens. Run `zuri serve` to host your own, whether for a
+team, a company or the public:
 
 ```console
 $ zuri serve
@@ -225,101 +220,112 @@ Nyssa is serving http://127.0.0.1:3000
 listening on 127.0.0.1:3000, storage in /home/ada/.zuri/nyssa
 ```
 
-[Packages and Nyssa](docs/book/src/ch27-00-packages.md) covers all of it.
+Nyssa uses SQLite by default, so there's nothing to set up before you
+start it. It can also run on PostgreSQL, MySQL or MariaDB, and it
+supports HTTPS, closing public sign-up, a read-only mode and backups of
+a live database. See [Packages and Nyssa](docs/book/src/ch27-00-packages.md)
+for the details.
 
-## Language Design
+## The Language
 
-Zuri takes the expressive, familiar syntax of modern dynamic languages
-and adds deliberate structural controls. It is dynamically typed, and it
-declines to be vague.
+Zuri's syntax will look familiar if you've used JavaScript, Python or
+Ruby. It's dynamically typed, but the compiler checks several things
+that dynamic languages usually leave to discipline:
 
-Zuri features true access controls with sealed classes, function 
-parameter type guards, private methods and modules, all enforced by the 
-compiler. The point of each is the same. **The things that are hard to see 
-when reading code are the things the language refuses to let you get 
-wrong**.
+- Classes are sealed. Assigning to a field the class doesn't declare is
+  an error, so a misspelled field name can't silently create a new one.
+- Parameters can declare a type, and the type is checked when the
+  function is called.
+- Methods, functions and module members whose names start with an
+  underscore are private, and code outside can't reach them.
 
-Zuri features a fast Just-In-Time (JIT) compiler driven underneath by Cranelift 
-&mdash; The same engine that drives `wasmtime`, with cutting edge 
-specialization and optimized to production workloads.
+Code starts out as bytecode. When part of a program runs often, a tiered
+JIT compiler built on Cranelift (the code generator used by Wasmtime)
+compiles it to machine code in the background, specializing it for the
+types it actually sees. You don't need annotations or flags for any of
+this.
 
 ## Documentation
 
-[`docs/`](docs) holds everything written about the language.
+- [**The Zuri Programming Language**](https://zuri-lang.github.io/zuri/book)
+  is the main guide. It starts with installation and goes all the way to
+  publishing packages, and its appendices cover the keywords, the
+  operators and every method of the built-in types.
+- [**The Zuri Standard Library**](https://zuri-lang.github.io/zuri/reference)
+  is the API reference for every module. It's generated from the doc
+  comments in the library source, so it always matches the code.
 
-- [**The Zuri Programming Language**](https://zuri-lang.github.io/zuri/book) 
-  is the main text: it covers everything from installing to publishing,
-  plus appendices covering the keywords, the operators and every method
-  on every built-in type.
-- [**The Zuri Standard Library**](https://zuri-lang.github.io/zuri/reference) 
-  is the reference: every module, every public name, generated from the library's own doc blocks so a page and the code it describes can never disagree.
-
-Read the book on [The Zuri website](https://zuri-lang.github.io/zuri/) as it 
-is, or render either locally if you have `cargo` installed:
+Both live in [`docs/`](docs) and are published on the
+[website](https://zuri-lang.github.io/zuri/). To build and browse them
+locally, you need `cargo`:
 
 ```console
 $ cargo run-docs                # the book
-$ cargo run-docs -- reference   # the standard library
+$ cargo run-docs -- reference   # the standard library reference
 ```
 
 ## Editor Support
 
-`zuri lsp` is a full language server, written in Zuri on the compiler's
-own parser, so what it reports is what the runtime would do with the
-same code. Completion with the import added for you, diagnostics as you
-type with the runtime's own messages, go to definition, references, call
-and type hierarchies, rename across the workspace, extract and inline
-refactorings, hover documentation, formatting, and tests run from the
-line they are on.
+`zuri lsp` is a complete language server. It's written in Zuri and uses
+the compiler's own parser, so the errors it shows in your editor are the
+same ones the runtime would report. It supports completion (adding
+imports for you), diagnostics as you type, go to definition, find
+references, call and type hierarchies, rename across the workspace,
+extract and inline refactorings, hover documentation, formatting, and
+running a test from the line it's on.
 
-- **[Open VSX](https://open-vsx.org/extension/zuri-lang/zuri-vscode)** &mdash;
-  the current build of the extension, which sets everything up. This is
-  the one to install: VS Codium, Cursor, Windsurf, Gitpod and Eclipse
-  Theia all pull from here.
-- **[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=zuri-lang.zuri-vscode)**
-  &mdash; the same extension for VS Code itself, and it trails the Open VSX
-  build.
-- **Neovim, Helix, Sublime Text and Emacs** take a few lines of
-  configuration each, given in
+- **[Open VSX](https://open-vsx.org/extension/zuri-lang/zuri-vscode)**:
+  the recommended way to get the extension, which sets everything up for
+  you. VSCodium, Cursor, Windsurf, Gitpod and Eclipse Theia all install
+  extensions from Open VSX.
+- **[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=zuri-lang.zuri-vscode)**:
+  the same extension for Visual Studio Code. New versions may appear here
+  a little later than on Open VSX.
+- **Neovim, Helix, Sublime Text and Emacs** each need a few lines of
+  configuration, described in
   [Editor Support](docs/book/src/ch29-00-editors.md).
 
 ## Roadmap
 
-Already here:
+Done:
 
-- [x] The language, complete and self-hosting enough to parse, compile
-      and reflect on itself.
-- [x] A Just-In-Time compiler.
-- [x] A standard library covering the whole stack.
-- [x] Two books, one of them generated from the library itself.
-- [x] **Databases**: SQLite, PostgreSQL, MySQL and MariaDB behind one
-      interface.
-- [x] **A test runner** and **a formatter.**
-- [x] **A language server** for every editor that speaks LSP.
-- [x] **C and Rust compatible FFI interop.**
-- [x] **Package management**, for the code that is genuinely
-      third-party: `zuri install`, `publish`, `update`, `restore` and the
-      rest ship with the runtime, with a lockfile and one version of
-      every package. A complete standard library is not an argument
-      against sharing.
-- [x] **Nyssa, a self-hosted repository server** in every installation,
-      `zuri serve`, so public and private organizations share Zuri
-      packages whichever way they like.
-- [x] **Bundles** that allows shipping a program to run where Zuri is 
-      not installed, as a directory, an archive or a single executable.
-- [x] **An ORM**, so that persisting a model never means reaching outside
-      the language.
+- [x] The language, including a `zuri` module that can parse, compile
+      and inspect Zuri code.
+- [x] A tiered JIT compiler.
+- [x] A standard library that covers the full web stack.
+- [x] Two books: a guide to the language, and a standard library
+      reference generated from the source.
+- [x] **Databases**: SQLite, PostgreSQL, MySQL and MariaDB through one API.
+- [x] **A test runner** and **a formatter**.
+- [x] **A language server** for any editor that supports LSP.
+- [x] **FFI** for calling C and Rust libraries.
+- [x] **Package management** built into the runtime: `zuri install`,
+      `publish`, `update`, `restore` and related commands, with a
+      lockfile that pins one version of each package.
+- [x] **Nyssa**, a self-hosted package registry included in every
+      installation (`zuri serve`), for public or private use.
+- [x] **Bundles** for running programs on machines without Zuri, as a
+      directory, an archive or a single executable.
+- [x] **An ORM** for saving and loading models.
 
-On the way, in the order it matters:
+Planned, roughly in order of priority:
 
-- [ ] **HTTP/3.** The `http` module speaks HTTP/1.1 and HTTP/2 today.
+- [ ] **HTTP/3.** The `http` module currently supports HTTP/1.1 and HTTP/2.
+- [ ] **A public package registry** at pub.zurilang.org.
+- [ ] **A debugger** with breakpoints and stepping, for editors that support DAP.
+- [ ] **A profiler** for finding where a program spends its time and memory.
+- [ ] **OAuth 2** in the standard library, for signing in with other services.
+- [ ] **Telemetry**: exporting traces and metrics over OpenTelemetry.
+- [ ] **Job scheduling** for running tasks at set times or intervals.
+- [ ] **A GitHub Action** for installing Zuri in CI workflows.
 
-## AI Involvement
+## Use of AI
 
-AI wrote code in this repository, and how much, where, and how well it
-went are documented rather than glossed over. **[AI.md](AI.md)** is that
-account, and it ends in a rule that contributors are held to.
+Parts of this repository were written with the help of AI tools.
+[AI.md](AI.md) describes where and how much, what worked and what
+didn't, and the rule that contributors are expected to follow as a
+result.
 
 ## License
 
-BSD 2-Clause. See [LICENSE](LICENSE).
+Zuri is released under the BSD 2-Clause license. See [LICENSE](LICENSE).

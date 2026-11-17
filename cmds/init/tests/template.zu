@@ -18,7 +18,7 @@ def written(words) {
 describe('manifest_file', @{
   it('opens on the project table, with nothing above it', @{
     expect(template.manifest_file(written([])).starts_with('[project]'))
-      .to_be_true()
+        .to_be_true()
   })
 
   it('reads back as the manifest it was given', @{
@@ -32,7 +32,7 @@ describe('manifest_file', @{
 
   it('leaves the dependencies table empty and waiting', @{
     expect(toml.parse(template.manifest_file(written([]))).dependencies)
-      .to_equal({})
+        .to_equal({})
   })
 
   it('survives a description with quotes in it', @{
@@ -50,7 +50,7 @@ describe('root_index', @{
 
   it('starts the application only when it is what was run', @{
     expect(template.root_index(written([])))
-      .to_contain('if __root__ == __file__ {')
+        .to_contain('if __root__ == __file__ {')
   })
 
   it('titles itself after the project', @{
@@ -59,7 +59,7 @@ describe('root_index', @{
 
   it('says something about a project that said nothing', @{
     expect(template.root_index(written(['-n', 'my-app'])))
-      .to_contain('One line on what my-app is.')
+        .to_contain('One line on what my-app is.')
   })
 
   it('keeps a description from closing the doc block early', @{
@@ -82,7 +82,7 @@ describe('app_index', @{
 
   it('writes the greeting as an interpolation, not a concatenation', @{
     expect(template.app_index(written([])))
-      .to_contain("return 'Hello, $" + '{name or "world"}!\'')
+        .to_contain("return 'Hello, $" + '{name or "world"}!\'')
   })
 
   it('gives the project a main to start from', @{
@@ -103,7 +103,7 @@ describe('app_test', @{
 describe('readme', @{
   it('leads with the project name', @{
     expect(template.readme(written(['-n', 'my-app'])).starts_with('# my-app'))
-      .to_be_true()
+        .to_be_true()
   })
 
   it('says how to run it and how to test it', @{
@@ -115,7 +115,7 @@ describe('readme', @{
 
   it('names the license when there is one', @{
     expect(template.readme(written(['-l', 'Apache-2.0'])))
-      .to_contain('Apache-2.0')
+        .to_contain('Apache-2.0')
   })
 
   it('leaves the section out when there is not', @{

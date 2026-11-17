@@ -1,25 +1,25 @@
 # Testing the Board
 
-The application works. This section is about keeping it working, and it is
-the last thing the layering from
-[Laying Out the Project](ch25-01-project-layout.md) pays for.
+The application works. This section is about keeping it working, and it's
+the final benefit of the layered design from [Laying Out the
+Project](ch25-01-project-layout.md).
 
-Recall the shape:
+Here's the structure again:
 
 ```text
 index.zu  ->  app.zu  ->  routes/  ->  storage/  ->  models/
 ```
 
-That is also the order to test in. `models` depends on nothing but
-`config`, so its tests need nothing. `storage` depends on `models` and a
-file, so its tests need a directory. `routes` depends on `storage` and a
-server, and takes both as arguments, so its tests need neither a socket nor
-a real board.
+That's also the order to test the layers in. `models` only depends on
+`config`, so its tests don't need anything. `storage` depends on `models`
+and a file, so its tests need a directory. `routes` depends on `storage` and
+a server, and takes both as arguments, so its tests need neither a socket
+nor a real board.
 
-Each layer is tested against the layer below it as it really is, and
-against the layer above it not at all.
+Each layer is tested against the real layer below it, and without the layer
+above it at all.
 
-## Where the Tests Live
+## Where the Tests Go
 
 ```text
 taskboard/
@@ -39,22 +39,23 @@ taskboard/
 $ zuri test
 ```
 
-That is the whole arrangement. The application is `zuri run taskboard`
-and its tests are `zuri test`, and neither needs a file name
-remembering. The command exits `1` when anything failed, which is all CI
-needs.
+That's all there is to it. You run the application with `zuri run taskboard`
+and its tests with `zuri test`, and you don't need to remember any file
+names. The command exits with status `1` if anything fails, which is all a
+CI system needs.
 
-Each test file is an ordinary script: it declares its tests and stops.
-Each one runs in a process of its own, which matters here for one
-concrete reason: every one of these files is going to create a `Board`,
-and a `Board` is a file on disk. One process per file means one file's
-leftovers can never reach another's.
+Each test file is an ordinary script that declares its tests and stops. Each
+one runs in its own process, which matters here for a specific reason: each
+of these files creates a `Board`, and a `Board` is a file on disk. Because
+each file runs in its own process, nothing one file leaves behind can affect
+another.
 
-## The Model
+## Testing the Model
 
-`models/task.zu` is pure. No file, no clock you care about, no network. Its
-tests are the fastest and the ones worth writing first, because every rule
-about what a task is lives there and nothing above re-checks any of them.
+`models/task.zu` doesn't depend on anything outside itself. There's no file,
+no network, and no clock that matters. Its tests are the fastest, and
+they're the ones to write first, because every rule about what a task is
+lives in this file, and nothing above it checks any of them again.
 
 <span class="filename">Filename: tests/task.zu</span>
 
@@ -68,9 +69,15 @@ describe('Task', @{
   describe('construction', @{
 
     it('needs a title', @{
-      expect(@{ Task(nil) }).to_raise_instance_of(TaskError)
-      expect(@{ Task('') }).to_raise_instance_of(TaskError)
-      expect(@{ Task('   ') }).to_raise_instance_of(TaskError)
+      expect(@{
+        Task(nil)
+      }).to_raise_instance_of(TaskError)
+      expect(@{
+        Task('')
+      }).to_raise_instance_of(TaskError)
+      expect(@{
+        Task('   ')
+      }).to_raise_instance_of(TaskError)
     })
 
     it('says which field was wrong', @{
@@ -82,8 +89,12 @@ describe('Task', @{
     })
 
     it('refuses a title over 120 characters', @{
-      expect(@{ Task('x' * 121) }).to_raise_instance_of(TaskError)
-      expect(@{ Task('x' * 120) }).to_not_raise()
+      expect(@{
+        Task('x' * 121)
+      }).to_raise_instance_of(TaskError)
+      expect(@{
+        Task('x' * 120)
+      }).to_not_raise()
     })
 
     it('defaults everything but the title', @{
@@ -101,7 +112,6 @@ describe('Task', @{
 
       expect([first.id, second.id]).to_be_sorted()
     })
-
   })
 
   describe('update()', @{
@@ -127,23 +137,28 @@ describe('Task', @{
     it('refuses a column the board does not have', @{
       var task = Task('Write the tests')
 
-      expect(@{ task.update({ column: 'sideways' }) }).to_raise_instance_of(TaskError)
+      expect(@{
+        task.update({ column: 'sideways' })
+      }).to_raise_instance_of(TaskError)
       expect(task.column).to_be('todo')
     })
-
   })
 
   describe('round-tripping', @{
 
     it('rebuilds a task from what it stored', @{
-      var original = Task('Write the tests', { notes: 'a note', column: 'doing' })
+      var original = Task('Write the tests', {
+        notes: 'a note',
+        column: 'doing',
+      })
 
       expect(from_dict(original.to_dict())).to_equal(original)
     })
 
     it('rejects a stored record that broke a rule', @{
-      expect(@{ from_dict({ id: 'x', title: '', column: 'todo' }) })
-        .to_raise_instance_of(TaskError)
+      expect(@{
+        from_dict({ id: 'x', title: '', column: 'todo' })
+      }).to_raise_instance_of(TaskError)
     })
 
     it('survives a record written before a field existed', @{
@@ -152,37 +167,36 @@ describe('Task', @{
       expect(task.column).to_be('todo')
       expect(task.notes).to_be('')
     })
-
   })
-
 })
 ```
 
-Four of those are worth pointing at.
+Four of these are worth a closer look.
 
-**`expect(@{ task.update(...) }).to_raise_instance_of(TaskError)` followed
-by `expect(task.column).to_be('todo')`.** Two assertions, because there are
-two claims: that it refused, and that it refused *before changing
-anything*. A validator that raises after assigning is a bug you only find
-by checking the second one.
+**`expect(@{ task.update(...) }).to_raise_instance_of(TaskError)`, followed
+by `expect(task.column).to_be('todo')`.** There are two assertions because
+there are two claims: that the update was rejected, and that it was rejected
+*before anything was changed*. A validator that raises its error after
+assigning the value is a bug you'll only find by checking the second claim.
 
-**`to_equal`, not `to_be`, for the round trip.** `from_dict()` builds a new
-`Task`, so identity is never going to match. The whole question is whether
-the contents survived.
+**`to_equal`, not `to_be`, for the round trip.** `from_dict()` creates a new
+`Task`, so the identities will never match. What matters is whether the
+contents survived.
 
-**`expect([first.id, second.id]).to_be_sorted()`** is the cheapest possible
-way to state what `uuid.v7()` was chosen for. If someone ever changes that
-line to `v4()`, this is the test that says so.
+**`expect([first.id, second.id]).to_be_sorted()`** is the simplest way to
+check the reason `uuid.v7()` was chosen. If someone ever changes that line
+to `v4()`, this test will tell them.
 
-**The record with no `column` and no `notes`.** That is the
-older-version-of-the-program case that `data.get(key, nil)` exists to
-handle. Writing the test is what stops the next person from simplifying
-`get()` into `.column` and finding out on someone's real `board.json`.
+**The record without a `column` and `notes`.** This is the case of a record
+saved by an older version of the program, which is why `data.get(key, nil)`
+is used. The test stops the next person from simplifying `get()` to
+`.column` and only finding out it was a mistake when it breaks someone's
+real `board.json`.
 
-## The Storage Layer
+## Testing the Storage Layer
 
-A `Board` is a file, so its tests need a directory of their own. One per
-test, created and removed by the hooks:
+A `Board` is a file, so its tests need a directory of their own. Each test
+gets one, created and removed by the hooks:
 
 <span class="filename">Filename: tests/board.zu</span>
 
@@ -226,7 +240,9 @@ describe('Board', @{
   })
 
   it('raises for an id it does not have', @{
-    expect(@{ board.get('no-such-id') }).to_raise_instance_of(NotFoundError)
+    expect(@{
+      board.get('no-such-id')
+    }).to_raise_instance_of(NotFoundError)
   })
 
   it('filters by column', @{
@@ -252,36 +268,37 @@ describe('Board', @{
     board.remove(created.id)
 
     expect(board.all()).to_be_empty()
-    expect(@{ board.get(created.id) }).to_raise_instance_of(NotFoundError)
+    expect(@{
+      board.get(created.id)
+    }).to_raise_instance_of(NotFoundError)
   })
-
 })
 ```
 
-The one that earns its place is **`survives a restart`**. It constructs a
-*second* `Board` over the same directory and asks it for the task the first
-one created. That is the only test here that exercises `_json_store`,
-`to_dict()` and `from_dict()` together, and it is the test that fails the
-day someone adds a field to `Task` and forgets one half of the pair.
+The most valuable test here is **`survives a restart`**. It creates a
+*second* `Board` using the same directory, and asks it for the task the
+first one created. It's the only test that uses `_json_store`, `to_dict()`
+and `from_dict()` together, and it's the test that fails when someone adds a
+field to `Task` and forgets to update one of the two methods.
 
-`after_each` removes the directory whether the test passed or not, so a
-failing test leaves nothing behind for the next one to trip over. That is
-the property to rely on: teardown that only runs on success is teardown you
-cannot trust.
+`after_each` removes the directory whether or not the test passed, so a
+failed test doesn't leave anything behind for the next one to trip over.
+That's an important property, because teardown that only runs when a test
+succeeds isn't teardown you can rely on.
 
-Note that none of these tests read `board.json` themselves. They ask the
-`Board` what it holds. The file format is `storage`'s business, and a test
-that parsed it would fail the day the format changed for a reason that has
-nothing to do with what the test was checking.
+Notice that none of these tests read `board.json` directly. They ask the
+`Board` what it contains. The file format is the storage layer's concern,
+and a test that parsed the file would fail whenever the format changed, for
+reasons that have nothing to do with what the test was checking.
 
-## The Routes
+## Testing the Routes
 
-`register(server, board)` takes its two collaborators as arguments. That
-was presented in [The JSON API](ch25-04-api.md) as being about seeding a
-demo board; here is the other half of what it buys.
+`register(server, board)` takes its two collaborators as arguments. [The
+JSON API](ch25-04-api.md) explained that this lets you run the routes with a
+board filled with sample data. Here's the other benefit.
 
-A handler needs three things: something to register on, a request, and a
-response. Stand in for all three:
+A handler needs three things: something to register routes on, a request and
+a response. You can provide stand-ins for all three:
 
 <span class="filename">Filename: tests/api.zu</span>
 
@@ -353,7 +370,7 @@ class FakeResponse {
 }
 ```
 
-Three small classes and the routes become ordinary functions:
+With three small classes, the routes become ordinary functions:
 
 ```zuri,ignore
 describe('the JSON API', @{
@@ -393,19 +410,26 @@ describe('the JSON API', @{
   })
 
   it('answers 201 when it creates a task', @{
-    var response = call('POST /api/tasks', { body: { title: 'Write the tests' } })
+    var response = call('POST /api/tasks', {
+      body: { title: 'Write the tests' },
+    })
 
     expect(response.status).to_be(201)
-    expect(response.body).to_match_object({ title: 'Write the tests', column: 'todo' })
+    expect(response.body)
+        .to_match_object({ title: 'Write the tests', column: 'todo' })
     expect(board.all()).to_have_length(1)
   })
 
   it('lets the model reject a bad body', @{
-    expect(@{ call('POST /api/tasks', { body: {} }) }).to_raise_with_message('title')
+    expect(@{
+      call('POST /api/tasks', { body: {} })
+    }).to_raise_with_message('title')
   })
 
   it('treats a missing body as an empty one', @{
-    expect(@{ call('POST /api/tasks', {}) }).to_raise_with_message('title')
+    expect(@{
+      call('POST /api/tasks', {})
+    }).to_raise_with_message('title')
   })
 
   it('lists everything, with a summary', @{
@@ -420,13 +444,19 @@ describe('the JSON API', @{
   it('filters by column when asked', @{
     board.add('one')
 
-    expect(call('GET /api/tasks', { query: { column: 'done' } }).body.tasks).to_be_empty()
+    expect(
+      call('GET /api/tasks', {
+        query: { column: 'done' },
+      }).body.tasks,
+    ).to_be_empty()
   })
 
   it('sends the view, not the stored task', @{
     var created = board.add('Write the tests')
 
-    var response = call('GET /api/tasks/:id', { params: { id: created.id } })
+    var response = call('GET /api/tasks/:id', {
+      params: { id: created.id },
+    })
 
     expect(response.body).to_have_keys(['created_on', 'is_done'])
   })
@@ -442,42 +472,41 @@ describe('the JSON API', @{
     expect(board.get(created.id).column).to_be('doing')
     expect(board.get(created.id).id).to_be(created.id)
   })
-
 })
 ```
 
-Several things worth saying about that.
+There are several things to say about this.
 
-**The board is real.** Only the HTTP machinery is faked. A fake board would
-have meant writing down what `board.add()` returns, and the test would then
-pass forever afterwards regardless of what `board.add()` actually did.
-Faking is for the things that are slow, remote or awkward, and a temporary
-file is none of those.
+**The board is real.** Only the HTTP machinery is fake. A fake board would
+mean writing down what `board.add()` returns, and the test would keep
+passing from then on, whatever `board.add()` actually did. Fakes are for
+things that are slow, remote or awkward to set up, and a temporary file is
+none of those.
 
-**`lets the model reject a bad body`.** From
-[Handlers Do Not Handle Errors](ch25-04-api.md#handlers-do-not-handle-errors):
-the handler does not catch anything, so an invalid title comes back out of
-the handler as a `TaskError`. That is the behaviour the middleware relies
-on, and this asserts it directly rather than through the middleware.
+**`lets the model reject a bad body`.** As described in [Why the Handlers
+Don't Handle Errors](ch25-04-api.md#why-the-handlers-dont-handle-errors),
+the handler doesn't catch anything, so an invalid title comes out of the
+handler as a `TaskError`. The middleware depends on that behavior, and this
+test checks it directly instead of through the middleware.
 
-**`ignores a key the model does not own`** is the whitelist claim from
-`update()`, tested where an attacker would aim it. One line of test for a
-property the code gets for free from `contains()`, and the day someone
-"simplifies" that method it fails.
+**`ignores a key the model does not own`** tests the list of allowed keys in
+`update()`, at exactly the point an attacker would target. It's one line of
+test code for a property the code gets for free from `contains()`, and if
+someone ever "simplifies" that method, the test will fail.
 
-**Use a class, not a dictionary, for a fake.** A dictionary already has
-`get`, `add`, `set` and `keys` of its own, so `fake.get('id')` calls the
-dictionary's method rather than yours. A small class gives you the names
-you meant.
+**Use a class, not a dictionary, for a fake.** A dictionary already has its
+own `get`, `add`, `set` and `keys` methods, so `fake.get('id')` would call
+the dictionary's method instead of yours. A small class gives you exactly
+the names you intended.
 
 ## What to Test Next
 
-Two layers are deliberately not tested above.
+Two layers are intentionally left untested above.
 
-**The pages.** `routes/pages.zu` renders templates. The same fake server
-works, and the assertion becomes `expect(response.body).to_contain(...)`
-against the rendered HTML, or `to_match_snapshot()`, which records the
-whole page once and watches it from then on:
+**The pages.** `routes/pages.zu` renders templates. You can use the same
+fake server, and check the rendered HTML with
+`expect(response.body).to_contain(...)`, or with `to_match_snapshot()`,
+which records the whole page once and compares against it from then on:
 
 ```zuri,ignore
 it('renders the board', @{
@@ -485,20 +514,20 @@ it('renders the board', @{
 })
 ```
 
-That records the page in `tests/__snapshots__/pages.zu.snap`. Reviewing
-the diff when it changes is the point; a template edit that alters more of
-the page than you intended shows up there and nowhere else.
+That stores the page in `tests/__snapshots__/pages.zu.snap`. The point is to
+review the changes when it changes. If a template edit changes more of the
+page than you meant it to, that's where you'll see it.
 
-**The whole thing.** Starting the real server on port `0`, making real
-requests with the `http` client, and shutting it down in `after_all` gives
-you one test that covers routing, middleware, templates and storage
-together. Write a handful of those, not a hundred: they are the slowest
-tests you own and the ones that break for reasons unrelated to what they
-were checking.
+**The whole application.** You can start the real server on port `0`, send
+real requests with the `http` client, and shut it down in `after_all`. That
+gives you a test that covers routing, middleware, templates and storage
+together. Write a few of these, not a hundred. They're your slowest tests,
+and they're the ones most likely to break for reasons that have nothing to
+do with what they're checking.
 
-## What This Bought
+## The Result
 
-Run it:
+Run the tests:
 
 ```console
 $ zuri test
@@ -514,11 +543,11 @@ $ zuri test
   time 674ms
 ```
 
-Twenty-five tests, under a second, no server and no network. That is a
-direct consequence of the layering: every arrow points one way, and every
-layer takes its collaborators as arguments rather than importing them.
+That's twenty-five tests in under a second, without a server or a network.
+It's a direct result of the layered design: every dependency points in the
+same direction, and every layer takes its collaborators as arguments instead
+of importing them.
 
-The layering was justified in
-[Laying Out the Project](ch25-01-project-layout.md) on the grounds that it
-makes each layer readable on its own. This is the other half of the claim,
-and it is the half you feel every day.
+[Laying Out the Project](ch25-01-project-layout.md) justified the layers by
+saying they make each layer readable on its own. This is the other half of
+that argument, and it's the half you'll notice every day.

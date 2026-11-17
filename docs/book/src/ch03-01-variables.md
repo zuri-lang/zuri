@@ -1,7 +1,7 @@
 # Variables and Constants
 
-A variable is a name for a value. In Zuri you introduce one with `var`,
-and from then on the name stands for whatever you last put in it.
+A variable is a name for a value. In Zuri, you declare one with `var`, and
+from then on the name refers to whatever value you last assigned to it.
 
 ```zuri
 var greeting = 'hello'
@@ -16,13 +16,13 @@ hello
 0
 ```
 
-That is the whole idea. The rest of this section is the detail: what a name
-may be called, what happens when you leave the value out, where the name
-can be seen, and what `const` adds.
+That's really all there is to it. The rest of this section covers the
+details: which names are allowed, what happens if you leave out the value,
+where a name is visible, and what `const` adds.
 
-## Declaring
+## Declaring Variables
 
-A `var` with no initializer holds `nil`, the value that means "nothing
+A `var` without an initializer holds `nil`, the value that means "nothing
 here yet":
 
 ```zuri
@@ -36,7 +36,7 @@ nil
 ```
 
 You can declare several names in one statement by separating them with
-commas, and each one may or may not have a value:
+commas, and each one can have a value or not:
 
 ```zuri
 var a = 1, b = 2, c
@@ -48,44 +48,45 @@ echo [a, b, c]
 [1, 2, nil]
 ```
 
-This is worth using when the names genuinely belong together — the three
-components of a colour, the lower and upper bound of a window — and worth
-avoiding when they do not, because one long line of declarations is harder
-to read than three short ones.
+This is useful when the names really do belong together, such as the three
+components of a color or the lower and upper bounds of a range. When they
+don't, it's better to avoid it, because one long line of declarations is
+harder to read than three short ones.
 
-`var` is a declaration, not an expression. It has no value, which is why
-you cannot write `if var x = f()` or `echo var y = 1`. Declare first, then
-use the name.
+`var` is a declaration, not an expression. It doesn't have a value, so you
+can't write `if var x = f()` or `echo var y = 1`. Declare the variable
+first, then use it.
 
-## Naming
+## Naming Rules
 
-A name is made of letters, digits and underscores, and may not start with
-a digit. `firstName`, `first_name` and `_first_name` are all legal, and all
-three are different names.
+A name can contain letters, digits and underscores, but it can't start with
+a digit. `firstName`, `first_name` and `_first_name` are all valid, and
+they're three different names.
 
-Zuri code follows one set of conventions everywhere, and the standard
-library is written in it:
+Zuri code uses the same naming conventions everywhere, and the standard
+library follows them too:
 
 | Kind of name | Convention | Example |
 | --- | --- | --- |
-| variable, function, method | `snake_case` | `read_line`, `total_count` |
-| class | `PascalCase` | `Account`, `HttpClient` |
-| constant | `SCREAMING_SNAKE_CASE` | `MAX_RETRIES` |
-| private anything | leading underscore | `_cache`, `_retry()` |
+| Variable, function, method | `snake_case` | `read_line`, `total_count` |
+| Class | `PascalCase` | `Account`, `HttpClient` |
+| Constant | `SCREAMING_SNAKE_CASE` | `MAX_RETRIES` |
+| Anything private | Leading underscore | `_cache`, `_retry()` |
 
-The leading underscore is the one convention that is not only a
-convention. A name beginning with `_` is private, and the compiler enforces
-it: another file cannot reach `module._helper`, and code outside a class
-cannot reach `instance._field`. [Chapter 6](ch06-04-encapsulation.md) and
-[Chapter 8](ch08-00-modules.md) cover what that means in each case.
+The leading underscore is more than a convention. A name that starts with
+`_` is private, and the compiler enforces it. Another file can't access
+`module._helper`, and code outside a class can't access `instance._field`.
+[Chapter 6](ch06-04-encapsulation.md) and [Chapter 8](ch08-00-modules.md)
+explain what this means for classes and modules.
 
-The 31 keywords listed at the end of the previous section cannot be used as
-names at all. Trying produces a syntax error at the point of declaration.
+You can't use any of the 31 keywords listed in the previous section as
+names. If you try, you'll get a syntax error at the declaration.
 
 ## Reassignment
 
-Zuri is dynamically typed. A variable holds a value, not a type, and
-assigning a different kind of value to the same name is legal:
+Zuri is dynamically typed. A variable holds a value rather than having a
+type, so you're allowed to assign a different kind of value to the same
+name:
 
 ```zuri
 var value = 42
@@ -99,12 +100,12 @@ echo value
 [1, 2, 3]
 ```
 
-Legal is not the same as advisable. A name that holds a number on one line
-and a list twenty lines later is a name no reader can predict. Reach for a
-second variable instead; they are free.
+Just because you can doesn't mean you should, though. If a name holds a
+number on one line and a list twenty lines later, nobody reading the code
+can predict what it holds. Use a second variable instead.
 
-Assignment is an expression, and it evaluates to the value assigned. That
-lets you chain:
+Assignment is an expression, and its value is the value that was assigned.
+This means you can chain assignments:
 
 ```zuri
 var x, y
@@ -120,16 +121,17 @@ echo '${x} ${y}'
 
 ## Compound Assignment
 
-Every arithmetic and bitwise operator has an assignment form, which applies
-the operator to the variable's current value and stores the result:
+Each arithmetic and bitwise operator has an assignment form, which applies
+the operator to the variable's current value and stores the result back in
+the variable:
 
 ```zuri
 var n = 5
 
-n += 10     # 15
-n **= 2     # 225
-n //= 7     # 32
-n <<= 1     # 64
+n += 10 # 15
+n **= 2 # 225
+n //= 7 # 32
+n <<= 1 # 64
 
 echo n
 ```
@@ -139,10 +141,10 @@ echo n
 ```
 
 The full set is `+=`, `-=`, `*=`, `/=`, `//=`, `**=`, `%=`, `&=`, `|=`,
-`^=`, `~=`, `<<=`, `>>=` and `>>>=`. Each one means exactly what the
-matching binary operator means, applied in place.
+`^=`, `~=`, `<<=`, `>>=` and `>>>=`. Each one does the same thing as the
+corresponding binary operator, but updates the variable in place.
 
-Compound assignment works on anything you can assign to, not just plain
+Compound assignment works with anything you can assign to, not only plain
 variables:
 
 ```zuri
@@ -180,10 +182,10 @@ echo n
 5
 ```
 
-Two rules to remember. First, **both are postfix only**. `++n` is a syntax
-error; the operator goes after the name.
+There are two rules to remember. First, **both are postfix only**. `++n` is
+a syntax error, because the operator has to come after the name.
 
-Second, when `n++` appears inside a larger expression it updates `n` and
+Second, when `n++` is used inside a larger expression, it updates `n` and
 then evaluates to the **new** value:
 
 ```zuri
@@ -198,11 +200,11 @@ echo j
 6
 ```
 
-If you have written C, Java or JavaScript, this is the opposite of what you
-expect: there, `j++` gives you the old value. In Zuri it gives you the new
-one. The habit that avoids the question entirely is to let `++` be a
-statement of its own, or to use it in the update clause of an `iter` loop
-where the value is discarded:
+If you're used to C, Java or JavaScript, this is the opposite of what you'd
+expect. In those languages, `j++` gives you the old value, but in Zuri it
+gives you the new one. The easiest way to avoid any confusion is to use `++`
+only as a statement of its own, or in the update clause of an `iter` loop,
+where its value isn't used:
 
 ```zuri
 iter var i = 0; i < 3; i++ {
@@ -218,7 +220,7 @@ iter var i = 0; i < 3; i++ {
 
 ## `const`
 
-`const` declares a name that cannot be reassigned:
+`const` declares a name that can't be reassigned:
 
 ```zuri
 def area(radius) {
@@ -234,7 +236,7 @@ echo area(2)
 12.566370614359172
 ```
 
-Writing to it is caught when the file is compiled, before anything runs:
+Assigning to it is caught when the file is compiled, before any code runs:
 
 ```zuri,ignore
 def f() {
@@ -251,20 +253,19 @@ SyntaxError: cannot assign to constant 'K'
   |   ^
 ```
 
-A `const` must be given a value where it is declared. `const K` on its own
-does not compile, which is the point: a constant with no value would be a
-constant `nil` forever.
+A `const` has to be given a value when it's declared, so `const K` on its
+own doesn't compile. A constant without a value would just be `nil` forever.
 
-The `const` keyword is enforced in local scopes — inside functions,
-methods, and blocks. At the top level of a module, `const` declares an
-ordinary module global and the reassignment check does not apply. Use it
-where it does its work, which is inside the code that would otherwise be
-tempted to reassign.
+`const` is enforced in local scopes, meaning inside functions, methods and
+blocks. At the top level of a module, `const` declares an ordinary
+module-level variable, and reassignment isn't checked. Use it inside code
+where the check is useful, which is where you might otherwise be tempted to
+reassign the name.
 
-### Constant Does Not Mean Frozen
+### Constants Aren't Frozen
 
-`const` prevents **rebinding the name**. It says nothing about the value.
-A constant list is still a list, and a list is still mutable:
+`const` prevents you from **rebinding the name**, but it doesn't affect the
+value. A constant list is still a list, and lists can still be changed:
 
 ```zuri
 def demo() {
@@ -281,14 +282,14 @@ demo()
 [1, 2, 3]
 ```
 
-`items = [4]` would be an error; `items.append(3)` is not. If you need a
-collection nothing can change, copy it at the boundary where you hand it
-out rather than relying on the declaration.
+`items = [4]` would be an error, but `items.append(3)` isn't. If you need a
+collection that can't be changed, give out a copy instead of relying on the
+declaration.
 
 ## Scope
 
-A block is a scope. Braces open one, and every name declared inside it is
-gone when the block closes:
+Every block is a scope. Braces open a new scope, and any name declared
+inside it disappears when the block ends:
 
 ```zuri
 var x = 'outer'
@@ -306,12 +307,12 @@ inner
 outer
 ```
 
-The inner `x` hides the outer one for the length of the block. This is
-called **shadowing**, and it is allowed deliberately: a short block can use
-a short name without worrying about what that name means outside it.
+Inside the block, the inner `x` hides the outer one. This is called
+**shadowing**, and it's allowed on purpose, so that a short block can use a
+short name without worrying about what that name means outside the block.
 
 Function bodies, loop bodies, `if` branches and bare `{ ... }` blocks all
-work this way. So does the initialiser of an `iter` loop, whose variable
+behave this way. So does the initializer of an `iter` loop, whose variable
 belongs to the loop:
 
 ```zuri,ignore
@@ -329,15 +330,14 @@ Unhandled UndefinedError: undefined global 'i'
   --> /path/to/main.zu:4
 ```
 
-After the loop, `i` is not a variable at all, and reading it is an error.
-That error is the good outcome: a name that does not exist is a mistake
-worth hearing about, and Zuri never invents a silent `nil` to paper over
-one.
+After the loop, `i` no longer exists, and reading it is an error. That's
+what you want. Using a name that doesn't exist is a mistake, and Zuri
+reports it instead of quietly giving you `nil`.
 
-### One Declaration Per Scope
+### One Declaration per Scope
 
-Shadowing across scopes is allowed. Declaring the same name twice in *one*
-scope is not:
+You can shadow a name in an inner scope, but you can't declare the same name
+twice in the *same* scope:
 
 ```zuri,ignore
 def f() {
@@ -354,15 +354,15 @@ SyntaxError: 'a' is already declared in this scope
   |       ^
 ```
 
-The exception is the top level of a script or module, where a second
-`var a` rebinds the existing global instead of erroring. That is what lets
-you retype a declaration in the REPL while you are experimenting.
+The exception is the top level of a script or module. There, a second
+`var a` rebinds the existing global instead of raising an error. That's what
+lets you retype a declaration in the REPL while you're experimenting.
 
 ### Functions Follow the Same Rule
 
-A `def` is scoped exactly like a `var`. One written at the top level of a
-file binds a module-level name; one written inside a function is a local of
-that function, and nothing outside can reach it:
+A `def` is scoped the same way as a `var`. A function declared at the top
+level of a file creates a module-level name. A function declared inside
+another function is local to that function, and nothing outside can see it:
 
 ```zuri,ignore
 def outer() {
@@ -383,7 +383,7 @@ Unhandled UndefinedError: undefined global 'helper'
   --> /path/to/main.zu:9
 ```
 
-The first call works because `helper` is a local of `outer`. The second
-fails because, outside `outer`, no such name was ever created.
+The first call works because `helper` is local to `outer`. The second one
+fails, because outside `outer` that name was never defined.
 
-[Chapter 5](ch05-01-defining-functions.md) covers this in full.
+[Chapter 5](ch05-01-defining-functions.md) covers this in more detail.

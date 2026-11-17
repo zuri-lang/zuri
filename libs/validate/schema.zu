@@ -1,24 +1,26 @@
 /**
- * # validate.schema
+ * @module validate.schema
  *
- * Provides the `Schema` class which binds a ruleset dictionary to data
- * and produces a structured validation result.
+ * Defines `Schema`, which applies a dictionary of rules to data and
+ * returns the result.
  *
  * ### Features
  *
- * - **Dot-notation keys**: `"address.city"` resolves nested dictionaries.
- * - **Wildcard keys**: `"tags.*"` validates every item in a list against
- *   a `Validator` chain.
- * - **Bail-on-first-error** per field (default) or collect-all-errors mode.
- * - **Sometimes**: skip rules when a field is absent.
- * - **Nullable**: treat nil as passing for all subsequent rules.
- * - **Label override**: substitute a human-readable name in error messages.
- * - **Required-field checking**: fields with `required()` that are entirely
- *   absent from the data dict are caught and reported.
- * - **`check(data)`**: returns `{ valid: bool, errors: list }`.
- * - **`check_or_raise(data)`**: raises `ValidationError` on failure.
- *
- * @module validate.schema
+ * - Dotted keys: `"address.city"` reads a value from nested
+ *   dictionaries.
+ * - Wildcard keys: `"tags.*"` checks every item in a list against a
+ *   `Validator` chain.
+ * - By default, a field's rules stop at its first error, but they can
+ *   collect every error instead.
+ * - `sometimes()` skips a field's rules when the field is absent.
+ * - `nullable()` lets nil pass every rule that follows it.
+ * - A label can replace the field name in error messages with a name
+ *   for people to read.
+ * - A field with `required()` that's missing from the data altogether
+ *   is reported.
+ * - `check(data)` returns `{ valid: bool, errors: list }`.
+ * - `check_or_raise(data)` raises a `ValidationError` if validation
+ *   fails.
  */
 
 import .validator { Validator }
@@ -268,7 +270,7 @@ class Schema {
       if !instance_of(value, Validator) {
         raise ValueError(
           'Schema ruleset values must be Validator instances; ' +
-            'got ${typeof(value)} for key "${key}"',
+              'got ${typeof(value)} for key "${key}"',
         )
       }
     }
@@ -281,9 +283,10 @@ class Schema {
   # -------------------------------------------------------------------------
 
   /**
-   * Validates `data` against the schema and returns a result dictionary.
+   * Validates `data` against the schema and returns a result
+   * dictionary.
    *
-   * The result always has the shape:
+   * The result always has this shape:
    *
    * ```
    * {
@@ -292,13 +295,12 @@ class Schema {
    * }
    * ```
    *
-   * Fields present in the data but absent from the schema are silently
-   * ignored.  Fields present in the schema but absent from the data are
-   * validated against their rules (the `required` rule catches absent
-   * fields; all other rules skip nil values unless chained after
-   * `required`).
+   * Fields that are in the data but not in the schema are ignored. A
+   * field that's in the schema but missing from the data is checked
+   * with a value of nil, so give a field that can be left out
+   * `sometimes()` or `nullable()`.
    *
-   * @param  dict data
+   * @param dict data
    * @returns dict
    * @throws ArgumentError
    */
@@ -321,9 +323,7 @@ class Schema {
             var item_key = '${base_key}.${i}'
             var item_value = list_val[i]
 
-            var label = validator.get_label() ?
-              validator.get_label() :
-              item_key
+            var label = validator.get_label() ? validator.get_label() : item_key
 
             if validator.is_sometimes() and _is_blank(item_value) {
               continue
@@ -336,9 +336,7 @@ class Schema {
           }
         } else {
           # Base list absent: treat as absent field; required() catches it.
-          var label = validator.get_label() ?
-            validator.get_label() :
-            base_key
+          var label = validator.get_label() ? validator.get_label() : base_key
 
           if validator.is_sometimes() {
             continue
@@ -360,8 +358,8 @@ class Schema {
       var label = validator.get_label() ? validator.get_label() : field_key
 
       # `sometimes`: skip entirely when absent.
-      if validator.is_sometimes()
-        and (!field_present or _is_blank(field_value)) {
+      if validator.is_sometimes() and
+          (!field_present or _is_blank(field_value)) {
         continue
       }
 
@@ -371,10 +369,7 @@ class Schema {
       }
     }
 
-    return {
-      valid: errors.is_empty(),
-      errors,
-    }
+    return { valid: errors.is_empty(), errors }
   }
 
   /**

@@ -2,12 +2,12 @@
  * @module proxy
  *
  * `ReverseProxy` forwards a request to another server and streams the
- * response back; `LoadBalancer` spreads those forwards across several
- * backends and stops sending to one that is failing.
+ * response back, and `LoadBalancer` spreads those requests across
+ * several backends, and stops sending requests to a backend that's
+ * failing.
  *
- * Hop-by-hop headers are stripped on the way through, and forwarding
- * headers are added, so the backend can still tell who the original
- * client was.
+ * Hop-by-hop headers are removed along the way, and forwarding headers
+ * are added, so the backend can still tell who the original client was.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -38,8 +38,9 @@ var _HOP_BY_HOP = [
 ]
 
 /**
- * A reverse proxy: takes a request this server received and passes it
- * to an upstream, then passes the upstream's response back.
+ * A reverse proxy. It takes a request this server received, passes it
+ * to an upstream server, and then passes the upstream server's response
+ * back.
  *
  * ```zuri
  * var api = http.ReverseProxy('http://127.0.0.1:9000')
@@ -49,11 +50,11 @@ var _HOP_BY_HOP = [
  * })
  * ```
  *
- * Hop-by-hop headers are stripped in both directions, the forwarding
- * headers an upstream needs to know who the real client is are added,
- * and the response body is streamed rather than buffered - a proxy
- * that holds a whole response in memory is a proxy that falls over on
- * the first large download.
+ * Hop-by-hop headers are removed in both directions, the forwarding
+ * headers that tell the upstream server who the real client is are
+ * added, and the response body is streamed instead of buffered. A proxy
+ * that holds a whole response in memory will fall over on the first
+ * large download.
  *
  * @printable
  */
@@ -74,10 +75,10 @@ class ReverseProxy {
   var strip_prefix
 
   /**
-   * What to send upstream as `Host`. `nil` (the default) sends the
-   * upstream's own host, which is what a virtual-hosted upstream
-   * expects; set it to `'preserve'` to forward the client's `Host`
-   * instead, or to any literal value to force one.
+   * What to send upstream as the `Host` header. The default, `nil`,
+   * sends the upstream server's own host, as a server that uses virtual
+   * hosting expects. Set it to `'preserve'` to forward the client's
+   * `Host` instead, or to any other value to send that value.
    * @type ?string
    */
   var host_header
@@ -90,9 +91,9 @@ class ReverseProxy {
   var forward_headers = true
 
   /**
-   * Whether this proxy itself sits behind another one, and so should
-   * extend the forwarding chain it was given rather than start a new
-   * one.
+   * Whether this proxy is itself behind another proxy, in which case it
+   * should extend the forwarding chain it received instead of starting
+   * a new one.
    * @type bool
    */
   var trust_proxy = false
@@ -149,13 +150,13 @@ class ReverseProxy {
   }
 
   /**
-   * Forwards `request` upstream and writes the upstream's response
-   * into `response`.
+   * Forwards `request` to the upstream server and writes the upstream
+   * server's response into `response`.
    *
-   * A connection failure becomes `502 Bad Gateway` and a timeout
-   * `504 Gateway Timeout`, which is what those statuses are for -
-   * they tell the client the failure was between this server and the
-   * next, not in the request.
+   * A connection failure becomes a `502 Bad Gateway`, and a timeout
+   * becomes a `504 Gateway Timeout`. That's what those status codes are
+   * for: they tell the client that the failure happened between this
+   * server and the next one, not in the request.
    *
    * @param HttpRequest request
    * @param HttpResponse response
@@ -271,9 +272,9 @@ class ReverseProxy {
     request.headers.each(@(name, value) {
       var lower = name.lower()
 
-      if !_HOP_BY_HOP.contains(lower)
-        and lower != 'host'
-        and lower != 'content-length' {
+      if !_HOP_BY_HOP.contains(lower) and
+          lower != 'host' and
+          lower != 'content-length' {
         forwarded.add(name, value)
       }
     })
@@ -337,12 +338,12 @@ def _forwarded_node(address) {
 }
 
 /**
- * Balances requests across several upstreams.
+ * Spreads requests across several upstream servers.
  *
- * Selection is round-robin, and an upstream that fails is taken out
- * of rotation for `recovery_time` seconds rather than retried on
- * every request - which is what stops one dead backend from adding
- * its full connect timeout to a share of all traffic.
+ * Servers are chosen in turn, and a server that fails is taken out of
+ * rotation for `recovery_time` seconds instead of being retried on
+ * every request. That stops a single dead backend from adding its full
+ * connection timeout to a share of all requests.
  *
  * ```zuri
  * var pool = http.LoadBalancer([
@@ -426,8 +427,8 @@ class LoadBalancer {
 
       self._proxies[index].handle(request, response)
 
-      if response.status != status.BAD_GATEWAY
-        and response.status != status.GATEWAY_TIMEOUT {
+      if response.status != status.BAD_GATEWAY and
+          response.status != status.GATEWAY_TIMEOUT {
         self._failed_until[index] = 0
         return
       }

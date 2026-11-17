@@ -1,29 +1,29 @@
 # Databases
 
-The `sql` module is how a Zuri program talks to a relational database.
-It is one module rather than one per engine, and that is the whole
-design: `sql` defines what a database adapter has to provide, supplies
-everything that is the same whichever engine answers, and picks the
-adapter from the connection string.
+The `sql` module is how a Zuri program works with a relational database.
+There's a single module rather than one for each database engine, and that's
+the core of its design. `sql` defines what a database adapter has to
+provide, supplies everything that works the same way regardless of the
+engine, and chooses the adapter based on the connection string.
 
-Three adapters ship with it to support four major database engines
-&mdash; SQLite, PostgreSQL, MySQL and MariaDB. SQLite is a file-based
-database with no server to run and nothing to configure, which makes it
-the right choice for an application that ships with its data and for a
-test suite that wants a real database per run. PostgreSQL, MySQL, and
-MariaDB are servers, for everything that outgrows a file, and the MySQL 
-adapter is the same adapter that drives MariaDB as well.
+It comes with three adapters that support four major database engines:
+SQLite, PostgreSQL, MySQL and MariaDB. SQLite is a file-based database with
+no server to run and nothing to configure, which makes it a good fit for
+applications that ship with their own data and for test suites that need a
+real database for each run. PostgreSQL, MySQL and MariaDB are database
+servers for anything that outgrows a single file. The MySQL adapter works
+with MariaDB as well.
 
-Changing from one to another means changing the connection string, and
-whatever SQL they genuinely spell differently.
+To switch from one database to another, you change the connection string,
+plus any SQL that the two engines really do write differently.
 
 - [Following Along](#following-along)
 - [Introduction](#introduction)
-- [Connecting](#connecting)
-- [Querying and Fetching](#querying-and-fetching)
+- [Connecting to a Database](#connecting-to-a-database)
+- [Running Queries](#running-queries)
 - [Parameters](#parameters)
 - [Rows, Columns and Types](#rows-columns-and-types)
-- [The CRUD Helpers](#the-crud-helpers)
+- [CRUD Helpers](#crud-helpers)
 - [Transactions](#transactions)
 - [Streaming Large Results](#streaming-large-results)
 - [Prepared Statements](#prepared-statements)
@@ -31,30 +31,31 @@ whatever SQL they genuinely spell differently.
 - [Errors](#errors)
 - [Schema Introspection](#schema-introspection)
 - [Switching Databases](#switching-databases)
-- [SQLite Specifics](#sqlite-specifics)
-- [PostgreSQL Specifics](#postgresql-specifics)
-- [MySQL Specifics](#mysql-specifics)
+- [SQLite Features](#sqlite-features)
+- [PostgreSQL Features](#postgresql-features)
+- [MySQL Features](#mysql-features)
 - [Writing Your Own Adapter](#writing-your-own-adapter)
-- [What the Module Refuses](#what-the-module-refuses)
+- [Design Limits](#design-limits)
 - [Module Reference](#module-reference)
 
-> Blocks on this page that list several calls together are **reference
-> listings**, not programs: they show the shape of each call rather
-> than a sequence to run. Anything presented as a complete program runs
-> as written. The PostgreSQL and MySQL examples need a server, so they
-> are shown rather than run.
+> Code blocks in this chapter that list several calls together are
+> **reference listings**, not programs. They show the form of each call, not
+> a sequence to run. Anything shown as a complete program runs as written.
+> The PostgreSQL and MySQL examples need a database server, so they're shown
+> but not run.
 
 ## Following Along
 
-Most examples below use a small database of posts and their authors.
-This builds it:
+Most of the examples below use a small database of posts and their authors.
+This creates it:
 
 ```zuri
 import sql
 
 var db = sql.open('sqlite://guide.db')
 
-db.exec_script("
+db.exec_script(
+  "
   drop table if exists posts;
   drop table if exists authors;
 
@@ -70,7 +71,8 @@ db.exec_script("
     views integer not null default 0,
     published boolean not null default 0
   );
-")
+",
+)
 
 var ada = db.insert('authors', { name: 'Ada Lovelace' })
 var grace = db.insert('authors', { name: 'Grace Hopper' })
@@ -90,25 +92,27 @@ db.close()
 4
 ```
 
-Everything from here on assumes that file exists in the working
+From here on, the examples assume that this file exists in the working
 directory.
 
 ## Introduction
 
-A database library usually ties a program to one engine. The calls are
-named after that engine, the placeholders are spelled its way, and the
-errors are its own numbers, so moving to another means rewriting every
-call site.
+A database library usually ties a program to a single engine. Its functions
+are named after that engine, its placeholders follow that engine's syntax,
+and its errors use that engine's error numbers, so switching to another
+database means rewriting every call.
 
-`sql` puts the parts that are the same in one place. A statement is
-written once:
+`sql` keeps the parts that are the same for every engine in one place, so
+you write a statement once:
 
 ```zuri
 import sql
 
 var db = sql.open('sqlite://guide.db')
 
-for post in db.query('select title, views from posts where published = ?', [true]) {
+for post in db.query('select title, views from posts where published = ?', [
+  true,
+]) {
   echo '${post.title}: ${post.views}'
 }
 
@@ -121,27 +125,26 @@ On Bugs: 1290
 On Compilers: 640
 ```
 
-Point the first line at `postgres://localhost/app` or
-`mysql://localhost/app` and the rest runs unchanged. The `?` becomes
-`$1` on PostgreSQL because that is what PostgreSQL wants, and stays `?`
-on MySQL because that is what MySQL wants. An insert asking for its new
-id gets a `RETURNING` clause on PostgreSQL, because PostgreSQL has no
-last insert id and the other two do. A duplicate key arrives as
-`UniqueViolation` from all three.
+If you change the first line to `postgres://localhost/app` or
+`mysql://localhost/app`, the rest runs unchanged. On PostgreSQL, the `?`
+becomes `$1`, because that's what PostgreSQL expects, and on MySQL it stays
+`?`, because that's what MySQL expects. An insert that asks for its new ID
+gets a `RETURNING` clause on PostgreSQL, because PostgreSQL has no "last
+insert ID" and the other two do. A duplicate key is reported as a
+`UniqueViolation` by all three.
 
-What it does not do is pretend the engines are the same. They disagree
-about auto-incrementing keys, about which functions exist, about a
-great deal of SQL. `sql` translates what can be translated and is
-explicit about the rest.
+What `sql` doesn't do is pretend that the engines are the same. They differ
+on auto-incrementing keys, on which functions are available and on a lot of
+other SQL. `sql` translates what it can and is explicit about the rest.
 
-## Connecting
+## Connecting to a Database
 
 `open()` takes a connection string and returns a `Connection`.
 
 ```zuri,ignore
-sql.open('sqlite://./app.db')          # a file
-sql.open(':memory:')                   # a private database in memory
-sql.open('./app.db')                   # a bare path is SQLite
+sql.open('sqlite://./app.db') # a file
+sql.open(':memory:') # a private database in memory
+sql.open('./app.db') # a bare path is SQLite
 sql.open('postgres://localhost/app')
 sql.open('postgres://alice:secret@db.internal:5432/shop?sslmode=require')
 sql.open('host=localhost dbname=app user=alice')
@@ -150,13 +153,13 @@ sql.open('mysql://alice:secret@db.internal:3306/shop?sslmode=verify')
 sql.open('mariadb://localhost/app')
 ```
 
-The scheme picks the adapter. A string with no scheme at all is taken
-as a SQLite path, since nothing else it could be. MySQL and MariaDB
-speak one protocol, so either scheme reaches either server, and the
-connection is described by the adapter for the server it found.
+The scheme selects the adapter. A string without a scheme is treated as a
+SQLite file path, since it can't be anything else. MySQL and MariaDB use the
+same protocol, so either scheme can connect to either server, and the
+connection is described by the adapter for whichever server it found.
 
-Options can also be given as a dictionary, which is how anything an
-adapter accepts beyond the connection string is passed:
+You can also pass options as a dictionary, which is how you set anything an
+adapter supports beyond what fits in the connection string:
 
 ```zuri,ignore
 sql.open({
@@ -167,14 +170,15 @@ sql.open({
 })
 ```
 
-or alongside a string, where they are merged over whatever it carried:
+Or you can pass them alongside a connection string, in which case they're
+merged with, and override, the values in the string:
 
 ```zuri,ignore
 sql.open('sqlite://./app.db', { journal_mode: 'wal' })
 ```
 
-A connection should be closed when it is finished with, and a `catch`
-block makes that certain even when the work between raises:
+Close a connection when you're done with it. A `catch` block makes sure that
+happens, even if the code in between raises an error:
 
 ```zuri
 import sql
@@ -197,13 +201,13 @@ db.close()
 1
 ```
 
-A connection belongs to the isolate that opened it and cannot be handed
-to another. An isolate that needs the database opens its own connection
-or its own pool.
+A connection belongs to the isolate that opened it and can't be passed to
+another isolate. An isolate that needs to use the database opens its own
+connection or its own pool.
 
-## Querying and Fetching
+## Running Queries
 
-`query()` runs a statement and reads its whole result:
+`query()` runs a statement and reads its entire result:
 
 ```zuri
 import sql
@@ -224,7 +228,7 @@ On Bugs
 [On Bugs, On Compilers, On Engines, On Looms]
 ```
 
-A result is iterable, so the common case needs nothing else:
+A result is iterable, so in the most common case, that's all you need:
 
 ```zuri,ignore
 for post in db.query('select * from posts') {
@@ -232,13 +236,13 @@ for post in db.query('select * from posts') {
 }
 ```
 
-For the shapes that come up constantly there are shorter forms:
+There are shorter forms for the most common kinds of result:
 
 ```zuri,ignore
-db.fetch_one(sql, params)             # the first row, or nil
-db.fetch_all(sql, params)             # every row, as dictionaries
+db.fetch_one(sql, params) # the first row, or nil
+db.fetch_all(sql, params) # every row, as dictionaries
 db.fetch_value(sql, params, fallback) # the first column of the first row
-db.fetch_column(sql, params, column)  # one column's values, as a list
+db.fetch_column(sql, params, column) # one column's values, as a list
 ```
 
 ```zuri
@@ -261,7 +265,7 @@ On Bugs
 none
 ```
 
-`exec()` is for a statement run for its effect rather than its rows:
+`exec()` is for statements you run for their effect rather than for rows:
 
 ```zuri
 import sql
@@ -282,8 +286,8 @@ db.close()
 1
 ```
 
-And `exec_script()` runs several statements at once, which is what a
-schema file is:
+And `exec_script()` runs several statements at once, which is what a schema
+file contains:
 
 ```zuri,ignore
 db.exec_script(file('schema.sql').read())
@@ -291,11 +295,11 @@ db.exec_script(file('schema.sql').read())
 
 ## Parameters
 
-Values are bound by the engine, never pasted into the statement. That
-is what makes a value a value rather than a piece of SQL, and it is the
-whole of the defence against injection.
+Values are bound by the database engine and never inserted into the text of
+the statement. That's what keeps a value from being treated as SQL, and it's
+your entire defense against SQL injection.
 
-Write `?` for positional parameters:
+Use `?` for positional parameters:
 
 ```zuri
 import sql
@@ -304,7 +308,7 @@ var db = sql.open('sqlite://guide.db')
 
 echo db.fetch_column(
   'select title from posts where author_id = ? and published = ?',
-  [1, true]
+  [1, true],
 )
 
 db.close()
@@ -314,8 +318,8 @@ db.close()
 [On Engines]
 ```
 
-or `:name` for named ones, where order stops mattering and a name may
-be used more than once:
+Or use `:name` for named parameters, where the order doesn't matter and you
+can use the same name more than once:
 
 ```zuri
 import sql
@@ -324,7 +328,7 @@ var db = sql.open('sqlite://guide.db')
 
 echo db.fetch_column(
   'select title from posts where views > :floor and views < :ceiling',
-  { floor: 100, ceiling: 1000 }
+  { floor: 100, ceiling: 1000 },
 )
 
 db.close()
@@ -334,10 +338,10 @@ db.close()
 [On Engines, On Compilers]
 ```
 
-`sql` rewrites these into whatever the adapter wants: `$1` and `$2` for
-PostgreSQL, `?1` and `?2` for SQLite, and `?` unchanged for MySQL, which
-already spells them that way. The scanner knows when a `?` or a `:` is
-not a placeholder, so none of these are touched:
+`sql` rewrites these into whatever form the adapter expects: `$1` and `$2`
+for PostgreSQL, `?1` and `?2` for SQLite, and `?` unchanged for MySQL, which
+already uses that form. The scanner recognizes when a `?` or a `:` isn't a
+placeholder, so none of these are changed:
 
 ```zuri,ignore
 "a ? inside a string"      -- a string
@@ -349,17 +353,16 @@ value::text                -- a PostgreSQL cast
 arr[1:3]                   -- an array slice
 ```
 
-PostgreSQL uses `?` as a JSON operator, so a literal one is written
-`??`:
+PostgreSQL uses `?` as a JSON operator, so to write a literal one, use `??`:
 
 ```zuri,ignore
 db.query('select * from docs where data ?? ?', ['key'])
 ```
 
-> Never build a statement by joining strings around a value, even when
-> the value looks safe. The two forms above cover every case where a
-> **value** varies. Where an **identifier** varies, quote it through
-> the driver rather than interpolating it:
+> Never build a statement by joining strings around a value, even when the
+> value looks safe. The two forms above cover every case where a **value**
+> varies. When an **identifier** varies, quote it through the driver instead
+> of interpolating it:
 >
 > ```zuri,ignore
 > var column = db.driver().quote_identifier(name)
@@ -368,8 +371,8 @@ db.query('select * from docs where data ?? ?', ['key'])
 
 ## Rows, Columns and Types
 
-A row is a dictionary keyed by column name, which is what lets
-`post.title` read the way it does.
+A row is a dictionary keyed by column name, which is why you can write
+`post.title`.
 
 ```zuri
 import sql
@@ -390,32 +393,32 @@ db.close()
 [[1, On Engines, 412]]
 ```
 
-Two columns of the same name collapse in a dictionary, which is worth
-knowing before selecting `id` from both sides of a join. Aliasing one
-of them is the fix; `tuples()` is the escape hatch when it cannot be.
+Two columns with the same name collapse into one entry in a dictionary, so
+keep that in mind before you select `id` from both sides of a join. Give one
+of them an alias to fix it, or use `tuples()` if you can't.
 
-Values correspond like this:
+Values are converted like this:
 
 | Zuri | Database |
 | --- | --- |
 | `nil` | NULL |
-| `bool` | a boolean where the engine has one, otherwise 0 and 1 |
-| `number` | an integer where the value is whole, otherwise a float |
-| `bigint` | a 64 bit integer, for values past what a double holds |
-| `string` | text |
-| `bytes` | a blob |
-| `date.Date` | a timestamp |
-| `sql.Time` | a `TIME` interval, on an engine that has one |
-| `sql.Decimal` | an exact decimal |
+| `bool` | A boolean, where the engine has one, and 0 or 1 otherwise |
+| `number` | An integer if the value is a whole number, and a float otherwise |
+| `bigint` | A 64-bit integer, for values too large for a double |
+| `string` | Text |
+| `bytes` | A blob |
+| `date.Date` | A timestamp |
+| `sql.Time` | A `TIME` interval, on engines that have one |
+| `sql.Decimal` | An exact decimal |
 | `list`, `dict` | JSON |
 
-Not every engine has every one of those. PostgreSQL has a real boolean
-and MySQL does not, so a `true` written to MySQL comes back as `1`.
-`db.supports()` answers that sort of question without guessing, and
-each engine's own section below says where it differs.
+Not every engine has all of these types. PostgreSQL has a real boolean type
+and MySQL doesn't, so a `true` written to MySQL is read back as `1`. Use
+`db.supports()` to find out about this kind of difference instead of
+guessing. Each engine's section below describes where it differs.
 
-An integer too large for a double comes back as a `bigint` rather than
-silently rounded:
+An integer that's too large for a double is returned as a `bigint` instead
+of being silently rounded:
 
 ```zuri
 import sql
@@ -436,10 +439,10 @@ bigint
 9223372036854775807n
 ```
 
-SQLite stores five things and remembers nothing about intent, so a
-boolean goes in as 1 and would come back as the number 1. What it does
-keep is the type each column was *declared* with, and that is what the
-adapter reads it back by:
+SQLite stores five kinds of value and doesn't record what you meant, so a
+boolean is stored as 1 and would be read back as the number 1. What SQLite
+does keep is the type each column was *declared* with, and the adapter uses
+that to convert values when it reads them:
 
 ```zuri
 import sql
@@ -447,7 +450,9 @@ import sql
 var db = sql.open(':memory:')
 db.exec('create table t (ok boolean, at datetime, doc json)')
 db.exec('insert into t values (?, ?, ?)', [
-  true, '2026-09-16T14:30:00.000000+00:00', '{"a":1}',
+  true,
+  '2026-09-16T14:30:00.000000+00:00',
+  '{"a":1}',
 ])
 
 var row = db.fetch_one('select * from t')
@@ -465,13 +470,13 @@ Date
 {a: 1}
 ```
 
-A column with no declared type is an expression, and comes back exactly
-as it was stored.
+A column without a declared type is an expression, and its value is returned
+exactly as it was stored.
 
-### Exact decimals
+### Exact Decimals
 
-A `number` is a double, which holds `0.1` only approximately. For money
-that is not good enough, so `sql.Decimal` holds a value exactly:
+A `number` is a double, which can only store `0.1` approximately. That isn't
+good enough for money, so `sql.Decimal` stores a value exactly:
 
 ```zuri
 import sql { Decimal }
@@ -493,30 +498,30 @@ echo Decimal('0.1').add(Decimal('0.2')).to_string()
 ```
 
 PostgreSQL's `numeric`, MySQL's `DECIMAL`, and SQLite's `DECIMAL` and
-`NUMERIC` columns read and write as `Decimal`. SQLite keeps a decimal as
-a double, which holds fifteen significant digits exactly, so a decimal
-column there holds at most fifteen, and `table.decimal()` refuses a
-larger precision on SQLite. An aggregate such as `sum()` has no declared
-type, and comes back as a number.
+`NUMERIC` columns are read and written as `Decimal` values. SQLite stores a
+decimal as a double, which holds 15 significant digits exactly, so a decimal
+column in SQLite can hold at most 15 digits, and `table.decimal()` rejects a
+larger precision on SQLite. An aggregate such as `sum()` doesn't have a
+declared type, so its result is returned as a number.
 
-## The CRUD Helpers
+## CRUD Helpers
 
-Four calls on a connection write no SQL at all. `insert()`, `update()`,
-`delete()` and `find()` take a table name and dictionaries, build the
-statement for whichever engine is on the other end, and bind every
-value as a parameter.
+Four methods on a connection let you work with rows without writing any SQL.
+`insert()`, `update()`, `delete()` and `find()` take a table name and
+dictionaries, build the statement for whichever engine you're connected to,
+and bind every value as a parameter.
 
-They are here because the statements they replace are the ones least
-worth writing by hand. They are mechanical, they differ between
-dialects in small ways that only show up in production, and a string
-built by concatenation is where an injection gets in. Anything harder
-than a flat list of conditions is still written as SQL, and the two
-mix freely on the same connection.
+They exist because the statements they replace are the ones least worth
+writing by hand. Those statements are repetitive, they differ between
+dialects in small ways that only show up in production, and building them by
+joining strings is how SQL injection gets in. Anything more complex than a
+simple list of conditions is still written in SQL, and you can mix the two
+freely on the same connection.
 
-### Inserting and ids
+### Inserting Rows and Getting Their IDs
 
-`insert()` takes a table and a dictionary, and returns the new row's
-id:
+`insert()` takes a table name and a dictionary, and returns the ID of the
+new row:
 
 ```zuri
 import sql
@@ -535,23 +540,23 @@ db.close()
 2
 ```
 
-This is the call that hides the largest difference between the engines.
-SQLite and MySQL report the id of the row just inserted; PostgreSQL does
-not, and an insert that wants one has to ask with a `RETURNING` clause
-naming the primary key. MariaDB has both and uses `RETURNING`.
-`insert()` does whichever applies, and finds the key by asking the
-schema rather than assuming it is called `id`.
+This method hides the biggest difference between the engines. SQLite and
+MySQL report the ID of the row that was just inserted, but PostgreSQL
+doesn't, so an insert that needs the ID has to ask for it with a `RETURNING`
+clause that names the primary key. MariaDB supports both and uses
+`RETURNING`. `insert()` does whichever applies, and finds the primary key by
+asking the schema rather than assuming it's called `id`.
 
-Where the key is not the column to return, name it:
+If you want a column other than the key to be returned, name it:
 
 ```zuri,ignore
 db.insert('events', { name: 'started' }, { returning: 'uuid' })
 ```
 
-### Several rows at once
+### Inserting Several Rows at Once
 
-Several rows go in one statement, split so that no single statement
-binds more parameters than the engine allows:
+Several rows can be inserted in a single statement, which is split up so
+that no statement binds more parameters than the engine allows:
 
 ```zuri
 import sql
@@ -571,14 +576,14 @@ db.close()
 2
 ```
 
-Every row has to name the same columns. A row naming a different set
-raises rather than being padded with nulls, because a missing column
-and a null column mean different things.
+Every row must have the same columns. A row with a different set of columns
+raises an error instead of being filled in with nulls, because a missing
+column and a null value mean different things.
 
-### Finding rows
+### Finding Rows
 
-`find()` answers with a `ResultSet`, `count()` with a number, and
-`find_one()` with the first row as a dictionary:
+`find()` returns a `ResultSet`, `count()` returns a number, and `find_one()`
+returns the first matching row as a dictionary:
 
 ```zuri
 import sql
@@ -587,14 +592,22 @@ var db = sql.open('sqlite://guide.db')
 
 echo db.count('posts')
 echo db.count('posts', { published: true })
-echo db.count('posts', { author_id: [1, 2] })
+echo db.count('posts', {
+  author_id: [1, 2],
+})
 echo db.count('posts', { author_id: [] })
 
-echo db.find('posts', { published: true }, {
-  columns: ['title'],
-  order: ['views desc'],
-  limit: 2,
-}).column('title')
+echo db
+    .find(
+      'posts',
+      { published: true },
+      {
+        columns: ['title'],
+        order: ['views desc'],
+        limit: 2,
+      },
+    )
+    .column('title')
 
 echo db.find_one('posts', { title: 'On Bugs' }).views
 
@@ -610,8 +623,8 @@ db.close()
 1290
 ```
 
-A `find_one()` that matches nothing answers `nil`. That is the answer,
-not a failure, so nothing is raised for it:
+If `find_one()` doesn't find a match, it returns `nil`. That's a valid
+answer rather than a failure, so no error is raised:
 
 ```zuri
 import sql
@@ -629,14 +642,15 @@ db.close()
 nil
 ```
 
-### What a filter can say
+### Writing Filters
 
-A condition's value decides what it means. A plain value is equality, a
-list is `IN`, an empty list matches nothing, and `nil` is `IS NULL`
-rather than `= NULL`, which no row ever satisfies.
+The type of a condition's value determines what it means. A plain value
+means equality, a list means `IN`, an empty list matches nothing, and `nil`
+means `IS NULL` rather than `= NULL`, which no row would ever match.
 
-Several conditions in one dictionary are joined with `AND`. There is no
-`OR`, which is the first thing to write as SQL:
+Several conditions in the same dictionary are combined with `AND`. There's
+no way to express `OR`, so that's usually the first thing you'll need to
+write in SQL:
 
 ```zuri
 import sql
@@ -644,7 +658,10 @@ import sql
 var db = sql.open('sqlite://guide.db')
 
 echo db.count('posts', { published: true, author_id: 1 })
-echo db.count('posts', { published: true, views: [87, 1290] })
+echo db.count('posts', {
+  published: true,
+  views: [87, 1290],
+})
 
 db.close()
 ```
@@ -654,23 +671,31 @@ db.close()
 1
 ```
 
-Passing `nil` as the whole filter matches every row. That has to be
-asked for rather than happening because a dictionary came out empty,
-which is what stands between a filter built from user input and an
-`UPDATE` with no `WHERE`.
+Passing `nil` as the whole filter matches every row. You have to ask for
+that explicitly, rather than it happening because a dictionary turned out to
+be empty. That's what prevents a filter built from user input from turning
+into an `UPDATE` without a `WHERE`.
 
-### Ordering, limits and pages
+### Ordering, Limits and Pages
 
-`order` is a list of column names, each optionally followed by ` asc`
-or ` desc`, applied in the order given:
+`order` is a list of column names, each optionally followed by ` asc` or
+` desc`, and they're applied in the order given:
 
 ```zuri
 import sql
 
 var db = sql.open('sqlite://guide.db')
 
-echo db.find('posts', nil, { order: ['views desc'] }).column('title')
-echo db.find('posts', nil, { order: ['author_id asc', 'views desc'] }).column('title')
+echo db
+    .find('posts', nil, {
+      order: ['views desc'],
+    })
+    .column('title')
+echo db
+    .find('posts', nil, {
+      order: ['author_id asc', 'views desc'],
+    })
+    .column('title')
 
 db.close()
 ```
@@ -680,8 +705,8 @@ db.close()
 [On Engines, On Looms, On Bugs, On Compilers]
 ```
 
-`limit` and `offset` are whole numbers of rows, and together they are a
-page. A page past the end is empty rather than an error:
+`limit` and `offset` are numbers of rows, and together they define a page. A
+page beyond the end of the results is empty rather than an error:
 
 ```zuri
 import sql
@@ -689,12 +714,14 @@ import sql
 var db = sql.open('sqlite://guide.db')
 
 def page(number, size) {
-  return db.find('posts', nil, {
-    columns: ['title'],
-    order: ['views desc'],
-    limit: size,
-    offset: (number - 1) * size,
-  }).column('title')
+  return db
+      .find('posts', nil, {
+        columns: ['title'],
+        order: ['views desc'],
+        limit: size,
+        offset: (number - 1) * size,
+      })
+      .column('title')
 }
 
 echo page(1, 2)
@@ -710,10 +737,10 @@ db.close()
 []
 ```
 
-A limit and an offset go into the statement text rather than being
-bound, because not every engine allows a parameter in either place.
-That leaves them as the one part of a built statement that is not a
-parameter, so each is checked before it goes in:
+The limit and the offset are written into the text of the statement instead
+of being bound as parameters, because not every engine allows a parameter in
+those positions. That makes them the only part of a generated statement that
+isn't a parameter, so each one is validated before it's added:
 
 ```zuri
 import sql
@@ -733,18 +760,28 @@ db.close()
 a limit is a whole number of rows, not 2.5
 ```
 
-### Updating and deleting
+### Updating and Deleting Rows
 
-`update()` and `delete()` return how many rows changed:
+`update()` and `delete()` return the number of rows they changed:
 
 ```zuri
 import sql
 
 var db = sql.open(':memory:')
 db.exec('create table t (id integer primary key, n integer)')
-db.insert_many('t', [{ n: 1 }, { n: 2 }, { n: 3 }])
+db.insert_many('t', [
+  { n: 1 },
+  { n: 2 },
+  { n: 3 },
+])
 
-echo db.update('t', { n: 0 }, { n: [1, 2] })
+echo db.update(
+  't',
+  { n: 0 },
+  {
+    n: [1, 2],
+  },
+)
 echo db.delete('t', { n: 0 })
 echo db.count('t')
 
@@ -757,13 +794,13 @@ db.close()
 1
 ```
 
-They read a filter exactly as `find()` does, `nil` included: passing it
-changes or deletes every row.
+They interpret a filter in exactly the same way as `find()`, including
+`nil`, which means that passing `nil` updates or deletes every row.
 
-### Values that are not values
+### Raw SQL Fragments
 
-Where a value is not a value, `sql.raw()` marks a fragment to be used
-as written:
+When you need to use something that isn't a plain value, `sql.raw()` marks a
+fragment of SQL to be used exactly as written:
 
 ```zuri
 import sql
@@ -782,9 +819,8 @@ db.close()
 11
 ```
 
-A `Raw` is accepted everywhere a column or a value is, which is what
-makes an aggregate or a subquery reachable without leaving the
-helpers:
+A `Raw` value is accepted anywhere a column or a value is, which lets you
+use an aggregate or a subquery without giving up the helpers:
 
 ```zuri
 import sql
@@ -808,14 +844,14 @@ db.close()
 ```
 
 > `raw()` is exactly as dangerous as it sounds. A fragment built from
-> anything a user supplied is a SQL injection. Build them from
-> literals, and keep values in the parameters where they belong.
+> anything a user provided is a SQL injection vulnerability. Only build
+> fragments from literals, and keep values in parameters, where they belong.
 
-### Inside a transaction
+### Using the Helpers in a Transaction
 
-A `Transaction` carries all of them, and they mean the same thing
-there. A read inside one sees what that transaction has written and
-nobody else has committed yet:
+A `Transaction` has all of the same methods, and they work the same way. A
+read inside a transaction sees what that transaction has written, even
+though nobody else has committed it yet:
 
 ```zuri
 import sql
@@ -824,16 +860,28 @@ var db = sql.open(':memory:')
 db.exec('create table t (id integer primary key, n integer)')
 
 db.transaction(@(tx) {
-  tx.insert_many('t', [{ n: 1 }, { n: 2 }, { n: 3 }])
+  tx.insert_many('t', [
+    { n: 1 },
+    { n: 2 },
+    { n: 3 },
+  ])
 
   echo tx.count('t')
-  echo tx.find('t', nil, { order: ['n desc'] }).column('n')
+  echo tx
+      .find('t', nil, {
+        order: ['n desc'],
+      })
+      .column('n')
 
   tx.update('t', { n: 9 }, { n: 1 })
   tx.delete('t', { n: 3 })
 })
 
-echo db.find('t', nil, { order: ['n asc'] }).column('n')
+echo db
+    .find('t', nil, {
+      order: ['n asc'],
+    })
+    .column('n')
 
 db.close()
 ```
@@ -844,29 +892,31 @@ db.close()
 [2, 9]
 ```
 
-A rollback takes those rows with it, the reads included, and a
-transaction that has already committed refuses them the way it refuses
-everything else.
+Rolling back undoes those changes, and a transaction that has already been
+committed rejects these calls, just as it rejects everything else.
 
-### Where they stop
+### Limitations of the Helpers
 
-These calls cover a flat list of equality conditions and stop there.
-There is no join, no `OR` and no expression tree, because SQL is a
-better language for those than any chain of method calls. A query that
-wants one is a `query()` or a `fetch_all()` on the same connection,
-next to the helpers rather than instead of them.
+The helpers only support a simple list of equality conditions. There are no
+joins, no `OR` and no expression trees, because SQL is a better language for
+those than any chain of method calls. For a query that needs one, use
+`query()` or `fetch_all()` on the same connection, alongside the helpers.
 
 ## Transactions
 
-The closure form commits when the body returns and rolls back when it
-raises, and there is no path through it that leaves a transaction open:
+With the closure form, the transaction is committed when the body returns
+and rolled back when it raises an error, so there's no way to leave a
+transaction open by accident:
 
 ```zuri
 import sql
 
 var db = sql.open(':memory:')
 db.exec('create table accounts (id integer primary key, balance integer)')
-db.insert_many('accounts', [{ balance: 500 }, { balance: 0 }])
+db.insert_many('accounts', [
+  { balance: 500 },
+  { balance: 0 },
+])
 
 db.transaction(@(tx) {
   tx.update('accounts', { balance: sql.raw('balance - 100') }, { id: 1 })
@@ -882,7 +932,7 @@ db.close()
 [400, 100]
 ```
 
-A failure undoes the whole thing:
+A failure undoes everything in the transaction:
 
 ```zuri
 import sql
@@ -908,10 +958,10 @@ rolled back: something went wrong
 0
 ```
 
-A `transaction()` called inside another becomes a savepoint, so a
-helper that opens one works the same whether it was called on its own
-or from inside a larger piece of work. Only the outermost commits, and
-a failure inside undoes just that inner piece:
+A `transaction()` called inside another one becomes a savepoint, so a helper
+that opens a transaction works the same way whether it's called on its own
+or as part of a larger piece of work. Only the outermost transaction
+commits, and a failure inside an inner one only undoes that inner piece:
 
 ```zuri
 import sql
@@ -941,38 +991,38 @@ inner undone
 [outer]
 ```
 
-Schema changes are part of the transaction on SQLite and PostgreSQL,
-so a set of `create table` statements that fails half way leaves
-nothing behind. MySQL and MariaDB commit the open transaction at every
-`create`, `alter` and `drop`, and a `transaction()` whose body changes
-the schema there raises `TransactionError` when it comes to commit.
-`db.supports('transactional_ddl')` tells the two apart, so a program
-that migrates its own schema can run each change inside a transaction
-where that holds and on its own where it does not.
+On SQLite and PostgreSQL, schema changes are part of the transaction, so if
+a series of `create table` statements fails halfway through, nothing is left
+behind. MySQL and MariaDB commit any open transaction on every `create`,
+`alter` and `drop`, so on those engines, a `transaction()` whose body
+changes the schema raises a `TransactionError` when it tries to commit.
+`db.supports('transactional_ddl')` tells you which behavior applies, so a
+program that migrates its own schema can run each change inside a
+transaction where that works, and on its own where it doesn't.
 
-An isolation level can be asked for. Where an engine cannot provide one
-it says so rather than quietly giving something weaker:
+You can request an isolation level. If an engine can't provide the level you
+ask for, it says so instead of quietly giving you a weaker one:
 
 ```zuri,ignore
 db.transaction(@(tx) { ... }, sql.SERIALIZABLE)
 ```
 
-| | |
+| Level | Support |
 | --- | --- |
-| `sql.READ_UNCOMMITTED` | MySQL honours it; PostgreSQL accepts it and gives read committed |
-| `sql.READ_COMMITTED` | everywhere |
-| `sql.REPEATABLE_READ` | everywhere, and MySQL's default |
-| `sql.SERIALIZABLE` | everywhere |
+| `sql.READ_UNCOMMITTED` | MySQL supports it. PostgreSQL accepts it, but gives you read committed. |
+| `sql.READ_COMMITTED` | Supported everywhere |
+| `sql.REPEATABLE_READ` | Supported everywhere, and the default on MySQL |
+| `sql.SERIALIZABLE` | Supported everywhere |
 
-`begin()` opens one to be committed or rolled back by hand, for a
-transaction whose lifetime is not a block. The closure form is safer
-and should be preferred.
+`begin()` starts a transaction that you commit or roll back yourself, for a
+transaction that doesn't fit inside a single block. The closure form is
+safer, so use it when you can.
 
 ## Streaming Large Results
 
-`query()` builds the whole result in memory, which is right for the
-hundreds of rows most queries return and wrong for the millions some
-do. `stream()` reads the same result a row at a time:
+`query()` builds the entire result in memory. That's fine for the hundreds
+of rows most queries return, but not for the millions that some return.
+`stream()` reads the same result one row at a time:
 
 ```zuri
 import sql
@@ -994,8 +1044,8 @@ On Engines
 On Looms
 ```
 
-Running to the end closes the cursor. A loop that stops early does not,
-so anything that might `break` has to close it:
+Reading to the end closes the cursor. If a loop stops early, the cursor
+isn't closed, so any loop that might `break` needs to close it:
 
 ```zuri,ignore
 var cursor = db.stream('select * from events')
@@ -1009,7 +1059,8 @@ for event in cursor {
 cursor.close()
 ```
 
-`take(n)` reads a batch at a time, for work that batches naturally:
+`take(n)` reads a batch of rows at a time, for work that naturally happens
+in batches:
 
 ```zuri
 import sql
@@ -1030,20 +1081,20 @@ db.close()
 []
 ```
 
-On PostgreSQL this is a server-side portal and on MySQL a server-side
-cursor, both fetched in batches that `{ batch: n }` sizes. On SQLite it
-is the engine's own behaviour: rows are computed as they are asked for,
-so nothing is held but the current one.
+On PostgreSQL, this uses a server-side portal, and on MySQL a server-side
+cursor. Both fetch rows in batches, whose size you can set with
+`{ batch: n }`. On SQLite, the engine itself computes rows as they're
+requested, so only the current row is held in memory.
 
-A server-side cursor holds its connection while it is open, since the
-server is part way through answering. Running another statement on that
-connection before the cursor is read to the end or closed raises rather
-than letting the exchange fall out of step.
+A server-side cursor keeps its connection busy while it's open, because the
+server is partway through sending the result. If you run another statement
+on that connection before the cursor has been read to the end or closed, an
+error is raised, so the two exchanges can't get mixed up.
 
 ## Prepared Statements
 
-Compiling a statement is the expensive half of running one, and a
-statement run in a loop should pay for it once:
+Compiling a statement is the expensive part of running it, so a statement
+that runs in a loop should only be compiled once:
 
 ```zuri
 import sql
@@ -1067,20 +1118,20 @@ db.close()
 1000
 ```
 
-The placeholders are translated once, when the statement is prepared,
-so the loop does no string work at all. A prepared statement carries
-the same query and fetch methods a connection does.
+The placeholders are translated once, when the statement is prepared, so the
+loop doesn't do any string processing at all. A prepared statement has the
+same query and fetch methods as a connection.
 
-A prepared statement belongs to the connection that prepared it.
-Closing the connection closes the statement too, along with any cursor
-still open on it, and using either afterwards raises `ClosedError`.
+A prepared statement belongs to the connection that prepared it. Closing the
+connection also closes the statement and any cursor still open on it, and
+using either of them afterwards raises a `ClosedError`.
 
 ## Connection Pools
 
-Opening a connection is expensive: for PostgreSQL and MySQL it is a TCP
-connection, a TLS handshake and an authentication exchange before the
-first statement runs. A server that opened one per request would spend
-most of its time connecting.
+Opening a connection is expensive. For PostgreSQL and MySQL, it involves a
+TCP connection, a TLS handshake and an authentication exchange, all before
+the first statement runs. A server that opened a new connection for every
+request would spend most of its time connecting.
 
 ```zuri
 import sql
@@ -1098,10 +1149,10 @@ db.close()
 {size: 1, idle: 1, in_use: 0, max: 4}
 ```
 
-Used that way the pool takes a connection, runs the statement and gives
-it back. Where several statements have to run on the same connection,
-which a transaction requires, `with_connection()` holds one and
-releases it whatever happens:
+Used like this, the pool takes a connection, runs the statement and returns
+the connection to the pool. When several statements have to run on the same
+connection, as they do in a transaction, `with_connection()` holds onto one
+connection and releases it however the block ends:
 
 ```zuri,ignore
 db.with_connection(@(connection) {
@@ -1111,33 +1162,33 @@ db.with_connection(@(connection) {
 })
 ```
 
-`transaction()` on the pool does the same in one call.
+`transaction()` on the pool does the same thing in a single call.
 
-| Setting | |
+| Setting | Meaning |
 | --- | --- |
-| `max` | most connections to open. Ten by default |
-| `min` | how many to open up front. None by default |
-| `idle_timeout` | how long an idle connection is kept |
-| `max_lifetime` | how long any connection is kept before being replaced |
-| `validate_on_acquire` | check a connection is alive before lending it |
-| `on_connect` | run something on each new connection |
+| `max` | The maximum number of connections to open. The default is ten. |
+| `min` | The number of connections to open in advance. The default is none. |
+| `idle_timeout` | How long an idle connection is kept |
+| `max_lifetime` | How long a connection is kept before it's replaced |
+| `validate_on_acquire` | Whether to check that a connection still works before handing it out |
+| `on_connect` | A function to run on each new connection |
 
-A pool wants to be as small as the work allows. Connections are not
-free at the other end either, and a pool larger than the database can
-usefully serve turns a queue in the application into a queue in the
-database, where it is harder to see.
+Keep a pool as small as your workload allows. Connections have a cost on the
+database side too, and a pool that's larger than the database can usefully
+handle just moves a queue from your application into the database, where
+it's harder to see.
 
-A pool belongs to the isolate that made it, which has two consequences.
-An isolate that needs database access makes its own. And there is no
-waiting when a pool is empty: nothing else can release a connection
-while the call is running, so running out is reported rather than
-waited on.
+A pool belongs to the isolate that created it, which has two consequences.
+An isolate that needs database access creates its own pool. And a call never
+waits when the pool is empty, because nothing else could release a
+connection while the call is running, so running out of connections is
+reported as an error rather than waited out.
 
 ## Errors
 
-Every error is a `sql.SqlError`. Catch that to catch anything a
-database can do; the subclasses separate what is worth handling
-differently.
+Every error is a `sql.SqlError`. Catch that to handle anything that can go
+wrong with a database, and use the subclasses to handle particular kinds of
+error differently.
 
 ```text
 Error
@@ -1161,11 +1212,11 @@ Error
     └── ClosedError
 ```
 
-The classes are the same on every engine, which is the point. A unique
-constraint is SQLSTATE `23505` on PostgreSQL, error number `1062` on
-MySQL, and extended result code `2067` on SQLite; no one of those means
-anything to the others, and code matching on any of them would stop
-working the moment the adapter changed.
+The error classes are the same on every engine, and that's the point. A
+unique constraint violation is SQLSTATE `23505` on PostgreSQL, error number
+`1062` on MySQL and extended result code `2067` on SQLite. None of these
+numbers mean anything to the other engines, so code that checked for any of
+them would stop working as soon as you changed adapters.
 
 ```zuri
 import sql
@@ -1193,9 +1244,9 @@ true
 sqlite
 ```
 
-The engine's own account is kept rather than thrown away. `code` holds
-what the engine said, `sqlstate` the five character code where there is
-one, and `query` the statement that failed:
+The engine's own information is kept rather than thrown away. `code` holds
+the code the engine reported, `sqlstate` holds the five-character SQLSTATE
+code where there is one, and `query` holds the statement that failed:
 
 ```zuri
 import sql
@@ -1221,21 +1272,20 @@ nil
 UniqueViolation
 ```
 
-`SerializationError` and `DeadlockError` are the two worth retrying:
-both mean the engine gave up on a transaction to keep its promises, and
-running the whole transaction again usually succeeds.
+`SerializationError` and `DeadlockError` are the two errors worth retrying.
+Both mean that the engine abandoned a transaction to keep its guarantees,
+and running the whole transaction again usually succeeds.
 
 ## Schema Introspection
 
-`db.schema` answers questions about what is in the database. The
-queries underneath are entirely different per engine, and the answers
-are the same shape.
+`db.schema` tells you what's in the database. The queries it runs are
+completely different for each engine, but the results have the same
+structure.
 
-Every method takes an optional schema to look in. PostgreSQL has
-schemas inside a database and resolves the default through
-`search_path`; MySQL calls a database a schema and has no layer above
-it, so naming one there names a database; SQLite has neither and
-ignores the argument.
+Every method takes an optional schema name. PostgreSQL has schemas inside
+each database, and finds the default through `search_path`. MySQL calls a
+database a schema and has no level above it, so naming a schema there names
+a database. SQLite has neither, and ignores the argument.
 
 ```zuri
 import sql
@@ -1257,7 +1307,7 @@ id
 true
 ```
 
-Each column is described the same way whichever engine answered:
+Each column is described in the same way, whichever engine you're using:
 
 ```zuri
 import sql
@@ -1279,7 +1329,7 @@ views integer not null
 published boolean not null
 ```
 
-`indexes()` and `foreign_keys()` describe the rest:
+`indexes()` and `foreign_keys()` describe the rest of the table:
 
 ```zuri
 import sql
@@ -1295,23 +1345,23 @@ db.close()
 [{columns: [author_id], references_table: authors, references_columns: [id], on_update: NO ACTION, on_delete: NO ACTION}]
 ```
 
-This is also what makes `insert()` portable: on an engine with no last
-insert id the insert needs a `RETURNING` clause, and the column to
-return is the table's primary key, which is asked for here.
+This is also what makes `insert()` portable. On an engine without a "last
+insert ID", the insert needs a `RETURNING` clause, and the column to return
+is the table's primary key, which is looked up here.
 
-One caution when moving a schema between engines: MySQL parses a
-column level `references` clause and then ignores it, so a foreign key
-declared that way exists on the other two and not there. Declared at
-table level it exists on all three.
+One thing to watch for when moving a schema between engines: MySQL parses a
+`references` clause on a column and then ignores it, so a foreign key
+declared that way exists on the other two engines but not on MySQL. If you
+declare it at the table level instead, it exists on all three.
 
-Changing what is there, creating, altering and dropping tables
-described once for every engine, is
-[Changing the Schema](ch17-01-schema-changes.md).
+Creating, changing and dropping tables, using one description that works for
+every engine, is covered in [Changing the
+Schema](ch17-01-schema-changes.md).
 
 ## Switching Databases
 
-The claim this module makes is that a program moves between engines by
-changing its connection string. Here is that claim, as a program:
+This module promises that a program can switch between engines by changing
+its connection string. Here's a program that shows it:
 
 ```zuri
 import sql
@@ -1319,10 +1369,15 @@ import sql
 def report(db) {
   db.exec_script('drop table if exists tally')
   db.exec_script(
-    'create table tally (id ' + key_type(db) + ' primary key, word text not null)'
+    'create table tally (id ' +
+        key_type(db) +
+        ' primary key, word text not null)',
   )
 
-  db.insert_many('tally', [{ word: 'alpha' }, { word: 'beta' }])
+  db.insert_many('tally', [
+    { word: 'alpha' },
+    { word: 'beta' },
+  ])
 
   var id = db.insert('tally', { word: 'gamma' })
   var found = db.fetch_column('select word from tally order by word')
@@ -1352,22 +1407,22 @@ sqlite.close()
 sqlite: [alpha, beta, gamma] (last id 3)
 ```
 
-The same `report()` runs against PostgreSQL or MySQL by opening a
+The same `report()` function runs against PostgreSQL or MySQL if you open a
 different connection, and prints the same list.
 
-Three things did have to be written twice, and they are the three that
-are genuinely different:
+Three things had to be written separately for each engine, and they're the
+three things that really are different:
 
-- **The connection string**, which is the point.
-- **An auto-incrementing key**, which is not standard SQL. PostgreSQL
-  spells it `serial`, MySQL `auto_increment`, SQLite `integer primary
-  key`.
-- **Any SQL only one of them has.** `sql` does not parse or rewrite
-  statements beyond their placeholders, so a PostgreSQL array operator,
-  a MySQL `on duplicate key update` or a SQLite `json_extract` stays
-  what it is.
+- **The connection string**, which is the whole idea.
+- **An auto-incrementing key**, which isn't part of standard SQL. PostgreSQL
+  uses `serial`, MySQL uses `auto_increment`, and SQLite uses
+  `integer primary key`.
+- **Any SQL that only one engine supports.** `sql` doesn't parse or rewrite
+  statements beyond their placeholders, so a PostgreSQL array operator, a
+  MySQL `on duplicate key update` or a SQLite `json_extract` is passed
+  through unchanged.
 
-`db.supports()` is how a program asks rather than assumes:
+`db.supports()` lets a program ask about a feature instead of assuming:
 
 ```zuri
 import sql
@@ -1391,32 +1446,32 @@ false
 indexed
 ```
 
-## SQLite Specifics
+## SQLite Features
 
-`db.native()` reaches the adapter underneath, where the engine's own
-features live.
+`db.native()` gives you the adapter underneath, which is where the engine's
+own features are.
 
-A SQLite database is a file, and `:memory:` is one that is not. An
-in-memory database belongs to the connection that opened it, so a
-second connection to `:memory:` is a second, empty database rather than
-another handle on the same data.
+A SQLite database is a file, except for `:memory:`, which isn't. An
+in-memory database belongs to the connection that opened it, so a second
+connection to `:memory:` opens a second, empty database, not another handle
+to the same data.
 
-Foreign keys are enforced. SQLite leaves them unenforced by default,
-per connection, for compatibility with databases written before it had
-them; a database that declares them almost certainly means them, so the
-adapter turns them on. Pass `foreign_keys: false` to turn them back
-off.
+Foreign keys are enforced. By default, SQLite doesn't enforce them,
+separately for each connection, for compatibility with databases created
+before it supported foreign keys. A database that declares foreign keys
+almost certainly wants them enforced, so the adapter turns enforcement on.
+Pass `foreign_keys: false` to turn it off.
 
-SQLite has no timestamp type, so a `date.Date` is kept as ISO 8601
-text, written in UTC whatever offset it carried. Text in that one form
-sorts and compares in time order, which is what makes `order by` and
-`<` on such a column agree with the clock. A date reads back as the
-same moment, in UTC.
+SQLite doesn't have a timestamp type, so a `date.Date` is stored as ISO 8601
+text in UTC, whatever time zone offset it had. Text in that format sorts and
+compares in chronological order, so `order by` and `<` on such a column
+agree with the clock. When a date is read back, it represents the same
+moment, in UTC.
 
-### Functions written in Zuri
+### Functions Written in Zuri
 
-A function registered on a connection runs inside the engine, once per
-row, and can be used anywhere an expression can:
+A function you register on a connection runs inside the database engine,
+once for each row, and you can use it anywhere an expression is allowed:
 
 ```zuri
 import sql
@@ -1436,10 +1491,9 @@ db.close()
 [AL, GH]
 ```
 
-An aggregate is written as a fold: `step` is called once per row with
-the accumulator and the row's arguments and returns the next
-accumulator, and `finish` turns the last accumulator into the group's
-value.
+An aggregate is written as a fold. `step` is called once for each row, with
+the accumulator and the row's arguments, and returns the next accumulator.
+`finish` turns the final accumulator into the value for the group.
 
 ```zuri
 import sql
@@ -1463,7 +1517,7 @@ db.close()
 On Compilers
 ```
 
-A collation is an ordering for text, reached with `collate`:
+A collation defines an ordering for text, and you use it with `collate`:
 
 ```zuri
 import sql
@@ -1481,15 +1535,16 @@ db.close()
 [On Bugs, On Looms, On Engines, On Compilers]
 ```
 
-> A function must not touch the connection it was registered on.
-> SQLite is in the middle of a statement when it calls, and reentering
-> would deadlock. An error raised inside one is carried out and
-> re-raised with its own class intact once the statement has finished.
+> A function must not use the connection it was registered on. SQLite is in
+> the middle of running a statement when it calls the function, and using
+> the connection again would cause a deadlock. If the function raises an
+> error, the error is passed back out and raised again, with its own class,
+> once the statement has finished.
 
-### Blobs, backups and hooks
+### Blobs, Backups and Hooks
 
-A large value read with a `select` arrives all at once. A blob handle
-opens one cell and reads windows of it:
+A large value read with a `select` arrives all at once. A blob handle opens
+a single cell and lets you read parts of it:
 
 ```zuri,ignore
 var blob = db.native().blob('main', 'files', 'content', id, false)
@@ -1503,18 +1558,19 @@ while at < blob.length() {
 blob.close()
 ```
 
-The cell has to exist and already be the right size: SQLite cannot grow
-a blob this way, which is what inserting `zeroblob(n)` is for.
+The cell must already exist and already be the right size, because SQLite
+can't make a blob larger this way. That's what inserting `zeroblob(n)` is
+for.
 
-Copying the file with the filesystem is only safe when nothing is
-writing. SQLite's own backup copies page by page and notices when the
-source changes underneath:
+Copying the database file with file system tools is only safe when nothing
+is writing to it. SQLite's own backup copies the database page by page and
+notices when the source changes during the copy:
 
 ```zuri,ignore
 db.native().backup_to('./snapshot.db')
 ```
 
-And the hooks report what the engine is doing:
+The hooks report what the engine is doing:
 
 ```zuri,ignore
 db.native().on_change(@(operation, database, table, rowid) { ... })
@@ -1524,41 +1580,41 @@ db.native().set_authorizer(@(action, first, second, database, trigger) { ... })
 db.native().on_progress(1000, @() => keep_going())
 ```
 
-## PostgreSQL Specifics
+## PostgreSQL Features
 
-The adapter speaks version 3 of the wire protocol, over TCP or over a
-unix domain socket, optionally under TLS.
+The adapter uses version 3 of the PostgreSQL wire protocol, over TCP or a
+Unix domain socket, with optional TLS.
 
-A `host` beginning with a slash is a socket directory, which is how
-libpq spells it, and the socket inside is named after the port:
-`/var/run/postgresql` with port 5432 means
-`/var/run/postgresql/.s.PGSQL.5432`. A path that already names the
-socket is taken as given. TLS is neither offered nor wanted over a
-socket, since nothing sits in between, so `sslmode` is ignored there.
+A `host` that starts with a slash is a socket directory, as it is in libpq,
+and the socket inside it is named after the port. So `/var/run/postgresql`
+with port 5432 means `/var/run/postgresql/.s.PGSQL.5432`. A path that
+already names the socket file is used as it is. TLS isn't used over a
+socket, because there's nothing in between to protect against, so `sslmode`
+is ignored in that case.
 
 ```zuri,ignore
 sql.open('postgres:///app?host=/var/run/postgresql')
 sql.open({ driver: 'postgres', host: '/var/run/postgresql', database: 'app' })
 ```
 
-`sslmode` chooses how TLS is used: `disable` never, `prefer` when the
-server offers it, and `require` always, failing when the server
-refuses. Only `require` verifies who is on the other end.
+`sslmode` controls how TLS is used: `disable` never uses it, `prefer` uses
+it when the server supports it, and `require` always uses it and fails if
+the server refuses. Only `require` verifies the server's identity.
 
-Statements go through the extended protocol, which compiles them on the
-server and binds values rather than substituting them. Values travel in
-the server's own binary form wherever the adapter has a codec for the
-type, and as text otherwise, so a type it has never heard of still
-arrives readable rather than as bytes.
+Statements are sent using the extended query protocol, which compiles them
+on the server and binds values rather than substituting them into the text.
+Values are sent in the server's own binary format whenever the adapter has a
+codec for the type, and as text otherwise, so even a type it doesn't know
+about arrives in readable form instead of as raw bytes.
 
-`numeric` columns arrive as `sql.Decimal`, arrays as lists, `jsonb` as
-dictionaries, and timestamps as `date.Date`.
+`numeric` columns are read as `sql.Decimal` values, arrays as lists, `jsonb`
+as dictionaries, and timestamps as `date.Date` values.
 
-### Listening for notifications
+### Listening for Notifications
 
-`LISTEN` and `NOTIFY` are PostgreSQL's own publish and subscribe. A
-connection that has run `LISTEN channel` receives a message whenever
-anything anywhere runs `NOTIFY channel`.
+`LISTEN` and `NOTIFY` are PostgreSQL's built-in publish and subscribe
+mechanism. A connection that has run `LISTEN channel` receives a message
+whenever anyone runs `NOTIFY channel`.
 
 ```zuri,ignore
 var listener = db.native().listener()
@@ -1572,13 +1628,14 @@ while true {
 }
 ```
 
-Notifications arrive between other messages, so a connection busy
-running statements collects them as it goes and `poll()` hands over
-whatever has accumulated.
+Notifications arrive in between other messages, so a connection that's busy
+running statements collects them along the way, and `poll()` returns
+whatever has built up.
 
-### Teaching it a type
+### Adding Support for a Type
 
-A database that defines its own types can teach the adapter about them:
+If your database defines its own types, you can tell the adapter how to
+handle them:
 
 ```zuri,ignore
 import sql.postgres { DEFAULT_REGISTRY }
@@ -1586,36 +1643,39 @@ import sql.postgres { DEFAULT_REGISTRY }
 DEFAULT_REGISTRY.register(oid, decoder, encoder)
 ```
 
-Until it is taught, such a column arrives as text, which is correct if
-unexciting.
+Until you do, columns of that type are read as text, which is correct, if
+not especially convenient.
 
-## MySQL Specifics
+## MySQL Features
 
-The adapter speaks the client/server protocol directly, over TCP or
-over a unix domain socket, optionally under TLS, with no client library
-underneath it. MariaDB speaks the same protocol and the same adapter
-drives it.
+The adapter implements the MySQL client/server protocol directly, over TCP
+or a Unix domain socket, with optional TLS, and doesn't depend on any client
+library. MariaDB uses the same protocol, and the same adapter works with it.
 
-A `socket` option names a socket, and so does a `host` beginning with a
-slash. Unlike PostgreSQL the path names the socket itself rather than
-the directory holding it:
+A `socket` option names a socket, and so does a `host` that starts with a
+slash. Unlike with PostgreSQL, the path names the socket file itself, not
+the directory it's in:
 
 ```zuri,ignore
-sql.open({ driver: 'mysql', socket: '/var/run/mysqld/mysqld.sock', user: 'app' })
+sql.open({
+  driver: 'mysql',
+  socket: '/var/run/mysqld/mysqld.sock',
+  user: 'app',
+})
 sql.open('socket=/var/run/mysqld/mysqld.sock user=app database=shop')
 sql.open('mysql://app@localhost/shop?socket=/var/run/mysqld/mysqld.sock')
 ```
 
-TLS is neither offered nor wanted there, since nothing sits in between.
-The connection does count as private, which is what lets
-`caching_sha2_password` and `sha256_password` send the password itself
-rather than encrypting it to the server's public key.
+TLS isn't used over a socket, because there's nothing in between to protect
+against. The connection is treated as private, which lets
+`caching_sha2_password` and `sha256_password` send the password directly
+instead of encrypting it with the server's public key.
 
-A statement with no values is sent as text, which is one round trip. A
-statement with values is prepared, so the values travel in the server's
-binary encoding instead of being written into the SQL, and the question
-of quoting never arises. Compiled statements are kept and reused, so a
-query run in a loop is compiled once.
+A statement without values is sent as text, which takes one round trip. A
+statement with values is prepared, so the values are sent in the server's
+binary format instead of being written into the SQL, and quoting is never an
+issue. Compiled statements are kept and reused, so a query that runs in a
+loop is only compiled once.
 
 ```zuri
 import sql
@@ -1637,41 +1697,41 @@ false
 true
 ```
 
-MySQL keeps `?` as it is written, and reports the id of an inserted row
-rather than returning it, so `insert()` reads the reported id instead of
-adding a `RETURNING` clause. MariaDB differs in two ways that change
-what the layer above generates: it has `RETURNING`, and it has no JSON
-type. The server decides which applies, whatever the scheme: a MariaDB
-server reached through `mysql://` reports `db.driver_name()` as
-`'mariadb'` and `db.supports('json')` as false.
+MySQL leaves `?` as it's written, and it reports the ID of an inserted row
+instead of returning it, so `insert()` reads the reported ID instead of
+adding a `RETURNING` clause. MariaDB differs in two ways that affect the SQL
+generated by the layers above: it supports `RETURNING`, and it doesn't have
+a JSON type. Which behavior applies depends on the server, not the scheme,
+so for a MariaDB server reached through `mysql://`, `db.driver_name()`
+returns `'mariadb'` and `db.supports('json')` returns false.
 
-### What arrives from where
+### How Column Types Are Read
 
-`DECIMAL` columns arrive as `sql.Decimal`, `JSON` as lists and
-dictionaries, `DATE` and `DATETIME` and `TIMESTAMP` as `date.Date`, and
-`TIME` as `sql.Time`.
+`DECIMAL` columns are read as `sql.Decimal` values, `JSON` as lists and
+dictionaries, `DATE`, `DATETIME` and `TIMESTAMP` as `date.Date` values, and
+`TIME` as `sql.Time` values.
 
-MySQL has no boolean. `BOOLEAN` is another name for `TINYINT(1)`, so a
-value written as `true` comes back as `1`, and `db.supports('booleans')`
-is false to say so.
+MySQL doesn't have a boolean type. `BOOLEAN` is another name for
+`TINYINT(1)`, so a value written as `true` is read back as `1`, and
+`db.supports('booleans')` returns false to reflect that.
 
-`BLOB` and `TEXT` share a type on the wire and are told apart only by
-the column's collation, which the adapter reads: a binary column
-arrives as `bytes` and a text one as a string. `BIT` and `GEOMETRY`
-arrive as `bytes`, having no shape Zuri could represent without
-inventing one. `SET` arrives as the comma separated text the server
-stores rather than as a list, because a list written back would be
-encoded as JSON and the column would quietly stop matching.
+`BLOB` and `TEXT` have the same type in the protocol, and the only way to
+tell them apart is the column's collation, which the adapter checks. A
+binary column is read as `bytes` and a text column as a string. `BIT` and
+`GEOMETRY` are read as `bytes`, because Zuri has no natural way to represent
+them. `SET` is read as the comma-separated text that the server stores, not
+as a list, because a list written back would be encoded as JSON and the
+column would silently stop matching.
 
-A date MySQL considers absent is written as zeros, and `0000-00-00` is
-not a date any calendar has. It arrives as `nil`.
+MySQL writes a missing date as zeros, but `0000-00-00` isn't a date in any
+calendar, so it's read as `nil`.
 
-### A TIME is a span, not a clock
+### TIME Values Are Durations
 
-A `TIME` column runs from `-838:59:59.999999` to `838:59:59.999999`. It
-is a duration rather than a point in the day, so it can be negative and
-can exceed twenty four hours, and neither of those would survive being
-read into a `date.Date`. `sql.Time` holds it:
+A `TIME` column ranges from `-838:59:59.999999` to `838:59:59.999999`. It's
+a duration rather than a time of day, so it can be negative and can be
+longer than 24 hours, and neither of those would survive being read into a
+`date.Date`. `sql.Time` holds it instead:
 
 ```zuri
 import sql
@@ -1707,15 +1767,17 @@ true
 
 ### Time zones
 
-A `DATETIME` carries no zone, and a `TIMESTAMP` is converted to and
-from whatever zone the session is in. So the session's zone decides
-what a timestamp means, and leaving it to the server's configuration
-would make the same database read differently from two machines.
+A `DATETIME` doesn't store a time zone, and a `TIMESTAMP` is converted to
+and from the session's time zone. That means the session's time zone
+determines what a timestamp means, and if it were left to the server's
+configuration, the same database could give different results on two
+different machines.
 
-The adapter sets the session to UTC when it connects. Every timestamp
-then arrives as UTC, and a `date.Date` written back is converted from
-whatever offset it carries. To leave the server's own setting alone,
-pass `time_zone` as `nil`, or name a zone to use instead:
+The adapter sets the session's time zone to UTC when it connects. Every
+timestamp is then read in UTC, and a `date.Date` that's written back is
+converted from whatever offset it has. To keep the server's own setting,
+pass `nil` as `time_zone`, or pass the name of the time zone you want to
+use:
 
 ```zuri,ignore
 sql.open('mysql://localhost/app', { time_zone: nil })
@@ -1724,38 +1786,37 @@ sql.open('mysql://localhost/app', { time_zone: '+01:00' })
 
 ### Authentication
 
-`caching_sha2_password`, which is the default from MySQL 8.0 onwards,
-`mysql_native_password`, `sha256_password`, `mysql_clear_password`, and
-MariaDB's `client_ed25519`.
+The supported methods are `caching_sha2_password`, which is the default from
+MySQL 8.0 onward, `mysql_native_password`, `sha256_password`,
+`mysql_clear_password` and MariaDB's `client_ed25519`.
 
-Two of those need the password itself rather than a proof of it, the
-first time an account authenticates. Over TLS the password is sent as
-it is. Over a plain connection it is encrypted to a public key the
-server hands over first, so it is never readable in transit.
-`mysql_clear_password` has no such fallback and is refused outright on
-a connection that is not private, since it sends the password with
-nothing protecting it.
+Two of these need the actual password, rather than proof of it, the first
+time an account authenticates. Over TLS, the password is sent as is. Over an
+unencrypted connection, it's encrypted with a public key that the server
+sends first, so it can never be read in transit. `mysql_clear_password` has
+no such fallback, so it's rejected on any connection that isn't private,
+because it sends the password without any protection.
 
 ### TLS
 
-`sslmode` chooses how TLS is used:
+`sslmode` controls how TLS is used:
 
 | Mode | Meaning |
 | --- | --- |
-| `disable` | Never. |
-| `prefer` | When the server offers it, without checking who the server is. The default. |
-| `require` | Always, without checking who the server is. |
-| `verify` | Always, checking the server's certificate and host name. |
+| `disable` | Never use TLS. |
+| `prefer` | Use TLS when the server supports it, without verifying the server's identity. This is the default. |
+| `require` | Always use TLS, without verifying the server's identity. |
+| `verify` | Always use TLS, and verify the server's certificate and host name. |
 
-MySQL's own spellings are accepted too. `DISABLED`, `PREFERRED` and
-`REQUIRED` mean what they say, and both `VERIFY_CA` and
-`VERIFY_IDENTITY` become `verify`. That makes `VERIFY_CA` stricter here
-than on the command line, where it checks the certificate but not the
-name: the difference can only cause a connection to be refused, never
-one to be wrongly trusted.
+MySQL's own names are accepted too. `DISABLED`, `PREFERRED` and `REQUIRED`
+mean what they say, and `VERIFY_CA` and `VERIFY_IDENTITY` both become
+`verify`. That makes `VERIFY_CA` stricter here than in the MySQL
+command-line client, which checks the certificate but not the host name. The
+difference can only ever cause a connection to be refused, never cause a
+server to be wrongly trusted.
 
-`ssl_ca` names a certificate authority to trust, and `ssl_cert` with
-`ssl_key` present a client certificate.
+`ssl_ca` names a certificate authority to trust, and `ssl_cert` and
+`ssl_key` provide a client certificate.
 
 ### Compression
 
@@ -1766,17 +1827,18 @@ sql.open('mysql://localhost/app', { compression: 'zlib' })
 sql.open('mysql://localhost/app', { compression: 'zstd' })
 ```
 
-It is worth it for large results over a slow link and costs more than
-it saves on a local socket, so it is off unless asked for. A packet too
-small to benefit is sent uncompressed regardless, which the protocol
-allows for.
+Compression is worthwhile for large results over a slow network, but costs
+more than it saves over a local socket, so it's off unless you turn it on.
+Packets that are too small to benefit are always sent uncompressed, which
+the protocol allows.
 
-### Sending a file
+### Sending a File to the Server
 
-`LOAD DATA LOCAL INFILE` has the server name a file and the client send
-it. The file is read from the machine the program runs on, chosen by
-the server, so a hostile or compromised server could ask for anything
-the process can read. It is refused unless a reader is supplied:
+With `LOAD DATA LOCAL INFILE`, the server names a file and the client sends
+it. The file is read from the machine the program is running on, but the
+server chooses which file, so a malicious or compromised server could ask
+for any file the process can read. For that reason, it's refused unless you
+provide a reader:
 
 ```zuri,ignore
 import os
@@ -1788,39 +1850,40 @@ var db = sql.open('mysql://localhost/app', {
 })
 ```
 
-The reader decides what may be sent, which is where that decision
-belongs. Refusing still answers the server, so the connection stays
-usable afterwards rather than waiting for a file that will never come.
+The reader decides what can be sent, which is where that decision belongs.
+When a request is refused, the server still gets an answer, so the
+connection can still be used afterwards instead of waiting for a file that
+will never arrive.
 
-### Statements that answer more than once
+### Statements With Several Results
 
-A stored procedure sends one result set per `select` inside it, then an
-OK packet. `query()` hands back the first and reads the rest, because
-leaving them unread would not lose them: it would give them to the next
-statement, which would then answer with this one's rows.
+A stored procedure sends one result set for each `select` inside it,
+followed by an OK packet. `query()` returns the first result set and reads
+the others, because leaving them unread wouldn't discard them. They would be
+returned to the next statement, which would then get this statement's rows.
 
 ```zuri,ignore
 var first = db.query('call two_results()')
 ```
 
-A routine's body has semicolons in it, and `exec_script()` splits a
-script on semicolons. So a `create procedure` goes through `exec()` as
-a single statement rather than through `exec_script()`.
+The body of a stored routine contains semicolons, and `exec_script()` splits
+a script at every semicolon. So send a `create procedure` statement through
+`exec()` as a single statement, not through `exec_script()`.
 
-### Reaching the adapter
+### Accessing the Adapter
 
 ```zuri,ignore
-db.native().flavor()          # 'mysql' or 'mariadb'
-db.native().connection_id()   # what KILL names
-db.native().parameters()      # what the server said about itself
-db.native().reset()           # back to a fresh session
+db.native().flavor() # 'mysql' or 'mariadb'
+db.native().connection_id() # what KILL names
+db.native().parameters() # what the server said about itself
+db.native().reset() # back to a fresh session
 ```
 
 ## Writing Your Own Adapter
 
-An adapter for another engine implements four things: a `Driver` that
-reads a connection string and opens a connection, a `DriverConnection`
-that runs statements, a `DriverStatement`, and a `DriverCursor`.
+An adapter for another engine implements four classes: a `Driver` that reads
+a connection string and opens a connection, a `DriverConnection` that runs
+statements, a `DriverStatement` and a `DriverCursor`.
 
 ```zuri,ignore
 import sql
@@ -1846,83 +1909,85 @@ sql.register(DuckDbDriver())
 var db = sql.open('duckdb://./app.duckdb')
 ```
 
-Everything above the adapter comes for free: pooling, transactions and
-savepoints, the CRUD helpers, placeholder translation, cursors, the
-error hierarchy, and models. What the adapter supplies is the engine.
+Everything above the adapter comes for free, including connection pools,
+transactions and savepoints, the CRUD helpers, placeholder translation,
+cursors, the error hierarchy and models. The adapter only has to provide
+access to the engine.
 
-Schema changes and migrations need one thing more: the engine's
-spelling of a table. An adapter supplies it by subclassing
-`sql.DdlAdapter`, which already writes standard SQL, overriding what the
-engine says differently, `type_name()` for each column type and
-`key_definition()` for an `id()` among them, and returning an instance
-from its driver's `ddl()`. A driver with none refuses schema changes
-with `NotSupportedError`.
+Schema changes and migrations need one more thing: how the engine writes
+table definitions. An adapter provides this by subclassing `sql.DdlAdapter`,
+which already writes standard SQL, and overriding whatever the engine does
+differently, such as `type_name()` for each column type and
+`key_definition()` for an `id()` column. It then returns an instance of that
+class from its driver's `ddl()` method. A driver that doesn't provide one
+rejects schema changes with a `NotSupportedError`.
 
-The base classes raise `NotImplementedError` for anything left out, so
-an unfinished adapter fails where the gap is. An engine that genuinely
-cannot do something raises `NotSupportedError` instead, which reads
-differently on purpose: the first is an unfinished adapter, the second
-is an honest limit.
+The base classes raise `NotImplementedError` for anything that hasn't been
+implemented, so an unfinished adapter fails exactly where the gap is. An
+engine that really can't support a feature raises `NotSupportedError`
+instead. The two errors are deliberately different: the first means the
+adapter is unfinished, and the second means the engine has a genuine
+limitation.
 
-## What the Module Refuses
+## Design Limits
 
-**Rows are dictionaries.** The connection hands back rows, never
-objects. Models are [`sql.model`](ch17-03-models.md), built on top and
-loaded only by a program that uses them.
+**Rows are dictionaries.** A connection returns rows, never objects. Models
+are provided by [`sql.model`](ch17-03-models.md), which is built on top of
+`sql` and only loaded by programs that use it.
 
-**It does not write your joins.** The CRUD helpers cover a flat list of
-equality conditions, and models their own columns and associations.
-Anything past that is SQL.
+**It doesn't write joins for you.** The CRUD helpers support a simple list
+of equality conditions, and models support their own columns and
+associations. Anything beyond that is written in SQL.
 
-**It does not translate SQL.** Placeholders are rewritten. Statements
-are not parsed, and a function only one engine has stays a function
-only one engine has.
+**It doesn't translate SQL.** Placeholders are rewritten, but statements
+aren't parsed, so a function that only one engine supports still only works
+on that engine.
 
-**It does not hide a difference by guessing.** Where an engine cannot
-do what was asked, the answer is `NotSupportedError` naming the adapter
-and the feature, rather than an approximation nobody asked for.
+**It doesn't hide differences by guessing.** When an engine can't do what
+was asked, you get a `NotSupportedError` that names the adapter and the
+feature, instead of an approximation you didn't ask for.
 
 ## Module Reference
 
-The standard library reference documents every class and method. The
-shape of the module:
+The standard library reference documents every class and method. Here's an
+overview of the module:
 
-| | |
+| Function | Description |
 | --- | --- |
-| `sql.open(dsn, options)` | opens a connection |
-| `sql.pool(dsn, options)` | opens a pool of them |
-| `sql.register(driver)` | adds an adapter |
-| `sql.drivers()` | what is registered |
-| `sql.raw(fragment)` | marks SQL to be used as written |
-| `sql.Decimal(text)` | an exact decimal |
-| `sql.time(h, m, s)` | a signed span, as a `TIME` column holds one |
-| `sql.parse_time(text)` | the same, read from text |
-| `sql.blueprint` | a table described once for every engine |
-| `sql.migrate` | versioned schema changes, and `Migrator` to apply them |
-| `sql.model` | models: `Model`, `Query` and the errors they raise |
+| `sql.open(dsn, options)` | Opens a connection |
+| `sql.pool(dsn, options)` | Opens a connection pool |
+| `sql.register(driver)` | Registers an adapter |
+| `sql.drivers()` | Lists the registered adapters |
+| `sql.raw(fragment)` | Marks SQL to be used exactly as written |
+| `sql.Decimal(text)` | Creates an exact decimal |
+| `sql.time(h, m, s)` | Creates a signed duration, like a value in a `TIME` column |
+| `sql.parse_time(text)` | Reads a duration from text |
+| `sql.blueprint` | Table definitions that work for every engine |
+| `sql.migrate` | Versioned schema changes, and the `Migrator` that applies them |
+| `sql.model` | Models: `Model`, `Query` and the errors they raise |
 
-On a `Connection`:
+Methods of a `Connection`:
 
-| | |
+| Method | Purpose |
 | --- | --- |
-| `query`, `exec`, `exec_script` | run a statement |
-| `fetch_one`, `fetch_all`, `fetch_value`, `fetch_column` | read a result |
-| `stream`, `prepare` | a cursor, and a compiled statement |
-| `insert`, `insert_many`, `update`, `delete`, `find`, `find_one`, `count` | the four statements that are always the same |
-| `transaction`, `begin`, `in_transaction` | transactions |
-| `schema` | introspection, and `create_table`, `alter_table`, `rename_table`, `drop_table` |
-| `model` | a query over a model's rows |
-| `driver`, `driver_name`, `capabilities`, `supports` | what this engine is |
-| `native` | the adapter underneath |
-| `ping`, `close`, `is_closed` | the connection itself |
+| `query`, `exec`, `exec_script` | Run statements |
+| `fetch_one`, `fetch_all`, `fetch_value`, `fetch_column` | Read results |
+| `stream`, `prepare` | Create a cursor or a compiled statement |
+| `insert`, `insert_many`, `update`, `delete`, `find`, `find_one`, `count` | Run the common statements without writing SQL |
+| `transaction`, `begin`, `in_transaction` | Work with transactions |
+| `schema` | Introspection, plus `create_table`, `alter_table`, `rename_table` and `drop_table` |
+| `model` | Query a model's rows |
+| `driver`, `driver_name`, `capabilities`, `supports` | Describe the engine |
+| `native` | The adapter underneath |
+| `ping`, `close`, `is_closed` | Manage the connection itself |
 
-On a `Transaction`:
+Methods of a `Transaction`:
 
-| | |
+| Method | Purpose |
 | --- | --- |
-| `query`, `exec` | run a statement |
-| `fetch_one`, `fetch_all`, `fetch_value` | read a result |
-| `insert`, `insert_many`, `update`, `delete`, `find`, `find_one`, `count` | the same helpers a connection has |
-| `schema`, `model` | the connection's schema and models, inside the transaction |
-| `commit`, `rollback`, `is_finished` | ending it |
-| `connection`, `nested` | what it is running on, and whether it is a savepoint |
+| `query`, `exec` | Run statements |
+| `fetch_one`, `fetch_all`, `fetch_value` | Read results |
+| `insert`, `insert_many`, `update`, `delete`, `find`, `find_one`, `count` | The same helpers a connection has |
+| `schema`, `model` | The connection's schema and models, inside the transaction |
+| `commit`, `rollback`, `is_finished` | End the transaction |
+| `connection`, `nested` | The connection it's running on, and whether it's a savepoint |

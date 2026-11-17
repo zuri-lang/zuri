@@ -86,7 +86,7 @@ def test_a_collection_gives_freed_memory_back() {
 
   assert peak - before > 100, 'the records must have taken real memory'
   assert after <= before + (peak - before) / 2,
-    'memory a collection frees must be back with the system when gc() returns'
+      'memory a collection frees must be back with the system when gc() returns'
   echo 'test_a_collection_gives_freed_memory_back passed'
 }
 
@@ -100,12 +100,17 @@ def test_an_isolate_waiting_on_a_channel_gives_its_garbage_back() {
 
   var made = isolate.channel()
   var go = isolate.channel()
-  var t = isolate.spawn(@(made, go, churn) {
-    churn()
-    made.send(true)
-    go.recv()
-    return true
-  }, made, go, _churn)
+  var t = isolate.spawn(
+    @(made, go, churn) {
+      churn()
+      made.send(true)
+      go.recv()
+      return true
+    },
+    made,
+    go,
+    _churn,
+  )
 
   made.recv()
 
@@ -130,7 +135,10 @@ def test_the_main_thread_gives_its_garbage_back_while_it_waits() {
 
   # Held across every wait below, so the collections the waits make
   # have to keep it, wherever it has moved to.
-  var kept = [{ name: 'kept', at: before }, 'held ${before}']
+  var kept = [
+    { name: 'kept', at: before },
+    'held ${before}',
+  ]
 
   _churn()
 
@@ -148,11 +156,11 @@ def test_the_main_thread_gives_its_garbage_back_while_it_waits() {
 
   assert peak - before > 100, 'the records must have taken real memory'
   assert _falls_to(before + (peak - before) / 2, wait),
-    'a waiting thread must give its garbage back'
-  assert kept[0].name == 'kept'
-    and kept[0].at == before
-    and kept[1] == 'held ${before}',
-    'what the program still holds must survive the collections'
+      'a waiting thread must give its garbage back'
+  assert kept[0].name == 'kept' and
+      kept[0].at == before and
+      kept[1] == 'held ${before}',
+      'what the program still holds must survive the collections'
   echo 'test_the_main_thread_gives_its_garbage_back_while_it_waits passed'
 }
 
@@ -184,7 +192,7 @@ def test_a_thread_that_shrank_gives_back_again() {
 
   assert peak - before > 100, 'the records must have taken real memory'
   assert _falls_to(before + (peak - before) / 2, wait),
-    'a thread whose heap shrank must still give its garbage back'
+      'a thread whose heap shrank must still give its garbage back'
   echo 'test_a_thread_that_shrank_gives_back_again passed'
 }
 

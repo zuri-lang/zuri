@@ -2,36 +2,34 @@
 
 *by the Zuri Project*
 
-Zuri is a language for building whole applications, and it ships with
-everything that takes. The runtime, the web server, the templating engine,
-the data formats, the cryptography and the toolchain were designed
-together and are delivered as one binary, so starting a real program does
-not begin with assembling an ecosystem out of third-party parts. Zuri has
-first-class language-level support for package management and vendoring, 
-so the code you bring in from outside needs no third-party tooling either.
+Zuri is a programming language for building complete applications, and it
+comes with the tools and libraries those applications need. The runtime, the
+web server, the template engine, the data formats, the cryptography and the
+toolchain were designed together and ship as a single binary. You don't have
+to assemble a stack of third-party packages before you can start on a real
+program. When you do want outside code, package management and vendoring are
+built into the language, so you don't need extra tools for that either.
 
-The standard library ships with the language, and it is large. Templating,
-HTTP/1.1 and HTTP/2, WebSockets, TLS, JSON, YAML, CSV, compression,
-cryptography, image decoding and drawing, HTML parsing, date arithmetic
-with the IANA time zone database, and OS-thread concurrency are all part
-of the installation. Every one of them is reachable with a bare `import`.
+The standard library is large. Templates, HTTP/1.1 and HTTP/2, WebSockets,
+TLS, JSON, YAML, CSV, compression, cryptography, image decoding and drawing,
+HTML parsing, date arithmetic with the IANA time zone database, and
+concurrency on OS threads are all included, and each is available with a
+plain `import`.
 
-The tools ship in the same binary. `zuri fmt` lays out your code,
-`zuri test` runs your tests, and `zuri lsp` gives every editor
-completion, navigation and diagnostics. `zuri install` and
-`zuri publish` manage packages against Nyssa, a package registry any
-installation can serve, and `zuri bundle` ships a finished program to
-machines where Zuri is not installed, as a single executable if you
-like.
+The tools are part of the same binary. `zuri fmt` formats your code,
+`zuri test` runs your tests, and `zuri lsp` provides completion, navigation
+and diagnostics in your editor. `zuri install` and `zuri publish` manage
+packages on Nyssa, a package registry that any Zuri installation can host,
+and `zuri bundle` packages a finished program so it can run on machines that
+do not have Zuri installed, even as a single executable.
 
-Zuri is dynamically typed, and it declines to be vague. A declared
-parameter type is enforced at the call, classes are sealed, a function
-cannot be quietly redefined, and a name beginning with an underscore stays
-inside the module that declared it. Your code runs as bytecode until a
-piece of it gets hot, and a JIT compiles that piece to machine code while
-the program is still running.
+Zuri is dynamically typed, but it checks more than most dynamic languages
+do. Parameter types you declare are checked when the function is called,
+classes are sealed, a function can't be silently redefined, and names that
+start with an underscore are private to the module that declares them. Your
+code runs as bytecode at first. When part of it runs often enough, a JIT
+compiler turns that part into machine code while the program keeps running.
 
-This book teaches the language from the first line of code to a complete
-web application. It is written against the Rust implementation of Zuri.
-Every program printed in these pages was run against that implementation,
-and the output shown underneath each one is the output it produced.
+This book teaches the language, starting with your first line of code and
+ending with a complete web application. The output shown below each 
+program is the output it actually produced.

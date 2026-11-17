@@ -1,30 +1,31 @@
 /**
  * @module ddl
  *
- * Turning a `Blueprint` into the statements one engine understands,
- * and running them the way that engine needs them run.
+ * Turns a `Blueprint` into the statements that one engine understands,
+ * and runs them in the way that engine needs.
  *
- * Every engine spells a table differently. An auto-numbered key is
- * `autoincrement` to SQLite, an identity column to PostgreSQL and
- * `auto_increment` to MySQL; a byte-for-byte comparison is SQLite's
- * default, PostgreSQL's `"C"` collation and MySQL's `utf8mb4_bin`; and
- * a change SQLite's `ALTER TABLE` cannot make has to be carried out by
- * building the table again. `DdlAdapter` holds what is the same for
- * all of them, and each adapter's subclass supplies the rest.
+ * Every engine describes tables differently. An auto-numbered key is
+ * `autoincrement` in SQLite, an identity column in PostgreSQL and
+ * `auto_increment` in MySQL. A byte-for-byte comparison is the default
+ * in SQLite, the `"C"` collation in PostgreSQL and `utf8mb4_bin` in
+ * MySQL. And a change that SQLite's `ALTER TABLE` can't make has to be
+ * carried out by rebuilding the table. `DdlAdapter` contains what's the
+ * same for all of them, and each adapter's subclass supplies the rest.
  *
- * A program never calls this directly. `db.schema.create_table()` and
- * the other schema changes go through `Driver.ddl()`, and an adapter of
- * one's own subclasses `DdlAdapter` and returns it from its driver's
- * `ddl()` to get them.
+ * Programs never call this directly. `db.schema.create_table()` and the
+ * other schema methods go through `Driver.ddl()`. To support them in an
+ * adapter of your own, subclass `DdlAdapter` and return an instance
+ * from the driver's `ddl()`.
  *
  * ### Running a change
  *
  * Each method takes the `Connection` to change and runs its statements
- * on it. `schema_change()` is the envelope a change runs in when the
- * caller has no transaction open, and what `sql.migrate` runs every
- * migration in: a transaction on an engine that can roll a schema
- * change back, nothing on one that cannot, and on SQLite foreign key
- * enforcement switched off around it, checked again before it commits.
+ * on it. `schema_change()` wraps a change when the caller has no
+ * transaction open, and `sql.migrate` runs every migration in it. On an
+ * engine that can roll back a schema change, it starts a transaction.
+ * On one that can't, it does nothing. On SQLite, it also turns off
+ * foreign key enforcement around the change, and checks the foreign
+ * keys again before committing.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -147,8 +148,8 @@ class DdlAdapter {
   }
 
   /**
-   * Whether indexes are declared inside `create table`, rather than by
-   * `create index` statements after it.
+   * Whether indexes are declared inside `create table`, instead of with
+   * `create index` statements afterwards.
    *
    * @returns bool
    */
@@ -290,7 +291,7 @@ class DdlAdapter {
 
     raise QueryError(
       'a default is nil, a bool, a number, a string, a sql.Decimal, a list ' +
-        'or a dictionary, not ${typeof(value)}; write anything else with sql.raw()',
+          'or a dictionary, not ${typeof(value)}; write anything else with sql.raw()',
     )
   }
 
@@ -303,8 +304,8 @@ class DdlAdapter {
    */
   foreign_key_sql(table: string, key) {
     var sql = 'constraint ${self.quote(key.name_on(table))} foreign key ' +
-      '(${self._list(key.columns)}) references ${self.table_name(key.table)} ' +
-      '(${self._list(key.references)})'
+        '(${self._list(key.columns)}) references ${self.table_name(key.table)} ' +
+        '(${self._list(key.references)})'
 
     if key.on_delete_action != nil {
       sql += ' on delete ' + key.on_delete_action
@@ -328,14 +329,17 @@ class DdlAdapter {
    * @returns string
    */
   index_sql(
-    table: string, kind: string, name: string, columns: list,
+    table: string,
+    kind: string,
+    name: string,
+    columns: list,
     if_not_exists: bool,
   ) {
     var unique = kind == 'unique' ? 'unique ' : ''
     var guard = if_not_exists ? 'if not exists ' : ''
 
     return 'create ${unique}index ${guard}${self.quote(name)} on ' +
-      '${self.table_name(table)} (${self._list(columns)})'
+        '${self.table_name(table)} (${self._list(columns)})'
   }
 
   /**
@@ -417,13 +421,15 @@ class DdlAdapter {
     }
 
     if columns.is_empty() {
-      raise QueryError('a table needs at least one column, and ${table} was given none')
+      raise QueryError(
+        'a table needs at least one column, and ${table} was given none',
+      )
     }
 
     if generated != nil and !primary.is_empty() {
       raise QueryError(
         '${table} has two primary keys: the id() column ${generated} and ' +
-          '(${", ".join(primary)})',
+            '(${", ".join(primary)})',
       )
     }
 
@@ -437,13 +443,17 @@ class DdlAdapter {
       self.check_index(table, index.columns, blueprint.columns())
 
       if self.inline_indexes() {
-        constraints.append(self.inline_index_sql(
-          index.kind, index.name, index.columns,
-        ))
+        constraints.append(
+          self.inline_index_sql(index.kind, index.name, index.columns),
+        )
       } else {
         after.append(
           self.index_sql(
-            table, index.kind, index.name, index.columns, if_not_exists,
+            table,
+            index.kind,
+            index.name,
+            index.columns,
+            if_not_exists,
           ),
         )
       }
@@ -452,7 +462,9 @@ class DdlAdapter {
     var guard = if_not_exists ? 'if not exists ' : ''
     var items = columns + constraints
     var create = 'create table ${guard}${self.table_name(table)} (\n  ' +
-      ',\n  '.join(items) + '\n)' + self.table_suffix()
+        ',\n  '.join(items) +
+        '\n)' +
+        self.table_suffix()
 
     return [create] + after
   }
@@ -464,8 +476,7 @@ class DdlAdapter {
    * @param Column column
    * @throws NotSupportedError where the engine cannot.
    */
-  check_column(column) {
-  }
+  check_column(column) {}
 
   /**
    * Checks the engine can index `columns` of `table`, given the
@@ -476,8 +487,7 @@ class DdlAdapter {
    * @param list[Column] described
    * @throws NotSupportedError where the engine cannot.
    */
-  check_index(table: string, columns: list, described: list) {
-  }
+  check_index(table: string, columns: list, described: list) {}
 
   /**
    * Creates the table `blueprint` describes.
@@ -533,10 +543,9 @@ class DdlAdapter {
             var own = self._own_index(table, kind, column)
 
             self.check_index(table, own.columns, [column])
-            self.run(
-              connection,
-              [self.index_sql(table, kind, own.name, own.columns, false)],
-            )
+            self.run(connection, [
+              self.index_sql(table, kind, own.name, own.columns, false),
+            ])
           }
         }
       }
@@ -549,25 +558,30 @@ class DdlAdapter {
         self.check_index(table, operation.columns, [])
         self.run(connection, [
           self.index_sql(
-            table, operation.kind, operation.name, operation.columns, false,
+            table,
+            operation.kind,
+            operation.name,
+            operation.columns,
+            false,
           ),
         ])
       }
       when 'foreign' {
         self.run(connection, [
-          'alter table ${target} add '
-            + self.foreign_key_sql(table, operation.key),
+          'alter table ${target} add ' +
+              self.foreign_key_sql(table, operation.key),
         ])
       }
       when 'rename_column' {
         self.run(connection, [
           'alter table ${target} rename column ${self.quote(operation.from)} to ' +
-            self.quote(operation.to),
+              self.quote(operation.to),
         ])
       }
       when 'drop_column' {
         self.run(
-          connection, self.drop_column(connection, table, operation.name),
+          connection,
+          self.drop_column(connection, table, operation.name),
         )
       }
       when 'drop_index', 'drop_unique' {
@@ -575,7 +589,8 @@ class DdlAdapter {
       }
       when 'drop_foreign' {
         self.run(
-          connection, self.drop_foreign(connection, table, operation.name),
+          connection,
+          self.drop_foreign(connection, table, operation.name),
         )
       }
       when 'drop_primary' {
@@ -585,12 +600,11 @@ class DdlAdapter {
   }
 
   /**
-   * Adds `column` to `table`, with the key it carries.
+   * Adds `column` to `table`, along with its key.
    *
-   * A required column with no default can only be added to a table
-   * with no rows, since there is nothing to fill the rows with; the
-   * default raises `NotNullViolation` from the engine when there are
-   * some.
+   * A required column with no default can only be added to a table with
+   * no rows, because there's nothing to fill the existing rows with. If
+   * the table has rows, the engine raises a `NotNullViolation`.
    *
    * @param Connection connection
    * @param string table
@@ -598,16 +612,20 @@ class DdlAdapter {
    */
   add_column(connection, table: string, column) {
     var target = self.table_name(table)
-    var statements = ['alter table ${target} add column ${self.column_definition(column)}']
+    var statements = [
+      'alter table ${target} add column ${self.column_definition(column)}',
+    ]
 
     if column.is_primary and !column.is_generated {
-      statements.append('alter table ${target} add primary key (${self.quote(column.name)})')
+      statements.append(
+        'alter table ${target} add primary key (${self.quote(column.name)})',
+      )
     }
 
     if column.foreign != nil {
       statements.append(
-        'alter table ${target} add '
-          + self.foreign_key_sql(table, column.foreign),
+        'alter table ${target} add ' +
+            self.foreign_key_sql(table, column.foreign),
       )
     }
 
@@ -637,7 +655,9 @@ class DdlAdapter {
    * @returns list[string]
    */
   drop_column(connection, table: string, name: string) {
-    return ['alter table ${self.table_name(table)} drop column ${self.quote(name)}']
+    return [
+      'alter table ${self.table_name(table)} drop column ${self.quote(name)}',
+    ]
   }
 
   /**
@@ -661,7 +681,9 @@ class DdlAdapter {
    * @returns list[string]
    */
   drop_foreign(connection, table: string, name: string) {
-    return ['alter table ${self.table_name(table)} drop constraint ${self.quote(name)}']
+    return [
+      'alter table ${self.table_name(table)} drop constraint ${self.quote(name)}',
+    ]
   }
 
   /**
@@ -678,13 +700,15 @@ class DdlAdapter {
   /**
    * Drops `table`.
    *
-   * A table another one refers to through a foreign key is refused, on
-   * every engine, rather than taking the referring rows with it.
+   * A table that another table refers to through a foreign key can't be
+   * dropped, on any engine, because dropping it would also remove the
+   * rows that refer to it.
    *
    * @param Connection connection
    * @param string table
-   * @param dict options `{ if_exists }`, false by default: when true, a
-   *    table that is not there is left alone rather than an error.
+   * @param dict options `{ if_exists }`, false by default. When it's
+   *    true, a table that doesn't exist is ignored instead of causing
+   *    an error.
    */
   drop_table(connection, table: string, options: dict) {
     var guard = options.get('if_exists', false) == true ? 'if exists ' : ''
@@ -693,8 +717,8 @@ class DdlAdapter {
   }
 
   /**
-   * Renames table `from` to `to`. Foreign keys referring to it follow
-   * it; its indexes keep the names they had.
+   * Renames table `from` to `to`. Foreign keys that refer to the table
+   * follow it, and its indexes keep their names.
    *
    * @param Connection connection
    * @param string from
@@ -712,15 +736,16 @@ class DdlAdapter {
   /**
    * Runs `body` as one schema change.
    *
-   * On an engine that can roll a schema change back, and when
+   * On an engine that can roll back a schema change, and when
    * `transactional` is true, `body` runs inside a transaction and is
-   * passed the `Transaction`; otherwise it is passed the connection
-   * and runs as it is.
+   * passed the `Transaction`. Otherwise, it's passed the connection and
+   * runs directly on it.
    *
-   * @param Connection connection Not already in a transaction.
+   * @param Connection connection A connection that isn't already in a
+   *    transaction.
    * @param function body
    * @param bool transactional
-   * @returns any What `body` returned.
+   * @returns any Whatever `body` returned.
    */
   schema_change(connection, body: function, transactional: bool) {
     if transactional and self.driver.supports('transactional_ddl') {

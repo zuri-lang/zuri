@@ -1,13 +1,13 @@
 /**
  * @module client
  *
- * `HttpClient`: the connection-pooling, redirect-following, cookie-aware
- * side of the module.
+ * `HttpClient`, the client side of the module, which pools connections,
+ * follows redirects and keeps cookies.
  *
- * It negotiates HTTP/2 over TLS when the server offers it, falls back to
- * HTTP/1.1 otherwise, and reuses connections between requests. The
- * module-level `http.get()`/`http.post()` shortcuts are thin wrappers
- * around a shared instance of this.
+ * It uses HTTP/2 over TLS when the server supports it, and HTTP/1.1
+ * otherwise, and reuses connections between requests. The module-level
+ * shortcuts such as `http.get()` and `http.post()` are thin wrappers
+ * around a shared instance of this class.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -17,8 +17,12 @@
 import .body
 import .cookies { CookieJar }
 import .errors {
-  ConnectionError, HttpError, ProtocolError, TimeoutError,
-  TooManyRedirectsError, UnsupportedProtocolError,
+  ConnectionError,
+  HttpError,
+  ProtocolError,
+  TimeoutError,
+  TooManyRedirectsError,
+  UnsupportedProtocolError,
 }
 import .h1
 import .h2
@@ -53,15 +57,15 @@ var _IDLE_TIMEOUT = 30
  * echo response.as_text()
  * ```
  *
- * One client is meant to be kept and reused: it holds the connection
- * pool, the cookie jar, and the TLS configuration, all of which are
- * wasted if a fresh client is built per request. Reusing it also
- * means the second request to a host skips the TCP and TLS
- * handshakes entirely.
+ * A client is meant to be created once and reused. It holds the
+ * connection pool, the cookie jar and the TLS configuration, all of
+ * which are wasted if you create a new client for each request. Reusing
+ * it also means that a second request to the same host skips the TCP
+ * and TLS handshakes completely.
  *
  * Redirects are followed, responses are decompressed, and cookies are
- * carried between requests when a jar is attached - all of which can
- * be turned off.
+ * kept between requests when a cookie jar is attached. You can turn off
+ * each of these.
  *
  * @printable
  */
@@ -119,12 +123,12 @@ class HttpClient {
   var write_timeout = 30000
 
   /**
-   * Whether to verify the server's certificate chain and hostname.
+   * Whether to verify the server's certificate chain and host name.
    *
-   * @note Turning this off makes an HTTPS connection encrypted but
-   *    unauthenticated, which is to say trivially interceptable. It
-   *    exists for talking to a development server with a self-signed
-   *    certificate; `add_ca()` is the right answer everywhere else.
+   * @note Turning this off makes an HTTPS connection encrypted but not
+   *    authenticated, which means anyone in the middle can easily
+   *    intercept it. It's meant for connecting to a development server
+   *    with a self-signed certificate. Everywhere else, use `add_ca()`.
    * @type bool
    */
   var verify = true
@@ -150,25 +154,25 @@ class HttpClient {
   var max_retries = 0
 
   /**
-   * Whether to negotiate HTTP/2 over TLS. When the server agrees, the
-   * whole exchange runs over one multiplexed connection; when it does
-   * not, this falls back to HTTP/1.1 with no extra round trip, since
-   * the choice is made during the TLS handshake.
+   * Whether to negotiate HTTP/2 over TLS. If the server agrees, the
+   * whole exchange runs over a single multiplexed connection. If it
+   * doesn't, the client falls back to HTTP/1.1 without an extra round
+   * trip, because the choice is made during the TLS handshake.
    * @type bool
    */
   var http2 = true
 
   /**
-   * The HTTP proxy every request goes through, as `http://host:port`,
-   * with `user:password@` in front of the host when the proxy asks for
-   * credentials. `nil` leaves the choice to the environment, when
-   * `trust_env` allows it.
+   * The HTTP proxy that every request goes through, written as
+   * `http://host:port`, with `user:password@` before the host if the
+   * proxy requires credentials. `nil` leaves the choice to the
+   * environment, if `trust_env` allows it.
    *
-   * A request for an `https` address is tunnelled through the proxy
-   * with `CONNECT`, so the proxy carries the encrypted bytes and never
-   * sees what they say; a request for an `http` address is handed to
-   * the proxy whole. A proxy is itself reached over plain HTTP; an
-   * `https://` proxy address is refused.
+   * A request for an `https` address is tunneled through the proxy with
+   * `CONNECT`, so the proxy only passes the encrypted bytes along and
+   * can't read them. A request for an `http` address is passed to the
+   * proxy in full. The connection to the proxy itself uses plain HTTP,
+   * and an `https://` proxy address is rejected.
    * @type ?string
    */
   var proxy
@@ -186,10 +190,10 @@ class HttpClient {
   var trust_env = true
 
   /**
-   * The cookie jar, or `nil` to not track cookies at all. A client
-   * built by `http.client()` has one; a bare `HttpClient()` does not,
-   * so that an API client does not accumulate state it never asked
-   * for.
+   * The cookie jar, or `nil` to not keep cookies at all. A client
+   * created by `http.client()` has one, but a plain `HttpClient()`
+   * doesn't, so that an API client doesn't build up state it never
+   * asked for.
    * @type ?CookieJar
    */
   var cookie_jar
@@ -392,7 +396,11 @@ class HttpClient {
       request.method = request.method.upper()
       request.set_target(_origin_form(parsed, options.get('query', nil)))
       request.headers = self._request_headers(
-        parsed, options, payload, request.method, _origin_of(parsed) == origin,
+        parsed,
+        options,
+        payload,
+        request.method,
+        _origin_of(parsed) == origin,
       )
 
       var attempt = 0
@@ -440,8 +448,8 @@ class HttpClient {
         var unheard = carrier[3] and transport.bytes_read() == read_before
 
         var retriable = instance_of(error, ConnectionError) and
-          (request.is_idempotent() or unheard) and
-          attempt < (self.max_retries > 0 ? self.max_retries : 1)
+            (request.is_idempotent() or unheard) and
+            attempt < (self.max_retries > 0 ? self.max_retries : 1)
 
         if !retriable {
           raise error
@@ -471,7 +479,9 @@ class HttpClient {
 
       redirects++
       if redirects > limit {
-        raise TooManyRedirectsError('more than ${limit} redirects from ${location}')
+        raise TooManyRedirectsError(
+          'more than ${limit} redirects from ${location}',
+        )
       }
 
       current = parsed.resolve(next.trim()).to_string()
@@ -545,7 +555,12 @@ class HttpClient {
 
     response.certificate = carrier[2].peer_certificate()
 
-    if options.get('decode_content', self.decode_content) {
+    # A response with no body has nothing to decode, whatever its coding
+    # header says: the header describes the body a GET would have had.
+    var bodiless = request.method == 'HEAD' or
+        status.is_bodiless(response.status)
+
+    if !bodiless and options.get('decode_content', self.decode_content) {
       var encoding = response.headers.get('content-encoding', nil)
 
       if encoding != nil and !encoding.trim().is_empty() {
@@ -584,7 +599,9 @@ class HttpClient {
     var scheme = parsed.scheme == nil ? '' : parsed.scheme.lower()
 
     if scheme != 'http' and scheme != 'https' {
-      raise UnsupportedProtocolError('cannot make an HTTP request to ${scheme}: URLs')
+      raise UnsupportedProtocolError(
+        'cannot make an HTTP request to ${scheme}: URLs',
+      )
     }
 
     if parsed.host == nil or parsed.host.is_empty() {
@@ -703,8 +720,8 @@ class HttpClient {
 
     if address == nil and self.trust_env {
       var names = parsed.scheme == 'https'
-        ? ['HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy']
-        : ['HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy']
+          ? ['HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+          : ['HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy']
 
       for name in names {
         var value = os.get_env(name, '')
@@ -795,7 +812,9 @@ class HttpClient {
       var carrier = entry[0]
 
       var alive = time() - entry[1] < _IDLE_TIMEOUT and
-        (carrier[0] == 'h2' ? carrier[1].is_usable() : !carrier[1].is_closed())
+          (carrier[0] == 'h2'
+              ? carrier[1].is_usable()
+              : !carrier[1].is_closed())
 
       if alive {
         # The connection was opened for another request, which may
@@ -832,8 +851,8 @@ class HttpClient {
     }
 
     var connection = proxy != nil
-      ? stream.tunnel(proxy, parsed.host, _port_of(parsed), settings)
-      : stream.connect(parsed.host, _port_of(parsed), settings)
+        ? stream.tunnel(proxy, parsed.host, _port_of(parsed), settings)
+        : stream.connect(parsed.host, _port_of(parsed), settings)
 
     # ALPN settled this during the handshake, so there is nothing to
     # negotiate here and no extra round trip to pay for it.
@@ -896,13 +915,13 @@ class HttpClient {
   }
 
   /**
-   * Releases the connection behind a streamed response, once the
-   * caller has finished reading its body.
+   * Releases the connection behind a streamed response, once the caller
+   * has finished reading its body.
    *
-   * Anything left unread is drained so the connection can be reused;
-   * when there is too much left for that to be worth it, the
-   * connection is closed instead. Calling this on an ordinary
-   * (non-streamed) response does nothing.
+   * Anything left unread is drained so that the connection can be
+   * reused. If there's too much left for that to be worthwhile, the
+   * connection is closed instead. Calling this on an ordinary response
+   * that isn't streamed does nothing.
    *
    * @param HttpResponse response
    */
@@ -918,8 +937,9 @@ class HttpClient {
     var carrier = held[0]
     var reader = response.body_reader
 
-    var reusable = carrier[0] == 'h1' and reader != nil and
-      reader.drain(self.max_body_size)
+    var reusable = carrier[0] == 'h1' and
+        reader != nil and
+        reader.drain(self.max_body_size)
 
     if !reusable {
       self._discard(carrier)
@@ -934,11 +954,11 @@ class HttpClient {
   }
 
   /**
-   * Trusts an additional PEM-encoded certificate authority, on top of
-   * the platform's own roots.
+   * Adds a PEM-encoded certificate authority to trust, in addition to
+   * the platform's own root certificates.
    *
-   * This is the right way to talk to a service with an internal or
-   * self-signed certificate; turning `verify` off instead trusts
+   * This is the right way to connect to a service with an internal or
+   * self-signed certificate. Turning off `verify` instead trusts
    * everyone, including whoever is between you and the server.
    *
    * @param string pem
@@ -1000,10 +1020,10 @@ class HttpClient {
   }
 
   /**
-   * Closes every pooled connection. A client is usable afterwards -
-   * the next request simply opens a fresh connection - but the
-   * sockets are released, which matters at the end of a long-running
-   * process or before forking.
+   * Closes every pooled connection. You can still use the client
+   * afterwards, and the next request simply opens a new connection, but
+   * the sockets are released, which matters at the end of a
+   * long-running process or before forking.
    */
   close() {
     for _, idle in self._pool {
@@ -1160,7 +1180,9 @@ def _authorization(auth) {
   }
 
   if !is_list(auth) or auth.length() < 2 {
-    raise HttpError("auth must be ['basic', user, password] or ['bearer', token]")
+    raise HttpError(
+      "auth must be ['basic', user, password] or ['bearer', token]",
+    )
   }
 
   var scheme = auth[0].lower()

@@ -39,19 +39,21 @@ class Declarations {
   }
 
   /**
-   * Reads C declarations into the set, returning it for chaining.
+   * Reads C declarations into the set, and returns the set for
+   * chaining.
    *
    * Typedefs, structs, unions, enums, function prototypes, `extern`
    * variables and `_Static_assert`s are read. So are object-like
-   * `#define`s, which become constants, and `#if` and its relatives,
-   * which are evaluated for this platform. `#pragma pack` is honoured.
-   * Including a C standard header is accepted, since everything it
-   * declares is already known; including any other file is an error, as
-   * is expanding a function-like macro.
+   * `#define`s, which become constants, and `#if` and the related
+   * directives, which are evaluated for the current platform.
+   * `#pragma pack` is respected. Including a C standard header is
+   * allowed, because everything it declares is already known, but
+   * including any other file is an error, and so is expanding a
+   * function-like macro.
    *
-   * A function returning `const char *` returns a string. A function
-   * with a body, as an inline helper in a header has, is read and not
-   * bound, since the library need not export it.
+   * A function that returns `const char *` returns a string. A function
+   * with a body, like an inline helper in a header, is read but not
+   * bound, because the library doesn't have to export it.
    *
    * @param string source
    * @returns self
@@ -164,13 +166,13 @@ class Declarations {
   }
 
   /**
-   * Binds the declarations to `library`, returning a namespace.
+   * Binds the declarations to `library`, and returns a namespace.
    *
-   * The namespace holds a function for each declared function, a
+   * The namespace has a function for each declared function, a
    * `Pointer` for each declared variable, each constant, and each type
-   * that has a name of its own (a typedef or a Rust type); tagged C
-   * types are reached with `type()`. Members are read the way a module's
-   * are:
+   * with a name of its own, which means a typedef or a Rust type.
+   * Tagged C types are reached with `type()`. You access the members in
+   * the same way as a module's members:
    *
    * ```zuri,ignore
    * var sqlite = api.bind(ffi.open('sqlite3'))
@@ -178,12 +180,13 @@ class Declarations {
    * ```
    *
    * @param Library library
-   * @param dict|nil options `allow_missing`: when `true`, a declared
-   *   function or variable the library does not export is left out of
-   *   the namespace instead of being an error. Defaults to `false`.
+   * @param dict|nil options `allow_missing`: when it's `true`, a
+   *    declared function or variable that the library doesn't export is
+   *    left out of the namespace instead of causing an error. Defaults
+   *    to `false`.
    * @returns module
    * @throws SymbolError naming every missing symbol, unless
-   *   `allow_missing` is set.
+   *    `allow_missing` is set.
    */
   bind(library, options) {
     options = options or {}

@@ -20,8 +20,8 @@
 
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{
-  AbiParam, Block, InstBuilder, MemFlagsData, SigRef, StackSlot, StackSlotData, StackSlotKind,
-  Value as IrValue, types,
+  AbiParam, AliasRegionData, Block, InstBuilder, MemFlagsData, SigRef, StackSlot, StackSlotData,
+  StackSlotKind, Value as IrValue, types,
 };
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_jit::JITModule;
@@ -48,11 +48,8 @@ const HEAP_FINALIZE_CUR_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_FINALIZE_CUR_OFFSET) as i32;
 const HEAP_FINALIZE_END_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_FINALIZE_END_OFFSET) as i32;
-const HEAP_LIVE_COUNT_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_LIVE_COUNT_OFFSET) as i32;
 const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_BYTES_ALLOCATED_OFFSET) as i32;
-const HEAP_BYTES_ALLOCATED_OFFSET: i32 =
-  (vm::VM_HEAP_OFFSET + object::HEAP_BYTES_ALLOCATED_OFFSET) as i32;
 const HEAP_YOUNG_HEADER_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_HEADER_OFFSET) as i32;
 const HEAP_FIELD_ARENA_CUR_OFFSET: i32 =
@@ -83,6 +80,10 @@ const CALL_FRAME_SIZE: i64 = vm::CALL_FRAME_SIZE as i64;
 /// deoptimization, matching the baseline tier; the caller looks at the
 /// pending error and deopt fields rather than the value.
 const PENDING_RETURN: u64 = value::QNAN;
+
+/// The longest list whose elements a guard checks in compiled code
+/// rather than through the runtime.
+const INLINE_ELEMENT_SCAN: i64 = 16;
 
 /// The runtime helper that runs `instr` for the generic path, if there
 /// is one. The builder refuses a function containing an instruction it
@@ -213,6 +214,8 @@ pub fn lower(
     leave_marker: None,
     positions: FxHashMap::default(),
     small: super::passes::ints::small_integers(ir),
+    leaves_loop: loop_leaving_branches(ir),
+    at: (BlockId(0), 0),
   };
   l.run()?;
   Ok(ir.osr_ids.clone())
@@ -250,6 +253,37 @@ struct Lowering<'a, 'b> {
   positions: FxHashMap<(u16, usize), usize>,
   /// `I64` values known to lie within 2^53 of zero.
   small: rustc_hash::FxHashSet<ValueId>,
+  /// Blocks in a loop whose branch goes on round the loop when it holds
+  /// and leaves the loop otherwise.
+  leaves_loop: rustc_hash::FxHashSet<BlockId>,
+  /// The block being lowered and the index of its instruction being
+  /// lowered, or its length while the terminator is.
+  at: (BlockId, usize),
+}
+
+/// The blocks whose branch takes its first target to stay in the
+/// innermost loop holding the block and its second to leave it.
+fn loop_leaving_branches(ir: &Func) -> rustc_hash::FxHashSet<BlockId> {
+  let loops = super::passes::loops::find(ir);
+  let mut out = rustc_hash::FxHashSet::default();
+  for (i, block) in ir.blocks.iter().enumerate() {
+    let b = BlockId(i as u32);
+    let Terminator::Branch {
+      then_block,
+      else_block,
+      ..
+    } = &block.term
+    else {
+      continue;
+    };
+    if let Some(lp) = loops.iter().find(|lp| lp.body.contains(&b))
+      && lp.body.contains(then_block)
+      && !lp.body.contains(else_block)
+    {
+      out.insert(b);
+    }
+  }
+  out
 }
 
 impl<'a, 'b> Lowering<'a, 'b> {
@@ -305,6 +339,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
     let mut i = 0;
     while i < insts.len() {
       let id = insts[i];
+      self.at = (b, i);
       if matches!(self.ir.inst(id).op, Op::Safepoint | Op::NewList { .. }) {
         // The reloads that follow a safepoint only have to read memory
         // when it actually collected.
@@ -325,6 +360,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
       self.lower_inst(id)?;
       i += 1;
     }
+    self.at = (b, insts.len());
     self.lower_term(b);
     Ok(())
   }
@@ -493,21 +529,29 @@ impl<'a, 'b> Lowering<'a, 'b> {
         let addr = self.fb.ins().iadd(av[1], off);
         let val = self.tagged_of(inst.args[3]);
         self.fb.ins().store(flags, val, addr, 0);
-        self.barrier_for_store(inst.args[3], val, list);
+        let moved = self
+          .ir
+          .def_inst(inst.args[3])
+          .is_some_and(|d| matches!(d.op, Op::LoadElem) && d.args[0] == inst.args[1]);
+        if !moved {
+          self.barrier_for_store(inst.args[3], val, list);
+        }
         None
       },
       Op::LoadField(slot) => {
         let fields = self.fields_ptr(av[0]);
+        let cells = self.field_cell_flags();
         Some(
           self
             .fb
             .ins()
-            .load(types::I64, flags, fields, (*slot as i32) * 8),
+            .load(types::I64, cells, fields, (*slot as i32) * 8),
         )
       },
       Op::StoreField(slot) => {
         let obj = av[0];
         let val = self.tagged_of(inst.args[1]);
+        let cells = self.field_cell_flags();
         match self.fresh_instance(inst.args[0]) {
           // Its layout is known, and it is young.
           Some(field_count) => {
@@ -516,14 +560,21 @@ impl<'a, 'b> Lowering<'a, 'b> {
               self.fb.ins().iadd_imm_s(obj, inline)
             } else {
               let at = object::obj_instance_fields_offset() as i32;
-              self.fb.ins().load(types::I64, flags, obj, at)
+              let storage = self.field_storage_flags();
+              self.fb.ins().load(types::I64, storage, obj, at)
             };
-            self.fb.ins().store(flags, val, fields, (*slot as i32) * 8);
+            self.fb.ins().store(cells, val, fields, (*slot as i32) * 8);
           },
           None => {
             let fields = self.fields_ptr(obj);
-            self.fb.ins().store(flags, val, fields, (*slot as i32) * 8);
-            self.barrier_for_store(inst.args[1], val, obj);
+            self.fb.ins().store(cells, val, fields, (*slot as i32) * 8);
+            let moved = self
+              .ir
+              .def_inst(inst.args[1])
+              .is_some_and(|d| matches!(d.op, Op::LoadField(_)) && d.args[0] == inst.args[0]);
+            if !moved {
+              self.barrier_for_store(inst.args[1], val, obj);
+            }
           },
         }
         None
@@ -693,38 +744,25 @@ impl<'a, 'b> Lowering<'a, 'b> {
     state: &FrameState,
   ) -> Option<IrValue> {
     let x = self.v(args[0]);
+    // Each part of a check branches to the deopt on its own, so no part
+    // waits on another's answer to be combined with it.
+    let fail = self.fb.create_block();
     let (ok, result) = match kind {
       GuardKind::Number => {
         let ok = self.is_number(x);
         (ok, Some(self.to_f64(x)))
       },
       GuardKind::Int => {
-        let (f, is_num) = if self.ir.ty(args[0]) == Ty::F64 {
-          (x, None)
-        } else {
-          (self.to_f64(x), Some(self.is_number(x)))
-        };
+        let f = self.guard_number(args[0], x, fail);
         let (i, exact) = self.f64_to_int(f);
-        let ok = match is_num {
-          Some(n) => self.fb.ins().band(n, exact),
-          None => exact,
-        };
-        (ok, Some(i))
+        (exact, Some(i))
       },
       GuardKind::Whole => {
-        let (f, is_num) = if self.ir.ty(args[0]) == Ty::F64 {
-          (x, None)
-        } else {
-          (self.to_f64(x), Some(self.is_number(x)))
-        };
+        let f = self.guard_number(args[0], x, fail);
         let (i, exact) = self.f64_to_int(f);
+        self.continue_if(exact, fail);
         let bits = self.from_f64(f);
-        let minus_zero = self.fb.ins().icmp_imm_s(IntCC::Equal, bits, i64::MIN);
-        let ok = self.fb.ins().band_not(exact, minus_zero);
-        let ok = match is_num {
-          Some(n) => self.fb.ins().band(n, ok),
-          None => ok,
-        };
+        let ok = self.fb.ins().icmp_imm_s(IntCC::NotEqual, bits, i64::MIN);
         (ok, Some(i))
       },
       GuardKind::Arith(op) => {
@@ -749,21 +787,23 @@ impl<'a, 'b> Lowering<'a, 'b> {
             (r, Some(o))
           },
         };
+        if let Some(o) = overflow {
+          let next = self.fb.create_block();
+          self.fb.ins().brif(o, fail, &[], next, &[]);
+          self.fb.switch_to_block(next);
+        }
         // Within `-2^53..2^53` exactly when the bits above the 53rd are
         // all zeros or all ones: shifted down, -1 or 0.
         let high = self.fb.ins().sshr_imm_u(r, 53);
         let high = self.fb.ins().iadd_imm_s(high, 1);
-        let in_range = self.fb.ins().icmp_imm_u(IntCC::UnsignedLessThan, high, 2);
-        let mut ok = match overflow {
-          Some(o) => self.fb.ins().band_not(in_range, o),
-          None => in_range,
-        };
+        let mut ok = self.fb.ins().icmp_imm_u(IntCC::UnsignedLessThan, high, 2);
         if op == IntOp::Mul {
+          self.continue_if(ok, fail);
           let signs = self.fb.ins().bor(x, y);
           let negative = self.fb.ins().icmp_imm_s(IntCC::SignedLessThan, signs, 0);
           let zero = self.fb.ins().icmp_imm_s(IntCC::Equal, r, 0);
           let minus_zero = self.fb.ins().band(negative, zero);
-          ok = self.fb.ins().band_not(ok, minus_zero);
+          ok = self.fb.ins().bxor_imm_u(minus_zero, 1);
         }
         (ok, Some(r))
       },
@@ -775,20 +815,24 @@ impl<'a, 'b> Lowering<'a, 'b> {
         (self.fb.ins().bor(is_t, is_f), Some(is_t))
       },
       GuardKind::List => {
-        let ok = self.obj_tag_is(x, object::OBJ_TAG_LIST);
-        (ok, Some(self.obj_ptr(x)))
+        let p = self.guard_obj(x, fail);
+        (self.tag_is(p, object::OBJ_TAG_LIST), Some(p))
       },
       GuardKind::Instance(class) => {
-        let ok = self.instance_of(x, class);
-        (ok, Some(self.obj_ptr(x)))
+        let p = self.guard_obj(x, fail);
+        let ok = self.tag_is(p, object::OBJ_TAG_INSTANCE);
+        self.continue_if(ok, fail);
+        (self.class_is(p, class), Some(p))
       },
       GuardKind::Family { class, depth } => {
-        let ok = self.instance_in_family(x, class, depth);
-        (ok, Some(self.obj_ptr(x)))
+        let p = self.guard_obj(x, fail);
+        let ok = self.tag_is(p, object::OBJ_TAG_INSTANCE);
+        self.continue_if(ok, fail);
+        (self.family_is(p, class, depth), Some(p))
       },
       GuardKind::Tag(tag) => {
-        let ok = self.obj_tag_is(x, tag);
-        (ok, Some(self.obj_ptr(x)))
+        let p = self.guard_obj(x, fail);
+        (self.tag_is(p, tag), Some(p))
       },
       GuardKind::Bounds => {
         let len = self.v(args[1]);
@@ -801,13 +845,16 @@ impl<'a, 'b> Lowering<'a, 'b> {
       },
       GuardKind::Proto(bits) => (self.closure_of(x, bits), None),
       GuardKind::Native(guard_fn) => (self.native_is(x, guard_fn), None),
-      GuardKind::Elems { whole } => {
-        let w = self.u64c(whole as u64);
+      GuardKind::Elems { whole: false } => {
+        self.guard_numbers(x, fail);
+        (self.fb.ins().iconst(types::I8, 1), None)
+      },
+      GuardKind::Elems { whole: true } => {
+        let w = self.u64c(1);
         let r = self.call_pure("zuri_jit_list_elems_are", &[self.vm, x, w]);
         (self.fb.ins().ireduce(types::I8, r), None)
       },
     };
-    let fail = self.fb.create_block();
     let cont = self.fb.create_block();
     self.fb.ins().brif(ok, cont, &[], fail, &[]);
     self.fb.switch_to_block(fail);
@@ -817,6 +864,110 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.deopt(state, marker);
     self.fb.switch_to_block(cont);
     result
+  }
+
+  /// A guard's operand as an `F64`, going to `fail` first when it is a
+  /// `Tagged` that holds no number.
+  fn guard_number(&mut self, arg: ValueId, x: IrValue, fail: Block) -> IrValue {
+    if self.ir.ty(arg) == Ty::F64 {
+      return x;
+    }
+    let ok = self.is_number(x);
+    self.continue_if(ok, fail);
+    self.to_f64(x)
+  }
+
+  /// Goes to `fail` unless every element of the list at `list` is a
+  /// number. A short list is read in a loop here, which costs less than
+  /// the call; a longer one goes to the runtime, whose loop over it runs
+  /// faster than this one would.
+  fn guard_numbers(&mut self, list: IrValue, fail: Block) {
+    let flags = MemFlagsData::trusted();
+    let len32 = self
+      .fb
+      .ins()
+      .load(types::I32, flags, list, object::obj_list_len_offset());
+    let len = self.fb.ins().uextend(types::I64, len32);
+    let data = self.list_data(list);
+    let head = self.fb.create_block();
+    let body = self.fb.create_block();
+    let long = self.fb.create_block();
+    let exit = self.fb.create_block();
+    self.fb.append_block_param(head, types::I64);
+    let zero = self.fb.ins().iconst(types::I64, 0);
+    let short = self
+      .fb
+      .ins()
+      .icmp_imm_u(IntCC::UnsignedLessThanOrEqual, len, INLINE_ELEMENT_SCAN);
+    self.fb.ins().brif(short, head, &[zero.into()], long, &[]);
+
+    self.fb.switch_to_block(long);
+    let w = self.u64c(0);
+    let all = self.call_pure("zuri_jit_list_elems_are", &[self.vm, list, w]);
+    self.fb.ins().brif(all, exit, &[], fail, &[]);
+
+    self.fb.switch_to_block(head);
+    let i = self.fb.block_params(head)[0];
+    let done = self.fb.ins().icmp(IntCC::Equal, i, len);
+    self.fb.ins().brif(done, exit, &[], body, &[]);
+
+    self.fb.switch_to_block(body);
+    let off = self.fb.ins().imul_imm_s(i, 8);
+    let addr = self.fb.ins().iadd(data, off);
+    let e = self.fb.ins().load(types::I64, flags, addr, 0);
+    let ok = self.is_number(e);
+    self.continue_if(ok, fail);
+    let next = self.fb.ins().iadd_imm_s(i, 1);
+    self.fb.ins().jump(head, &[next.into()]);
+
+    self.fb.switch_to_block(exit);
+  }
+
+  /// The object `x` points at, going to `fail` when it is no object.
+  fn guard_obj(&mut self, x: IrValue, fail: Block) -> IrValue {
+    let ok = self.is_obj(x);
+    self.continue_if(ok, fail);
+    self.obj_ptr(x)
+  }
+
+  /// Whether the object at `p` has tag `tag`.
+  fn tag_is(&mut self, p: IrValue, tag: u8) -> IrValue {
+    let t = self.fb.ins().load(types::I8, MemFlagsData::trusted(), p, 0);
+    self.fb.ins().icmp_imm_s(IntCC::Equal, t, tag as i64)
+  }
+
+  /// Whether the instance at `p` is of the class whose bits are `class`.
+  fn class_is(&mut self, p: IrValue, class: u64) -> IrValue {
+    let bits = self.fb.ins().load(
+      types::I64,
+      MemFlagsData::trusted(),
+      p,
+      object::obj_instance_class_offset() as i32,
+    );
+    let want = self.u64c(class);
+    self.fb.ins().icmp(IntCC::Equal, bits, want)
+  }
+
+  /// Whether the instance at `p` is of `class` or a class descending from
+  /// it: the entry at `depth` of its class's display is `class`.
+  fn family_is(&mut self, p: IrValue, class: u64, depth: u8) -> IrValue {
+    let flags = MemFlagsData::trusted();
+    let bits = self.fb.ins().load(
+      types::I64,
+      flags,
+      p,
+      object::obj_instance_class_offset() as i32,
+    );
+    let class_obj = self.obj_ptr(bits);
+    let (box_offset, display) = object::obj_class_display_offsets();
+    let boxed = self
+      .fb
+      .ins()
+      .load(types::I64, flags, class_obj, box_offset as i32);
+    let entry = display + depth as usize * std::mem::size_of::<u64>();
+    let seen = self.fb.ins().load(types::I64, flags, boxed, entry as i32);
+    let want = self.u64c(class);
+    self.fb.ins().icmp(IntCC::Equal, seen, want)
   }
 
   /// Runs one instruction through its runtime helper: publish the
@@ -865,31 +1016,30 @@ impl<'a, 'b> Lowering<'a, 'b> {
         if let Some((miss, _)) = constructed {
           self.fb.switch_to_block(miss);
         }
-        let status = if num_args > 4 {
-          self.fast_call("zuri_jit_call_prepare", prepare, call, name, &args)
-        } else {
-          // A callee named by the feedback whose shape takes this call
-          // needs only to be recognised.
-          let callee = match self.ir.known_calls.get(&(frame, ip)) {
-            Some(&(function, bits)) => {
-              // SAFETY: prototypes live in the old generation and never
-              // move, and this one is live while the compile runs.
-              let f = unsafe { &*(function as *const ObjFunction) };
-              if f.arity == num_args && !f.variadic && !f.is_method {
-                DirectCallee::Known { function, bits }
-              } else {
-                DirectCallee::Register
-              }
-            },
-            None => DirectCallee::Register,
-          };
-          let (miss, done) = self.direct_call(callee, call, ip, frame);
-          self.fb.switch_to_block(miss);
-          let status = self.fast_call("zuri_jit_call_prepare", prepare, call, name, &args);
-          self.fb.ins().jump(done, &[status.into()]);
-          self.fb.switch_to_block(done);
-          self.fb.block_params(done)[0]
+        // A callee named by the feedback whose shape takes this call needs
+        // only to be recognised. Past the fourth, arguments reach it
+        // through the register file, where the call already wrote them.
+        let callee = match self.ir.known_calls.get(&(frame, ip)) {
+          Some(&(function, bits)) => {
+            // SAFETY: prototypes live in the old generation and never
+            // move, and this one is live while the compile runs.
+            let f = unsafe { &*(function as *const ObjFunction) };
+            if f.arity == num_args && !f.variadic && !f.is_method {
+              DirectCallee::Known { function, bits }
+            } else {
+              DirectCallee::Register
+            }
+          },
+          None => DirectCallee::Register,
         };
+        // A construction tried first may have written the registers.
+        let flushed = constructed.is_none().then_some(state);
+        let (miss, done) = self.direct_call(callee, call, ip, frame, flushed);
+        self.fb.switch_to_block(miss);
+        let status = self.fast_call("zuri_jit_call_prepare", prepare, call, name, &args);
+        self.fb.ins().jump(done, &[status.into()]);
+        self.fb.switch_to_block(done);
+        let status = self.fb.block_params(done)[0];
         match constructed {
           Some((_, done)) => {
             self.fb.ins().jump(done, &[status.into()]);
@@ -957,9 +1107,11 @@ impl<'a, 'b> Lowering<'a, 'b> {
           dst,
         };
         let status = match proto.chunk.invoke_cache_cell(ip) {
-          Some(cell) if num_args < 4 => {
+          Some(cell) => {
             let cell = cell as *const _ as u64;
-            let (miss, done) = self.direct_call(DirectCallee::Cached(cell), call, ip, frame);
+            let flushed = constructed.is_none().then_some(state);
+            let (miss, done) =
+              self.direct_call(DirectCallee::Cached(cell), call, ip, frame, flushed);
             self.fb.switch_to_block(miss);
             let status = self.invoke_resolved(offset + obj, prepare, call, name, &args);
             self.fb.ins().jump(done, &[status.into()]);
@@ -1214,6 +1366,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
     call: FastCall,
     ip: usize,
     frame: u16,
+    flushed: Option<&FrameState>,
   ) -> (Block, Block) {
     let FastCall {
       base,
@@ -1229,7 +1382,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
 
     let (closure, proto) = match callee {
       DirectCallee::Register => {
-        let closure = self.load_reg(offset + first_arg - 1);
+        let closure = self.flushed_reg(flushed, offset + first_arg - 1);
         let is_obj = self.is_obj(closure);
         self.continue_if(is_obj, miss);
         let p = self.obj_ptr(closure);
@@ -1271,7 +1424,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
         (closure, self.function_proto(function))
       },
       DirectCallee::Known { function, bits } => {
-        let closure = self.load_reg(offset + first_arg - 1);
+        let closure = self.flushed_reg(flushed, offset + first_arg - 1);
         let is_closure = self.obj_tag_is(closure, object::OBJ_TAG_CLOSURE);
         self.continue_if(is_closure, miss);
         let p = self.obj_ptr(closure);
@@ -1289,7 +1442,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
       DirectCallee::Cached(cell) => {
         // The receiver's class has to be the one the cache was filled
         // for, and then its method is the closure the cache holds.
-        let receiver = self.load_reg(offset + first_arg - 1);
+        let receiver = self.flushed_reg(flushed, offset + first_arg - 1);
         let is_instance = self.obj_tag_is(receiver, object::OBJ_TAG_INSTANCE);
         self.continue_if(is_instance, miss);
         let p = self.obj_ptr(receiver);
@@ -1371,14 +1524,23 @@ impl<'a, 'b> Lowering<'a, 'b> {
       vm::JIT_MAX_CALL_DEPTH as i64,
     );
     self.continue_if(depth_ok, miss);
-    let registers = self.fb.ins().load(
-      types::I8,
-      flags,
-      proto,
-      object::obj_function_num_registers_offset() as i32,
-    );
-    let registers = self.fb.ins().uextend(types::I64, registers);
-    let needed = self.fb.ins().iadd(new_base, registers);
+    let needed = match callee {
+      DirectCallee::Known { function, .. } => {
+        // SAFETY: as for the shape `lower_generic` checked.
+        let f = unsafe { &*(function as *const ObjFunction) };
+        self.fb.ins().iadd_imm_s(new_base, f.num_registers as i64)
+      },
+      _ => {
+        let registers = self.fb.ins().load(
+          types::I8,
+          flags,
+          proto,
+          object::obj_function_num_registers_offset() as i32,
+        );
+        let registers = self.fb.ins().uextend(types::I64, registers);
+        self.fb.ins().iadd(new_base, registers)
+      },
+    };
     let regs_len = self
       .fb
       .ins()
@@ -1470,7 +1632,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
     call_args.push(self.fb.ins().iconst(types::I32, -1));
     for k in 0..4u8 {
       let a = if k < num_args {
-        self.load_reg(offset + first_arg + k)
+        self.flushed_reg(flushed, offset + first_arg + k)
       } else {
         nil
       };
@@ -1520,28 +1682,18 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.ins().jump(done, &[one.into()]);
 
     // Popped as the frame's own return would pop it, retiring any scalar
-    // roots it registered.
+    // roots it registered. A callee that returns leaves its own frame on
+    // top, marked with the scalar root count read for the push, so the
+    // counts read then are the ones to put back.
     self.fb.switch_to_block(returned);
-    let frames_len = self
-      .fb
-      .ins()
-      .load(types::I64, flags, self.vm, FRAMES_LEN_OFFSET);
-    let top = self.fb.ins().iadd_imm_s(frames_len, -1);
-    let frames = self
-      .fb
-      .ins()
-      .load(types::I64, flags, self.vm, FRAMES_PTR_OFFSET);
-    let at = self.fb.ins().imul_imm_s(top, CALL_FRAME_SIZE);
-    let at = self.fb.ins().iadd(frames, at);
-    let mark = self
-      .fb
-      .ins()
-      .load(types::I64, flags, at, CALL_FRAME_SCALAR_ROOTS_MARK_OFFSET);
     self
       .fb
       .ins()
-      .store(flags, mark, self.vm, JIT_SCALAR_ROOTS_LEN_OFFSET);
-    self.fb.ins().store(flags, top, self.vm, FRAMES_LEN_OFFSET);
+      .store(flags, roots, self.vm, JIT_SCALAR_ROOTS_LEN_OFFSET);
+    self
+      .fb
+      .ins()
+      .store(flags, frames_len, self.vm, FRAMES_LEN_OFFSET);
     self.store_reg(offset + dst, ret);
     let ok = self.u64c(0);
     self.fb.ins().jump(done, &[ok.into()]);
@@ -1987,13 +2139,17 @@ impl<'a, 'b> Lowering<'a, 'b> {
         let c = self.v(cond);
         let ta: Vec<_> = then_args.iter().map(|&v| self.v(v).into()).collect();
         let ea: Vec<_> = else_args.iter().map(|&v| self.v(v).into()).collect();
-        self.fb.ins().brif(
-          c,
-          self.blocks[then_block.0 as usize],
-          &ta,
-          self.blocks[else_block.0 as usize],
-          &ea,
-        );
+        let then_b = self.blocks[then_block.0 as usize];
+        let else_b = self.blocks[else_block.0 as usize];
+        if self.leaves_loop.contains(&b) {
+          // Cranelift places a branch's second target straight after it,
+          // so the way on round the loop goes second and the loop runs
+          // without a taken branch on the way in.
+          let leave = self.fb.ins().icmp_imm_s(IntCC::Equal, c, 0);
+          self.fb.ins().brif(leave, else_b, &ea, then_b, &ta);
+        } else {
+          self.fb.ins().brif(c, then_b, &ta, else_b, &ea);
+        }
       },
       Terminator::Return(v) => {
         let x = self.tagged_of(v);
@@ -2080,9 +2236,41 @@ impl<'a, 'b> Lowering<'a, 'b> {
   /// Writes every value in `state` into its register, boxed.
   fn flush(&mut self, state: &FrameState) {
     for &(r, v) in &state.regs {
+      if self.in_register_file(r, v) {
+        continue;
+      }
       let x = self.tagged_of(v);
       self.store_reg(r, x);
     }
+  }
+
+  /// Whether register `r` already holds `v`: `v` was read back from it
+  /// after a runtime call earlier in the block being lowered, and nothing
+  /// since can have written the register file. A guard between them
+  /// leaves by writing the same values out.
+  fn in_register_file(&self, r: u8, v: ValueId) -> bool {
+    let Some(def) = self.ir.def_inst_id(v) else {
+      return false;
+    };
+    if !matches!(self.ir.inst(def).op, Op::Reload { reg } if reg == r) {
+      return false;
+    }
+    let (b, upto) = self.at;
+    let insts = &self.ir.block(b).insts;
+    let Some(pos) = insts[..upto].iter().position(|&i| i == def) else {
+      return false;
+    };
+    let mut first = pos;
+    while first > 0 && matches!(self.ir.inst(insts[first - 1]).op, Op::Reload { .. }) {
+      first -= 1;
+    }
+    if first == 0 || !matches!(self.ir.inst(insts[first - 1]).op, Op::Generic { .. }) {
+      return false;
+    }
+    insts[pos + 1..upto].iter().all(|&i| {
+      let op = &self.ir.inst(i).op;
+      matches!(op, Op::Guard(_)) || (!op.has_effect() && !op.may_collect())
+    })
   }
 
   /// Tells the VM where compiled code is, for stack traces. Inside a
@@ -2149,6 +2337,16 @@ impl<'a, 'b> Lowering<'a, 'b> {
   fn store_reg(&mut self, r: u8, v: IrValue) {
     let addr = self.reg_addr(r);
     self.fb.ins().store(MemFlagsData::trusted(), v, addr, 0);
+  }
+
+  /// Register `r` as `flushed` just wrote it, when that state covers it
+  /// and nothing has written the register file since; read back from the
+  /// file otherwise.
+  fn flushed_reg(&mut self, flushed: Option<&FrameState>, r: u8) -> IrValue {
+    match flushed.and_then(|state| state.regs.iter().find(|&&(reg, _)| reg == r)) {
+      Some(&(_, v)) => self.tagged_of(v),
+      None => self.load_reg(r),
+    }
   }
 
   // --- representations ---------------------------------------------------
@@ -2361,28 +2559,6 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.block_params(done)[0]
   }
 
-  fn instance_of(&mut self, v: IrValue, class: u64) -> IrValue {
-    let is_inst = self.obj_tag_is(v, object::OBJ_TAG_INSTANCE);
-    let check = self.fb.create_block();
-    let done = self.fb.create_block();
-    self.fb.append_block_param(done, types::I8);
-    let no = self.fb.ins().iconst(types::I8, 0);
-    self.fb.ins().brif(is_inst, check, &[], done, &[no.into()]);
-    self.fb.switch_to_block(check);
-    let p = self.obj_ptr(v);
-    let bits = self.fb.ins().load(
-      types::I64,
-      MemFlagsData::trusted(),
-      p,
-      object::obj_instance_class_offset() as i32,
-    );
-    let want = self.u64c(class);
-    let same = self.fb.ins().icmp(IntCC::Equal, bits, want);
-    self.fb.ins().jump(done, &[same.into()]);
-    self.fb.switch_to_block(done);
-    self.fb.block_params(done)[0]
-  }
-
   /// Whether `v` is an instance of `class` or a class descending from
   /// it: the entry at `depth` of its class's display is `class`.
   fn instance_in_family(&mut self, v: IrValue, class: u64, depth: u8) -> IrValue {
@@ -2393,24 +2569,8 @@ impl<'a, 'b> Lowering<'a, 'b> {
     let no = self.fb.ins().iconst(types::I8, 0);
     self.fb.ins().brif(is_inst, check, &[], done, &[no.into()]);
     self.fb.switch_to_block(check);
-    let flags = MemFlagsData::trusted();
     let p = self.obj_ptr(v);
-    let bits = self.fb.ins().load(
-      types::I64,
-      flags,
-      p,
-      object::obj_instance_class_offset() as i32,
-    );
-    let class_obj = self.obj_ptr(bits);
-    let (box_offset, display) = object::obj_class_display_offsets();
-    let boxed = self
-      .fb
-      .ins()
-      .load(types::I64, flags, class_obj, box_offset as i32);
-    let entry = display + depth as usize * std::mem::size_of::<u64>();
-    let seen = self.fb.ins().load(types::I64, flags, boxed, entry as i32);
-    let want = self.u64c(class);
-    let same = self.fb.ins().icmp(IntCC::Equal, seen, want);
+    let same = self.family_is(p, class, depth);
     self.fb.ins().jump(done, &[same.into()]);
     self.fb.switch_to_block(done);
     self.fb.block_params(done)[0]
@@ -2807,39 +2967,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
       .fb
       .ins()
       .store(flags, fnext, vm, HEAP_FINALIZE_CUR_OFFSET);
-    for (offset, delta) in [
-      (HEAP_LIVE_COUNT_OFFSET, 1),
-      (HEAP_BYTES_ALLOCATED_OFFSET, size),
-    ] {
-      let old = self.fb.ins().load(types::I64, flags, vm, offset);
-      let new = self.fb.ins().iadd_imm_s(old, delta);
-      self.fb.ins().store(flags, new, vm, offset);
-    }
-    let young = self
-      .fb
-      .ins()
-      .load(types::I64, flags, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
-    let young = self.fb.ins().iadd_imm_s(young, size);
-    self
-      .fb
-      .ins()
-      .store(flags, young, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
-    // Owe a collection once the young budget is spent; the next
-    // safepoint pays it.
-    let budget = self.u64c(self.ir.young_budget);
-    let owed = self
-      .fb
-      .ins()
-      .icmp(IntCC::UnsignedGreaterThan, young, budget);
-    let flag = self
-      .fb
-      .ins()
-      .load(types::I8, flags, vm, HEAP_JIT_GC_NEEDED_OFFSET);
-    let flag = self.fb.ins().bor(flag, owed);
-    self
-      .fb
-      .ins()
-      .store(flags, flag, vm, HEAP_JIT_GC_NEEDED_OFFSET);
+    self.count_young(size);
     let header = self
       .fb
       .ins()
@@ -3012,39 +3140,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
           .ins()
           .store(flags, anext, vm, HEAP_FIELD_ARENA_CUR_OFFSET);
       }
-      for (offset, delta) in [
-        (HEAP_LIVE_COUNT_OFFSET, 1),
-        (HEAP_BYTES_ALLOCATED_OFFSET, size),
-      ] {
-        let old = self.fb.ins().load(types::I64, flags, vm, offset);
-        let new = self.fb.ins().iadd_imm_s(old, delta);
-        self.fb.ins().store(flags, new, vm, offset);
-      }
-      let young = self
-        .fb
-        .ins()
-        .load(types::I64, flags, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
-      let young = self.fb.ins().iadd_imm_s(young, size);
-      self
-        .fb
-        .ins()
-        .store(flags, young, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
-      // Owe a collection once the young budget is spent; the next
-      // safepoint pays it.
-      let budget = self.u64c(self.ir.young_budget);
-      let owed = self
-        .fb
-        .ins()
-        .icmp(IntCC::UnsignedGreaterThan, young, budget);
-      let flag = self
-        .fb
-        .ins()
-        .load(types::I8, flags, vm, HEAP_JIT_GC_NEEDED_OFFSET);
-      let flag = self.fb.ins().bor(flag, owed);
-      self
-        .fb
-        .ins()
-        .store(flags, flag, vm, HEAP_JIT_GC_NEEDED_OFFSET);
+      self.count_young(size);
       let header = self
         .fb
         .ins()
@@ -3069,8 +3165,9 @@ impl<'a, 'b> Lowering<'a, 'b> {
         Some(cells) => (cells, count as u64 | (1u64 << 32)),
         None => (zero, count as u64),
       };
+      let storage = self.field_storage_flags();
       self.fb.ins().store(
-        flags,
+        storage,
         cells_ptr,
         obj,
         object::obj_instance_fields_offset() as i32,
@@ -3095,19 +3192,23 @@ impl<'a, 'b> Lowering<'a, 'b> {
         None => nil,
       };
       let inline = object::obj_instance_fields_inline_offset() as i32;
+      let cell_flags = self.field_cell_flags();
       match arena {
         Some(cells) => {
-          self.fb.ins().store(flags, nil, obj, inline);
-          self.fb.ins().store(flags, nil, obj, inline + 8);
+          self.fb.ins().store(cell_flags, nil, obj, inline);
+          self.fb.ins().store(cell_flags, nil, obj, inline + 8);
           for i in 0..count {
             let v = start(self, i);
-            self.fb.ins().store(flags, v, cells, (i * 8) as i32);
+            self.fb.ins().store(cell_flags, v, cells, (i * 8) as i32);
           }
         },
         None => {
           for i in 0..2 {
             let v = start(self, i);
-            self.fb.ins().store(flags, v, obj, inline + (i * 8) as i32);
+            self
+              .fb
+              .ins()
+              .store(cell_flags, v, obj, inline + (i * 8) as i32);
           }
         },
       }
@@ -3666,11 +3767,32 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.ins().select(is_inline, inline, heap)
   }
 
+  /// Flags for the word naming an instance's field storage. It is written
+  /// only when the instance is made, so a field store between two reads
+  /// of it leaves the second read to reuse the first.
+  fn field_storage_flags(&mut self) -> MemFlagsData {
+    self.region_flags(1, "instance field storage")
+  }
+
+  /// Flags for an instance's field cells.
+  fn field_cell_flags(&mut self) -> MemFlagsData {
+    self.region_flags(2, "instance field cells")
+  }
+
+  fn region_flags(&mut self, id: u32, description: &'static str) -> MemFlagsData {
+    let region = self.fb.func.dfg.alias_regions.insert(AliasRegionData {
+      user_id: id,
+      description: description.into(),
+    });
+    MemFlagsData::trusted().with_alias_region(Some(region))
+  }
+
   /// An instance's field storage, inline or on the heap.
   fn fields_ptr(&mut self, obj: IrValue) -> IrValue {
+    let flags = self.field_storage_flags();
     let heap = self.fb.ins().load(
       types::I64,
-      MemFlagsData::trusted(),
+      flags,
       obj,
       object::obj_instance_fields_offset() as i32,
     );
@@ -3683,10 +3805,49 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.ins().select(is_inline, inline, heap)
   }
 
+  /// Counts `size` bytes against the young budget, owing a collection
+  /// once it is spent; the next safepoint pays it.
+  fn count_young(&mut self, size: i64) {
+    let flags = MemFlagsData::trusted();
+    let vm = self.vm;
+    let young = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
+    let young = self.fb.ins().iadd_imm_s(young, size);
+    self
+      .fb
+      .ins()
+      .store(flags, young, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
+    let budget = self.u64c(self.ir.young_budget);
+    let owed = self
+      .fb
+      .ins()
+      .icmp(IntCC::UnsignedGreaterThan, young, budget);
+    let owe = self.fb.create_block();
+    let on = self.fb.create_block();
+    self.fb.ins().brif(owed, owe, &[], on, &[]);
+    self.fb.switch_to_block(owe);
+    self.fb.set_cold_block(owe);
+    let yes = self.fb.ins().iconst(types::I8, 1);
+    self
+      .fb
+      .ins()
+      .store(flags, yes, vm, HEAP_JIT_GC_NEEDED_OFFSET);
+    self.fb.ins().jump(on, &[]);
+    self.fb.switch_to_block(on);
+  }
+
   /// The write barrier after storing `val` into `container`: an old
   /// container not yet remembered has to be told it now points at
   /// something that may be young. Skipped outright when the stored value
   /// is known not to be an object.
+  ///
+  /// Stores call it only for a value that was not read out of the same
+  /// container. One that was needs none: a young value in an old container
+  /// means the container is already remembered, and no collection can have
+  /// run since the read, as the pointer it went through would not have
+  /// outlived one.
   fn barrier_for_store(&mut self, stored: ValueId, val: IrValue, container: IrValue) {
     if matches!(self.ir.ty(stored), Ty::F64 | Ty::I64 | Ty::Bool) {
       return;

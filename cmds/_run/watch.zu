@@ -314,8 +314,7 @@ class Session {
       # watch until the program reads the file again.
       catch {
         self.watcher.add(os.dir_name(path), false)
-      } as missing {
-      }
+      } as missing {}
     }
   }
 
@@ -413,8 +412,7 @@ class Session {
     if child.wait(GRACE_MS) == nil {
       catch {
         child.kill(9)
-      } as error {
-      }
+      } as error {}
 
       child.wait()
     }
@@ -431,8 +429,7 @@ class Session {
 
     catch {
       os.remove_dir(self._scratch, true)
-    } as error {
-    }
+    } as error {}
   }
 
   # Shuts watch mode down on `name`, letting the program go first.

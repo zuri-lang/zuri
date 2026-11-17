@@ -1,42 +1,41 @@
 /**
  * @module rpc
  *
- * JSON-RPC 2.0: calling methods on another program, and answering its
- * calls, over HTTP, WebSockets, sockets, pipes, or any stream of
+ * JSON-RPC 2.0, for calling methods in another program and answering
+ * its calls, over HTTP, WebSockets, sockets, pipes or any stream of
  * bytes.
  *
  * JSON-RPC is a small, stateless protocol for calling methods in
- * another program. It defines the messages and nothing more: which
- * methods exist is up to the programs using it, and the messages
- * travel over whatever connects them. A message is a small JSON
- * object: a request names a method and carries its parameters and an
- * `id`, the response carries the same `id` and a result or an error,
- * and a notification is a request nobody answers. Either side may
- * send any of them, so the protocol has no fixed client and server.
+ * another program. It only defines the messages. Which methods exist is
+ * up to the programs using it, and the messages travel over whatever
+ * connects them. A message is a small JSON object. A request names a
+ * method and has its parameters and an `id`, the response has the same
+ * `id` and either a result or an error, and a notification is a request
+ * that nobody answers. Either side can send any of these, so the
+ * protocol has no fixed client and server.
  *
- * The module is built in layers, each usable on its own:
+ * The module is built in layers, and each one can be used by itself:
  *
  * - {Request}, {Notification}, {Response} and {RpcError} are the
- *   messages, and `encode()`, `decode()` and `read()` turn them to and
- *   from JSON, checking every rule of the specification.
- * - A {Service} holds the handler for each method a program serves,
- *   and answers every message it is given with them.
+ *   messages, and `encode()`, `decode()` and `read()` convert them to
+ *   and from JSON, checking every rule of the specification.
+ * - A {Service} holds the handler for each method that a program
+ *   serves, and uses them to answer every message it's given.
  * - Over HTTP, `http_handler()` serves a service from a route of an
  *   `http` server, and {HttpClient} calls one.
  * - {HeaderFraming}, {LineFraming} and {MessageFraming} tell messages
- *   apart in a stream: by a `Content-Length` header in front of each,
- *   one to a line, or one to each read of a transport that keeps them
- *   apart itself.
+ *   apart in a stream: with a `Content-Length` header in front of each
+ *   one, one message per line, or one message per read from a transport
+ *   that already keeps them apart.
  * - A transport carries the bytes of a connection: {StdioTransport}
  *   over the program's own standard streams, {SocketTransport} over a
- *   socket, {ProcessTransport} to a child process,
- *   {WebSocketTransport} over a WebSocket, and the two ends of a
- *   `pipe()` between isolates.
- * - An {Endpoint} is a service on a connection: it answers what
- *   arrives, and calls the other side with requests and
- *   notifications of its own.
- * - `serve()` gives every connection to a listening socket an
- *   endpoint of its own, across a pool of isolates.
+ *   socket, {ProcessTransport} to a child process, {WebSocketTransport}
+ *   over a WebSocket, and the two ends of a `pipe()` between isolates.
+ * - An {Endpoint} is a service on a connection. It answers what
+ *   arrives, and calls the other side with requests and notifications
+ *   of its own.
+ * - `serve()` gives every connection to a listening socket an endpoint
+ *   of its own, across a pool of isolates.
  *
  * ```zuri
  * import rpc
@@ -71,10 +70,10 @@ import @.http { * }
 import @.server { * }
 
 /**
- * A new {Endpoint} over `transport`, framing its messages with a
+ * A new {Endpoint} over `transport`, which frames its messages with a
  * {HeaderFraming}.
  *
- * @param any transport: A transport; see {rpc.transport}.
+ * @param any transport: a transport. See {rpc.transport}.
  * @returns Endpoint
  */
 def endpoint(transport) {

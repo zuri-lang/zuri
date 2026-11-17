@@ -3,8 +3,8 @@
  *
  * Transactions, and the nesting that savepoints make possible.
  *
- * The shape worth using is the closure form, because it cannot be got
- * wrong:
+ * The best way to use a transaction is with a closure, because it can't
+ * be misused:
  *
  * ```zuri,ignore
  * db.transaction(@(tx) {
@@ -13,19 +13,20 @@
  * })
  * ```
  *
- * It commits when the closure returns and rolls back when the closure
- * raises, and there is no path through it that leaves a transaction
- * open. The manual form exists for the cases the closure form cannot
- * express, such as a transaction whose lifetime is a request rather
- * than a block.
+ * The transaction commits when the closure returns and rolls back if
+ * the closure raises an error, and there's no way through it that
+ * leaves a transaction open. The manual form is for cases that the
+ * closure form can't express, such as a transaction that lasts for a
+ * whole request instead of a block of code.
  *
  * ### Nesting
  *
- * No engine here supports a transaction inside a transaction, but both
- * support savepoints, which is the same thing under a different name.
- * A `transaction()` inside another takes a savepoint, so a helper that
- * opens one works the same whether it was called on its own or from
- * inside a larger piece of work. Only the outermost actually commits.
+ * None of the engines here supports a transaction inside a transaction,
+ * but they all support savepoints, which do the same job. A
+ * `transaction()` inside another one creates a savepoint, so a helper
+ * that starts a transaction works the same whether it's called by
+ * itself or from inside a larger piece of work. Only the outermost
+ * transaction actually commits.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -51,8 +52,8 @@ class Transaction {
   var connection
 
   /**
-   * Whether this transaction is a savepoint inside another rather than
-   * a transaction of its own.
+   * Whether this transaction is a savepoint inside another transaction,
+   * as opposed to a transaction of its own.
    *
    * @type bool
    */
@@ -164,14 +165,14 @@ class Transaction {
   }
 
   /**
-   * Runs a query and returns a cursor over its result rather than
-   * reading all of it. The cursor belongs to the transaction's
+   * Runs a query and returns a cursor over its result, instead of
+   * reading the whole result. The cursor belongs to the transaction's
    * connection, so it has to be read to the end or closed before the
    * transaction commits.
    *
    * @param string sql
    * @param list|dict|nil params
-   * @param dict|nil options `{ batch }` on engines that fetch in
+   * @param dict|nil options `{ batch }`, on engines that fetch rows in
    *    batches.
    * @returns Cursor
    */
@@ -338,7 +339,7 @@ class Transaction {
     if self._finished {
       raise TransactionError(
         'this transaction has already ' +
-          '${self.nested ? "left its savepoint" : "finished"}',
+            '${self.nested ? "left its savepoint" : "finished"}',
       )
     }
   }

@@ -1,10 +1,11 @@
 /**
  * @module imap
  *
- * IMAP: reading mail where it is kept, rather than taking it away.
+ * IMAP, for reading mail where it's stored, instead of taking it away.
  *
- * Both ends are here. `ImapClient` talks to a server; `ImapServer` is
- * one, answering out of a `MailStore` of which two ship.
+ * Both sides are here. `ImapClient` connects to a server, and
+ * `ImapServer` is a server, which answers from a `MailStore`. Two
+ * stores are included.
  *
  * ```zuri,ignore
  * import mail.imap { ImapClient }

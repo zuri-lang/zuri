@@ -1,11 +1,11 @@
 /**
  * @module int8
  *
- * `Int8Array`: a packed array of twos-complement 8-bit signed integers, 1 byte per
- * element.
+ * `Int8Array`, a packed array of 8-bit signed integers in two's
+ * complement, with 1 byte per element.
  *
- * `INT8_MAX` and `INT8_MIN` bound what an element
- * may be; a value outside them raises rather than wrapping.
+ * `INT8_MAX` and `INT8_MIN` are the limits for an element. A value
+ * outside them raises an error, instead of wrapping around.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
@@ -71,9 +71,9 @@ class Int8Array < Array {
   }
 
   /**
-   * Returns a new Int8Array over `[start, end)` of this array
-   * (both default to the whole array; negative bounds count from
-   * the end).
+   * Returns a new `Int8Array` with the elements from `start` up to, but
+   * not including, `end`. Both default to the whole array, and negative
+   * values count from the end.
    *
    * @param ?number start
    * @param ?number end

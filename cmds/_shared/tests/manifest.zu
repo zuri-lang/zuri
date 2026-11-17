@@ -3,7 +3,11 @@
 import test { * }
 
 import ..manifest {
-  DEFAULT_REGISTRY, ManifestError, parse, parse_dependency, resolve_registry,
+  DEFAULT_REGISTRY,
+  ManifestError,
+  parse,
+  parse_dependency,
+  resolve_registry,
 }
 
 var SOURCE = '# ours
@@ -70,11 +74,26 @@ describe('refusing', @{
   it('refuses a declaration that says nothing sensible', @{
     var bad = [
       ['x', 'not a range'],
-      ['x', { git: 'https://a', path: '../b' }],
-      ['x', { git: 'https://a', tag: 'v1', branch: 'main' }],
-      ['x', { tag: 'v1' }],
-      ['x', { version: '^1', colour: 'red' }],
-      ['x', { registry: 'company' }],
+      [
+        'x',
+        { git: 'https://a', path: '../b' },
+      ],
+      [
+        'x',
+        { git: 'https://a', tag: 'v1', branch: 'main' },
+      ],
+      [
+        'x',
+        { tag: 'v1' },
+      ],
+      [
+        'x',
+        { version: '^1', colour: 'red' },
+      ],
+      [
+        'x',
+        { registry: 'company' },
+      ],
       ['x', 5],
     ]
 
@@ -86,7 +105,9 @@ describe('refusing', @{
   })
 
   it('refuses the same package declared twice under two spellings', @{
-    var m = parse('[dependencies]\na-b = "1"\n\n[dev-dependencies]\na_b = "1"\n')
+    var m = parse(
+      '[dependencies]\na-b = "1"\n\n[dev-dependencies]\na_b = "1"\n',
+    )
 
     expect(@{
       m.dependencies(true, {})
@@ -134,7 +155,11 @@ describe('editing', @{
 
   it('writes a git dependency as a table', @{
     var dep = parse_dependency(
-      'forked', { git: 'https://a/b.git', rev: 'abc' }, false, nil, {},
+      'forked',
+      { git: 'https://a/b.git', rev: 'abc' },
+      false,
+      nil,
+      {},
     )
 
     expect(dep.declaration()).to_equal({ git: 'https://a/b.git', rev: 'abc' })
@@ -146,12 +171,10 @@ describe('resolve_registry', @{
     var aliases = { company: 'https://packages.example.test/' }
 
     expect(resolve_registry(nil, {})).to_equal(DEFAULT_REGISTRY)
-    expect(resolve_registry(
-      'company', aliases,
-    )).to_equal('https://packages.example.test')
-    expect(resolve_registry(
-      'https://other.test', aliases,
-    )).to_equal('https://other.test')
+    expect(resolve_registry('company', aliases))
+        .to_equal('https://packages.example.test')
+    expect(resolve_registry('https://other.test', aliases))
+        .to_equal('https://other.test')
     var with_default = { 'default': 'https://mine.test' }
 
     expect(resolve_registry(nil, with_default)).to_equal('https://mine.test')

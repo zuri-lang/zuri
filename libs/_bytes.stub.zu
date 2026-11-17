@@ -1,45 +1,37 @@
 /**
- * # Working with Binary data
+ * # Bytes
  *
- * Working with binary data in Zuri is a simple as working with
- * _lists_ and this can be done using `bytes`. A `bytes` (meaning
- * Byte stream) is an iterable in-memory contiguous list of
- * numbers. Zuri allows easily creating _bytes_ from strings and
- * vice-versa and they are the primary medium of reading and
- * writing binary data into and from the OS.
+ * A `bytes` value is a sequence of bytes held in memory, each one a
+ * number from 0 to 255. It works much like a list, and it's how Zuri
+ * reads and writes binary data, such as image files, network packets
+ * and anything else that isn't text.
  *
- * ## Creating a Byte stream
+ * ## Creating bytes
  *
- * The built-in `bytes()` function can be used to create a byte
- * stream. For example,
+ * `bytes()` with a number creates that many zero bytes:
  *
  * ```zuri-repl
  * %> bytes(5)
- * (0 0 0 0 0)
+ * (00 00 00 00 00)
  * ```
  *
- * The above code creates a byte stream containing five bytes all
- * initialized to zero (0). You can also create byte stream from
- * a list of numbers as well. For example,
+ * With a list of numbers, it creates bytes with those values:
  *
  * ```zuri-repl
  * %> bytes([72, 69, 76, 76, 79])
  * (48 45 4c 4c 4f)
  * ```
  *
- * The above code creates a byte stream sequence corresponding to
- * `HELLO` in memory.
+ * Every number in the list must be an integer from 0 to 255. Anything
+ * else raises an error, instead of being wrapped around or truncated.
  *
- * Byte streams are like lists and they can be extended,
- * concatenated and more. They allow us operate on binary data.
+ * `bytes` values are printed in hexadecimal, which is why `72` appears
+ * as `48`.
  *
- * One very important use-case for bytes are to create a file
- * containing binary data, the `file.write()` API expects to
- * write byte streams to file when the file is opened in the
- * binary mode and the most basic way of providing it with such
- * data is by using `bytes`.
+ * ## Reading and writing binary files
  *
- * For example,
+ * A file opened in a binary mode, such as `'wb'` or `'rb'`, reads and
+ * writes `bytes`:
  *
  * ```zuri-repl
  * %> file('dummy.txt', 'wb').write(bytes([72, 69, 76, 76, 79]))
@@ -48,39 +40,13 @@
  * 'HELLO'
  * ```
  *
- * In the above sample, we wrote the bytes we created earlier
- * into a file and read its contents.
+ * ## Indexing and slicing
  *
- * > When a byte stream is created using a list of numbers, the
- * > maximum number that will be interpreted as is is 255. All
- * > numbers exceeding that amount will be equal to `(number %
- * > 255) - 1`.
- * >
- * > E.g.
- * > ```zuri-repl
- * > %> bytes([256])
- * > (0)
- * > %> bytes([386])
- * > (82)
- * > %> 0x82
- * > 130
- * > %> (386 % 255) - 1
- * > 130
- * > ```
- *
- * ## Byte stream indexing
- *
- * Like _Lists_, _Strings_ and _Dictionaries_, Byte streams can
- * also be indexed in Zuri. We can retrieve an index in a byte
- * stream using the same operators as others (`[]`) and we can
- * use this to access or modify the contents of a byte stream.
- *
- * For example,
+ * `bytes` can be indexed and sliced in the same way as lists and
+ * strings, and individual bytes can be changed:
  *
  * ```zuri-repl
  * %> var g = bytes([31, 47, 83, 105, 72])
- * %> g
- * (1f 2f 53 69 48)
  * %> g[3]
  * 105
  * %> g[1,3]
@@ -89,8 +55,6 @@
  * %> g
  * (1f 2f 60 69 48)
  * ```
- *
- * @note Byte streams are printed as hexadecimal lists.
  */
 
 class bytes {
@@ -127,9 +91,9 @@ class bytes {
   is_empty() {}
 
   /**
-   * Adds an item to the top of a byte stream.
+   * Adds a byte to the end.
    *
-   * For example,
+   * For example:
    *
    * ```zuri-repl
    * %> var a = bytes([0x40, 0x75])
@@ -139,7 +103,6 @@ class bytes {
    * ```
    *
    * @param {int} n The byte to add.
-   * @returns {bytes}
    */
   append(n: int) {}
 
@@ -243,8 +206,7 @@ class bytes {
   pop() {}
 
   /**
-   * Removes the item at the specified index in the byte stream
-   * and return the previous value at the specified index.
+   * Removes the byte at the given index, and returns it.
    *
    * ```zuri-repl
    * %> var a = bytes([25, 57, 25])
@@ -255,7 +217,7 @@ class bytes {
    * ```
    *
    * @param {number} index The index to remove.
-   * @returns {bytes}
+   * @returns {number}
    */
   remove(index: number) {}
 
@@ -306,10 +268,10 @@ class bytes {
   get(index: number) {}
 
   /**
-   * Returns a new byte stream containing the first _n_ items in the
-   * bytes or a new copy of the bytes if _n_ greater than or equals
-   * to the `bytes.length()`. If `n < 0`, returns
-   * `bytes.take(bytes.length() - n)`.
+   * Returns new bytes containing the first _n_ bytes, or a copy of all
+   * of them if _n_ is greater than or equal to `length()`. If _n_ is
+   * negative, this returns all but the last `-n` bytes, which is the
+   * same as `take(length() + n)`.
    *
    * For example:
    *
@@ -317,9 +279,9 @@ class bytes {
    * %> var a = bytes([10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
    * %> a.take(4)
    * (0a 0b 0c 0d)
-   * %> a.take(11) # taking more than the size of the bytes
+   * %> a.take(11) # more than there are
    * (0a 0b 0c 0d 0e 0f 10 11 12 13 14)
-   * %> a.take(-5)   # taking n < 0
+   * %> a.take(-5) # all but the last five
    * (0a 0b 0c 0d 0e 0f)
    * ```
    *
@@ -347,15 +309,13 @@ class bytes {
   split(delimiter: bytes) {}
 
   /**
-   * Due to the nature of byte stream and their use-case
-   * (especially streaming data), it is easy for the system
-   * memory to get filled up with data in the byte stream. The
-   * method allows users to reset a byte stream and empty it.
+   * Empties the bytes, releasing the memory they hold.
    *
-   * > This method allows a fine-grained control on manual memory
-   * > management of byte stream.
+   * When bytes are used for streaming data, they can easily fill up
+   * memory. This method gives you direct control over that, by
+   * resetting the bytes so that they're empty.
    *
-   * For example,
+   * For example:
    *
    * ```zuri-repl
    * %> var a = bytes([13, 36])

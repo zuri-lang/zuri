@@ -1,0 +1,268 @@
+# Tests for colouring code: each language picks out what it should, and
+# nothing a block holds reaches the page unescaped.
+
+import test { * }
+
+import ..highlight { highlight, is_known, label, language_of }
+import ..highlight.spans { escape, render, words }
+
+# The text of every span of class _kind_ in _markup_.
+def spans_of(markup: string, kind: string) {
+  var found = markup.matches('/<span class="${kind}">([^<]*)<\/span>/')
+
+  return found.get(1, [])
+}
+
+# _markup_ with its tags taken out and its references decoded, which is
+# the code a reader sees.
+def text_of(markup: string) {
+  return markup
+      .replace('/<[^>]+>/', '')
+      .replace('&lt;', '<')
+      .replace('&gt;', '>')
+      .replace('&amp;', '&')
+}
+
+describe('language_of', @{
+  it('takes the first word of the info string', @{
+    expect(language_of('zuri')).to_be('zuri')
+    expect(language_of('zuri,ignore')).to_be('zuri')
+    expect(language_of('Shell {.wide}')).to_be('shell')
+    expect(language_of('language-json')).to_be('json')
+  })
+
+  it('is empty for a block with no info string', @{
+    expect(language_of(nil)).to_be('')
+    expect(language_of('   ')).to_be('')
+  })
+})
+
+describe('label', @{
+  it('names the languages it colours', @{
+    expect(label('zuri', nil)).to_be('Zuri')
+    expect(label('wire', nil)).to_be('Wire')
+    expect(label('zuri-repl', nil)).to_be('REPL')
+  })
+
+  it('tells a terminal session from output alone', @{
+    expect(label('console', '$ zuri run main.zu\nhello')).to_be('Terminal')
+    expect(label('console', 'hello\nworld')).to_be('Output')
+  })
+
+  it('gives plain text no label and other languages their own name', @{
+    expect(label('text', 'x')).to_be_nil()
+    expect(label('', 'x')).to_be_nil()
+    expect(label('rust', 'x')).to_be('rust')
+  })
+})
+
+describe('every language', @{
+  it('spells the code out exactly, escaped', @{
+    var samples = [
+      ['zuri', "var s = '<b> & \${x + 1}'\n# done"],
+      ['zuri-repl', "%> 1 < 2\ntrue"],
+      [
+        'html',
+        '<p class="a">x &amp; {{ y }}</p><script>if (a < b) f()</script>',
+      ],
+      ['xml', '<?xml version="1.0"?><a><![CDATA[<b>]]></a>'],
+      ['json', '{"a": [1, true, null, "<x>"]}'],
+      ['sh', 'echo "$HOME" | grep -v x > out.txt'],
+      ['console', '$ zuri doc build\nwarning: <x>'],
+      ['toml', '[a]\nb = "<c>" # d'],
+      ['ini', 'KEY=<value>'],
+      ['js', 'const a = "<b>"; // c'],
+      ['css', 'a > b { color: red }'],
+      ['rust', 'fn main() { a < b }'],
+    ]
+
+    for sample in samples {
+      var markup = highlight(sample[1], language_of(sample[0]))
+
+      expect(markup.contains('<b>')).to_be_false()
+      expect(text_of(markup)).to_be(sample[1])
+    }
+  })
+})
+
+describe('zuri', @{
+  it('colours what the lexer reads', @{
+    var markup = highlight("def area(w) {\n  return w * 2.5 # half\n}", 'zuri')
+
+    expect(spans_of(markup, 'kw')).to_contain('def')
+    expect(spans_of(markup, 'kw')).to_contain('return')
+    expect(spans_of(markup, 'def')).to_equal(['area'])
+    expect(spans_of(markup, 'num')).to_equal(['2.5'])
+    expect(spans_of(markup, 'com')).to_equal(['# half'])
+  })
+
+  it('marks interpolation apart from the string around it', @{
+    var markup = highlight("'a \${b} c'", 'zuri')
+
+    expect(spans_of(markup, 'subst')).to_equal(['\${', '}'])
+    expect(spans_of(markup, 'str')).to_equal(["'a ", " c'"])
+  })
+
+  it('tells calls, types, constants and values apart', @{
+    var markup = highlight('self.x = ValueError(LIMIT, nil).describe()', 'zuri')
+
+    expect(spans_of(markup, 'self')).to_equal(['self'])
+    expect(spans_of(markup, 'prop')).to_equal(['x'])
+    expect(spans_of(markup, 'type')).to_equal(['ValueError'])
+    expect(spans_of(markup, 'const')).to_equal(['LIMIT'])
+    expect(spans_of(markup, 'lit')).to_equal(['nil'])
+    expect(spans_of(markup, 'fn')).to_equal(['describe'])
+  })
+
+  it('picks out the tags of a doc block', @{
+    var markup = highlight('/**\n * @param string name\n */', 'zuri')
+
+    expect(spans_of(markup, 'doctag')).to_equal(['@param'])
+  })
+
+  it('carries on past what does not lex', @{
+    var markup = highlight('var a = `b` + 1', 'zuri')
+
+    expect(spans_of(markup, 'num')).to_equal(['1'])
+  })
+})
+
+describe('the REPL', @{
+  it('colours input as Zuri and the rest as output', @{
+    var markup = highlight(
+      "%> var x = 'a\n.. b'\n'a b'\n%> raise\nUnhandled Error: no",
+      'zuri-repl',
+    )
+
+    expect(spans_of(markup, 'prompt')).to_equal(['%&gt; ', '.. ', '%&gt; '])
+    expect(spans_of(markup, 'out')).to_equal(["'a b'"])
+    expect(spans_of(markup, 'err')).to_equal(['Unhandled Error: no'])
+    expect(spans_of(markup, 'str')).to_equal(["'a", "b'"])
+  })
+})
+
+describe('markup', @{
+  it('colours tags, attributes and values', @{
+    var markup = highlight('<a href="/x">y</a>', 'html')
+
+    expect(spans_of(markup, 'tag'))
+        .to_equal(['&lt;a', '&gt;', '&lt;/a', '&gt;'])
+    expect(spans_of(markup, 'attr')).to_equal(['href'])
+    expect(spans_of(markup, 'str')).to_equal(['"/x"'])
+  })
+
+  it('reads Wire values and directives as expressions', @{
+    var markup = highlight('<p x-if="user.ok">{{ user.name }}</p>', 'wire')
+
+    expect(spans_of(markup, 'dir')).to_equal(['x-if'])
+    expect(spans_of(markup, 'subst')).to_equal(['{{', '}}'])
+    expect(spans_of(markup, 'prop')).to_contain('name')
+  })
+
+  it('colours a script as JavaScript and a style as CSS', @{
+    var markup = highlight(
+      '<script>let a = 1</script><style>p { margin: 0 }</style>',
+      'html',
+    )
+
+    expect(spans_of(markup, 'kw')).to_equal(['let'])
+    expect(spans_of(markup, 'attr')).to_contain('margin')
+  })
+
+  it('leaves the contents of an XML element alone', @{
+    var markup = highlight('<script>let a = 1</script>', 'xml')
+
+    expect(spans_of(markup, 'kw')).to_equal([])
+  })
+})
+
+describe('json', @{
+  it('tells keys from string values', @{
+    var markup = highlight('{"a": "b", "c": 1.5e3, "d": false}', 'json')
+
+    expect(spans_of(markup, 'key')).to_equal(['"a"', '"c"', '"d"'])
+    expect(spans_of(markup, 'str')).to_equal(['"b"'])
+    expect(spans_of(markup, 'num')).to_equal(['1.5e3'])
+    expect(spans_of(markup, 'lit')).to_equal(['false'])
+  })
+})
+
+describe('shell', @{
+  it('colours commands, flags, variables and comments', @{
+    var markup = highlight('NAME=x grep -v "$NAME" file # look', 'sh')
+
+    expect(spans_of(markup, 'var')).to_equal(['NAME', '$NAME'])
+    expect(spans_of(markup, 'fn')).to_equal(['grep'])
+    expect(spans_of(markup, 'attr')).to_equal(['-v'])
+    expect(spans_of(markup, 'com')).to_equal(['# look'])
+  })
+
+  it('reads a here-document as a string', @{
+    var markup = highlight("cat <<'EOF'\nbody\nEOF\necho done", 'sh')
+
+    expect(spans_of(markup, 'str')).to_equal(['body\n'])
+    expect(spans_of(markup, 'fn')).to_equal(['cat', 'echo'])
+  })
+
+  it('reads a terminal session as commands and their output', @{
+    var markup = highlight('$ zuri doc build\nBuilt 5 pages', 'console')
+
+    expect(spans_of(markup, 'prompt')).to_equal(['$ '])
+    expect(spans_of(markup, 'fn')).to_equal(['zuri'])
+    expect(spans_of(markup, 'out')).to_equal(['Built 5 pages'])
+  })
+
+  it('leaves output alone when there are no commands', @{
+    expect(highlight('hello\nworld', 'console')).to_be('hello\nworld')
+  })
+})
+
+describe('toml and ini', @{
+  it('colours sections, keys and values', @{
+    var markup = highlight(
+      '[documentation]\ntitle = "A" # c\nfold = 1\non = true',
+      'toml',
+    )
+
+    expect(spans_of(markup, 'sect')).to_equal(['[documentation]'])
+    expect(spans_of(markup, 'key')).to_equal(['title', 'fold', 'on'])
+    expect(spans_of(markup, 'num')).to_equal(['1'])
+    expect(spans_of(markup, 'lit')).to_equal(['true'])
+  })
+
+  it('reads .env lines', @{
+    var markup = highlight('export PORT=3000\nDEBUG=on', 'env')
+
+    expect(spans_of(markup, 'key')).to_equal(['PORT', 'DEBUG'])
+    expect(spans_of(markup, 'num')).to_equal(['3000'])
+  })
+})
+
+describe('spans', @{
+  it('escapes what HTML text would read', @{
+    expect(escape('<a & b>')).to_be('&lt;a &amp; b&gt;')
+  })
+
+  it('shares one span between neighbours of a kind', @{
+    expect(
+      render([
+        ['kw', 'a'],
+        ['kw', 'b'],
+        [nil, ' '],
+        ['str', 'c'],
+      ]),
+    ).to_be('<span class="kw">ab</span> <span class="str">c</span>')
+  })
+
+  it('makes a set of words', @{
+    expect(words('if  then fi'))
+        .to_equal({ 'if': true, 'then': true, 'fi': true })
+  })
+})
+
+describe('is_known', @{
+  it('knows the languages it colours', @{
+    expect(is_known('zuri')).to_be_true()
+    expect(is_known('cobol')).to_be_false()
+  })
+})

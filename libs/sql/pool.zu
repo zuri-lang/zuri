@@ -1,13 +1,13 @@
 /**
  * @module pool
  *
- * Keeping connections open and lending them out.
+ * Keeps connections open and lends them out.
  *
- * Opening a connection is expensive: for PostgreSQL it is a TCP
- * connection, a TLS handshake and an authentication exchange before
- * the first statement runs. A server that opened one per request would
- * spend most of its time connecting. A pool opens a few and lends them
- * out.
+ * Opening a connection is expensive. For PostgreSQL, it takes a TCP
+ * connection, a TLS handshake and an authentication exchange before the
+ * first statement can run. A server that opened a connection for every
+ * request would spend most of its time connecting. A pool opens a few
+ * connections and lends them out.
  *
  * ```zuri,ignore
  * var db = sql.pool('postgres://localhost/app', { max: 10 })
@@ -15,29 +15,30 @@
  * var posts = db.fetch_all('select * from posts')
  * ```
  *
- * Used that way the pool takes a connection, runs the statement and
- * gives it back. Where several statements have to run on the same
- * connection, which a transaction requires, `acquire()` holds one until
- * it is released and `with_connection()` does the releasing.
+ * Used like this, the pool takes a connection, runs the statement and
+ * returns the connection. When several statements have to run on the
+ * same connection, as they do in a transaction, `acquire()` holds a
+ * connection until it's released, and `with_connection()` releases it
+ * for you.
  *
  * ### Sizing
  *
- * A pool wants to be as small as the work allows. Connections are not
- * free at the other end either, and a pool larger than the database
- * can usefully serve turns a queue in the application into a queue in
- * the database, where it is harder to see.
+ * Keep a pool as small as the work allows. Connections cost resources
+ * on the database side too, and a pool larger than the database can
+ * usefully serve just moves a queue from the application into the
+ * database, where it's harder to see.
  *
- * SQLite wants a smaller pool than a server engine does. Readers are
- * concurrent but writers are not, so past a handful of connections the
- * writes queue on the database's own lock rather than running. An
- * in-memory SQLite database goes further: it belongs to the connection
- * that opened it, so a pool of several would be several different
- * empty databases. The pool clamps that case to one connection.
+ * SQLite needs a smaller pool than a server engine. Reads can happen at
+ * the same time, but writes can't, so beyond a few connections, writes
+ * queue on the database's own lock instead of running. An in-memory
+ * SQLite database is a special case: it belongs to the connection that
+ * opened it, so a pool of several connections would be several separate
+ * empty databases. The pool limits that case to a single connection.
  *
  * ### Isolates
  *
- * A pool belongs to the isolate that made it. An isolate that needs
- * database access makes its own.
+ * A pool belongs to the isolate that created it. An isolate that needs
+ * to use the database creates its own pool.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -147,19 +148,18 @@ class Pool {
   }
 
   /**
-   * Takes a connection, waiting for one if they are all busy.
+   * Takes a connection from the pool.
    *
-   * The caller has to give it back. `close()` on the connection does
-   * that, which is what makes a pooled connection a drop-in for one
-   * that is not pooled, and `with_connection()` does it whatever
-   * happens.
+   * The caller has to return it. Calling `close()` on the connection
+   * returns it, so a pooled connection can be used anywhere an ordinary
+   * one can, and `with_connection()` returns it whatever happens.
    *
-   * There is no waiting when the pool is empty, and no timeout to set.
-   * A pool belongs to one isolate, so nothing else can release a
-   * connection while this call is running; blocking would never end.
-   * Running out means the pool is too small for the work or a
-   * connection is being held longer than it should be, and both of
-   * those are better reported than waited on.
+   * This never waits, and there's no timeout to set. A pool belongs to
+   * one isolate, so nothing else can release a connection while this
+   * call is running, and waiting would never end. Running out of
+   * connections means that the pool is too small for the work, or that
+   * a connection is being held for longer than it should be, and both
+   * are better reported than waited for.
    *
    * @returns Connection
    * @throws PoolExhaustedError if every connection is in use.
@@ -183,19 +183,19 @@ class Pool {
 
     raise PoolExhaustedError(
       'all ${self._settings.max} connections are in use; release one ' +
-        'before acquiring another, or raise the pool maximum',
+          'before acquiring another, or raise the pool maximum',
       { driver: self._driver.name() },
     )
   }
 
   /**
-   * Gives a connection back.
+   * Returns a connection to the pool.
    *
-   * Called for you by `Connection.close()` on a pooled connection, so
-   * there is rarely a reason to call it directly.
+   * `Connection.close()` calls this for you on a pooled connection, so
+   * there's rarely a reason to call it directly.
    *
-   * A connection that has been closed for real, or that has outlived
-   * `max_lifetime`, is discarded rather than kept.
+   * A connection that has really been closed, or that has outlived
+   * `max_lifetime`, is discarded instead of being kept.
    *
    * @param Connection connection
    */
@@ -352,8 +352,7 @@ class Pool {
     for entry in self._idle {
       catch {
         entry.connection.close()
-      } as _error {
-      }
+      } as _error {}
     }
 
     self._size -= self._idle.length()
@@ -405,7 +404,8 @@ class Pool {
   _open() {
     var driver_connection = self._driver.connect(self._options)
     var connection = Connection(
-      driver_connection, self._driver.describing(driver_connection),
+      driver_connection,
+      self._driver.describing(driver_connection),
     )
     var now = _now()
 
@@ -418,19 +418,14 @@ class Pool {
       prepare(connection)
     }
 
-    return {
-      connection,
-      opened_at: now,
-      released_at: now,
-    }
+    return { connection, opened_at: now, released_at: now }
   }
 
   _discard(entry) {
     catch {
       entry.connection.detach_from_pool()
       entry.connection.close()
-    } as _error {
-    }
+    } as _error {}
 
     self._size--
 
@@ -501,7 +496,7 @@ class Pool {
     if filled.min > filled.max {
       raise SqlError(
         'a pool cannot keep ${filled.min} connections open when its ' +
-          'maximum is ${filled.max}',
+            'maximum is ${filled.max}',
       )
     }
 
@@ -526,7 +521,7 @@ class Pool {
 
   to_string() {
     return '<Pool ${self._driver.name()} ${self.in_use()}/${self._size} in use' +
-      '${self._closed ? ", closed" : ""}>'
+        '${self._closed ? ", closed" : ""}>'
   }
 
   @to_string() {

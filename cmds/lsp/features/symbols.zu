@@ -27,7 +27,12 @@ def _outlined(symbol: dict) {
   }
 
   return [
-    'class', 'function', 'method', 'field', 'variable', 'constant',
+    'class',
+    'function',
+    'method',
+    'field',
+    'variable',
+    'constant',
   ].contains(symbol.kind)
 }
 
@@ -45,8 +50,8 @@ def _detail(symbol: dict) {
       }
 
       return symbol.get('extension', false)
-        ? '> ${parent_text}'
-        : '< ${parent_text}'
+          ? '> ${parent_text}'
+          : '< ${parent_text}'
     }
     default {
       var hint = symbol.get('hint', nil)
@@ -68,7 +73,9 @@ def document(server, params: dict) {
   var source = server.document(params.textDocument.uri)
   var summary = server.analysis(source).summary
   var key = source.key
-  var nested = server.supports('textDocument.documentSymbol.hierarchicalDocumentSymbolSupport')
+  var nested = server.supports(
+    'textDocument.documentSymbol.hierarchicalDocumentSymbolSupport',
+  )
   var children = {}
   var roots = []
   var index = 0
@@ -158,7 +165,12 @@ def _node(server, key: string, summary: dict, index: int, children: dict) {
 }
 
 def _flatten(
-  server, key: string, summary: dict, index: int, container, children: dict,
+  server,
+  key: string,
+  summary: dict,
+  index: int,
+  container,
+  children: dict,
   out: list,
 ) {
   var symbol = summary.symbols[index]
@@ -254,8 +266,8 @@ def workspace(server, params: dict, context) {
     }
 
     for symbol in summary.symbols {
-      if !_outlined(symbol)
-        or (symbol.scope != 0 and symbol.get('owner', nil) == nil) {
+      if !_outlined(symbol) or
+          (symbol.scope != 0 and symbol.get('owner', nil) == nil) {
         continue
       }
 

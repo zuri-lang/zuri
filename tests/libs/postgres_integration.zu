@@ -57,11 +57,11 @@ def test_types() {
 
   db.exec_script(
     'create table kinds (' +
-      '  id serial primary key,' +
-      '  n integer, big bigint, r double precision,' +
-      '  money numeric(20, 4), s text, b bytea, ok boolean,' +
-      '  tags text[], doc jsonb, at timestamptz, day date, u uuid' +
-      ')',
+        '  id serial primary key,' +
+        '  n integer, big bigint, r double precision,' +
+        '  money numeric(20, 4), s text, b bytea, ok boolean,' +
+        '  tags text[], doc jsonb, at timestamptz, day date, u uuid' +
+        ')',
   )
 
   var moment = date.Date(2026, 9, 16, 14, 30, 45, 123456, 0, false)
@@ -76,7 +76,9 @@ def test_types() {
     b: bytes([1, 2, 255]),
     ok: true,
     tags: ['a', 'b'],
-    doc: { k: [1, 2] },
+    doc: {
+      k: [1, 2],
+    },
     at: moment,
     day: date.Date(2026, 9, 16, 0, 0, 0, 0, 0, false),
     u: uuid,
@@ -94,7 +96,10 @@ def test_types() {
   assert row.b == bytes([1, 2, 255])
   assert row.ok == true
   assert row.tags == ['a', 'b']
-  assert row.doc == { k: [1, 2] }
+  assert row.doc ==
+      {
+        k: [1, 2],
+      }
   assert typeof(row.at) == 'Date'
   assert row.at.year == 2026
   assert row.at.microseconds == 123456
@@ -117,19 +122,17 @@ def test_integer_ranges() {
 
   db.exec_script(
     'create table counts (id integer primary key, small smallint, ' +
-      'n integer, big bigint)',
+        'n integer, big bigint)',
   )
 
   # Every value at the edge of its type is stored as it is, the bigint
   # ones exactly.
-  db.exec(
-    'insert into counts values (1, ?, ?, ?)',
-    [-32768, 2147483647, -9223372036854775808n],
-  )
-  db.exec(
-    'insert into counts values (2, ?, ?, ?)',
-    [32767, -2147483648, 9223372036854775807n],
-  )
+  db.exec('insert into counts values (1, ?, ?, ?)', [
+    -32768, 2147483647, -9223372036854775808n,
+  ])
+  db.exec('insert into counts values (2, ?, ?, ?)', [
+    32767, -2147483648, 9223372036854775807n,
+  ])
 
   var rows = db.fetch_all('select small, n, big from counts order by id', nil)
   assert rows[0].small == -32768 and rows[0].n == 2147483647
@@ -183,7 +186,11 @@ def test_inserts_and_ids() {
   db.exec_script('create table named (k serial primary key, name text)')
   assert db.insert('named', { name: 'y' }, { returning: 'k' }) == 1
 
-  assert db.insert_many('t', [{ name: 'c' }, { name: 'd' }]) == 2
+  assert db.insert_many('t', [
+        { name: 'c' },
+        { name: 'd' },
+      ]) ==
+      2
   assert db.count('t', nil) == 4
 
   finish(db)
@@ -210,10 +217,11 @@ def test_large_inserts() {
   assert db.insert_many('wide', rows) == 12000
   assert db.count('wide', nil) == 12000
   assert db.fetch_value('select title from wide where id = 11999', nil, nil) ==
-    'row 11999'
-  assert db.fetch_value(
-    'select count(*) from wide where made = ?', [made], nil,
-  ) == 12000
+      'row 11999'
+  assert db.fetch_value('select count(*) from wide where made = ?', [
+        made,
+      ], nil) ==
+      12000
 
   finish(db)
   echo 'test_large_inserts passed'
@@ -233,8 +241,7 @@ def test_transactions() {
       tx.insert('t', { name: 'lost' }, nil)
       raise Error('stop')
     }, nil)
-  } as _error {
-  }
+  } as _error {}
   assert db.count('t', nil) == 1
   assert !db.in_transaction()
 
@@ -248,8 +255,7 @@ def test_transactions() {
         inner.insert('t', { name: 'inner' }, nil)
         raise Error('stop')
       }, nil)
-    } as _error {
-    }
+    } as _error {}
   }, nil)
 
   var names = db.fetch_column('select name from t order by name', nil, nil)
@@ -333,11 +339,11 @@ def test_errors() {
 
   db.exec_script(
     'create table parents (id serial primary key, name text not null unique);' +
-      'create table children (' +
-      '  id serial primary key,' +
-      '  parent_id integer not null references parents(id),' +
-      '  n integer check (n > 0)' +
-      ')',
+        'create table children (' +
+        '  id serial primary key,' +
+        '  parent_id integer not null references parents(id),' +
+        '  n integer check (n > 0)' +
+        ')',
   )
 
   db.insert('parents', { name: 'taken' }, nil)
@@ -390,8 +396,7 @@ def test_errors() {
   db.native().run_simple('begin')
   catch {
     db.query('select * from no_such_table', nil)
-  } as _error {
-  }
+  } as _error {}
   assert db.native().in_failed_transaction()
   db.native().run_simple('rollback')
   assert db.fetch_value('select 1', nil, nil) == 1
@@ -405,20 +410,20 @@ def test_schema() {
 
   db.exec_script(
     'create table authors (id serial primary key, name text not null unique);' +
-      'create table posts (' +
-      '  id bigserial primary key,' +
-      '  author_id integer not null references authors(id) on delete cascade,' +
-      '  title text not null,' +
-      '  views integer not null default 0' +
-      ');' +
-      'create index posts_author on posts (author_id);' +
-      'create view recent as select * from posts;',
+        'create table posts (' +
+        '  id bigserial primary key,' +
+        '  author_id integer not null references authors(id) on delete cascade,' +
+        '  title text not null,' +
+        '  views integer not null default 0' +
+        ');' +
+        'create index posts_author on posts (author_id);' +
+        'create view recent as select * from posts;',
   )
 
   assert db.schema.tables(SCHEMA) == ['authors', 'posts']
   assert db.schema.views(SCHEMA) == ['recent']
   assert db.schema.column_names('posts', SCHEMA) ==
-    ['id', 'author_id', 'title', 'views']
+      ['id', 'author_id', 'title', 'views']
 
   var columns = db.schema.columns('posts', SCHEMA)
   assert columns[0].primary_key
@@ -468,7 +473,8 @@ def test_pool() {
 
   pool.exec('drop table if exists zuri_pool_test', nil)
   pool.exec(
-    'create table zuri_pool_test (id serial primary key, n integer)', nil,
+    'create table zuri_pool_test (id serial primary key, n integer)',
+    nil,
   )
 
   pool.transaction(@(tx) {
@@ -494,7 +500,7 @@ def test_pool() {
 def run() {
   if os.get_env('ZURI_TEST_POSTGRES', nil) == nil {
     echo 'postgres_integration skipped: set ZURI_TEST_POSTGRES to a ' +
-      'connection string to run it'
+        'connection string to run it'
 
     return
   }

@@ -1,14 +1,14 @@
 /**
  * @module env
  *
- * Configuration from a file, in the environment, in the type you
- * wanted.
+ * Reads configuration from a file into the environment, and reads it
+ * back in the types your program uses.
  *
- * A program's configuration belongs in its environment, and a
- * developer's machine has nowhere convenient to put it. `env` closes
- * that gap: it reads a `.env` file into the process environment at
- * startup, and it reads values back out already converted to the
- * number, boolean or list the program is going to use.
+ * A program's configuration belongs in its environment, but a
+ * developer's machine has no convenient place to keep it. `env` fills
+ * that gap. It reads a `.env` file into the process environment when
+ * the program starts, and reads values back already converted to the
+ * numbers, booleans or lists the program needs.
  *
  * ```zuri,ignore
  * import env
@@ -22,8 +22,8 @@
  *
  * ### The file
  *
- * A `.env` file sits beside the program and is not committed. One
- * name per line:
+ * A `.env` file is kept next to the program, and isn't committed. It
+ * has one name per line:
  *
  * ```dosini
  * # The address to bind on.
@@ -38,22 +38,23 @@
  * -----END PRIVATE KEY-----"
  * ```
  *
- * Unquoted values are trimmed and run to a comment or the end of the
- * line. Double quotes resolve backslash escapes and allow `$`
- * references. Single quotes and backticks take every character exactly
- * as written. Values in any of the three quotes may span lines.
- * `parse()` states the grammar in full.
+ * Unquoted values are trimmed, and end at a comment or at the end of
+ * the line. Double quotes resolve backslash escapes and allow `$`
+ * references. Single quotes and backticks keep every character exactly
+ * as written. Values in any of the three kinds of quotes can span
+ * several lines. `parse()` describes the full syntax.
  *
- * ### What already exists wins
+ * ### Existing variables take priority
  *
- * A name that is already set in the process environment is left alone,
- * and the file fills in the rest. This is the whole point of the
- * default: the file carries what a developer needs to run the program
- * at all, and production sets the real values through the shell, the
- * orchestrator or the CI runner without the file having to know.
+ * A name that's already set in the process environment is left alone,
+ * and the file fills in the rest. That's the reason for the default:
+ * the file contains what a developer needs to run the program at all,
+ * and in production, the real values are set by the shell, the
+ * orchestrator or the CI runner, without the file having to know about
+ * them.
  *
- * `Result` says exactly what happened, and `override()` reverses the
- * rule where a file genuinely should win:
+ * A `Result` tells you exactly what happened, and `override()` reverses
+ * the rule when a file really should take priority:
  *
  * ```zuri,ignore
  * var result = env.loader().path('.env').override().load()
@@ -62,15 +63,15 @@
  * echo result.skipped   # the names that were already set
  * ```
  *
- * Throughout the module, a variable set to the empty string counts as
- * unset. `FLAG=` in a file, an empty shell variable and a name nobody
- * ever set all mean the same thing, which is the one thing anybody
- * means by them.
+ * Throughout the module, a variable set to an empty string counts as
+ * unset. `FLAG=` in a file, an empty shell variable and a name that was
+ * never set all mean the same thing, which is what anyone means by
+ * them.
  *
  * ### References between values
  *
- * Values may refer to other values and to the environment around them,
- * with the shell's syntax and three of its modifiers:
+ * Values can refer to other values and to the surrounding environment,
+ * using the shell's syntax and three of its modifiers:
  *
  * ```dosini
  * HOST=localhost
@@ -80,16 +81,16 @@
  * SESSION_SECRET=${SESSION_SECRET:?the deploy must supply a session secret}
  * ```
  *
- * A reference resolves to the value the name will hold once the load
- * has finished, so `PORT=${PORT:-8080}` reads "whatever the
- * environment already says, and 8080 when it says nothing" no matter
- * which line of the file defines it. `\$` is a literal dollar sign,
- * and a value in single quotes never expands at all.
+ * A reference resolves to the value the name will have once loading has
+ * finished, so `PORT=${PORT:-8080}` means "whatever the environment
+ * already says, or 8080 if it doesn't say anything", whichever line of
+ * the file defines it. `\$` is a literal dollar sign, and a value in
+ * single quotes is never expanded.
  *
  * ### Layering files
  *
- * Sources are read in the order they are added, and the last one to
- * define a name defines it:
+ * Sources are read in the order they're added, and the last one to
+ * define a name wins:
  *
  * ```zuri,ignore
  * env.loader()
@@ -98,15 +99,15 @@
  *   .load()
  * ```
  *
- * `source()` adds text instead of a file, so configuration that
- * arrived from a secret store or a test fixture goes through the same
- * parsing, expansion and precedence.
+ * `source()` adds text instead of a file, so configuration that came
+ * from a secret store or a test fixture goes through the same parsing,
+ * expansion and precedence rules.
  *
- * ### Reading values back
+ * ### Reading values
  *
- * `get()` and `require()` answer with text. `int()`, `float()`,
- * `bool()` and `list()` answer with the type and raise a `ValueError`
- * naming the variable when the text is not one:
+ * `get()` and `require()` return text. `int()`, `float()`, `bool()` and
+ * `list()` return the corresponding type, and raise a `ValueError`
+ * naming the variable if the text can't be converted:
  *
  * ```zuri,ignore
  * var port    = env.int('PORT', 8080)
@@ -115,17 +116,17 @@
  * var origins = env.list('CORS_ORIGINS', ',', [])
  * ```
  *
- * They read the process environment, not the file, so they answer the
- * same whether a value came from `.env` or from the shell. That is
- * what makes the same program run unchanged in both places.
+ * They read the process environment, not the file, so they return the
+ * same result whether a value came from `.env` or from the shell.
+ * That's what lets the same program run unchanged in both places.
  *
- * ### Do not commit it
+ * ### Don't commit the file
  *
- * A `.env` file holds the values that differ between one deployment
- * and the next, which is to say it holds the secrets. Commit a
- * `.env.example` with every name and no real value, add `.env` to
- * `.gitignore`, and let `required()` fail loudly on a machine where
- * the file was never made.
+ * A `.env` file holds the values that differ from one deployment to the
+ * next, which means it holds the secrets. Commit a `.env.example` file
+ * with every name and no real values, add `.env` to `.gitignore`, and
+ * let `require()` fail with a clear error on a machine where the file
+ * was never created.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

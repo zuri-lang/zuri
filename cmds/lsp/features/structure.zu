@@ -22,9 +22,9 @@ const _FOLDED = ['Block', 'Class', 'Dict', 'List', 'Call', 'Using', 'When']
 def _is_import(node) {
   var statement = node.kind == 'Stmt' ? node.fields.statement : node
 
-  return statement != nil
-    and common.is_node(statement)
-    and statement.kind == 'Import'
+  return statement != nil and
+      common.is_node(statement) and
+      statement.kind == 'Import'
 }
 
 /**
@@ -72,8 +72,8 @@ def folding(server, params: dict) {
     var closing = text[node.end - 1, node.end]
     var line_start = lines.line_start(last)
 
-    if ['}', ']', ')'].contains(closing)
-      and text[line_start, node.end - 1].trim().is_empty() {
+    if ['}', ']', ')'].contains(closing) and
+        text[line_start, node.end - 1].trim().is_empty() {
       last--
     }
 
@@ -151,7 +151,8 @@ def folding(server, params: dict) {
 def _fold_inside(node, add, fold_node, walk, lines) {
   if node.kind == 'DocBlock' {
     add(
-      lines.line_of(node.start), lines.line_of((node.end - 1).max(node.start)),
+      lines.line_of(node.start),
+      lines.line_of((node.end - 1).max(node.start)),
       'comment',
     )
     return
@@ -194,7 +195,9 @@ def selection(server, params: dict) {
 
   for position in params.get('positions', []) {
     var offset = server.offset(document, position)
-    var spans = [[0, document.text.length()]]
+    var spans = [
+      [0, document.text.length()],
+    ]
 
     for node in common.path_to(analysis.nodes, offset) {
       spans.append([node.start, node.end])

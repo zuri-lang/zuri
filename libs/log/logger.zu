@@ -1,10 +1,10 @@
 /**
  * @module log.logger
  *
- * The flat, module-level logging functions (`log()`, `info()`,
- * `debug()`, `warn()`, `error()`, `critical()`, `exception()`), and
- * `Logger`: namespaced, structured-field-bound loggers built on top
- * of the exact same dispatch path.
+ * The module-level logging functions, `log()`, `info()`, `debug()`,
+ * `warn()`, `error()`, `critical()` and `exception()`, and `Logger`,
+ * for named loggers with bound structured fields, which use the same
+ * dispatch code.
  */
 
 import .transport { * }
@@ -89,19 +89,18 @@ def critical(...args) {
 # within the module that shadows it; confirmed to affect even
 # `param: Type` annotations, not just plain expressions.
 def _looks_like_error(ex) {
-  return is_instance(ex)
-    and hasprop(ex, 'message')
-    and hasprop(ex, 'stacktrace')
+  return is_instance(ex) and
+      hasprop(ex, 'message') and
+      hasprop(ex, 'stacktrace')
 }
 
 /**
- * Logs an exception with level [[log.Error]] on all registered
- * transports, including its message and stacktrace.
+ * Logs an error at level [[log.Error]] on all registered transports,
+ * with its message and stack trace.
  *
- * @param any ex Expected to be an Error instance (from a `catch`
- *    block); anything else is logged via its string form instead.
- * @param ?any message Optional additional context to log alongside
- *    the exception.
+ * @param any ex The error, usually from a `catch` block. Anything else
+ *    is logged as a string.
+ * @param ?any message Optional extra context to log with the error.
  */
 def exception(ex, message) {
   if _looks_like_error(ex) {
@@ -118,9 +117,7 @@ def exception(ex, message) {
       ], nil)
     }
   } else if message {
-    _write(LogLevel.Error, [
-      'Unhandled ${typeof(ex)}: ${message}',
-    ], nil)
+    _write(LogLevel.Error, ['Unhandled ${typeof(ex)}: ${message}'], nil)
   } else {
     _write(LogLevel.Error, [ex], nil)
   }
@@ -131,9 +128,9 @@ def exception(ex, message) {
 # ---------------------------------------------------------------------------
 
 /**
- * A namespaced logger that tags every record it writes with a name
- * and, optionally, a set of bound structured fields. Get one via
- * [[log.get_logger]] rather than constructing directly.
+ * A named logger, which labels every record it writes with a name and,
+ * optionally, a set of bound structured fields. Get one with
+ * [[log.get_logger]], instead of creating it directly.
  *
  * ### Example
  *

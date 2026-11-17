@@ -34,7 +34,9 @@ def scratch() {
 def three(directory) {
   os.create_dir(directory, 0c755, true)
 
-  write(os.join_paths(directory, '001_create_authors.zu'), "
+  write(
+    os.join_paths(directory, '001_create_authors.zu'),
+    "
 import sql { Blueprint, Connection, Transaction }
 
 def up(db: Transaction|Connection) {
@@ -47,9 +49,12 @@ def up(db: Transaction|Connection) {
 def down(db: Transaction|Connection) {
   db.schema.drop_table('authors')
 }
-")
+",
+  )
 
-  write(os.join_paths(directory, '002_create_books.zu'), "
+  write(
+    os.join_paths(directory, '002_create_books.zu'),
+    "
 import sql { Blueprint, Connection, Transaction }
 
 def up(db: Transaction|Connection) {
@@ -63,9 +68,12 @@ def up(db: Transaction|Connection) {
 def down(db: Transaction|Connection) {
   db.schema.drop_table('books')
 }
-")
+",
+  )
 
-  write(os.join_paths(directory, '010_add_pages_to_books.zu'), "
+  write(
+    os.join_paths(directory, '010_add_pages_to_books.zu'),
+    "
 import sql { Blueprint, Connection, Transaction }
 
 def up(db: Transaction|Connection) {
@@ -79,7 +87,8 @@ def down(db: Transaction|Connection) {
     table.drop_column('pages')
   })
 }
-")
+",
+  )
 }
 
 def names(rows) {
@@ -95,23 +104,22 @@ def test_up_and_status() {
   var migrator = Migrator(db, { directory })
 
   assert migrator.table == DEFAULT_TABLE
-  assert migrator.status().map(@(entry) => entry.state)
-    == ['pending', 'pending', 'pending']
+  assert migrator.status().map(@(entry) => entry.state) ==
+      ['pending', 'pending', 'pending']
 
   # Ordered by version as a number: 010 after 002, not between them.
-  assert names(migrator.pending()) == [
-    '001_create_authors', '002_create_books', '010_add_pages_to_books',
-  ]
+  assert names(migrator.pending()) ==
+      ['001_create_authors', '002_create_books', '010_add_pages_to_books']
 
   var applied = migrator.up()
 
   assert applied == names(migrator.migrations())
-  assert db.schema.column_names('books')
-    == ['id', 'author_id', 'title', 'pages']
+  assert db.schema.column_names('books') ==
+      ['id', 'author_id', 'title', 'pages']
   assert migrator.pending().is_empty()
   assert migrator.applied().map(@(row) => row.batch) == [1, 1, 1]
-  assert migrator.status().map(@(entry) => entry.state)
-    == ['applied', 'applied', 'applied']
+  assert migrator.status().map(@(entry) => entry.state) ==
+      ['applied', 'applied', 'applied']
   assert typeof(migrator.applied()[0].applied_at) == 'Date'
 
   # Nothing left to do is not an error.
@@ -140,13 +148,13 @@ def test_batches_and_rollback() {
   assert !db.schema.column_names('books').contains('pages')
 
   assert migrator.up() == ['010_add_pages_to_books']
-  assert migrator.down({ steps: 2 })
-    == ['010_add_pages_to_books', '002_create_books']
+  assert migrator.down({ steps: 2 }) ==
+      ['010_add_pages_to_books', '002_create_books']
   assert !db.schema.has_table('books')
 
   assert migrator.up() == ['002_create_books', '010_add_pages_to_books']
-  assert migrator.down({ to: '001_create_authors' })
-    == ['010_add_pages_to_books', '002_create_books']
+  assert migrator.down({ to: '001_create_authors' }) ==
+      ['010_add_pages_to_books', '002_create_books']
   assert names(migrator.applied()) == ['001_create_authors']
 
   assert raises(@() {
@@ -176,7 +184,9 @@ def test_failure() {
   var directory = os.join_paths(root, 'migrations')
   three(directory)
 
-  write(os.join_paths(directory, '005_broken.zu'), "
+  write(
+    os.join_paths(directory, '005_broken.zu'),
+    "
 import sql { Blueprint, Connection, Transaction }
 
 def up(db: Transaction|Connection) {
@@ -189,7 +199,8 @@ def up(db: Transaction|Connection) {
 
 def down(db: Transaction|Connection) {
 }
-")
+",
+  )
 
   var db = sql.open(':memory:')
   var migrator = Migrator(db, { directory })
@@ -219,8 +230,11 @@ def test_changed_and_missing() {
 
   migrator.up()
 
-  write(os.join_paths(directory, '001_create_authors.zu'), '# edited\n' +
-    file(os.join_paths(directory, '001_create_authors.zu')).read())
+  write(
+    os.join_paths(directory, '001_create_authors.zu'),
+    '# edited\n' +
+        file(os.join_paths(directory, '001_create_authors.zu')).read(),
+  )
   file(os.join_paths(directory, '010_add_pages_to_books.zu')).delete()
 
   var states = {}
@@ -253,7 +267,9 @@ def test_files() {
 
   # Shared code lives in files starting with an underscore, and other
   # files are left alone.
-  write(os.join_paths(directory, '_tables.zu'), "
+  write(
+    os.join_paths(directory, '_tables.zu'),
+    "
 import sql { Blueprint, Connection, Transaction }
 
 def make(db: Transaction|Connection, name: string) {
@@ -261,20 +277,26 @@ def make(db: Transaction|Connection, name: string) {
     table.id()
   })
 }
-")
+",
+  )
 
   write(os.join_paths(directory, 'README.md'), 'notes')
 
-  write(os.join_paths(directory, '1_shared.zu'), "
+  write(
+    os.join_paths(directory, '1_shared.zu'),
+    "
 import sql { Connection, Transaction }
 import ._tables
 
 def up(db: Transaction|Connection) {
   _tables.make(db, 'shared')
 }
-")
+",
+  )
 
-  write(os.join_paths(directory, '2_outside.zu'), "
+  write(
+    os.join_paths(directory, '2_outside.zu'),
+    "
 import sql { Blueprint, Connection, Transaction }
 
 var transaction = false
@@ -284,7 +306,8 @@ def up(db: Transaction|Connection) {
     table.id()
   })
 }
-")
+",
+  )
 
   var db = sql.open(':memory:')
   var migrator = Migrator(db, { directory })
@@ -340,7 +363,9 @@ def test_rebuild_inside_a_migration() {
   var directory = os.join_paths(root, 'migrations')
   three(directory)
 
-  write(os.join_paths(directory, '020_widen_names.zu'), "
+  write(
+    os.join_paths(directory, '020_widen_names.zu'),
+    "
 import sql { Blueprint, Connection, Transaction }
 
 def up(db: Transaction|Connection) {
@@ -354,7 +379,8 @@ def down(db: Transaction|Connection) {
     table.string('name', 80).change()
   })
 }
-")
+",
+  )
 
   var db = sql.open(':memory:')
   var migrator = Migrator(db, { directory })
@@ -408,7 +434,12 @@ def test_create() {
   assert file(again).read().contains('def up(db: Transaction|Connection)')
 
   var refused = [
-    'bad/name', 'create posts', 'add-slug', '', ' create_posts', 'posts\n',
+    'bad/name',
+    'create posts',
+    'add-slug',
+    '',
+    ' create_posts',
+    'posts\n',
   ]
 
   for name in refused {
@@ -423,8 +454,8 @@ def test_create() {
 
   # A refused name writes nothing.
   var written = os
-    .read_dir(directory)
-    .filter(@(entry) => entry.ends_with('.zu'))
+      .read_dir(directory)
+      .filter(@(entry) => entry.ends_with('.zu'))
   assert written.length() == 2
 
   var db = sql.open(':memory:')
@@ -447,9 +478,9 @@ def race(dsn, directory, count) {
   var children = []
 
   iter var i = 0; i < count; i++ {
-    children.append(os.spawn(
-      os.exe_path, ['run', helper, dsn, directory], { stdin: 'null' },
-    ))
+    children.append(
+      os.spawn(os.exe_path, ['run', helper, dsn, directory], { stdin: 'null' }),
+    )
   }
 
   var outputs = []
@@ -459,11 +490,10 @@ def race(dsn, directory, count) {
     var output = child.read_stdout().to_string()
 
     assert status == 0,
-      'a migrating process failed: ${child.read_stderr().to_string()}'
-    outputs.append(output
-      .trim()
-      .split('\n')
-      .filter(@(line) => !line.is_empty()))
+        'a migrating process failed: ${child.read_stderr().to_string()}'
+    outputs.append(
+      output.trim().split('\n').filter(@(line) => !line.is_empty()),
+    )
   }
 
   return outputs
@@ -473,7 +503,9 @@ def slow(directory) {
   three(directory)
 
   # Long enough that the runs overlap.
-  write(os.join_paths(directory, '005_fill.zu'), "
+  write(
+    os.join_paths(directory, '005_fill.zu'),
+    "
 import sql { Connection, Transaction }
 
 def up(db: Transaction|Connection) {
@@ -485,7 +517,8 @@ def up(db: Transaction|Connection) {
 def down(db: Transaction|Connection) {
   db.delete('authors', nil)
 }
-")
+",
+  )
 }
 
 def test_concurrent_sqlite() {
@@ -507,10 +540,14 @@ def test_concurrent_sqlite() {
 
   applied.sort()
 
-  assert applied == [
-    '001_create_authors', '002_create_books', '005_fill',
-    '010_add_pages_to_books',
-  ], 'each migration is applied by exactly one process, not ${outputs}'
+  assert applied ==
+      [
+        '001_create_authors',
+        '002_create_books',
+        '005_fill',
+        '010_add_pages_to_books',
+      ],
+      'each migration is applied by exactly one process, not ${outputs}'
 
   var db = sql.open(path)
 
@@ -548,8 +585,8 @@ def test_servers() {
       admin.exec_script('drop database if exists zuri_sql_migrate')
       admin.exec_script('create database zuri_sql_migrate')
       target = dsn.ends_with('/')
-        ? dsn + 'zuri_sql_migrate'
-        : dsn + '/zuri_sql_migrate'
+          ? dsn + 'zuri_sql_migrate'
+          : dsn + '/zuri_sql_migrate'
     }
 
     var root = scratch()
@@ -566,18 +603,20 @@ def test_servers() {
 
     applied.sort()
     assert applied.length() == 4,
-      '${label}: each migration applied once, not ${outputs}'
+        '${label}: each migration applied once, not ${outputs}'
 
     var db = sql.open(target)
     var migrator = Migrator(db, { directory })
 
     assert db.count('authors') == 300
     assert migrator.pending().is_empty()
-    assert migrator.down()
-      == [
-        '010_add_pages_to_books', '005_fill', '002_create_books',
-        '001_create_authors',
-      ]
+    assert migrator.down() ==
+        [
+          '010_add_pages_to_books',
+          '005_fill',
+          '002_create_books',
+          '001_create_authors',
+        ]
     assert !db.schema.has_table('authors')
 
     db.close()

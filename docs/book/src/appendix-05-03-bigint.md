@@ -1,32 +1,31 @@
 # Bigint Methods
 
-Every method on the built-in `bigint` type, with its signature, what it
-returns, and the cases where it does something other than the obvious
-thing.
+Every method of the built-in `bigint` type, with its signature, what it
+returns, and any behavior you might not expect.
 
 | Method | Returns | Summary |
 | --- | --- | --- |
-| [`to_string(radix)`](#to_string) | `string` | Returns the decimal digits of the bigint, with a leading `-` when it is negative and no trailing `n`. |
+| [`to_string(radix)`](#to_string) | `string` | Returns the decimal digits of the bigint, with a leading `-` if it's negative and without the trailing `n`. |
 | [`to_number()`](#to_number) | `number` | Converts the bigint to a `number`. |
 | [`to_bool()`](#to_bool) | `boolean` | Converts the bigint to a boolean, by the same rule `if` uses. |
-| [`to_bytes(order)`](#to_bytes) | `bytes` | Returns the two's-complement byte representation, which carries the sign and so round-trips back to the same value. |
-| [`bin()`](#bin) | `string` | Returns the base-2 digits, equivalent to `to_string(2)`. |
+| [`to_bytes(order)`](#to_bytes) | `bytes` | Returns the bigint as bytes in two's complement, which includes the sign, so the bytes convert back to the same value. |
+| [`bin()`](#bin) | `string` | Returns the binary digits of the bigint. |
 | [`hex()`](#hex) | `string` | Returns the base-16 digits in lowercase, equivalent to `to_string(16)`. |
 | [`oct()`](#oct) | `string` | Returns the base-8 digits, equivalent to `to_string(8)`. |
 | [`abs()`](#abs) | `bigint` | Returns the absolute value. |
 | [`sign()`](#sign) | `number` | Returns the sign as a plain `number`: `1` when positive, `-1` when negative and `0` for zero. |
 | [`max(other)`](#max) | `bigint` | Returns the larger of the two bigints. |
 | [`min(other)`](#min) | `bigint` | Returns the smaller of the two bigints. |
-| [`pow(exponent)`](#pow) | `bigint` | Raises the bigint to `exponent`, the method form of `**`. |
-| [`sqrt()`](#sqrt) | `bigint` | Returns the integer square root, truncated towards zero, so `145n.sqrt()` is `12n` rather than `12.04...`. |
+| [`pow(exponent)`](#pow) | `bigint` | Raises the bigint to the power `exponent`. |
+| [`sqrt()`](#sqrt) | `bigint` | Returns the integer square root, truncated toward zero, so `145n.sqrt()` is `12n`, not `12.04...`. |
 | [`cbrt()`](#cbrt) | `bigint` | Returns the integer cube root, truncated towards zero. |
-| [`nth_root(n)`](#nth_root) | `bigint` | Returns the integer `n`th root, truncated towards zero. |
+| [`nth_root(n)`](#nth_root) | `bigint` | Returns the integer `n`th root, truncated toward zero. |
 | [`gcd(other)`](#gcd) | `bigint` | Returns the greatest common divisor of the two bigints. |
 | [`lcm(other)`](#lcm) | `bigint` | Returns the least common multiple of the two bigints. |
-| [`modpow(exponent, modulus)`](#modpow) | `bigint` | Returns `(self ** exponent) % modulus` without ever building the full power, which is what makes it usable for the huge exponents cryptography needs. |
-| [`modinv(modulus)`](#modinv) | `bigint\|nil` | Returns the modular multiplicative inverse: the `x` solving `self * x == 1 (mod modulus)`. |
+| [`modpow(exponent, modulus)`](#modpow) | `bigint` | Returns `(self ** exponent) % modulus` without computing the full power, so it works with the very large exponents that cryptography uses. |
+| [`modinv(modulus)`](#modinv) | `bigint\|nil` | Returns the modular multiplicative inverse, which is the `x` for which `self * x == 1 (mod modulus)`. |
 | [`bits()`](#bits) | `number` | Returns how many bits the magnitude occupies, ignoring the sign. |
-| [`bit(index)`](#bit) | `boolean` | Returns whether the bit at `index` is set, counting from the least significant bit at index 0. |
+| [`bit(index)`](#bit) | `boolean` | Returns whether the bit at `index` is set, counting from the least significant bit, which is at index 0. |
 | [`set_bit(index, value)`](#set_bit) | `bigint` | Returns a new bigint with the bit at `index` set or cleared. |
 | [`trailing_zeros()`](#trailing_zeros) | `number\|nil` | Returns the count of least-significant zero bits, which is the largest power of two dividing the bigint. |
 | [`is_zero()`](#is_zero) | `boolean` | Returns whether the bigint is zero. |
@@ -39,9 +38,9 @@ thing.
 to_string(radix) -> string
 ```
 
-Returns the decimal digits of the bigint, with a leading `-` when it is
-negative and no trailing `n`. Pass `radix` to render in another base
-instead, using lowercase letters for digit values above nine.
+Returns the decimal digits of the bigint, with a leading `-` if it's
+negative and without the trailing `n`. Pass `radix` to use another base,
+with lowercase letters for digits above nine.
 
 ```zuri-repl
 %> 255n.to_string()
@@ -54,14 +53,15 @@ instead, using lowercase letters for digit values above nine.
 
 **Parameters**
 
-- `radix` (`number`) — base to render in, from 2 to 36. Defaults to 10.
+- `radix` (`number`): The base to use, from 2 to 36. Defaults to 10.
 
 **Returns** `string`
 
 **Raises** `RangeError` if `radix` is outside 2 to 36.
 
 > **Note:** The `n` that `echo` and string interpolation show is part of
-> the repr, not the conversion; `to_string()` never includes it.
+> how a bigint is displayed, not part of the conversion. `to_string()`
+> never includes it.
 
 ## `to_number()`
 
@@ -78,10 +78,10 @@ Converts the bigint to a `number`.
 
 **Returns** `number`
 
-> **Note:** This is lossy for anything past `2^53`: the result is the
-> nearest double, and a value past the double range becomes `inf` or
-> `-inf` rather than wrapping or reading as zero. Check `bits()`
-> beforehand when that matters.
+> **Note:** This loses precision for anything above `2^53`, because the
+> result is the nearest double. A value beyond the range of a double
+> becomes `inf` or `-inf`, instead of wrapping around or becoming zero.
+> Check `bits()` first if that matters.
 
 ## `to_bool()`
 
@@ -109,10 +109,10 @@ true
 to_bytes(order) -> bytes
 ```
 
-Returns the two's-complement byte representation, which carries the sign
-and so round-trips back to the same value. The result is the shortest
-byte string that can hold it, and is never empty: zero is a single
-`0x00` byte.
+Returns the bigint as bytes in two's complement, which includes the
+sign, so the bytes convert back to the same value. The result is the
+shortest byte string that can hold the value, and it's never empty: zero
+is a single `0x00` byte.
 
 ```zuri-repl
 %> 258n.to_bytes()
@@ -125,7 +125,7 @@ byte string that can hold it, and is never empty: zero is a single
 
 **Parameters**
 
-- `order` (`string`) — `'big'` or `'little'`. Defaults to `'big'`.
+- `order` (`string`): `'big'` or `'little'`. Defaults to `'big'`.
 
 **Returns** `bytes`
 
@@ -137,7 +137,8 @@ byte string that can hold it, and is never empty: zero is a single
 bin() -> string
 ```
 
-Returns the base-2 digits, equivalent to `to_string(2)`.
+Returns the binary digits of the bigint. This is the same as
+`to_string(2)`.
 
 ```zuri-repl
 %> 255n.bin()
@@ -146,9 +147,9 @@ Returns the base-2 digits, equivalent to `to_string(2)`.
 
 **Returns** `string`
 
-> **Note:** This is the sign-and-magnitude form, so a negative bigint
-> comes back with a leading `-` rather than as two's complement. Use
-> `to_bytes()` for the two's-complement view.
+> **Note:** This uses sign and magnitude, so a negative bigint is returned
+> with a leading `-`, not in two's complement. Use `to_bytes()` for two's
+> complement.
 
 ## `hex()`
 
@@ -261,7 +262,8 @@ Returns the smaller of the two bigints.
 pow(exponent) -> bigint
 ```
 
-Raises the bigint to `exponent`, the method form of `**`.
+Raises the bigint to the power `exponent`. This is the method form of
+`**`.
 
 ```zuri-repl
 %> 2n.pow(100)
@@ -270,9 +272,9 @@ Raises the bigint to `exponent`, the method form of `**`.
 
 **Parameters**
 
-- `exponent` (`number|bigint`) — a integer from 0 to 2^32 - 1. Negative
-  exponents have no integral answer and are rejected rather than truncated
-  to zero.
+- `exponent` (`number|bigint`): An integer from 0 to 2^32 - 1. A
+  negative exponent has no integer result, so it's rejected instead of
+  being truncated to zero.
 
 **Returns** `bigint`
 
@@ -285,8 +287,8 @@ large.
 sqrt() -> bigint
 ```
 
-Returns the integer square root, truncated towards zero, so
-`145n.sqrt()` is `12n` rather than `12.04...`.
+Returns the integer square root, truncated toward zero, so `145n.sqrt()`
+is `12n`, not `12.04...`.
 
 ```zuri-repl
 %> 144n.sqrt()
@@ -321,7 +323,7 @@ fine here, unlike `sqrt()`.
 nth_root(n) -> bigint
 ```
 
-Returns the integer `n`th root, truncated towards zero.
+Returns the integer `n`th root, truncated toward zero.
 
 ```zuri-repl
 %> 1000000n.nth_root(3)
@@ -330,7 +332,7 @@ Returns the integer `n`th root, truncated towards zero.
 
 **Parameters**
 
-- `n` (`number|bigint`) — a integer from 1 to 2^32 - 1.
+- `n` (`number|bigint`): An integer from 1 to 2^32 - 1.
 
 **Returns** `bigint`
 
@@ -387,9 +389,8 @@ always non-negative, and is `0n` when either side is zero.
 modpow(exponent, modulus) -> bigint
 ```
 
-Returns `(self ** exponent) % modulus` without ever building the full
-power, which is what makes it usable for the huge exponents cryptography
-needs.
+Returns `(self ** exponent) % modulus` without computing the full power,
+so it works with the very large exponents that cryptography uses.
 
 ```zuri-repl
 %> 4n.modpow(13n, 497n)
@@ -399,19 +400,18 @@ needs.
 **Parameters**
 
 - `exponent` (`bigint`)
-- `modulus` (`bigint`) — must not be zero.
+- `modulus` (`bigint`): Must not be zero.
 
 **Returns** `bigint`
 
-**Raises** `TypeError` if either argument is not a bigint.
+**Raises** `TypeError` if either argument isn't a bigint.
 
 **Raises** `RangeError` if `modulus` is zero, or if `exponent` is
-negative and no modular inverse exists.
+negative and there's no modular inverse.
 
-> **Note:** The remainder is floored rather than truncated, so the result
-> carries the sign of `modulus`, not of the receiver. A negative
-> `exponent` is allowed only when the receiver is invertible modulo
-> `modulus`.
+> **Note:** The remainder is floored, not truncated, so the result has the
+> sign of `modulus`, not of the receiver. A negative `exponent` is only
+> allowed if the receiver has an inverse modulo `modulus`.
 
 ## `modinv()`
 
@@ -419,7 +419,8 @@ negative and no modular inverse exists.
 modinv(modulus) -> bigint|nil
 ```
 
-Returns the modular multiplicative inverse: the `x` solving `self * x == 1 (mod modulus)`.
+Returns the modular multiplicative inverse, which is the `x` for which
+`self * x == 1 (mod modulus)`.
 
 ```zuri-repl
 %> 3n.modinv(11n)
@@ -430,17 +431,18 @@ nil
 
 **Parameters**
 
-- `modulus` (`bigint`) — must not be zero.
+- `modulus` (`bigint`): Must not be zero.
 
 **Returns** `bigint|nil`
 
-**Raises** `TypeError` if `modulus` is not a bigint.
+**Raises** `TypeError` if `modulus` isn't a bigint.
 
 **Raises** `RangeError` if `modulus` is zero.
 
-> **Note:** Returns `nil` rather than raising when the receiver and
-> `modulus` are not coprime, since having no inverse is an ordinary answer
-> and not a caller mistake. The result carries the sign of `modulus`.
+> **Note:** If the receiver and `modulus` aren't coprime, this returns
+> `nil` instead of raising an error, because having no inverse is an
+> ordinary result, not a mistake by the caller. The result has the sign of
+> `modulus`.
 
 ## `bits()`
 
@@ -467,7 +469,7 @@ bit(index) -> boolean
 ```
 
 Returns whether the bit at `index` is set, counting from the least
-significant bit at index 0.
+significant bit, which is at index 0.
 
 ```zuri-repl
 %> 5n.bit(0)
@@ -478,14 +480,14 @@ false
 
 **Parameters**
 
-- `index` (`number`) — a non-negative integer.
+- `index` (`number`): A non-negative integer.
 
 **Returns** `boolean`
 
 **Raises** `RangeError` if `index` is negative or fractional.
 
-> **Note:** The bigint is read as two's complement, so a negative receiver
-> reports `true` for every index above its magnitude rather than running
+> **Note:** The bigint is read as two's complement, so a negative bigint
+> reports `true` for every index above its magnitude, instead of running
 > out of bits.
 
 ## `set_bit()`
@@ -495,7 +497,7 @@ set_bit(index, value) -> bigint
 ```
 
 Returns a new bigint with the bit at `index` set or cleared. The
-receiver is left untouched.
+original bigint isn't changed.
 
 ```zuri-repl
 %> 5n.set_bit(1, true)
@@ -504,7 +506,7 @@ receiver is left untouched.
 
 **Parameters**
 
-- `index` (`number`) — a non-negative integer.
+- `index` (`number`): A non-negative integer.
 - `value` (`boolean`)
 
 **Returns** `bigint`

@@ -1,22 +1,22 @@
 # init
 
-Starts a Zuri project: the directory layout, a manifest describing it,
-an application that runs, and a test that passes. What it writes is
-already in the project style and already under test, so the first
-thing anyone does with a new project is add to it rather than fix it.
+Creates a new Zuri project: the directory layout, a manifest that
+describes the project, an application that runs, and a test that passes.
+The files it creates already follow the project's code style and are
+already tested, so you can start adding to them right away.
 
-## Running it
+## Usage
 
 ```sh
 zuri init [path]
 ```
 
-`path` is where the project goes, created if it is not there yet. Left
-off, the directory you are standing in becomes the project:
+`path` is where the project is created. If the directory doesn't exist,
+it's created. Without a path, the current directory becomes the project:
 
 ```sh
-zuri init myproject   # myproject/, created
-zuri init             # here
+zuri init myproject   # creates myproject/
+zuri init             # uses the current directory
 ```
 
 Then:
@@ -27,7 +27,7 @@ zuri run
 zuri test
 ```
 
-## What it writes
+## What it creates
 
 ```
 myproject/
@@ -42,9 +42,9 @@ myproject/
 └── .gitattributes
 ```
 
-`index.zu` re-exports everything under `app`, so importing the project
-gets the whole of it. It starts the application only when it is what
-was run:
+`index.zu` re-exports everything in `app`, so importing the project gives
+you all of it. It only starts the application when it's the file that was
+run:
 
 ```zuri,ignore
 import @.app { * }
@@ -54,19 +54,19 @@ if __root__ == __file__ {
 }
 ```
 
-Which means `zuri run` starts the project, and another project that
-imports it gets its exports without setting it going.
+This means that `zuri run` starts the project, while another project that
+imports it gets its exports without starting it.
 
 `app/index.zu` is the application. Whatever it exports, the project
-exports. `tests/app.test.zu` tests it, and `zuri test` runs it.
+exports. `tests/app.test.zu` tests it, and `zuri test` runs that test.
 
-A file that is already there is never written over. Initializing
-inside a directory that has a README, a licence and a git history adds
-what is missing and disturbs nothing else.
+An existing file is never overwritten. If you run `init` in a directory
+that already has a README, a license and a git history, it adds the files
+that are missing and leaves everything else as it is.
 
 ## The manifest
 
-`project.toml` is what the project is, for anything that reads it:
+`project.toml` describes the project to the tools that read it:
 
 ```toml
 [project]
@@ -82,82 +82,83 @@ homepage = "https://example.com"
 ```
 
 `name`, `version`, `description`, `authors` and `license` are always
-written, so the file states the whole shape a project has. `keywords`,
-`homepage` and `repository` appear once they have something to say.
+written, so the file shows every field a project normally has.
+`keywords`, `homepage` and `repository` are only written when they have a
+value.
 
-The name defaults to the directory's own, lower-cased and joined up: a
-directory called `My Project (v2)` suggests `my-project-v2`. A name is
-lowercase letters, digits, hyphens and underscores, beginning and
-ending on a letter or digit, and at most 64 characters. The version is
-semantic versioning, pre-release and build metadata included. The
-author is read from `git config`.
+The name defaults to the name of the directory, in lowercase, with words
+joined by hyphens. For example, a directory called `My Project (v2)` gives
+`my-project-v2`. A name can contain lowercase letters, digits, hyphens and
+underscores, has to start and end with a letter or digit, and can be at
+most 64 characters long. The version uses semantic versioning, including
+pre-release and build metadata. The author is read from `git config`.
 
-## Answering the questions
+## Questions and defaults
 
-Run in a terminal, `init` asks for each of those in turn and offers
-what it worked out. Press enter to take it. The manifest is shown
-before anything is written, and `n` at that point writes nothing and
-exits `1`.
+When it runs in a terminal, `init` asks for each of these values in turn,
+and suggests a default. Press Enter to accept it. The manifest is shown
+before anything is written. If you answer `n` at that point, nothing is
+written and the command exits with status 1.
 
-Run anywhere else — a pipe, a script, a CI job — there is nobody to
-ask, so the defaults stand and the project is written straight away.
-`--yes` says so outright.
+When it doesn't run in a terminal, such as in a pipe, a script or a CI
+job, it can't ask any questions, so it uses the defaults and creates the
+project right away. `--yes` does the same in a terminal.
 
-A flag settles its question, and the question is not asked:
+An option answers its question, so that question isn't asked:
 
 ```sh
 zuri init myproject --name web-server --license Apache-2.0
 ```
 
-## Flags
+## Options
 
-| Flag | What it does |
+| Option | Description |
 | --- | --- |
-| `-n, --name <name>` | The project name. Default: the directory's own. |
-| `--version <version>` | The version it starts at. Default `0.1.0`. |
-| `-d, --description <text>` | One line on what the project is. |
-| `-a, --author <author...>` | Who wrote it. Default: `git config`. |
-| `-l, --license <license>` | An SPDX identifier. Default `MIT`. |
-| `-k, --keywords <keyword...>` | Words it should be found by. |
-| `--homepage <url>` | Where it is documented. |
-| `--repository <url>` | Where its source lives. |
-| `-y, --yes` | Take every default without asking. |
-| `--vcs <git\|none>` | Whether to create a git repository. Default: `git`, unless git is missing or the directory is already in a repository. |
-| `--force` | Write `project.toml` again over a project that is already here. |
-| `--dry-run` | Report what would be written and write nothing. |
+| `-n, --name <name>` | The project's name. Defaults to the directory's name. |
+| `--version <version>` | The project's starting version, as `major.minor.patch`. Defaults to `0.1.0`. |
+| `-d, --description <text>` | A one-line description of the project. |
+| `-a, --author <author...>` | The project's authors, as `"Name <email>"`. Defaults to the name and email in `git config`. |
+| `-l, --license <license>` | The project's license, as an SPDX identifier. Defaults to `MIT`. |
+| `-k, --keywords <keyword...>` | Keywords that help people find the project. |
+| `--homepage <url>` | The address of the project's homepage or documentation. |
+| `--repository <url>` | The address of the project's source code repository. |
+| `-y, --yes` | Accept all the defaults without asking any questions. |
+| `--vcs <git\|none>` | Whether to create a git repository. Defaults to `git`, unless git isn't installed or the directory is already in a repository. |
+| `--force` | Rewrite `project.toml` even if there's already a project here. |
+| `--dry-run` | Show what would be written without writing anything. |
 
-`--author` and `--keywords` take as many words as follow them, so put
-the path ahead of them, or close them with `--`:
+`--author` and `--keywords` take every word that follows them, so put the
+path before them, or end them with `--`:
 
 ```sh
 zuri init myproject --keywords cli tools
 zuri init --keywords cli tools -- myproject
 ```
 
-At the prompt, both are separated by commas instead.
+When you answer the questions instead, separate several authors or
+keywords with commas.
 
-## Initializing twice
+## Running it twice
 
-`init` refuses where a project already is, rather than writing over
-one:
+`init` won't overwrite an existing project:
 
 ```console
 $ zuri init
-init: a project already exists in '/home/ada/myproject'; use --force to
-rewrite its project.toml and leave everything else alone
+init: a project already exists in '/home/ada/myproject'. Use --force to
+rewrite its project.toml without changing any other files
 ```
 
-`--force` does exactly that much: the manifest is written again from
-the answers, and every other file is left as it stands.
+With `--force`, the manifest is written again from your answers, and
+every other file is left as it is.
 
-## How it is built
+## Source files
 
-- `plan.zu` — the argument parser, and every rule about what a project
-  may be called, where it lands, and what ends up in its manifest.
-- `template.zu` — the text of each file a project starts with.
-- `scaffold.zu` — the layout, and writing it out without disturbing
-  what was already there.
-- `index.zu` — the command itself, the questions, and the report.
+- `plan.zu`: the argument parser, and the rules for what a project can be
+  called, where it's created, and what goes in its manifest.
+- `template.zu`: the text of each file that a new project starts with.
+- `scaffold.zu`: the layout, and writing it without changing existing
+  files.
+- `index.zu`: the command itself, the questions and the report.
 
 ## Tests
 
@@ -165,5 +166,5 @@ the answers, and every other file is left as it stands.
 zuri test cmds/init/tests
 ```
 
-The command end to end, including that what it writes runs and passes
-its own tests, is covered in `tests/zuri.rs` under `init_command`.
+The tests in `tests/zuri.rs` under `init_command` cover the whole command,
+including checking that a new project runs and passes its own tests.

@@ -235,7 +235,9 @@ def _read(data: bytes) {
   }
 
   if image.linkedit == nil or image.text == nil or image.symtab == nil {
-    raise CommandError('the runtime is missing __TEXT, __LINKEDIT or its symbol table')
+    raise CommandError(
+      'the runtime is missing __TEXT, __LINKEDIT or its symbol table',
+    )
   }
 
   image.room = image.first_data - commands_end
@@ -276,9 +278,9 @@ def _read_segment(data: bytes, at: number, image: dict) {
     section += _SECTION_SIZE
   }
 
-  if segment.fileoff > 0
-    and segment.filesize > 0
-    and segment.fileoff < image.first_data {
+  if segment.fileoff > 0 and
+      segment.filesize > 0 and
+      segment.fileoff < image.first_data {
     image.first_data = segment.fileoff
   }
 }
@@ -290,13 +292,19 @@ def _add_signature_command(data: bytes, image: dict) {
 
   iter var i = at; i < at + 16; i++ {
     if data[i] != 0 {
-      raise CommandError('the runtime has no free room in its header for a signature')
+      raise CommandError(
+        'the runtime has no free room in its header for a signature',
+      )
     }
   }
 
   struct.pack_into('VVVV', data, at, _LC_CODE_SIGNATURE, 16, 0, 0)
   struct.pack_into(
-    'VV', data, 16, image.ncmds + 1, image.commands_end + 16 - _HEADER_SIZE,
+    'VV',
+    data,
+    16,
+    image.ncmds + 1,
+    image.commands_end + 16 - _HEADER_SIZE,
   )
 
   image.signature_at = at
@@ -306,8 +314,8 @@ def _add_signature_command(data: bytes, image: dict) {
 # `strings_end`, which is where the payload ends.
 def _cover(data: bytes, image: dict, end: number, strings_end: number) {
   var filesize = end - image.linkedit.fileoff
-  var vmsize = ((filesize + _SEGMENT_ALIGN - 1) / _SEGMENT_ALIGN).floor()
-    * _SEGMENT_ALIGN
+  var vmsize = ((filesize + _SEGMENT_ALIGN - 1) / _SEGMENT_ALIGN).floor() *
+      _SEGMENT_ALIGN
 
   if vmsize < image.linkedit.vmsize {
     vmsize = image.linkedit.vmsize
@@ -316,7 +324,10 @@ def _cover(data: bytes, image: dict, end: number, strings_end: number) {
   struct.pack_into('P', data, image.linkedit.at + 8 + 16 + 8, vmsize)
   struct.pack_into('P', data, image.linkedit.at + 8 + 16 + 24, filesize)
   struct.pack_into(
-    'V', data, image.symtab.at + 20, strings_end - image.symtab.stroff,
+    'V',
+    data,
+    image.symtab.at + 20,
+    strings_end - image.symtab.stroff,
   )
 }
 

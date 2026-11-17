@@ -1,12 +1,12 @@
 /**
  * @module test.result
  *
- * The shapes a test run is made of: the tree the declarations build,
- * and what running it produced.
+ * The objects a test run is made of: the tree that the declarations
+ * build, and the results of running it.
  *
- * Every reporter is handed these objects and nothing else, so a
- * custom reporter has the same view of a run that the built-in ones
- * do. See {test.reporter} for what a reporter does with them.
+ * Every reporter receives these objects and nothing else, so a custom
+ * reporter sees a run in the same way as the built-in ones. See
+ * {test.reporter} for what a reporter does with them.
  */
 
 import .format
@@ -59,7 +59,7 @@ class Failure {
   /** What was received. */
   var received = nil
 
-  /** Whether `expected` and `received` are worth printing. */
+  /** Whether `expected` and `received` should be printed. */
   var has_values = false
 
   /** Pre-rendered lines to print under the message. */
@@ -234,7 +234,7 @@ class Suite {
     return []
   }
 
-  /** How deeply nested the suite is; the root is `0`. @returns int */
+  /** How deeply the suite is nested. The root is `0`. @returns int */
   depth() {
     return self.owner == nil ? 0 : self.owner.depth() + 1
   }
@@ -380,6 +380,6 @@ class Summary {
   /** @returns string */
   to_string() {
     return '${self.passed} passed, ${self.failed} failed, ' +
-      '${self.skipped} skipped, ${self.todo} todo in ${format.duration(self.duration)}'
+        '${self.skipped} skipped, ${self.todo} todo in ${format.duration(self.duration)}'
   }
 }

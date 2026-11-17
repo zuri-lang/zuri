@@ -1,37 +1,37 @@
 /**
  * @module test.style
  *
- * Terminal presentation for the test module: colour, symbols, width,
- * and the padding helpers that keep a report's columns lined up once
- * escape sequences are in the text.
+ * How the test module presents output in a terminal: color, symbols,
+ * width, and the padding functions that keep a report's columns aligned
+ * when the text contains escape sequences.
  *
- * Colour and symbols are decided once, when this module loads, from
+ * Color and symbols are decided once, when this module loads, based on
  * the environment the process actually has. Nothing else in the test
- * module asks whether colour is on; it calls `green()` and gets plain
- * text back when it isn't.
+ * module checks whether color is on. It calls `green()`, and gets plain
+ * text back when color is off.
  *
- * ### Deciding whether to use colour
+ * ### Deciding whether to use color
  *
- * In order, the first of these that applies wins:
+ * The first of these that applies decides:
  *
- * 1. `NO_COLOR` set to anything non-empty turns colour off, per
- *    <https://no-color.org>.
- * 2. `FORCE_COLOR` set to anything other than `0` turns it on, which
- *    is how CI systems that capture output but still render ANSI ask
- *    for it.
- * 3. Standard output being a terminal turns it on, and a pipe or a
- *    file turns it off.
+ * 1. If `NO_COLOR` is set to anything other than an empty string, color
+ *    is off, as <https://no-color.org> specifies.
+ * 2. If `FORCE_COLOR` is set to anything other than `0`, color is on.
+ *    CI systems that capture output but still display ANSI colors use
+ *    this to ask for color.
+ * 3. If standard output is a terminal, color is on. If it's a pipe or a
+ *    file, color is off.
  *
- * `set_enabled()` overrides the lot, for a caller that has already
- * made the decision itself.
+ * `set_enabled()` overrides all of these, for code that has already
+ * decided for itself.
  *
  * ### Deciding whether to use Unicode
  *
- * `ZURI_TEST_ASCII` set to anything non-empty forces the ASCII
- * symbol set. Otherwise the box-drawing and tick/cross characters are
- * used everywhere except a Windows console that is not Windows
- * Terminal, which is the one common environment that still renders
- * them as mojibake.
+ * If `ZURI_TEST_ASCII` is set to anything other than an empty string,
+ * ASCII symbols are used. Otherwise, box-drawing characters and tick
+ * and cross symbols are used everywhere except in a Windows console
+ * that isn't Windows Terminal, which is the one common environment that
+ * still displays them as garbage characters.
  */
 
 import colors
@@ -78,7 +78,7 @@ _enabled = _detect_color()
 _unicode = _detect_unicode()
 
 /**
- * Whether colour is currently being emitted.
+ * Whether color is currently being emitted.
  *
  * @returns bool
  */
@@ -87,7 +87,7 @@ def enabled() {
 }
 
 /**
- * Forces colour on or off, overriding what the environment said.
+ * Forces color on or off, overriding what the environment said.
  *
  * @param bool on
  */
@@ -127,7 +127,7 @@ def _paint(text, code, background) {
 }
 
 /**
- * Emphasis. Returns `text` unchanged when colour is off.
+ * Emphasis. Returns `text` unchanged when color is off.
  *
  * @param string text
  * @returns string
@@ -198,9 +198,9 @@ def white(text: string) {
 }
 
 /**
- * A filled, inverted label, the way a status banner reads in a CI
+ * A filled label with inverted colors, like a status banner in a CI
  * log. `kind` is one of `'pass'`, `'fail'`, `'skip'`, `'todo'` or
- * `'flaky'`; anything else gets the neutral grey background.
+ * `'flaky'`, and anything else gets a neutral gray background.
  *
  * @param string kind
  * @param string text
@@ -348,8 +348,8 @@ def pad_left(text: string, width: int, fill: ?string) {
  * with an ellipsis. Returns `text` untouched when it already fits.
  *
  * @note only safe on text with no escape sequences in it, since it
- *    cuts by codepoint and would leave a colour sequence unterminated.
- *    Colour the result, not the input.
+ *    cuts by codepoint and would leave a color sequence unterminated.
+ *    Color the result, not the input.
  * @param string text
  * @param int width
  * @returns string
@@ -404,7 +404,7 @@ def indent(depth: int) {
  *
  * Asks the terminal first, falls back to `COLUMNS`, and finally to a
  * conventional 80. Clamped to 40..120 so neither a one-column pty nor
- * a maximised ultrawide produces an unreadable layout.
+ * a maximized ultrawide produces an unreadable layout.
  *
  * @returns int
  */

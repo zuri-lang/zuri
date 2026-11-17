@@ -1,13 +1,13 @@
 /**
  * @module notify
  *
- * LISTEN and NOTIFY, PostgreSQL's own publish and subscribe.
+ * LISTEN and NOTIFY, PostgreSQL's own publish and subscribe system.
  *
  * A connection that has run `LISTEN channel` receives a message
- * whenever anything runs `NOTIFY channel`, including from another
- * connection or another process entirely. It is the one part of this
- * adapter with no equivalent in SQLite, so it lives here rather than
- * in the shared contract and is reached through `db.native()`.
+ * whenever anything runs `NOTIFY channel`, including another connection
+ * or a different process. The other engines have nothing like it, so
+ * it's here instead of in the shared interface, and you reach it
+ * through `db.native()`.
  *
  * ```zuri,ignore
  * var listener = db.native().listener()
@@ -21,10 +21,10 @@
  * }
  * ```
  *
- * Notifications arrive between other messages, so a connection that is
- * busy running statements collects them as it goes and `poll()` hands
- * over whatever has accumulated. A connection doing nothing else has
- * to ask, which is what `wait()` does.
+ * Notifications arrive between other messages, so a connection that's
+ * busy running statements collects them as it goes, and `poll()`
+ * returns whatever has built up. A connection that isn't doing anything
+ * else has to ask for them, which is what `wait()` does.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -96,8 +96,8 @@ class Listener {
   /**
    * Sends a notification.
    *
-   * The payload is bound rather than pasted in, so it can hold
-   * anything including quotes.
+   * The payload is bound as a parameter, not inserted into the SQL, so
+   * it can contain anything, including quotes.
    *
    * @param string channel
    * @param string|nil payload
@@ -106,9 +106,9 @@ class Listener {
     self._open()
 
     var values = payload == nil ? [channel] : [channel, payload]
-    var sql = payload == nil ?
-      'select pg_notify($1, null)' :
-      'select pg_notify($1, $2)'
+    var sql = payload == nil
+        ? 'select pg_notify($1, null)'
+        : 'select pg_notify($1, $2)'
 
     self._connection.select(sql, values)
   }
@@ -128,14 +128,14 @@ class Listener {
    * Waits for at least one notification, checking the connection each
    * time round.
    *
-   * There is no way to block on a socket and a database at once here,
-   * so this asks the server a trivial question on each pass, which is
-   * what carries any pending notification back with it.
+   * There's no way to wait on a socket and a database at the same time
+   * here, so each time round, this sends the server a trivial query,
+   * and any pending notifications come back with the answer.
    *
-   * @param number|nil rounds How many times to check before giving up.
-   *    Unlimited when nil.
-   * @returns list[dict] The notifications received, which is empty
-   *    only if `rounds` ran out.
+   * @param number|nil rounds The number of times to check before giving
+   *    up. Nil means no limit.
+   * @returns list[dict] The notifications received. The list is only
+   *    empty if `rounds` ran out.
    */
   wait(rounds) {
     self._open()
@@ -173,8 +173,7 @@ class Listener {
       if !self._connection.is_closed() {
         self._connection.run_simple('unlisten *')
       }
-    } as _error {
-    }
+    } as _error {}
 
     self._channels = []
   }
@@ -187,8 +186,8 @@ class Listener {
 
   to_string() {
     return '<Listener ${self._channels.length()} channel' +
-      '${self._channels.length() == 1 ? "" : "s"}' +
-      '${self._closed ? ", closed" : ""}>'
+        '${self._channels.length() == 1 ? "" : "s"}' +
+        '${self._closed ? ", closed" : ""}>'
   }
 
   @to_string() {

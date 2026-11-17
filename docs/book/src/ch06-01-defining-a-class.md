@@ -17,17 +17,18 @@ class Account {
 }
 ```
 
-- `class Name { ... }` declares it. `PascalCase` is the convention.
-- `var` inside the body declares a **field**, with an optional default. A
-  field with no default starts as `nil`.
-- A bare `name(params) { ... }` is a **method**. There is no `def` keyword
-  on methods.
+- `class Name { ... }` declares a class. By convention, class names use
+  `PascalCase`.
+- `var` inside the class body declares a **field**, with an optional default
+  value. A field without a default starts out as `nil`.
+- A plain `name(params) { ... }` declares a **method**. Methods don't use
+  the `def` keyword.
 - `@new` is the constructor.
-- `self` is the current instance.
+- `self` refers to the current instance.
 
 ## Creating an Instance
 
-Call the class. There is no `new` keyword:
+To create an instance, call the class. There's no `new` keyword:
 
 ```zuri
 var a = Account('Ada', 50)
@@ -41,19 +42,19 @@ Ada
 50
 ```
 
-If the class has no `@new`, calling it with no arguments gives you an
-instance with every field at its default.
+If the class doesn't have an `@new` method, calling it without arguments
+gives you an instance with every field set to its default value.
 
 ## The Constructor
 
 `@new` is the constructor. It runs once, when the class is called, and its
-job is to put the instance into a usable state — which is what
-`Account`'s did above.
+job is to put the new instance into a usable state, as `Account`'s
+constructor did above.
 
-### It Is Optional
+### Constructors Are Optional
 
-A class with no `@new` is constructed with no arguments, and every field
-takes its declared default:
+A class without an `@new` method is created with no arguments, and each
+field gets its declared default:
 
 ```zuri
 class Settings {
@@ -72,14 +73,14 @@ dark
 nil
 ```
 
-Extra arguments to a class with no `@new` are ignored rather than
-rejected, exactly as they are for a function.
+If you pass arguments to a class that has no `@new`, they're ignored rather
+than rejected, as they would be for a function.
 
-### It Declares Fields
+### Constructors Can Declare Fields
 
-`self.x = value` inside `@new` **declares** a field. This is the one place
-in the language where assignment creates a member, and it exists so a
-constructor does not have to repeat every field as a `var` line above it:
+`self.x = value` inside `@new` **declares** a field. This is the only place
+in the language where an assignment creates a member, and it exists so that
+a constructor doesn't have to repeat every field as a `var` line above it:
 
 ```zuri
 class Point {
@@ -100,14 +101,15 @@ echo p.distance
 5
 ```
 
-`distance` was never declared with `var`, and it is a real field.
+`distance` was never declared with `var`, but it's still a real field.
 
-That power belongs to `@new`'s **own body** and nowhere else. A constructor
-that delegates its setup to a helper must declare those fields:
+This only works in the **body of `@new` itself**. If a constructor delegates
+its setup to a helper method, the fields that helper assigns have to be
+declared:
 
 ```zuri
 class Delayed {
-  var ready          # required: setup() cannot declare it
+  var ready # required: setup() cannot declare it
 
   @new() {
     self.setup()
@@ -125,14 +127,14 @@ echo Delayed().ready
 true
 ```
 
-Remove the `var ready` line and `setup()` raises
+If you remove the `var ready` line, `setup()` raises
 `undefined field 'ready'`.
 
-### Arguments Are Not Checked Unless You Ask
+### Constructor Arguments Aren't Checked by Default
 
-`@new` is a function, so the usual rules apply: missing arguments arrive as
-`nil`, extra ones are dropped. A constructor that assumes it got something
-fails later, in a confusing place:
+`@new` is a function, so the usual rules apply: missing arguments are `nil`,
+and extra arguments are ignored. A constructor that assumes it received an
+argument fails later, somewhere confusing:
 
 ```zuri,ignore
 class Ctor {
@@ -146,11 +148,11 @@ Ctor()
 ```
 
 ```console
-Unhandled TypeError: operator '*' not defined for call signature (nil, float)
+Unhandled TypeError: operator '*' not defined for call signature (nil, number)
 ```
 
-Annotate the parameter and the failure moves to the call, where it names
-the problem:
+If you annotate the parameter, the error is raised at the call instead, and
+it tells you what's wrong:
 
 ```zuri
 class Ctor {
@@ -174,13 +176,14 @@ catch {
 @new() expects parameter 'x' (argument 1) to be a number, got string
 ```
 
-Constructors are the highest-value place in a program to annotate, because
-a badly built object goes wrong somewhere else entirely.
+Constructors are the most valuable place in a program to add annotations,
+because an object that's built incorrectly usually fails somewhere else
+entirely.
 
 ### Validating in the Constructor
 
-A constructor may raise. Nothing is returned to the caller, so an object
-that cannot be valid never exists:
+A constructor can raise an error. When it does, nothing is returned to the
+caller, so an object that can't be valid never exists:
 
 ```zuri
 class Port {
@@ -208,14 +211,15 @@ catch {
 ValueError: port out of range: 99999
 ```
 
-This is worth doing whenever a class has an invariant. Every other method
-can then assume it holds, instead of re-checking.
+This is worth doing whenever a class has an invariant, a condition that
+should always be true for its instances. The other methods can then rely on
+it instead of checking it again.
 
-### `@new` Cannot Return a Value
+### `@new` Can't Return a Value
 
-Calling a class always produces an instance of that class. A `return` in
-`@new` ends the constructor early; it does not change what the caller
-gets:
+Calling a class always gives you an instance of that class. A `return` in
+`@new` ends the constructor early, but it doesn't change what the caller
+receives:
 
 ```zuri
 class Returns {
@@ -234,14 +238,14 @@ echo typeof(Returns())
 Returns
 ```
 
-If you want a call that may hand back something else — a cached instance, a
-subclass, `nil` on bad input — write a `static` factory method and call
-that instead.
+If you need a call that might return something else, such as a cached
+instance, a subclass or `nil` for invalid input, write a `static` factory
+method and call that instead.
 
 ## Methods
 
 A method is a `name(params) { ... }` declaration inside the class body.
-There is no `def` keyword on it:
+Methods don't use the `def` keyword:
 
 ```zuri
 class Account {
@@ -268,11 +272,12 @@ echo a.balance
 100
 ```
 
-`deposit` returns `self`, which is what makes the chain work. Returning
-`self` from a mutator is a common Zuri idiom.
+`deposit` returns `self`, which is what makes the chained calls work.
+Returning `self` from a method that modifies the object is a common pattern
+in Zuri.
 
-Inside a method, `self` is required to reach a field or another method.
-There is no implicit receiver:
+Inside a method, you have to use `self` to access a field or call another
+method. There's no implicit receiver:
 
 ```zuri
 class Greeter {
@@ -284,12 +289,13 @@ class Greeter {
 }
 ```
 
-Writing `name` there would look for a local or a global, not a field.
+Writing just `name` there would look for a local or global variable, not a
+field.
 
-## Fields Are Declared, Not Discovered
+## Fields Must Be Declared
 
-The set of fields is fixed when the class is declared. Two things follow
-from that.
+A class's fields are fixed when the class is declared, which has two
+consequences.
 
 First, assigning to a field that was never declared is an error:
 
@@ -311,8 +317,8 @@ catch {
 undefined field 'nickname' on instance of 'Account'
 ```
 
-Second, `self.x = value` inside `@new` **does** declare a field, as a
-convenience so that constructors do not have to repeat themselves:
+Second, as described above, `self.x = value` inside `@new` **does** declare
+a field, so that constructors don't have to repeat themselves:
 
 ```zuri
 class Point {
@@ -329,13 +335,13 @@ echo Point(3, 4).x
 3
 ```
 
-That convenience applies to `@new`'s own body and nowhere else. A
-constructor that calls a helper to do its initialisation must declare those
-fields with `var`:
+Again, this only applies in the body of `@new` itself. If a constructor
+calls a helper to do its initialization, the helper's fields have to be
+declared with `var`:
 
 ```zuri
 class A {
-  var from_helper          # required
+  var from_helper # required
 
   @new() {
     self.setup()
@@ -347,12 +353,13 @@ class A {
 }
 ```
 
-Without the `var` line, the assignment inside `setup()` raises
+Without the `var` line, the assignment in `setup()` raises
 `undefined field 'from_helper'`.
 
 ## Static Members
 
-`static` puts a field or method on the class rather than on each instance:
+`static` attaches a field or method to the class itself instead of to each
+instance:
 
 ```zuri
 class Account {
@@ -380,21 +387,21 @@ echo Account.open('Carol').owner
 Carol
 ```
 
-A static method has no `self`:
+Static methods don't have a `self`:
 
 ```console
 SyntaxError: 'self' used outside of a method
 ```
 
-Reach the class by name instead.
+Use the class name to refer to the class instead.
 
-Static fields are the one mutable part of a class. The set of members is
-sealed; the values of static fields are not.
+Static fields are the only part of a class that can change. The set of
+members is sealed, but the values of static fields aren't.
 
-## Duplicate Members Are Errors
+## Duplicate Members
 
-Declaring the same method twice in one class does not silently keep the
-last one:
+If you declare the same method twice in one class, Zuri reports an error
+instead of quietly keeping the second one:
 
 ```zuri,ignore
 class B {
@@ -407,18 +414,19 @@ class B {
 SyntaxError: multiple declaration for method 'm' found in class 'B'
 ```
 
-The same applies to declaring the same class name twice in one module.
+The same is true if you declare two classes with the same name in one
+module.
 
-## Instances and Dictionaries
+## Classes or Dictionaries?
 
 | | `dict` | `class` |
 | --- | --- | --- |
-| keys | any, added at any time | fixed at declaration |
-| access | `d.key` or `d['key']` | `obj.field` only |
-| missing member | `get()` returns a fallback | error |
-| behaviour | none | methods |
-| cost of a read | hash lookup | array index |
+| Keys | Any, added at any time | Fixed when the class is declared |
+| Access | `d.key` or `d['key']` | `obj.field` only |
+| Missing member | `get()` returns a fallback | Error |
+| Behavior | None | Methods |
+| Cost of reading a member | Hash lookup | Array index |
 
-Use a dictionary for data whose shape you learn at runtime: parsed JSON,
-HTTP headers, a config file. Use a class when the shape is known and there
-is behaviour to attach.
+Use a dictionary for data whose shape you only find out at run time, such as
+parsed JSON, HTTP headers or a configuration file. Use a class when you know
+the shape in advance and want to attach behavior to it.

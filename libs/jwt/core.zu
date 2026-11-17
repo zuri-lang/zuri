@@ -1,9 +1,10 @@
 /**
  * @module jwt.core
  *
- * The core encode/decode/sign/verify functions the rest of the `jwt`
- * module is built on. `Verifier`/`Signer`/`Jwks` are thin, stateful
- * wrappers around `verify()`/`sign()` defined here.
+ * The core functions for encoding, decoding, signing and verifying,
+ * which the rest of the `jwt` module is built on. `Verifier`, `Signer`
+ * and `Jwks` are thin wrappers that keep settings around the `verify()`
+ * and `sign()` functions defined here.
  */
 
 import .errors { * }
@@ -155,7 +156,7 @@ def decode(token) {
   if parts.length() != 3 {
     raise MalformedTokenError(
       'malformed token: expected three dot-separated segments, got ' +
-        parts.length().to_string(),
+          parts.length().to_string(),
     )
   }
 
@@ -164,13 +165,17 @@ def decode(token) {
   catch {
     header_json = _b64_decode(parts[0])
   } as _ {
-    raise MalformedTokenError('malformed token: header segment is not valid base64url')
+    raise MalformedTokenError(
+      'malformed token: header segment is not valid base64url',
+    )
   }
 
   catch {
     payload_json = _b64_decode(parts[1])
   } as _ {
-    raise MalformedTokenError('malformed token: payload segment is not valid base64url')
+    raise MalformedTokenError(
+      'malformed token: payload segment is not valid base64url',
+    )
   }
 
   var header, payload
@@ -320,40 +325,38 @@ def sign(payload, secret, options) {
 # ---------------------------------------------------------------------------
 
 /**
- * Verifies a JWT string and returns its payload (or the full
- * Token when options.complete is true).
+ * Verifies a JWT and returns its payload, or the whole `Token` if
+ * `options.complete` is true.
  *
- * Verification performs the following steps in order:
+ * Verification takes these steps, in order:
  *
- * 1. Structural decode: ensures the token is well-formed.
- * 2. Algorithm check: rejects algorithms not in the
- *    options.algorithms list.
- * 3. Signature verification: recomputes and compares the
- *    signature using a constant-time comparison for HMAC
- *    algorithms, or the underlying public-key verification for
- *    PS/ES/EdDSA algorithms.
- * 4. Temporal claim validation: checks exp, nbf, and iat
- *    against the current clock, applying clock_tolerance leeway
- *    where configured.
- * 5. Registered claim validation: checks iss, aud, and sub when
- *    the corresponding options are set.
+ * 1. Structural decoding, which checks that the token is well formed.
+ * 2. An algorithm check, which rejects any algorithm that isn't in
+ *    `options.algorithms`.
+ * 3. Signature verification, which recomputes the signature and
+ *    compares it in constant time for HMAC algorithms, or uses the
+ *    public-key verification routine for the PS, ES and EdDSA
+ *    algorithms.
+ * 4. Time claim validation, which checks `exp`, `nbf` and `iat` against
+ *    the current time, allowing for `clock_tolerance` if it's set.
+ * 5. Registered claim validation, which checks `iss`, `aud` and `sub`
+ *    if the corresponding options are set.
  *
- * An error is raised at the first failure; verification does not
- * accumulate errors.
+ * An error is raised at the first failure. Errors aren't collected.
  *
  * ### Options
  *
- * | Key               | Type          | Default             | Description                                    |
- * |-------------------|---------------|---------------------|------------------------------------------------|
- * | algorithms        | list          | [HS256,HS384,HS512] | Accepted algorithm whitelist                   |
- * | issuer            | string        |:                   | Required `iss` claim value                     |
- * | subject           | string        |:                   | Required `sub` claim value                     |
- * | audience          | string\|list  |:                   | Required `aud` claim value                     |
- * | clock_tolerance   | number        | 0                   | Leeway in seconds for exp, nbf, and iat        |
- * | ignore_expiration | bool          | false               | Skip `exp` validation                          |
- * | ignore_not_before | bool          | false               | Skip `nbf` validation                          |
- * | complete          | bool          | false               | Return full Token instead of payload dict      |
- * | allow_none        | bool          | false               | Permit the `none` algorithm                    |
+ * | Key               | Type          | Default             | Description                                     |
+ * |-------------------|---------------|---------------------|-------------------------------------------------|
+ * | algorithms        | list          | [HS256,HS384,HS512] | The algorithms to accept                        |
+ * | issuer            | string        | not set             | The required `iss` claim value                  |
+ * | subject           | string        | not set             | The required `sub` claim value                  |
+ * | audience          | string\|list  | not set             | The required `aud` claim value                  |
+ * | clock_tolerance   | number        | 0                   | Allowance in seconds for `exp`, `nbf` and `iat` |
+ * | ignore_expiration | bool          | false               | Skip `exp` validation                           |
+ * | ignore_not_before | bool          | false               | Skip `nbf` validation                           |
+ * | complete          | bool          | false               | Return the whole `Token` instead of the payload |
+ * | allow_none        | bool          | false               | Accept the `none` algorithm                     |
  *
  * ### Example
  *
@@ -412,8 +415,10 @@ def verify(token, secret, options) {
     }
   } else if !accepted.contains(alg) {
     raise AlgorithmError(
-      'token algorithm "' + alg + '" is not in the accepted list: ' +
-        ', '.join(accepted),
+      'token algorithm "' +
+          alg +
+          '" is not in the accepted list: ' +
+          ', '.join(accepted),
     )
   }
 
@@ -468,8 +473,11 @@ def _finish_verify(tok, options) {
 
     if now > payload['exp'] + tolerance {
       raise TokenExpiredError(
-        'token expired at ' + payload['exp'].to_string() +
-          ' (current time: ' + now.to_string() + ')',
+        'token expired at ' +
+            payload['exp'].to_string() +
+            ' (current time: ' +
+            now.to_string() +
+            ')',
       )
     }
   }
@@ -481,8 +489,11 @@ def _finish_verify(tok, options) {
 
     if now < payload['nbf'] - tolerance {
       raise TokenExpiredError(
-        'token not valid before ' + payload['nbf'].to_string() +
-          ' (current time: ' + now.to_string() + ')',
+        'token not valid before ' +
+            payload['nbf'].to_string() +
+            ' (current time: ' +
+            now.to_string() +
+            ')',
       )
     }
   }
@@ -494,8 +505,11 @@ def _finish_verify(tok, options) {
 
     if payload['iat'] > now + tolerance {
       raise TokenExpiredError(
-        'token issued in the future at ' + payload['iat'].to_string() +
-          ' (current time: ' + now.to_string() + ')',
+        'token issued in the future at ' +
+            payload['iat'].to_string() +
+            ' (current time: ' +
+            now.to_string() +
+            ')',
       )
     }
   }
@@ -509,8 +523,11 @@ def _finish_verify(tok, options) {
 
     if payload['iss'] != options['issuer'] {
       raise ClaimError(
-        'issuer mismatch: expected "' + options['issuer'] +
-          '", got "' + payload['iss'].to_string() + '"',
+        'issuer mismatch: expected "' +
+            options['issuer'] +
+            '", got "' +
+            payload['iss'].to_string() +
+            '"',
       )
     }
   }
@@ -522,8 +539,11 @@ def _finish_verify(tok, options) {
 
     if payload['sub'] != options['subject'] {
       raise ClaimError(
-        'subject mismatch: expected "' + options['subject'] +
-          '", got "' + payload['sub'].to_string() + '"',
+        'subject mismatch: expected "' +
+            options['subject'] +
+            '", got "' +
+            payload['sub'].to_string() +
+            '"',
       )
     }
   }

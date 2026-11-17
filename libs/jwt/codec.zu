@@ -1,10 +1,10 @@
 /**
  * @module jwt.codec
  *
- * Algorithm identifiers and the low-level encoding helpers `core.zu`
- * builds `encode()`/`verify()` out of: base64url, HMAC dispatch, a
- * constant-time comparison, and the DER <-> raw-`R‖S` conversion
- * ECDSA signatures need to become JOSE-shaped.
+ * Algorithm identifiers, and the low-level helpers that `core.zu`
+ * builds `encode()` and `verify()` from: base64url encoding, HMAC
+ * selection, constant-time comparison, and the conversion between DER
+ * and raw `R‖S` that ECDSA signatures need for JOSE.
  */
 
 import .errors { JwtError, MalformedTokenError }
@@ -32,12 +32,12 @@ var HS384 = 'HS384'
 var HS512 = 'HS512'
 
 /**
- * RSA-PSS-SHA256 signing algorithm identifier.
+ * The identifier of the RSA-PSS signing algorithm with SHA-256.
  *
- * This is deliberately `PS256`, not `RS256`: this module's RSA
- * backing (`crypto.rsa`) is RSASSA-PSS, not RSASSA-PKCS1-v1_5, and
- * `PS256`/`PS384`/`PS512` are the JOSE-registered names (RFC 7518
- * §3.5) for exactly that scheme.
+ * There's no `RS256`, because this module's RSA support (`crypto.rsa`)
+ * uses RSASSA-PSS, and RS256 uses RSASSA-PKCS1-v1_5. `PS256`, `PS384`
+ * and `PS512` are the names that JOSE registers for RSASSA-PSS, in RFC
+ * 7518 §3.5.
  */
 var PS256 = 'PS256'
 
@@ -228,7 +228,9 @@ def _der_to_raw_ec(der: bytes, coord_len: number) {
   }
 
   if der[1] >= 0x80 {
-    raise MalformedTokenError('invalid ECDSA signature: unsupported long-form DER length')
+    raise MalformedTokenError(
+      'invalid ECDSA signature: unsupported long-form DER length',
+    )
   }
 
   var offset = 2

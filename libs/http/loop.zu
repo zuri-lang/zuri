@@ -1,29 +1,31 @@
 /**
  * @module loop
  *
- * One thread serving many connections at once.
+ * A single thread serving many connections at once.
  *
- * A thread that commits to one connection cannot look at another until
- * that connection lets go of it, and a client is under no obligation to
- * be quick: it can sit on an idle keep-alive connection, send half a
- * request and stop, or stop reading what it asked for. `ConnectionLoop`
- * keeps every connection on a poller instead, and does for each only
- * what can be done without waiting.
+ * A thread that's dedicated to one connection can't look at another
+ * until that connection releases it, and clients aren't always quick. A
+ * client can sit on an idle keep-alive connection, send half a request
+ * and stop, or stop reading the response it asked for. `ConnectionLoop`
+ * keeps every connection on a poller instead, and only does the work
+ * for each one that can be done without waiting.
  *
- * Reading works by buffering. Each readable event takes what has
- * arrived, and the request pipeline only runs once a whole request is
- * in the buffer, so the pipeline's own reads never reach the socket.
- * Writing works by queueing. Everything a connection produces waits in
- * its output until the pipeline has finished, and goes out as the
- * socket makes room, which also turns a batch of responses into one
- * write.
+ * Reading uses buffering. Each time a connection is readable, whatever
+ * has arrived is buffered, and the request pipeline only runs once a
+ * complete request is in the buffer, so the pipeline's own reads never
+ * touch the socket. Writing uses queueing. Everything a connection
+ * produces waits in its output queue until the pipeline has finished,
+ * and is sent as the socket has room, which also combines a batch of
+ * responses into a single write.
  *
- * Timeouts live here too, as a deadline on each connection, because
- * the socket's own timeouts only bound a call that waits.
+ * Timeouts are handled here as well, as a deadline for each connection,
+ * because the socket's own timeouts only apply to a call that's
+ * waiting.
  *
- * Two things still hold the thread, and both are the application's
- * choice: a handler runs to completion, and a streamed body or an
- * upgraded connection writes as it goes, bounded by `write_timeout`.
+ * Two things can still keep the thread busy, and both are under the
+ * application's control: a handler runs until it finishes, and a
+ * streamed body or an upgraded connection writes as it goes, limited by
+ * `write_timeout`.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -248,8 +250,8 @@ class ConnectionLoop {
     self._acceptor = nil
 
     var now = time()
-    var limit = now
-      + (self._write_wait == nil ? _FINISH_LIMIT : self._write_wait)
+    var limit = now +
+        (self._write_wait == nil ? _FINISH_LIMIT : self._write_wait)
 
     for held in self._live.values() {
       held.closing = true
@@ -309,11 +311,11 @@ class ConnectionLoop {
   }
 
   _resume_accepting(now) {
-    if self._acceptor != nil
-      and !self._accepting
-      and now >= self._accept_after
-      and self.has_room()
-      and self._server.is_listening() {
+    if self._acceptor != nil and
+        !self._accepting and
+        now >= self._accept_after and
+        self.has_room() and
+        self._server.is_listening() {
       self._accepting = true
       self._poller.add(self._acceptor.listener(), 0, net.READABLE)
     }
@@ -453,7 +455,9 @@ class ConnectionLoop {
 
       if request == nil {
         var head = connection.try_request_head(
-          server.max_line_size, server.max_header_size, server.max_header_count,
+          server.max_line_size,
+          server.max_header_size,
+          server.max_header_count,
         )
 
         if head == nil {
@@ -484,8 +488,8 @@ class ConnectionLoop {
 
       # With the peer gone the rest of the body is never coming, and
       # the pipeline is what says so.
-      if !server.body_arrived(connection, request)
-        and !connection.peer_finished() {
+      if !server.body_arrived(connection, request) and
+          !connection.peer_finished() {
         held.request = request
         return
       }

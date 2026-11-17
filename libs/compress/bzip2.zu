@@ -1,7 +1,7 @@
 /**
  * @module bzip2
  *
- * The Bzip2 submodule for the compress module.
+ * Bzip2 compression and decompression.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -20,12 +20,13 @@ def compress(data, level) {
 }
 
 /**
- * Decompress Bzip2-compressed data.
+ * Decompresses Bzip2-compressed data.
  *
- * @note This only decodes the first bzip2 stream in `data`. Some
- *    tools (`pbzip2`, Wikipedia data dumps, ...) concatenate several
- *    independent bzip2 streams back to back ("multistreams"); use
- *    `Bzip2Decoder` in a loop with `reset()` to decode all of them.
+ * @note This only decodes the first bzip2 stream in `data`. Some tools,
+ *    such as `pbzip2`, and some data sources, such as Wikipedia's data
+ *    dumps, put several independent bzip2 streams one after another,
+ *    which is called a multistream. To decode all of them, use
+ *    `Bzip2Decoder` in a loop with `reset()`.
  * @param {bytes|string} data
  * @returns bytes
  */
@@ -501,8 +502,7 @@ class BzFile {
    * @returns bool
    */
   is_open() {
-    return self._file.is_open()
-      and !self._inner.finished()
+    return self._file.is_open() and !self._inner.finished()
   }
 
   /**
@@ -510,8 +510,7 @@ class BzFile {
    * writing and `false` otherwise.
    */
   is_closed() {
-    return self._file.is_closed()
-      or self._inner.finished()
+    return self._file.is_closed() or self._inner.finished()
   }
 
   /**

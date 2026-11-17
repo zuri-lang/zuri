@@ -1,13 +1,13 @@
 /**
  * @module message
  *
- * A mail message: its headers, its body, and the tree of parts a body
- * turns into once there is more than one thing in it.
+ * A mail message: its headers, its body, and the tree of parts that the
+ * body becomes when it contains more than one thing.
  *
- * `Message` is both what comes off the wire and what goes onto it.
- * Parsing one gives the whole MIME tree with every part decoded on
- * demand; building one from text, HTML and files gives back a message
- * any mail server will accept.
+ * `Message` is used both for messages received and messages sent.
+ * Parsing one gives you the whole MIME tree, with each part decoded
+ * when you ask for it. Building one from text, HTML and files gives you
+ * a message that any mail server will accept.
  *
  * ```zuri
  * import mail
@@ -27,10 +27,10 @@
  * text/plain
  * ```
  *
- * A message with both text and HTML in it becomes a
- * `multipart/alternative`; add a file and the whole thing is wrapped
- * in a `multipart/mixed`. None of that has to be spelled out: the
- * shape follows from what was put in.
+ * A message with both text and HTML becomes a `multipart/alternative`,
+ * and if you add a file, the whole message is wrapped in a
+ * `multipart/mixed`. You don't have to set any of that up yourself,
+ * because the structure follows from what you add.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -124,9 +124,9 @@ def _body_offset(raw) {
         return { headers: stop, body: next + 1 }
       }
 
-      if next + 1 < raw.length()
-        and raw[next] == 0x0d
-        and raw[next + 1] == 0x0a {
+      if next + 1 < raw.length() and
+          raw[next] == 0x0d and
+          raw[next + 1] == 0x0a {
         return { headers: stop, body: next + 2 }
       }
     }
@@ -192,11 +192,11 @@ class Message {
   _load(raw) {
     var split = _body_offset(raw)
     var header_text = split.headers == 0
-      ? ''
-      : raw[0, split.headers].to_string()
+        ? ''
+        : raw[0, split.headers].to_string()
     var body = split.body >= raw.length()
-      ? bytes(0)
-      : raw[split.body, raw.length()]
+        ? bytes(0)
+        : raw[split.body, raw.length()]
 
     self.headers = Headers.parse(header_text)
     self._source_headers = header_text
@@ -214,10 +214,10 @@ class Message {
   /**
    * Reads a message.
    *
-   * Nothing is decoded up front. The tree is built, and each part
+   * Nothing is decoded in advance. The tree is built, and each part
    * decodes its own body the first time something asks for it, so
-   * reading the subject of a message with a large attachment in it
-   * costs nothing more than reading the headers.
+   * reading the subject of a message with a large attachment costs no
+   * more than reading its headers.
    *
    * ```zuri
    * import mail
@@ -240,7 +240,7 @@ class Message {
    *
    * @param string|bytes data
    * @returns Message
-   * @throws MessageError if the headers cannot be read.
+   * @throws MessageError if the headers can't be read.
    */
   static parse(data) {
     return Message(nil, data)
@@ -267,9 +267,9 @@ class Message {
       if content_start == nil {
         preamble_end = line.start
       } else {
-        pieces.append(body[content_start, _trim_eol(
-          body, content_start, line.start,
-        )])
+        pieces.append(
+          body[content_start, _trim_eol(body, content_start, line.start)],
+        )
       }
 
       if text == closer {
@@ -324,8 +324,8 @@ class Message {
   }
 
   /**
-   * The parts directly inside this one, which is empty for a part that
-   * holds content rather than other parts.
+   * The parts directly inside this one. The list is empty for a part
+   * that holds content instead of other parts.
    *
    * @returns list of `Message`
    */
@@ -382,7 +382,8 @@ class Message {
    */
   text() {
     return encoding.decode_text(
-      self.body_bytes(), self.content_type().charset(),
+      self.body_bytes(),
+      self.content_type().charset(),
     )
   }
 
@@ -435,11 +436,11 @@ class Message {
   }
 
   /**
-   * The bytes this part's headers were read from, or `nil` for a part
-   * that was built rather than parsed.
+   * The bytes that this part's headers were read from, or `nil` for a
+   * part that was built instead of parsed.
    *
    * A signature covers the message as it was written, not as it would
-   * be written again, which is what this is for.
+   * be written again, and this is what makes that possible.
    *
    * @returns string|nil
    */
@@ -448,8 +449,8 @@ class Message {
   }
 
   /**
-   * The bytes this part's body was read from, or `nil` for a part that
-   * was built rather than parsed.
+   * The bytes that this part's body was read from, or `nil` for a part
+   * that was built instead of parsed.
    *
    * @returns bytes|nil
    */
@@ -523,8 +524,8 @@ class Message {
   }
 
   /**
-   * The addresses in `Reply-To`, falling back to the sender when there
-   * is no such header, which is what a mail client does.
+   * The addresses in `Reply-To`, or the sender if there's no `Reply-To`
+   * header, as a mail client does.
    *
    * @returns list of `Address`
    */
@@ -628,11 +629,12 @@ class Message {
   }
 
   /**
-   * Whether this part is meant to be offered as a file rather than
+   * Whether this part should be offered as a file, instead of being
    * shown in place.
    *
-   * A part is an attachment when it says so, and also when it says
-   * nothing but carries a filename, which is what older mailers do.
+   * A part is an attachment if its `Content-Disposition` says so. It's
+   * also an attachment if it has no `Content-Disposition` but has a
+   * file name, which is how older mail programs mark attachments.
    *
    * @returns bool
    */
@@ -641,8 +643,8 @@ class Message {
       return true
     }
 
-    return !self.headers.contains('Content-Disposition')
-      and self.filename() != nil
+    return !self.headers.contains('Content-Disposition') and
+        self.filename() != nil
   }
 
   /**
@@ -750,7 +752,8 @@ class Message {
    */
   become_multipart(subtype: string, parts: list) {
     self.headers.set(
-      'Content-Type', 'multipart/${subtype}; boundary="${_new_boundary()}"',
+      'Content-Type',
+      'multipart/${subtype}; boundary="${_new_boundary()}"',
     )
     self.headers.remove('Content-Transfer-Encoding')
     self.headers.remove('Content-Disposition')
@@ -1107,22 +1110,23 @@ class Message {
     var author = self.sender()
 
     self.headers.set(
-      'Message-ID', new_message_id(author == nil ? nil : author.domain),
+      'Message-ID',
+      new_message_id(author == nil ? nil : author.domain),
     )
 
     return self
   }
 
   /**
-   * Marks the message as a reply to another, which is what puts the
-   * two in the same conversation in a mail client.
+   * Marks the message as a reply to another message, so that a mail
+   * client shows the two in the same conversation.
    *
    * ```zuri,ignore
    * reply.set_in_reply_to(original.message_id())
    *      .set_references(original.references() + [original.message_id()])
    * ```
    *
-   * @param string id: The identifier of the message being answered.
+   * @param string id: the identifier of the message being answered
    * @returns Message itself.
    */
   set_in_reply_to(id: string) {
@@ -1206,12 +1210,11 @@ class Message {
   }
 
   /**
-   * Adds something to be shown inside the HTML rather than offered
-   * separately, and returns the reference to point an `<img>` at.
+   * Adds something to be shown inside the HTML, instead of offered
+   * separately, and returns the reference to use in an `<img>` tag.
    *
-   * The message becomes a `multipart/related` around the content it
-   * already held, which is what tells a reader the two belong
-   * together.
+   * The message becomes a `multipart/related` part around its existing
+   * content, which tells a mail client that the two belong together.
    *
    * ```zuri,ignore
    * var source = note.embed(mail.attachment(logo).set_filename('logo.png'))
@@ -1221,7 +1224,7 @@ class Message {
    *
    * @param Attachment|Message part
    * @returns string the `cid:` URL that refers to it.
-   * @throws MessageError if handed anything else.
+   * @throws MessageError if it's given anything else.
    */
   embed(part) {
     var id = nil
@@ -1274,8 +1277,8 @@ class Message {
   /**
    * The whole message, ready to be written to a socket or a file.
    *
-   * Lines end with a carriage return and a newline, which is what the
-   * protocols require whatever the local convention is.
+   * Lines end with a carriage return and a line feed, as the protocols
+   * require, whatever the local convention is.
    *
    * @returns bytes
    */
@@ -1353,14 +1356,15 @@ def _outgoing_charset(text: string, charset: ?string) {
 }
 
 /**
- * Builds one text part.
+ * Creates a single text part.
  *
  * @param string text
- * @param ?string charset: `utf-8`, or `us-ascii` when the text needs
- *    nothing more. No other set can be written.
- * @param ?string subtype: `plain` when not given.
+ * @param ?string charset: `utf-8`, or `us-ascii` if the text doesn't
+ *    need anything more. No other character set can be written.
+ * @param ?string subtype: `plain` if it isn't given
  * @returns Message
- * @throws MessageError if `charset` names a set this cannot write.
+ * @throws MessageError if `charset` names a character set that can't be
+ *    written.
  */
 def text_part(text: string, charset: ?string, subtype: ?string) {
   var set = _outgoing_charset(text, charset)
@@ -1386,10 +1390,10 @@ def text_part(text: string, charset: ?string, subtype: ?string) {
  * @returns Message
  */
 /**
- * Something a message carries alongside what it says: a file to offer,
- * or an image the HTML shows.
+ * Something that a message carries in addition to its text: a file to
+ * offer, or an image that the HTML shows.
  *
- * Built one call at a time, the way a message is, and handed to
+ * You build it one call at a time, as you do a message, and pass it to
  * `Message.attach()` or `Message.embed()`.
  *
  * ```zuri
@@ -1409,10 +1413,10 @@ def text_part(text: string, charset: ?string, subtype: ?string) {
  * 24
  * ```
  *
- * The media type follows from the filename unless it is set. The
- * transfer encoding follows from the contents, and a file is always
- * encoded rather than sent as it is, because bytes that happen to look
- * like text are still bytes.
+ * The media type is based on the file name, unless you set it. The
+ * transfer encoding is based on the contents, and a file is always
+ * encoded, never sent as it is, because bytes that happen to look like
+ * text are still bytes.
  *
  * @printable
  */
@@ -1480,12 +1484,12 @@ class Attachment {
   }
 
   /**
-   * Sets whether the part is offered as a file or shown where it sits.
+   * Sets whether the part is offered as a file or shown where it is.
    *
-   * `embed()` sets this to `inline` itself, so it is only worth
-   * setting for a part that is neither quite.
+   * `embed()` sets this to `inline` itself, so you only need to set it
+   * for a part that doesn't fit either case exactly.
    *
-   * @param string kind: `attachment` or `inline`.
+   * @param string kind: `attachment` or `inline`
    * @returns Attachment itself.
    */
   set_disposition(kind: string) {
@@ -1645,9 +1649,10 @@ class Attachment {
     }
 
     if self._description != nil {
-      part.headers.set('Content-Description', encoding.encode_word(
-        self._description, 'utf-8', nil,
-      ))
+      part.headers.set(
+        'Content-Description',
+        encoding.encode_word(self._description, 'utf-8', nil),
+      )
     }
 
     part.set_raw_body(encoding.encode_body(self._data, transfer))
@@ -1750,8 +1755,8 @@ def parse(data) {
 /**
  * Starts a message.
  *
- * What goes in it is said one call at a time, and every call hands the
- * message back so they read as one:
+ * You describe what goes in it one call at a time, and every call
+ * returns the message, so the calls can be chained:
  *
  * ```zuri
  * import mail
@@ -1771,14 +1776,14 @@ def parse(data) {
  * text/plain
  * ```
  *
- * The shape follows from what is said. Text alone is a `text/plain`
- * message; adding HTML makes it a `multipart/alternative`; attaching a
- * file wraps the whole thing in a `multipart/mixed`. None of that has
- * to be arranged by hand.
+ * The structure follows from what you add. Text by itself makes a
+ * `text/plain` message, adding HTML makes it a `multipart/alternative`,
+ * and attaching a file wraps the whole message in a `multipart/mixed`.
+ * You don't have to arrange any of that yourself.
  *
- * A message starts dated, since the time it was written is the time it
- * was written. It gets its identifier when it is sent, because that is
- * when the domain it belongs to is settled.
+ * A message is dated when it's created, because that's when it was
+ * written. It gets its identifier when it's sent, because that's when
+ * the domain it belongs to is known.
  *
  * @returns Message
  */

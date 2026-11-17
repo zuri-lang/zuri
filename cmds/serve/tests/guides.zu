@@ -1,0 +1,140 @@
+# The guides packages ship, built when a version is published and
+# served on a host of their own: here `localhost`, beside the
+# repository's own `127.0.0.1`.
+
+import http
+import net
+import os
+import test { * }
+
+import ._harness { World, commit, write }
+
+var world = World('guides')
+var PORT = nil
+
+# Asks the guides host for _path_, and gives back `{ status, headers,
+# body }`. The request goes to the address the repository listens on,
+# naming the guides host, as a browser that reached it by that name
+# would.
+def guides(path: string) {
+  var stream = net.TcpStream()
+
+  stream.connect('127.0.0.1:${PORT}')
+  stream.write_all(
+    'GET ${path} HTTP/1.1\r\nHost: localhost:${PORT}\r\nConnection: close\r\n\r\n',
+  )
+
+  var raw = stream.read_all().to_string()
+
+  stream.close()
+
+  var split = raw.index_of('\r\n\r\n')
+  var head = raw[0, split].split('\r\n')
+
+  return {
+    status: head[0].split(' ')[1].to_number(),
+    headers: '\n'.join(head[1,]).lower(),
+    body: raw[split + 4,],
+  }
+}
+
+def page(path: string) {
+  return http.get(world.url + path).as_text()
+}
+
+# A package whose `docs` is documentation of its own.
+def publish(name: string, intro: string) {
+  var dir = world.project(name)
+
+  write(dir, 'docs/doc.toml', '[documentation]\ntitle = "${name} guide"\n')
+  write(dir, 'docs/src/SUMMARY.md', '# Summary\n\n[Welcome](welcome.md)\n')
+  write(dir, 'docs/src/welcome.md', intro)
+  commit(dir)
+
+  var published = world.zuri(['publish', '--registry', world.url], dir)
+
+  if published.status != 0 {
+    raise Error('publishing ${name} failed: ${published.all}')
+  }
+}
+
+before_all(@{
+  world.start(['--guides-url', 'http://localhost:{port}'])
+  PORT = world.url.split(':').last()
+  world.account('ada', world.dir('signin'))
+
+  publish(
+    'kit',
+    '# Welcome\n\nThe kit, <em>by hand</em>.\n\n<script>document.title = "ran"</script>\n',
+  )
+  publish('snoop', '# Welcome\n\n{{#include ../../../../../nyssa/nyssa.db}}\n')
+})
+
+after_all(@{
+  world.finish()
+})
+
+describe('a guide', @{
+  it('is built when the version is published, and served on its own host', @{
+    var got = guides('/kit/0.1.0/')
+
+    expect(got.status).to_be(200)
+    expect(got.body).to_contain('<title>Welcome · kit guide</title>')
+    expect(got.body).to_contain('The kit, <em>by hand</em>.')
+  })
+
+  it("keeps the package's own HTML and scripts, since its host is its own", @{
+    expect(guides('/kit/0.1.0/').body)
+        .to_contain('<script>document.title = "ran"</script>')
+  })
+
+  it('serves what the site needs beside its pages', @{
+    var got = guides('/kit/0.1.0/assets/doc.css')
+
+    expect(got.status).to_be(200)
+    expect(got.headers).to_contain('content-type: text/css')
+  })
+
+  it('is the newest version when no version is named', @{
+    var got = guides('/kit/')
+
+    expect(got.status).to_be(302)
+    expect(got.headers).to_contain('location: /kit/0.1.0/')
+  })
+
+  it('sets no cookie, and cannot be framed', @{
+    var got = guides('/kit/0.1.0/')
+
+    expect(got.headers).not.to_contain('set-cookie')
+    expect(got.headers)
+        .to_contain("content-security-policy: frame-ancestors 'none'")
+  })
+
+  it("is linked from the version's page", @{
+    expect(page('/packages/kit')).to_contain(
+      '<a href="http://localhost:${PORT}/kit/0.1.0/" rel="noopener">Guide',
+    )
+  })
+
+  it("is never served on the repository's own host", @{
+    var response = http.get(world.url + '/kit/0.1.0/')
+
+    expect(response.status).to_be(404)
+    expect(response.as_text()).not.to_contain('The kit, <em>by hand</em>.')
+  })
+
+  it('reads nothing from outside its package', @{
+    expect(guides('/snoop/0.1.0/').body).to_contain('snoop 0.1.0 has no guide.')
+    expect(page('/packages/snoop')).not.to_contain('>Guide <span')
+  })
+
+  it("stays inside a version's own guide", @{
+    expect(guides('/kit/0.1.0/../../snoop/0.1.0/').body)
+        .to_contain('snoop 0.1.0 has no guide.')
+
+    var climbed = guides('/kit/0.1.0/%2e%2e/%2e%2e/%2e%2e/nyssa/nyssa.db')
+
+    expect(climbed.status).to_be(404)
+    expect(climbed.body).to_contain('There is no package called nyssa.')
+  })
+})

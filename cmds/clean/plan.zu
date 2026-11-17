@@ -20,27 +20,44 @@ var _UNITS = { s: 1, m: 60, h: 3600, d: 86400, w: 604800 }
 def parser() {
   var parser = args.Parser('zuri clean', false)
 
-  parser.description = 'Frees the space downloads, logs and installed packages take up.'
-  parser.epilog = 'With nothing chosen, the download cache and the logs are cleaned.'
+  parser.description = 'Frees up the disk space used by downloads, logs and installed packages.'
+  parser.epilog = 'If nothing is selected, the download cache and the logs are removed.'
 
-  parser.add_option('cache',
-    'The download cache: archives, registry indexes, git checkouts',
-    { short_name: 'c' })
-  parser.add_option('runtimes', 'The runtimes zuri bundle downloaded', nil)
   parser.add_option(
-    'logs', 'The logs install and uninstall scripts left', { short_name: 'l' },
+    'cache',
+    'Remove the download cache: archives, registry indexes and git checkouts',
+    { short_name: 'c' },
   )
-  parser.add_option('libs',
-    "The project's installed packages; zuri restore brings them back", nil)
-  parser.add_option('all', 'All of the above', { short_name: 'a' })
-  parser.add_option('older-than',
-    'Only what has not changed for this long, such as 30d or 12h',
-    { type: args.STRING, metavar: 'age' })
-  parser.add_option('global',
-    "With libs, this user's packages rather than the project's",
-    { short_name: 'g' })
   parser.add_option(
-    'dry-run', 'Say what would go and remove nothing', { short_name: 'n' },
+    'runtimes',
+    'Remove the runtimes that zuri bundle downloaded',
+    nil,
+  )
+  parser.add_option(
+    'logs',
+    'Remove the logs left by install and uninstall scripts',
+    { short_name: 'l' },
+  )
+  parser.add_option(
+    'libs',
+    "Remove the project's installed packages, which zuri restore can bring back",
+    nil,
+  )
+  parser.add_option('all', 'Remove all of the above', { short_name: 'a' })
+  parser.add_option(
+    'older-than',
+    'Only remove what hasn\'t changed for this long, such as 30d or 12h',
+    { type: args.STRING, metavar: 'age' },
+  )
+  parser.add_option(
+    'global',
+    "With --libs, remove your user's packages instead of the project's",
+    { short_name: 'g' },
+  )
+  parser.add_option(
+    'dry-run',
+    'Show what would be removed without removing anything',
+    { short_name: 'n' },
   )
 
   return parser

@@ -68,15 +68,16 @@ def live_smtp(url) {
     return
   }
 
-  var note = mail.message()
-    .set_from(recipient)
-    .add_to(recipient)
-    .set_subject('Zuri mail suite: Grüße')
-    .set_text('Sent by the mail module test suite.')
-    .set_html('<p>Sent by the <em>mail</em> module test suite.</p>')
-    .attach(mail
-      .attachment('name,total\nwidgets,41\n')
-      .set_filename('figures.csv'))
+  var note = mail
+      .message()
+      .set_from(recipient)
+      .add_to(recipient)
+      .set_subject('Zuri mail suite: Grüße')
+      .set_text('Sent by the mail module test suite.')
+      .set_html('<p>Sent by the <em>mail</em> module test suite.</p>')
+      .attach(
+        mail.attachment('name,total\nwidgets,41\n').set_filename('figures.csv'),
+      )
 
   check('delivered', server.send(note, nil).code, 250)
   server.quit()
@@ -94,8 +95,10 @@ def live_imap(url) {
   var mailboxes = inbox.list('', '*')
 
   ok('it has mailboxes', !mailboxes.is_empty())
-  ok('one of them is the inbox',
-    mailboxes.some(@(box) => box.name.upper() == 'INBOX'))
+  ok(
+    'one of them is the inbox',
+    mailboxes.some(@(box) => box.name.upper() == 'INBOX'),
+  )
 
   var box = inbox.examine('INBOX')
 
@@ -178,11 +181,11 @@ def run() {
   var imap_url = os.get_env('ZURI_TEST_IMAP', nil)
   var pop3_url = os.get_env('ZURI_TEST_POP3', nil)
 
-  if (smtp_url == nil or smtp_url == '')
-    and (imap_url == nil or imap_url == '')
-    and (pop3_url == nil or pop3_url == '') {
-    echo 'mail_live skipped: set ZURI_TEST_SMTP, ZURI_TEST_IMAP or '
-      + 'ZURI_TEST_POP3 to a connection string to run it'
+  if (smtp_url == nil or smtp_url == '') and
+      (imap_url == nil or imap_url == '') and
+      (pop3_url == nil or pop3_url == '') {
+    echo 'mail_live skipped: set ZURI_TEST_SMTP, ZURI_TEST_IMAP or ' +
+        'ZURI_TEST_POP3 to a connection string to run it'
 
     return
   }

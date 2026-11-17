@@ -47,6 +47,38 @@ A published version never changes. To fix one, publish the next
 version. A version's dependencies must all come from a registry, since
 a git or path dependency means nothing on anyone else's machine.
 
+## The API reference
+
+Every version's page has an API tab beside its README: a page for each
+public module, with every function, constant and class it declares,
+written from the doc blocks in the published files. It is written when
+the version is published, and nothing has to be built or uploaded for
+it. The repository reads the code and never runs it.
+
+A module is any `.zu` file but a test, one in `tests`, `docs`,
+`examples`, `benchmarks` or `cmds`, and one whose path has a part
+starting with an underscore, which the compiler keeps private.
+
+Every version's page says how many of its public names have a doc
+block, and `zuri publish` says the same before it sends anything,
+naming the first few that have none.
+
+Every name in the reference links to the line that declares it, on the
+version's Source tab, which shows every file the version holds with
+its lines numbered and its Zuri coloured.
+
+Documentation in `docs`, built with `zuri doc`, is the package's guide.
+Where the repository serves guides, it is built when the version is
+published and linked from the version's page. It is built from the
+package's own files alone, so whatever its `doc.toml` names and its
+pages include has to be in the package.
+
+A name in braces that the package's own pages do not document, as
+`{http.Request}` or `{weather_kit.forecast()}`, links to where it is
+documented: the standard library's reference, which the repository
+serves at [/std](/std) for the Zuri it runs on, or the API of a package
+it depends on from this repository.
+
 ## Yanking a version
 
 ```sh

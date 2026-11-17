@@ -8,10 +8,13 @@ import args
 
 var p = args.Parser('metatest', false)
 p.add_option('threshold', 'A threshold', { short_name: 't', type: args.INT })
-p.add_option(
-  'label', 'A label', { short_name: 'l', type: args.STRING, metavar: 'text' },
-)
-p.add_command(
-  'commit', 'Commit changes', { type: args.STRING, metavar: 'message' },
-)
+p.add_option('label', 'A label', {
+  short_name: 'l',
+  type: args.STRING,
+  metavar: 'text',
+})
+p.add_command('commit', 'Commit changes', {
+  type: args.STRING,
+  metavar: 'message',
+})
 p.parse(['-h'])

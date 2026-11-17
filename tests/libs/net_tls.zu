@@ -102,7 +102,10 @@ echo '════════════════════════�
 # ---------------------------------------------------------------------------
 var ch1 = isolate.channel(1)
 var task1 = isolate.spawn(
-  net_tls_server.echo_server, ch1, server_cert, server_key,
+  net_tls_server.echo_server,
+  ch1,
+  server_cert,
+  server_key,
 )
 var addr1 = ch1.recv()
 
@@ -126,7 +129,10 @@ ok('client/server echo round-trip over a verified certificate chain')
 # ---------------------------------------------------------------------------
 var ch2 = isolate.channel(1)
 var task2 = isolate.spawn(
-  net_tls_server.echo_server, ch2, server_cert, server_key,
+  net_tls_server.echo_server,
+  ch2,
+  server_cert,
+  server_key,
 )
 var addr2 = ch2.recv()
 
@@ -137,7 +143,7 @@ tcp2.connect(addr2)
 assert raises(@() {
   tls.TlsStream.connect(tcp2, config2, 'localhost')
 }),
-  'connecting without trusting the test CA must raise'
+    'connecting without trusting the test CA must raise'
 ok('untrusted certificate is rejected')
 
 # ---------------------------------------------------------------------------
@@ -145,7 +151,12 @@ ok('untrusted certificate is rejected')
 # ---------------------------------------------------------------------------
 var ch3 = isolate.channel(1)
 var task3 = isolate.spawn(
-  net_tls_server.mutual_tls_server, ch3, server_cert, server_key, ca_cert)
+  net_tls_server.mutual_tls_server,
+  ch3,
+  server_cert,
+  server_key,
+  ca_cert,
+)
 var addr3 = ch3.recv()
 
 var config3 = tls.TlsConfig()
@@ -161,7 +172,7 @@ stream3.close()
 task3.join()
 
 assert reply3 == 'subject:CN=test-client',
-  'server must see and report the client certificate subject'
+    'server must see and report the client certificate subject'
 ok('mutual TLS: server verifies and reads the client certificate')
 
 # ---------------------------------------------------------------------------
@@ -169,7 +180,12 @@ ok('mutual TLS: server verifies and reads the client certificate')
 # ---------------------------------------------------------------------------
 var ch4 = isolate.channel(1)
 var task4 = isolate.spawn(
-  net_tls_server.alpn_server, ch4, server_cert, server_key, ['h2', 'http/1.1'])
+  net_tls_server.alpn_server,
+  ch4,
+  server_cert,
+  server_key,
+  ['h2', 'http/1.1'],
+)
 var addr4 = ch4.recv()
 
 var config4 = tls.TlsConfig()
@@ -180,7 +196,7 @@ var tcp4 = net.TcpStream()
 tcp4.connect(addr4)
 var stream4 = tls.TlsStream.connect(tcp4, config4, 'localhost')
 assert stream4.alpn_protocol() == 'http/1.1',
-  'client must see the negotiated ALPN protocol too'
+    'client must see the negotiated ALPN protocol too'
 # The server never reads from the client here, it just replies and
 # closes - so, unlike the echo/mTLS scenarios, there's nothing for the
 # client to signal EOF on first; shutdown() before reading would just
@@ -190,7 +206,7 @@ stream4.close()
 task4.join()
 
 assert reply4 == 'negotiated:http/1.1',
-  'client and server must negotiate the one protocol they both offer'
+    'client and server must negotiate the one protocol they both offer'
 ok('ALPN negotiation picks the overlapping protocol')
 
 # ---------------------------------------------------------------------------
@@ -198,7 +214,10 @@ ok('ALPN negotiation picks the overlapping protocol')
 # ---------------------------------------------------------------------------
 var ch5 = isolate.channel(1)
 var task5 = isolate.spawn(
-  net_tls_server.starttls_server, ch5, server_cert, server_key,
+  net_tls_server.starttls_server,
+  ch5,
+  server_cert,
+  server_key,
 )
 var addr5 = ch5.recv()
 
@@ -215,9 +234,9 @@ stream5.close()
 task5.join()
 
 assert greeting.to_string() == '220 ready\r\n',
-  'must read the plaintext greeting first'
+    'must read the plaintext greeting first'
 assert reply5.to_string() == 'secure-hello',
-  'the connection must be encrypted, and usable, after the STARTTLS upgrade'
+    'the connection must be encrypted, and usable, after the STARTTLS upgrade'
 ok('STARTTLS-style upgrade after a plaintext greeting')
 
 # ---------------------------------------------------------------------------
@@ -226,7 +245,10 @@ ok('STARTTLS-style upgrade after a plaintext greeting')
 # ---------------------------------------------------------------------------
 var ch6 = isolate.channel(1)
 var task6 = isolate.spawn(
-  net_tls_server.non_blocking_server, ch6, server_cert, server_key,
+  net_tls_server.non_blocking_server,
+  ch6,
+  server_cert,
+  server_key,
 )
 var addr6 = ch6.recv()
 
@@ -262,7 +284,7 @@ stream6.close()
 task6.join()
 
 assert reply6 == 'ok',
-  'the stream must be fully usable once the handshake completes'
+    'the stream must be fully usable once the handshake completes'
 ok('TLS handshake completes correctly over a non-blocking socket')
 
 # ===========================================================================

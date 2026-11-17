@@ -10,8 +10,7 @@ def raises(fn) {
   catch {
     fn()
     return false
-  } as _error {
-  }
+  } as _error {}
 
   return true
 }
@@ -37,8 +36,7 @@ def test_commit_and_rollback() {
       tx.insert('t', { name: 'discarded' }, nil)
       raise Error('stop')
     }, nil)
-  } as _error {
-  }
+  } as _error {}
 
   assert db.count('t', nil) == 1
   assert !db.in_transaction()
@@ -63,8 +61,7 @@ def test_nesting() {
         inner.insert('t', { name: 'inner' }, nil)
         raise Error('inner fails')
       }, nil)
-    } as _error {
-    }
+    } as _error {}
 
     outer.insert('t', { name: 'after' }, nil)
   }, nil)
@@ -187,15 +184,23 @@ def test_transaction_reads() {
   var db = fresh()
 
   db.transaction(@(tx) {
-    assert tx.insert_many('t', [{ name: 'a' }, { name: 'b' }, { name: 'c' }])
-      == 3
+    assert tx.insert_many('t', [
+          { name: 'a' },
+          { name: 'b' },
+          { name: 'c' },
+        ]) ==
+        3
 
     # A read inside the transaction sees what the transaction has
     # written and nobody else has yet.
     assert tx.count('t', nil) == 3
     assert tx.count('t', { name: 'b' }) == 1
-    assert tx.find('t', nil, { order: ['name desc'] }).column('name') ==
-      ['c', 'b', 'a']
+    assert tx
+            .find('t', nil, {
+              order: ['name desc'],
+            })
+            .column('name') ==
+        ['c', 'b', 'a']
     assert tx.find_one('t', { name: 'b' }, nil).name == 'b'
     assert tx.find_one('t', { name: 'nobody' }, nil) == nil
   }, nil)
@@ -209,8 +214,7 @@ def test_transaction_reads() {
       assert tx.count('t', nil) == 4
       raise Error('stop')
     }, nil)
-  } as _error {
-  }
+  } as _error {}
 
   assert db.count('t', nil) == 3
 
@@ -228,7 +232,9 @@ def test_transaction_reads() {
     tx.find_one('t', nil, nil)
   })
   assert raises(@() {
-    tx.insert_many('t', [{ name: 'e' }])
+    tx.insert_many('t', [
+      { name: 'e' },
+    ])
   })
 
   db.close()
@@ -250,22 +256,30 @@ def test_transaction_scripts_and_cursors() {
 
   catch {
     db.transaction(@(tx) {
-      tx.exec_script('create table dropped (n integer); insert into dropped values (1);')
+      tx.exec_script(
+        'create table dropped (n integer); insert into dropped values (1);',
+      )
       raise Error('stop')
     }, nil)
-  } as _error {
-  }
+  } as _error {}
 
-  assert db.fetch_column(
-    "select name from sqlite_master where type = 'table' and name = 'dropped'",
-    nil, nil,
-  ).is_empty()
+  assert db
+      .fetch_column(
+        "select name from sqlite_master where type = 'table' and name = 'dropped'",
+        nil,
+        nil,
+      )
+      .is_empty()
 
   db.transaction(@(tx) {
-    tx.insert_many('t', [{ name: 'a' }, { name: 'b' }, { name: 'c' }])
+    tx.insert_many('t', [
+      { name: 'a' },
+      { name: 'b' },
+      { name: 'c' },
+    ])
 
-    assert tx.fetch_column('select name from t order by name', nil, nil)
-      == ['a', 'b', 'c']
+    assert tx.fetch_column('select name from t order by name', nil, nil) ==
+        ['a', 'b', 'c']
 
     var seen = []
 

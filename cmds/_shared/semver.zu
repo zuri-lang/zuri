@@ -43,15 +43,15 @@ import .errors { UsageError }
  */
 class SemverError < UsageError {}
 
-var _CORE = '/^v?(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)'
-  + '(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?'
-  + '(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$/'
+var _CORE = '/^v?(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)' +
+    '(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?' +
+    '(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$/'
 
-var _PARTIAL = '/^v?(\\*|x|X|0|[1-9][0-9]*)'
-  + '(?:\\.(\\*|x|X|0|[1-9][0-9]*))?'
-  + '(?:\\.(\\*|x|X|0|[1-9][0-9]*))?'
-  + '(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?'
-  + '(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$/'
+var _PARTIAL = '/^v?(\\*|x|X|0|[1-9][0-9]*)' +
+    '(?:\\.(\\*|x|X|0|[1-9][0-9]*))?' +
+    '(?:\\.(\\*|x|X|0|[1-9][0-9]*))?' +
+    '(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?' +
+    '(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$/'
 
 # Whether an identifier is all digits.
 def _is_numeric(text: string) {
@@ -232,8 +232,9 @@ class Version {
    * @returns bool
    */
   same_core(other) {
-    return self.major == other.major and self.minor == other.minor
-      and self.patch == other.patch
+    return self.major == other.major and
+        self.minor == other.minor and
+        self.patch == other.patch
   }
 
   /**
@@ -283,12 +284,12 @@ def parse(text: string) {
   # A numeric pre-release identifier with a leading zero is not
   # allowed, since `01` and `1` would otherwise be the same thing.
   for identifier in _identifiers(_group(found, 4)) {
-    if _is_numeric(identifier)
-      and identifier.length() > 1
-      and identifier.starts_with('0') {
+    if _is_numeric(identifier) and
+        identifier.length() > 1 and
+        identifier.starts_with('0') {
       raise SemverError(
-        "'${text}' is not a valid version; the pre-release number '${identifier}' "
-          + 'has a leading zero',
+        "'${text}' is not a valid version; the pre-release number '${identifier}' " +
+            'has a leading zero',
       )
     }
   }
@@ -456,8 +457,8 @@ def _desugar(term: string, whole: string) {
 
   if has_pre and patch == nil {
     raise SemverError(
-      "'${whole}' is not a valid version range; a pre-release needs all three "
-        + 'numbers in front of it',
+      "'${whole}' is not a valid version range; a pre-release needs all three " +
+          'numbers in front of it',
     )
   }
 
@@ -466,14 +467,19 @@ def _desugar(term: string, whole: string) {
   if major == nil {
     if op == '<' or op == '>' {
       # Nothing is below or above every version.
-      return [_Comparator('<', Version(0, 0, 0, ['0']), false)]
+      return [
+        _Comparator('<', Version(0, 0, 0, ['0']), false),
+      ]
     }
 
     return [_Comparator('>=', Version(0, 0, 0), false)]
   }
 
   var low = Version(
-    major, minor == nil ? 0 : minor, patch == nil ? 0 : patch, p.pre,
+    major,
+    minor == nil ? 0 : minor,
+    patch == nil ? 0 : patch,
+    p.pre,
   )
 
   # A written wildcard pins everything in front of it, the way `=`
@@ -510,8 +516,8 @@ def _desugar(term: string, whole: string) {
 
   if op == '~' {
     var high = minor == nil
-      ? _floor(major + 1, 0, 0)
-      : _floor(major, minor + 1, 0)
+        ? _floor(major + 1, 0, 0)
+        : _floor(major, minor + 1, 0)
 
     return [_Comparator('>=', low, has_pre), _Comparator('<', high, false)]
   }
@@ -522,8 +528,8 @@ def _desugar(term: string, whole: string) {
     }
 
     var high = minor == nil
-      ? _floor(major + 1, 0, 0)
-      : _floor(major, minor + 1, 0)
+        ? _floor(major + 1, 0, 0)
+        : _floor(major, minor + 1, 0)
 
     return [_Comparator('>=', low, false), _Comparator('<', high, false)]
   }
@@ -546,8 +552,8 @@ def _desugar(term: string, whole: string) {
     }
 
     var next = minor == nil
-      ? Version(major + 1, 0, 0)
-      : Version(major, minor + 1, 0)
+        ? Version(major + 1, 0, 0)
+        : Version(major, minor + 1, 0)
 
     return [_Comparator('>=', next, false)]
   }
@@ -558,8 +564,8 @@ def _desugar(term: string, whole: string) {
   }
 
   var ceiling = minor == nil
-    ? _floor(major + 1, 0, 0)
-    : _floor(major, minor + 1, 0)
+      ? _floor(major + 1, 0, 0)
+      : _floor(major, minor + 1, 0)
 
   return [_Comparator('<', ceiling, false)]
 }
@@ -640,8 +646,9 @@ class Range {
    * @returns bool
    */
   is_exact() {
-    return self._sets.length() == 1 and self._sets[0].length() == 1
-      and self._sets[0][0].op == '='
+    return self._sets.length() == 1 and
+        self._sets[0].length() == 1 and
+        self._sets[0][0].op == '='
   }
 
   /**
@@ -670,8 +677,9 @@ def _set_satisfies(set: list, version) {
   }
 
   for comparator in set {
-    if comparator.explicit and comparator.version.is_prerelease()
-      and comparator.version.same_core(version) {
+    if comparator.explicit and
+        comparator.version.is_prerelease() and
+        comparator.version.same_core(version) {
       return true
     }
   }
@@ -776,8 +784,8 @@ def max_satisfying(versions: list, within) {
   for text in versions {
     var version = parse(text)
 
-    if within.satisfies(version)
-      and (best == nil or version.compare(best) > 0) {
+    if within.satisfies(version) and
+        (best == nil or version.compare(best) > 0) {
       best = version
       best_text = text
     }

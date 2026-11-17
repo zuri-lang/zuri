@@ -1,12 +1,12 @@
 # Appendix D: Built-in Functions
 
-These functions are available in every file with no import. They are the
-parts of the language that happen to be spelled as calls rather than as
-syntax.
+These functions are available in every file, without an import. They are
+the parts of the language that are written as function calls instead of
+as syntax.
 
 | Function | Returns | Summary |
 | --- | --- | --- |
-| [`time()`](#time) | `number` | Returns the current epoch time to the microseconds resolution. |
+| [`time()`](#time) | `number` | Returns the current time as a Unix timestamp, with microsecond resolution. |
 | [`sum(...values: list)`](#sum) | `number` | Calculates the sum of all the elements passed as arguments. |
 | [`bytes(x: number\|list)`](#bytes) | `bytes\|any` | If x is a number, this function returns a new `bytes` object with length x having all its bytes set to `0x0`. |
 | [`file(path: string, mode: ?string)`](#file) | `file` | Returns an open file handle to the file specified in the path in the specified mode. |
@@ -17,9 +17,9 @@ syntax.
 | [`hasprop(object: instance, name: string)`](#hasprop) | `boolean` | Returns true if the property name exists in the given instance of object. |
 | [`setprop(obj: instance, prop: string, value)`](#setprop) | `boolean` | Sets the value of the object's property with the matching name to the given value. |
 | [`id(x)`](#id) | `number` | Returns the unique identifier of value x within the system. |
-| [`print(...values: list)`](#print) | `void` | Prints the given arguments to standard output. |
+| [`print(...values: list)`](#print) | `void` | Writes its arguments to standard output. |
 | [`rand(x: ?number, y: ?number)`](#rand) | `number` | If no argument is given, returns a random number between 0 and 1. |
-| [`is_bigint(x)`](#is_bigint) | `boolean` | Returns `true` if x is a bigint or `false` otherwise. |
+| [`is_bigint(x)`](#is_bigint) | `boolean` | Returns `true` if `x` is a bigint, and `false` otherwise. |
 | [`is_bool(x)`](#is_bool) | `boolean` | Returns `true` if x is a boolean or `false` otherwise. |
 | [`is_callable(x)`](#is_callable) | `boolean` | Returns `true` if x is a callable or `false` otherwise. |
 | [`is_class(x)`](#is_class) | `boolean` | Returns `true` if x is a class or `false` otherwise. |
@@ -41,23 +41,23 @@ syntax.
 time() -> number
 ```
 
-Returns the current epoch time to the microseconds resolution.
+Returns the current time as a Unix timestamp, with microsecond
+resolution.
 
-Example:
+For example:
 
 ```zuri-repl
 %> time()
 1686787200.123456
 ```
 
-The time is returned as a floating point number where the integer part
-represents the number of seconds since the epoch and the fractional part
-represents the microseconds.
+The result is a floating-point number. The integer part is the number of
+seconds since the Unix epoch, and the fractional part holds the
+microseconds.
 
 **Returns** `number`
 
-> **Note:** The epoch time is the number of seconds that have elapsed
-> since January 1, 1970 (midnight UTC/GMT).
+> **Note:** The Unix epoch is midnight UTC on January 1, 1970.
 
 ## `sum()`
 
@@ -102,7 +102,7 @@ bytes specified in the list.
 
 **Parameters**
 
-- `x` (`number|list`) — The number or list to convert to bytes.
+- `x` (`number|list`): The number or list to convert to bytes.
 
 **Returns** `bytes|any`
 
@@ -146,8 +146,8 @@ the mode for lock files. The failure comes on the first read, write or
 
 **Parameters**
 
-- `path` (`string`) — The path to the file to open.
-- `mode` (`?string`) — The mode to open the file in.
+- `path` (`string`): The path to the file to open.
+- `mode` (`?string`): The mode to open the file in.
 
 **Returns** `file`
 
@@ -162,8 +162,8 @@ otherwise.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
-- `y` (`class`) — The class to check for.
+- `x` (`any`): The value to check.
+- `y` (`class`): The class to check for.
 
 **Returns** `boolean`
 
@@ -177,7 +177,7 @@ Returns the type of the given value as a string.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
+- `x` (`any`): The value to check.
 
 **Returns** `string`
 
@@ -191,8 +191,8 @@ Deletes the property name from the given instance of object.
 
 **Parameters**
 
-- `object` (`instance`) — The instance to delete the property from.
-- `name` (`string`) — The name of the property to delete.
+- `object` (`instance`): The instance to delete the property from.
+- `name` (`string`): The name of the property to delete.
 
 **Returns** `void`
 
@@ -207,8 +207,8 @@ object. If the object has no such property, `nil` is returned.
 
 **Parameters**
 
-- `object` (`instance`) — The instance to get the property from.
-- `name` (`string`) — The name of the property to get.
+- `object` (`instance`): The instance to get the property from.
+- `name` (`string`): The name of the property to get.
 
 **Returns** `any|nil`
 
@@ -223,8 +223,8 @@ object. If the object has no such property, `false` is returned.
 
 **Parameters**
 
-- `object` (`instance`) — The instance to check for the property.
-- `name` (`string`) — The name of the property to check.
+- `object` (`instance`): The instance to check for the property.
+- `name` (`string`): The name of the property to check.
 
 **Returns** `boolean`
 
@@ -240,9 +240,9 @@ returns `true`, otherwise it returns `false`.
 
 **Parameters**
 
-- `obj` (`instance`) — The object to set the property of.
-- `prop` (`string`) — The property to set.
-- `value` (`any`) — The value to set the property to.
+- `obj` (`instance`): The object to set the property of.
+- `prop` (`string`): The property to set.
+- `value` (`any`): The value to set the property to.
 
 **Returns** `boolean`
 
@@ -257,7 +257,7 @@ is also equivalent to the current address of object x in memory.
 
 **Parameters**
 
-- `x` (`any`) — The value to get the identifier of.
+- `x` (`any`): The value to get the identifier of.
 
 **Returns** `number`
 
@@ -267,22 +267,21 @@ is also equivalent to the current address of object x in memory.
 print(...values: list) -> void
 ```
 
-Prints the given arguments to standard output.
+Writes its arguments to standard output.
 
-Unlike `echo` (which always appends a newline and only ever prints one
-value), `print()` writes every argument back-to-back with no separator
-and no trailing newline. It also critically writes a `bytes` object as
-RAW bytes rather than its `Display` text. That raw-byte path is what
-lets a script stream binary output (e.g. a PBM/PNG image body one
-scanline at a time).
+Unlike `echo`, which always adds a line break and only prints one value,
+`print()` writes all its arguments one after another, with no separator
+and no line break at the end. It also writes a `bytes` value as raw
+bytes, instead of as its text representation, so a script can stream
+binary output, such as the body of a PBM or PNG image one row at a time.
 
 **Parameters**
 
-- `values` (`...any`) — Any number of arguments to print
+- `values` (`...any`): the values to print
 
 **Returns** `void`
 
-> **Note:** In the REPL, it also appends a newline at the end.
+> **Note:** In the REPL, it also adds a line break at the end.
 
 ## `rand()`
 
@@ -296,8 +295,8 @@ returns a random number between x and y.
 
 **Parameters**
 
-- `x` (`?number`) — The lower bound of the random number.
-- `y` (`?number`) — The upper bound of the random number.
+- `x` (`?number`): The lower bound of the random number.
+- `y` (`?number`): The upper bound of the random number.
 
 **Returns** `number`
 
@@ -307,16 +306,16 @@ returns a random number between x and y.
 is_bigint(x) -> boolean
 ```
 
-Returns `true` if x is a bigint or `false` otherwise. A bigint is a
-distinct type from `number` created either with the `n` literal suffix
-(`123n`) or by an operation whose result overflows what a regular
-`number` can represent exactly. `is_number(x)` and `is_int(x)` are both
-`false` for a bigint even though it holds an integer value; check
-`is_bigint(x)` separately when a value might be either.
+Returns `true` if `x` is a bigint, and `false` otherwise. A bigint is a
+different type from `number`, created either with the `n` suffix on a
+literal (`123n`) or by an integer literal too large for a signed 64-bit
+integer. `is_number(x)` and `is_int(x)` both return `false` for a
+bigint, even though it holds an integer, so check `is_bigint(x)`
+separately when a value could be either.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
+- `x` (`any`): The value to check.
 
 **Returns** `boolean`
 
@@ -330,7 +329,7 @@ Returns `true` if x is a boolean or `false` otherwise.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
+- `x` (`any`): The value to check.
 
 **Returns** `boolean`
 
@@ -345,7 +344,7 @@ includes classes, functions, methods and closures.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
+- `x` (`any`): The value to check.
 
 **Returns** `boolean`
 
@@ -359,7 +358,7 @@ Returns `true` if x is a class or `false` otherwise.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
+- `x` (`any`): The value to check.
 
 **Returns** `boolean`
 
@@ -373,7 +372,7 @@ Returns `true` if x is a dictionary or `false` otherwise.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
+- `x` (`any`): The value to check.
 
 **Returns** `boolean`
 
@@ -387,7 +386,7 @@ Returns `true` if x is a function or `false` otherwise.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
+- `x` (`any`): The value to check.
 
 **Returns** `boolean`
 
@@ -401,7 +400,7 @@ Returns `true` if x is an instance of any class or `false` otherwise.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
+- `x` (`any`): The value to check.
 
 **Returns** `boolean`
 
@@ -415,7 +414,7 @@ Returns `true` if x is an integer or `false` otherwise.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
+- `x` (`any`): The value to check.
 
 **Returns** `boolean`
 
@@ -429,7 +428,7 @@ Returns `true` if x is a list or `false` otherwise.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
+- `x` (`any`): The value to check.
 
 **Returns** `boolean`
 
@@ -443,7 +442,7 @@ Returns `true` if x is a number or `false` otherwise.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
+- `x` (`any`): The value to check.
 
 **Returns** `boolean`
 
@@ -457,7 +456,7 @@ Returns `true` if x is an object or `false` otherwise.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
+- `x` (`any`): The value to check.
 
 **Returns** `boolean`
 
@@ -471,7 +470,7 @@ Returns `true` if x is a string or `false` otherwise.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
+- `x` (`any`): The value to check.
 
 **Returns** `boolean`
 
@@ -485,7 +484,7 @@ Returns `true` if x is bytes or `false` otherwise.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
+- `x` (`any`): The value to check.
 
 **Returns** `boolean`
 
@@ -499,7 +498,7 @@ Returns `true` if x is a file or `false` otherwise.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
+- `x` (`any`): The value to check.
 
 **Returns** `boolean`
 
@@ -515,29 +514,29 @@ any class that defines both `@key()` and `@value()` decorator functions.
 
 **Parameters**
 
-- `x` (`any`) — The value to check.
+- `x` (`any`): The value to check.
 
 **Returns** `boolean`
 
 # Module Variables
 
-Every file also has these variables, which describe the file itself
-rather than anything it declares.
+Every file also has these variables, which describe the file itself, not
+anything it declares.
 
 ## `__file__`
 
-The path of the file it is read in. In the file a program was started
-from, it is the path the program was started with; in an imported
-module, it is the module's full path.
+The path of the file in which it's used. In the file that the program
+was started from, it's the path the program was started with. In an
+imported module, it's the module's full path.
 
 **Type** `string`
 
 ## `__root__`
 
-The path of the file the program was started from, the same in every
-module of one run and in every isolate, so `__root__ == __file__` holds
-in that one file alone. That is how a file serves both as a module
-others import and as a program of its own:
+The path of the file that the program was started from. It's the same in
+every module and every isolate of a single run, so `__root__ == __file__`
+is only true in that one file. That's how a file can work both as a
+module that other files import and as a program by itself:
 
 ```zuri,ignore
 def main() {
@@ -549,7 +548,7 @@ if __root__ == __file__ {
 }
 ```
 
-`__root__` and `__file__` are both set when a file runs; the REPL, which
-runs no file, defines neither.
+`__root__` and `__file__` are both set when a file runs. The REPL
+doesn't run a file, so it defines neither.
 
 **Type** `string`

@@ -1,18 +1,18 @@
 # Introduction
 
-Welcome. Open a terminal, keep it next to this page, and let's begin.
+Welcome! Open a terminal next to this page and let's get started.
 
-This book teaches Zuri. It starts with installing the language and printing
-a line of text, and it ends with a task-board web application that stores
-data on disk, renders HTML from templates, serves a JSON API, and runs
-behind a stack of middleware. Everything in between is the road from one to
-the other.
+This book teaches you Zuri. It starts with installing the language and
+printing a line of text, and it ends with a task-board web application that
+stores its data on disk, renders HTML from templates, serves a JSON API and
+runs behind several layers of middleware. The chapters in between cover
+everything you need to get from the first program to the last.
 
 ## What Zuri Looks Like
 
-Here is a complete program. You do not need to understand all of it yet;
-read it the way you would read a paragraph in a language you are learning,
-and see how much comes through.
+Here is a complete program. Don't worry about understanding all of it yet.
+Read it the way you'd read a paragraph in a language you're learning, and
+see how much of it makes sense.
 
 ```zuri
 class Account {
@@ -36,10 +36,7 @@ class Account {
   }
 }
 
-var accounts = [
-  Account('ada', 100),
-  Account('grace', 250),
-]
+var accounts = [Account('ada', 100), Account('grace', 250)]
 
 for account in accounts {
   account.deposit(50)
@@ -52,129 +49,129 @@ ada: 150
 grace: 300
 ```
 
-Most of that will be familiar if you have written code before. The pieces
-worth pointing at now, because they come up on the very first page of
-Chapter 3:
+If you've programmed before, most of this will look familiar. A few things
+are worth pointing out now, because you'll see them again as soon as Chapter
+3:
 
 - `var` declares a variable, and `class` declares a class.
-- A constructor is called `@new`. Methods whose names begin with `@` hook
-  into the language's own syntax, and Chapter 6 covers the full set.
-- `self` refers to the instance, and reading a field always goes through
-  it: `self.balance`, never a bare `balance`.
-- `'${...}'` interpolates an expression into a string.
-- `echo` prints a value and a newline.
-- `raise` signals an error; Chapter 7 shows how to catch one.
-- Every block is written with braces, and every control-flow statement
-  requires one.
+- The constructor is named `@new`. Methods whose names start with `@` hook
+  into the language's own syntax. Chapter 6 lists all of them.
+- `self` refers to the current instance, and you always read a field through
+  it. You write `self.balance`, never just `balance`.
+- `'${...}'` inserts the value of an expression into a string.
+- `echo` prints a value followed by a newline.
+- `raise` raises an error. Chapter 7 explains how to catch one.
+- Blocks are written with braces, and every control flow statement needs
+  them.
 
 ## What Comes With Zuri
 
-Installing Zuri installs its whole toolchain with it. Every tool is a
-subcommand of `zuri`, and every one has its place in this book:
+When you install Zuri, you get its whole toolchain as well. Each tool is a
+subcommand of `zuri`, and each one is covered somewhere in this book:
 
 | Command | What it does | Where |
 | --- | --- | --- |
-| `zuri` | the interactive REPL | [Chapter 1](ch01-03-the-repl.md) |
-| `zuri run` | runs a script, a package or a directory | [Chapter 1](ch01-02-hello-world.md) |
-| `zuri init` | starts a project | [Chapter 1](ch01-02-hello-world.md#starting-a-project) |
-| `zuri fmt` | lays out Zuri source in the house style | [Chapter 1](ch01-02-hello-world.md#formatting) |
-| `zuri test` | runs a project's tests | [Chapter 23](ch23-00-testing.md) |
-| `zuri migrate` | applies and rolls back database migrations | [Chapter 17](ch17-02-migrations.md) |
-| `zuri lsp` | the language server behind your editor | [Chapter 29](ch29-00-editors.md) |
-| `zuri install` | adds packages, resolved into a lockfile | [Chapter 27](ch27-02-installing.md) |
-| `zuri publish` | shares a package on a registry | [Chapter 27](ch27-03-publishing.md) |
-| `zuri serve` | runs Nyssa, a package registry of your own | [Chapter 27](ch27-06-nyssa.md) |
-| `zuri bundle` | ships a program to machines without Zuri | [Chapter 27](ch27-05-bundles.md) |
-| `zuri upgrade` | moves the installation to a newer release | [Chapter 27](ch27-05-bundles.md#upgrading-zuri) |
+| `zuri` | Starts the interactive REPL | [Chapter 1](ch01-03-the-repl.md) |
+| `zuri run` | Runs a script, a package or a directory | [Chapter 1](ch01-02-hello-world.md) |
+| `zuri init` | Creates a new project | [Chapter 1](ch01-02-hello-world.md#starting-a-project) |
+| `zuri fmt` | Formats Zuri source code | [Chapter 1](ch01-02-hello-world.md#formatting) |
+| `zuri test` | Runs a project's tests | [Chapter 23](ch23-00-testing.md) |
+| `zuri migrate` | Applies and rolls back database migrations | [Chapter 17](ch17-02-migrations.md) |
+| `zuri lsp` | Runs the language server that your editor talks to | [Chapter 29](ch29-00-editors.md) |
+| `zuri doc` | Builds a documentation site (like this book) from Markdown, and an API reference from doc comments | [Chapter 30](ch30-00-documentation.md) |
+| `zuri install` | Adds packages to a project and records them in a lockfile | [Chapter 27](ch27-02-installing.md) |
+| `zuri publish` | Publishes a package to a registry | [Chapter 27](ch27-03-publishing.md) |
+| `zuri serve` | Runs Nyssa, your own package registry | [Chapter 27](ch27-06-nyssa.md) |
+| `zuri bundle` | Packages a program to run on machines without Zuri | [Chapter 27](ch27-05-bundles.md) |
+| `zuri upgrade` | Updates Zuri to a newer release | [Chapter 27](ch27-05-bundles.md#upgrading-zuri) |
 
-A project adds commands of its own the same way, and so can a package;
-[Appendix I](appendix-09-commands.md) shows how.
+Projects and packages can add their own commands too. [Appendix
+I](appendix-09-commands.md) shows how.
 
 ## Who This Book Is For
 
-Chapters 1 through 6 assume you can open a terminal and nothing else. If
-this is your first programming language, start at the beginning and go
-slowly. Every idea is introduced before it is used, and every example is
-short enough to type out.
+Chapters 1 through 6 assume only that you know how to open a terminal. If
+Zuri is your first programming language, start at the beginning and take
+your time. Each idea is explained before it's used, and the examples are
+short enough to type in yourself.
 
-If you already write Python, JavaScript, Ruby, Go or Java, you can move
-through Chapters 3 to 5 quickly. Read [Appendix H](appendix-08-coming-from.md)
-first: it lists the places where Zuri does something different from what
-the same syntax does in the language you already know, which is where the
-hours get lost.
+If you already know Python, JavaScript, Ruby, Go or Java, you can skim
+Chapters 3 to 5. Read [Appendix H](appendix-08-coming-from.md) first,
+though. It lists the places where Zuri behaves differently from the language
+you know, even when the syntax looks the same, and those are the places
+where you're most likely to get stuck.
 
-## How This Book Is Organised
+## How This Book Is Organized
 
-**Getting started**, Chapters 1 and 2. Install the language, run something,
-start a project and format it, then build a small command-line application
-end to end so you have seen the shape of a real program before we take one
-apart.
+**Getting started**, Chapters 1 and 2. You'll install the language, run some
+code, create and format a project, and then build a small command-line
+application from start to finish, so you've seen what a real program looks
+like before we go through the language piece by piece.
 
 **The language**, Chapters 3 to 8. Variables, types, operators, control
-flow, strings, numbers, collections, functions, closures, type
-annotations, classes, inheritance, decorated methods, errors and modules.
-Read these in order.
+flow, strings, numbers, collections, functions, closures, type annotations,
+classes, inheritance, decorated methods, error handling and modules. These
+chapters are best read in order.
 
 **The world outside your program**, Chapters 9 to 13. Files, binary data
 and byte streams, isolates and concurrency, sockets and networking, and a
 tour of the standard library.
 
-**The large modules**, Chapters 14 to 20. Wire for templating, HTTP for
-clients and servers, Imagine for images, SQL for databases, Mail for the
-three protocols that move messages, env for the configuration all of them
-read, and args for the command line they are started from. Each is big
-enough to need a chapter of its own, and each is a reference you will come
-back to.
+**The large modules**, Chapters 14 to 20. Wire for templates, HTTP for
+clients and servers, Imagine for images, SQL for databases, Mail for sending
+and receiving email, env for configuration, and args for parsing the command
+line. Each of these modules is big enough for a chapter of its own, and
+you'll probably come back to them as a reference.
 
-**Depth**, Chapters 21 to 24. Reflection and the compiler API, how Zuri
-executes your code and how to make it faster, how to test it, and how to
-debug a program that is doing something you did not expect.
+**Going deeper**, Chapters 21 to 24. Reflection and the compiler API, how
+Zuri runs your code and how to make it faster, how to test it, and how to
+debug a program that isn't doing what you expected.
 
-**The capstone**, Chapter 25. One application, built in seven steps, using
-almost everything the book has covered.
+**The capstone project**, Chapter 25. A single application, built in seven
+steps, that uses most of what the book has covered.
 
-**Interoperability**, Chapter 26. Calling C and Rust libraries, and being
-called back by them.
+**Interoperability**, Chapter 26. Calling C and Rust libraries, and letting
+them call back into Zuri.
 
 **Sharing and shipping**, Chapter 27. Installing and publishing packages,
-the lockfile, packaging a program to run where Zuri is not installed, and
-running Nyssa, the package repository, for a team or the public.
+the lockfile, bundling a program so it runs where Zuri isn't installed, and
+running Nyssa, the package registry, for your team or for the public.
 
-**Talking to other programs**, Chapter 28. JSON-RPC, for calling methods on
-another program and answering its calls over any connection.
+**Talking to other programs**, Chapter 28. JSON-RPC, for calling methods in
+another program and handling its calls over any kind of connection.
 
-**Tooling**, Chapter 29. The language server, and setting up your editor
-to use it.
+**Tools**, Chapters 29 and 30. The language server and how to set up your
+editor to use it, and building documentation with `zuri doc`.
 
 **Appendices.** Keywords, operators and precedence, decorated methods,
-built-in functions, every method on every built-in type, the standard
-library index, the error hierarchy, the notes for readers arriving from
-another language, and writing commands of your own. These are reference material; the rest of the book is
-prose.
+built-in functions, the methods of every built-in type, an index of the
+standard library, the error hierarchy, notes for readers coming from other
+languages, and how to write your own commands. The appendices are meant for
+looking things up, while the chapters are meant to be read.
 
 ## How to Read It
 
-Read it with the interpreter running. Zuri has a REPL, every short example
-in this book can be pasted straight into it, and the fastest way to
-understand a rule is to break it on purpose and read the error.
+Keep the REPL open while you read. You can paste any of the short examples
+straight into it, and one of the quickest ways to understand a rule is to
+break it deliberately and read the error message.
 
-Chapters build on each other. When a chapter needs something from later in
-the book, it says so and links to it, and you can carry on without
-following the link. When a chapter introduces something you will need
-again, it says that too.
+The chapters build on each other. When a chapter mentions something that's
+covered later, it links to it, but you can keep reading without following
+the link. When a chapter introduces something you'll need again later, it
+tells you.
 
 ## Conventions
 
-Commands you type in a shell appear with a `$` prompt, and the output
-follows underneath:
+Commands that you type in a shell are shown with a `$` prompt, followed by
+their output:
 
 ```console
 $ zuri run main.zu
 Hello, world!
 ```
 
-Code that belongs in a file appears with the filename above it when the
-filename matters:
+When the file name matters, code that belongs in a file is shown with the
+name above it:
 
 <span class="filename">Filename: main.zu</span>
 
@@ -182,9 +179,8 @@ filename matters:
 echo 'Hello, world!'
 ```
 
-Sessions in the interactive prompt use `%>` for the first line of an input
-and `..` for its continuations, which is exactly what the REPL itself
-prints:
+Sessions in the REPL use `%>` for the first line of input and `..` for each
+continuation line, which is what the REPL itself prints:
 
 ```zuri
 %> var name = 'zuri'
@@ -192,9 +188,7 @@ prints:
 'ZURI'
 ```
 
-Where a rule has an exception, the exception is stated in the same
-paragraph as the rule. Where a limit exists, it is stated as a limit.
-Nothing in this book is a guess about how the language behaves; every claim
-was checked by running it.
+All of the examples in this book were run to check that they behave as
+described.
 
 Let's get started.

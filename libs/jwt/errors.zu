@@ -1,10 +1,9 @@
 /**
  * @module jwt.errors
  *
- * The full error hierarchy raised by the `jwt` module. All of them
- * inherit from `JwtError`, so a caller who just wants to catch
- * "something went wrong with this token" only needs to catch that
- * one class.
+ * The errors that the `jwt` module raises. They all inherit from
+ * `JwtError`, so if you only want to catch any problem with a token,
+ * you only need to catch that one class.
  */
 
 /**
@@ -48,11 +47,11 @@ class SignatureError < JwtError {
 }
 
 /**
- * Raised when a token's temporal claims fail validation:
+ * Raised when a token's time claims fail validation:
  *
- * - `exp` (expiry): token has expired - `nbf` (not before):
- * token is not yet valid - `iat` (issued at): token was issued
- * in the future
+ * - `exp` (expiration time): the token has expired.
+ * - `nbf` (not before): the token isn't valid yet.
+ * - `iat` (issued at): the token was issued in the future.
  */
 class TokenExpiredError < JwtError {
   @new(message) {

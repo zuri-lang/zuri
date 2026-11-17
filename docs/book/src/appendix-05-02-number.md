@@ -1,23 +1,22 @@
 # Number Methods
 
-Every method on the built-in `number` type, with its signature, what it
-returns, and the cases where it does something other than the obvious
-thing.
+Every method of the built-in `number` type, with its signature, what it
+returns, and any behavior you might not expect.
 
 | Method | Returns | Summary |
 | --- | --- | --- |
 | [`to_string()`](#to_string) | `string` | Returns the string representation of the number. |
 | [`to_bool()`](#to_bool) | `boolean` | Converts the number to a boolean, by the same rule `if` uses. |
-| [`to_bigint()`](#to_bigint) | `bigint` | Converts the number to a `bigint`, the counterpart to `bigint.to_number()`. |
+| [`to_bigint()`](#to_bigint) | `bigint` | Converts the number to a `bigint`. |
 | [`abs()`](#abs) | `number` | Returns the absolute value of the number. |
 | [`chr()`](#chr) | `string` | Returns the Unicode character whose code point is equal to the number. |
-| [`bin()`](#bin) | `string` | Converts the number to its binary string representation. |
-| [`hex()`](#hex) | `string` | Converts the number to its hexadecimal string representation. |
-| [`oct()`](#oct) | `string` | Converts the number to its octal string representation. |
-| [`int()`](#int) | `number` | Truncates the number down to its integer part, discarding anything after the decimal point. |
+| [`bin()`](#bin) | `string` | Converts the number to a string of binary digits. |
+| [`hex()`](#hex) | `string` | Converts the number to a string of hexadecimal digits. |
+| [`oct()`](#oct) | `string` | Converts the number to a string of octal digits. |
+| [`int()`](#int) | `number` | Truncates the number to its integer part, discarding anything after the decimal point. |
 | [`max(other: number)`](#max) | `number` | Returns the larger of the number and _other_. |
 | [`min(other: number)`](#min) | `number` | Returns the smaller of the number and _other_. |
-| [`factorial()`](#factorial) | `number` | Returns the factorial of the number, i.e. |
+| [`factorial()`](#factorial) | `number` | Returns the factorial of the number, which is the product of every positive integer up to and including it. |
 | [`sin()`](#sin) | `number` | Returns the sine of the number, taken to be in radians. |
 | [`cos()`](#cos) | `number` | Returns the cosine of the number, taken to be in radians. |
 | [`tan()`](#tan) | `number` | Returns the tangent of the number, taken to be in radians. |
@@ -43,11 +42,11 @@ thing.
 | [`ceil()`](#ceil) | `number` | Returns the smallest whole number greater than or equal to the number. |
 | [`round()`](#round) | `number` | Rounds the number to the nearest whole number. |
 | [`floor()`](#floor) | `number` | Returns the largest whole number less than or equal to the number. |
-| [`is_nan()`](#is_nan) | `boolean` | Returns `true` if the number is NaN (not a number, e.g. |
+| [`is_nan()`](#is_nan) | `boolean` | Returns `true` if the number is NaN (not a number), such as the result of `0/0`, and `false` otherwise. |
 | [`is_inf()`](#is_inf) | `boolean` | Returns `true` if the number is positive or negative infinity, `false` otherwise. |
 | [`is_finite()`](#is_finite) | `boolean` | Returns `true` if the number is neither infinite nor NaN, `false` otherwise. |
-| [`trunc()`](#trunc) | `number` | Truncates the number towards zero, discarding anything after the decimal point. |
-| [`fraction()`](#fraction) | `number` | Returns the digits after the number's decimal point, read as a whole number rather than a fraction. |
+| [`trunc()`](#trunc) | `number` | Truncates the number toward zero, discarding anything after the decimal point. |
+| [`fraction()`](#fraction) | `number` | Returns the digits after the decimal point as a whole number, not as a fraction. |
 | [`fixed(n)`](#fixed) |  | Returns the number rounded to _n_ decimal places, with a half rounding away from zero the same way `round()` does. |
 
 ## `to_string()`
@@ -94,7 +93,7 @@ false
 to_bigint() -> bigint
 ```
 
-Converts the number to a `bigint`, the counterpart to
+Converts the number to a `bigint`. This is the counterpart of
 `bigint.to_number()`.
 
 ```zuri-repl
@@ -106,13 +105,13 @@ Converts the number to a `bigint`, the counterpart to
 
 **Returns** `bigint`
 
-**Raises** `RangeError` if the number is not an exact integer.
+**Raises** `RangeError` if the number isn't an exact integer.
 
-> **Note:** Only an exact integer has a `bigint` form, so a fractional
-> number, `Infinity` and `NaN` all raise rather than being rounded or
-> clamped. Numbers above `2^53` are already imprecise as doubles, so
-> converting one yields the exact integer the double holds, not the
-> decimal literal it was written as.
+> **Note:** Only an exact integer can be converted to a `bigint`, so a
+> fractional number, `Infinity` and `NaN` all raise an error, instead of
+> being rounded or clamped. A number above `2^53` is already imprecise as
+> a double, so converting it gives the exact integer that the double
+> holds, not the decimal literal it was written as.
 
 ## `abs()`
 
@@ -152,7 +151,7 @@ Returns the Unicode character whose code point is equal to the number.
 bin() -> string
 ```
 
-Converts the number to its binary string representation. The number is
+Converts the number to a string of binary digits. The number is
 truncated to an integer first.
 
 ```zuri-repl
@@ -162,8 +161,8 @@ truncated to an integer first.
 
 **Returns** `string`
 
-> **Note:** A negative number always returns `'0'`; there is no signed or
-> two's-complement form.
+> **Note:** A negative number always returns `'0'`. There's no signed or
+> two's complement form.
 
 ## `hex()`
 
@@ -171,8 +170,8 @@ truncated to an integer first.
 hex() -> string
 ```
 
-Converts the number to its hexadecimal string representation. The number
-is truncated to an integer first.
+Converts the number to a string of hexadecimal digits. The number is
+truncated to an integer first.
 
 ```zuri-repl
 %> 255.hex()
@@ -181,8 +180,8 @@ is truncated to an integer first.
 
 **Returns** `string`
 
-> **Note:** A negative number always returns `'0'`; there is no signed or
-> two's-complement form.
+> **Note:** A negative number always returns `'0'`. There's no signed or
+> two's complement form.
 
 ## `oct()`
 
@@ -190,8 +189,8 @@ is truncated to an integer first.
 oct() -> string
 ```
 
-Converts the number to its octal string representation. The number is
-truncated to an integer first.
+Converts the number to a string of octal digits. The number is truncated
+to an integer first.
 
 ```zuri-repl
 %> 8.oct()
@@ -200,8 +199,8 @@ truncated to an integer first.
 
 **Returns** `string`
 
-> **Note:** A negative number always returns `'0'`; there is no signed or
-> two's-complement form.
+> **Note:** A negative number always returns `'0'`. There's no signed or
+> two's complement form.
 
 ## `int()`
 
@@ -209,10 +208,10 @@ truncated to an integer first.
 int() -> number
 ```
 
-Truncates the number down to its integer part, discarding anything after
-the decimal point. Unlike `floor()`, this rounds towards zero rather
-than towards negative infinity, so the result for a negative number
-differs from `floor()`.
+Truncates the number to its integer part, discarding anything after the
+decimal point. Unlike `floor()`, this rounds toward zero, not toward
+negative infinity, so the result for a negative number is different from
+`floor()`.
 
 ```zuri-repl
 %> 3.9.int()
@@ -248,7 +247,7 @@ and only two `NaN`s give `NaN`. `-0` counts as smaller than `0`, so
 
 **Parameters**
 
-- `other` (`number`) — The number to compare against.
+- `other` (`number`): The number to compare against.
 
 **Returns** `number`
 
@@ -277,7 +276,7 @@ and only two `NaN`s give `NaN`. `-0` counts as smaller than `0`, so
 
 **Parameters**
 
-- `other` (`number`) — The number to compare against.
+- `other` (`number`): The number to compare against.
 
 **Returns** `number`
 
@@ -287,9 +286,9 @@ and only two `NaN`s give `NaN`. `-0` counts as smaller than `0`, so
 factorial() -> number
 ```
 
-Returns the factorial of the number, i.e. the product of every positive
-integer less than or equal to it. `0.factorial()` is `1`, matching the
-standard mathematical definition.
+Returns the factorial of the number, which is the product of every
+positive integer up to and including it. `0.factorial()` is `1`, as in
+the standard mathematical definition.
 
 ```zuri-repl
 %> 5.factorial()
@@ -300,7 +299,7 @@ standard mathematical definition.
 
 **Returns** `number`
 
-**Raises** `Error` if the number is negative or not a whole number.
+**Raises** `Error` if the number is negative or isn't a whole number.
 
 ## `sin()`
 
@@ -372,8 +371,8 @@ Returns the arcsine (inverse sine) of the number, in radians.
 
 **Returns** `number`
 
-> **Note:** Only defined for a receiver between `-1` and `1` inclusive;
-> outside that range, this returns `NaN` rather than raising an error.
+> **Note:** It's only defined for a number from `-1` to `1`. Outside that
+> range, this returns `NaN` instead of raising an error.
 
 ## `acos()`
 
@@ -385,8 +384,8 @@ Returns the arccosine (inverse cosine) of the number, in radians.
 
 **Returns** `number`
 
-> **Note:** Only defined for a receiver between `-1` and `1` inclusive;
-> outside that range, this returns `NaN` rather than raising an error.
+> **Note:** It's only defined for a number from `-1` to `1`. Outside that
+> range, this returns `NaN` instead of raising an error.
 
 ## `atan()`
 
@@ -415,7 +414,7 @@ matching the conventional `atan2(y, x)` signature: `y.atan2(x)`.
 
 **Parameters**
 
-- `x` (`number`) — The x-coordinate.
+- `x` (`number`): The x-coordinate.
 
 **Returns** `number`
 
@@ -439,8 +438,8 @@ Returns the inverse hyperbolic cosine of the number.
 
 **Returns** `number`
 
-> **Note:** Only defined for a receiver greater than or equal to `1`;
-> below that, this returns `NaN` rather than raising an error.
+> **Note:** It's only defined for a number greater than or equal to `1`.
+> Below that, this returns `NaN` instead of raising an error.
 
 ## `atanh()`
 
@@ -452,8 +451,8 @@ Returns the inverse hyperbolic tangent of the number.
 
 **Returns** `number`
 
-> **Note:** Only defined for a receiver between `-1` and `1` exclusive;
-> outside that range, this returns `NaN` rather than raising an error.
+> **Note:** It's only defined for a number greater than `-1` and less than
+> `1`. Outside that range, this returns `NaN` instead of raising an error.
 
 ## `exp()`
 
@@ -472,8 +471,7 @@ expm1() -> number
 ```
 
 Returns _e_ raised to the power of the number, minus `1`. For a number
-close to zero, this is more numerically accurate than computing `n.exp() - 1`
-directly.
+close to zero, this is more accurate than calculating `n.exp() - 1`.
 
 **Returns** `number`
 
@@ -564,10 +562,10 @@ Returns the square root of the number.
 
 **Returns** `number`
 
-> **Note:** For a negative number this returns `NaN` rather than raising
-> an error; there is no `bigint`-style promotion into complex numbers.
-> Check `is_nan()` on the result, or the sign of the receiver beforehand,
-> if that distinction matters to the caller.
+> **Note:** For a negative number, this returns `NaN` instead of raising
+> an error. There's no conversion to complex numbers. If the difference
+> matters, check `is_nan()` on the result, or check the sign of the number
+> first.
 
 ## `sign()`
 
@@ -643,8 +641,8 @@ Returns the largest whole number less than or equal to the number.
 is_nan() -> boolean
 ```
 
-Returns `true` if the number is NaN (not a number, e.g. the result of
-`0/0`), `false` otherwise.
+Returns `true` if the number is NaN (not a number), such as the result
+of `0/0`, and `false` otherwise.
 
 **Returns** `boolean`
 
@@ -676,11 +674,11 @@ otherwise.
 trunc() -> number
 ```
 
-Truncates the number towards zero, discarding anything after the decimal
-point. For values that fit in a 64-bit integer this matches `int()`;
-unlike `int()`, `trunc()` stays a floating-point result rather than
-going through an integer cast, so it does not overflow for numbers
-larger than a 64-bit integer can hold.
+Truncates the number toward zero, discarding anything after the decimal
+point. For a value that fits in a 64-bit integer, this gives the same
+result as `int()`. Unlike `int()`, `trunc()` works entirely in floating
+point, without converting to an integer, so it doesn't overflow for a
+number too large for a 64-bit integer.
 
 ```zuri-repl
 %> (-3.9).trunc()
@@ -695,9 +693,9 @@ larger than a 64-bit integer can hold.
 fraction() -> number
 ```
 
-Returns the digits after the number's decimal point, read as a whole
-number rather than a fraction. Note that this is NOT the same as `(n - n.int())`:
-`1.92.fraction()` is `92`, not `0.92`.
+Returns the digits after the decimal point as a whole number, not as a
+fraction. This isn't the same as `(n - n.int())`: `1.92.fraction()` is
+`92`, not `0.92`.
 
 ```zuri-repl
 %> 1.92.fraction()

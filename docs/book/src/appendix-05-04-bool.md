@@ -1,8 +1,7 @@
 # Boolean Methods
 
-Every method on the built-in `bool` type, with its signature, what it
-returns, and the cases where it does something other than the obvious
-thing.
+Every method of the built-in `bool` type, with its signature, what it
+returns, and any behavior you might not expect.
 
 | Method | Returns | Summary |
 | --- | --- | --- |

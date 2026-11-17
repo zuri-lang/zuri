@@ -149,7 +149,7 @@ ok('on_signal() registers without firing')
 # Both run to their limit with no signal pending, which is what gets
 # them compiled. Everything after this point is testing compiled code.
 assert !wait_for_int(0, WARM_SPINS),
-  'no signal has been sent yet, so this must time out'
+    'no signal has been sent yet, so this must time out'
 assert !wait_for_term(0, WARM_SPINS), 'the same for the other loop'
 ok('the waiting loops run to completion and tier up')
 
@@ -159,7 +159,7 @@ ok('the waiting loops run to completion and tier up')
 var sender = signal_self_later(2)
 
 assert wait_for_int(0, WAIT_SPINS),
-  'SIGINT must be delivered while a compiled, allocation-free, call-free loop is running'
+    'SIGINT must be delivered while a compiled, allocation-free, call-free loop is running'
 assert int_count == 1, 'the handler must run exactly once per signal'
 sender.wait()
 ok('SIGINT is delivered from inside a JIT-compiled bare loop')
@@ -169,7 +169,7 @@ sender = signal_self_later(15)
 assert wait_for_term(0, WAIT_SPINS), 'SIGTERM must be delivered the same way'
 assert term_count == 1, 'and exactly once'
 assert int_count == 1,
-  'delivering one signal must not fire another signal\'s handler'
+    'delivering one signal must not fire another signal\'s handler'
 sender.wait()
 ok('SIGTERM is delivered, and signals do not cross wires')
 
@@ -180,9 +180,9 @@ iter var round = 1; round <= 3; round++ {
   os.kill(os.pid(), 2)
 
   assert wait_for_int(round, WAIT_SPINS),
-    'signal ${round + 1} must be delivered like the first'
+      'signal ${round + 1} must be delivered like the first'
   assert int_count == round + 1,
-    'each signal must fire the handler exactly once'
+      'each signal must fire the handler exactly once'
 }
 
 ok('repeated signals are each delivered exactly once')
@@ -237,14 +237,14 @@ def write_fixture(path, body) {
 
   handle.write(
     'import os\n' +
-      '\n' +
-      'os.on_signal("INT", def {\n' +
-      '  echo "handler ran"\n' +
-      body +
-      '})\n' +
-      '\n' +
-      'os.kill(os.pid(), 2)\n' +
-      'echo "survived"\n',
+        '\n' +
+        'os.on_signal("INT", def {\n' +
+        '  echo "handler ran"\n' +
+        body +
+        '})\n' +
+        '\n' +
+        'os.kill(os.pid(), 2)\n' +
+        'echo "survived"\n',
   )
   handle.close()
 
@@ -254,27 +254,28 @@ def write_fixture(path, body) {
 var declined = write_fixture('tmp/os_signal_decline_fixture.zu', '')
 
 assert declined.output.contains('handler ran'),
-  'a declining callback must still run'
+    'a declining callback must still run'
 assert !declined.output.contains('survived'),
-  'declining must not let the program carry on'
+    'declining must not let the program carry on'
 assert declined.exit_code == 130,
-  'declining must terminate the way an untrapped SIGINT would, with the conventional 128 + 2 status'
+    'declining must terminate the way an untrapped SIGINT would, with the conventional 128 + 2 status'
 ok('a falsy return lets the signal take its default action')
 
 var swallowed = write_fixture(
-  'tmp/os_signal_handled_fixture.zu', '  return true\n',
+  'tmp/os_signal_handled_fixture.zu',
+  '  return true\n',
 )
 
 assert swallowed.output.contains('handler ran'), 'a handling callback must run'
 assert swallowed.output.contains('survived'),
-  'a truthy return must swallow the signal and let the program carry on'
+    'a truthy return must swallow the signal and let the program carry on'
 assert swallowed.exit_code == 0, 'and the program must then exit normally'
 ok('a truthy return swallows the signal')
 
 var zero = write_fixture('tmp/os_signal_zero_fixture.zu', '  return 0\n')
 
 assert zero.exit_code == 130,
-  'truthiness is the language\'s own, so returning 0 declines just as false does'
+    'truthiness is the language\'s own, so returning 0 declines just as false does'
 ok('the contract follows Zuri truthiness, not just true/false')
 
 echo ''

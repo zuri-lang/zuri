@@ -1,9 +1,20 @@
 # Data Types
 
-Zuri has ten built-in types. `typeof()` names the one you are holding:
+Zuri has ten built-in types. `typeof()` tells you which one a value is:
 
 ```zuri
-var values = [1, 1.5, 'text', true, nil, [1], {a: 1}, 1..3, 10n, bytes(2)]
+var values = [
+  1,
+  1.5,
+  'text',
+  true,
+  nil,
+  [1],
+  { a: 1 },
+  1..3,
+  10n,
+  bytes(2),
+]
 
 for v in values {
   echo typeof(v)
@@ -23,13 +34,14 @@ bigint
 bytes
 ```
 
-On top of those there are `function`, `class`, `instance`, `module`, `file`
-and `ptr`, which you get from declaring things rather than from a literal.
+In addition, there are `function`, `class`, `instance`, `module`, `file` and
+`ptr` values, which you get by declaring or opening things rather than by
+writing a literal.
 
 ## `number`
 
-A number is an IEEE-754 double. There is no separate integer type, which
-means `1` and `1.0` are the same value:
+A number is an IEEE 754 double-precision value. There's no separate integer
+type, so `1` and `1.0` are the same value:
 
 ```zuri
 echo 1 == 1.0
@@ -39,8 +51,8 @@ echo 1 == 1.0
 true
 ```
 
-`is_int()` asks whether a number's value is integral, not whether it was
-written without a decimal point:
+`is_int()` checks whether a number's value is a whole number. It doesn't
+matter whether it was written with a decimal point:
 
 ```zuri
 echo is_int(1)
@@ -54,7 +66,8 @@ true
 false
 ```
 
-Doubles hold integers exactly up to 2^53. Past that, precision goes:
+Doubles can represent integers exactly up to 2^53. Beyond that, precision is
+lost:
 
 ```zuri
 echo 9007199254740993
@@ -64,13 +77,13 @@ echo 9007199254740993
 9007199254740992
 ```
 
-Numeric literals come in five forms:
+There are five ways to write a number literal:
 
 ```zuri
 var decimal = 1_000_000
-var binary = 0b1010          # 10
-var octal = 0c17             # 15
-var hexadecimal = 0xff       # 255
+var binary = 0b1010 # 10
+var octal = 0c17 # 15
+var hexadecimal = 0xff # 255
 var scientific = 6.02e23
 
 echo [decimal, binary, octal, hexadecimal, scientific]
@@ -80,11 +93,11 @@ echo [decimal, binary, octal, hexadecimal, scientific]
 [1000000, 10, 15, 255, 602000000000000000000000]
 ```
 
-Underscores are digit separators, and they are accepted in decimal literals
-only. `1_000_000` and `1_0.5_5` are fine; `0xdead_beef` and `0b1010_1010`
-are not. [Numbers](ch04-02-numbers.md) has the full rules.
+Underscores can be used as digit separators, but only in decimal literals.
+`1_000_000` and `1_0.5_5` are fine, while `0xdead_beef` and `0b1010_1010`
+aren't. See [Numbers](ch04-02-numbers.md) for the full rules.
 
-The special values behave the way the standard says:
+The special values behave as the IEEE standard specifies:
 
 ```zuri
 echo 1 / 0
@@ -98,7 +111,7 @@ inf
 NaN
 ```
 
-Every number carries methods, so mathematics reads left to right:
+Numbers have methods, so math can be written from left to right:
 
 ```zuri
 echo 2.sqrt()
@@ -118,14 +131,14 @@ echo 255.hex()
 ff
 ```
 
-A literal takes a method directly; the parentheses around `(-3)` are there
-because a method call binds tighter than the minus sign, so `-3.abs()`
-would negate the result instead of the operand.
-[Numbers](ch04-02-numbers.md) covers the rule in full.
+You can call a method directly on a literal. The parentheses around `(-3)`
+are needed because a method call binds more tightly than the minus sign, so
+`-3.abs()` would negate the result instead of the number.
+[Numbers](ch04-02-numbers.md) explains this rule in full.
 
 ## `bigint`
 
-When 2^53 is not enough, suffix the literal with `n` and you get an
+When 2^53 isn't big enough, add an `n` suffix to the literal to get an
 arbitrary-precision integer:
 
 ```zuri
@@ -136,36 +149,35 @@ echo 9007199254740993n + 1n
 9007199254740994n
 ```
 
-Bigints never lose precision and never overflow. They are slower than
-numbers and they do not silently mix with them, so convert explicitly with
-`to_bigint()` and `to_number()`. [Chapter 4](ch04-02-numbers.md) covers
-them properly.
+Bigints never lose precision and never overflow. They're slower than
+numbers, and the two types don't mix automatically, so you convert between
+them explicitly with `to_bigint()` and `to_number()`. [Chapter
+4](ch04-02-numbers.md) covers them in detail.
 
 ## `bool`
 
-`true` and `false`. Every value in Zuri is either **truthy** or **falsy**,
-and that determines what `if`, `while`, `and`, `or`, `!` and `? :` do with
-it. The falsy values are:
+A `bool` is either `true` or `false`. Every value in Zuri is either
+**truthy** or **falsy**, which determines how `if`, `while`, `and`, `or`,
+`!` and `? :` treat it. These are the falsy values:
 
-| Value | Why |
+| Value | Why it's falsy |
 | --- | --- |
-| `false` | itself |
-| `nil` | absence of a value |
-| `0`, `0.0`, `-0.0` | zero |
-| `NaN` | not a number at all |
-| `0n` | the bigint zero |
-| `''` | the empty string |
-| `bytes(0)` | an empty byte buffer |
+| `false` | It's false |
+| `nil` | No value |
+| `0`, `0.0`, `-0.0` | Zero |
+| `NaN` | Not a number |
+| `0n` | Bigint zero |
+| `''` | Empty string |
+| `bytes(0)` | Empty byte buffer |
 
-Everything else is truthy, including every negative number, `[]`, `{}`
-and `'0'`.
+Everything else is truthy, including negative numbers, `[]`, `{}` and `'0'`.
 
-Two consequences deserve a second look.
+This has two consequences that are easy to miss.
 
-**A position of `0` is falsy.** `index_of()` returns `-1` when it finds
-nothing, which is truthy, and `0` when it finds the item first, which is
-falsy. So `if list.index_of(x) { ... }` gets both cases backwards. Compare
-the result explicitly:
+**A position of `0` is falsy.** `index_of()` returns `-1` when it doesn't
+find anything, which is truthy, and `0` when the item is first, which is
+falsy. So `if list.index_of(x) { ... }` gets both cases wrong. Compare the
+result explicitly instead:
 
 ```zuri
 var haystack = ['a', 'b', 'c']
@@ -180,8 +192,8 @@ if position == -1 {
 not found
 ```
 
-**An empty list is truthy.** `[]` and `{}` are objects, and objects are
-truthy. Use `is_empty()`:
+**An empty list is truthy.** `[]` and `{}` are objects, and all objects are
+truthy. Use `is_empty()` instead:
 
 ```zuri
 var items = []
@@ -197,11 +209,11 @@ nothing here
 
 ## `nil`
 
-`nil` is the absence of a value. An uninitialised `var` is `nil`, a
-function that falls off the end returns `nil`, and a missing dictionary key
-read through `get()` gives `nil`.
+`nil` represents the absence of a value. An uninitialized `var` holds `nil`,
+a function that ends without returning anything returns `nil`, and reading a
+missing dictionary key with `get()` gives you `nil`.
 
-`nil` is falsy, and it still has a `to_string()`:
+`nil` is falsy, but it still has a `to_string()` method:
 
 ```zuri
 echo nil.to_string()
@@ -211,24 +223,24 @@ echo nil.to_string()
 nil
 ```
 
-Calling any other method on `nil` raises a `TypeError`, which is usually
-exactly the error you wanted.
+Calling any other method on `nil` raises a `TypeError`, which is usually the
+error you want to see in that situation.
 
 ## `string`
 
-This is the short version. [Strings](ch04-01-strings.md) covers quoting,
-escapes, interpolation, concatenation, repetition and regular expressions
-in full.
+This section is a quick overview. [Strings](ch04-01-strings.md) covers
+quoting, escape sequences, interpolation, concatenation, repetition and
+regular expressions in detail.
 
-Strings are written in single or double quotes, with no difference in
-meaning:
+Strings can be written in single or double quotes, and both mean the same
+thing:
 
 ```zuri
 echo 'single'
 echo "double"
 ```
 
-Both kinds may span multiple lines:
+Either kind can span several lines:
 
 ```zuri
 echo 'multi
@@ -241,8 +253,9 @@ line
 ```
 
 The escape sequences are `\0`, `\a`, `\b`, `\f`, `\n`, `\r`, `\t`, `\v`,
-`\\`, `\'`, `\"`, `\${` for a literal `${`, plus `\xNN` for a byte, `\uNNNN`
-for a code point and `\UNNNNNNNN` for one outside the basic plane:
+`\\`, `\'`, `\"` and `\${` (for a literal `${`), along with `\xNN` for a
+byte, `\uNNNN` for a code point, and `\UNNNNNNNN` for a code point outside
+the Basic Multilingual Plane:
 
 ```zuri
 echo "tab:\there"
@@ -256,12 +269,13 @@ hex: A
 emoji: 😀
 ```
 
-A backslash followed by anything else is left alone, backslash and all.
+A backslash followed by any other character is left as it is, backslash
+included.
 
 ### Interpolation
 
-`${...}` inside a string evaluates the expression and splices the result
-in. It works in both quote styles and the expression can be anything:
+`${...}` inside a string evaluates the expression and inserts the result. It
+works with both kinds of quotes, and the expression can be anything:
 
 ```zuri
 var name = 'Zuri'
@@ -272,7 +286,7 @@ echo 'Hi ${name}, ${1 + 2} and ${name.upper()}'
 Hi Zuri, 3 and ZURI
 ```
 
-To produce a literal `${`, put a backslash before it:
+To write a literal `${`, put a backslash in front of it:
 
 ```zuri
 echo 'B: \${x}'
@@ -282,15 +296,15 @@ echo 'B: \${x}'
 B: ${x}
 ```
 
-### Strings Are Sequences
+### Strings as Sequences
 
-Indexing gives you a one-character string, and negative indices count from
-the end:
+Indexing a string gives you a one-character string. Negative indexes count
+from the end:
 
 ```zuri
 var s = 'hello world'
 echo s[0]
-echo s[0,5]
+echo s[0, 5]
 echo s[-5,]
 ```
 
@@ -300,11 +314,11 @@ hello
 world
 ```
 
-`s[a,b]` is a **slice**: from `a` up to but not including `b`. Either side
-may be left out, so `s[,3]` is the first three characters and `s[3,]` is
-everything from index three onward.
+`s[a,b]` is a **slice**, from index `a` up to but not including `b`. You can
+leave out either side, so `s[,3]` is the first three characters and `s[3,]`
+is everything from index three onward.
 
-`+` concatenates and `*` repeats:
+`+` concatenates strings and `*` repeats them:
 
 ```zuri
 echo 'ab' + 'cd'
@@ -318,11 +332,16 @@ ababab
 
 ## `list`
 
-An ordered, growable sequence, written in square brackets. Elements may be
-of any type, including other lists:
+A list is an ordered sequence that can grow, written in square brackets. Its
+elements can be of any type, including other lists:
 
 ```zuri
-var mixed = [1, 'two', [3], { four: 4 }]
+var mixed = [
+  1,
+  'two',
+  [3],
+  { four: 4 },
+]
 echo mixed.length()
 ```
 
@@ -330,18 +349,19 @@ echo mixed.length()
 4
 ```
 
-Lists index and slice exactly like strings, negative indices included.
-[Chapter 4](ch04-03-lists.md) covers the forty methods they carry.
+Lists support indexing and slicing just like strings, including negative
+indexes. [Chapter 4](ch04-03-lists.md) covers their forty methods.
 
 ## `dict`
 
-An insertion-ordered mapping from keys to values:
+A dictionary maps keys to values and remembers the order in which keys were
+inserted:
 
 ```zuri
 var config = { host: 'localhost', port: 8080, debug: true }
 ```
 
-A bare word key is taken as a string, so `{ host: ... }` and
+A key written as a bare word is treated as a string, so `{ host: ... }` and
 `{ 'host': ... }` are the same dictionary. Keys can also be numbers, and
 they can be computed:
 
@@ -358,11 +378,12 @@ Ada
 three
 ```
 
-Dot access and bracket access are the same operation. Use the dot when the
-key is a fixed name, brackets when it is computed or not a valid
+Dot access and bracket access do the same thing. Use a dot when the key is a
+fixed name, and brackets when the key is computed or isn't a valid
 identifier.
 
-When a key and the variable holding its value share a name, write it once:
+When a key has the same name as the variable that holds its value, you can
+write the name once:
 
 ```zuri
 var host = 'localhost'
@@ -373,7 +394,7 @@ var config = { host, port }
 
 ## `range`
 
-`a..b` describes the integers from `a` up to but not including `b`:
+`a..b` represents the integers from `a` up to but not including `b`:
 
 ```zuri
 echo 1..5
@@ -385,8 +406,8 @@ echo 1..5.to_list()
 [1, 2, 3, 4]
 ```
 
-A range is a real value, not loop syntax. You can store one, pass it
-around, and ask it questions:
+A range is a value in its own right, not just loop syntax. You can store it
+in a variable, pass it to a function, and call methods on it:
 
 ```zuri
 var r = 0..10
@@ -403,8 +424,9 @@ true
 
 ## `bytes`
 
-A fixed-size buffer of 8-bit values, for binary data. `bytes(n)` allocates
-`n` zero bytes; `bytes(list)` builds one from numbers in `0..256`:
+A `bytes` value is a fixed-size buffer of 8-bit values, used for binary
+data. `bytes(n)` creates a buffer of `n` zero bytes, and `bytes(list)`
+creates one from a list of numbers between 0 and 255:
 
 ```zuri
 var b = bytes([72, 101, 108, 108, 111])
@@ -419,14 +441,14 @@ Hello
 72
 ```
 
-Bytes print as hexadecimal in parentheses, which is how you can always tell
-one from a list at a glance. [Chapter 10](ch10-00-binary-data.md) is the
-full treatment.
+Bytes are printed as hexadecimal values in parentheses, so you can always
+tell them apart from lists. [Chapter 10](ch10-00-binary-data.md) covers them
+in full.
 
 ## Checking Types
 
-`typeof()` gives you a name. The `is_*` family gives you a boolean, and
-there are fifteen of them:
+`typeof()` gives you the name of a type. The `is_*` functions give you a
+boolean instead, and there are fifteen of them:
 
 ```text
 is_bigint   is_bool     is_bytes    is_callable  is_class
@@ -446,5 +468,6 @@ true
 true
 ```
 
-Use `instance_of(value, SomeClass)` for classes, which walks the
-inheritance chain. [Chapter 6](ch06-00-classes.md) covers that.
+To check whether a value is an instance of a class, use
+`instance_of(value, SomeClass)`, which also checks parent classes. [Chapter
+6](ch06-00-classes.md) covers this.

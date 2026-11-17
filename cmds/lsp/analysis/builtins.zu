@@ -18,8 +18,16 @@ import .scope
 
 /** The built-in types, each with a stub of its own. */
 const TYPES = [
-  'string', 'number', 'bigint', 'bool', 'list', 'dict', 'range',
-  'bytes', 'file', 'function',
+  'string',
+  'number',
+  'bigint',
+  'bool',
+  'list',
+  'dict',
+  'range',
+  'bytes',
+  'file',
+  'function',
 ]
 
 # Walks a stub, which names nothing it does not declare.

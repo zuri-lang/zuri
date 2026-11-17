@@ -26,6 +26,7 @@
         <nav class="topnav" aria-label="Site">
           <a href="/search" class="wide">Browse</a>
           <a href="/docs">Docs</a>
+          <a href="{{ links.reference }}" class="wide">Library</a>
           <a href="{{ links.book }}" class="wide">The Book</a>
           <template x-if="viewer">
             <a href="/account" class="me"><span class="avatar" aria-hidden="true">{{ viewer|truncate(1, '') }}</span>{{ viewer }}</a>

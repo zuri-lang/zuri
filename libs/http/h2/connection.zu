@@ -3,11 +3,12 @@
  *
  * One HTTP/2 connection and the streams multiplexed over it.
  *
- * `Http2Connection` owns the connection-level state: the settings
- * exchange, flow-control windows, and the HPACK contexts shared by every
- * stream. `Http2Stream` is one request/response pair within it, and
- * `Http2Writer` serialises frames so that concurrent streams cannot
- * interleave mid-frame.
+ * `Http2Connection` holds the state that belongs to the whole
+ * connection: the settings that were exchanged, the flow control
+ * windows and the HPACK contexts that every stream shares.
+ * `Http2Stream` is a single request and response within the connection,
+ * and `Http2Writer` serializes frames so that concurrent streams can't
+ * interleave in the middle of a frame.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -95,7 +96,7 @@ class Http2Stream {
   var ended = false
 
   /**
-   * Whether the header block is complete - that is, whether an
+   * Whether the header block is complete, meaning that a frame with the
    * END_HEADERS flag has been seen.
    * @type bool
    */
@@ -146,27 +147,28 @@ class Http2Stream {
 }
 
 /**
- * An HTTP/2 connection, in either role.
+ * An HTTP/2 connection, on either the server or the client side.
  *
- * On the server side, `serve()` reads the preface, exchanges
- * settings, and then runs the frame loop, handing each completed
- * request to the `HttpServer` it was given and writing the response
+ * On the server side, `serve()` reads the connection preface, exchanges
+ * settings and then runs the frame loop. Each complete request is
+ * passed to the `HttpServer` it was given, and the response is written
  * back. On the client side, `start_client()` performs the same
- * handshake and `send_request()`/`await_response()` carry one
+ * handshake, and `send_request()` and `await_response()` carry out one
  * exchange.
  *
- * Streams are multiplexed on the wire but handled in the order they
- * complete: this is one thread reading one socket, so a request that
- * arrives while another is being handled is read, buffered, and
- * answered next rather than in parallel. That is a throughput
- * property, not a correctness one - the framing, flow control and
- * header state are all maintained exactly as the protocol requires.
+ * Streams are multiplexed on the wire, but they're handled in the order
+ * they complete. A single thread reads the socket, so a request that
+ * arrives while another one is being handled is read, buffered and
+ * answered next, not in parallel. This affects throughput, not
+ * correctness. The framing, flow control and header state are all
+ * maintained exactly as the protocol requires.
  *
- * A readiness loop drives it differently. `drive()` turns that on, and
- * from then on `on_readable()` acts on the frames that have arrived and
- * returns rather than waiting for more, so one session does not hold
- * the thread its neighbours are served on. A response that outruns its
- * flow control window is parked and sent as the window opens.
+ * A readiness loop drives the connection differently. Once `drive()`
+ * has been called, `on_readable()` handles the frames that have arrived
+ * and returns, instead of waiting for more, so that one session doesn't
+ * hold up the thread that other sessions are served on. A response that
+ * has used up its flow control window is set aside and sent as the
+ * window opens.
  */
 class Http2Connection {
 
@@ -296,8 +298,7 @@ class Http2Connection {
    * @param HttpServer server
    */
   serve(server) {
-    while self._take_frame(server) {
-    }
+    while self._take_frame(server) {}
   }
 
   /**
@@ -352,9 +353,9 @@ class Http2Connection {
   }
 
   /**
-   * Whether a waiting body could go further if the connection's output
-   * had room, which is what tells a readiness loop to call `resume()`
-   * again once it has sent what is queued.
+   * Whether a body that's waiting could make progress if the connection
+   * had room for more output. This tells a readiness loop to call
+   * `resume()` again once it has sent what's queued.
    *
    * @returns bool
    */
@@ -379,8 +380,8 @@ class Http2Connection {
     if error {
       # A peer that simply stops talking has closed the connection,
       # which is the ordinary end of one.
-      if instance_of(error, ConnectionError)
-        or instance_of(error, TimeoutError) {
+      if instance_of(error, ConnectionError) or
+          instance_of(error, TimeoutError) {
         return false
       }
 
@@ -513,8 +514,8 @@ class Http2Connection {
   }
 
   _on_continuation(frame) {
-    if self._pending_headers == nil
-      or self._pending_headers.id != frame.stream_id {
+    if self._pending_headers == nil or
+        self._pending_headers.id != frame.stream_id {
       self._go_away(frames.PROTOCOL_ERROR, 'unexpected CONTINUATION')
       return nil
     }
@@ -651,7 +652,8 @@ class Http2Connection {
         when frames.SETTINGS_MAX_FRAME_SIZE {
           if value < 16384 or value > 16777215 {
             self._go_away(
-              frames.PROTOCOL_ERROR, 'SETTINGS_MAX_FRAME_SIZE is out of range',
+              frames.PROTOCOL_ERROR,
+              'SETTINGS_MAX_FRAME_SIZE is out of range',
             )
             return
           }
@@ -699,7 +701,8 @@ class Http2Connection {
     if increment == 0 {
       if frame.stream_id == 0 {
         self._go_away(
-          frames.PROTOCOL_ERROR, 'a zero connection window increment',
+          frames.PROTOCOL_ERROR,
+          'a zero connection window increment',
         )
       } else {
         self._reset(frame.stream_id, frames.PROTOCOL_ERROR)
@@ -729,7 +732,11 @@ class Http2Connection {
     }
 
     frames.write_frame(
-      self._conn, frames.PING, frames.FLAG_ACK, 0, frame.payload,
+      self._conn,
+      frames.PING,
+      frames.FLAG_ACK,
+      0,
+      frame.payload,
     )
     self._conn.flush()
   }
@@ -777,7 +784,9 @@ class Http2Connection {
 
     catch {
       var payload = frames.encode_goaway(
-        self._last_stream_id, error_code, message,
+        self._last_stream_id,
+        error_code,
+        message,
       )
       frames.write_frame(self._conn, frames.GOAWAY, 0, 0, payload)
       payload.dispose()
@@ -833,7 +842,9 @@ class Http2Connection {
         # Every pseudo-header must come before every ordinary one
         # (RFC 9113 §8.3), and each may appear at most once.
         if seen_regular {
-          raise ProtocolError('a pseudo-header followed an ordinary header field')
+          raise ProtocolError(
+            'a pseudo-header followed an ordinary header field',
+          )
         }
 
         using name {
@@ -930,7 +941,9 @@ class Http2Connection {
     response.version = '2'
     response.request_method = request.method
 
-    var fields = [[':status', response.status.to_string()]]
+    var fields = [
+      [':status', response.status.to_string()],
+    ]
 
     response.headers.set_default('Date', util.format_date())
     response.headers.set_default('Server', 'Zuri')
@@ -945,8 +958,8 @@ class Http2Connection {
       }
     })
 
-    var bodiless = status.is_bodiless(response.status)
-      or request.method == 'HEAD'
+    var bodiless = status.is_bodiless(response.status) or
+        request.method == 'HEAD'
     var source = response.source()
 
     # A Content-Length is still meaningful in HTTP/2 - it is not
@@ -1034,7 +1047,11 @@ class Http2Connection {
 
       if piece == nil {
         frames.write_frame(
-          self._conn, frames.DATA, frames.FLAG_END_STREAM, stream.id, nil,
+          self._conn,
+          frames.DATA,
+          frames.FLAG_END_STREAM,
+          stream.id,
+          nil,
         )
         self._finish_feed(stream)
         return true
@@ -1076,7 +1093,10 @@ class Http2Connection {
 
     if block.length() <= limit {
       frames.write_frame(
-        self._conn, frames.HEADERS, flags | frames.FLAG_END_HEADERS, stream_id,
+        self._conn,
+        frames.HEADERS,
+        flags | frames.FLAG_END_HEADERS,
+        stream_id,
         block,
       )
       return
@@ -1113,13 +1133,13 @@ class Http2Connection {
   }
 
   /**
-   * Sends `data` on `stream` as DATA frames, respecting both the
+   * Sends `data` on `stream` as DATA frames, keeping within both the
    * stream's and the connection's send windows and the peer's maximum
    * frame size.
    *
-   * When a window is exhausted this reads frames until the peer grants
-   * more, which is what makes flow control actually work rather than
-   * simply be accounted for.
+   * When a window is used up, this reads frames until the peer allows
+   * more. That's what makes flow control actually work, instead of only
+   * being counted.
    *
    * @param Http2Stream stream
    * @param bytes data
@@ -1163,7 +1183,11 @@ class Http2Connection {
 
     if end_stream and data.length() == 0 {
       frames.write_frame(
-        self._conn, frames.DATA, frames.FLAG_END_STREAM, stream.id, nil,
+        self._conn,
+        frames.DATA,
+        frames.FLAG_END_STREAM,
+        stream.id,
+        nil,
       )
     }
   }
@@ -1187,7 +1211,9 @@ class Http2Connection {
   _await_window(stream) {
     while self._writable(stream) <= 0 {
       if self._going_away {
-        raise ConnectionError('the peer went away while the send window was closed')
+        raise ConnectionError(
+          'the peer went away while the send window was closed',
+        )
       }
 
       var frame = frames.read_frame(self._conn, _MAX_FRAME_SIZE)
@@ -1299,7 +1325,9 @@ class Http2Connection {
   await_response(stream, request) {
     while !stream.ended {
       if self._going_away and !stream.ended {
-        raise ConnectionError('the connection went away before the response finished')
+        raise ConnectionError(
+          'the connection went away before the response finished',
+        )
       }
 
       var frame = frames.read_frame(self._conn, _MAX_FRAME_SIZE)
@@ -1329,7 +1357,9 @@ class Http2Connection {
 
       if name.starts_with(':') {
         if seen_regular {
-          raise ProtocolError('a pseudo-header followed an ordinary header field')
+          raise ProtocolError(
+            'a pseudo-header followed an ordinary header field',
+          )
         }
 
         if name != ':status' {
@@ -1436,8 +1466,7 @@ class Http2Writer {
    * already flushed as they go, so this is here for interface parity
    * with the HTTP/1.1 writer.
    */
-  flush() {
-  }
+  flush() {}
 
   /**
    * Ends the body with an empty END_STREAM frame.

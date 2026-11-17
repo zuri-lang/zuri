@@ -1,47 +1,46 @@
 # String Methods
 
-Every method on the built-in `string` type, with its signature, what it
-returns, and the cases where it does something other than the obvious
-thing.
+Every method of the built-in `string` type, with its signature, what it
+returns, and any behavior you might not expect.
 
 | Method | Returns | Summary |
 | --- | --- | --- |
 | [`length()`](#length) | `number` | Returns the length of a string. |
 | [`upper()`](#upper) | `string` | Returns a copy of the string with all the cased characters converted to uppercase. |
-| [`lower()`](#lower) | `string` | Return a copy of the string with all the cased characters converted to lowercase. |
-| [`is_alpha()`](#is_alpha) | `boolean` | Returns `true` if all the characters in the string are all alphabets and the string is not empty., otherwise returns `false`. |
-| [`is_alnum()`](#is_alnum) | `boolean` | Returns `true` if all the characters in the string are either alphabets or numbers and the string is not empty, otherwise returns `false`. |
-| [`is_number()`](#is_number) |  | Returns `true` if all the characters in the string are all digits and the string is not empty, otherwise returns `false`. |
-| [`is_lower()`](#is_lower) | `boolean` | Returns `true` if at least one character in the string is cased, all cased characters are lower cased and the string is not empty. |
-| [`is_upper()`](#is_upper) | `boolean` | Returns `true` if at least one character in the string is cased, all cased characters are upper cased and the string is not empty. |
-| [`is_space()`](#is_space) | `boolean` | Returns `true` if there are only whitespace characters in the string and the string is not empty. |
+| [`lower()`](#lower) | `string` | Returns a copy of the string with every cased character converted to lowercase. |
+| [`is_alpha()`](#is_alpha) | `boolean` | Returns `true` if the string isn't empty and every character in it is a letter, and `false` otherwise. |
+| [`is_alnum()`](#is_alnum) | `boolean` | Returns `true` if the string isn't empty and every character in it is a letter or a digit, and `false` otherwise. |
+| [`is_number()`](#is_number) |  | Returns `true` if the string isn't empty and every character in it is a digit, and `false` otherwise. |
+| [`is_lower()`](#is_lower) | `boolean` | Returns `true` if the string contains at least one cased character and all its cased characters are lowercase, and `false` otherwise. |
+| [`is_upper()`](#is_upper) | `boolean` | Returns `true` if the string contains at least one cased character and all its cased characters are uppercase, and `false` otherwise. |
+| [`is_space()`](#is_space) | `boolean` | Returns `true` if the string isn't empty and contains only whitespace, and `false` otherwise. |
 | [`ord()`](#ord) | `number` | Returns the Unicode code point of the string, which must be exactly one character long. |
-| [`trim(chars: ?string)`](#trim) | `string` | Returns a copy of the string with characters stripped from both ends. |
-| [`ltrim(chars: ?string)`](#ltrim) | `string` | Returns a copy of the string with characters stripped from its start only. |
-| [`rtrim(chars: ?string)`](#rtrim) | `string` | Returns a copy of the string with characters stripped from its end only. |
-| [`join(string: string)`](#join) | `string` | Returns a string which is a concatenation of the items in the iterable using the _string_ as the separator. |
-| [`split(delimiter: string)`](#split) | `list` | Returns a list of words or characters in a string after separating the content of the string at every point where the _delimiter_ is found. |
-| [`index_of(str: string, start_index: ?number)`](#index_of) | `number` | Returns the index position of the first occurrence of the string _`str`_ in the string _`string`_. |
-| [`last_index_of(str: string, end_index: ?number)`](#last_index_of) | `number` | Returns the index position of the last occurrence of the string _`str`_ in the string _`string`_, searching from the end. |
-| [`starts_with(str: string)`](#starts_with) | `boolean` | Returns `true` if the string begins with the string or character specified in _str_, otherwise it returns `false`. |
-| [`ends_with(str: string)`](#ends_with) | `boolean` | Returns `true` if the string ends with the string or character specified in _str_, otherwise it returns `false`. |
-| [`count(str: string)`](#count) | `number` | Returns the number of non-overlapping occurrences of the substring _str_ in the string. |
-| [`to_number(base)`](#to_number) | `number` | Returns the first numeric value contained in the string if any exists or `0` if the string contains no numeric value. |
-| [`to_bigint(base)`](#to_bigint) | `bigint` | Returns the integer value of the string as a `bigint`, or `0n` if the string does not spell one. |
-| [`to_list()`](#to_list) | `list` | Returns a list whose elements consists of every character contained in the string in order of appearance. |
+| [`trim(chars: ?string)`](#trim) | `string` | Returns a copy of the string with characters removed from both ends. |
+| [`ltrim(chars: ?string)`](#ltrim) | `string` | Returns a copy of the string with characters removed from its start only. |
+| [`rtrim(chars: ?string)`](#rtrim) | `string` | Returns a copy of the string with characters removed from its end only. |
+| [`join(items: list\|dict\|string)`](#join) | `string` | Joins the items of a list, the values of a dictionary or the characters of a string into one string, with this string as the separator between them. |
+| [`split(delimiter: string)`](#split) | `list` | Splits the string at every occurrence of _delimiter_, and returns a list of the parts. |
+| [`index_of(str: string, start_index: ?number)`](#index_of) | `number` | Returns the index of the first occurrence of _`str`_ in the string, or -1 if it doesn't occur. |
+| [`last_index_of(str: string, end_index: ?number)`](#last_index_of) | `number` | Returns the index of the last occurrence of _`str`_ in the string, searching from the end, or -1 if it doesn't occur. |
+| [`starts_with(str: string)`](#starts_with) | `boolean` | Returns `true` if the string starts with _str_, and `false` otherwise. |
+| [`ends_with(str: string)`](#ends_with) | `boolean` | Returns `true` if the string ends with _str_, and `false` otherwise. |
+| [`count(str: string)`](#count) | `number` | Returns the number of non-overlapping occurrences of _str_ in the string. |
+| [`to_number(base)`](#to_number) | `number` | Returns the first number in the string, or `0` if the string doesn't contain one. |
+| [`to_bigint(base)`](#to_bigint) | `bigint` | Returns the integer in the string as a `bigint`, or `0n` if the string doesn't contain one. |
+| [`to_list()`](#to_list) | `list` | Returns a list of the characters in the string, in order. |
 | [`to_bytes()`](#to_bytes) | `bytes` | Returns the content of the string as a stream of `bytes`. |
-| [`lpad(width: number, fill: ?string)`](#lpad) | `string` | Returns the string left justified in a string of length _width_. |
-| [`rpad(width: number, fill: ?string)`](#rpad) | `string` | Returns the string right justified in a string of length _width_. |
-| [`match(str: string)`](#match) | `boolean\|dictionary` | If the string _str_ is a regular string, this method returns `true` if the _string_ contains a substring _str_. |
-| [`matches(reg: string)`](#matches) | `dictionary` | Returns a dictionary containing every match of the given regular expression _reg_ in the source string. |
-| [`replace(str: string, replacement: string, use_regex: ?bool)`](#replace) | `string` | Returns a copy of the string with all occurrences or matches of _str_ replaced by the _replacement_ string. |
-| [`replace_with(regex: string, callback: function)`](#replace_with) | `string` | Returns a copy of the string with all occurrences or matches of *regex* replaced with the result of the function *callback* which is invoked only if and after a match has occurred. |
-| [`ascii()`](#ascii) | `string` | Reinterprets the string as a raw byte view: each byte of its UTF-8 encoding becomes its own character (a codepoint between `0` and `255`, i.e. |
-| [`case_fold()`](#case_fold) | `string` | Returns a copy of the string case-folded for case-insensitive comparison, using full Unicode case folding rather than plain lowercasing. |
+| [`lpad(width: number, fill: ?string)`](#lpad) | `string` | Returns the string padded on the left to _width_ characters, so that it's aligned to the right. |
+| [`rpad(width: number, fill: ?string)`](#rpad) | `string` | Returns the string padded on the right to _width_ characters, so that it's aligned to the left. |
+| [`match(str: string)`](#match) | `boolean\|dictionary` | If _str_ is a plain string, this returns `true` if the string contains _str_, and `false` otherwise. |
+| [`matches(reg: string)`](#matches) | `dictionary` | Returns a dictionary with every match of the regular expression _reg_ in the string. |
+| [`replace(str: string, replacement: string, use_regex: ?bool)`](#replace) | `string` | Returns a copy of the string with every occurrence or match of _str_ replaced by _replacement_. |
+| [`replace_with(regex: string, callback: function)`](#replace_with) | `string` | Returns a copy of the string with every match of _regex_ replaced by what _callback_ returns. |
+| [`ascii()`](#ascii) | `string` | Reinterprets the string as raw bytes: each byte of its UTF-8 encoding becomes a separate character, with a code point from `0` to `255`, as in Latin-1. |
+| [`case_fold()`](#case_fold) | `string` | Returns a copy of the string case-folded for case-insensitive comparison, using full Unicode case folding instead of plain conversion to lowercase. |
 | [`compare(other: string)`](#compare) | `number` | Compares the string with another string. |
-| [`is_empty()`](#is_empty) | `boolean` | Returns true if the string is empty, false otherwise. |
-| [`contains(str: string)`](#contains) | `boolean` | Returns true if the string contains the specified substring, false otherwise. |
-| [`lines()`](#lines) | `list` | Returns the lines of the string as an list as it would be if split on newline characters. |
+| [`is_empty()`](#is_empty) | `boolean` | Returns `true` if the string is empty, and `false` otherwise. |
+| [`contains(str: string)`](#contains) | `boolean` | Returns `true` if the string contains _str_, and `false` otherwise. |
+| [`lines()`](#lines) | `list` | Returns the lines of the string as a list, as if the string were split at each line break. |
 | [`each_line(callback: function)`](#each_line) | `void` | Iterates over each line of the string, calling the provided callback function with the line and its index. |
 | [`each(callback: function)`](#each) | `void` | Iterates over each character of the string, calling the provided callback function with the character and its index. |
 | [`capitalize()`](#capitalize) | `string` | Returns a new string with the first character capitalized and the rest in lowercase. |
@@ -98,8 +97,8 @@ For example:
 lower() -> string
 ```
 
-Return a copy of the string with all the cased characters converted to
-lowercase.<br>
+Returns a copy of the string with every cased character converted to
+lowercase.
 
 For example:
 
@@ -116,8 +115,8 @@ For example:
 is_alpha() -> boolean
 ```
 
-Returns `true` if all the characters in the string are all alphabets and
-the string is not empty., otherwise returns `false`.
+Returns `true` if the string isn't empty and every character in it is a
+letter, and `false` otherwise.
 
 For example:
 
@@ -138,9 +137,8 @@ false
 is_alnum() -> boolean
 ```
 
-Returns `true` if all the characters in the string are either alphabets
-or numbers and the string is not empty, otherwise returns `false`. This
-method is the same as `string.is_alpha() or string.is_number()`.
+Returns `true` if the string isn't empty and every character in it is a
+letter or a digit, and `false` otherwise.
 
 For example:
 
@@ -167,8 +165,8 @@ false
 is_number()
 ```
 
-Returns `true` if all the characters in the string are all digits and
-the string is not empty, otherwise returns `false`.
+Returns `true` if the string isn't empty and every character in it is a
+digit, and `false` otherwise.
 
 For example:
 
@@ -187,9 +185,8 @@ false
 is_lower() -> boolean
 ```
 
-Returns `true` if at least one character in the string is cased, all
-cased characters are lower cased and the string is not empty. Otherwise,
-it returns `false`.
+Returns `true` if the string contains at least one cased character and
+all its cased characters are lowercase, and `false` otherwise.
 
 For example:
 
@@ -212,9 +209,8 @@ false
 is_upper() -> boolean
 ```
 
-Returns `true` if at least one character in the string is cased, all
-cased characters are upper cased and the string is not empty. Otherwise,
-it returns `false`.
+Returns `true` if the string contains at least one cased character and
+all its cased characters are uppercase, and `false` otherwise.
 
 For example:
 
@@ -237,8 +233,8 @@ false
 is_space() -> boolean
 ```
 
-Returns `true` if there are only whitespace characters in the string and
-the string is not empty. Otherwise, it returns empty.
+Returns `true` if the string isn't empty and contains only whitespace,
+and `false` otherwise.
 
 For example:
 
@@ -281,19 +277,20 @@ StackTrace:
 trim(chars: ?string) -> string
 ```
 
-Returns a copy of the string with characters stripped from both ends.
+Returns a copy of the string with characters removed from both ends.
 
-With no argument, whitespace is stripped: space, tab (`\t`), line feed
-(`\n`), vertical tab, form feed and carriage return (`\r`). Other
-Unicode spaces, such as a no-break space, are kept.
+Without an argument, whitespace is removed: spaces, tabs (`\t`), line
+feeds (`\n`), vertical tabs, form feeds and carriage returns (`\r`).
+Other Unicode spaces, such as the no-break space, are kept.
 
-Given _`chars`_, every character in it is stripped instead, in any order
-and any number of times, until a character not in _`chars`_ is reached
-at each end. _`chars`_ is a set of characters, not a prefix or suffix:
-`'xyax'.trim('xy')` is `'a'`. An empty _`chars`_ strips nothing.
+With _`chars`_, every character in it is removed instead, in any order
+and any number of times, until a character that isn't in _`chars`_ is
+reached at each end. _`chars`_ is a set of characters, not a prefix or
+suffix, so `'xyax'.trim('xy')` is `'a'`. An empty _`chars`_ removes
+nothing.
 
-The string itself is never changed. A string with nothing to strip comes
-back as an equal copy.
+The original string is never changed. If there's nothing to remove, the
+result is an equal copy.
 
 For example:
 
@@ -312,7 +309,7 @@ For example:
 
 **Parameters**
 
-- `chars` (`?string`) — The characters to strip (Default = whitespace).
+- `chars` (`?string`): The characters to remove. Defaults to whitespace.
 
 **Returns** `string`
 
@@ -322,10 +319,10 @@ For example:
 ltrim(chars: ?string) -> string
 ```
 
-Returns a copy of the string with characters stripped from its start
-only. The characters stripped are chosen exactly as they are for
-`trim()`: whitespace when _`chars`_ is not given, or every character of
-_`chars`_ when it is.
+Returns a copy of the string with characters removed from its start
+only. The characters removed are chosen in the same way as for `trim()`:
+whitespace if _`chars`_ isn't given, or every character in _`chars`_ if
+it is.
 
 For example:
 
@@ -340,7 +337,7 @@ For example:
 
 **Parameters**
 
-- `chars` (`?string`) — The characters to strip (Default = whitespace).
+- `chars` (`?string`): The characters to remove. Defaults to whitespace.
 
 **Returns** `string`
 
@@ -350,10 +347,10 @@ For example:
 rtrim(chars: ?string) -> string
 ```
 
-Returns a copy of the string with characters stripped from its end only.
-The characters stripped are chosen exactly as they are for `trim()`:
-whitespace when _`chars`_ is not given, or every character of _`chars`_
-when it is.
+Returns a copy of the string with characters removed from its end only.
+The characters removed are chosen in the same way as for `trim()`:
+whitespace if _`chars`_ isn't given, or every character in _`chars`_ if
+it is.
 
 For example:
 
@@ -368,23 +365,20 @@ For example:
 
 **Parameters**
 
-- `chars` (`?string`) — The characters to strip (Default = whitespace).
+- `chars` (`?string`): The characters to remove. Defaults to whitespace.
 
 **Returns** `string`
 
 ## `join()`
 
 ```zuri,ignore
-join(string: string) -> string
+join(items: list|dict|string) -> string
 ```
 
-Returns a string which is a concatenation of the items in the iterable
-using the _string_ as the separator. If the iterable contains just one
-item or the _string_ is empty, the original element is returned. If the
-_iterable_ contains non-string items, the items are converted to their
-string representation before joining.
-
-`Bytes` are the only non supported iterables.
+Joins the items of a list, the values of a dictionary or the characters
+of a string into one string, with this string as the separator between
+them. Items that aren't strings are converted to strings first. Any
+other argument, such as a range or `bytes`, raises an error.
 
 For example:
 
@@ -395,11 +389,15 @@ For example:
 'n--a--m--e'
 %> ','.join('a')
 'a'
+%> ''.join(['a', 'b', 'c'])
+'abc'
+%> '-'.join({ a: 1, b: 2 })
+'1-2'
 ```
 
 **Parameters**
 
-- `string` (`string`) — The string to join the items in the iterable.
+- `items` (`list|dict|string`): The items to join.
 
 **Returns** `string`
 
@@ -409,16 +407,15 @@ For example:
 split(delimiter: string) -> list
 ```
 
-Returns a list of words or characters in a string after separating the
-content of the string at every point where the _delimiter_ is found.
+Splits the string at every occurrence of _delimiter_, and returns a list
+of the parts.
 
-If the _delimiter_ is an empty string, the resultant list will contain
-the individual characters of the string in the order in which they
-appear in the original string. Consecutive delimiters are not grouped
-together and are deemed to delimit empty strings. Splitting an empty
-string with a specified separator returns an empty list.
+If _delimiter_ is an empty string, the result is a list of the string's
+characters, in order. Consecutive delimiters aren't treated as one, so
+they produce empty strings between them. Splitting an empty string
+returns an empty list.
 
-This method has full UTF-8 support.
+This works correctly with any UTF-8 text.
 
 For example:
 
@@ -426,9 +423,9 @@ For example:
 %> 'name'.split('')
 [n, a, m, e]
 %> '1<>2<>3'.split('<>')
-[1, , 2, , 3]
-%> '1,2,3'.split(',')
 [1, 2, 3]
+%> '1,,2'.split(',')
+[1, , 2]
 %> ''.split(',')
 []
 %> '地点'.split('')
@@ -439,7 +436,7 @@ For example:
 
 **Parameters**
 
-- `delimiter` (`string`) — The delimiter to use the split the string.
+- `delimiter` (`string`): The delimiter to split the string at.
 
 **Returns** `list`
 
@@ -449,10 +446,9 @@ For example:
 index_of(str: string, start_index: ?number) -> number
 ```
 
-Returns the index position of the first occurrence of the string _`str`_
-in the string _`string`_. If the _str_ cannot be found anywhere in
-_string_, it returns -1. If the `start_index` parameter is given, it
-will start scanning from the given index.
+Returns the index of the first occurrence of _`str`_ in the string, or
+-1 if it doesn't occur. If `start_index` is given, the search starts at
+that index.
 
 For example:
 
@@ -465,14 +461,14 @@ For example:
 -1
 %> 'hello, world'.index_of('o')
 4
-%> 'hello, world'.index_of('o', 5)  # next index of `o` starting from index 5.
+%> 'hello, world'.index_of('o', 5)  # the next `o` from index 5
 8
 ```
 
 **Parameters**
 
-- `str` (`string`) — The string to search for.
-- `start_index` (`?number`) — The index to start the search from.
+- `str` (`string`): The string to search for.
+- `start_index` (`?number`): The index to start searching from.
 
 **Returns** `number`
 
@@ -482,17 +478,16 @@ For example:
 last_index_of(str: string, end_index: ?number) -> number
 ```
 
-Returns the index position of the last occurrence of the string _`str`_
-in the string _`string`_, searching from the end. If _str_ cannot be
-found anywhere in _string_, it returns -1.
+Returns the index of the last occurrence of _`str`_ in the string,
+searching from the end, or -1 if it doesn't occur.
 
-If the `end_index` parameter is given, only a match that _begins_ at or
-before that index counts. That is the same thing `index_of()`'s own
-second parameter bounds, so for any index `n`, `index_of(str, n)` and
-`last_index_of(str, n)` are the first and last matches of the two halves
-`n` splits the string into.
+If `end_index` is given, only a match that _starts_ at or before that
+index counts. That's the same position that the second parameter of
+`index_of()` uses, so for any index `n`, `index_of(str, n)` and
+`last_index_of(str, n)` give the first and last matches in the two
+halves that `n` splits the string into.
 
-An empty _str_ returns -1, matching `index_of()`.
+An empty _str_ returns -1, as it does for `index_of()`.
 
 For example:
 
@@ -503,12 +498,11 @@ For example:
 10
 %> 'hello, world'.last_index_of('q')
 -1
-%> 'hello, world'.last_index_of('o', 7)  # last `o` starting at or before index 7.
+%> 'hello, world'.last_index_of('o', 7)  # the last `o` at or before index 7
 4
 ```
 
-Splitting a path on its final separator is the usual reason to reach for
-it:
+The most common use is to split a path at its last separator:
 
 ```zuri-repl
 %> var path = 'a/b/c'
@@ -520,8 +514,8 @@ it:
 
 **Parameters**
 
-- `str` (`string`) — The string to search for.
-- `end_index` (`?number`) — The highest index a match may start at.
+- `str` (`string`): The string to search for.
+- `end_index` (`?number`): The highest index a match can start at.
 
 **Returns** `number`
 
@@ -531,8 +525,7 @@ it:
 starts_with(str: string) -> boolean
 ```
 
-Returns `true` if the string begins with the string or character
-specified in _str_, otherwise it returns `false`.
+Returns `true` if the string starts with _str_, and `false` otherwise.
 
 For example:
 
@@ -545,7 +538,7 @@ false
 
 **Parameters**
 
-- `str` (`string`) — The string to search for.
+- `str` (`string`): The string to look for.
 
 **Returns** `boolean`
 
@@ -555,8 +548,7 @@ false
 ends_with(str: string) -> boolean
 ```
 
-Returns `true` if the string ends with the string or character specified
-in _str_, otherwise it returns `false`.
+Returns `true` if the string ends with _str_, and `false` otherwise.
 
 For example:
 
@@ -569,7 +561,7 @@ false
 
 **Parameters**
 
-- `str` (`string`) — The string to search for.
+- `str` (`string`): The string to look for.
 
 **Returns** `boolean`
 
@@ -579,13 +571,11 @@ false
 count(str: string) -> number
 ```
 
-Returns the number of non-overlapping occurrences of the substring _str_
-in the string.
+Returns the number of non-overlapping occurrences of _str_ in the
+string.
 
-_For those coming from Python who may consider this method similar to
-Python's own, this method differs in that it does not allow specifying a
-start and end region for the operation. Zuri considers this unnecessary
-as the same can be accomplished by slicing the string._
+Unlike Python's `count()`, this doesn't take a start and end position.
+To count within part of a string, slice it first.
 
 For example:
 
@@ -594,13 +584,13 @@ For example:
 3
 %> 'ding dong'.count('ng')
 2
-%> 'ding dong'[2,7].count('ng') # setting region to search for counts - 'ng do'
+%> 'ding dong'[2,7].count('ng') # count only in 'ng do'
 1
 ```
 
 **Parameters**
 
-- `str` (`string`) — The string to search for.
+- `str` (`string`): The string to count.
 
 **Returns** `number`
 
@@ -610,10 +600,9 @@ For example:
 to_number(base) -> number
 ```
 
-Returns the first numeric value contained in the string if any exists or
-`0` if the string contains no numeric value. Floating numbers that have
-the same value as their integer counterparts will return the integer
-value.
+Returns the first number in the string, or `0` if the string doesn't
+contain one. A fractional number with the same value as an integer is
+returned as the integer.
 
 For example:
 
@@ -630,9 +619,9 @@ For example:
 
 **Parameters**
 
-- `base` (`number`) — The base the digits are in, from 2 to 36. Defaults
-  to `10`. A fractional part is only read in base 10, since no other base
-  spells one.
+- `base` (`number`): The base of the digits, from 2 to 36. Defaults to
+  `10`. A fractional part is only read in base 10, because other bases
+  have no way of writing one.
 
 **Returns** `number`
 
@@ -644,13 +633,13 @@ For example:
 to_bigint(base) -> bigint
 ```
 
-Returns the integer value of the string as a `bigint`, or `0n` if the
-string does not spell one.
+Returns the integer in the string as a `bigint`, or `0n` if the string
+doesn't contain one.
 
-This is `to_number()` for integers too large to be a number. A number is
-exact only up to 2^53; past that, digits are lost, and an id or a
-`BIGINT UNSIGNED` read from a database routinely runs past it. Every
-digit survives here however long the run.
+This is `to_number()` for integers too large for a `number`. A number is
+only exact up to 2^53, and beyond that, digits are lost. An ID or a
+`BIGINT UNSIGNED` value read from a database often goes beyond it. Here,
+every digit is kept, however many there are.
 
 ```zuri-repl
 %> '9007199254740993'.to_bigint()
@@ -667,15 +656,15 @@ digit survives here however long the run.
 0n
 ```
 
-The number is found exactly as `to_number()` finds it: the first one
-written in the string, with any text around it ignored. No fractional
-part is read, since this produces an integer, so `'12.5'.to_bigint()` is
-`12n`.
+The number is found in the same way as for `to_number()`: it's the first
+number in the string, and any text around it is ignored. No fractional
+part is read, because the result is an integer, so `'12.5'.to_bigint()`
+is `12n`.
 
 **Parameters**
 
-- `base` (`number`) — The base the digits are in, from 2 to 36. Defaults
-  to `10`.
+- `base` (`number`): The base of the digits, from 2 to 36. Defaults to
+  `10`.
 
 **Returns** `bigint`
 
@@ -687,10 +676,7 @@ part is read, since this produces an integer, so `'12.5'.to_bigint()` is
 to_list() -> list
 ```
 
-Returns a list whose elements consists of every character contained in
-the string in order of appearance. Characters that repeat in the string
-will have different entries in the same index as they appear in the
-string.<br>
+Returns a list of the characters in the string, in order.
 
 For example:
 
@@ -731,10 +717,10 @@ For example:
 lpad(width: number, fill: ?string) -> string
 ```
 
-Returns the string left justified in a string of length _width_. Padding
-is done using the specified character _fill_ if given of a space (`' '`)
-if a _fill_ is not specified. The original string is returned if width
-is less than _`string.length()`_.
+Returns the string padded on the left to _width_ characters, so that
+it's aligned to the right. The padding is _fill_ if it's given, or
+spaces otherwise. If _width_ is less than the length of the string, the
+string is returned unchanged.
 
 For example:
 
@@ -749,8 +735,8 @@ For example:
 
 **Parameters**
 
-- `width` (`number`) — The length of the string after padding.
-- `fill` (`?string`) — The character to use for padding.
+- `width` (`number`): The length of the string after padding.
+- `fill` (`?string`): The character to pad with.
 
 **Returns** `string`
 
@@ -760,10 +746,10 @@ For example:
 rpad(width: number, fill: ?string) -> string
 ```
 
-Returns the string right justified in a string of length _width_.
-Padding is done using the specified character _fill_ if given of a space
-(`' '`) if a _fill_ is not specified. The original string is returned if
-width is less than _`string.length()`_.
+Returns the string padded on the right to _width_ characters, so that
+it's aligned to the left. The padding is _fill_ if it's given, or spaces
+otherwise. If _width_ is less than the length of the string, the string
+is returned unchanged.
 
 For example:
 
@@ -778,8 +764,8 @@ For example:
 
 **Parameters**
 
-- `width` (`number`) — The length of the string after padding.
-- `fill` (`?string`) — The character to use for padding.
+- `width` (`number`): The length of the string after padding.
+- `fill` (`?string`): The character to pad with.
 
 **Returns** `string`
 
@@ -789,31 +775,28 @@ For example:
 match(str: string) -> boolean|dictionary
 ```
 
-If the string _str_ is a regular string, this method returns `true` if
-the _string_ contains a substring _str_. Otherwise, it returns `false`.
+If _str_ is a plain string, this returns `true` if the string contains
+_str_, and `false` otherwise.
 
-If the string _str_ contains a valid [regular
-expression](ch04-01-strings.md#regular-expressions) (we'll get to that shortly below), it
-returns `false` if a match for the regex _str_ cannot be found in the
-string. Otherwise, it returns a [dictionary](ch04-04-dictionaries.md) of the
-first match: the whole match under key `0`, each capture group under its
-number, and a named group under its name as well. A group that takes no
-part in the match is `nil`. Groups that share a name, under the `J`
-modifier, give the name to the one that took part.
+If _str_ is a regular expression, this returns `false` if there's no
+match. Otherwise, it returns a dictionary describing the first match:
+the whole match under the key `0`, each capture group under its number,
+and each named group under its name as well. A group that isn't part of
+the match is `nil`. When several groups share a name, which the `J`
+modifier allows, the name refers to the one that's part of the match.
 
-If the _offset_ argument is specified, it becomes the offset in the
-_string_ at which to start matching.
+If _offset_ is given, matching starts at that position in the string.
 
 For example:
 
 ```zuri-repl
-%> 'gorilla'.match('go')      # regular string match
+%> 'gorilla'.match('go')      # plain string, found
 true
-%> 'gorilla'.match('gox')     # regular string non-match
+%> 'gorilla'.match('gox')     # plain string, not found
 false
-%> 'gorilla'.match('/?gox/')  # regular expression match
+%> 'gorilla'.match('/?gox/')  # regular expression, matched
 {0: go}
-%> 'gorilla'.match('/gox\d/') # regular expression non-match
+%> 'gorilla'.match('/gox\d/') # regular expression, not matched
 false
 %> '2024-01'.match('/(?<year>\d+)-(\d+)/')
 {0: 2024-01, 1: 2024, 2: 01, year: 2024}
@@ -821,7 +804,7 @@ false
 
 **Parameters**
 
-- `str` (`string`) — The string to match.
+- `str` (`string`): The string or regular expression to match.
 
 **Returns** `boolean|dictionary`
 
@@ -831,13 +814,11 @@ false
 matches(reg: string) -> dictionary
 ```
 
-Returns a dictionary containing every match of the given regular
-expression _reg_ in the source string. If no match is found, each key of
-the [dictionary](ch04-04-dictionaries.md) holds an empty list, so `{0: []}` for a
-pattern with no groups.
+Returns a dictionary with every match of the regular expression _reg_ in
+the string. If there are no matches, each key holds an empty list, so a
+pattern without groups gives `{0: []}`.
 
-If the _offset_ argument is specified, it becomes the offset in the
-_string_ at which to start matching.
+If _offset_ is given, matching starts at that position in the string.
 
 For example:
 
@@ -850,7 +831,7 @@ For example:
 
 **Parameters**
 
-- `reg` (`string`) — The regular expression to match.
+- `reg` (`string`): The regular expression to match.
 
 **Returns** `dictionary`
 
@@ -860,23 +841,22 @@ For example:
 replace(str: string, replacement: string, use_regex: ?bool) -> string
 ```
 
-Returns a copy of the string with all occurrences or matches of _str_
-replaced by the _replacement_ string.
+Returns a copy of the string with every occurrence or match of _str_
+replaced by _replacement_.
 
-In the _replacement_ string, if _str_ is a regular expression, then
-capture groups can be referenced using the syntax `$index`. Taking as an
-example, capture group `0` contains the entire match and can be used in
-the _replacement_ string as `$0`.
+If _str_ is a regular expression, _replacement_ can refer to capture
+groups as `$index`. Group `0` is the whole match, so `$0` inserts the
+whole match.
 
-> To escape the `$` sign in the _replacement_ string, use
-> the double backslashes (`\\`).
+> To write a literal `$` in _replacement_, put two backslashes
+> (`\\`) before it.
 
 For example:
 
 ```zuri-repl
-%> 'lady friend'.replace('d', 'z')  # non-regex
+%> 'lady friend'.replace('d', 'z')  # plain string
 'lazy frienz'
-%> 'John is 26 years old'.replace('/(\d+)/', '1$1') # regex example
+%> 'John is 26 years old'.replace('/(\d+)/', '1$1') # regular expression
 'John is 126 years old'
 %> 'John is 26 years old'.replace('/(\d+)/', '1\\$2')
 'John is 1$2 years old'
@@ -884,16 +864,15 @@ For example:
 
 **Parameters**
 
-- `str` (`string`) — The string to match.
-- `replacement` (`string`) — The replacement string.
-- `use_regex` (`?bool`) — Whether to use the regular expression or the
-  string string as the match string (default = true).
+- `str` (`string`): The string or regular expression to replace.
+- `replacement` (`string`): The replacement string.
+- `use_regex` (`?bool`): Whether _str_ can be treated as a regular
+  expression. Defaults to true.
 
 **Returns** `string`
 
-> **Note:** When the third parameter _`use_regex`_ is set to false, _str_
-> will never be treated as a regular expression even if it contains a
-> valid regular expression.
+> **Note:** When the third parameter, _`use_regex`_, is false, _str_ is
+> never treated as a regular expression, even if it looks like one.
 
 ## `replace_with()`
 
@@ -901,11 +880,11 @@ For example:
 replace_with(regex: string, callback: function) -> string
 ```
 
-Returns a copy of the string with all occurrences or matches of *regex*
-replaced with the result of the function *callback* which is invoked
-only if and after a match has occurred.
+Returns a copy of the string with every match of _regex_ replaced by
+what _callback_ returns. The callback is only called when there's a
+match.
 
-The callback function is defined as follows:
+The callback looks like this:
 
 ```zuri,ignore
 def replacer(match, p1, p2, /* …, */ pN, offset, string) {
@@ -913,26 +892,26 @@ def replacer(match, p1, p2, /* …, */ pN, offset, string) {
 }
 ```
 
-The arguments to the function are as follows:
+Its arguments are:
 
-- `match`: The matched substring. (Corresponds to `$0`.)
+- `match`: the matched text, which is the same as `$0`.
 
-- `p1, p2, …, pN`: The nth string found by a capture group
-(including named capturing groups) corresponds to `$1`, `$2`, etc. For
-example, if the pattern is `/(\a+)(\b+)/`, then `p1` is the match for
-`\a+`, and `p2` is the match for `\b+`. If the group is part of a
-disjunction (e.g. `"abc".replace_with('/(a)|(b)/', replacer)`), the
-unmatched alternative will be `nil`.
+- `p1, p2, …, pN`: the text matched by each capture group,
+  including named groups, which is the same as `$1`, `$2` and so
+  on. For example, if the pattern is `/(\a+)(\b+)/`, `p1` is the
+  match for `\a+`, and `p2` is the match for `\b+`. If a group is
+  one side of an alternation, as in
+  `"abc".replace_with('/(a)|(b)/', replacer)`, the side that didn't
+  match is `nil`.
 
-- `offset`: The offset of the matched substring within the
-whole string being examined. For example, if the whole string was
-`'abcd'`, and the matched substring was `'bc'`, then this argument will
-be `1`.
+- `offset`: the position of the match in the whole string. For
+  example, if the whole string is `'abcd'` and the match is `'bc'`,
+  this is `1`.
 
-- `string`: The whole string being examined.
+- `string`: the whole string being searched.
 
-The exact number of arguments depends on how many capture groups are
-contained in the regex.
+The number of arguments depends on the number of capture groups in the
+regular expression.
 
 For example:
 
@@ -940,26 +919,24 @@ For example:
 %> echo 'name'.replace_with('/m/', @(match, offset) {
 ..   return match + '-'
 .. })
-'nam-e'
+nam-e
 ```
 
-Below is another example that uses a capture group:
+Here's an example with a capture group:
 
 ```zuri-repl
 %> var text = 'all is well'
-%> 
 %> echo text.replace_with('/([a-z]+)/', @(match, val) {
 ..   if val == 'is' return 'is not'
 ..   return 'will be'
 .. })
-'will be is not will be'
+will be is not will be
 ```
 
 **Parameters**
 
-- `regex` (`string`) — The regular expression to match.
-- `callback` (`function`) — The callback function to invoke for each
-  match.
+- `regex` (`string`): The regular expression to match.
+- `callback` (`function`): The function to call for each match.
 
 **Returns** `string`
 
@@ -969,23 +946,21 @@ Below is another example that uses a capture group:
 ascii() -> string
 ```
 
-Reinterprets the string as a raw byte view: each byte of its UTF-8
-encoding becomes its own character (a codepoint between `0` and `255`,
-i.e. a Latin-1-style one-byte-per-character mapping), rather than the
-decoded sequence of Unicode characters that `length()`, `each()`, and
-indexing otherwise operate on.
+Reinterprets the string as raw bytes: each byte of its UTF-8 encoding
+becomes a separate character, with a code point from `0` to `255`, as in
+Latin-1. Normally, `length()`, `each()` and indexing work on the decoded
+Unicode characters instead.
 
-The result is still a valid string (every codepoint between `0` and
-`255` is valid UTF-8), so it can be used anywhere a normal string can.
-It just no longer round-trips back through the original multi-byte
-characters if the string had any, and its `length()` now reports the
-original BYTE count of the string rather than its original CHARACTER
-count.
+The result is still a valid string, because every code point from `0` to
+`255` is valid UTF-8, so it can be used anywhere a normal string can.
+But if the string contained multi-byte characters, they can't be
+recovered from the result, and its `length()` is the original number of
+bytes, not the original number of characters.
 
-This is meant for the rare case where code needs to walk a string
-byte-for-byte instead of character-by-character, e.g. one that
-originated from a byte stream where the bytes were never meant to be
-decoded as Unicode at all.
+This is for the rare case where code needs to go through a string one
+byte at a time, instead of one character at a time, for example for a
+string that came from a byte stream that was never meant to be decoded
+as Unicode.
 
 ```zuri-repl
 %> 'café'.length()
@@ -1003,14 +978,13 @@ case_fold() -> string
 ```
 
 Returns a copy of the string case-folded for case-insensitive
-comparison, using full Unicode case folding rather than plain
-lowercasing. This matters for characters whose fold is not just their
-lowercase form: for example, the German `ß` folds to `ss`.
+comparison, using full Unicode case folding instead of plain conversion
+to lowercase. This matters for characters whose folded form isn't just
+their lowercase form. For example, the German `ß` folds to `ss`.
 
-Two strings that are considered equal ignoring case will always produce
-identical output from `case_fold()`, which makes it the correct method
-to use for case-insensitive comparisons; `lower()` is not a substitute
-for it.
+Two strings that are equal when case is ignored always give the same
+result from `case_fold()`, so it's the right method for case-insensitive
+comparison. `lower()` isn't a substitute for it.
 
 ```zuri-repl
 %> 'HELLO World'.case_fold()
@@ -1031,13 +1005,13 @@ Compares the string with another string.
 
 **Parameters**
 
-- `other` (`string`) — The other string to compare with.
+- `other` (`string`): The string to compare with.
 
-**Returns** `number` — A negative number if the string is less than the
-other string. - Zero if the strings are equal. - A positive number if
-the string is greater than the other string.
+**Returns** `number`: A negative number if this string comes before
+`other`, zero if the two are equal, or a positive number if this string
+comes after `other`.
 
-**Raises** `Error` if the other string is not a string.
+**Raises** `Error` if `other` isn't a string.
 
 ## `is_empty()`
 
@@ -1045,7 +1019,7 @@ the string is greater than the other string.
 is_empty() -> boolean
 ```
 
-Returns true if the string is empty, false otherwise.
+Returns `true` if the string is empty, and `false` otherwise.
 
 **Returns** `boolean`
 
@@ -1055,12 +1029,11 @@ Returns true if the string is empty, false otherwise.
 contains(str: string) -> boolean
 ```
 
-Returns true if the string contains the specified substring, false
-otherwise.
+Returns `true` if the string contains _str_, and `false` otherwise.
 
 **Parameters**
 
-- `str` (`string`) — The substring to search for.
+- `str` (`string`): The string to look for.
 
 **Returns** `boolean`
 
@@ -1070,8 +1043,8 @@ otherwise.
 lines() -> list
 ```
 
-Returns the lines of the string as an list as it would be if split on
-newline characters.
+Returns the lines of the string as a list, as if the string were split
+at each line break.
 
 **Returns** `list`
 
@@ -1086,8 +1059,8 @@ function with the line and its index.
 
 **Parameters**
 
-- `callback` (`function`) — A function that takes two arguments: the
-  line and its index.
+- `callback` (`function`): A function that takes two arguments: the line
+  and its index.
 
 **Returns** `void`
 
@@ -1104,7 +1077,7 @@ callback function with the character and its index.
 
 **Parameters**
 
-- `callback` (`function`) — A function that takes two arguments: the
+- `callback` (`function`): A function that takes two arguments: the
   character and its index.
 
 **Returns** `void`

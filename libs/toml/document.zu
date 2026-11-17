@@ -1,25 +1,25 @@
 /**
  * @module document
  *
- * The document tree, which is the text.
+ * The document tree, which represents the text itself.
  *
- * A TOML file read for its values can throw away everything that is
- * not a value. A TOML file read so that it can be written back cannot
- * throw away anything at all: the comment above a key, the blank line
- * between two tables, the choice of `0x1F` over `31`, the single
- * quotes around a Windows path. A program that rewrites a file it did
- * not write has to leave all of it alone.
+ * A program that reads a TOML file for its values can discard
+ * everything that isn't a value. A program that reads a TOML file in
+ * order to write it back can't discard anything: the comment above a
+ * key, the blank line between two tables, the choice of `0x1F` instead
+ * of `31`, the single quotes around a Windows path. A program that
+ * rewrites a file it didn't write has to leave all of that alone.
  *
  * So every node here holds two things: what it means, and the exact
- * text it was. `Value` keeps the decoded value beside the source
- * spelling that produced it. `Entry` keeps the whitespace on each side
- * of its `=`. `Table` keeps the trivia before its header. Rendering is
- * concatenation, and a document nobody edited comes back byte for
- * byte.
+ * text it came from. A `Value` keeps the decoded value along with the
+ * text that produced it, an `Entry` keeps the whitespace on each side
+ * of its `=`, and a `Table` keeps everything before its header.
+ * Rendering just joins the pieces together, so a document that nobody
+ * edited comes back exactly as it was.
  *
- * Nodes are built by `parser.zu` when reading and by `encoder.zu` when
- * writing. Reach them through `Document`, which is what the module's
- * public API hands out.
+ * Nodes are created by `parser.zu` when reading, and by `encoder.zu`
+ * when writing. Use them through `Document`, which is what the module's
+ * public API returns.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
@@ -192,9 +192,9 @@ def spell_basic_string(text: string) {
 /**
  * Returns `text` as a TOML multi-line basic string.
  *
- * Newlines and single quotes pass through untouched; a run of three
- * quotes and a trailing quote are escaped, since either would close
- * the string early.
+ * Line breaks and single quotes are written as they are. A run of three
+ * quotes, and a quote at the end, are escaped, because either one would
+ * end the string early.
  *
  * @param string text
  * @returns string
@@ -208,8 +208,10 @@ def spell_multiline_string(text: string) {
 
     # A run of three or more quotes has to be broken up, and escaping
     # the first of each three is the least invasive way to do it.
-    if ch == '"' and i + 2 < text.length() and text[i + 1] == '"' and
-      text[i + 2] == '"' {
+    if ch == '"' and
+        i + 2 < text.length() and
+        text[i + 1] == '"' and
+        text[i + 2] == '"' {
       out += '\\"'
       i++
       continue
@@ -288,16 +290,16 @@ def spell_float(value) {
 }
 
 /**
- * One value in a document: a scalar, an array, or an inline table.
+ * One value in a document: a scalar, an array or an inline table.
  *
- * `kind` names the TOML type. `value` is the decoded Zuri value for a
+ * `kind` is the TOML type. `value` is the decoded Zuri value for a
  * scalar, or the `Array` or `InlineTable` node for a container. `raw`
- * is the exact source text of a scalar, which is what makes `0x1F`
- * survive a round trip as `0x1F` rather than as `31`.
+ * is the exact source text of a scalar, so that `0x1F` is still `0x1F`
+ * after a round trip, and isn't turned into `31`.
  *
- * `prefix` and `suffix` hold the trivia on each side: whatever sat
- * between the `=` and the value, and whatever followed it on the same
- * line, a trailing comment included.
+ * `prefix` and `suffix` hold the text on each side: whatever was
+ * between the `=` and the value, and whatever followed the value on the
+ * same line, including a comment.
  *
  * @printable
  */
@@ -515,9 +517,14 @@ class Entry {
    * @returns string
    */
   to_string() {
-    return self.prefix + self.key_raw + self.pre_eq + '=' +
-      self.value.prefix + self.value.to_string() + self.value.suffix +
-      self.newline
+    return self.prefix +
+        self.key_raw +
+        self.pre_eq +
+        '=' +
+        self.value.prefix +
+        self.value.to_string() +
+        self.value.suffix +
+        self.newline
   }
 
   @to_string() {
@@ -607,8 +614,12 @@ class Table {
 
     if self.header_raw != nil {
       var brackets = self.is_aot_element ? ['[[', ']]'] : ['[', ']']
-      out += self.prefix + brackets[0] + self.header_raw + brackets[1] +
-        self.suffix + self.newline
+      out += self.prefix +
+          brackets[0] +
+          self.header_raw +
+          brackets[1] +
+          self.suffix +
+          self.newline
     }
 
     for entry in self.entries {
@@ -736,8 +747,7 @@ class Table {
     # the rest reaching into an inline table or an array.
     for entry in self.entries {
       if _is_prefix(entry.path, parts) {
-        return _descend(entry.value.to_value(),
-          parts[entry.path.length(),])
+        return _descend(entry.value.to_value(), parts[entry.path.length(),])
       }
     }
 
@@ -771,22 +781,22 @@ class Table {
   /**
    * Writes `value` at `path`, relative to this table.
    *
-   * A key that is already there keeps its line: only the value text
-   * changes, so the spacing around the `=` and a trailing comment both
-   * survive. A key that is not there is appended to this table,
-   * indented to match the pairs already in it.
+   * A key that already exists keeps its line, and only the text of the
+   * value changes, so the spacing around the `=` and any comment at the
+   * end of the line are kept. A key that doesn't exist is added to the
+   * end of this table, indented to match the entries already in it.
    *
-   * Parent tables along `path` are created as table blocks when they
-   * do not exist. A dictionary passed as `value` is written as an
-   * inline table; `Document.table()` is how a dictionary becomes a
-   * table block of its own instead.
+   * Parent tables along `path` that don't exist are created as table
+   * blocks. A dictionary passed as `value` is written as an inline
+   * table. To make a dictionary into a table block of its own, use
+   * `Document.table()`.
    *
    * @param string|list path A dotted key path, or a list of names.
    * @param any value
-   * @returns Entry The pair that was written.
-   * @throws EditError If `path` runs through something that is not a
+   * @returns Entry The entry that was written.
+   * @throws EditError If `path` goes through something that isn't a
    *    table, or names a table that already exists.
-   * @throws EncodeError If `value` has no TOML spelling.
+   * @throws EncodeError If `value` can't be written as TOML.
    */
   set(path, value) {
     return _set(self.document, self, _as_path(path), value)
@@ -1027,21 +1037,21 @@ def _as_path(path) {
 }
 
 /**
- * Builds the `Value` node for a plain Zuri value, choosing the TOML
- * spelling as it goes.
+ * Creates the `Value` node for a plain Zuri value, choosing how to
+ * write it in TOML.
  *
- * A string with a newline in it becomes a multi-line basic string; a
- * whole number becomes an integer; a `Float` becomes a float whatever
- * its value. A list becomes a single-line array and a dictionary
- * becomes an inline table, because this is the spelling a value takes
- * when it is written in place. `Document.table()` is how a value
- * becomes a table block instead.
+ * A string containing a line break becomes a multi-line basic string, a
+ * whole number becomes an integer, and a `Float` becomes a float,
+ * whatever its value. A list becomes a single-line array, and a
+ * dictionary becomes an inline table, because that's how a value is
+ * written in place. To make a value into a table block instead, use
+ * `Document.table()`.
  *
  * @param any value
  * @param ?string path Dotted path used in an error message.
  * @returns Value
- * @throws EncodeError If the value has no TOML spelling, or if a list
- *    or dictionary contains itself.
+ * @throws EncodeError If the value can't be written as TOML, or if a
+ *    list or dictionary contains itself.
  */
 def spell_value(value, path) {
   return _spell(value, path == nil ? '' : path, {})
@@ -1075,8 +1085,10 @@ def _spell(value, path, seen) {
   if is_number(value) {
     # NaN and the infinities have no integer spelling, and neither has
     # a fractional number, so everything else is a float.
-    if value == value and value != (1 / 0) and value != (-1 / 0) and
-      value == value.floor() {
+    if value == value and
+        value != (1 / 0) and
+        value != (-1 / 0) and
+        value == value.floor() {
       return Value('integer', value, spell_integer(value))
     }
 
@@ -1119,9 +1131,16 @@ def _spell(value, path, seen) {
 def _spell_date(value) {
   var minutes = (value.gmt_offset / 60).floor()
 
-  return DateTime(value.year, value.month, value.day, value.hour,
-    value.minute, value.seconds, value.microseconds * 1000,
-    minutes).to_string()
+  return DateTime(
+    value.year,
+    value.month,
+    value.day,
+    value.hour,
+    value.minute,
+    value.seconds,
+    value.microseconds * 1000,
+    minutes,
+  ).to_string()
 }
 
 def _spell_array(items, path, seen) {
@@ -1165,7 +1184,8 @@ def _spell_inline(source, path, seen) {
   for name, item in source {
     if !is_string(name) {
       raise EncodeError(
-        'a TOML key must be a string, got ${typeof(name)}', path,
+        'a TOML key must be a string, got ${typeof(name)}',
+        path,
       )
     }
 
@@ -1314,10 +1334,11 @@ class Document {
   /**
    * Writes `value` at `path`.
    *
-   * A key that is already there keeps its line, its spacing and its
-   * trailing comment; only the value text changes. A key that is not
-   * there is appended to the table that should hold it, and the table
-   * blocks along `path` are created when they do not exist.
+   * A key that already exists keeps its line, its spacing and any
+   * comment at the end of the line, and only the text of the value
+   * changes. A key that doesn't exist is added to the end of the table
+   * that should contain it, and any table blocks along `path` that
+   * don't exist are created.
    *
    * ```zuri
    * import toml
@@ -1339,10 +1360,10 @@ class Document {
    * @param string|list path A dotted key path, or a list of names for
    *    keys that contain a literal dot.
    * @param any value
-   * @returns Entry The pair that was written.
-   * @throws EditError If `path` runs through something that is not a
+   * @returns Entry The entry that was written.
+   * @throws EditError If `path` goes through something that isn't a
    *    table, or names a table that already exists.
-   * @throws EncodeError If `value` has no TOML spelling.
+   * @throws EncodeError If `value` can't be written as TOML.
    */
   set(path, value) {
     return _set(self, self.root, _as_path(path), value)
@@ -1362,11 +1383,11 @@ class Document {
   }
 
   /**
-   * Returns the table at `path`, creating it as a table block when it
-   * is not there.
+   * Returns the table at `path`, creating it as a table block if it
+   * doesn't exist.
    *
-   * This is how a dictionary becomes a `[header]` block rather than
-   * the inline table `set()` would write.
+   * This is how a dictionary becomes a `[header]` block, instead of the
+   * inline table that `set()` would write.
    *
    * ```zuri
    * import toml
@@ -1387,7 +1408,7 @@ class Document {
    *
    * @param string|list path
    * @returns Table
-   * @throws EditError If `path` runs through something that is not a
+   * @throws EditError If `path` goes through something that isn't a
    *    table.
    */
   table(path) {
@@ -1570,8 +1591,8 @@ def _block_prefix(document) {
   }
 
   var previous = document.order.length() > 0
-    ? document.order[document.order.length() - 1]
-    : document.root
+      ? document.order[document.order.length() - 1]
+      : document.root
 
   _close_last_line(document, previous)
 
@@ -1617,7 +1638,7 @@ def _locate_in(document, start, parts, create) {
     if instance_of(child, ArrayOfTables) {
       raise EditError(
         "'${'.'.join(parts[0, i + 1])}' is an array of tables; reach an " +
-          'element through array_of_tables()',
+            'element through array_of_tables()',
         '.'.join(parts),
       )
     }
@@ -1674,9 +1695,9 @@ def _set(document, start, parts, value) {
     if _is_prefix(entry.path, path) {
       raise EditError(
         entry.value.kind == 'inline-table'
-          ? "'${_join_path(entry.path)}' is an inline table, which TOML " +
-            'seals once written; replace the whole value instead'
-          : "'${_join_path(entry.path)}' is a value and cannot hold a key",
+            ? "'${_join_path(entry.path)}' is an inline table, which TOML " +
+                  'seals once written; replace the whole value instead'
+            : "'${_join_path(entry.path)}' is a value and cannot hold a key",
         '.'.join(parts),
       )
     }
@@ -1781,9 +1802,7 @@ def _rebuild_prefix(prefix, text, newline) {
 
   kept.append(indent)
 
-  return newline == '\r\n'
-    ? '\r\n'.join(kept)
-    : '\n'.join(kept)
+  return newline == '\r\n' ? '\r\n'.join(kept) : '\n'.join(kept)
 }
 
 # Finds or creates the array of tables at `parts`.

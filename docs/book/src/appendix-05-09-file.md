@@ -1,30 +1,29 @@
 # File Methods
 
-Every method on the built-in `file` type, with its signature, what it
-returns, and the cases where it does something other than the obvious
-thing.
+Every method of the built-in `file` type, with its signature, what it
+returns, and any behavior you might not expect.
 
 | Method | Returns | Summary |
 | --- | --- | --- |
 | [`exists()`](#exists) | `boolean` | Returns `true` if a file exists or `false` otherwise. |
 | [`close()`](#close) | `void` | Closes the stream to an opened file. |
 | [`open()`](#open) | `void` | Opens the stream to a file for the operation originally specified on the file object during creation. |
-| [`read(length: ?int)`](#read) | `string\|bytes` | Reads the content of an opened file up to the specified length and returns it as string or bytes if the file was opened in the binary mode. |
+| [`read(length: ?int)`](#read) | `string\|bytes` | Reads from the open file, up to `length` bytes, and returns a string, or bytes if the file was opened in a binary mode. |
 | [`gets(length: ?int)`](#gets) | `string\|bytes` | Same as `read()`, but doesn't open or close the file automatically. |
 | [`write(data: string\|bytes)`](#write) | `string\|bytes` | Writes a string or bytes to an opened file at the current insertion point. |
 | [`puts(data: string\|bytes)`](#puts) | `string\|bytes` | Same as `write()`, but doesn't open or close the file automatically. |
-| [`number()`](#number) | `int` | Returns the integer file descriptor number that is used by the underlying implementation to request I/O operations from the operating system. |
+| [`number()`](#number) | `int` | Returns the file descriptor that the operating system uses for this file. |
 | [`is_tty()`](#is_tty) | `boolean` | Returns `true` if the file is connected to a TTY like device or `false` otherwise. |
 | [`is_open()`](#is_open) | `boolean` | Returns `true` if the file is open for reading or writing and `false` otherwise. |
 | [`is_closed()`](#is_closed) | `boolean` | Returns `true` if the file is closed for reading or writing and `false` otherwise. |
 | [`flush()`](#flush) | `void` | Flushes the buffer held by a file. |
 | [`stats()`](#stats) | `dict` | Returns the statistics or details of a file. |
-| [`symlink()`](#symlink) | `boolean` | Creates a symbolic link for the original file at the specified path. |
+| [`symlink()`](#symlink) | `boolean` | Creates a symbolic link to this file at the given path. |
 | [`delete()`](#delete) | `boolean` | Deletes a file. |
-| [`rename(new_name: string)`](#rename) | `boolean` | Renames a file to to `new_name`. |
+| [`rename(new_name: string)`](#rename) | `boolean` | Renames the file to `new_name`. |
 | [`path()`](#path) | `string` | Returns the path to the file. |
 | [`abs_path()`](#abs_path) | `string` | Returns the absolute path to the file. |
-| [`copy(path: string)`](#copy) | `boolean` | Copies a file from the path specified in the original file to the given path. |
+| [`copy(path: string)`](#copy) | `boolean` | Copies the file to the given path. |
 | [`truncate(length: ?number)`](#truncate) | `boolean` | Truncates the entire file if length is not given or truncates the file such that only length number of bytes is left in it. |
 | [`chmod(mode: int)`](#chmod) | `boolean` | Changes the permission on the file to the one specified in the number given. |
 | [`set_times(atime: number, mtime: number)`](#set_times) | `boolean` | Sets the last access time and last modified time of the file. |
@@ -94,22 +93,17 @@ For example:
 read(length: ?int) -> string|bytes
 ```
 
-Reads the content of an opened file up to the specified length and
-returns it as string or bytes if the file was opened in the binary mode.
-If the length is not specified, the file will be read to the end.
+Reads from the open file, up to `length` bytes, and returns a string, or
+bytes if the file was opened in a binary mode. Without a length, it
+reads to the end of the file.
 
-In text mode the bytes read must be valid UTF-8; anything else raises
-rather than being silently replaced. Open the file in a binary mode
-(`'rb'`) to read arbitrary bytes instead. Note that `io.stdin` is
-already binary.
+In text mode, the data must be valid UTF-8, and anything else raises an
+error, instead of being silently replaced. To read arbitrary bytes, open
+the file in a binary mode, such as `'rb'`. `io.stdin` is already binary.
 
-This method requires that the file be opened in the read mode (default
-mode) or a mode that supports reading. If you aren't reading the full
-length of the file, you'll need to call the `close()` method to free the
-file for further reading, otherwise, the `close()` method will be
-automatically called for you.
-
-_An example has been given above._
+The file must be open in a mode that allows reading, which includes the
+default mode. If you read the whole file, it's closed for you.
+Otherwise, call `close()` when you've finished.
 
 **Parameters**
 
@@ -171,10 +165,9 @@ Same as `write()`, but doesn't open or close the file automatically.
 number() -> int
 ```
 
-Returns the integer file descriptor number that is used by the
-underlying implementation to request I/O operations from the operating
-system. This can be very useful for low-level interfaces that uses or
-act as file descriptors.
+Returns the file descriptor that the operating system uses for this
+file. This is useful for low-level interfaces that work with file
+descriptors.
 
 For example:
 
@@ -183,14 +176,14 @@ For example:
 6
 ```
 
-A standard stream reports the descriptor it is named by, `0`, `1` or
-`2`, rather than the private duplicate the runtime holds open for it, so
-`number()` is what tells `io.stdout` apart from `io.stderr`.
+A standard stream reports the descriptor it's known by, `0`, `1` or `2`,
+not the private duplicate that the runtime keeps open for it, so
+`number()` tells `io.stdout` apart from `io.stderr`.
 
 **Returns** `int`
 
-> **Note:** `-1` on a platform with no file descriptors, and on any handle
-> that is not currently open.
+> **Note:** It's `-1` on a platform without file descriptors, and for any
+> handle that isn't currently open.
 
 ## `is_tty()`
 
@@ -305,7 +298,7 @@ Every key above is present on every platform, so reading `size` or
 symlink() -> boolean
 ```
 
-Creates a symbolic link for the original file at the specified path.
+Creates a symbolic link to this file at the given path.
 
 For example:
 
@@ -316,11 +309,11 @@ true
 
 **Returns** `boolean`
 
-> **Note:** Windows decides at creation time whether a link stands for a
-> file or a directory, so the original is inspected first; one pointing at
-> something that does not exist yet is made as a file link. Creating any
-> symbolic link there is privileged, and fails unless the machine is in
-> developer mode or the process is elevated.
+> **Note:** Windows decides when a link is created whether it's a link to
+> a file or a directory, so the original is checked first. A link to
+> something that doesn't exist yet is created as a file link. Creating any
+> symbolic link on Windows requires privileges, and it fails unless the
+> machine is in developer mode or the process is elevated.
 
 ## `delete()`
 
@@ -351,8 +344,8 @@ true
 rename(new_name: string) -> boolean
 ```
 
-Renames a file to to `new_name`. The new name can be a full path in
-another location in which case the file will be moved.
+Renames the file to `new_name`. The new name can be a full path to
+another location, in which case the file is moved.
 
 For example:
 
@@ -367,9 +360,9 @@ true
 
 **Returns** `boolean`
 
-> **Note:** The new name cannot be empty
+> **Note:** The new name can't be empty.
 
-> **Note:** This method throws Error on failure.
+> **Note:** This method raises an error if it fails.
 
 ## `path()`
 
@@ -411,8 +404,7 @@ For example:
 copy(path: string) -> boolean
 ```
 
-Copies a file from the path specified in the original file to the given
-path.
+Copies the file to the given path.
 
 For example:
 
@@ -423,7 +415,7 @@ true
 
 **Parameters**
 
-- `new_name` (`string`)
+- `path` (`string`)
 
 **Returns** `boolean`
 

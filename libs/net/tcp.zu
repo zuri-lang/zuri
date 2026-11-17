@@ -1,18 +1,13 @@
 /**
  * @module tcp
  *
- * This module provides a complete implementation of the
- * Transmission Control Protocol as specified in IETF RFC 793. It
- * provides an interface for working with connected socket and
- * listening socket alike.
+ * TCP sockets, for both connecting to a server and listening for
+ * connections.
  *
- * It is meant to be used to provide more controlled and specific
- * TCP-based operating system features and for implementing
- * various standard and custom network protocols and
- * specifications.
+ * Use this module to work with TCP directly, for example to implement a
+ * standard or custom network protocol.
  *
- * The example below shows how to use this module to create a
- * basic HTTP client.
+ * This example is a very small HTTP client:
  *
  * ```zuri
  * import net
@@ -25,12 +20,9 @@
  * stream.close()
  * ```
  *
- * Like earlier said, this module provides functionally for both
- * connected sockets and listening sockets. A simple
- * demonstration of a listening socket is given below which
- * implements a basic and foundational HTTP server that recieves
- * requests on port 8080 and returns a message containig the
- * address of the client to the said client.
+ * A listening socket works in a similar way. This example accepts
+ * connections on port 8080, and replies to each client with its own
+ * address:
  *
  * ```zuri
  * import net
@@ -64,17 +56,16 @@ def _addr_string(address) {
 }
 
 /**
- * Resolves `address` - a `host:port` string whose host may be a name
- * or an IP literal - into every socket address it names, in the order
+ * Resolves `address`, a `host:port` string whose host can be a name or
+ * an IP address, into every socket address it refers to, in the order
  * the resolver returned them.
  *
- * A hostname routinely maps to several addresses (an IPv6 and an IPv4
- * one at the very least), which is why this returns a list rather
- * than a single address. `connect()` does its own resolution when
- * handed a name, so this is mainly useful when you need the concrete
- * address first: to connect with a timeout (which requires a literal),
- * to prefer one address family, or simply to look up what a name
- * points at.
+ * A host name often maps to several addresses, at least an IPv6 and an
+ * IPv4 address, which is why this returns a list. `connect()` does its
+ * own resolution when it's given a name, so this is mainly useful when
+ * you need the actual address first: to connect with a timeout, which
+ * requires an IP address, to prefer one address family, or just to find
+ * out what a name points to.
  *
  * ```zuri
  * import net
@@ -83,9 +74,9 @@ def _addr_string(address) {
  * # [93.184.215.14:443]
  * ```
  *
- * @param {string|SocketAddr} address: The `host:port` to resolve
+ * @param {string|SocketAddr} address: the `host:port` to resolve
  * @returns list: one or more `SocketAddr`
- * @throws Error if the name cannot be resolved, or resolves to nothing
+ * @throws Error if the name can't be resolved, or resolves to nothing
  */
 def resolve(address) {
   var resolved = _net_tcp.tcp_resolve(_addr_string(address))
@@ -154,17 +145,14 @@ class TcpStream {
    * Returns a new instance of a {TcpStream}.
    */
   @new(_ptr) {
-    self._ptr = _ptr == nil ?
-      _net_tcp.tcp_new() :
-      _ptr
+    self._ptr = _ptr == nil ? _net_tcp.tcp_new() : _ptr
   }
 
   /**
-   * Hands out this stream's underlying native socket handle.
-   * `_ptr` is private the way every field prefixed with `_` is,
-   * so a sibling module like `tls` - which needs to take an
-   * already-connected `TcpStream` and wrap it, without belonging
-   * to this class or inheriting from it - has no other way to
+   * Returns this stream's native socket handle. `_ptr` is private, like
+   * every field whose name starts with `_`, so a module like `tls`,
+   * which has to take a connected `TcpStream` and wrap it, without
+   * belonging to this class or inheriting from it, has no other way to
    * reach it.
    *
    * @returns Ptr
@@ -174,77 +162,71 @@ class TcpStream {
   }
 
   /**
-   * Opens a TCP connection to a remote host, turning this
-   * instance into a connected stream.
+   * Opens a TCP connection to a remote host, which turns this object
+   * into a connected stream.
    *
-   * `address` may be a hostname or an IP literal, combined with
-   * a port, e.g. `'example.com:80'` or `'127.0.0.1:8080'`. A
-   * hostname may resolve to several addresses; they are tried in
-   * turn and the first one that succeeds is used, meaning this
-   * call can succeed even though some of the resolved addresses
-   * were unreachable.
+   * `address` is a host name or an IP address, with a port, such as
+   * `'example.com:80'` or `'127.0.0.1:8080'`. A host name can resolve
+   * to several addresses. They're tried in turn, and the first one that
+   * succeeds is used, so this call can succeed even if some of the
+   * addresses were unreachable.
    *
-   * Pass `timeout` to bound how long the connection attempt may
-   * take before giving up. When a timeout is given, `address`
-   * must already be a concrete `ip:port` literal rather than a
-   * hostname, as no DNS resolution would be performed and no
-   * multi-address fallback is guaranteed.
+   * Pass `timeout` to limit how long the connection attempt can take.
+   * When a timeout is given, `address` must be an IP address and port,
+   * not a host name, because no DNS resolution is done, and so there's
+   * no fallback to other addresses.
    *
-   * @note a timeout of `0` is the same as specifying no timeout.
-   * @param {string|SocketAddr} address: The host:port to connect
-   *    to
-   * @param ?int timeout: Optional milliseconds to wait before
-   *    giving up; omit for an untimed connection attempt
+   * @note A timeout of `0` is the same as no timeout.
+   * @param {string|SocketAddr} address: the host and port to connect to
+   * @param ?int timeout: the number of milliseconds to wait before
+   *    giving up. Leave it out for no time limit.
    * @throws Error if resolution fails, if every resolved address
-   *    refuses the connection, or (when `timeout` is given) if
-   *    `address` cannot be parsed as an `ip:port` literal or the
-   *    timeout elapses first.
+   *    refuses the connection, or, when `timeout` is given, if
+   *    `address` isn't an IP address and port or the timeout passes
+   *    first.
    */
   connect(address, timeout) {
     _net_tcp.tcp_connect(self._ptr, _addr_string(address), timeout)
   }
 
   /**
-   * Binds this instance to `address` and starts listening for
-   * incoming connections, turning it into a listening server.
+   * Binds this object to `address` and starts listening for incoming
+   * connections, which turns it into a server.
    *
-   * `address` may be a hostname or an IP literal combined with a
-   * port, e.g. `'0.0.0.0:8080'` or `'[::]:8080'`; port `0` asks
-   * the OS to assign an available ephemeral port, which can then
-   * be discovered via `local_address()`. If `address` resolves
-   * to multiple addresses, binding is attempted against each in
-   * turn until one succeeds.
+   * `address` is a host name or an IP address, with a port, such as
+   * `'0.0.0.0:8080'` or `'[::]:8080'`. Port `0` asks the operating
+   * system to choose a free port, which you can then find with
+   * `local_address()`. If `address` resolves to several addresses, each
+   * one is tried in turn until one can be bound.
    *
-   * @param {string|SocketAddr} address: The host:port to bind
+   * @param {string|SocketAddr} address: the host and port to bind to
    *    and listen on
-   * @throws Error if resolution fails or every resolved address
-   *    fails to bind (e.g. because it is already in use)
+   * @throws Error if resolution fails, or no resolved address can be
+   *    bound, for example because it's already in use
    */
   bind(address) {
     _net_tcp.tcp_bind(self._ptr, _addr_string(address))
   }
 
   /**
-   * Accepts a new incoming connection. Only valid once this
-   * instance has been `bind()`-ed.
+   * Accepts a new incoming connection. This only works after `bind()`
+   * has been called.
    *
-   * Blocks until a connection arrives, and returns a fully
-   * connected `TcpStream` for the new client. To find out who
-   * connected, call `peer_address()` on it.
+   * It waits until a connection arrives, and returns a connected
+   * `TcpStream` for the new client. To find out who connected, call
+   * `peer_address()` on it.
    *
-   * In non-blocking mode (see `set_non_blocking()`) it never
-   * blocks: it returns `nil` when no connection is waiting. That
-   * is an answer, not a failure, so nothing is raised for it.
+   * In non-blocking mode, set with `set_non_blocking()`, it never
+   * waits, and returns `nil` when no connection is waiting. That's an
+   * answer, not a failure, so no error is raised.
    *
-   * The accepted stream can carry its own blocking mode, which
-   * is a platform's default rather than this listener's. Set it
-   * explicitly with `set_non_blocking()` on the returned stream if
-   * it matters.
+   * The accepted stream can have its own blocking mode, which is the
+   * platform's default, not necessarily the listener's. If it matters,
+   * set it explicitly with `set_non_blocking()` on the returned stream.
    *
-   * @returns ?TcpStream a stream connected to the newly accepted
-   *    client, or `nil` in non-blocking mode with nobody waiting
-   * @throws Error on an underlying I/O error, or if this
-   *    instance has not been bound
+   * @returns ?TcpStream a stream connected to the new client, or `nil`
+   *    in non-blocking mode when nobody is waiting
+   * @throws Error on an I/O error, or if this object hasn't been bound
    */
   accept() {
     var client = _net_tcp.tcp_accept(self._ptr)
@@ -284,15 +266,15 @@ class TcpStream {
   }
 
   /**
-   * Shuts down the read, write, or both halves of this
-   * connection. See `Shutdown` for the meaning of each value;
-   * defaults to `Shutdown.BOTH` when `how` is omitted. Only
-   * valid on a connected stream. Calling this more than once may
-   * return an error on some platforms.
+   * Shuts down the reading half, the writing half or both halves of
+   * this connection. See `Shutdown` for what each value means. If `how`
+   * is left out, it defaults to `Shutdown.BOTH`. This only works on a
+   * connected stream. Calling it more than once can raise an error on
+   * some platforms.
    *
-   * @param ?int how: One of the `Shutdown` constants
-   * @throws Error if the underlying `shutdown(2)` call fails, or
-   *    if this instance is not a connected stream
+   * @param ?int how: one of the `Shutdown` constants
+   * @throws Error if the underlying `shutdown(2)` call fails, or if
+   *    this object isn't a connected stream
    */
   shutdown(how) {
     _net_tcp.tcp_shutdown(self._ptr, how)
@@ -427,15 +409,13 @@ class TcpStream {
   }
 
   /**
-   * Retrieves and clears the value of the socket's `SO_ERROR`
-   * option - i.e. any pending error the OS has recorded for this
-   * socket without yet surfacing through a failed read, write,
-   * or `accept()`.
+   * Reads and clears the socket's `SO_ERROR` option, which is any error
+   * that the operating system has recorded for this socket but hasn't
+   * yet reported through a failed read, write or `accept()`.
    *
-   * @returns ?string a description of the pending error, or
-   *    `nil` if there is none
-   * @throws Error on an underlying I/O error while querying the
-   *    socket
+   * @returns ?string a description of the pending error, or `nil` if
+   *    there isn't one
+   * @throws Error on an I/O error while querying the socket
    */
   get_error() {
     return _net_tcp.tcp_get_error(self._ptr)
@@ -455,22 +435,19 @@ class TcpStream {
   }
 
   /**
-   * Reads up to `length` bytes from the stream into a newly
-   * allocated byte buffer, without necessarily filling it and
-   * returns the buffer. It is entirely normal for this to return
-   * fewer bytes than `length`; even when more data will
-   * eventually be available. So, callers that need an exact
-   * amount of data should call this in a loop or use
+   * Reads up to `length` bytes from the stream, and returns them in a
+   * new buffer. It's quite normal for this to return fewer bytes than
+   * `length`, even when more data will arrive later, so code that needs
+   * an exact amount of data should call this in a loop, or use
    * `read_exact()` instead.
    *
-   * An empty result means the peer has closed its write half
-   * (EOF).
+   * An empty result means that the peer has closed its writing half,
+   * which is the end of the stream.
    *
-   * @param number length: The maximum number of bytes to read
-   * @returns bytes up to `length` bytes read from the stream
-   *    (may be empty on EOF)
-   * @throws Error on an underlying I/O error, or if the
-   *    configured read timeout elapses first
+   * @param number length: the maximum number of bytes to read
+   * @returns bytes up to `length` bytes read from the stream, which can
+   *    be empty at the end of the stream
+   * @throws Error on an I/O error, or if the read timeout passes first
    */
   read(length) {
     return _net_tcp.tcp_read(self._ptr, length)
@@ -478,32 +455,29 @@ class TcpStream {
 
   /**
    * Reads whatever has already arrived, for a stream in non-blocking
-   * mode (see `set_non_blocking()`) watched on a `Poller`. It is
-   * `read()` with "nothing yet" as a result rather than an error, which
-   * is the usual outcome in that mode and not a failure.
+   * mode (see `set_non_blocking()`) that's watched by a `Poller`. It's
+   * the same as `read()`, except that "nothing yet" is a result, not an
+   * error, because that's the usual outcome in that mode.
    *
-   * @param number length: The maximum number of bytes to read
-   * @returns ?bytes up to `length` bytes, empty at EOF, or `nil` when
-   *    nothing has arrived yet
-   * @throws Error on an underlying I/O error
+   * @param number length: the maximum number of bytes to read
+   * @returns ?bytes up to `length` bytes, empty at the end of the
+   *    stream, or `nil` if nothing has arrived yet
+   * @throws Error on an I/O error
    */
   try_read(length) {
     return _net_tcp.tcp_try_read(self._ptr, length)
   }
 
   /**
-   * Reads exactly `length` bytes from the stream, blocking
-   * (subject to the read timeout) until that many bytes have
-   * arrived.
+   * Reads exactly `length` bytes from the stream, waiting, subject to
+   * the read timeout, until that many bytes have arrived.
    *
-   * If the stream reaches EOF before `length` bytes have been
-   * read, this raises an error; the contents of any bytes
-   * already read are lost.
+   * If the stream ends before `length` bytes have been read, this
+   * raises an error, and any bytes already read are lost.
    *
-   * @param number length: The exact number of bytes to read
+   * @param number length: the exact number of bytes to read
    * @returns bytes exactly `length` bytes
-   * @throws Error if EOF is reached early, or on any other
-   *    underlying I/O error
+   * @throws Error if the stream ends early, or on any other I/O error
    */
   read_exact(length) {
     return _net_tcp.tcp_read_exact(self._ptr, length)
@@ -556,17 +530,18 @@ class TcpStream {
   }
 
   /**
-   * Writes as much of `data` as the socket takes right now, for a
-   * stream in non-blocking mode, and returns how much that was. It is
-   * `write()` with "no room" as a result rather than an error.
+   * Writes as much of `data` as the socket accepts right now, for a
+   * stream in non-blocking mode, and returns how much that was. It's
+   * the same as `write()`, except that "no room" is a result, not an
+   * error.
    *
-   * @param {bytes|string} data: The bytes (or UTF-8 text) to write
-   * @param ?number offset: Where in `data` to start. Defaults to `0`,
-   *    which lets a caller resume a partial write without copying
-   *    what remains.
-   * @returns number the number of bytes taken, `0` when the socket has
-   *    no room
-   * @throws Error on an underlying I/O error
+   * @param {bytes|string} data: the bytes, or UTF-8 text, to write
+   * @param ?number offset: where in `data` to start. Defaults to `0`.
+   *    It lets a caller continue a partial write without copying the
+   *    rest of the data.
+   * @returns number the number of bytes accepted, or `0` if the socket
+   *    has no room
+   * @throws Error on an I/O error
    */
   try_write(data, offset: ?number) {
     return _net_tcp.tcp_try_write(self._ptr, data, offset == nil ? 0 : offset)
@@ -622,13 +597,11 @@ class TcpStream {
   }
 
   /**
-   * Flushes, shuts down, and releases the underlying socket,
-   * whether it is a connected stream or a bound listener. It is
-   * advised to call this explicitly once you are done with the
-   * socket rather than relying on the Zuri garbage collector to
-   * do it for you eventually. Safe to call more than once, and
-   * safe to call on an instance that was never connected or
-   * bound.
+   * Flushes, shuts down and releases the socket, whether it's a
+   * connected stream or a listening socket. Call this yourself when
+   * you've finished with the socket, instead of waiting for the garbage
+   * collector to do it eventually. It's safe to call more than once,
+   * and on an object that was never connected or bound.
    */
   close() {
     _net_tcp.tcp_close(self._ptr)

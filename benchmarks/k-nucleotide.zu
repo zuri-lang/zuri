@@ -32,13 +32,7 @@ const THREE_H = 'H'.ord()
 const BASES = 'ACGT'
 
 # The reading frames reported as raw counts rather than frequencies.
-const TARGETS = [
-  'GGT',
-  'GGTA',
-  'GGTATT',
-  'GGTATTTTAATT',
-  'GGTATTTTAATTTATAGT',
-]
+const TARGETS = ['GGT', 'GGTA', 'GGTATT', 'GGTATTTTAATT', 'GGTATTTTAATTTATAGT']
 
 # Size of each read from stdin.
 const CHUNK = 64 * 1024
@@ -92,9 +86,9 @@ def read_sequence(codes: bytes) {
       return [bytes(0), 0]
     }
 
-    if pos + 2 < size
-      and data[pos + 1] == THREE_T
-      and data[pos + 2] == THREE_H {
+    if pos + 2 < size and
+        data[pos + 1] == THREE_T and
+        data[pos + 2] == THREE_H {
       break
     }
 

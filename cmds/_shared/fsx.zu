@@ -64,7 +64,8 @@ def atomic_write(path: string, contents, mode: ?int) {
   ensure_dir(directory)
 
   var temporary = os.join_paths(
-    directory, '.${os.base_name(path)}.${unique()}.tmp',
+    directory,
+    '.${os.base_name(path)}.${unique()}.tmp',
   )
   var binary = is_bytes(contents)
   var handle = file(temporary, binary ? 'wb' : 'w')
@@ -246,7 +247,9 @@ def tree_digest(root: string) {
     } else {
       var executable = (file(full).stats().mode & 0c111) != 0
 
-      lines.append('${executable ? "x" : "f"} ${entry.path} ${hash.sha256(read_bytes(full))}')
+      lines.append(
+        '${executable ? "x" : "f"} ${entry.path} ${hash.sha256(read_bytes(full))}',
+      )
     }
   }
 

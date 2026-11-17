@@ -89,8 +89,7 @@ class Packet {
 
 # Task Records
 
-class TaskRec {
-}
+class TaskRec {}
 
 class DeviceTaskRec < TaskRec {
   @new() {
@@ -465,14 +464,22 @@ def run() {
   wkq = Packet(wkq, I_DEVA, K_DEV)
   wkq = Packet(wkq, I_DEVA, K_DEV)
   HandlerTask(
-    I_HANDLERA, 2_000, wkq, TaskState().waitingWithPacket(), HandlerTaskRec(),
+    I_HANDLERA,
+    2_000,
+    wkq,
+    TaskState().waitingWithPacket(),
+    HandlerTaskRec(),
   )
 
   wkq = Packet(nil, I_DEVB, K_DEV)
   wkq = Packet(wkq, I_DEVB, K_DEV)
   wkq = Packet(wkq, I_DEVB, K_DEV)
   HandlerTask(
-    I_HANDLERB, 3_000, wkq, TaskState().waitingWithPacket(), HandlerTaskRec(),
+    I_HANDLERB,
+    3_000,
+    wkq,
+    TaskState().waitingWithPacket(),
+    HandlerTaskRec(),
   )
 
   wkq = nil

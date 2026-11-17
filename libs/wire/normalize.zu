@@ -1,41 +1,41 @@
 /**
  * @module wire.normalize
  *
- * Rewriting Wire's pseudo elements into something HTML's own tree
- * construction will not move, drop or reshape.
+ * Rewrites Wire's pseudo elements into a form that HTML's tree
+ * construction won't move, drop or reshape.
  *
- * ### Why this exists
+ * ### Why this is needed
  *
- * `<include>`, `<extend>`, `<declare>` and `<define>` are not HTML
- * elements, and a standards-following parser has firm opinions about
- * elements it does not know. Inside `<head>` one is pushed out into
- * `<body>`. Inside a table one is foster parented out in front of the
- * table. Inside a `<select>` one is dropped on the floor. And written
+ * `<include>`, `<extend>`, `<declare>` and `<define>` aren't HTML
+ * elements, and a parser that follows the standard has strict rules for
+ * elements it doesn't know. Inside `<head>`, an unknown element is
+ * moved into `<body>`. Inside a table, it's foster-parented in front of
+ * the table. Inside a `<select>`, it's dropped. And when it's written
  * as `<include path="x" />`, the trailing slash means nothing on an
- * unknown element, so it swallows the whole rest of the document as its
- * children.
+ * unknown element, so the element takes the whole rest of the document
+ * as its children.
  *
- * All four of those are places a template genuinely wants an include: a
- * shared block of `<meta>` tags, a partial holding table rows, a
- * partial holding options. So Wire does not hand its own tag names to
- * the parser at all. While the source is being tokenized, every pseudo
- * element is turned into a `<template>` carrying the directive it means,
- * and `<template>` is the one element the standard lets through
+ * These are all places where a template might reasonably want an
+ * include: a shared set of `<meta>` tags, a partial with table rows, or
+ * a partial with options. So Wire never gives its own tag names to the
+ * parser. While the source is being tokenized, each pseudo element is
+ * turned into a `<template>` element carrying the directive it stands
+ * for, because `<template>` is the one element that the standard leaves
  * untouched everywhere.
  *
- * The rewrite happens on the token stream rather than on the text, so it
- * inherits the tokenizer's own understanding of comments, of raw text
- * inside `<script>` and `<style>`, and of quoting. A `<include>` written
- * inside a comment or inside a script stays exactly where it was.
+ * The rewrite works on the stream of tokens, not on the text, so it
+ * follows the tokenizer's own handling of comments, of raw text inside
+ * `<script>` and `<style>`, and of quoting. An `<include>` written
+ * inside a comment or a script stays exactly where it was.
  *
- * ### What else it notices
+ * ### What else it records
  *
- * A template may be a whole page or a fragment of one, and the tree
- * builder gives you `<html>`, `<head>` and `<body>` either way. Telling
- * the two apart afterwards is guesswork, so the flags are collected here
- * while the real tokens go past: whether the source actually spelled a
- * doctype, an `<html>`, a `<head>` or a `<body>`. The compiler emits
- * each of those only when the author wrote it.
+ * A template can be a whole page or a fragment of one, and the tree
+ * builder produces `<html>`, `<head>` and `<body>` either way. The two
+ * can't be told apart reliably afterwards, so while the tokens go past,
+ * this records whether the source actually contained a doctype, an
+ * `<html>`, a `<head>` or a `<body>`. The compiler only writes out each
+ * of those if the author wrote it.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
@@ -61,9 +61,9 @@ class Normalizer {
   var cdata_ok = false
 
   /**
-   * The parse errors the underlying tokenizer has collected. This is the
-   * tokenizer's own list rather than a copy, so the tree builder reading
-   * it sees everything.
+   * The parse errors the tokenizer has collected. This is the
+   * tokenizer's own list, not a copy, so the tree builder that reads it
+   * sees everything.
    */
   var errors = []
 
@@ -259,24 +259,25 @@ def _end_tag(start) {
 }
 
 /**
- * Parses _source_ into a tree with Wire's pseudo elements already
+ * Parses _source_ into a tree, with Wire's pseudo elements already
  * rewritten.
  *
- * _context_ names the element the source is being parsed inside. Pass
- * `nil` to parse it as a whole document, which is what a template being
- * rendered on its own is; pass a tag name to parse it as a fragment, so
- * that a partial holding table rows keeps its rows when it is included
- * inside a table.
+ * _context_ names the element that the source is being parsed inside.
+ * Pass `nil` to parse it as a whole document, which is the right choice
+ * for a template that's rendered by itself. Pass a tag name to parse it
+ * as a fragment, so that a partial containing table rows keeps its rows
+ * when it's included inside a table.
  *
- * Returns a dictionary of:
+ * Returns a dictionary with these keys:
  *
  * - `root`: the `Document` for a document parse, or the
- *   `DocumentFragment` holding the parsed nodes for a fragment parse.
- * - `document`: true when the parse was a document parse.
+ *   `DocumentFragment` with the parsed nodes for a fragment parse.
+ * - `document`: true for a document parse.
  * - `saw_doctype`, `saw_html`, `saw_head`, `saw_body`: whether the
- *   source really contained each, as opposed to the parser having
- *   supplied it.
- * - `errors`: the parse errors the tokenizer and tree builder found.
+ *   source really contained each of these, as opposed to the parser
+ *   adding it.
+ * - `errors`: the parse errors that the tokenizer and tree builder
+ *   found.
  *
  * ```zuri
  * import wire
@@ -291,10 +292,9 @@ def _end_tag(start) {
  * @returns dict
  */
 def parse(source: string, context: ?string) {
-  var stream = Normalizer(html.Tokenizer(source, {
-    scripting: false,
-    auto_content_state: false,
-  }))
+  var stream = Normalizer(
+    html.Tokenizer(source, { scripting: false, auto_content_state: false }),
+  )
 
   var builder = html.TreeBuilder(stream, { scripting: false })
 

@@ -48,13 +48,13 @@ ok('basic token kinds and values')
 # ---------------------------------------------------------------------------
 var pos_tokens = zuri.tokenize('  foo')
 assert pos_tokens[0].kind == 'Identifier',
-  'first real token must be the identifier'
+    'first real token must be the identifier'
 assert pos_tokens[0].line == 1, 'identifier must be on line 1'
 assert pos_tokens[0].column == 3,
-  'identifier must start at column 3 (after two spaces)'
+    'identifier must start at column 3 (after two spaces)'
 assert pos_tokens[0].text == 'foo', 'text must be the exact source slice'
 assert pos_tokens[0].end - pos_tokens[0].start == 3,
-  'span must cover exactly 3 characters'
+    'span must cover exactly 3 characters'
 ok('token positions and spans')
 
 # ---------------------------------------------------------------------------
@@ -76,9 +76,9 @@ for t in trivia_tokens {
 }
 assert comment_token != nil, 'must have found the comment token'
 assert comment_token.value == ' a comment',
-  'comment value must exclude the leading #'
+    'comment value must exclude the leading #'
 assert comment_token.is_trivia(),
-  'a Comment token must report is_trivia() as true'
+    'a Comment token must report is_trivia() as true'
 ok('comments and newlines are preserved as real tokens')
 
 # ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ ok('malformed input surfaces as an Error token instead of raising')
 # ---------------------------------------------------------------------------
 var str_tokens = zuri.tokenize('x')
 assert str_tokens[0].to_string() == 'Identifier@1:1',
-  'to_string() must be kind@line:column'
+    'to_string() must be kind@line:column'
 ok('Token.to_string()')
 
 # ---------------------------------------------------------------------------
@@ -113,14 +113,14 @@ scratch_file.close()
 
 var file_tokens = zuri.tokenize_file(scratch_path)
 assert file_tokens.length() == zuri.tokenize('var x = 1').length(),
-  'tokenize_file() must match tokenize() on the same source'
+    'tokenize_file() must match tokenize() on the same source'
 assert file_tokens[0].kind == 'Var',
-  'tokenize_file() must actually read the file content'
+    'tokenize_file() must actually read the file content'
 
 assert raises(@() {
   zuri.tokenize_file('tmp/zuri_this_file_does_not_exist.zu')
 }),
-  'tokenize_file() on a missing file must raise'
+    'tokenize_file() on a missing file must raise'
 ok('tokenize_file() reads a real file and matches tokenize() on its content')
 
 # ===========================================================================

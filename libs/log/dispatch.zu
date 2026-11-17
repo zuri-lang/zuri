@@ -1,8 +1,8 @@
 /**
  * @module log.dispatch
  *
- * The default transport instance and the module-level functions
- * that configure it.
+ * The default transport, and the module-level functions that configure
+ * it.
  */
 
 import .console { ConsoleTransport }

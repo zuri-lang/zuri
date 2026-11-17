@@ -1,11 +1,11 @@
-/** 
+/**
  * @module type
  *
- * Provides type validation and conversion capabilities
+ * Type checking and conversion.
  *
- * This module is wrapper around the builtin functions where
- * applicable and does and return the same thing as the builtin
- * alternative.
+ * Where a built-in function already does the same job, the function
+ * here wraps it, and returns exactly what the built-in function
+ * returns.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */

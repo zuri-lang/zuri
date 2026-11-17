@@ -1,29 +1,29 @@
 /**
  * @module http
  *
- * JSON-RPC over HTTP, both ends of it. Each message, or batch, is the
- * body of a `POST`, and its answer is the body of the response, so
- * every exchange stands on its own: no connection is kept between
+ * JSON-RPC over HTTP, both client and server. Each message, or batch,
+ * is the body of a `POST`, and its answer is the body of the response,
+ * so every exchange is independent. No connection is kept between
  * calls, and nothing is framed.
  *
- * `http_handler()` serves a {Service} from a route of an `http`
- * server, and {HttpClient} calls a JSON-RPC service over HTTP.
+ * `http_handler()` serves a {Service} from a route of an `http` server,
+ * and {HttpClient} calls a JSON-RPC service over HTTP.
  *
- * The statuses on the wire follow common practice:
+ * The HTTP statuses follow common practice:
  *
  * | Status | When |
  * | --- | --- |
- * | `200` | an answer, whether it is a result or a JSON-RPC error |
+ * | `200` | an answer, whether it's a result or a JSON-RPC error |
  * | `204` | nothing to answer: a notification, or a batch of them |
  * | `405` | a method other than `POST` |
- * | `415` | a body that is not `application/json` in UTF-8 |
+ * | `415` | a body that isn't `application/json` in UTF-8 |
  *
- * A JSON-RPC error never changes the status: `METHOD_NOT_FOUND` comes
- * back as a `200` whose body says so. The `http` server's own limits
- * apply first, so a body over its `max_body_size` is refused with
- * `413` before it reaches the service.
+ * A JSON-RPC error never changes the status, so `METHOD_NOT_FOUND`
+ * comes back as a `200` whose body says so. The `http` server's own
+ * limits apply first, so a body larger than its `max_body_size` is
+ * refused with `413` before it reaches the service.
  *
- * Re-exported by `rpc`.
+ * The `rpc` module re-exports it.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -36,7 +36,9 @@ import .message as messages
 # the two that earlier drafts of JSON-RPC over HTTP named, which some
 # clients still send.
 const _MEDIA_TYPES = [
-  'application/json', 'application/json-rpc', 'application/jsonrequest',
+  'application/json',
+  'application/json-rpc',
+  'application/jsonrequest',
 ]
 
 # What is wrong with a request's `Content-Type`, or `nil` when it is
@@ -178,22 +180,23 @@ def _body_text(reply) {
 class HttpClient {
 
   /**
-   * Returns a new {HttpClient} calling the service at `url`.
+   * Returns a new {HttpClient} that calls the service at `url`.
    *
    * | Option | Meaning |
    * | --- | --- |
    * | `headers` | headers sent with every call, such as `Authorization` |
-   * | `timeout` | the most seconds to wait for an answer |
-   * | `client` | the `http.HttpClient` to send through |
+   * | `timeout` | the maximum number of seconds to wait for an answer |
+   * | `client` | the `http.HttpClient` to send requests through |
    *
    * `headers` defaults to none. `timeout` defaults to `nil`, which
-   * leaves the wait to the `http` client's own read timeout. `client`
-   * defaults to a new `http.HttpClient`; pass one for its proxy, TLS
-   * and connection settings.
+   * leaves it to the `http` client's own read timeout. `client`
+   * defaults to a new `http.HttpClient`. Pass one of your own to use
+   * its proxy, TLS and connection settings.
    *
-   * @param string url: Where the service is, an `http:` or `https:`
+   * @param string url: where the service is, as an `http:` or `https:`
    *    URL.
-   * @param ?dict options: Default `nil`, every option at its default.
+   * @param ?dict options: defaults to `nil`, which gives every option
+   *    its default.
    */
   @new(url: string, options: ?dict) {
     import http
@@ -242,7 +245,8 @@ class HttpClient {
 
     if answer.id != id {
       raise RpcError(
-        INVALID_REQUEST, 'the server answered #${answer.id} to request #${id}',
+        INVALID_REQUEST,
+        'the server answered #${answer.id} to request #${id}',
       )
     }
 
@@ -369,7 +373,8 @@ class HttpClient {
     if reply.status == 200 {
       if text == nil {
         raise RpcError(
-          PARSE_ERROR, 'Parse error: the answer is not valid UTF-8',
+          PARSE_ERROR,
+          'Parse error: the answer is not valid UTF-8',
         )
       }
 
@@ -382,9 +387,9 @@ class HttpClient {
 
     # Some servers carry a JSON-RPC error on another status. When the
     # body is an answer, it is the answer.
-    if text != nil
-      and reply.media_type() == 'application/json'
-      and !text.trim().is_empty() {
+    if text != nil and
+        reply.media_type() == 'application/json' and
+        !text.trim().is_empty() {
       catch {
         return messages.decode(text)
       } as error {

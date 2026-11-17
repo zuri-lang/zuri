@@ -104,14 +104,16 @@ assert !poller.modify(99, net.READABLE), 'and reports an unknown token as such'
 
 assert raises(@() {
   poller.add(listener, 1, 0)
-}), 'an empty interest is refused'
+}),
+    'an empty interest is refused'
 assert raises(@() {
   poller.modify(0, 0)
-}), 'including through modify()'
+}),
+    'including through modify()'
 assert raises(@() {
   poller.add('not a socket', 1, net.READABLE)
 }),
-  'and something that is not a socket is refused'
+    'and something that is not a socket is refused'
 ok('registration, replacement, and interest changes')
 
 # ---------------------------------------------------------------------------
@@ -124,14 +126,14 @@ var client = net.TcpStream()
 client.connect(address)
 
 assert wait_for(poller, 0, 2000) & net.READABLE != 0,
-  'a listener with a connection waiting is readable'
+    'a listener with a connection waiting is readable'
 ok('a pending connection makes a listener readable')
 
 var accepted = listener.accept()
 poller.add(accepted, 1, net.WRITABLE)
 
 assert wait_for(poller, 1, 2000) & net.WRITABLE != 0,
-  'a connected socket with room in its buffer is writable'
+    'a connected socket with room in its buffer is writable'
 
 poller.modify(1, net.READABLE)
 assert poller.wait(50).length() == 0, 'and is not readable with nothing sent'
@@ -150,7 +152,7 @@ client.close()
 var after_close = wait_for(poller, 1, 2000)
 assert after_close != 0, 'a peer closing wakes the poller'
 assert after_close & (net.READABLE | net.HANGUP) != 0,
-  'reported as readable (the end-of-stream is there to read) or as a hangup'
+    'reported as readable (the end-of-stream is there to read) or as a hangup'
 assert accepted.read(16).length() == 0, 'and the read that follows sees EOF'
 ok('a peer closing is reported rather than left to be discovered')
 
@@ -162,7 +164,7 @@ accepted.close()
 
 var closed_flags = wait_for(poller, 1, 1000)
 assert closed_flags & net.ERROR != 0,
-  'a closed socket is reported as an error against its own token'
+    'a closed socket is reported as an error against its own token'
 ok('a closed socket is reported, not polled')
 
 poller.remove(1)
@@ -186,14 +188,14 @@ var idle_poller = net.Poller()
 idle_poller.add(idle, 0, net.READABLE)
 
 assert idle_poller.wait(50).length() == 0,
-  'nothing is waiting on a fresh listener'
+    'nothing is waiting on a fresh listener'
 assert idle.accept() == nil, 'and accept() says so instead of raising'
 
 var caller = net.TcpStream()
 caller.connect(idle_address)
 
 assert wait_for(idle_poller, 0, 2000) & net.READABLE != 0,
-  'a connection waiting makes the listener readable'
+    'a connection waiting makes the listener readable'
 
 var answered = idle.accept()
 assert answered != nil, 'and accept() hands it over'
@@ -231,12 +233,12 @@ taken.set_read_timeout(50)
 assert raises(@() {
   taken.read_exact(4)
 }),
-  'so a read with nothing sent times out rather than returning empty'
+    'so a read with nothing sent times out rather than returning empty'
 
 assert raises(@() {
   net.Acceptor(served_by, -1)
 }),
-  'a negative interval is refused, since it would wait forever'
+    'a negative interval is refused, since it would wait forever'
 ok('an Acceptor accepts without parking the thread')
 
 taken.close()
@@ -255,7 +257,7 @@ var moving_poller = net.Poller()
 moving_poller.add(moved, 5, net.WRITABLE)
 
 assert moving_poller.wait(200)[0][1] & net.WRITABLE != 0,
-  'the socket is watched normally to begin with'
+    'the socket is watched normally to begin with'
 
 var inbox = isolate.channel(1)
 var reply = isolate.channel(1)
@@ -269,7 +271,7 @@ assert reply.recv(5000), 'the socket really did arrive in the other isolate'
 # number the operating system may since have handed to something else.
 var moved_flags = wait_for(moving_poller, 5, 1000)
 assert moved_flags & net.ERROR != 0,
-  'a socket moved to another isolate is reported as an error, never polled'
+    'a socket moved to another isolate is reported as an error, never polled'
 ok('a socket moved across an isolate boundary cannot be polled by mistake')
 
 catch {
@@ -283,7 +285,10 @@ mover.close()
 
 var tls_channel = isolate.channel(1)
 var tls_task = isolate.spawn(
-  net_poll_helper.tls_echo, tls_channel, server_cert, server_key,
+  net_poll_helper.tls_echo,
+  tls_channel,
+  server_cert,
+  server_key,
 )
 var tls_address = tls_channel.recv()
 
@@ -300,9 +305,9 @@ tls_poller.add(secure, 3, net.READABLE)
 secure.write_all('hello')
 
 assert wait_for(tls_poller, 3, 3000) & net.READABLE != 0,
-  'a TLS stream becomes readable when its socket does'
+    'a TLS stream becomes readable when its socket does'
 assert secure.read(16).to_string() == 'polled',
-  'and the decrypted data is there'
+    'and the decrypted data is there'
 ok('a TLS stream is pollable through the socket underneath it')
 
 tls_channel.send('done')
@@ -321,13 +326,17 @@ var origin = net.TcpStream()
 origin.bind('127.0.0.1:0')
 
 var relay_task = isolate.spawn(
-  net_poll_helper.coalescing_relay, relay_ready,
-  origin.local_address().to_string(), relay_done,
+  net_poll_helper.coalescing_relay,
+  relay_ready,
+  origin.local_address().to_string(),
+  relay_done,
 )
 
 var hurried_done = isolate.channel(1)
 var hurried_task = isolate.spawn(
-  net_poll_helper.tls_hurried_client, relay_ready.recv(), hurried_done,
+  net_poll_helper.tls_hurried_client,
+  relay_ready.recv(),
+  hurried_done,
 )
 
 var arrived = origin.accept()
@@ -345,7 +354,7 @@ var started = time()
 var held_events = held_poller.wait(5000)
 
 assert held_events.length() == 1 and held_events[0][1] & net.READABLE != 0,
-  'data that arrived with the handshake makes a TLS stream readable'
+    'data that arrived with the handshake makes a TLS stream readable'
 assert time() - started < 1, 'at once, rather than once the timeout is up'
 assert held.read(5).to_string() == 'early', 'and the read returns it'
 
@@ -353,10 +362,10 @@ started = time()
 held_events = held_poller.wait(5000)
 
 assert held_events.length() == 1 and held_events[0][1] & net.READABLE != 0,
-  'so does what a short read leaves behind'
+    'so does what a short read leaves behind'
 assert time() - started < 1, 'just as quickly'
 assert held.read(16).to_string() == ' bird',
-  'and the next read returns the rest'
+    'and the next read returns the rest'
 ok('a TLS stream is readable for data it already holds')
 
 relay_done.send('done')
@@ -404,7 +413,7 @@ ready_client.write_all('hello')
 ready_reads.wait(5000)
 
 assert ready_side.try_read(16).to_string() == 'hello',
-  'what arrived is returned'
+    'what arrived is returned'
 ok('try_read() reports nothing arrived as nil')
 
 assert ready_side.try_write('abcdef', 2) == 4, 'offset skips what already went'
@@ -439,7 +448,9 @@ ok('try_read() sees the end of the stream')
 
 var driven_done = isolate.channel(1)
 var driven_task = isolate.spawn(
-  net_poll_helper.tls_hurried_client, ready_address, driven_done,
+  net_poll_helper.tls_hurried_client,
+  ready_address,
+  driven_done,
 )
 
 ready_watch.wait(5000)
@@ -480,7 +491,7 @@ while arrived_text.length() < 10 and time() - read_started < 5 {
 }
 
 assert arrived_text.to_string() == 'early bird',
-  'what it sent arrives decrypted'
+    'what it sent arrives decrypted'
 assert driven.try_read(64) == nil, 'and then there is nothing to read'
 assert driven.try_write('ok') == 2, 'the session takes what it can'
 assert driven.try_flush(), 'and it reaches the socket'

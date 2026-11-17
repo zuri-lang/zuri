@@ -1,6 +1,6 @@
 # owner
 
-Lists, adds and removes the publishers who own a package.
+Lists, adds and removes the owners of a package.
 
 ```sh
 zuri owner list <package>
@@ -8,11 +8,15 @@ zuri owner add <package> <username>
 zuri owner remove <package> <username>
 ```
 
-Every owner may publish new versions, yank them, and change the owners.
-The first account to publish a name owns it. A package always keeps at
-least one owner, so removing the last is refused.
+Every owner can publish new versions, yank versions, and add or remove
+owners. The account that first publishes a package becomes its owner. A
+package must always have at least one owner, so you can't remove the last
+one.
 
-| Flag | What it does |
+## Options
+
+| Option | Description |
 | --- | --- |
-| `-r, --registry <registry>` | The registry the package is on. |
-| `--json` | Print the owners as JSON. |
+| `-r, --registry <registry>` | The registry the package is on, as an alias or an address. |
+| `--insecure` | Allow sending a token over plain HTTP to another machine. |
+| `--json` | Print the result as JSON. |

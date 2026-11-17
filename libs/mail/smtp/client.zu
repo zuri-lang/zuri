@@ -1,13 +1,13 @@
 /**
  * @module client
  *
- * The sending end of SMTP.
+ * The client side of SMTP.
  *
- * `SmtpClient` opens a connection, negotiates what the server can do,
- * authenticates, and hands messages over. Most programs want
- * `mail.send()`, which does all of that for one message and closes the
- * connection again; the client itself is for sending many, or for
- * needing the steps apart.
+ * `SmtpClient` opens a connection, finds out what the server supports,
+ * authenticates and hands messages over. Most programs should use
+ * `mail.send()`, which does all of that for one message and then closes
+ * the connection. The client itself is for sending many messages, or
+ * for when you need to take the steps separately.
  *
  * ```zuri,ignore
  * import mail.smtp { SmtpClient }
@@ -34,8 +34,13 @@ import net.tls
 import os
 
 import ..errors {
-  AuthenticationError, ConnectionClosed, ProtocolError, StateError,
-  SmtpError, SmtpPermanentError, SmtpTransientError,
+  AuthenticationError,
+  ConnectionClosed,
+  ProtocolError,
+  StateError,
+  SmtpError,
+  SmtpPermanentError,
+  SmtpTransientError,
 }
 import ..message { Message }
 import ..sasl
@@ -232,14 +237,14 @@ def _normalise_breaks(raw) {
 class SmtpClient {
 
   /**
-   * Builds a client around a connection that is already open.
+   * Creates a client around a connection that's already open.
    *
-   * `connect()` is what opens one; this is for a connection made some
-   * other way, and for tests that hand it a transcript instead of a
-   * socket.
+   * `connect()` opens a connection itself. This is for a connection
+   * made some other way, and for tests that pass in a transcript
+   * instead of a socket.
    *
    * @param LineStream connection
-   * @param ?dict options: As `connect()`.
+   * @param ?dict options: the same as for `connect()`
    */
   @new(connection, options: ?dict) {
     var given = options == nil ? {} : options
@@ -255,34 +260,35 @@ class SmtpClient {
   }
 
   /**
-   * Opens a connection and gets as far as being ready to send.
+   * Opens a connection, and gets as far as being ready to send.
    *
-   * The greeting is read, capabilities are asked for, TLS is
-   * negotiated if the connection did not start with it, and the client
-   * authenticates when given something to authenticate with.
+   * The greeting is read, the server's capabilities are requested, TLS
+   * is negotiated if the connection didn't start with it, and the
+   * client authenticates if it was given credentials.
    *
-   * When the greeting, TLS or authentication fails, the connection is
-   * closed before the error is raised, since no client is returned to
-   * close it with.
+   * If the greeting, TLS or authentication fails, the connection is
+   * closed before the error is raised, because no client is returned
+   * that could close it.
    *
    * | option | default | what it does |
    * | - | - | - |
-   * | `username`, `password` | none | authenticate when both are given |
+   * | `username`, `password` | none | authenticate if both are given |
    * | `token` | none | authenticate with a bearer token instead |
-   * | `tls` | `require` | `require`, `prefer` or `disable`, when not already encrypted |
+   * | `tls` | `require` | `require`, `prefer` or `disable`, if the connection isn't already encrypted |
    * | `tls_config` | a default one | the trust settings for TLS |
-   * | `mechanisms` | all of them | restricts which are acceptable |
-   * | `client_name` | the local hostname | the name to greet the server with |
-   * | `timeout` | `30000` | milliseconds to wait on the socket |
+   * | `mechanisms` | all of them | limits which mechanisms are acceptable |
+   * | `client_name` | the local host name | the name to greet the server with |
+   * | `timeout` | `30000` | the number of milliseconds to wait on the socket |
    *
-   * @param string url: `smtp://host`, `smtps://host`, or a bare host.
-   *    A username and password in the string are used when the options
-   *    do not carry them.
+   * @param string url: `smtp://host`, `smtps://host`, or just a host
+   *    name. A username and password in the URL are used if the options
+   *    don't include them.
    * @param ?dict options
    * @returns SmtpClient
    * @throws SmtpError if the server refuses the greeting.
-   * @throws AuthenticationError if it refuses the credentials.
-   * @throws ProtocolError if TLS is required and not offered.
+   * @throws AuthenticationError if the server rejects the credentials.
+   * @throws ProtocolError if TLS is required and the server doesn't
+   *    offer it.
    */
   static connect(url: string, options: ?dict) {
     var given = options == nil ? {} : options
@@ -329,8 +335,8 @@ class SmtpClient {
 
   /**
    * Reads the greeting, introduces the client, negotiates TLS and
-   * authenticates. `connect()` calls this; a client built around an
-   * existing connection has to.
+   * authenticates. `connect()` calls this, but for a client created
+   * around an existing connection, you have to call it yourself.
    *
    * @returns SmtpClient itself.
    */
@@ -352,8 +358,8 @@ class SmtpClient {
       }
     }
 
-    if self._options.get('username', nil) != nil
-      or self._options.get('token', nil) != nil {
+    if self._options.get('username', nil) != nil or
+        self._options.get('token', nil) != nil {
       self.login()
     }
 
@@ -437,7 +443,9 @@ class SmtpClient {
       var line = self._stream.read_line(MAX_REPLY_LINE)
 
       if line.length() < 3 or !_is_digits(line[0, 3]) {
-        raise ProtocolError('the server sent something that is not a reply: ${line}')
+        raise ProtocolError(
+          'the server sent something that is not a reply: ${line}',
+        )
       }
 
       var value = line[0, 3].to_number()
@@ -542,13 +550,15 @@ class SmtpClient {
   }
 
   /**
-   * Authenticates, choosing the strongest mechanism both ends know.
+   * Authenticates, using the strongest mechanism that both sides
+   * support.
    *
-   * @param ?string mechanism: Forces one rather than choosing.
+   * @param ?string mechanism: forces a particular mechanism, instead of
+   *    choosing one
    * @returns SmtpClient itself.
-   * @throws AuthenticationError if there is no mechanism in common, if
-   *    the credentials are refused, or if the only ones on offer would
-   *    put the password on an unencrypted connection.
+   * @throws AuthenticationError if there's no mechanism in common, if
+   *    the credentials are rejected, or if the only mechanisms offered
+   *    would send the password over an unencrypted connection.
    */
   login(mechanism: ?string) {
     var offered = self._auth_mechanisms()
@@ -566,12 +576,14 @@ class SmtpClient {
     if chosen == nil {
       if !self._stream.is_secure() {
         raise AuthenticationError(
-          'no mechanism this connection can use without TLS; '
-            + 'the server offers ${', '.join(offered)}',
+          'no mechanism this connection can use without TLS; ' +
+              'the server offers ${', '.join(offered)}',
         )
       }
 
-      raise AuthenticationError('no mechanism in common; the server offers ${', '.join(offered)}')
+      raise AuthenticationError(
+        'no mechanism in common; the server offers ${', '.join(offered)}',
+      )
     }
 
     return self.authenticate(sasl.of(chosen, self._options))
@@ -586,9 +598,9 @@ class SmtpClient {
    */
   authenticate(mechanism) {
     var initial = mechanism.start()
-    var reply = initial == nil ?
-      self.command('AUTH ${mechanism.name()}') :
-      self.command('AUTH ${mechanism.name()} ${_encode(initial)}')
+    var reply = initial == nil
+        ? self.command('AUTH ${mechanism.name()}')
+        : self.command('AUTH ${mechanism.name()} ${_encode(initial)}')
 
     while reply.is_intermediate() {
       var challenge = _decode(reply.lines.is_empty() ? '' : reply.lines[0])
@@ -709,7 +721,7 @@ class SmtpClient {
   /**
    * Hands over the message itself and ends the transaction.
    *
-   * Line endings are normalised and a leading dot on any line is
+   * Line endings are normalized and a leading dot on any line is
    * doubled, so a body containing a line with one dot on it cannot end
    * the message early.
    *
@@ -737,16 +749,16 @@ class SmtpClient {
   }
 
   /**
-   * Hands the message over in chunks, which is what `CHUNKING` is for.
+   * Sends the message in chunks, using the `CHUNKING` extension.
    *
-   * Nothing is escaped, because a chunk carries its own length and has
-   * no terminator to collide with. Only works where the server offers
-   * `CHUNKING`.
+   * Nothing is escaped, because each chunk carries its own length and
+   * has no terminator that its contents could be confused with. This
+   * only works if the server supports `CHUNKING`.
    *
    * @param string|bytes chunk
-   * @param bool last: Whether this is the final chunk.
+   * @param bool last: whether this is the final chunk
    * @returns Reply
-   * @throws StateError if the server does not offer `CHUNKING`.
+   * @throws StateError if the server doesn't support `CHUNKING`.
    * @throws SmtpError if the server refuses.
    */
   bdat(chunk, last: bool) {
@@ -928,9 +940,10 @@ class SmtpClient {
   /**
    * Asks whether the server knows an address.
    *
-   * Most servers on the public internet refuse to answer this, because
-   * answering it hands an address list to whoever asks. A refusal is
-   * returned rather than raised, since it is an answer of a kind.
+   * Most servers on the public internet refuse to answer, because
+   * answering would give a list of addresses to anyone who asked. A
+   * refusal is returned instead of raised, because it's still an
+   * answer.
    *
    * @param string address
    * @returns Reply

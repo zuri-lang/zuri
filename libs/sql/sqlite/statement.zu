@@ -3,16 +3,16 @@
  *
  * A SQLite statement compiled once and run many times.
  *
- * Compiling a statement is the expensive half of running one, and a
- * statement run in a loop pays that cost once here rather than on
- * every pass. The saving is real enough to be worth the extra object:
- * an insert of ten thousand rows through a prepared statement does one
- * compile instead of ten thousand.
+ * Compiling a statement is the expensive part of running it, and a
+ * statement run in a loop only pays that cost once here, instead of on
+ * every iteration. The saving is large enough to justify the extra
+ * object: inserting ten thousand rows through a prepared statement
+ * compiles it once instead of ten thousand times.
  *
- * A statement holds one native handle, so it can only be doing one
- * thing at a time. Opening a cursor over it takes that handle until
- * the cursor closes, and running it again in the meantime raises
- * rather than silently resetting the cursor underneath.
+ * A statement holds a single native handle, so it can only do one thing
+ * at a time. Opening a cursor on it takes the handle until the cursor
+ * is closed, and running the statement again in the meantime raises an
+ * error instead of silently resetting the cursor.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -53,10 +53,7 @@ def describe(statement) {
     # name.
     var type = index < declared.length() ? declared[index] : nil
 
-    columns.append({
-      name,
-      type: type == nil ? nil : type.lower(),
-    })
+    columns.append({ name, type: type == nil ? nil : type.lower() })
   }
 
   var conversions = conversions_for(declared)
@@ -85,8 +82,8 @@ def bind_all(statement, values: list, query: string, expected: number) {
   if values.length() != expected {
     raise QueryError(
       'this statement binds ${expected} parameter' +
-        '${expected == 1 ? "" : "s"} and ${values.length()} ' +
-        '${values.length() == 1 ? "was" : "were"} given',
+          '${expected == 1 ? "" : "s"} and ${values.length()} ' +
+          '${values.length() == 1 ? "was" : "were"} given',
       { driver: 'sqlite', query },
     )
   }
@@ -165,10 +162,7 @@ class SqliteStatement < DriverStatement {
 
     _sqlite.reset(self._statement)
 
-    return {
-      rows_affected: affected,
-      last_insert_id: inserted,
-    }
+    return { rows_affected: affected, last_insert_id: inserted }
   }
 
   /**
@@ -208,19 +202,16 @@ class SqliteStatement < DriverStatement {
       }
     }
 
-    return {
-      columns: self._columns,
-      rows,
-    }
+    return { columns: self._columns, rows }
   }
 
   /**
-   * Runs the statement and hands back a cursor over its result.
+   * Runs the statement and returns a cursor over its result.
    *
-   * The cursor holds this statement until it closes.
+   * The cursor holds this statement until it's closed.
    *
    * @param list values
-   * @param dict options Unused here; SQLite streams natively.
+   * @param dict options Not used. SQLite already streams its results.
    * @returns SqliteCursor
    */
   open_cursor(values: list, options: dict) {
@@ -299,10 +290,10 @@ class SqliteStatement < DriverStatement {
   # Raises unless the statement is in a state to be run.
   _ready() {
     if self._closed {
-      raise ClosedError(
-        'this prepared statement was closed',
-        { driver: 'sqlite', query: self._query },
-      )
+      raise ClosedError('this prepared statement was closed', {
+        driver: 'sqlite',
+        query: self._query,
+      })
     }
 
     if self._connection.is_closed() {
@@ -315,7 +306,7 @@ class SqliteStatement < DriverStatement {
     if self._lent and _sqlite.stmt_busy(self._statement) {
       raise QueryError(
         'a cursor is still reading this prepared statement; close it ' +
-          'before running the statement again',
+            'before running the statement again',
         { driver: 'sqlite', query: self._query },
       )
     }

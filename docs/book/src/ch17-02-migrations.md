@@ -1,30 +1,32 @@
 # Migrations
 
-A database's schema changes as the program around it does, and every
-copy of the database, a developer's, the test suite's, production's,
-has to make the same changes in the same order. A migration is one such
-change, kept as a file, applied to each database once and recorded
-there, so any copy can be brought up to date from wherever it is.
+A database's schema changes along with the program that uses it, and every
+copy of the database, whether it belongs to a developer, the test suite or
+production, has to make the same changes in the same order. A migration is
+one of those changes, stored as a file. It's applied to each database once
+and recorded there, so any copy of the database can be brought up to date
+from wherever it is.
 
-`sql.migrate` applies them from a program, and `zuri migrate` from the
-command line. Both read the same files and keep the same record.
+`sql.migrate` applies migrations from a program, and `zuri migrate` applies
+them from the command line. Both read the same files and keep the same
+record.
 
 - [Writing a Migration](#writing-a-migration)
-- [Running Them](#running-them)
+- [Running Migrations](#running-migrations)
 - [Batches and Rolling Back](#batches-and-rolling-back)
-- [What Is Applied](#what-is-applied)
+- [Checking What's Applied](#checking-whats-applied)
 - [How a Migration Runs](#how-a-migration-runs)
-- [When One Fails](#when-one-fails)
+- [When a Migration Fails](#when-a-migration-fails)
 - [Several Processes at Once](#several-processes-at-once)
-- [Migrating as a Program Starts](#migrating-as-a-program-starts)
-- [The Directory](#the-directory)
+- [Migrating When a Program Starts](#migrating-when-a-program-starts)
+- [The Migrations Directory](#the-migrations-directory)
 
 ## Writing a Migration
 
-A migration is a Zuri file in a directory of them. Its name starts with
-a version, a run of digits, and says what it does in letters, digits
-and underscores. `zuri migrate new` writes one, with the time as its
-version:
+A migration is a Zuri file in a directory of migrations. Its name starts
+with a version, which is a sequence of digits, followed by a description
+made of letters, digits and underscores. `zuri migrate new` creates one,
+using the current time as its version:
 
 ```sh
 zuri migrate new create_posts
@@ -34,15 +36,16 @@ zuri migrate new create_posts
 Created migrations/20261011143000_create_posts.zu
 ```
 
-Each name given writes a migration of its own, in the order given, so
-`zuri migrate new create_posts add_slug_to_posts` writes two.
+Each name you give creates a separate migration, in the order you give them,
+so `zuri migrate new create_posts add_slug_to_posts` creates two.
 
-It exports `up(db)`, which makes the change, and `down(db)`, which
+A migration exports `up(db)`, which makes the change, and `down(db)`, which
 undoes it. `db` is the `Transaction` the migration runs in, or the
-`Connection` itself where it runs outside one: always on MySQL and
-MariaDB, and anywhere for a migration that asks to. Its type is
-`Transaction|Connection`, and the change is described with `db.schema`
-and its blueprint, once, for every engine the program runs against:
+`Connection` itself when it runs outside a transaction, which always happens
+on MySQL and MariaDB, and can happen anywhere for a migration that asks for
+it. Its type is `Transaction|Connection`, and you describe the change with
+`db.schema` and its blueprint, once, for every engine the program runs
+against:
 
 ```zuri,ignore
 import sql { Blueprint, Connection, Transaction }
@@ -60,13 +63,13 @@ def down(db: Transaction|Connection) {
 }
 ```
 
-With the types written, an editor completes `db.` with what a
-transaction and a connection both have, and `table.` with the
-blueprint's methods. `zuri migrate new` writes them in.
+With the types written out, your editor can complete `db.` with the methods
+that transactions and connections share, and `table.` with the blueprint's
+methods. `zuri migrate new` includes the types for you.
 
-A name of the form `create_<table>` starts the file creating that
-table, as above; any other name starts it with empty `up()` and
-`down()`. A migration can also move data, with the same calls a
+If the name has the form `create_<table>`, the new file starts out creating
+that table, as above. Any other name starts with empty `up()` and `down()`
+functions. A migration can also change data, using the same methods a
 connection has:
 
 ```zuri,ignore
@@ -83,12 +86,12 @@ def up(db: Transaction|Connection) {
 }
 ```
 
-## Running Them
+## Running Migrations
 
-`zuri migrate` finds the project, the nearest directory above the
-working directory with a `project.toml`, and its `migrations`
-directory, and the database from `--database`, or from `DATABASE_URL`
-in the environment or in the project's `.env`:
+`zuri migrate` finds the project by looking for the nearest directory above
+the working directory that contains a `project.toml`, and uses its
+`migrations` directory. It gets the database from `--database`, or from
+`DATABASE_URL` in the environment or the project's `.env` file:
 
 ```sh
 zuri migrate                  # apply every pending migration
@@ -103,7 +106,7 @@ Applied 2 migrations:
   20261012091500_add_slug_to_posts
 ```
 
-From a program, `Migrator` does the same:
+In a program, `Migrator` does the same thing:
 
 ```zuri
 import os
@@ -130,15 +133,15 @@ db.close()
 [id, created_at, updated_at]
 ```
 
-`Migrator` takes `directory`, `migrations` by default, and `table`, the
-table the record is kept in, `zuri_migrations` by default. The table is
-created the first time it is needed.
+`Migrator` accepts a `directory`, which is `migrations` by default, and a
+`table` to keep the record in, which is `zuri_migrations` by default. The
+table is created the first time it's needed.
 
 ## Batches and Rolling Back
 
-Every migration one run applies shares a batch number. Rolling back
-with no options undoes the latest batch whole, however many migrations
-that was, newest first:
+All the migrations applied in a single run share a batch number. Rolling
+back without any options undoes the whole of the latest batch, however many
+migrations that is, starting with the newest:
 
 ```zuri
 import os
@@ -150,11 +153,11 @@ var directory = os.create_temp_dir('guide-')
 def write(name, table) {
   file(os.join_paths(directory, name), 'w').write(
     'import sql { Blueprint, Connection, Transaction }\n\n' +
-      'def up(db: Transaction|Connection) {\n' +
-      "  db.schema.create_table('${table}', @(table: Blueprint) {\n" +
-      '    table.id()\n  })\n}\n\n' +
-      'def down(db: Transaction|Connection) {\n' +
-      "  db.schema.drop_table('${table}')\n}\n",
+        'def up(db: Transaction|Connection) {\n' +
+        "  db.schema.create_table('${table}', @(table: Blueprint) {\n" +
+        '    table.id()\n  })\n}\n\n' +
+        'def down(db: Transaction|Connection) {\n' +
+        "  db.schema.drop_table('${table}')\n}\n",
   )
 }
 
@@ -180,53 +183,53 @@ db.close()
 [authors, zuri_migrations]
 ```
 
-Both directions take a limit. `steps` counts migrations; `to` names
-one:
+Both directions accept a limit. `steps` counts migrations, and `to` names a
+specific migration:
 
 ```zuri,ignore
-migrator.up({ steps: 1 })                       # the next one
-migrator.up({ to: '20261012091500_add_slug' })  # up to and including it
-migrator.down({ steps: 2 })                     # the two most recent
-migrator.down({ to: '20261011143000_create' })  # leave it the latest
+migrator.up({ steps: 1 }) # the next one
+migrator.up({ to: '20261012091500_add_slug' }) # up to and including it
+migrator.down({ steps: 2 }) # the two most recent
+migrator.down({ to: '20261011143000_create' }) # leave it the latest
 ```
 
-Every migration about to be rolled back is checked before the first
-one is: each has to have its file, with a `down()`, or nothing is
-rolled back at all.
+Before the first migration is rolled back, every migration that's about to
+be rolled back is checked. Each one must still have its file, with a
+`down()` function, or nothing is rolled back at all.
 
-## What Is Applied
+## Checking What's Applied
 
-`status()` lists every migration, from the files and from the record,
+`status()` lists every migration, from both the files and the record, along
 with its state:
 
 | State | Meaning |
 | --- | --- |
-| `applied` | recorded, and the file is as it was when it ran |
-| `changed` | recorded, and the file has changed since it ran |
-| `missing` | recorded, and there is no file for it any more |
-| `pending` | a file the database has not had |
+| `applied` | Recorded, and the file is unchanged since it ran |
+| `changed` | Recorded, but the file has changed since it ran |
+| `missing` | Recorded, but the file no longer exists |
+| `pending` | A file that hasn't been applied to this database yet |
 
-A changed migration has already run as it was then, and editing it
-changes nothing in a database that ran it. The database has what the
-old file said; a further change goes in a new migration. `zuri migrate
-status` says so when it finds one.
+A changed migration has already run in its earlier form, and editing it
+doesn't change anything in a database where it has run. That database has
+whatever the old file did. To make a further change, write a new migration.
+`zuri migrate status` reminds you of this when it finds a changed migration.
 
 ## How a Migration Runs
 
-Each migration runs in a transaction of its own, together with the row
-recording it. On SQLite and PostgreSQL, a migration that fails part
-way leaves nothing behind and is not recorded. MySQL and MariaDB commit
-at every statement that changes a table's definition: there a migration
-runs on its own and is recorded once it has finished, and one that
-fails part way leaves the statements before the failure in place.
+Each migration runs in its own transaction, together with the row that
+records it. On SQLite and PostgreSQL, a migration that fails partway through
+leaves nothing behind and isn't recorded. MySQL and MariaDB commit every
+statement that changes a table's definition, so on those engines, a
+migration runs outside a transaction and is recorded once it has finished,
+and a migration that fails partway through leaves the statements before the
+failure in place.
 
-On SQLite, foreign key enforcement is switched off while a migration
-runs, so a change that builds a table again cannot take the rows
-referring to it along, and every foreign key is checked before the
-migration commits.
+On SQLite, foreign key enforcement is turned off while a migration runs, so
+that a change that rebuilds a table can't delete the rows that refer to it.
+Every foreign key is checked before the migration commits.
 
 A migration that has to run outside a transaction, as PostgreSQL's
-`create index concurrently` does, says so:
+`create index concurrently` does, can say so:
 
 ```zuri,ignore
 import sql { Connection, Transaction }
@@ -238,11 +241,11 @@ def up(db: Transaction|Connection) {
 }
 ```
 
-## When One Fails
+## When a Migration Fails
 
-A failure stops the run where it is. The migrations before it stay
-applied, and it and those after it stay pending, ready for the next
-run once it is fixed:
+A failure stops the run at that point. The migrations before it stay
+applied, and the failed one and those after it stay pending, ready for the
+next run once you've fixed the problem:
 
 ```zuri
 import os
@@ -252,17 +255,19 @@ import sql.migrate { Migrator }
 var directory = os.create_temp_dir('guide-')
 
 var head = 'import sql { Blueprint, Connection, Transaction }\n\n' +
-  'def up(db: Transaction|Connection) {\n'
+    'def up(db: Transaction|Connection) {\n'
 
 file(os.join_paths(directory, '1_create_posts.zu'), 'w').write(
-  head + "  db.schema.create_table('posts', @(table: Blueprint) {\n" +
-    '    table.id()\n  })\n}\n',
+  head +
+      "  db.schema.create_table('posts', @(table: Blueprint) {\n" +
+      '    table.id()\n  })\n}\n',
 )
 
 file(os.join_paths(directory, '2_broken.zu'), 'w').write(
-  head + "  db.schema.create_table('half', @(table: Blueprint) {\n" +
-    '    table.id()\n  })\n' +
-    "  db.exec('this is not sql', nil)\n}\n",
+  head +
+      "  db.schema.create_table('half', @(table: Blueprint) {\n" +
+      '    table.id()\n  })\n' +
+      "  db.exec('this is not sql', nil)\n}\n",
 )
 
 var db = sql.open(':memory:')
@@ -288,18 +293,19 @@ false
 
 ## Several Processes at Once
 
-Two processes migrating one database at the same moment, as two copies
-of a server starting together do, apply each migration once. On
-PostgreSQL, MySQL and MariaDB a run holds the engine's own lock, and a
-second run waits for the first to finish before it looks for pending
-migrations. On SQLite each migration takes the write lock as it starts.
-Either way, every migration checks the record again once it holds the
-lock, so one another process applied meanwhile is passed over.
+If two processes migrate the same database at the same time, as happens when
+two copies of a server start together, each migration is still applied only
+once. On PostgreSQL, MySQL and MariaDB, a run holds a lock provided by the
+engine, and a second run waits for the first one to finish before it looks
+for pending migrations. On SQLite, each migration takes the write lock when
+it starts. Either way, each migration checks the record again once it holds
+the lock, so a migration that another process applied in the meantime is
+skipped.
 
-## Migrating as a Program Starts
+## Migrating When a Program Starts
 
-A program that keeps its own database brings it up to date as it
-starts. Nyssa, the package repository `zuri serve` runs, does exactly
+A program that manages its own database can bring it up to date when it
+starts. Nyssa, the package registry that `zuri serve` runs, does exactly
 this:
 
 ```zuri,ignore
@@ -310,17 +316,20 @@ import sql.migrate { Migrator }
 
 var db = sql.open(env.require('DATABASE_URL'))
 
-Migrator(db, { directory: os.join_paths(os.dir_name(__file__), 'migrations') }).up()
+Migrator(
+  db,
+  { directory: os.join_paths(os.dir_name(__file__), 'migrations') },
+).up()
 ```
 
-A migration directory found from `__file__` travels with the program
-wherever it is installed.
+Because the migrations directory is found relative to `__file__`, it moves
+with the program wherever it's installed.
 
-## The Directory
+## The Migrations Directory
 
-Every `.zu` file whose name starts with a version and an underscore is
-a migration, and they run by version, as numbers, then by name: `9`
-before `10`, and a version two files share is refused. A `.zu` file
-whose name starts with `_` is not a migration; it holds code several
-migrations share, which they import as `import ._tables`. Files that are
-not Zuri are left alone.
+Every `.zu` file whose name starts with a version followed by an underscore
+is a migration. Migrations run in order of version, compared as numbers, and
+then by name, so `9` comes before `10`. Two files with the same version are
+rejected. A `.zu` file whose name starts with `_` isn't a migration. It
+holds code shared by several migrations, which they import with
+`import ._tables`. Files that aren't Zuri files are ignored.

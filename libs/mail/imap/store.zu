@@ -3,12 +3,12 @@
  *
  * Where an `ImapServer` keeps mail.
  *
- * `MailStore` is the contract: what a store has to be able to do for
- * the server to answer with it. Two are provided. `MaildirStore` keeps
- * mail on disk in the Maildir layout, which every other mail tool can
- * read, so a mailbox written here is not trapped here. `MemoryStore`
- * keeps it in the process and forgets it on exit, which is what a test
- * and an embedded server want.
+ * `MailStore` is the interface: what a store has to be able to do for
+ * the server to answer from it. Two stores are included. `MaildirStore`
+ * keeps mail on disk in the Maildir format, which every other mail tool
+ * can read, so mail written here isn't locked in. `MemoryStore` keeps
+ * mail in the process and loses it when the process exits, which suits
+ * tests and embedded servers.
  *
  * ```zuri,ignore
  * import mail.imap { ImapServer, MaildirStore }
@@ -21,7 +21,7 @@
  * ```
  *
  * A store of your own only has to answer the same calls. Nothing here
- * is required to come from a file.
+ * has to come from a file.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -108,10 +108,10 @@ class StoredMessage {
 }
 
 /**
- * What a store has to be able to do.
+ * The interface that a store implements.
  *
- * Every method raises here; a store is something that answers them.
- * Both of the ones that ship do, and so can one of your own.
+ * Every method here raises an error. A store is a class that implements
+ * them. Both of the included stores do, and you can write your own.
  *
  * @printable
  */
@@ -144,14 +144,13 @@ class MailStore {
   }
 
   /**
-   * Whether this store can produce a password rather than only check
-   * one.
+   * Whether this store can provide a password, not only check one.
    *
-   * A server offers the mechanisms that prove a password without
-   * sending it only when it can work out the same proof, which means
-   * knowing the password. A store that keeps only hashes, or that
-   * checks credentials somewhere else entirely, says no here and the
-   * server stops offering them.
+   * A server only offers the mechanisms that prove a password without
+   * sending it if it can compute the same proof, which means knowing
+   * the password. A store that only keeps hashes, or that checks
+   * credentials somewhere else entirely, returns false here, and the
+   * server stops offering those mechanisms.
    *
    * @returns bool
    */
@@ -553,26 +552,25 @@ def _new_box() {
 var INDEX_FILE = 'zuri-uidlist'
 
 /**
- * A store that keeps mail on disk in the Maildir layout.
+ * A store that keeps mail on disk in the Maildir format.
  *
- * Each account is a directory under `root`, holding its INBOX
- * directly and every other mailbox as `.Name` beside it, which is the
- * Maildir++ arrangement every other mail tool understands. A mailbox
- * written here can be read by anything else, and mail delivered by
- * anything else turns up here.
+ * Each account is a directory under `root`, which holds its INBOX
+ * directly and every other mailbox as `.Name` next to it. That's the
+ * Maildir++ layout, which every other mail tool understands, so a
+ * mailbox written here can be read by anything else, and mail delivered
+ * by anything else shows up here.
  *
- * Flags are kept the Maildir way, as letters at the end of a message's
- * filename after `:2,`. A colon cannot appear in a Windows filename, so
- * on Windows the flags follow `;2,` instead, which is what mbsync
- * writes there too. A Maildir moved between Windows and any other
- * system keeps its messages but has to have their flags renamed to
- * match.
+ * Flags are stored the Maildir way, as letters at the end of a
+ * message's file name, after `:2,`. A colon can't appear in a Windows
+ * file name, so on Windows the flags come after `;2,` instead, as
+ * mbsync also writes them there. A Maildir moved between Windows and
+ * another system keeps its messages, but their flags have to be renamed
+ * to match.
  *
- * Mail is on disk; accounts are not. The store asks the program who
- * its users are, either as a password given to `add_account()` or
- * through `set_authenticator()`, because where an application keeps
- * its passwords is the application's business and not a mail
- * library's.
+ * Mail is kept on disk, but accounts aren't. The store asks the program
+ * who its users are, either through a password given to `add_account()`
+ * or through `set_authenticator()`, because where an application keeps
+ * its passwords is up to the application, not to a mail library.
  *
  * ```zuri,ignore
  * import mail.imap { MaildirStore }
@@ -624,14 +622,14 @@ class MaildirStore < MailStore {
   }
 
   /**
-   * Hands credential checking to a function of your own, which is what
-   * a program with its own user table wants.
+   * Passes credential checks to a function of your own, such as one
+   * that looks users up in your program's own table.
    *
-   * A store with an authenticator can no longer produce a password, so
-   * the server stops offering the mechanisms that need one.
+   * A store with an authenticator can't provide passwords any more, so
+   * the server stops offering the mechanisms that need them.
    *
-   * @param function(2) checker: Given a username and a password,
-   *    returns whether they are right.
+   * @param function(2) checker: called with a username and a password,
+   *    and returns whether they're correct
    * @returns MaildirStore itself.
    */
   set_authenticator(checker) {
@@ -667,8 +665,10 @@ class MaildirStore < MailStore {
   }
 
   _home(username: string) {
-    if username.index_of('/') > -1 or username.index_of('\\') > -1
-      or username == '.' or username == '..' {
+    if username.index_of('/') > -1 or
+        username.index_of('\\') > -1 or
+        username == '.' or
+        username == '..' {
       raise MailboxError('${username} is not a usable account name')
     }
 
@@ -742,9 +742,11 @@ class MaildirStore < MailStore {
 
     os.create_dir(path, nil, true)
     self._ensure_maildir(path)
-    self._write_index(
-      path, { uidvalidity: time().floor(), uidnext: 1, entries: {} },
-    )
+    self._write_index(path, {
+      uidvalidity: time().floor(),
+      uidnext: 1,
+      entries: {},
+    })
   }
 
   remove(username: string, mailbox: string) {
@@ -829,9 +831,9 @@ class MaildirStore < MailStore {
         continue
       }
 
-      var moved = name.index_of(INFO_SEPARATOR) > -1 ?
-        name :
-        '${name}${INFO_SEPARATOR}2,'
+      var moved = name.index_of(INFO_SEPARATOR) > -1
+          ? name
+          : '${name}${INFO_SEPARATOR}2,'
 
       os.rename(os.join_paths(staging, name), os.join_paths(current, moved))
     }
@@ -893,12 +895,14 @@ class MaildirStore < MailStore {
 
       handle.close()
 
-      found.append(StoredMessage(
-        state.index.entries[key],
-        raw,
-        _flags_from_letters(_flag_part(name)),
-        _received_of(key),
-      ))
+      found.append(
+        StoredMessage(
+          state.index.entries[key],
+          raw,
+          _flags_from_letters(_flag_part(name)),
+          _received_of(key),
+        ),
+      )
     }
 
     return found.sort(@(left, right) => left.uid - right.uid)
@@ -1042,10 +1046,7 @@ class MaildirStore < MailStore {
   }
 
   _write_index(path: string, index: dict) {
-    var lines = [
-      'uidvalidity ${index.uidvalidity}',
-      'uidnext ${index.uidnext}',
-    ]
+    var lines = ['uidvalidity ${index.uidvalidity}', 'uidnext ${index.uidnext}']
 
     for key in index.entries.keys() {
       lines.append('${index.entries[key]} ${key}')

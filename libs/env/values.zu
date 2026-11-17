@@ -1,27 +1,26 @@
 /**
  * @module values
  *
- * Reading configuration back out of the process environment, in the
- * type the program actually wants.
+ * Reads configuration from the process environment, in the type that
+ * the program actually needs.
  *
- * An environment variable is always text. A port is a number, a
- * feature flag is a boolean, and an allow-list is a list, so somewhere
- * that text has to be checked and converted. Doing it here means it is
- * done the same way everywhere, and that a `PORT=eighty` is a loud
- * error at startup rather than a silent zero halfway through the first
- * request.
+ * An environment variable is always text, but a port is a number, a
+ * feature flag is a boolean and an allow list is a list, so the text
+ * has to be checked and converted somewhere. Doing it here means it's
+ * done the same way everywhere, and that `PORT=eighty` is a clear error
+ * at startup, not a silent zero halfway through the first request.
  *
- * ### Empty means unconfigured
+ * ### Empty means unset
  *
- * Every function here treats a variable set to the empty string
- * exactly as it treats one that was never set at all: the default
- * applies, and `require()` raises. This is the same rule `${NAME:-...}`
- * follows, and it is what makes a `FLAG=` line, an unset shell
- * variable and an orchestrator passing an empty value all mean one
- * thing instead of three.
+ * Every function here treats a variable set to an empty string exactly
+ * as if it had never been set: the default applies, and `require()`
+ * raises an error. This is the same rule that `${NAME:-...}` follows,
+ * and it means that a `FLAG=` line, an unset shell variable and an
+ * empty value passed by an orchestrator all mean the same thing, not
+ * three different things.
  *
- * `os.get_env()` is the unfiltered view for the rare case that needs
- * to tell those apart.
+ * `os.get_env()` gives the unfiltered values, for the rare case that
+ * needs to tell them apart.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -77,7 +76,7 @@ def has(name: string) {
 }
 
 /**
- * Returns the value of `name`, or `default_value` when it is unset or
+ * Returns the value of `name`, or `default_value` if it's unset or
  * empty.
  *
  * ```zuri,ignore
@@ -85,7 +84,7 @@ def has(name: string) {
  * ```
  *
  * @param string name
- * @param ?any default_value Returned unchanged; `nil` when not given.
+ * @param ?any default_value Returned as it is. Defaults to `nil`.
  * @returns ?any
  */
 def get(name: string, default_value: ?any) {
@@ -183,10 +182,10 @@ def float(name: string, default_value: ?number) {
 /**
  * Returns the value of `name` as a boolean.
  *
- * `1`, `true`, `yes`, `y` and `on` are true; `0`, `false`, `no`, `n`
- * and `off` are false. Case and surrounding whitespace do not matter.
- * Anything else is a `ValueError`, so a `DEBUG=maybe` is caught rather
- * than quietly read as true.
+ * `1`, `true`, `yes`, `y` and `on` are true, and `0`, `false`, `no`,
+ * `n` and `off` are false. Case and surrounding whitespace don't
+ * matter. Anything else raises a `ValueError`, so `DEBUG=maybe` is
+ * caught, instead of being silently read as true.
  *
  * ```zuri,ignore
  * if env.bool('DEBUG', false) {
@@ -195,9 +194,9 @@ def float(name: string, default_value: ?number) {
  * ```
  *
  * @param string name
- * @param ?bool default_value Returned when `name` is unset or empty.
+ * @param ?bool default_value Returned if `name` is unset or empty.
  * @returns ?bool
- * @throws ValueError when the value is not one of the spellings above.
+ * @throws ValueError if the value isn't one of the words above.
  */
 def bool(name: string, default_value: ?bool) {
   var value = _configured(name)

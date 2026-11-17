@@ -1,17 +1,15 @@
 /**
  * @module uuid
  *
- * Provides RFC 9562 (and RFC 4122) compliant Universally Unique
- * Identifier (UUID) generation, parsing, validation, and
- * inspection.
+ * Generates, parses, validates and inspects UUIDs (universally unique
+ * identifiers), as defined in RFC 9562 and RFC 4122.
  *
- * A UUID is a 128-bit label represented as 32 lowercase
- * hexadecimal digits, displayed in five groups separated by
- * hyphens in the form:
+ * A UUID is a 128-bit value, written as 32 lowercase hexadecimal digits
+ * in five groups separated by hyphens:
  *
  * `xxxxxxxx-xxxx-Mxxx-Nxxx-xxxxxxxxxxxx`
  *
- * where `M` encodes the version and `N` encodes the variant.
+ * `M` is the version, and `N` is the variant.
  *
  * ## Supported versions
  *
@@ -25,22 +23,22 @@
  * | v7      | Unix-time ordered + random         | RFC 9562 |
  * | v8      | Custom / application-defined       | RFC 9562 |
  *
- * The Nil UUID (`00000000-0000-0000-0000-000000000000`) and the
- * Max UUID (`ffffffff-ffff-ffff-ffff-ffffffffffff`) are also
- * defined as per RFC 9562.
+ * The Nil UUID (`00000000-0000-0000-0000-000000000000`) and the Max
+ * UUID (`ffffffff-ffff-ffff-ffff-ffffffffffff`) are also defined, as in
+ * RFC 9562.
  *
- * > **Note:** UUID v2 (DCE Security) is intentionally omitted.
- * > RFC 9562 declares v2 "out of scope", and its specification
- * > lives in a separate DCE document rather than in the IETF
- * > UUID standard.
+ * > **Note:** UUID version 2 (DCE Security) is intentionally
+ * > left out. RFC 9562 declares it out of scope, and it's
+ * > specified in a separate DCE document, not in the IETF UUID
+ * > standard.
  *
- * ## Quick start
+ * ## A first example
  *
  * ```zuri
  * import uuid
  *
  * echo uuid.v4()           # e.g. '110e8400-e29b-41d4-a716-446655440000'
- * echo uuid.v7()           # time-ordered, database-friendly
+ * echo uuid.v7()           # time-ordered, which suits database keys
  * echo uuid.is_valid('...')
  *
  * var id = uuid.UUID('110e8400-e29b-41d4-a716-446655440000')
@@ -49,14 +47,14 @@
  * echo id.urn()            # 'urn:uuid:110e8400-...'
  * ```
  *
- * ## Namespace UUIDs (for v3 / v5)
+ * ## Namespace UUIDs for v3 and v5
  *
- * RFC 9562 §Appendix C pre-defines four namespace UUIDs:
+ * Appendix C of RFC 9562 defines four namespace UUIDs:
  *
- * - `uuid.NAMESPACE_DNS`: for fully-qualified domain names -
- * `uuid.NAMESPACE_URL`: for URLs - `uuid.NAMESPACE_OID`: for
- * ISO OIDs - `uuid.NAMESPACE_X500`: for X.500 distinguished
- * names
+ * - `uuid.NAMESPACE_DNS`: for fully qualified domain names
+ * - `uuid.NAMESPACE_URL`: for URLs
+ * - `uuid.NAMESPACE_OID`: for ISO OIDs
+ * - `uuid.NAMESPACE_X500`: for X.500 distinguished names
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  * @license MIT
@@ -112,8 +110,15 @@ def _strip_hyphens(uuid_str) {
 
 # Formats a 32-character raw hex string into the canonical 8-4-4-4-12 form.
 def _format(hex32) {
-  return hex32[0, 8] + '-' + hex32[8, 12] + '-' + hex32[12, 16] +
-    '-' + hex32[16, 20] + '-' + hex32[20, 32]
+  return hex32[0, 8] +
+      '-' +
+      hex32[8, 12] +
+      '-' +
+      hex32[12, 16] +
+      '-' +
+      hex32[16, 20] +
+      '-' +
+      hex32[20, 32]
 }
 
 # Applies RFC 4122/9562 variant bits (10xx xxxx) to byte 8 of a raw 32-char
@@ -124,10 +129,10 @@ def _set_variant(hex32) {
   byte8 = (byte8 & 0x3f) | 0x80 # clear top 2, set '10'
   var hi = (byte8 / 16).floor()
   var lo = byte8 % 16
-  return hex32[0, 16]
-    + '0123456789abcdef'[hi]
-    + '0123456789abcdef'[lo]
-    + hex32[18, 32]
+  return hex32[0, 16] +
+      '0123456789abcdef'[hi] +
+      '0123456789abcdef'[lo] +
+      hex32[18, 32]
 }
 
 # Applies a version nibble (1-8) to byte 6 of a raw 32-char hex string.
@@ -137,10 +142,10 @@ def _set_version(hex32, version) {
   byte6 = (byte6 & 0x0f) | (version * 16)
   var hi = (byte6 / 16).floor()
   var lo = byte6 % 16
-  return hex32[0, 12]
-    + '0123456789abcdef'[hi]
-    + '0123456789abcdef'[lo]
-    + hex32[14, 32]
+  return hex32[0, 12] +
+      '0123456789abcdef'[hi] +
+      '0123456789abcdef'[lo] +
+      hex32[14, 32]
 }
 
 # Computes the number of 100-nanosecond intervals since 1582-10-15 00:00:00 UTC
@@ -188,8 +193,8 @@ def _bigint_to_hex32(n) {
 }
 
 # Shared clock-sequence state for v1/v6 (module-level, reset per process).
-var _v1_clock_seq = convert.bytes_to_decimal(crypto.random_bytes(2))
-  % 16384 # 14-bit random seed
+var _v1_clock_seq = convert.bytes_to_decimal(crypto.random_bytes(2)) %
+    16384 # 14-bit random seed
 var _v1_last_ts = 0
 
 # ---------------------------------------------------------------------------
@@ -281,20 +286,19 @@ class UUID {
   var value
 
   /**
-   * Creates a new UUID object from a canonical UUID string.
+   * Creates a UUID object from a UUID string.
    *
-   * The constructor normalises the input to lowercase and
-   * accepts any of the following common forms:
+   * The constructor converts the input to lowercase, and accepts any of
+   * these common forms:
    *
-   * - `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (canonical, with
-   * hyphens) - `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` (raw hex, no
-   * hyphens) - `urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
-   * (URN form) - `{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}`
-   * (brace-wrapped GUID form)
+   * - `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (canonical, with hyphens)
+   * - `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` (hexadecimal digits only)
+   * - `urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (URN form)
+   * - `{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}` (GUID form, in braces)
    *
    * @param string uuid_str The UUID to parse.
-   * @throws Error If `uuid_str` is not a valid UUID in any
-   *    accepted form.
+   * @throws Error If `uuid_str` isn't a valid UUID in any of these
+   *    forms.
    */
   @new(uuid_str: string) {
     var s = uuid_str.lower().trim()
@@ -416,8 +420,8 @@ class UUID {
     var raw = _strip_hyphens(self.value)
     var result = 0n
     for ch in raw {
-      result = result * 16n
-        + _HEX_DIGIT_BIGINTS[('0123456789abcdef').index_of(ch)]
+      result = result * 16n +
+          _HEX_DIGIT_BIGINTS[('0123456789abcdef').index_of(ch)]
     }
     return result
   }
@@ -504,14 +508,12 @@ class UUID {
 # ---------------------------------------------------------------------------
 
 /**
- * Returns `true` if `str` is a syntactically valid UUID in
- * canonical form (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`),
- * case-insensitive.
+ * Returns `true` if `str` is a valid UUID in canonical form
+ * (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`), in either case.
  *
- * This function checks only the structure and character set; it
- * does **not** verify that the version and variant bits are set
- * to any particular value, so the Nil and Max UUIDs are
- * considered valid.
+ * This only checks the structure and the characters. It **doesn't**
+ * check that the version and variant bits have particular values, so
+ * the Nil and Max UUIDs count as valid.
  *
  * ### Example
  *
@@ -536,7 +538,10 @@ def is_valid(str: any) {
   # needs an explicit coercion to give is_valid() the real bool its
   # own contract promises. .matches() (plural) would be the wrong
   # choice here: it always returns a dict, empty or not, never false.
-  return str.match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i') != false
+  return str.match(
+        '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i',
+      ) !=
+      false
 }
 
 /**
@@ -686,15 +691,14 @@ def v3(namespace: string, name: string) {
 }
 
 /**
- * Generates a UUID Version 4 (random) as defined in RFC 4122
- * §4.4 / RFC 9562 §5.4.
+ * Generates a version 4 (random) UUID, as defined in RFC 4122 §4.4 and
+ * RFC 9562 §5.4.
  *
- * 122 bits are filled with pseudo-random data; the remaining 6
- * bits encode the version (`0100`) and variant (`10`).
+ * 122 bits are random, and the remaining 6 bits hold the version
+ * (`0100`) and the variant (`10`).
  *
- * This is the most commonly used UUID version for
- * general-purpose unique identifiers where time-ordering is not
- * required.
+ * This is the most widely used version, for general-purpose unique
+ * identifiers that don't need to be ordered by time.
  *
  * ### Example
  *
@@ -839,19 +843,19 @@ def v6(node: ?string, clock_seq: ?number) {
 }
 
 /**
- * Generates a UUID Version 7 (Unix-time ordered) as defined in
- * RFC 9562 §5.7.
+ * Generates a version 7 (ordered by Unix time) UUID, as defined in RFC
+ * 9562 §5.7.
  *
- * v7 UUIDs embed a 48-bit Unix millisecond timestamp in the most
- * significant bits, followed by a 12-bit sub-millisecond
- * sequence counter (for monotonicity within the same
- * millisecond) and 62 random bits for uniqueness.
+ * A version 7 UUID has a 48-bit Unix timestamp in milliseconds in its
+ * most significant bits, followed by a 12-bit counter, which keeps
+ * UUIDs created in the same millisecond in order, and 62 random bits.
  *
- * v7 is the **recommended version for new systems** that need:
+ * Version 7 is the **recommended version for new systems** that need:
  *
- * - Time-ordered, lexicographically sortable identifiers. - Good
- * database index locality (avoids B-tree fragmentation). - No
- * MAC address leakage (unlike v1 / v6).
+ * - Identifiers ordered by time, which sort correctly as strings.
+ * - Good locality in database indexes, which avoids B-tree
+ *   fragmentation.
+ * - No MAC address in the UUID, unlike versions 1 and 6.
  *
  * ### Example
  *
@@ -940,9 +944,9 @@ def v8(a: number, b: number, c: number) {
   var c_lo = c % 4294967296
   var byte8 = ((c_hi / 16777216).floor() & 0x3f) | 0x80 # variant
   var c_hi2 = c_hi & 0x00ffffff
-  var field_c = _int_to_hex(byte8, 2)
-    + _int_to_hex(c_hi2, 6)
-    + _int_to_hex(c_lo, 8)
+  var field_c = _int_to_hex(byte8, 2) +
+      _int_to_hex(c_hi2, 6) +
+      _int_to_hex(c_lo, 8)
 
   # raw: field_a(12) + '8' + field_b(3) + field_c(16)
   var raw = field_a + '8' + field_b + field_c
@@ -994,7 +998,7 @@ def max_uuid() {
  *
  * @param string str The UUID string to parse.
  * @return UUID
- * @throws Error If `str` is not a recognisable UUID form.
+ * @throws Error If `str` is not a recognizable UUID form.
  */
 def parse(str: string) {
   return UUID(str)

@@ -236,11 +236,7 @@ def gitignore() {
  * @returns string
  */
 def gitattributes() {
-  var lines = [
-    '*.zu linguist-detectable',
-    '*.zu linguist-language=Zuri',
-    '',
-  ]
+  var lines = ['*.zu linguist-detectable', '*.zu linguist-language=Zuri', '']
 
   return '\n'.join(lines)
 }

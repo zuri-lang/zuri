@@ -1,0 +1,605 @@
+/**
+ * markdown.zu
+ *
+ * Test suite for the `markdown` module beyond the conformance suites:
+ * options and presets, the safe defaults, every extension, heading
+ * identifiers and tables of contents, the tree API, transforms,
+ * custom renderers and the module's helpers.
+ */
+
+import markdown
+import markdown.renderer { HtmlRenderer }
+import markdown.node { Node }
+import markdown.errors { MarkdownError, MetadataError }
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+  } as error
+
+  return error
+}
+
+def same(got, expected, message) {
+  assert got == expected, '${message}\nexpected: ${expected}\ngot:      ${got}'
+}
+
+var extended = markdown({ preset: 'extended', html: true })
+
+echo '═══════════════════════════════════════════════════════'
+echo '  markdown — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Presets and options
+# ---------------------------------------------------------------------------
+same(
+  markdown.render('# Hi\n\nSome *text*.'),
+  '<h1>Hi</h1>\n<p>Some <em>text</em>.</p>\n',
+  'the default render must be plain CommonMark output for plain Markdown',
+)
+same(
+  markdown.render('a ~~b~~ c'),
+  '<p>a <del>b</del> c</p>\n',
+  'GFM strikethrough is on by default',
+)
+same(
+  markdown.render('a ~~b~~ c', { preset: 'commonmark' }),
+  '<p>a ~~b~~ c</p>\n',
+  'the commonmark preset must leave strikethrough as text',
+)
+same(
+  markdown.render('a ~~b~~ c', { preset: 'commonmark', strikethrough: true }),
+  '<p>a <del>b</del> c</p>\n',
+  'an option named beside a preset must override it',
+)
+same(markdown().options.tables, true, 'the gfm preset turns tables on')
+same(
+  markdown({ preset: 'extended' }).options.metadata,
+  false,
+  'the extended preset leaves front matter off',
+)
+same(
+  markdown({ preset: 'extended' }).options.heading_ids,
+  'github',
+  'the extended preset gives headings GitHub identifiers',
+)
+ok('presets start the options and named options override them')
+
+assert raises(@() => markdown({ bogus: true })).message.contains("'bogus'"),
+    'an unknown option must be named in the error'
+assert instance_of(raises(@() => markdown({ tables: 'yes' })), ValueError),
+    'a boolean option given a string must be refused'
+assert raises(@() => markdown({ preset: 'pandoc' })).message
+    .contains("'pandoc'"),
+    'an unknown preset must be named in the error'
+assert instance_of(
+  raises(@() => markdown({ heading_ids: 'mine' })),
+  ValueError,
+),
+    'heading_ids accepts only a bool, a style name or a function'
+assert instance_of(
+  raises(
+    @() => markdown({
+      toc_levels: [1],
+    }),
+  ),
+  ValueError,
+),
+    'toc_levels must hold two levels'
+assert instance_of(
+  raises(@() => markdown({ renderer: 'HtmlRenderer' })),
+  ValueError,
+),
+    'renderer must be a class'
+ok('options are checked when a Markdown is made')
+
+same(
+  markdown.render('a\nb', { breaks: true }),
+  '<p>a<br />\nb</p>\n',
+  'breaks must turn every line ending into a <br />',
+)
+same(
+  markdown.render('"Hi" -- \'there\' --- ok...', { smart: true }),
+  '<p>“Hi” – ‘there’ — ok…</p>\n',
+  'smart punctuation curls quotes and makes dashes',
+)
+ok('breaks and smart punctuation')
+
+# ---------------------------------------------------------------------------
+# Raw HTML and links
+# ---------------------------------------------------------------------------
+same(
+  markdown.render('<b>hi</b> there'),
+  '<p>&lt;b&gt;hi&lt;/b&gt; there</p>\n',
+  'raw HTML must be shown as text by default',
+)
+same(
+  markdown.render('<div>\nx\n</div>'),
+  '<p>&lt;div&gt;\nx\n&lt;/div&gt;</p>\n',
+  'an HTML block must be shown as text by default',
+)
+same(
+  markdown.render('<b>hi</b>', { html: true }),
+  '<p><b>hi</b></p>\n',
+  'html must pass raw HTML through',
+)
+same(
+  markdown.render('<script>x</script>\n\na <iframe src=x> b', { html: true }),
+  '&lt;script>x&lt;/script>\n<p>a &lt;iframe src=x> b</p>\n',
+  'the tag filter must defuse script and iframe',
+)
+same(
+  markdown.render('<script>x</script>', { html: true, tag_filter: false }),
+  '<script>x</script>\n',
+  'turning the tag filter off must let them through',
+)
+ok('raw HTML is escaped unless html is on, and filtered when it is')
+
+same(
+  markdown.render(
+    '[a](javascript:alert(1)) [b](JAVASCRIPT:x) [c](vbscript:x) [d](file:///etc)',
+  ),
+  '<p><a href="">a</a> <a href="">b</a> <a href="">c</a> <a href="">d</a></p>\n',
+  'script and file links must lose their destination',
+)
+same(
+  markdown.render('![i](data:image/png;base64,AA) [t](data:text/html,x)'),
+  '<p><img src="data:image/png;base64,AA" alt="i" /> <a href="">t</a></p>\n',
+  'a data URL is kept only for an image type',
+)
+same(
+  markdown.render('[a](javascript:alert(1))', { unsafe_links: true }),
+  '<p><a href="javascript:alert(1)">a</a></p>\n',
+  'unsafe_links must keep them',
+)
+same(
+  markdown.render('[a](https://x.org/a b)', { preset: 'commonmark' }),
+  '<p>[a](https://x.org/a b)</p>\n',
+  'a destination with a space is not a link',
+)
+ok('dangerous link destinations are emptied')
+
+same(
+  extended.render('# T {onclick=alert(1) .c}'),
+  '<h1 id="t" class="c" onclick="alert(1)">T</h1>\n',
+  'with html on, an attribute is written as given',
+)
+same(
+  markdown.render('# T {onclick=alert(1) .c target=x}', { attributes: true }),
+  '<h1 class="c" data-onclick="alert(1)" target="x">T</h1>\n',
+  'with html off, an attribute that could run script gets a data- prefix',
+)
+ok('attributes an author writes cannot run script unless html is on')
+
+# ---------------------------------------------------------------------------
+# GitHub extensions
+# ---------------------------------------------------------------------------
+same(
+  markdown.render('| a | b |\n|:--|--:|\n| 1 | 2 |'),
+  '<table>\n<thead>\n<tr>\n<th align="left">a</th>\n<th align="right">b</th>\n</tr>\n</thead>\n' +
+      '<tbody>\n<tr>\n<td align="left">1</td>\n<td align="right">2</td>\n</tr>\n</tbody>\n</table>\n',
+  'a pipe table with alignment',
+)
+same(
+  markdown.render('- [ ] a\n- [x] b'),
+  '<ul>\n<li><input type="checkbox" disabled="" /> a</li>\n' +
+      '<li><input type="checkbox" checked="" disabled="" /> b</li>\n</ul>\n',
+  'task list items',
+)
+same(
+  markdown.parse('- [X] done').find('item').checked,
+  true,
+  'a task item records whether it is checked',
+)
+same(
+  markdown.render('see www.zuri.dev/a, or mail a.b@c.org.'),
+  '<p>see <a href="http://www.zuri.dev/a">www.zuri.dev/a</a>, or mail ' +
+      '<a href="mailto:a.b@c.org">a.b@c.org</a>.</p>\n',
+  'bare www and email addresses become links, without trailing punctuation',
+)
+same(
+  markdown.render(':tada: and :+1:, not :nothing:'),
+  '<p>🎉 and 👍, not :nothing:</p>\n',
+  'emoji shortcodes',
+)
+same(
+  markdown.render('> [!TIP]\n> Use it.'),
+  '<div class="markdown-alert markdown-alert-tip">\n<p class="markdown-alert-title">Tip</p>\n' +
+      '<p>Use it.</p>\n</div>\n',
+  'a GitHub alert',
+)
+same(
+  markdown.render('> [!NOPE]\n> Use it.'),
+  '<blockquote>\n<p>[!NOPE]\nUse it.</p>\n</blockquote>\n',
+  'an unknown alert kind is an ordinary block quote',
+)
+same(
+  markdown.render('A[^n] and B[^n].\n\n[^n]: Note.'),
+  '<p>A<sup class="footnote-ref"><a href="#fn-n" id="fnref-n" data-footnote-ref>1</a></sup> and ' +
+      'B<sup class="footnote-ref"><a href="#fn-n" id="fnref-n-2" data-footnote-ref>1</a></sup>.</p>\n' +
+      '<section class="footnotes" data-footnotes>\n<ol>\n<li id="fn-n">\n<p>Note. ' +
+      '<a href="#fnref-n" class="footnote-backref" data-footnote-backref data-footnote-backref-idx="1" aria-label="Back to reference 1">↩</a> ' +
+      '<a href="#fnref-n-2" class="footnote-backref" data-footnote-backref data-footnote-backref-idx="1-2" aria-label="Back to reference 1-2">↩<sup class="footnote-ref">2</sup></a></p>\n' +
+      '</li>\n</ol>\n</section>\n',
+  'a footnote referred to twice',
+)
+same(
+  markdown.render('A^[An *inline* note.] b.'),
+  '<p>A<sup class="footnote-ref"><a href="#fn-inline-1" id="fnref-inline-1" data-footnote-ref>1</a></sup> b.</p>\n' +
+      '<section class="footnotes" data-footnotes>\n<ol>\n<li id="fn-inline-1">\n<p>An <em>inline</em> note. ' +
+      '<a href="#fnref-inline-1" class="footnote-backref" data-footnote-backref data-footnote-backref-idx="1" aria-label="Back to reference 1">↩</a></p>\n' +
+      '</li>\n</ol>\n</section>\n',
+  'an inline note becomes a numbered footnote',
+)
+same(
+  markdown.parse('A^[note] b').first_child().text_content(),
+  'A b',
+  'a note\'s text is not part of the text around it',
+)
+ok('tables, task lists, autolinks, emoji, alerts and footnotes')
+
+# ---------------------------------------------------------------------------
+# Pandoc-style extensions
+# ---------------------------------------------------------------------------
+same(
+  extended.render('H~2~O, 2^10^, ==hi== and ~~gone~~ but ~a b~'),
+  '<p>H<sub>2</sub>O, 2<sup>10</sup>, <mark>hi</mark> and <del>gone</del> but <del>a b</del></p>\n',
+  'subscript, superscript, mark and strikethrough together',
+)
+same(
+  extended.render(
+    '`x`{.zu} [s]{#i .c} [l](/u){rel=nofollow} ![i](/i.png){width=40}',
+  ),
+  '<p><code class="zu">x</code> <span id="i" class="c">s</span> ' +
+      '<a href="/u" rel="nofollow">l</a> <img src="/i.png" alt="i" width="40" /></p>\n',
+  'attributes on code, spans, links and images',
+)
+same(
+  extended.render('```{.python #ex .numbered}\nx\n```'),
+  '<pre id="ex"><code class="language-python numbered">x\n</code></pre>\n',
+  'fenced code attributes: the first class is the language',
+)
+same(
+  extended.render('Title {#top}\n====='),
+  '<h1 id="top">Title</h1>\n',
+  'attributes on a setext heading',
+)
+ok('subscript, superscript, mark, attributes and spans')
+
+var abbreviated = markdown({ abbreviations: true }).render(
+  '*[HTML]: HyperText Markup Language\n*[HTML5]: The fifth\n\nHTML5 and HTML, not HTMLX or `HTML`.',
+)
+
+same(
+  abbreviated,
+  '<p><abbr title="The fifth">HTML5</abbr> and ' +
+      '<abbr title="HyperText Markup Language">HTML</abbr>, not HTMLX or <code>HTML</code>.</p>\n',
+  'abbreviations match whole words, the longest first, and never inside code',
+)
+ok('abbreviations')
+
+var definitions = markdown({ definition_lists: true })
+
+same(
+  definitions.render('Term\n: One\n: Two'),
+  '<dl>\n<dt>Term</dt>\n<dd>One</dd>\n<dd>Two</dd>\n</dl>\n',
+  'a tight definition list with two definitions',
+)
+same(
+  definitions.render('Term\n\n:   Loose.\n\n    More.\n\nOther\n: Tight.'),
+  '<dl>\n<dt>Term</dt>\n<dd>\n<p>Loose.</p>\n<p>More.</p>\n</dd>\n<dt>Other</dt>\n<dd>Tight.</dd>\n</dl>\n',
+  'loose and tight definitions in one list',
+)
+same(
+  definitions.render('Two\nlines\n: no'),
+  '<p>Two\nlines\n: no</p>\n',
+  'a term is a single line',
+)
+ok('definition lists')
+
+var divs = markdown({ divs: true })
+
+same(
+  divs.render('::: note\nA *b*.\n\n::: {#x .inner}\nC\n:::\n:::'),
+  '<div class="note">\n<p>A <em>b</em>.</p>\n<div id="x" class="inner">\n<p>C</p>\n</div>\n</div>\n',
+  'nested fenced divs close innermost first',
+)
+same(
+  divs.render('::: note\n```\n:::\n```\n:::'),
+  '<div class="note">\n<pre><code>:::\n</code></pre>\n</div>\n',
+  'a fence inside a code block belongs to the code',
+)
+same(
+  divs.render(':::\nx'),
+  '<p>:::\nx</p>\n',
+  'an opening fence needs a class or attributes',
+)
+ok('fenced divs')
+
+same(
+  markdown({ line_blocks: true })
+      .render('| One\n|   two\n| three\n  continued'),
+  '<div class="line-block">One<br />\n  two<br />\nthree continued</div>\n',
+  'a line block keeps its lines and their indentation',
+)
+ok('line blocks')
+
+var math = markdown({ math: true })
+
+same(
+  math.render('$x^2$ and $$\\sum$$'),
+  '<p><span class="math inline">\\(x^2\\)</span> and <span class="math display">\\[\\sum\\]</span></p>\n',
+  'inline and display math',
+)
+same(
+  math.render('From $20,000 to $30,000.\n\n$ x$ and $y $'),
+  '<p>From $20,000 to $30,000.</p>\n<p>$ x$ and $y $</p>\n',
+  'dollars that cannot open or close math stay text',
+)
+same(
+  math.render('```math\na < b\n```'),
+  '<div class="math display">\\[a &lt; b\n\\]</div>\n',
+  'a math code block',
+)
+same(math.render('\\$x$'), '<p>$x$</p>\n', 'an escaped dollar opens nothing')
+ok('math')
+
+# ---------------------------------------------------------------------------
+# Front matter
+# ---------------------------------------------------------------------------
+var meta = markdown({ metadata: true })
+var with_meta = meta.parse('---\ntitle: Notes\ntags: [a, b]\n...\n# Body')
+
+same(with_meta.metadata, {
+  title: 'Notes',
+  tags: ['a', 'b'],
+}, 'front matter is read as YAML')
+same(meta.to_html(with_meta), '<h1>Body</h1>\n', 'front matter is not rendered')
+same(
+  with_meta.first_child().line,
+  5,
+  'lines are counted from the top of the file, front matter included',
+)
+same(
+  meta.parse('# none').metadata,
+  nil,
+  'a document without front matter has none',
+)
+same(
+  meta.render('---\n\nnot: meta\n---'),
+  '<hr />\n<h2>not: meta</h2>\n',
+  'a --- with a blank line under it is a thematic break',
+)
+assert instance_of(raises(@() => meta.parse('---\n- a\n---\n')), MetadataError),
+    'front matter that is not a mapping must be refused'
+assert instance_of(
+  raises(@() => meta.parse('---\na: [\n---\n')),
+  MarkdownError,
+),
+    'front matter that is not YAML must be refused'
+same(
+  markdown.render('---\nx: 1\n---'),
+  '<hr />\n<h2>x: 1</h2>\n',
+  'without the option, front matter is ordinary Markdown',
+)
+ok('front matter')
+
+# ---------------------------------------------------------------------------
+# Heading identifiers and tables of contents
+# ---------------------------------------------------------------------------
+same(
+  markdown.render('# A\n\n# A\n\n## Hello, World!', { heading_ids: true }),
+  '<h1 id="a">A</h1>\n<h1 id="a-1">A</h1>\n<h2 id="hello-world">Hello, World!</h2>\n',
+  'GitHub identifiers, numbered when they repeat',
+)
+same(
+  markdown.render('# 2. Intro {#own}\n\n# 2. Intro', {
+    heading_ids: 'pandoc',
+    attributes: true,
+    id_prefix: 'h-',
+  }),
+  '<h1 id="own">2. Intro</h1>\n<h1 id="h-intro">2. Intro</h1>\n',
+  'Pandoc identifiers with a prefix, and an id the author gave kept',
+)
+same(
+  markdown.render('# A b', {
+    heading_ids: @(text) => text.upper().replace(' ', '_'),
+  }),
+  '<h1 id="A_B">A b</h1>\n',
+  'a function can make the identifiers',
+)
+same(
+  markdown.slug('Ünïcödé — Title!'),
+  'ünïcödé--title',
+  'slug keeps letters and makes spaces hyphens',
+)
+same(
+  markdown.slug('1.2 The *End*', 'pandoc'),
+  'the-end',
+  'a Pandoc slug starts at the first letter',
+)
+assert instance_of(raises(@() => markdown.slug('x', 'mine')), ValueError),
+    'an unknown slug style is refused'
+ok('heading identifiers')
+
+var toc = markdown({
+  toc: true,
+  toc_levels: [2, 3],
+})
+
+same(
+  toc.render('# Title\n\n[TOC]\n\n## One\n\n### One a\n\n## Two'),
+  '<h1 id="title">Title</h1>\n<nav class="table-of-contents">\n<ul>\n' +
+      '<li><a href="#one">One</a>\n<ul>\n<li><a href="#one-a">One a</a></li>\n</ul>\n</li>\n' +
+      '<li><a href="#two">Two</a></li>\n</ul>\n</nav>\n' +
+      '<h2 id="one">One</h2>\n<h3 id="one-a">One a</h3>\n<h2 id="two">Two</h2>\n',
+  'the table of contents replaces [TOC], within the levels asked for',
+)
+
+var entries = toc.toc(toc.parse('## A\n\n### B\n\n## C'))
+
+same(entries.length(), 2, 'two top-level entries')
+same(entries[0].children[0], {
+  level: 3,
+  text: 'B',
+  id: 'b',
+  children: [],
+}, 'an entry holds its level, text, id and the entries under it')
+same(
+  markdown.render('[toc]'),
+  '<p>[toc]</p>\n',
+  'without the option [TOC] is text',
+)
+ok('tables of contents')
+
+# ---------------------------------------------------------------------------
+# The tree
+# ---------------------------------------------------------------------------
+var doc = markdown.parse(
+  '# A *very* `fine` title\n\nHello *there*, [x](/y "T").\n\n- one\n- two',
+)
+
+same(doc.type, 'document', 'parse returns the document')
+same(doc.children.length(), 3, 'the document holds its three blocks')
+same(
+  doc.first_child().text_content(),
+  'A very fine title',
+  'text_content drops markup',
+)
+same(
+  doc.find('link').destination,
+  '/y',
+  'find returns the first node of a type',
+)
+same(doc.find('link').title, 'T', 'a link keeps its title')
+same(doc.find_all('item').length(), 2, 'find_all finds every node of a type')
+same(doc.find('list').tight, true, 'a list records whether it is tight')
+same(doc.children[1].line, 3, 'a block records the line it starts on')
+same(doc.children[2].end_line, 6, 'and the line it ends on')
+assert doc.first_child().is_block() and doc.find('emphasis').is_inline(),
+    'nodes know whether they are blocks or inlines'
+assert doc.dump().contains("    code 'fine'"), 'dump shows the tree indented'
+
+var walked = []
+
+doc.walk(@(node) {
+  walked.append(node.type)
+
+  return node.type != 'paragraph'
+})
+
+assert !walked.contains('link'),
+    'returning false from walk skips a node\'s children'
+assert walked.contains('item'), 'walk visits every other node'
+
+var copy = doc.clone()
+
+copy.first_child().level = 3
+same(doc.first_child().level, 1, 'a clone is independent of the original')
+same(copy.first_child().parent_node, copy, 'a clone has its own parents')
+
+var paragraph = doc.children[1]
+var added = Node('text')
+
+added.literal = '!'
+paragraph.append_child(added)
+same(paragraph.last_child(), added, 'append_child adds at the end')
+same(added.parent_node, paragraph, 'append_child sets the parent')
+same(added.previous_sibling().type, 'text', 'previous_sibling')
+added.detach()
+same(added.parent_node, nil, 'detach clears the parent')
+paragraph.prepend_child(added)
+same(paragraph.first_child(), added, 'prepend_child adds at the start')
+
+var replacement = Node('text')
+
+replacement.literal = '?'
+added.replace_with(replacement)
+same(
+  paragraph.first_child(),
+  replacement,
+  'replace_with puts the new node in place',
+)
+paragraph.insert_after(added, replacement)
+same(replacement.next_sibling(), added, 'insert_after')
+paragraph.insert_before(Node('softbreak'), added)
+same(replacement.next_sibling().type, 'softbreak', 'insert_before')
+assert instance_of(
+  raises(@() => doc.insert_before(Node('text'), added)),
+  ValueError,
+),
+    'insert_before refuses a reference that is not a child'
+ok('the tree can be read, walked, copied and changed')
+
+# ---------------------------------------------------------------------------
+# Transforms, renderers and helpers
+# ---------------------------------------------------------------------------
+var shifted = markdown().use(@(tree) {
+  for heading in tree.find_all('heading') {
+    heading.level = (heading.level + 1).min(6)
+  }
+})
+
+same(
+  shifted.render('# A'),
+  '<h2>A</h2>\n',
+  'a transform changes the tree before rendering',
+)
+
+class NewTab < HtmlRenderer {
+  link(node) {
+    self.write(
+      '<a href="${self.escape(self.url(node.destination))}" target="_blank">',
+    )
+    self.render_children(node)
+    self.write('</a>')
+  }
+}
+
+same(
+  markdown({ renderer: NewTab }).render('[z](https://z.dev) *e*'),
+  '<p><a href="https://z.dev" target="_blank">z</a> <em>e</em></p>\n',
+  'a renderer subclass changes one node type and keeps the rest',
+)
+
+var highlighted = markdown({
+  highlight: @(code, language) => language == 'zu' ? '<b>${code}</b>' : nil,
+})
+
+same(
+  highlighted.render('```zu\nx\n```\n\n```\n<y>\n```'),
+  '<pre><code class="language-zu"><b>x\n</b></code></pre>\n<pre><code>&lt;y&gt;\n</code></pre>\n',
+  'highlight gives the markup for a code block, or nil to keep the default',
+)
+same(
+  markdown.render_inline('A *short* title'),
+  'A <em>short</em> title',
+  'render_inline leaves out the paragraph',
+)
+same(
+  markdown.render_inline('# not a heading'),
+  '# not a heading',
+  'render_inline ignores block syntax',
+)
+
+var hostile = '*not* a [link] & <tag> 1. ~x~ `c`'
+
+same(
+  markdown.render(markdown.escape(hostile), { preset: 'extended' }),
+  '<p>*not* a [link] &amp; &lt;tag&gt; 1. ~x~ `c`</p>\n',
+  'escaped text renders as itself under every extension',
+)
+ok('transforms, renderers, highlighting and helpers')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} markdown checks passed.'
+echo '═══════════════════════════════════════════════════════'

@@ -1,16 +1,16 @@
 /**
  * @module errors
  *
- * What the model layer raises, and the list a model's own checks add
- * to.
+ * The errors that the model layer raises, and the list of errors that a
+ * model's own checks add to.
  *
- * A mistake in how a model is declared and a record that cannot be
- * found are database errors, so `ModelError` and `RecordNotFound` are
- * `sql.SqlError`s like everything else `sql` raises. A record that
- * fails its validation is a different thing: the same failure a form
- * reports, so `RecordInvalid` is a `validate.ValidationError`, and the
- * code that answers a bad form with a 422 answers a bad record the
- * same way.
+ * A mistake in how a model is declared, and a record that can't be
+ * found, are database errors, so `ModelError` and `RecordNotFound` are
+ * subclasses of `sql.SqlError`, like everything else that `sql` raises.
+ * A record that fails validation is different. It's the same kind of
+ * failure as an invalid form, so `RecordInvalid` is a
+ * `validate.ValidationError`, and the code that responds to an invalid
+ * form with a 422 can respond to an invalid record in the same way.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -167,8 +167,8 @@ class Errors {
    */
   on(field: string) {
     return self._found
-      .filter(@(found) => found.field == field)
-      .map(@(found) => found.message)
+        .filter(@(found) => found.field == field)
+        .map(@(found) => found.message)
   }
 
   /**

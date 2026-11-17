@@ -1,18 +1,16 @@
 /**
  * @module bcrypt
  *
- * Generating and verifying bcrypt password hashes, and reading
- * information back out of an existing hash (its cost factor and
- * salt).
+ * Creates and verifies bcrypt password hashes, and reads the cost
+ * factor and salt from an existing hash.
  *
- * `hash()` and `compare()` are the two functions almost every
- * caller needs: hash a password before storing it, then compare a
- * login attempt against the stored hash later. The salt is
- * generated internally by a real cryptographically secure random
- * source, embedded in the returned hash string, and never needs to
- * be handled separately.
+ * Most programs only need `hash()` and `compare()`: hash a password
+ * before storing it, and later compare a login attempt with the stored
+ * hash. The salt is generated from a cryptographically secure random
+ * source, stored in the returned hash string, and never needs to be
+ * handled separately.
  *
- * Example,
+ * For example:
  *
  * ```zuri-repl
  * %> import bcrypt
@@ -31,10 +29,10 @@
 import _crypto
 
 /**
- * Default cost factor used by `hash()` when `rounds` isn't given.
- * Higher means slower to compute (and slower to brute-force):
- * each increment roughly doubles the work. `10` is a reasonable
- * default for an interactive login flow; raise it over time as
+ * The cost factor that `hash()` uses when `rounds` isn't given. A
+ * higher value makes hashes slower to compute, and so slower to attack
+ * by brute force. Each step up roughly doubles the work. `10` is a
+ * reasonable default for an interactive login. Increase it over time as
  * hardware gets faster (see `needs_rehash()`).
  *
  * @type number
@@ -61,14 +59,14 @@ def hash(str: string, rounds: ?number) {
 }
 
 /**
- * Checks whether `str` is the password `known_hash` was generated
+ * Checks whether `str` is the password that `known_hash` was created
  * from.
  *
  * @param string str
  * @param string known_hash
- * @returns bool: `false` for a wrong password, and also `false`
- *    (rather than raising) for a `known_hash` that isn't a
- *    well-formed bcrypt hash at all.
+ * @returns bool: `false` for a wrong password, and also `false`,
+ *    instead of an error, for a `known_hash` that isn't a well-formed
+ *    bcrypt hash at all.
  */
 def compare(str: string, known_hash: string) {
   return _crypto.bcrypt_verify(str, known_hash)
@@ -86,12 +84,11 @@ def get_rounds(hash: string) {
 }
 
 /**
- * Reads the salt portion out of a hash: the first 29 characters,
+ * Reads the salt from a hash, which is the first 29 characters,
  * covering the `$2x$rounds$salt` prefix.
  *
- * @note this does not validate that `hash` is actually a
- *    well-formed bcrypt hash; call `get_rounds()` first if you
- *    need that checked.
+ * @note This doesn't check that `hash` is a well-formed bcrypt hash.
+ *    Call `get_rounds()` first if you need that checked.
  * @param string hash
  * @returns string
  * @raises Error if `hash` is shorter than a real bcrypt hash.

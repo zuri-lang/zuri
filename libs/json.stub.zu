@@ -1,44 +1,39 @@
 /**
  * @module json
  *
- * Provides APIs for encoding and decoding JSON data.
+ * Encodes and decodes JSON.
  *
- * JavaScript Object Notation (JSON) is a lightweight,
- * text-based, language-independent data interchange format. It
- * was derived from the ECMAScript Programming Language Standard.
- * JSON defines a small set of formatting rules for the portable
- * representation of structured data.
+ * JSON (JavaScript Object Notation) is a lightweight, text-based data
+ * interchange format that doesn't depend on any language. It was
+ * derived from the ECMAScript standard, and defines a small set of
+ * formatting rules for representing structured data in a portable way.
  *
- * This implementation complies with [RFC
+ * This implementation follows [RFC
  * 8259](https://datatracker.ietf.org/doc/html/rfc8259).
  *
- * ### JSON to Zuri value mapping
+ * ### How JSON values are decoded
  *
  * | JSON | Zuri |
  * |------|-------|
- * | Null | Nil |
- * | String | String |
- * | Number | Number |
- * | Boolean | Boolean |
- * | Array | List |
- * | Object | Dict |
+ * | null | `nil` |
+ * | string | string |
+ * | number | number |
+ * | boolean | bool |
+ * | array | list |
+ * | object | dict |
  *
- *
- * ### Zuri to JSON object mapping
+ * ### How Zuri values are encoded
  *
  * | Zuri | JSON |
  * |-------|------|
- * | `nil` | Null |
- * | Integer | Number |
- * | Number | Number |
- * | Char | String |
- * | String | String |
- * | List | Array |
- * | Dict | Object |
- * | Instance of class implementing `to_json()` decorator | Any |
+ * | `nil` | null |
+ * | number | number |
+ * | string | string |
+ * | list | array |
+ * | dict | object |
+ * | An instance of a class with a `@to_json` method | whatever that method returns |
  *
- *
- * Example,
+ * For example:
  *
  * ```zuri-repl
  * %> import json

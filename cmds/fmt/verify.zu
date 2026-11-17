@@ -20,8 +20,16 @@
 
 # Fields that say where something is rather than what it is.
 var _PLACES = [
-  'start', 'end', 'line', 'col', 'end_line', 'end_col', 'name_span', 'key_span',
-  'value_span', 'segments',
+  'start',
+  'end',
+  'line',
+  'col',
+  'end_line',
+  'end_col',
+  'name_span',
+  'key_span',
+  'value_span',
+  'segments',
 ]
 
 # Statements that declare a name, which braces would scope.
@@ -38,8 +46,8 @@ var _BODIES = {
 }
 
 def _is_comment(node) {
-  return is_instance(node)
-    and (node.kind == 'Comment' or node.kind == 'DocBlock')
+  return is_instance(node) and
+      (node.kind == 'Comment' or node.kind == 'DocBlock')
 }
 
 # A comment's text with what layout is allowed to change taken out: the

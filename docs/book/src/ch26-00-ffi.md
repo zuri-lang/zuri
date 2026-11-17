@@ -1,31 +1,32 @@
 # Foreign Functions: C and Rust
 
-The `ffi` module calls code written in C and in Rust. It loads a shared
-library, describes the functions in it, and calls them with ordinary Zuri
-values; it turns Zuri functions into C function pointers so a library can
-call back; and it reads the declarations a header or a crate already
-contains, so the description is written once, by the people who wrote the
-library.
+The `ffi` module calls code written in C and Rust. It loads shared
+libraries, describes the functions in them and calls those functions with
+ordinary Zuri values. It turns Zuri functions into C function pointers so
+that a library can call back into your code. And it reads the declarations
+that a header file or a Rust crate already contains, so the description only
+has to be written once, by the people who wrote the library.
 
-Every value that crosses is converted and checked against its C type. An
-integer that does not fit is a `RangeError` at the call, not a truncated
-argument inside the library. Memory the module allocates knows its size,
-and a read past its end is refused before it happens. Where a check cannot
-be made, because C handed back an address with no extent attached, the
-module says so plainly rather than guessing.
+Every value that crosses the boundary is converted and checked against its C
+type. An integer that doesn't fit is a `RangeError` at the call, not a
+truncated argument inside the library. Memory allocated by the module knows
+its own size, and a read past its end is rejected before it happens. When a
+check isn't possible, because C returned an address without saying how much
+memory is behind it, the module tells you so instead of guessing.
 
-A C library, a Rust `cdylib`, and a static library of either are all
-reachable, and the layout of every record, packed, over-aligned or full of
-bitfields, is the one the platform's own compiler would give it.
+You can use C libraries, Rust `cdylib` libraries, and static libraries
+written in either language. The layout of every struct, whether it's packed,
+over-aligned or full of bitfields, is the same as the platform's own
+compiler would give it.
 
 - [Following Along](#following-along)
 - [Introduction](#introduction)
 - [Loading a Library](#loading-a-library)
 - [Calling a Function](#calling-a-function)
 - [Types](#types)
-- [Numbers at the Boundary](#numbers-at-the-boundary)
-- [Declaring from C](#declaring-from-c)
-- [Declaring from Rust](#declaring-from-rust)
+- [Numbers Across the Boundary](#numbers-across-the-boundary)
+- [Declaring Functions From C](#declaring-functions-from-c)
+- [Declaring Functions From Rust](#declaring-functions-from-rust)
 - [Pointers and Memory](#pointers-and-memory)
 - [Strings and Text](#strings-and-text)
 - [Structs, Unions and Arrays](#structs-unions-and-arrays)
@@ -40,20 +41,20 @@ bitfields, is the one the platform's own compiler would give it.
 - [Rust in Depth](#rust-in-depth)
 - [Platform Differences](#platform-differences)
 - [What Is Checked](#what-is-checked)
-- [What the Module Refuses](#what-the-module-refuses)
+- [Design Limits](#design-limits)
 - [Module Reference](#module-reference)
 
-> Blocks on this page that list several calls together are **reference
-> listings**, not programs: they show the shape of each call rather than a
-> sequence to run. Anything presented as a complete program runs as
-> written. The programs that call the C runtime run on Linux as shown;
-> the ones that need a library of your own are shown rather than run.
+> Code blocks in this chapter that list several calls together are
+> **reference listings**, not programs. They show the form of each call, not
+> a sequence to run. Anything shown as a complete program runs as written.
+> The programs that call the C runtime run on Linux as shown, and the ones
+> that need a library of your own are shown but not run.
 
 ## Following Along
 
-The C runtime is on every machine, so most examples below call it.
-`ffi.LIBC` names it for the platform the program is running on, and
-`ffi.LIBM` names the maths library:
+Every machine has the C runtime library, so most of the examples below call
+it. `ffi.LIBC` names it for the platform the program is running on, and
+`ffi.LIBM` names the math library:
 
 ```zuri
 import ffi
@@ -68,8 +69,7 @@ echo strlen('Hello, C')
 8
 ```
 
-Some sections use a small library of your own. Save this as
-`geometry.c`:
+Some sections use a small library of your own. Save this as `geometry.c`:
 
 ```c
 #include <math.h>
@@ -94,7 +94,7 @@ void scale_all(point *points, size_t n, double k) {
 }
 ```
 
-and build it as a shared library with the C compiler:
+Then build it as a shared library with the C compiler:
 
 ```sh
 cc -shared -fPIC geometry.c -o libgeometry.so -lm       # Linux
@@ -102,37 +102,41 @@ cc -dynamiclib geometry.c -o libgeometry.dylib          # macOS
 cl /LD geometry.c                                       # Windows
 ```
 
-The Rust sections use a crate built with `crate-type = ["cdylib"]`, shown
-where it is used.
+The Rust sections use a crate built with `crate-type = ["cdylib"]`, which is
+shown where it's used.
 
 ## Introduction
 
-Every language that grows up eventually needs code it did not write: a
-database engine, a codec, a cryptography library, a scientific kernel, a
-system call the standard library has no wrapper for. The code exists, it
-is fast and it is tested, and it speaks the C calling convention, which
-is the one convention every language on every platform agrees on. Rust
-libraries speak it too, through `extern "C"`.
+Sooner or later, every language needs to use code it didn't write, such as a
+database engine, a codec, a cryptography library, a scientific computing
+kernel, or a system call that the standard library doesn't wrap. That code
+already exists, it's fast and well tested, and it uses the C calling
+convention, which is the one convention every language agrees on, on every
+platform. Rust libraries can use it too, through `extern "C"`.
 
-Calling across that boundary is a matter of describing, exactly, what the
-other side expects: how wide each integer is, where each member of a
-struct sits, which register a value travels in. The machine does not
-check any of it. A description that is off by one byte corrupts memory
-silently, and the bug shows up somewhere unrelated, later.
+Calling across that boundary means describing exactly what the other side
+expects: how wide each integer is, where each member of a struct is stored,
+and which register each value is passed in. The machine doesn't check any of
+this. A description that's off by a single byte silently corrupts memory,
+and the bug shows up later, somewhere unrelated.
 
-`ffi` makes that description a value the program can inspect, builds it
-from the source the library's authors already wrote, lays out every type
-the way the platform's compiler does, and checks every value against it
-at the moment it crosses:
+`ffi` turns that description into a value your program can inspect. It
+builds the description from the source code the library's authors already
+wrote, lays out every type the same way the platform's compiler does, and
+checks every value against it as the value crosses the boundary:
 
 ```zuri
 import ffi
 
-var c = ffi.open(ffi.LIBC).declare('
+var c = ffi
+    .open(ffi.LIBC)
+    .declare(
+      '
   int abs(int n);
   typedef struct { int quot; int rem; } div_t;
   div_t div(int numerator, int denominator);
-')
+',
+    )
 
 echo c.abs(-7)
 echo c.div(17, 5)
@@ -143,8 +147,9 @@ echo c.div(17, 5)
 {quot: 3, rem: 2}
 ```
 
-The declarations are the ones `<stdlib.h>` contains. The struct came back
-as a dictionary. And the conversion rules held on the way in:
+The declarations are the same ones `<stdlib.h>` contains. The struct was
+returned as a dictionary, and the conversion rules were enforced for the
+arguments:
 
 ```zuri,ignore
 c.abs(3000000000)
@@ -156,23 +161,26 @@ RangeError: abs() argument 1 'n': 3000000000 is out of range for 'int', which ho
 
 ## Loading a Library
 
-`ffi.open()` loads a shared library and returns a `Library`. It takes a
-path, a file name, or a bare name the platform's conventions complete:
+`ffi.open()` loads a shared library and returns a `Library`. It accepts a
+path, a file name, or a bare name that it completes following the platform's
+conventions:
 
 ```zuri,ignore
-var sqlite = ffi.open('sqlite3')                    # libsqlite3.so, libsqlite3.dylib, sqlite3.dll
-var local = ffi.open('./build/libgeometry.so')      # a path, as given
-var vendored = ffi.open('geometry', { paths: ['vendor/lib'] })
+var sqlite = ffi.open('sqlite3') # libsqlite3.so, libsqlite3.dylib, sqlite3.dll
+var local = ffi.open('./build/libgeometry.so') # a path, as given
+var vendored = ffi.open('geometry', {
+  paths: ['vendor/lib'],
+})
 ```
 
-A bare name is tried in the directories given as `paths` first, then in
-the platform's own search order. On Linux, a library's unversioned
-`libname.so` is usually only installed with its development package, so
+A bare name is looked for first in the directories given in `paths`, and
+then in the platform's own search order. On Linux, a library's unversioned
+`libname.so` file is usually only installed with its development package, so
 `ffi.open()` also asks the dynamic loader's cache for the versioned file
-the runtime package ships, such as `libsqlite3.so.0`. On macOS the name is
-tried as a `.dylib` and as a framework.
+that the runtime package installs, such as `libsqlite3.so.0`. On macOS, the
+name is tried as a `.dylib` and as a framework.
 
-`ffi.find()` answers the same question without loading anything:
+`ffi.find()` looks for a library the same way, without loading it:
 
 ```zuri
 import ffi
@@ -184,23 +192,24 @@ echo ffi.find('zuri_has_no_such_library')
 nil
 ```
 
-With no name at all, `ffi.open()` returns the running process, whose
-symbols include the C runtime and everything already loaded globally.
+Without a name, `ffi.open()` returns the running process, whose symbols
+include the C runtime library and everything else that's already loaded
+globally.
 
 Two options change how a library is loaded. `lazy: true` resolves its
-symbols as they are first used instead of all at once. `global: true`
-makes its symbols visible to libraries loaded after it and to the process
-handle, which a plugin that expects its host's symbols needs. Both are
-Unix concepts and have no effect on Windows, where every loaded module is
-searched when the process is asked for a symbol.
+symbols when they're first used, instead of all at once. `global: true`
+makes its symbols visible to libraries loaded after it, and to the process
+handle, which a plugin that relies on its host's symbols needs. Both options
+are Unix concepts and have no effect on Windows, where every loaded module
+is searched whenever the process is asked for a symbol.
 
-A library that cannot be found or loaded raises `LoadError`, carrying the
-loader's own explanation: a missing dependency, a library for another
-architecture, a file that is not a library.
+If a library can't be found or loaded, `ffi.open()` raises a `LoadError`
+that includes the loader's own explanation, such as a missing dependency, a
+library built for a different architecture, or a file that isn't a library.
 
 ### Symbols
 
-A `Library` answers whether it exports a name, and where:
+A `Library` can tell you whether it exports a symbol, and where:
 
 ```zuri
 import ffi
@@ -219,20 +228,20 @@ nil
 ```
 
 `symbol()` returns a `Pointer` to the symbol. On glibc, `name@VERSION`
-asks for a particular version of a versioned symbol, for the rare program
-that must pin one.
+requests a particular version of a versioned symbol, for the rare program
+that needs to pin one.
 
-### Closing
+### Closing a Library
 
-`close()` stops a library being used: every function bound from it
-raises `LoadError` from then on. The code itself is unloaded once nothing
-refers to the library any longer, functions bound from it included, so a
-closed library is never unloaded out from under a call in progress.
+`close()` stops a library from being used, so every function bound from it
+raises a `LoadError` from then on. The code itself is only unloaded once
+nothing refers to the library anymore, including the functions bound from
+it, so a closed library is never unloaded while a call is still running.
 
 ## Calling a Function
 
-A function is bound by name, return type and parameter types, and comes
-back as an ordinary Zuri function:
+You bind a function by giving its name, its return type and its parameter
+types, and you get back an ordinary Zuri function:
 
 ```zuri
 import ffi
@@ -251,9 +260,9 @@ pow
 2
 ```
 
-It can be stored, passed to `map()`, spawned onto an isolate, and called
-like any other function. The number of arguments is checked like any
-function's:
+You can store it, pass it to `map()`, spawn it in an isolate and call it
+like any other function. The number of arguments is checked just as it is
+for any function:
 
 ```zuri,ignore
 pow(2)
@@ -263,8 +272,8 @@ pow(2)
 ArgumentError: 'pow' expects 2 arguments, got 1
 ```
 
-`ffi.describe()` reports what a foreign function is, and
-`ffi.is_foreign()` tells a foreign function from a Zuri one:
+`ffi.describe()` describes a foreign function, and `ffi.is_foreign()` tells
+a foreign function apart from a Zuri one:
 
 ```zuri
 import ffi
@@ -285,12 +294,14 @@ true
 false
 ```
 
-Binding one function at a time suits a handful. For more, declarations
-read a header, as the next sections show.
+Binding one function at a time works well for a few functions. For more than
+that, you can read the declarations from a header, as the next sections
+show.
 
 ## Types
 
-Every C type is a `Type`. The module exports the built-in ones:
+Every C type is represented by a `Type`. The module exports the built-in
+types:
 
 | Zuri | C | Size |
 | --- | --- | --- |
@@ -303,19 +314,20 @@ Every C type is a `Type`. The module exports the built-in ones:
 | `ffi.longlong`, `ffi.ulonglong` | `long long`, `unsigned long long` | 8 |
 | `ffi.int8` ... `ffi.uint64` | `int8_t` ... `uint64_t` | 1 to 8 |
 | `ffi.int128`, `ffi.uint128` | `__int128`, `unsigned __int128` | 16 |
-| `ffi.size_t`, `ffi.ssize_t`, `ffi.ptrdiff_t` | the same | 8 |
-| `ffi.intptr_t`, `ffi.uintptr_t` | the same | 8 |
-| `ffi.wchar_t`, `ffi.char16_t`, `ffi.char32_t` | the same | 4, 2 on Windows; 2; 4 |
-| `ffi.float`, `ffi.double` | the same | 4, 8 |
+| `ffi.size_t`, `ffi.ssize_t`, `ffi.ptrdiff_t` | The same names | 8 |
+| `ffi.intptr_t`, `ffi.uintptr_t` | The same names | 8 |
+| `ffi.wchar_t`, `ffi.char16_t`, `ffi.char32_t` | The same names | 4 (2 on Windows), 2, 4 |
+| `ffi.float`, `ffi.double` | The same names | 4, 8 |
 | `ffi.longdouble` | `long double` | 16, or 8 on Windows and Apple Arm |
 | `ffi.complex_float`, `ffi.complex_double` | `float _Complex`, `double _Complex` | 8, 16 |
 | `ffi.ptr` | `void *` | 8 |
 | `ffi.string` | `const char *`, as text | 8 |
 | `ffi.wstring` | `const wchar_t *`, as text | 8 |
 
-and Rust's names for the same types: `ffi.i8` through `ffi.u128`,
-`ffi.isize`, `ffi.usize`, `ffi.f32`, `ffi.f64`, and `ffi.rust_char` for
-Rust's `char`. A Rust name and its C counterpart are the same type:
+The module also exports Rust's names for the same types: `ffi.i8` to
+`ffi.u128`, `ffi.isize`, `ffi.usize`, `ffi.f32`, `ffi.f64`, and
+`ffi.rust_char` for Rust's `char`. A Rust name and its C equivalent refer to
+the same type:
 
 ```zuri
 import ffi
@@ -331,7 +343,7 @@ true
 true
 ```
 
-A type knows its size, alignment and kind on this platform:
+A type knows its size, alignment and kind on the current platform:
 
 ```zuri
 import ffi
@@ -349,7 +361,7 @@ int
 string
 ```
 
-### Building types
+### Building Types
 
 Pointers, arrays, `const` and function types are built from other types:
 
@@ -372,7 +384,7 @@ int (*)(void *, void *)
 const char *
 ```
 
-`ffi.type()` reads a C spelling of a built-in type, which is often the
+`ffi.type()` reads the C name of a built-in type, which is often the
 shortest way to write one:
 
 ```zuri
@@ -387,28 +399,31 @@ true
 function pointer
 ```
 
-Structs, unions and enums are built member by member; [Structs, Unions
-and Arrays](#structs-unions-and-arrays) and [Enums and
-Constants](#enums-and-constants) cover them.
+Structs, unions and enums are built member by member, as described in
+[Structs, Unions and Arrays](#structs-unions-and-arrays) and [Enums and
+Constants](#enums-and-constants).
 
-## Numbers at the Boundary
+## Numbers Across the Boundary
 
-A Zuri number is a double, which holds every integer up to 2^53 exactly
-and no further. C integer types reach 2^64 and, with `__int128`, 2^128.
-So integers cross the boundary this way:
+A Zuri number is a double, which can represent every integer up to 2^53
+exactly, but no further. C integer types go up to 2^64, and with `__int128`,
+2^128. So integers cross the boundary like this:
 
-- **Going in**, a number must be a whole number that fits the type, and
-  a bigint may be given for any integer type. A fraction, a string, or a
-  bool for an integer is a `TypeError`; a value outside the type's range
-  is a `RangeError`. Nothing is ever truncated or wrapped.
-- **Coming out**, an integer is a number when it lies within 2^53 of
-  zero, and a bigint beyond that, so no value is ever rounded.
+- **Going in**, a number must be a whole number that fits in the type, and
+  you can pass a bigint for any integer type. A fraction, a string or a bool
+  passed for an integer raises a `TypeError`, and a value outside the type's
+  range raises a `RangeError`. Values are never truncated or wrapped around.
+- **Coming out**, an integer is returned as a number if it's within 2^53 of
+  zero, and as a bigint otherwise, so no value is ever rounded.
 
 ```zuri
 import ffi
 
-var strtoull = ffi.open(ffi.LIBC).function('strtoull', ffi.uint64,
-  [ffi.string, ffi.ptr, ffi.int])
+var strtoull = ffi.open(ffi.LIBC).function('strtoull', ffi.uint64, [
+  ffi.string,
+  ffi.ptr,
+  ffi.int,
+])
 
 echo strtoull('42', nil, 10)
 echo strtoull('18446744073709551615', nil, 10)
@@ -421,17 +436,18 @@ echo typeof(strtoull('18446744073709551615', nil, 10))
 bigint
 ```
 
-A type that can be either is the program's to handle:
-`is_bigint(value)`, or comparing against a bigint, which compares
-correctly with a number too.
+When a value could be either type, your program has to handle both, for
+example with `is_bigint(value)` or by comparing against a bigint, which also
+compares correctly with a number.
 
-Floating-point types take any number. `long double` is wider than a
-double on some platforms, 80-bit extended precision on x86-64 Linux and
-macOS and 128-bit quad precision on Arm Linux; going in is exact, and
-coming out rounds to the nearest double, as C's own conversion does.
+Floating-point types accept any number. `long double` is wider than a double
+on some platforms: it's 80-bit extended precision on x86-64 Linux and macOS,
+and 128-bit quad precision on Arm Linux. Values going in are converted
+exactly, and values coming out are rounded to the nearest double, as C's own
+conversion does.
 
-`bool` takes and gives a Zuri bool, and a C character type takes a number
-or a one-character string:
+`bool` accepts and returns a Zuri bool, and a C character type accepts a
+number or a one-character string:
 
 ```zuri
 import ffi
@@ -447,24 +463,26 @@ echo toupper(97).chr()
 A
 ```
 
-A complex number is a list of two, `[real, imaginary]`, and passing one
-by value is available wherever the C compiler has `_Complex`, which is
-everywhere but Windows.
+A complex number is represented as a list of two numbers,
+`[real, imaginary]`. You can pass one by value wherever the C compiler
+supports `_Complex`, which is everywhere except Windows.
 
-## Declaring from C
+## Declaring Functions From C
 
-`ffi.declare()` reads C declarations and returns a `Declarations`: a set
-of types, functions, variables and constants that is not tied to any
-library. Binding it to one produces a namespace:
+`ffi.declare()` reads C declarations and returns a `Declarations` object,
+which is a set of types, functions, variables and constants that isn't tied
+to any particular library. Binding it to a library produces a namespace:
 
 ```zuri
 import ffi
 
-var api = ffi.declare('
+var api = ffi.declare(
+  '
   typedef struct { long quot; long rem; } ldiv_t;
   ldiv_t ldiv(long numerator, long denominator);
   long labs(long n);
-')
+',
+)
 
 var c = api.bind(ffi.open(ffi.LIBC))
 
@@ -479,44 +497,45 @@ echo c.ldiv_t.size()
 16
 ```
 
-`Library.declare()` does both steps at once, and is what most programs
+`Library.declare()` does both steps at once, and it's what most programs
 use.
 
-The namespace holds a function for each declared function, a `Pointer`
-for each declared variable, each constant, and each type that has a name
-of its own. It is read the way a module is. A tagged type with no typedef,
-such as `struct stat`, is reached through the declarations instead:
-`api.type('struct stat')`.
+The namespace contains a function for each declared function, a `Pointer`
+for each declared variable, each constant, and each type that has a name of
+its own. You use it in the same way as a module. A tagged type without a
+typedef, such as `struct stat`, is accessed through the declarations
+instead, as in `api.type('struct stat')`.
 
-A declared function that the library does not export is a `SymbolError`
-naming every one that is missing. `allow_missing: true` binds the rest
-and leaves those out, for a header describing several versions of a
-library.
+If a declared function isn't exported by the library, you get a
+`SymbolError` that names every missing function. With `allow_missing: true`,
+the other functions are bound and the missing ones are left out, which is
+useful for a header that describes several versions of a library.
 
-### What is read
+### What Is Read
 
 Everything a header says about an API:
 
 - `typedef`, `struct`, `union` and `enum`, including forward declarations,
-  self-referencing records, nested records, anonymous members, bitfields
-  and flexible array members;
-- function prototypes, variadic ones included, and function pointer types
-  however deeply they nest;
-- `extern` variables;
+  self-referencing records, nested records, anonymous members, bitfields and
+  flexible array members
+- Function prototypes, including variadic ones, and function pointer types
+  nested to any depth
+- `extern` variables
 - `_Static_assert`, which is evaluated, so a header that checks its own
-  assumptions checks them here too;
+  assumptions checks them here too
 - `__attribute__((packed))`, `aligned(n)`, `ms_abi` and `sysv_abi`,
-  `__declspec(align(n))`, `_Alignas`, and `asm` labels that give a
-  function a different symbol name; every other attribute is read past;
-- `extern "C" { ... }`, as headers shared with C++ write it.
+  `__declspec(align(n))`, `_Alignas`, and `asm` labels that give a function
+  a different symbol name. Other attributes are skipped.
+- `extern "C" { ... }`, as written in headers that are shared with C++
 
-A function with a body, as an inline helper in a header has one, is read
-and not bound, because the library need not export it.
+A function with a body, such as an inline helper in a header, is read but
+not bound, because the library doesn't have to export it.
 
 ```zuri
 import ffi
 
-var api = ffi.declare('
+var api = ffi.declare(
+  '
   struct node;
   typedef struct node node;
   struct node { int value; node *next; };
@@ -527,7 +546,8 @@ var api = ffi.declare('
   } shape;
 
   _Static_assert(sizeof(shape) == 24, "shape is 24 bytes");
-')
+',
+)
 
 echo api.type('node').size()
 echo api.type('shape').offset_of('tag')
@@ -540,34 +560,35 @@ echo api.type('shape').has_field('id')
 true
 ```
 
-### The preprocessor
+### The Preprocessor
 
-Real header text is full of preprocessor lines, so enough of the
-preprocessor runs for it to read as written:
+Real headers contain a lot of preprocessor lines, so enough of the
+preprocessor is implemented to read them as they're written:
 
-- `#define` of a value is expanded wherever the name appears and becomes a
-  constant: numbers in any base with any suffix, floating-point numbers,
-  character constants, strings, adjacent strings joined, and expressions
-  over other constants. A value cast to a pointer type, the way a header
-  spells a sentinel such as `((void *) -1)`, is a `Pointer` of that type at
-  that address, and `nil` when the address is zero. A macro can use a type
-  declared after it, as C allows, since a macro means something only where
-  it is used.
+- A `#define` of a value is expanded wherever the name appears, and also
+  becomes a constant. Values can be numbers in any base with any suffix,
+  floating-point numbers, character constants, strings, adjacent strings
+  (which are joined), and expressions that use other constants. A value cast
+  to a pointer type, as headers write sentinels such as `((void *) -1)`,
+  becomes a `Pointer` of that type at that address, or `nil` when the
+  address is zero. A macro can use a type that's declared after it, as C
+  allows, since a macro only has a meaning where it's used.
 - `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else` and `#endif` are evaluated,
-  with `defined()`, against the macros the target platform's compiler
-  predefines: `__linux__`, `__APPLE__`, `_WIN32`, `__x86_64__`,
-  `__aarch64__`, `__LP64__` and the rest. `__has_include()` and the
-  other `__has_` queries answer no.
+  along with `defined()`, using the macros that the target platform's
+  compiler predefines, such as `__linux__`, `__APPLE__`, `_WIN32`,
+  `__x86_64__`, `__aarch64__` and `__LP64__`. `__has_include()` and the
+  other `__has_` queries always return false.
 - `#pragma pack` applies to the records declared after it, exactly where
-  it is written.
+  it's written.
 - `#undef` removes a macro, and `#error` stops with its message.
-- Including a C standard header is accepted, because everything it
-  declares is already known; `<stdio.h>` also declares `FILE`.
+- Including a C standard header is allowed, because everything it declares
+  is already known. Including `<stdio.h>` also declares `FILE`.
 
 ```zuri
 import ffi
 
-var api = ffi.declare('
+var api = ffi.declare(
+  '
   #include <stdint.h>
   #define VERSION_MAJOR 2
   #define VERSION_MINOR 7
@@ -583,7 +604,8 @@ var api = ffi.declare('
   #pragma pack(push, 1)
   typedef struct { uint8_t kind; uint32_t length; } header;
   #pragma pack(pop)
-')
+',
+)
 
 echo api.constant('VERSION')
 echo api.constant('NAME')
@@ -598,28 +620,34 @@ geometry
 5
 ```
 
-Two things are refused, each with the line and column of the problem.
-Including any other file, because declarations are read as given, never
-fetched: paste in the ones the program needs. And using a function-like
-macro, which would need the preprocessor's full expansion rules; define a
-function-like macro and it is recorded, and only using one is an error.
+Two things are rejected, with the line and column of the problem. The first
+is including any other file, because declarations are read exactly as given
+and files are never fetched, so paste in the declarations the program needs.
+The second is using a function-like macro, which would require the
+preprocessor's full expansion rules. Defining a function-like macro is
+allowed and recorded, and only using one is an error.
 
-### Text returns
+### Functions That Return Text
 
-C cannot say who owns a returned pointer, but its convention is clear
-enough to follow: a function returning `const char *` hands back text it
-keeps, and one returning `char *` usually hands over memory. So a
-declared function returning `const char *` returns a string, `nil` for a
-null pointer, and one returning `char *` returns a `Pointer`, which the
-program reads and releases. The same holds for `const wchar_t *`.
+C has no way to say who owns a returned pointer, but it has a convention
+that's clear enough to follow. A function returning `const char *` returns
+text that it keeps, while one returning `char *` usually hands over memory
+to the caller. So a declared function that returns `const char *` returns a
+string, or `nil` for a null pointer, and one that returns `char *` returns a
+`Pointer`, which your program reads and then frees. The same applies to
+`const wchar_t *`.
 
 ```zuri
 import ffi
 
-var c = ffi.open(ffi.LIBC).declare('
+var c = ffi
+    .open(ffi.LIBC)
+    .declare(
+      '
   int setenv(const char *name, const char *value, int overwrite);
   const char *getenv(const char *name);
-')
+',
+    )
 
 c.setenv('ZURI_FFI_DEMO', 'hello', 1)
 echo c.getenv('ZURI_FFI_DEMO')
@@ -631,25 +659,26 @@ hello
 nil
 ```
 
-`getenv` is declared `char *getenv(const char *)` in the real header;
-writing it as `const char *` here is the program saying it will not free
-the result, which is true.
+In the real header, `getenv` is declared as `char *getenv(const char *)`.
+Declaring it as `const char *` here is the program's way of saying that it
+won't free the result, which is correct.
 
-### Growing a set, and sharing one
+### Extending and Sharing Declarations
 
-Sources are added to a set one after another, and each sees what came
-before. One set can include another, whose types it can then use without
-owning them, which is how two libraries share one set of common types:
+You add sources to a set one after another, and each one can see what came
+before it. A set can include another set and use its types without owning
+them, which is how two libraries can share one set of common types:
 
 ```zuri
 import ffi
 
 var common = ffi.declare('typedef struct { double x, y; } point;')
 
-var shapes = ffi.declarations()
-  .include(common)
-  .declare('typedef struct { point from, to; } segment;')
-  .declare('double length(segment s);')
+var shapes = ffi
+    .declarations()
+    .include(common)
+    .declare('typedef struct { point from, to; } segment;')
+    .declare('double length(segment s);')
 
 echo shapes.type('segment').size()
 echo shapes.functions().length.signature().params[0].name()
@@ -661,15 +690,16 @@ segment
 ```
 
 `types()`, `functions()`, `variables()` and `constants()` list what a set
-holds, and `type()` resolves any C spelling against it:
+contains, and `type()` resolves any C type name against it, as in
 `shapes.type('segment *[2]')`.
 
-## Declaring from Rust
+## Declaring Functions From Rust
 
-A Rust library is reached through the C ABI it exports: `extern "C"`
-functions, and the `#[repr(C)]` types they take. `ffi.declare_rust()`
-reads that surface as a crate writes it, so its source can be handed over
-as it stands. Given this `lib.rs`, built with `crate-type = ["cdylib"]`:
+Rust libraries are called through the C ABI they export, meaning
+`extern "C"` functions and the `#[repr(C)]` types they use.
+`ffi.declare_rust()` reads those declarations the way a crate writes them,
+so you can pass it the crate's source code as it is. Given this `lib.rs`,
+built with `crate-type = ["cdylib"]`:
 
 ```rust
 use std::ffi::{CStr, CString, c_char};
@@ -711,13 +741,17 @@ pub unsafe extern "C" fn free_greeting(text: *mut c_char) {
 }
 ```
 
-the Zuri side reads the same file:
+The Zuri side reads the same file:
 
 ```zuri,ignore
 import ffi
 
 var source = file('shapes/src/lib.rs').read()
-var shapes = ffi.open('shapes', { paths: ['shapes/target/release'] }).declare_rust(source)
+var shapes = ffi
+    .open('shapes', {
+      paths: ['shapes/target/release'],
+    })
+    .declare_rust(source)
 
 echo shapes.area({ variant: 'Rect', w: 2, h: 3 })
 echo shapes.midpoint({ x: 0, y: 0 }, { x: 4, y: 2 })
@@ -732,34 +766,36 @@ echo greeting.read_string()
 hello, zuri
 ```
 
-What is read, and what is skipped:
+Here's what's read and what's skipped:
 
-- functions in `extern "C"` blocks (and `unsafe extern "C"` ones), with
-  `#[link_name]` for a different symbol;
-- `extern "C" fn` definitions marked `#[no_mangle]` or `#[export_name]`,
-  with their bodies skipped; one with neither is refused, because it is
-  exported under a mangled name nothing can look up;
+- Functions in `extern "C"` blocks (including `unsafe extern "C"` blocks),
+  with `#[link_name]` for a different symbol name
+- `extern "C" fn` definitions marked with `#[no_mangle]` or
+  `#[export_name]`, with their bodies skipped. One without either attribute
+  is rejected, because it's exported under a mangled name that nothing can
+  look up.
 - `#[repr(C)]`, `#[repr(C, packed)]`, `#[repr(C, align(N))]` and
-  `#[repr(transparent)]` structs, tuple structs and unions;
-- enums with `#[repr(C)]` or an integer `#[repr]`, with and without
-  fields;
-- `type` aliases, `const` items and statics;
-- `#[cfg(...)]`, evaluated for the platform the program is running on;
-- everything else, from `use` lines to `impl` blocks, macros and private
-  functions, is read past.
+  `#[repr(transparent)]` structs, tuple structs and unions
+- Enums with `#[repr(C)]` or an integer `#[repr]`, with or without fields
+- `type` aliases, `const` items and statics
+- `#[cfg(...)]`, which is evaluated for the platform the program is running
+  on
+- Everything else, from `use` statements to `impl` blocks, macros and
+  private functions, is skipped
 
-A type may be used before it is declared, as Rust allows, and a struct
-without `#[repr(C)]` can only be used through a pointer, because Rust's
-own layout is unspecified. [Rust in Depth](#rust-in-depth) covers how
-each Rust type crosses.
+A type can be used before it's declared, as Rust allows. A struct without
+`#[repr(C)]` can only be used through a pointer, because Rust doesn't
+specify its layout. [Rust in Depth](#rust-in-depth) explains how each Rust
+type crosses the boundary.
 
-C and Rust declarations go in the same set, and each sees the other's
-types, which suits a crate that ships a C header beside its source.
+C and Rust declarations can go in the same set, and each can use the other's
+types, which suits a crate that includes a C header alongside its source
+code.
 
 ## Pointers and Memory
 
-A `Pointer` is an address with, optionally, the type of what it points
-at. Memory comes from `ffi.alloc()`, zeroed and typed:
+A `Pointer` is an address, optionally with the type of the value it points
+to. You get memory from `ffi.alloc()`, which returns it zeroed and typed:
 
 ```zuri
 import ffi
@@ -781,10 +817,10 @@ echo numbers.size()
 16
 ```
 
-`get()` and `set()` read and write elements of the pointer's type, as C's
-`ptr[i]` does, and `add()` steps by elements, as C's `ptr + i` does.
-`read()` and `write()` take a type of their own and a byte offset, and work
-on any pointer:
+`get()` and `set()` read and write elements of the pointer's type, as
+`ptr[i]` does in C, and `add()` moves forward by a number of elements, as
+`ptr + i` does in C. `read()` and `write()` take their own type and a byte
+offset, and work on any pointer:
 
 ```zuri
 import ffi
@@ -806,13 +842,13 @@ echo header.cast(ffi.uint16).get(1)
 51966
 ```
 
-Memory is little-endian on every platform the module runs on, which the
-third line shows. `cast()` gives a pointer a type, or takes it away.
+Memory is little-endian on every platform the module supports, as the third
+line shows. `cast()` gives a pointer a type, or removes its type.
 
-### Checked access
+### Checked Access
 
-Memory the module allocated knows its extent, and every access through a
-pointer into it is checked against that extent before it happens:
+Memory allocated by the module knows its size, and every access through a
+pointer into it is checked against that size before it happens:
 
 ```zuri
 import ffi
@@ -832,39 +868,42 @@ PointerError
 4 bytes at offset 16 fall outside the 16-byte block this pointer belongs to
 ```
 
-A write that fails to convert writes nothing, so a record is never left
-half updated. Freed memory refuses every access, and freeing it twice is
-an error rather than a double free.
+If a write fails to convert its value, nothing is written, so a record is
+never left half updated. Freed memory rejects every access, and freeing
+memory twice raises an error instead of causing a double free.
 
-A pointer C handed back carries no extent, because C did not say how much
-memory is behind it. Only a null pointer is caught through one; how much
-is there is whatever the library's documentation says.
+A pointer returned by C code doesn't have a size, because C didn't say how
+much memory is behind it. The only thing that can be caught through such a
+pointer is a null pointer. How much memory is actually there depends on what
+the library's documentation says.
 
-### Pointers as arguments
+### Passing Pointers as Arguments
 
-A pointer parameter accepts more than a `Pointer`, each for the duration
-of the call:
+A pointer parameter accepts more than just a `Pointer`. Each of these is
+converted for the duration of the call:
 
 | Passed | Becomes |
 | --- | --- |
-| `nil` | a null pointer |
-| a `Pointer` | its address |
-| a string | a NUL-terminated copy, for a pointer to characters |
-| bytes | the bytes' own storage, with nothing copied |
-| a list | a temporary array of the target type, written back after the call |
-| a dictionary | a temporary record, written back after the call |
-| a Zuri function | a callback, for a function pointer |
-| a `Callback` | its code |
-| a foreign function | its address |
+| `nil` | A null pointer |
+| A `Pointer` | Its address |
+| A string | A NUL-terminated copy, for a pointer to characters |
+| Bytes | The bytes' own storage, without copying |
+| A list | A temporary array of the target type, copied back after the call |
+| A dictionary | A temporary record, copied back after the call |
+| A Zuri function | A callback, for a function pointer |
+| A `Callback` | Its code |
+| A foreign function | Its address |
 
-A list or dictionary is written back only when the pointer is not to a
-`const` type, so it works as an out-parameter:
+A list or dictionary is only copied back when the pointer isn't to a `const`
+type, so you can use it as an output parameter:
 
 ```zuri
 import ffi
 
-var frexp = ffi.open(ffi.LIBM).function('frexp', ffi.double,
-  [ffi.double, ffi.pointer(ffi.int)])
+var frexp = ffi.open(ffi.LIBM).function('frexp', ffi.double, [
+  ffi.double,
+  ffi.pointer(ffi.int),
+])
 
 var exponent = [0]
 echo frexp(48, exponent)
@@ -876,14 +915,17 @@ echo exponent[0]
 6
 ```
 
-Bytes pass their own storage, so a C function that fills a buffer fills
-the bytes directly:
+Bytes are passed using their own storage, so a C function that fills a
+buffer fills the bytes directly:
 
 ```zuri
 import ffi
 
-var memset = ffi.open(ffi.LIBC).function('memset', ffi.ptr,
-  [ffi.ptr, ffi.int, ffi.size_t])
+var memset = ffi.open(ffi.LIBC).function('memset', ffi.ptr, [
+  ffi.ptr,
+  ffi.int,
+  ffi.size_t,
+])
 
 var buffer = bytes(6)
 memset(buffer, 65, 4)
@@ -894,30 +936,30 @@ echo buffer
 (41 41 41 41 00 00)
 ```
 
-A bytes value passed to a call must not be resized by a callback while
-the call is running; its storage is only guaranteed to stay where it is
-for as long as nothing changes its length.
+A callback mustn't resize a bytes value that's been passed to a call while
+the call is running. Its storage is only guaranteed to stay in the same
+place as long as nothing changes its length.
 
-### Other allocations
+### Other Kinds of Allocation
 
 `ffi.alloc_bytes(size, align)` allocates untyped memory. `ffi.malloc()`
-allocates from the C allocator, for memory that will be handed to C code
-which frees it with `free()`; it is never freed when the pointer is
-collected. `ffi.at(address, type)` makes a pointer from a known address.
-`copy_from()`, `fill()` and `compare()` are `memmove`, `memset` and
-`memcmp` over checked memory.
+allocates memory from the C allocator, for memory you'll pass to C code that
+frees it with `free()`, so it's never freed when the pointer is garbage
+collected. `ffi.at(address, type)` creates a pointer from a known address.
+`copy_from()`, `fill()` and `compare()` are the equivalents of `memmove`,
+`memset` and `memcmp` for checked memory.
 
 ## Strings and Text
 
 A string passed where a pointer to characters is expected becomes a
-NUL-terminated copy for the duration of the call, in the encoding the
-character type implies: UTF-8 for `char`, UTF-16 for `char16_t`, UTF-32
-for `char32_t`, and `wchar_t`'s own, which is UTF-16 on Windows and
-UTF-32 elsewhere.
+NUL-terminated copy for the duration of the call, using the encoding implied
+by the character type: UTF-8 for `char`, UTF-16 for `char16_t`, UTF-32 for
+`char32_t`, and the platform's own encoding for `wchar_t`, which is UTF-16
+on Windows and UTF-32 everywhere else.
 
-`ffi.string` and `ffi.wstring` are pointer types that also convert back:
-a function declared to return one returns a Zuri string, and `nil` for a
-null pointer.
+`ffi.string` and `ffi.wstring` are pointer types that also convert values
+coming back. A function declared to return one of them returns a Zuri
+string, or `nil` for a null pointer.
 
 ```zuri
 import ffi
@@ -934,8 +976,9 @@ haystack
 nil
 ```
 
-Text that has to outlive a call, because it is stored in a struct or kept
-by the library, goes in memory of its own with `ffi.alloc_string()`:
+Text that needs to last longer than a call, because it's stored in a struct
+or kept by the library, has to be put in memory of its own with
+`ffi.alloc_string()`:
 
 ```zuri
 import ffi
@@ -954,23 +997,24 @@ naïve
 ```
 
 `read_string()` reads up to the terminator, or exactly a given number of
-code units, in any of the four encodings, and raises `ValueError` for
-text that is not valid in its encoding. `write_string()` writes text and
-its terminator. When a read has no terminator inside a block of known
-size, it is refused rather than run past the end.
+code units, in any of the four encodings, and raises a `ValueError` for text
+that isn't valid in its encoding. `write_string()` writes text followed by
+its terminator. If a read in a block of known size finds no terminator, it's
+rejected instead of reading past the end.
 
 ## Structs, Unions and Arrays
 
-A record is built member by member, and laid out the way the platform's C
-compiler lays it out:
+A record is built one member at a time, and laid out in the same way the
+platform's C compiler lays it out:
 
 ```zuri
 import ffi
 
-var Header = ffi.struct('Header')
-  .add_field('tag', ffi.uint8)
-  .add_field('length', ffi.uint32)
-  .add_field('checksum', ffi.uint64)
+var Header = ffi
+    .struct('Header')
+    .add_field('tag', ffi.uint8)
+    .add_field('length', ffi.uint32)
+    .add_field('checksum', ffi.uint64)
 
 echo Header.size()
 echo Header.offset_of('length')
@@ -983,15 +1027,20 @@ echo Header.offset_of('checksum')
 8
 ```
 
-It is sealed the first time anything needs its size, including passing a
-value of it, and cannot change after that. `set_packed()` packs it as
-`#pragma pack` does, `set_align()` raises its alignment, and `add_field()`
-takes a minimum alignment for one member, as `_Alignas` gives:
+A record is sealed the first time anything needs its size, including passing
+a value of that type, and can't be changed after that. `set_packed()` packs
+it as `#pragma pack` does, `set_align()` increases its alignment, and
+`add_field()` accepts a minimum alignment for a single member, as `_Alignas`
+does:
 
 ```zuri
 import ffi
 
-var Packed = ffi.struct('Packed').add_field('tag', ffi.uint8).add_field('length', ffi.uint32).set_packed()
+var Packed = ffi
+    .struct('Packed')
+    .add_field('tag', ffi.uint8)
+    .add_field('length', ffi.uint32)
+    .set_packed()
 var Wide = ffi.struct('Wide').add_field('tag', ffi.uint8).set_align(64)
 
 echo Packed.size()
@@ -1003,23 +1052,27 @@ echo Wide.size()
 64
 ```
 
-### Values
+### Record Values
 
-A record value is a dictionary of its members, going in and coming out. A
-member left out of a dictionary going in is zero. Nested records are
-nested dictionaries, and array members are lists, except that an array of
-`char` reads as the string in it and an array of other bytes reads as
-bytes:
+A record value is represented as a dictionary of its members, both going in
+and coming out. A member that's missing from a dictionary going in is set to
+zero. Nested records are nested dictionaries, and array members are lists,
+except that an array of `char` is read as the string it contains, and an
+array of other bytes is read as bytes:
 
 ```zuri
 import ffi
 
-var Item = ffi.struct('Item')
-  .add_field('name', ffi.char.array(8))
-  .add_field('counts', ffi.int.array(3))
+var Item = ffi
+    .struct('Item')
+    .add_field('name', ffi.char.array(8))
+    .add_field('counts', ffi.int.array(3))
 
 var item = ffi.alloc(Item)
-item.set(0, { name: 'widget', counts: [1, 2] })
+item.set(0, {
+  name: 'widget',
+  counts: [1, 2],
+})
 
 echo item.get()
 echo item.get_field('counts')
@@ -1030,24 +1083,25 @@ echo item.get_field('counts')
 [1, 2, 0]
 ```
 
-Through a pointer, `get_field()` and `set_field()` read and write one
-member, as `ptr->name` does, and `field()` points at one, as `&ptr->name`
-does. `fields()` lists the members with their offsets.
+Through a pointer, `get_field()` and `set_field()` read and write a single
+member, as `ptr->name` does, and `field()` returns a pointer to a member, as
+`&ptr->name` does. `fields()` lists the members along with their offsets.
 
 ### Bitfields
 
-`add_bitfield()` adds a member of a given width. Bitfields follow the
-platform's rules for packing them, GCC's and Clang's on Linux and macOS
-and MSVC's on Windows, including a zero-width bitfield ending a storage
-unit:
+`add_bitfield()` adds a member with a given width in bits. Bitfields follow
+the platform's rules for packing them, which are GCC's and Clang's on Linux
+and macOS and MSVC's on Windows, including a zero-width bitfield that ends a
+storage unit:
 
 ```zuri
 import ffi
 
-var Flags = ffi.struct('Flags')
-  .add_bitfield('ready', ffi.uint, 1)
-  .add_bitfield('mode', ffi.uint, 3)
-  .add_bitfield('delta', ffi.int, 4)
+var Flags = ffi
+    .struct('Flags')
+    .add_bitfield('ready', ffi.uint, 1)
+    .add_bitfield('mode', ffi.uint, 3)
+    .add_bitfield('delta', ffi.int, 4)
 
 var flags = ffi.alloc(Flags)
 flags.set_field('mode', 5)
@@ -1071,14 +1125,17 @@ catch {
 
 ### Unions
 
-A union value going in is a dictionary holding one member, the one to
-store. Coming out, it holds every member, each read from the same bytes,
-because only the program knows which one is meaningful:
+A union value going in is a dictionary that holds a single member, the one
+to store. Coming out, it contains every member, each read from the same
+bytes, because only your program knows which one is meaningful:
 
 ```zuri
 import ffi
 
-var Bits = ffi.union('Bits').add_field('f', ffi.float).add_field('u', ffi.uint32)
+var Bits = ffi
+    .union('Bits')
+    .add_field('f', ffi.float)
+    .add_field('u', ffi.uint32)
 var value = ffi.alloc(Bits)
 value.set(0, { f: 1 })
 
@@ -1089,29 +1146,37 @@ echo value.get()
 {f: 1, u: 1065353216}
 ```
 
-A union read back and passed in again is accepted as it is, because its
-members agree; members that disagree are a `TypeError`.
+A union that's been read back and passed in again is accepted as it is,
+because its members agree with each other. If the members disagree, a
+`TypeError` is raised.
 
-### By value
+### Passing Records by Value
 
-Records pass to and return from functions by value, whatever their shape.
-Which registers a record travels in depends on its size and on the types
-of its members, differently on every platform, and those rules are
-applied to the record's real layout, packed and over-aligned records and
-bitfields included:
+Records can be passed to and returned from functions by value, whatever
+their shape. Which registers a record is passed in depends on its size and
+the types of its members, and differs on every platform. Those rules are
+applied to the record's actual layout, including packed and over-aligned
+records and bitfields:
 
 ```zuri,ignore
-var geometry = ffi.open('geometry').declare('
+var geometry = ffi
+    .open('geometry')
+    .declare(
+      '
   typedef struct { double x, y; } point;
   double distance(point a, point b);
   point midpoint(const point *a, const point *b);
   void scale_all(point *points, size_t n, double k);
-')
+',
+    )
 
 echo geometry.distance({ x: 0, y: 0 }, { x: 3, y: 4 })
 echo geometry.midpoint({ x: 0, y: 0 }, { x: 4, y: 2 })
 
-var points = [{ x: 1, y: 1 }, { x: 2, y: 3 }]
+var points = [
+  { x: 1, y: 1 },
+  { x: 2, y: 3 },
+]
 geometry.scale_all(points, 2, 10)
 echo points
 ```
@@ -1122,21 +1187,21 @@ echo points
 [{x: 10, y: 10}, {x: 20, y: 30}]
 ```
 
-`midpoint` takes pointers to records, and the dictionaries went in as
-temporary records. `scale_all` takes a pointer to an array of them, and a
-list of dictionaries went in as a temporary array and was written back.
+`midpoint` takes pointers to records, so the dictionaries were passed as
+temporary records. `scale_all` takes a pointer to an array of records, so a
+list of dictionaries was passed as a temporary array and copied back
+afterwards.
 
 ## Enums and Constants
 
-An enum is an integer type with named constants. A value of one is a
-number, and anywhere one goes in, a constant's name may go instead:
+An enum is an integer type with named constants. A value of an enum type is
+a number, and wherever one is passed in, you can use a constant's name
+instead:
 
 ```zuri
 import ffi
 
-var Level = ffi.enum('Level')
-  .add_constant('LOW', 1)
-  .add_constant('HIGH', 10)
+var Level = ffi.enum('Level').add_constant('LOW', 1).add_constant('HIGH', 10)
 
 echo Level.constants()
 echo Level.value('HIGH')
@@ -1154,24 +1219,29 @@ echo level.get()
 10
 ```
 
-Declared enums come with their constants, and a declared enum is stored
-as `int` unless its values need more, or it says otherwise
-(`enum x : uint8_t`), or GCC's `packed` attribute asks for the smallest
-type. Every enum constant, `#define` constant and Rust `const` is a
-constant of the declarations, and a member of the namespace they bind to.
+Declared enums include their constants. A declared enum is stored as an
+`int` unless its values need more space, it specifies a type (as in
+`enum x : uint8_t`), or GCC's `packed` attribute asks for the smallest
+possible type. Every enum constant, `#define` constant and Rust `const`
+becomes a constant of the declarations, and a member of the namespace
+they're bound to.
 
 ## Callbacks
 
 A Zuri function passed where a function pointer is expected becomes a C
-function pointer for the length of that call:
+function pointer for the duration of that call:
 
 ```zuri
 import ffi
 
-var c = ffi.open(ffi.LIBC).declare('
+var c = ffi
+    .open(ffi.LIBC)
+    .declare(
+      '
   void qsort(void *base, size_t count, size_t size,
              int (*compare)(const void *, const void *));
-')
+',
+    )
 
 var numbers = ffi.alloc(ffi.int, 5)
 for i, n in [42, 7, 19, 3, 25] {
@@ -1189,16 +1259,16 @@ echo numbers.to_list(5)
 [3, 7, 19, 25, 42]
 ```
 
-The arguments arrive converted from their C types, pointers as
-`Pointer`s, records as dictionaries, and the return value is converted to
-the callback's return type, a small integer widened to a full register the
-way a C compiler returns one.
+The arguments are converted from their C types, with pointers becoming
+`Pointer` values and records becoming dictionaries, and the return value is
+converted to the callback's return type. A small integer is widened to a
+full register, the same way a C compiler returns one.
 
-### Lasting callbacks
+### Long-Lived Callbacks
 
-A library that keeps a function pointer and calls it later, a signal
-handler, an event callback, a logging hook, needs a callback that
-outlives the call that handed it over. `ffi.callback()` makes one:
+A library that stores a function pointer and calls it later, such as a
+signal handler, an event callback or a logging hook, needs a callback that
+lasts longer than the call that passed it. `ffi.callback()` creates one:
 
 ```zuri,ignore
 var on_event = ffi.callback(@(code) {
@@ -1208,25 +1278,30 @@ var on_event = ffi.callback(@(code) {
 library.set_handler(on_event)
 ```
 
-A lasting callback lives until `release()`. Nothing else frees it,
-because nothing can know when the library has finished with the pointer;
-a callback that is never released lives as long as the program. After
-`release()` it can no longer be passed, and C must not call it again.
+A long-lived callback lasts until you call `release()`. Nothing else frees
+it, because there's no way to know when the library has finished with the
+pointer, so a callback that's never released lasts as long as the program.
+After `release()`, the callback can no longer be passed anywhere, and C code
+must not call it again.
 
-### Errors inside a callback
+### Errors Inside a Callback
 
-A Zuri error cannot unwind through C frames; the C code in between
-expects to finish. So an error raised inside a callback is trapped, C gets
-a zero back (or the callback's `error_value`), and the error is raised
-again, as it was, the moment the C function returns:
+A Zuri error can't unwind through C stack frames, because the C code in
+between expects to finish. So an error raised inside a callback is caught, C
+receives a zero (or the callback's `error_value`), and the error is raised
+again, unchanged, as soon as the C function returns:
 
 ```zuri
 import ffi
 
-var c = ffi.open(ffi.LIBC).declare('
+var c = ffi
+    .open(ffi.LIBC)
+    .declare(
+      '
   void qsort(void *base, size_t count, size_t size,
              int (*compare)(const void *, const void *));
-')
+',
+    )
 
 var numbers = ffi.alloc(ffi.int, 3)
 
@@ -1243,34 +1318,38 @@ catch {
 ValueError: comparison refused
 ```
 
-The first error is the one raised; later calls into the callback during
-the same C call see the error value.
+The first error is the one that's raised. Any later calls to the callback
+during the same C call return the error value.
 
 ## Callbacks and Threads
 
-C libraries run threads of their own, and those threads call callbacks.
-A Zuri isolate runs on one thread, so a call from any other thread is
-posted to the isolate that made the callback, and the calling thread
-waits until the isolate has run it. The isolate answers at its next
-safepoint, the same points where it checks for signals, or at once when
-it is inside a foreign call or in `ffi.serve()`.
+C libraries often run their own threads, and those threads can call
+callbacks. A Zuri isolate runs on a single thread, so a call from any other
+thread is passed to the isolate that created the callback, and the calling
+thread waits until the isolate has run it. The isolate responds at its next
+safepoint, which is the same point where it checks for signals, or
+immediately if it's inside a foreign call or in `ffi.serve()`.
 
-That covers a library whose threads call back while the program does
-something else. It does not cover a function that blocks the isolate
-until its own threads have finished calling back: the isolate would be
-waiting for the function, the function for its threads, and the threads
-for the isolate. `ffi.threaded()` gives such a function a variant that
-runs on a helper thread while the isolate keeps answering:
+That covers a library whose threads call back while the program is busy with
+something else. It doesn't cover a function that blocks the isolate until
+its own threads have finished calling back. In that case, the isolate would
+be waiting for the function, the function for its threads, and the threads
+for the isolate. `ffi.threaded()` gives that kind of function a version that
+runs on a helper thread, while the isolate keeps responding to callbacks:
 
 ```zuri
 import ffi
 
-var c = ffi.open(ffi.LIBC).declare('
+var c = ffi
+    .open(ffi.LIBC)
+    .declare(
+      '
   typedef unsigned long pthread_t;
   int pthread_create(pthread_t *thread, const void *attributes,
                      void *(*start)(void *), void *argument);
   int pthread_join(pthread_t thread, void **result);
-')
+',
+    )
 
 var seen = []
 var start = ffi.callback(@(argument) {
@@ -1292,43 +1371,56 @@ start.release()
 [42]
 ```
 
-The callback ran on the isolate's own thread, in the middle of the
-threaded call. A program with nothing else to do while it waits for calls
-from another thread can wait in `ffi.serve(timeout)`, which answers
-whatever is posted and returns how many it answered.
+The callback ran on the isolate's own thread, partway through the threaded
+call. A program that has nothing else to do while it waits for calls from
+another thread can wait in `ffi.serve(timeout)`, which handles whatever
+calls arrive and returns how many it handled.
 
 ## Variadic Functions
 
-A variadic function, `printf` and its family, takes its fixed parameters
-by type and any number after them. Each argument past the fixed ones
-travels as the type its value suggests:
+A variadic function, such as `printf` and its relatives, takes its fixed
+parameters with declared types, followed by any number of other arguments.
+Each argument after the fixed ones is passed as the type its value suggests:
 
-| Value | Travels as |
+| Value | Passed as |
 | --- | --- |
-| a whole number that fits an `int` | `int` |
-| a larger whole number | `long long` |
-| any other number | `double` |
-| a bigint | `long long`, or `unsigned long long` when it needs to be |
-| a bool | `int` |
-| a string | `const char *` |
-| a pointer, bytes or `nil` | `void *` |
+| A whole number that fits in an `int` | `int` |
+| A larger whole number | `long long` |
+| Any other number | `double` |
+| A bigint | `long long`, or `unsigned long long` if necessary |
+| A bool | `int` |
+| A string | `const char *` |
+| A pointer, bytes or `nil` | `void *` |
 
-Anything else is given its type with `Type.of()`, and C's promotions still
-apply on top: a `float` travels as a `double`, and a type narrower than
-`int` as an `int`.
+For anything else, give the value a type with `Type.of()`. C's usual
+promotions still apply on top of that, so a `float` is passed as a `double`,
+and a type narrower than `int` is passed as an `int`.
 
 ```zuri
 import ffi
 
-var snprintf = ffi.open(ffi.LIBC).function('snprintf', ffi.int,
-  [ffi.pointer(ffi.char), ffi.size_t, ffi.string], { variadic: true })
+var snprintf = ffi
+    .open(ffi.LIBC)
+    .function(
+      'snprintf',
+      ffi.int,
+      [ffi.pointer(ffi.char), ffi.size_t, ffi.string],
+      { variadic: true },
+    )
 
 var buffer = ffi.alloc(ffi.char, 64)
 
 snprintf(buffer, 64, '%s has %d items at %.2f each', 'cart', 3, 4.5)
 echo buffer.read_string()
 
-snprintf(buffer, 64, '%.1f, %ld, %c', ffi.double.of(2), ffi.long.of(-7), ffi.char.of('z'))
+snprintf(
+  buffer,
+  64,
+  '%.1f, %ld, %c',
+  ffi.double.of(2),
+  ffi.long.of(-7),
+  ffi.char.of('z'),
+)
 echo buffer.read_string()
 ```
 
@@ -1337,39 +1429,42 @@ cart has 3 items at 4.50 each
 2.0, -7, z
 ```
 
-The second call shows why `of()` exists: `%.1f` with a bare `2` would pass
-an `int`, and `printf` would read a double that was never there.
+The second call shows why `of()` exists. `%.1f` with a plain `2` would pass
+an `int`, and `printf` would read a double that was never passed.
 
 ## Errors and errno
 
-The module's own errors all descend from `FfiError`:
+All of the module's own errors are subclasses of `FfiError`:
 
 | Class | Raised when |
 | --- | --- |
-| `FfiError` | a type cannot be used as asked: a record with no size passed by value, a signature libffi cannot call |
-| `LoadError` | a library cannot be found or loaded, or a function is called after its library was closed |
-| `SymbolError` | a library does not export a symbol |
-| `DeclarationError` | C or Rust source cannot be read; `line` and `column` point at the problem |
-| `PointerError` | memory would be accessed out of bounds, through null, after being freed, or freed twice |
-| `CallbackError` | a released callback is used |
-| `LinkError` | a static library cannot be linked |
+| `FfiError` | A type can't be used in the way requested, such as a record without a size passed by value, or a signature that libffi can't call |
+| `LoadError` | A library can't be found or loaded, or a function is called after its library was closed |
+| `SymbolError` | A library doesn't export a symbol |
+| `DeclarationError` | C or Rust source can't be read. `line` and `column` point to the problem. |
+| `PointerError` | Memory would be accessed out of bounds, through a null pointer or after being freed, or freed twice |
+| `CallbackError` | A released callback is used |
+| `LinkError` | A static library can't be linked |
 
-A value that does not convert to its C type raises the prelude's
-`TypeError` or `RangeError`, the same errors any function raises for a bad
+A value that can't be converted to its C type raises the usual `TypeError`
+or `RangeError`, the same errors any function raises for an invalid
 argument, and the message names the function, the argument and the type.
 
 ### errno
 
-C reports failure through `errno`, which anything that runs afterwards may
-change. So `errno` is cleared immediately before every foreign call and
-read immediately after it, and `ffi.errno()` reports what the most recent
-call on this isolate left there:
+C reports failures through `errno`, which anything that runs afterwards
+might change. So `errno` is cleared just before every foreign call and read
+just after it, and `ffi.errno()` returns the value that the most recent call
+on this isolate left there:
 
 ```zuri
 import ffi
 
-var strtol = ffi.open(ffi.LIBC).function('strtol', ffi.long,
-  [ffi.string, ffi.ptr, ffi.int])
+var strtol = ffi.open(ffi.LIBC).function('strtol', ffi.long, [
+  ffi.string,
+  ffi.ptr,
+  ffi.int,
+])
 
 echo strtol('123', nil, 10)
 echo ffi.errno()
@@ -1384,36 +1479,42 @@ echo ffi.errno()
 34
 ```
 
-34 is `ERANGE`. On Windows, `ffi.last_error()` reports `GetLastError()` the
-same way; it is always zero elsewhere. `ffi.set_errno()` sets `errno` for
-the rare function that reads it.
+34 is `ERANGE`. On Windows, `ffi.last_error()` reports `GetLastError()` in
+the same way, and it's always zero on other platforms. `ffi.set_errno()`
+sets `errno`, for the rare function that reads it.
 
 ## Ownership and Lifetimes
 
-Three kinds of memory cross the boundary, and each has one owner.
+Three kinds of memory cross the boundary, and each one has a single owner.
 
-**Memory from `ffi.alloc()`** belongs to the program. It is freed when the
-last pointer into it is collected, or earlier with `free()`. Pointers made
-from it with `add()`, `offset()`, `cast()` and `field()` share it and keep
-it alive. The one rule is that a pointer must stay reachable for as long
-as C holds the address; memory C was given and Zuri forgot is memory freed
-under C's feet.
+**Memory from `ffi.alloc()`** belongs to the program. It's freed when the
+last pointer to it is garbage collected, or earlier, when you call `free()`.
+Pointers created from it with `add()`, `offset()`, `cast()` and `field()`
+share the same memory and keep it alive. The one rule to follow is that a
+pointer must stay reachable for as long as C code holds the address. If C
+was given some memory and Zuri lost track of it, that memory can be freed
+while C is still using it.
 
-**Memory from `ffi.malloc()`** belongs to whoever frees it. It is never
-freed on collection, because the usual reason to allocate it is to hand
-it to C code that frees it with `free()`. `free()` releases it otherwise.
+**Memory from `ffi.malloc()`** belongs to whoever frees it. It's never freed
+by the garbage collector, because the usual reason to allocate it is to pass
+it to C code that frees it with `free()`. Otherwise, call `free()` to
+release it.
 
-**Memory C allocated** belongs to C until the program takes it over with
-`own()`, naming the function that releases it, or with no function for
-memory the C allocator's `free()` releases:
+**Memory allocated by C** belongs to C until your program takes ownership of
+it with `own()`, passing the function that releases it, or no function for
+memory that the C allocator's `free()` releases:
 
 ```zuri
 import ffi
 
-var c = ffi.open(ffi.LIBC).declare('
+var c = ffi
+    .open(ffi.LIBC)
+    .declare(
+      '
   char *strdup(const char *text);
   void free(void *pointer);
-')
+',
+    )
 
 var copy = c.strdup('owned by Zuri now').own(c.free)
 echo copy.read_string()
@@ -1429,55 +1530,60 @@ true
 true
 ```
 
-An owned pointer is released when it is collected, or with `free()`; every
-pointer derived from it refuses access afterwards. A destructor is any
-foreign function of one pointer: `sqlite3_close`, `png_destroy`,
-`CString::from_raw` wrapped in an `extern "C"` function. Only a pointer to
-the start of an allocation can free it.
+An owned pointer is released when it's garbage collected, or when you call
+`free()`, and every pointer derived from it rejects any access afterwards. A
+destructor can be any foreign function that takes a single pointer, such as
+`sqlite3_close`, `png_destroy`, or `CString::from_raw` wrapped in an
+`extern "C"` function. Only a pointer to the start of an allocation can free
+it.
 
-The collector runs a destructor in the middle of its own work, where no
-Zuri code can run, so a destructor that calls a callback during a
-collection gets zero back, or the callback's `error_value`, every time. `free()` runs the
-destructor from the program, where callbacks work as they do anywhere
-else.
+The garbage collector runs destructors in the middle of its own work, when
+no Zuri code can run, so a destructor that calls a callback during garbage
+collection always gets zero back, or the callback's `error_value`. When you
+call `free()` yourself, the destructor runs from your program, where
+callbacks work as they do anywhere else.
 
 ## Static Libraries
 
-A static library is object code waiting for a linker; nothing can load it
-at run time as it stands. `ffi.link()` hands it to the platform's linker,
-which links every object in it into a shared library, and loads that:
+A static library is object code waiting for a linker, so nothing can load it
+at run time as it is. `ffi.link()` passes it to the platform's linker, which
+links every object in it into a shared library, and then loads the result:
 
 ```zuri,ignore
-var geometry = ffi.link('build/libgeometry.a', { libraries: ['m'] })
+var geometry = ffi.link('build/libgeometry.a', {
+  libraries: ['m'],
+})
 var rust = ffi.link('shapes/target/release/libshapes.a')
 ```
 
-The linker is the C compiler, `cc` or whatever `$CC` names, on Linux and
-macOS, and MSVC's `link.exe` on Windows, found through the Visual Studio
-installation. The result is cached under a name derived from the archives'
-contents and the options, in `ffi.default_link_cache()` or the `cache`
-option's directory, so the linker runs once for a given input and every
-later program start loads the cached library.
+On Linux and macOS, the linker is the C compiler, which is `cc` or whatever
+`$CC` names. On Windows, it's MSVC's `link.exe`, found through the Visual
+Studio installation. The result is cached under a name based on the contents
+of the archives and the options, in `ffi.default_link_cache()` or the
+directory given in the `cache` option, so the linker only runs once for a
+given input, and every time the program starts after that, it loads the
+cached library.
 
-A Rust `staticlib` carries the Rust standard library with it, which in
-turn needs a handful of system libraries. An archive holding Rust code is
-recognised and linked against them without being asked.
+A Rust `staticlib` includes the Rust standard library, which in turn needs a
+few system libraries. An archive that contains Rust code is recognized and
+linked against them automatically.
 
-On Windows, a static library's functions are not marked for export, so
-the linked DLL exports every symbol the archives define with an
-unmangled name, or exactly the ones listed in the `exports` option.
+On Windows, a static library's functions aren't marked for export, so the
+linked DLL exports every symbol the archives define with an unmangled name,
+or exactly the symbols listed in the `exports` option.
 
-`libraries`, `search_paths` and `flags` pass further libraries, their
-directories and raw arguments to the linker, and `linker` replaces it.
-A failure raises `LinkError` carrying the linker's own output.
+`libraries`, `search_paths` and `flags` pass extra libraries, their
+directories and raw arguments to the linker, and `linker` replaces the
+linker itself. A failure raises a `LinkError` that includes the linker's own
+output.
 
 ## Isolates
 
 Types, pointers, libraries, foreign functions, callbacks and declarations
-all cross to another isolate, and none of them is moved: both sides keep a
-working handle on the same thing. A type is a description, a library a
-handle the loader shares across threads, and a pointer an address, so
-memory one isolate writes, another reads:
+can all be passed to another isolate, and none of them are moved: both sides
+keep a working handle to the same thing. A type is a description, a library
+is a handle that the loader shares across threads, and a pointer is an
+address, so memory written by one isolate can be read by another:
 
 ```zuri
 import ffi
@@ -1498,40 +1604,40 @@ echo shared.get(0)
 99
 ```
 
-Whatever the memory holds is shared without any synchronisation, as it
-is between C threads. A callback belongs to the isolate that made it:
-passed elsewhere, its calls still run on that isolate.
+Whatever is in that memory is shared without any synchronization, just as it
+is between C threads. A callback belongs to the isolate that created it, so
+if it's passed somewhere else, its calls still run on the original isolate.
 
 ## Rust in Depth
 
-Every Rust type that has a defined C ABI crosses, and the rest are refused
-with the reason.
+Every Rust type that has a defined C ABI can cross the boundary, and every
+other type is rejected with an explanation.
 
 | Rust | Crosses as |
 | --- | --- |
-| `i8` ... `u128`, `isize`, `usize` | integers, 128-bit ones by value included |
-| `f32`, `f64` | numbers |
-| `bool` | a bool |
-| `char` | a one-character string; checked to be a Unicode scalar value |
-| `*const T`, `*mut T` | a `Pointer`, `nil` for null |
-| `&T`, `&mut T`, `NonNull<T>`, `Box<T>` | a `Pointer`; `nil` is refused going in |
-| `Option<&T>`, `Option<NonNull<T>>`, `Option<Box<T>>` | a `Pointer` or `nil` |
-| `extern "C" fn(...)` | a function pointer: a Zuri function or a `Callback` in, a callable out |
-| `Option<extern "C" fn(...)>` | the same, or `nil` |
-| `NonZeroU32` and the other `NonZero` types | a number; zero is refused |
-| `Option<NonZeroU32>` | a number, or `nil` for `None` |
-| `[T; N]` | a list |
-| `#[repr(C)]` struct | a dictionary |
-| `#[repr(transparent)]` struct | its field |
-| `#[repr(C)]` or `#[repr(u8)]` enum without fields | a number, or a variant name going in |
-| `#[repr(C)]`, `#[repr(C, u8)]` or `#[repr(u8)]` enum with fields | a dictionary with a `variant` key |
-| `MaybeUninit<T>`, `ManuallyDrop<T>`, `Cell<T>` | as `T` |
-| `PhantomData<T>` | nothing; it takes no space |
+| `i8` ... `u128`, `isize`, `usize` | Integers, including 128-bit integers passed by value |
+| `f32`, `f64` | Numbers |
+| `bool` | A bool |
+| `char` | A one-character string, checked to be a Unicode scalar value |
+| `*const T`, `*mut T` | A `Pointer`, or `nil` for null |
+| `&T`, `&mut T`, `NonNull<T>`, `Box<T>` | A `Pointer`. Passing `nil` is rejected. |
+| `Option<&T>`, `Option<NonNull<T>>`, `Option<Box<T>>` | A `Pointer` or `nil` |
+| `extern "C" fn(...)` | A function pointer: a Zuri function or a `Callback` going in, and a callable value coming out |
+| `Option<extern "C" fn(...)>` | The same, or `nil` |
+| `NonZeroU32` and the other `NonZero` types | A number. Zero is rejected. |
+| `Option<NonZeroU32>` | A number, or `nil` for `None` |
+| `[T; N]` | A list |
+| `#[repr(C)]` struct | A dictionary |
+| `#[repr(transparent)]` struct | Its single field |
+| `#[repr(C)]` or `#[repr(u8)]` enum without fields | A number, or a variant name going in |
+| `#[repr(C)]`, `#[repr(C, u8)]` or `#[repr(u8)]` enum with fields | A dictionary with a `variant` key |
+| `MaybeUninit<T>`, `ManuallyDrop<T>`, `Cell<T>` | The same as `T` |
+| `PhantomData<T>` | Nothing, because it takes up no space |
 
-An enum with fields is laid out by the rules those representations
-define. A value names its variant, and its fields are the rest of the
-dictionary; a tuple variant's fields are `'0'`, `'1'` and so on, and a
-variant without fields may be passed as just its name:
+An enum with fields is laid out according to the rules for its
+representation. A value names its variant, and the rest of the dictionary
+holds its fields. The fields of a tuple variant are named `'0'`, `'1'` and
+so on, and a variant without fields can be passed as just its name:
 
 ```zuri,ignore
 shapes.area({ variant: 'Circle', radius: 2 })
@@ -1540,8 +1646,8 @@ tokens.value({ variant: 'Number', '0': 42 })
 tokens.value('Plus')
 ```
 
-A slice crosses as the pointer and the length Rust's own FFI convention
-pairs it into; `ffi.slice(type)` builds that `#[repr(C)]` struct:
+A slice crosses as the pointer and length that Rust's own FFI convention
+combines it into, and `ffi.slice(type)` builds that `#[repr(C)]` struct:
 
 ```zuri,ignore
 var Slice = ffi.slice(ffi.i32)
@@ -1549,131 +1655,135 @@ var values = ffi.alloc(ffi.i32, 3)
 lib.sum_slice({ ptr: values, len: 3 })
 ```
 
-Refused, each with the reason: `&str`, `&[T]`, `String`, `Vec`, and every
-other type without a stable layout; trait objects; tuples; generic types
-and functions; `Option` of a type without a niche; a function without
-`#[no_mangle]` or `#[export_name]`; and the `extern "Rust"` ABI.
+These are rejected, each with an explanation: `&str`, `&[T]`, `String`,
+`Vec` and every other type without a stable layout, trait objects, tuples,
+generic types and functions, `Option` of a type without a niche, a function
+without `#[no_mangle]` or `#[export_name]`, and the `extern "Rust"` ABI.
 
-A panic in a Rust library will end the process if it escapes the function
-called from Zuri. A library that catches its panics at its own boundary,
-or keeps them on threads of its own, returns normally. One that lets a
-panic escape ends the process, even from an isolate. An `extern "C"`
-function aborts at once. An `extern "C-unwind"` function unwinds into
-Zuri, which cannot catch a panic from another copy of Rust's runtime and
-aborts. A Rust library built with `panic = "abort"` ends the process at
-any panic. This is the one panic that does not stay inside its isolate.
+A panic that escapes from a function in a Rust library ends the process. A
+library that catches its panics at its own boundary, or keeps them on its
+own threads, returns normally. One that lets a panic escape ends the
+process, even when it's called from an isolate. An `extern "C"` function
+aborts immediately. An `extern "C-unwind"` function unwinds into Zuri, which
+can't catch a panic from another copy of Rust's runtime, so it aborts. A
+Rust library built with `panic = "abort"` ends the process on any panic.
+This is the only kind of panic that isn't contained within its isolate.
 
 ## Platform Differences
 
-The module runs on 64-bit little-endian platforms, x86-64 and Arm, on
-Linux, macOS and Windows, and follows each one's C compiler:
+The module runs on 64-bit little-endian platforms, x86-64 and Arm, on Linux,
+macOS and Windows, and it follows each platform's C compiler:
 
 | | Linux x86-64 | Linux Arm | macOS x86-64 | macOS Arm | Windows x86-64 |
 | --- | --- | --- | --- | --- | --- |
 | `long` | 8 | 8 | 8 | 8 | 4 |
-| `char` | signed | unsigned | signed | signed | signed |
+| `char` | Signed | Unsigned | Signed | Signed | Signed |
 | `wchar_t` | 4, signed | 4, unsigned | 4, signed | 4, signed | 2, unsigned |
 | `long double` | 80-bit | 128-bit | 80-bit | 64-bit | 64-bit |
-| `_Complex` by value | yes | yes | yes | yes | no |
-| enum past `int` | wider type | wider type | wider type | wider type | `int`, truncated |
-| bitfield rules | GCC | GCC | Clang | Clang | MSVC |
+| `_Complex` passed by value | Yes | Yes | Yes | Yes | No |
+| Enum values larger than `int` | Wider type | Wider type | Wider type | Wider type | `int`, truncated |
+| Bitfield rules | GCC | GCC | Clang | Clang | MSVC |
 
-`ffi.platform()` reports these for the running platform. A program that
-passes records between platforms through files or sockets gets the same
-layouts the C compiler on each one produces, which is what the C code
-there expects.
+`ffi.platform()` reports these values for the running platform. A program
+that passes records between platforms through files or sockets gets the same
+layouts that the C compiler on each platform produces, which is what the C
+code on that platform expects.
 
 Calling conventions follow the platform too: System V on Linux and macOS
-x86-64, AAPCS64 on Arm, with Apple's variations on it, and the Microsoft
-x64 convention on Windows. On x86-64, a function type or `Library.function()`
-can ask for `abi: 'win64'`, and on Unix `abi: 'sysv64'`, for a function
-compiled for the other convention; declarations read `ms_abi` and
-`sysv_abi` attributes and Rust's `extern "win64"` and `extern "sysv64"`.
+x86-64, AAPCS64 on Arm, with Apple's variations of it, and the Microsoft x64
+convention on Windows. On x86-64, a function type or `Library.function()`
+can request `abi: 'win64'`, or `abi: 'sysv64'` on Unix, for a function
+compiled for the other convention. Declarations read `ms_abi` and `sysv_abi`
+attributes, and Rust's `extern "win64"` and `extern "sysv64"`.
 
-128-bit integers cross by value under every one of them, in both
-directions. The Microsoft x64 convention passes one by reference and
-returns it in a vector register, as rustc, Clang and GCC compile it, so a
-callback returning `i128` works there as it does everywhere else.
+128-bit integers can be passed by value, in both directions, under every one
+of these conventions. The Microsoft x64 convention passes them by reference
+and returns them in a vector register, the same way rustc, Clang and GCC
+compile them, so a callback that returns an `i128` works there just as it
+does everywhere else.
 
 ## What Is Checked
 
-A foreign call runs code the module cannot see into, so the guarantees
-stop where C begins. Inside them:
+A foreign call runs code that the module can't see into, so its guarantees
+stop where the C code begins. Up to that point:
 
-- every value is converted to its declared type, with integers checked
-  against their range and every other kind against its type;
-- memory the module allocated is bounds-checked and refuses use after
-  `free()`; freeing twice is an error;
-- a null pointer is caught before it is read or written through;
-- a failed write changes nothing;
-- a Zuri error inside a callback never unwinds through C, and a Rust panic
-  inside the module never reaches C;
-- a callback called from any thread runs on its own isolate.
+- Every value is converted to its declared type, with integers checked
+  against their range, and every other kind of value checked against its
+  type.
+- Memory allocated by the module is checked against its bounds and rejects
+  any use after `free()`. Freeing it twice is an error.
+- A null pointer is caught before anything is read or written through it.
+- A write that fails doesn't change anything.
+- A Zuri error inside a callback never unwinds through C code, and a Rust
+  panic inside the module never reaches C code.
+- A callback called from any thread runs on its own isolate.
 
-Beyond them, what C does is C's. A description that disagrees with the
-library, a pointer read past what the library says is there, a callback C
-calls after it was released, bytes resized by a callback while C writes to
-them: each of these is undefined behaviour in C, and it stays so here.
-Reading declarations from the library's own header or crate, rather than
-writing them by hand, is the surest way to keep the first of these away.
+Beyond that, what C code does is up to C. A declaration that doesn't match
+the library, a pointer read beyond what the library says is there, a
+callback that C calls after it was released, or bytes resized by a callback
+while C writes to them are all undefined behavior in C, and they still are
+here. Reading declarations from the library's own header or crate, instead
+of writing them by hand, is the best way to avoid the first of these.
 
-## What the Module Refuses
+## Design Limits
 
-**It does not run the C preprocessor in full.** Macros that define values
-and conditional blocks are evaluated; including other files and expanding
-function-like macros are not, and are refused where they appear.
+**It doesn't run the full C preprocessor.** Macros that define values and
+conditional blocks are evaluated, but including other files and expanding
+function-like macros aren't supported, and they're rejected where they
+appear.
 
-**It does not compile C.** Static libraries are linked by the platform's
+**It doesn't compile C code.** Static libraries are linked by the platform's
 own linker, which needs a C toolchain on the machine that links them.
 
-**It does not guess ownership.** A pointer C returns is not freed until
-the program says how, with `own()`.
+**It doesn't guess who owns memory.** A pointer returned by C isn't freed
+until your program says how, with `own()`.
 
-**It does not free a callback on its own.** A callback lives until
-`release()`, because only the program knows when the library is done
+**It doesn't free callbacks automatically.** A callback lasts until you call
+`release()`, because only your program knows when the library has finished
 with it.
 
-**It does not unwind through foreign frames.** Errors are trapped and
-raised again once C has returned. A panic in a callback waits the same way,
-then carries on and ends its isolate. A panic that escapes a Rust library
-ends the process, as [Rust in Depth](#rust-in-depth) describes.
+**It doesn't unwind through foreign stack frames.** Errors are caught and
+raised again once the C code has returned. A panic in a callback is held in
+the same way, and then continues and ends its isolate. A panic that escapes
+from a Rust library ends the process, as described in [Rust in
+Depth](#rust-in-depth).
 
 ## Module Reference
 
-The standard library reference documents every class and method. The
-shape of the module:
+The standard library reference documents every class and method. Here's an
+overview of the module:
 
-| | |
+| Function | Description |
 | --- | --- |
-| `ffi.open(name, options)` | loads a library, or the process |
-| `ffi.find(name, paths)` | where a library would load from |
-| `ffi.link(archives, options)` | links static libraries and loads the result |
-| `ffi.declare(source)`, `ffi.declare_rust(source)`, `ffi.declarations()` | sets of declarations |
-| `ffi.struct(name)`, `ffi.union(name)`, `ffi.enum(name, type)` | records and enums, built by hand |
-| `ffi.pointer(type, options)`, `ffi.array(type, length)`, `ffi.function_type(returns, params, options)`, `ffi.slice(type)`, `ffi.type(spelling)` | other types |
-| `ffi.alloc(type, count)`, `ffi.alloc_bytes(size)`, `ffi.malloc(size)`, `ffi.alloc_string(text)`, `ffi.at(address, type)` | memory |
-| `ffi.function(pointer, type)`, `ffi.threaded(function)`, `ffi.describe(function)`, `ffi.is_foreign(value)` | foreign functions |
-| `ffi.callback(function, type, options)`, `ffi.serve(timeout)` | callbacks |
-| `ffi.errno()`, `ffi.set_errno(n)`, `ffi.last_error()` | error codes |
-| `ffi.platform()`, `ffi.default_link_cache()` | facts about the platform |
-| `ffi.LIBC`, `ffi.LIBM` | the C runtime and maths libraries |
+| `ffi.open(name, options)` | Loads a library, or the current process |
+| `ffi.find(name, paths)` | Finds where a library would be loaded from |
+| `ffi.link(archives, options)` | Links static libraries and loads the result |
+| `ffi.declare(source)`, `ffi.declare_rust(source)`, `ffi.declarations()` | Create sets of declarations |
+| `ffi.struct(name)`, `ffi.union(name)`, `ffi.enum(name, type)` | Build records and enums by hand |
+| `ffi.pointer(type, options)`, `ffi.array(type, length)`, `ffi.function_type(returns, params, options)`, `ffi.slice(type)`, `ffi.type(spelling)` | Build other types |
+| `ffi.alloc(type, count)`, `ffi.alloc_bytes(size)`, `ffi.malloc(size)`, `ffi.alloc_string(text)`, `ffi.at(address, type)` | Allocate or refer to memory |
+| `ffi.function(pointer, type)`, `ffi.threaded(function)`, `ffi.describe(function)`, `ffi.is_foreign(value)` | Work with foreign functions |
+| `ffi.callback(function, type, options)`, `ffi.serve(timeout)` | Work with callbacks |
+| `ffi.errno()`, `ffi.set_errno(n)`, `ffi.last_error()` | Read and set error codes |
+| `ffi.platform()`, `ffi.default_link_cache()` | Report facts about the platform |
+| `ffi.LIBC`, `ffi.LIBM` | Name the C runtime and math libraries |
 
-On a `Library`: `function`, `variable`, `symbol`, `has`, `declare`,
+Methods of a `Library`: `function`, `variable`, `symbol`, `has`, `declare`,
 `declare_rust`, `bind`, `path`, `close`, `is_closed`.
 
-On a `Pointer`: `get`, `set`, `read`, `write`, `get_field`, `set_field`,
-`field`, `read_string`, `write_string`, `read_bytes`, `write_bytes`,
-`to_list`, `add`, `offset`, `cast`, `copy_from`, `fill`, `compare`,
-`own`, `free`, `is_owned`, `is_freed`, `address`, `is_null`, `type`,
-`size`, `equals`.
+Methods of a `Pointer`: `get`, `set`, `read`, `write`, `get_field`,
+`set_field`, `field`, `read_string`, `write_string`, `read_bytes`,
+`write_bytes`, `to_list`, `add`, `offset`, `cast`, `copy_from`, `fill`,
+`compare`, `own`, `free`, `is_owned`, `is_freed`, `address`, `is_null`,
+`type`, `size`, `equals`.
 
-On a `Type`: `name`, `kind`, `size`, `align`, `is_const`, `target`,
-`length`, `signature`, `pointer`, `array`, `as_const`, `of`, `equals`; on
-a `StructType` or `UnionType` also `add_field`, `add_bitfield`,
-`set_packed`, `set_align`, `fields`, `offset_of`, `has_field`, `variants`;
-on an `EnumType`, `add_constant`, `constants`, `value`.
+Methods of a `Type`: `name`, `kind`, `size`, `align`, `is_const`, `target`,
+`length`, `signature`, `pointer`, `array`, `as_const`, `of`, `equals`. A
+`StructType` or `UnionType` also has `add_field`, `add_bitfield`,
+`set_packed`, `set_align`, `fields`, `offset_of`, `has_field` and
+`variants`, and an `EnumType` has `add_constant`, `constants` and `value`.
 
-On a `Declarations`: `declare`, `declare_rust`, `include`, `type`,
+Methods of a `Declarations`: `declare`, `declare_rust`, `include`, `type`,
 `constant`, `constants`, `types`, `functions`, `variables`, `bind`.
 
-On a `Callback`: `pointer`, `type`, `release`, `is_released`.
+Methods of a `Callback`: `pointer`, `type`, `release`, `is_released`.

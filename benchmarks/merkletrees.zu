@@ -75,7 +75,7 @@ def main(n) {
   var stretch_tree = create(stretch_depth)
   stretch_tree.cal_hash()
   echo 'stretch tree of depth ${stretch_depth}\t root hash: ' +
-    '${stretch_tree.get_hash()} check: ${stretch_tree.check()}'
+      '${stretch_tree.get_hash()} check: ${stretch_tree.check()}'
 
   var long_lived_tree = create(max_depth)
 
@@ -94,7 +94,7 @@ def main(n) {
 
   long_lived_tree.cal_hash()
   echo 'long lived tree of depth ${max_depth}\t root hash: ' +
-    '${long_lived_tree.get_hash()} check: ${long_lived_tree.check()}'
+      '${long_lived_tree.get_hash()} check: ${long_lived_tree.check()}'
 }
 
 # 17 is the largest input the upstream merkletrees benchmark is configured

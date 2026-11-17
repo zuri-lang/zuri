@@ -11,7 +11,12 @@ import os
 import sql
 import validate
 import sql.model {
-  Model, Query, ModelError, RecordNotFound, RecordInvalid, definition_of,
+  Model,
+  Query,
+  ModelError,
+  RecordNotFound,
+  RecordInvalid,
+  definition_of,
 }
 
 import .sql_model_twin_a as twin_a
@@ -90,7 +95,8 @@ class Post < Model {
     model.validate('title', validate.required().string().max_length(200))
     model.scope('published', @(query, _) => query.where({ published: true }))
     model.scope(
-      'popular', @(query, least) => query.where('views >= ?', [least]),
+      'popular',
+      @(query, least) => query.where('views >= ?', [least]),
     )
   }
 
@@ -266,14 +272,21 @@ def test_definitions() {
 
   # Columns are the declared fields, without associations or what is
   # transient, in order.
-  assert definition_of(Post).columns == [
-    'id', 'author_id', 'title', 'views', 'published', 'tags', 'price',
-    'created_at', 'updated_at',
-  ]
+  assert definition_of(Post).columns ==
+      [
+        'id',
+        'author_id',
+        'title',
+        'views',
+        'published',
+        'tags',
+        'price',
+        'created_at',
+        'updated_at',
+      ]
 
-  assert definition_of(Post).fillable_columns == [
-    'author_id', 'title', 'views', 'published', 'tags', 'price',
-  ]
+  assert definition_of(Post).fillable_columns ==
+      ['author_id', 'title', 'views', 'published', 'tags', 'price']
 
   # A definition that cannot work says so the first time it is used.
   assert raises(@() {
@@ -343,7 +356,10 @@ def test_saving() {
 
   # A list changed in place is a change.
   stored.tags.append('history')
-  assert stored.changes() == { tags: ['history'] }
+  assert stored.changes() ==
+      {
+        tags: ['history'],
+      }
   stored.save(db)
   assert db.model(Post).find(post.id).tags == ['history']
 
@@ -472,8 +488,10 @@ def test_validation() {
 
   assert instance_of(raised, RecordInvalid)
   assert instance_of(raised, validate.ValidationError)
-  assert raised.errors
-    == [{ field: 'title', message: 'That title is not allowed.' }]
+  assert raised.errors ==
+      [
+        { field: 'title', message: 'That title is not allowed.' },
+      ]
   assert raised.record.title == 'forbidden'
   assert db.model(Post).count() == 0
 
@@ -502,19 +520,31 @@ def test_hooks() {
   var post = Post({ title: 'Hooked' })
   post.save(db)
 
-  assert calls == [
-    'before_validate', 'validate', 'after_validate', 'before_save',
-    'before_create', 'after_create', 'after_save',
-  ]
+  assert calls ==
+      [
+        'before_validate',
+        'validate',
+        'after_validate',
+        'before_save',
+        'before_create',
+        'after_create',
+        'after_save',
+      ]
 
   calls = []
   post.title = 'Hooked again'
   post.save(db)
 
-  assert calls == [
-    'before_validate', 'validate', 'after_validate', 'before_save',
-    'before_update', 'after_update', 'after_save',
-  ]
+  assert calls ==
+      [
+        'before_validate',
+        'validate',
+        'after_validate',
+        'before_save',
+        'before_update',
+        'after_update',
+        'after_save',
+      ]
 
   calls = []
   post.delete(db)
@@ -547,8 +577,7 @@ def test_transactions() {
 
       raise Error('undo it all')
     })
-  } as _ignored {
-  }
+  } as _ignored {}
 
   assert db.model(Author).count() == 0
   assert db.model(Post).count() == 0
@@ -567,55 +596,59 @@ def test_queries() {
   var db = fresh()
   var ada = db.model(Author).create({ name: 'Ada' })
 
-  db
-    .model(Post)
-    .create({ title: 'One', views: 10, published: true, author_id: ada.id })
+  db.model(Post).create({
+    title: 'One',
+    views: 10,
+    published: true,
+    author_id: ada.id,
+  })
   db.model(Post).create({ title: 'Two', views: 200, published: true })
-  db
-    .model(Post)
-    .create({
-      title: 'Three',
-      views: 50,
-      published: false,
-      price: sql.Decimal('5.50'),
-    })
-  db
-    .model(Post)
-    .create({
-      title: 'Four',
-      views: 0,
-      published: false,
-      price: sql.Decimal('1.25'),
-    })
+  db.model(Post).create({
+    title: 'Three',
+    views: 50,
+    published: false,
+    price: sql.Decimal('5.50'),
+  })
+  db.model(Post).create({
+    title: 'Four',
+    views: 0,
+    published: false,
+    price: sql.Decimal('1.25'),
+  })
 
   var all = db.model(Post)
 
   assert all.count() == 4
   assert all.where({ published: true }).count() == 2
   assert all.where({ author_id: nil }).count() == 3
-  assert all.where({ title: ['One', 'Four'] }).count() == 2
+  assert all.where({
+        title: ['One', 'Four'],
+      }).count() ==
+      2
   assert all.where({ title: [] }).count() == 0
   assert all.where({ views: sql.raw('views') }).count() == 4
   assert all.where('views > ? or title = ?', [100, 'Four']).count() == 2
 
   # Every condition holds, and an or inside a fragment stays inside it.
-  assert all
-    .where('views > ? or title = ?', [100, 'Four'])
-    .where({ published: true })
-    .count()
-    == 1
+  assert all.where('views > ? or title = ?', [100, 'Four']).where({
+        published: true,
+      }).count() ==
+      1
 
   # A null is not equal to anything, so it is among what a value
   # excludes.
   assert all.where_not({ author_id: ada.id }).count() == 3
   assert all.where_not({ author_id: nil }).count() == 1
-  assert all.where_not({ title: ['One', 'Two'] }).count() == 2
+  assert all.where_not({
+        title: ['One', 'Two'],
+      }).count() ==
+      2
   assert all.where_not({ title: [] }).count() == 4
 
-  assert all.order('views desc').pluck('title')
-    == ['Two', 'Three', 'One', 'Four']
-  assert all.order(['published desc', 'title']).pluck('title')
-    == ['One', 'Two', 'Four', 'Three']
+  assert all.order('views desc').pluck('title') ==
+      ['Two', 'Three', 'One', 'Four']
+  assert all.order(['published desc', 'title']).pluck('title') ==
+      ['One', 'Two', 'Four', 'Three']
   assert all.order('views').limit(2).pluck('views') == [0, 10]
   assert all.order('views').offset(3).pluck('views') == [200]
   assert all.order('views').limit(1).offset(1).pluck('title') == ['One']
@@ -685,14 +718,14 @@ def test_queries() {
 
   var built = all.where({ published: true }).order('id').limit(5).to_sql()
 
-  assert built.sql
-    == 'select * from "posts" where "published" = ? order by "id" limit 5'
+  assert built.sql ==
+      'select * from "posts" where "published" = ? order by "id" limit 5'
   assert built.values == [true]
 
   assert all
-    .from_sql('select * from posts where views > ? order by views', [20])
-    .map(@(post) => post.title)
-    == ['Three', 'Two']
+          .from_sql('select * from posts where views > ? order by views', [20])
+          .map(@(post) => post.title) ==
+      ['Three', 'Two']
 
   assert raises(@() {
     all.limit(-1)
@@ -712,11 +745,10 @@ def test_bulk() {
   var before = db.model(Post).find(1).updated_at
 
   calls = []
-  assert db
-    .model(Post)
-    .where('views >= ?', [2])
-    .update({ views: sql.raw('views + 10') })
-    == 2
+  assert db.model(Post).where('views >= ?', [2]).update({
+        views: sql.raw('views + 10'),
+      }) ==
+      2
   assert calls.is_empty(), 'bulk updates call no hooks'
   assert db.model(Post).order('id').pluck('views') == [1, 12, 13]
   assert db.model(Post).find(2).updated_at >= before
@@ -791,8 +823,8 @@ def test_associations() {
   assert engines.attach(db, 'labels', [red, blue.id]) == 2
   assert engines.attach(db, 'labels', red) == 0
 
-  assert engines.load(db, 'labels').map(@(label) => label.name)
-    == ['red', 'blue']
+  assert engines.load(db, 'labels').map(@(label) => label.name) ==
+      ['red', 'blue']
   assert engines.related(db, 'labels').count() == 2
   assert red.load(db, 'posts').map(@(post) => post.title) == ['Engines']
 
@@ -800,8 +832,8 @@ def test_associations() {
 
   assert synced.attached == [green.id]
   assert synced.detached == [red.id]
-  assert engines.load(db, 'labels').map(@(label) => label.name)
-    == ['blue', 'green']
+  assert engines.load(db, 'labels').map(@(label) => label.name) ==
+      ['blue', 'green']
 
   assert engines.detach(db, 'labels', green) == 1
   assert engines.detach(db, 'labels', nil) == 1
@@ -872,7 +904,12 @@ def test_equality() {
 # What every engine does the same, run against a live server.
 def portable(db) {
   for table in [
-    'label_post', 'labels', 'posts', 'profiles', 'authors', 'categories',
+    'label_post',
+    'labels',
+    'posts',
+    'profiles',
+    'authors',
+    'categories',
     'addresses',
   ] {
     db.schema.drop_table(table, { if_exists: true })
@@ -922,7 +959,12 @@ def portable(db) {
   assert db.model(Author).count() == 2
 
   for table in [
-    'label_post', 'labels', 'posts', 'profiles', 'authors', 'categories',
+    'label_post',
+    'labels',
+    'posts',
+    'profiles',
+    'authors',
+    'categories',
     'addresses',
   ] {
     db.schema.drop_table(table, { if_exists: true })

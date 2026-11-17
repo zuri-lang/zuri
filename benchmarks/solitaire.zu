@@ -57,8 +57,9 @@ Otherwise, move returns false. */
 def move(pos, dir) {
   moves++
 
-  if board[pos] == '●' and board[pos + dir] == '●' and
-    board[pos + 2 * dir] == '○' {
+  if board[pos] == '●' and
+      board[pos + dir] == '●' and
+      board[pos + 2 * dir] == '○' {
     board[pos] = '○'
     board[pos + dir] = '○'
     board[pos + 2 * dir] = '●'

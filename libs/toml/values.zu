@@ -1,21 +1,20 @@
 /**
  * @module values
  *
- * The TOML types that Zuri has no built-in equal for.
+ * The TOML types that have no built-in equivalent in Zuri.
  *
- * TOML carries four temporal types and draws a line between an
- * integer and a float. Zuri has one `number`, which is an IEEE-754
- * double, and a `date.Date` that always knows an offset. Neither gap
- * can be closed by picking a near-enough built-in: a local date that
- * decoded as a `Date` would grow a UTC offset it never had, and a
- * float that decoded as a `number` would be written back out as an
- * integer.
+ * TOML has four date and time types, and distinguishes integers from
+ * floats. Zuri has a single `number`, which is an IEEE 754 double, and
+ * a `date.Date` that always has an offset. Neither gap can be closed by
+ * using the closest built-in type. A local date decoded as a `Date`
+ * would gain a UTC offset it never had, and a float decoded as a
+ * `number` would be written back as an integer.
  *
- * So the four temporal types are their own classes here, and `Float`
- * marks a number that must stay a float. Each temporal class validates
- * on construction, renders itself in the exact form TOML specifies,
- * and answers `equals()` rather than `==`, which compares instances by
- * identity.
+ * So the four date and time types are classes of their own here, and
+ * `Float` marks a number that must stay a float. Each date and time
+ * class validates its value when it's created, renders itself in
+ * exactly the form TOML specifies, and supports `equals()`, because
+ * `==` compares instances by identity.
  *
  * ```zuri
  * import toml
@@ -101,7 +100,9 @@ def _check_date(year, month, day) {
   var limit = _days_in(year, month)
 
   if day < 1 or day > limit {
-    raise TomlError('day must be from 1 to ${limit} for month ${month}, got ${day}')
+    raise TomlError(
+      'day must be from 1 to ${limit} for month ${month}, got ${day}',
+    )
   }
 }
 
@@ -209,11 +210,11 @@ class LocalDate {
    * @returns string
    */
   to_string() {
-    return _pad(self.year, 4)
-      + '-'
-      + _pad(self.month, 2)
-      + '-'
-      + _pad(self.day, 2)
+    return _pad(self.year, 4) +
+        '-' +
+        _pad(self.month, 2) +
+        '-' +
+        _pad(self.day, 2)
   }
 
   @to_string() {
@@ -232,8 +233,9 @@ class LocalDate {
       return false
     }
 
-    return self.year == other.year and self.month == other.month and
-      self.day == other.day
+    return self.year == other.year and
+        self.month == other.month and
+        self.day == other.day
   }
 
   /**
@@ -249,7 +251,7 @@ class LocalDate {
   /**
    * Returns this date as a `date.Date` at midnight UTC.
    *
-   * The offset is an artefact of the conversion: a `date.Date` always
+   * The offset is an artifact of the conversion: a `date.Date` always
    * has one and a `LocalDate` never did. Use it for calendar
    * arithmetic, not to claim an instant the TOML file did not state.
    *
@@ -261,14 +263,15 @@ class LocalDate {
 }
 
 /**
- * A wall-clock time with no date and no offset, TOML's `local-time`.
+ * A time of day with no date and no offset, which is TOML's
+ * `local-time`.
  *
- * Spelled `07:32:00` or `07:32:00.999999`. This is a time of day that
- * recurs: an opening hour, a cron-like schedule, a curfew.
+ * It's written as `07:32:00` or `07:32:00.999999`. It's a time of day
+ * that recurs, such as an opening time, a time in a schedule or a
+ * curfew.
  *
- * Fractional seconds are kept to nanosecond precision and render with
- * trailing zeros removed, so half a second is `.5` rather than
- * `.500000000`.
+ * Fractional seconds are kept to nanosecond precision, and written
+ * without trailing zeros, so half a second is `.5`, not `.500000000`.
  *
  * ```zuri
  * import toml
@@ -313,8 +316,12 @@ class LocalTime {
    * @returns string
    */
   to_string() {
-    return _pad(self.hour, 2) + ':' + _pad(self.minute, 2) + ':' +
-      _pad(self.second, 2) + _fraction(self.nanosecond)
+    return _pad(self.hour, 2) +
+        ':' +
+        _pad(self.minute, 2) +
+        ':' +
+        _pad(self.second, 2) +
+        _fraction(self.nanosecond)
   }
 
   @to_string() {
@@ -333,8 +340,10 @@ class LocalTime {
       return false
     }
 
-    return self.hour == other.hour and self.minute == other.minute and
-      self.second == other.second and self.nanosecond == other.nanosecond
+    return self.hour == other.hour and
+        self.minute == other.minute and
+        self.second == other.second and
+        self.nanosecond == other.nanosecond
   }
 
   /**
@@ -349,12 +358,12 @@ class LocalTime {
 }
 
 /**
- * A date and a wall-clock time with no offset, TOML's
+ * A date and a time of day with no offset, which is TOML's
  * `local-date-time`.
  *
- * Spelled `1979-05-27T07:32:00`. It names a moment on somebody's
- * calendar and clock without saying whose, which is what a log format
- * or a schedule written for one site means by a timestamp.
+ * It's written as `1979-05-27T07:32:00`. It gives a date and a time of
+ * day without a time zone. Log formats and schedules written for one
+ * place often use timestamps like this.
  *
  * ```zuri
  * import toml
@@ -404,10 +413,18 @@ class LocalDateTime {
    * @returns string
    */
   to_string() {
-    return _pad(self.year, 4) + '-' + _pad(self.month, 2) + '-' +
-      _pad(self.day, 2) + 'T' + _pad(self.hour, 2) + ':' +
-      _pad(self.minute, 2) + ':' + _pad(self.second, 2) +
-      _fraction(self.nanosecond)
+    return _pad(self.year, 4) +
+        '-' +
+        _pad(self.month, 2) +
+        '-' +
+        _pad(self.day, 2) +
+        'T' +
+        _pad(self.hour, 2) +
+        ':' +
+        _pad(self.minute, 2) +
+        ':' +
+        _pad(self.second, 2) +
+        _fraction(self.nanosecond)
   }
 
   @to_string() {
@@ -426,10 +443,13 @@ class LocalDateTime {
       return false
     }
 
-    return self.year == other.year and self.month == other.month and
-      self.day == other.day and self.hour == other.hour and
-      self.minute == other.minute and self.second == other.second and
-      self.nanosecond == other.nanosecond
+    return self.year == other.year and
+        self.month == other.month and
+        self.day == other.day and
+        self.hour == other.hour and
+        self.minute == other.minute and
+        self.second == other.second and
+        self.nanosecond == other.nanosecond
   }
 
   /**
@@ -443,31 +463,41 @@ class LocalDateTime {
   }
 
   /**
-   * Returns this timestamp as a `date.Date` read as UTC.
+   * Returns this timestamp as a `date.Date`, treating it as UTC.
    *
-   * The offset is an artefact of the conversion. A `LocalDateTime`
-   * deliberately does not know one, so reading the result as an
-   * instant asserts something the TOML file did not.
+   * The offset is only a result of the conversion. A `LocalDateTime`
+   * intentionally has no offset, so treating the result as an exact
+   * instant claims something that the TOML file didn't.
    *
    * @returns Date
    */
   to_date() {
-    return date.Date(self.year, self.month, self.day, self.hour, self.minute,
-      self.second, (self.nanosecond / 1000).floor(), 0)
+    return date.Date(
+      self.year,
+      self.month,
+      self.day,
+      self.hour,
+      self.minute,
+      self.second,
+      (self.nanosecond / 1000).floor(),
+      0,
+    )
   }
 }
 
 /**
- * A date and time with a UTC offset, TOML's `offset-date-time`.
+ * A date and time with a UTC offset, which is TOML's
+ * `offset-date-time`.
  *
- * Spelled `1979-05-27T07:32:00Z` or `1979-05-27T00:32:00-07:00`. This
- * is the only one of the four that names an unambiguous instant, and
- * the only one that can be compared across sites.
+ * It's written as `1979-05-27T07:32:00Z` or
+ * `1979-05-27T00:32:00-07:00`. It's the only one of the four types that
+ * names an exact instant, and the only one that can be compared between
+ * places.
  *
- * The offset is held in minutes, signed, so `-300` is `-05:00`. A zero
- * offset renders as `Z`; a document that spelled it `+00:00` keeps
- * that spelling through an edit, because the raw text is preserved
- * alongside the value.
+ * The offset is stored as a signed number of minutes, so `-300` is
+ * `-05:00`. A zero offset is written as `Z`. If a document wrote it as
+ * `+00:00`, that's kept through an edit, because the original text is
+ * stored along with the value.
  *
  * ```zuri
  * import toml
@@ -533,10 +563,19 @@ class DateTime {
    * @returns string
    */
   to_string() {
-    return _pad(self.year, 4) + '-' + _pad(self.month, 2) + '-' +
-      _pad(self.day, 2) + 'T' + _pad(self.hour, 2) + ':' +
-      _pad(self.minute, 2) + ':' + _pad(self.second, 2) +
-      _fraction(self.nanosecond) + _offset_text(self.offset_minutes)
+    return _pad(self.year, 4) +
+        '-' +
+        _pad(self.month, 2) +
+        '-' +
+        _pad(self.day, 2) +
+        'T' +
+        _pad(self.hour, 2) +
+        ':' +
+        _pad(self.minute, 2) +
+        ':' +
+        _pad(self.second, 2) +
+        _fraction(self.nanosecond) +
+        _offset_text(self.offset_minutes)
   }
 
   @to_string() {
@@ -558,11 +597,14 @@ class DateTime {
       return false
     }
 
-    return self.year == other.year and self.month == other.month and
-      self.day == other.day and self.hour == other.hour and
-      self.minute == other.minute and self.second == other.second and
-      self.nanosecond == other.nanosecond and
-      self.offset_minutes == other.offset_minutes
+    return self.year == other.year and
+        self.month == other.month and
+        self.day == other.day and
+        self.hour == other.hour and
+        self.minute == other.minute and
+        self.second == other.second and
+        self.nanosecond == other.nanosecond and
+        self.offset_minutes == other.offset_minutes
   }
 
   /**
@@ -584,8 +626,16 @@ class DateTime {
    * @returns Date
    */
   to_date() {
-    return date.Date(self.year, self.month, self.day, self.hour, self.minute,
-      self.second, (self.nanosecond / 1000).floor(), self.offset_minutes * 60)
+    return date.Date(
+      self.year,
+      self.month,
+      self.day,
+      self.hour,
+      self.minute,
+      self.second,
+      (self.nanosecond / 1000).floor(),
+      self.offset_minutes * 60,
+    )
   }
 }
 
@@ -625,9 +675,9 @@ class Float {
 
   /**
    * @param number value The number to write as a float. `inf`, `-inf`
-   *    and `nan` are all accepted; TOML spells them `inf`, `-inf` and
-   *    `nan`.
-   * @throws TomlError If `value` is not a number.
+   *    and `nan` are all accepted, and TOML writes them as `inf`,
+   *    `-inf` and `nan`.
+   * @throws TomlError If `value` isn't a number.
    */
   @new(value) {
     if !is_number(value) {

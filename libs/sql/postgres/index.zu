@@ -3,7 +3,7 @@
  *
  * The PostgreSQL adapter.
  *
- * Reach it through `sql`, which is what keeps a program portable:
+ * Use it through `sql`, so that your program stays portable:
  *
  * ```zuri,ignore
  * import sql
@@ -11,24 +11,24 @@
  * var db = sql.open('postgres://alice:secret@localhost/app')
  * ```
  *
- * The module underneath is here for the parts of PostgreSQL that have
- * no equivalent elsewhere: LISTEN and NOTIFY, the server's own
- * settings, and the type registry, which is how a program teaches the
- * adapter about a type its database defines.
+ * The module itself is for the parts of PostgreSQL that have no
+ * equivalent in other engines: LISTEN and NOTIFY, the server's own
+ * settings, and the type registry, which lets a program tell the
+ * adapter about a type that its database defines.
  *
- * ### What this adapter speaks
+ * ### Protocol support
  *
- * Version 3 of the wire protocol, over TCP, optionally under TLS, or
- * over a unix domain socket. A `host` beginning with a slash is a
- * socket directory, as libpq spells it, and the socket inside it is
- * named after the port. TLS is neither offered nor wanted there, since
- * nothing sits in between, so `sslmode` is ignored.
+ * The adapter uses version 3 of the wire protocol, over TCP, optionally
+ * with TLS, or over a Unix domain socket. A `host` that starts with a
+ * slash is a socket directory, as in libpq, and the socket inside it is
+ * named after the port. TLS isn't offered or needed on a socket,
+ * because there's nothing in between, so `sslmode` is ignored.
  *
- * Statements go through the extended protocol, which compiles them on
- * the server and binds values rather than substituting them. Values
- * travel in the server's own binary form wherever this adapter has a
- * codec for the type, and as text otherwise, so a type it has never
- * heard of still arrives readable.
+ * Statements go through the extended query protocol, which compiles
+ * them on the server and binds values instead of substituting them.
+ * Values are sent in the server's own binary format wherever the
+ * adapter has a codec for the type, and as text otherwise, so even a
+ * type the adapter has never heard of arrives in a readable form.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

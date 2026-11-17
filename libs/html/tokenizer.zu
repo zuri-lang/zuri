@@ -1,14 +1,14 @@
 /**
  * @module html.tokenizer
  *
- * The HTML tokenizer from the WHATWG HTML Living Standard: the stage
- * that turns a string of markup into a stream of doctype, tag,
- * comment and character tokens.
+ * The HTML tokenizer from the WHATWG HTML Living Standard, which turns
+ * a string of markup into a stream of doctype, tag, comment and
+ * character tokens.
  *
- * You rarely need this directly. `html.parse()` drives it to build a
- * document tree, and that is what almost every program wants. Reach
- * for the tokenizer when you care about the markup *as written*:
- * linting a template, rewriting attributes in place, or checking
+ * You rarely need it directly. `html.parse()` uses it to build a
+ * document tree, which is what almost every program wants. Use the
+ * tokenizer when you care about the markup *as it was written*, for
+ * example to lint a template, rewrite attributes in place, or check
  * which parse errors a document raises.
  *
  * ```zuri
@@ -24,19 +24,19 @@
  * # eof
  * ```
  *
- * ### Two deliberate departures from a literal reading of the spec
+ * ### Two intentional differences from a literal reading of the standard
  *
- * The standard emits one character token per character. This
- * tokenizer emits one per contiguous run, so a paragraph of prose is
- * a single token rather than a few hundred. Nothing observable
- * changes: the tree builder splits runs back apart wherever the
- * algorithm is defined per character.
+ * The standard produces one character token for each character. This
+ * tokenizer produces one for each run of characters, so a paragraph of
+ * text is a single token, not a few hundred. That doesn't change
+ * anything you can observe, because the tree builder splits runs apart
+ * wherever the algorithm is defined character by character.
  *
- * The standard also spells the "character reference" sub-machine as
- * nine separate tokenizer states. Here that algorithm lives in
- * `html.entities.consume_reference()` and is shared with
- * `html.decode()`, so both agree on every edge case by construction
- * rather than by careful duplication.
+ * The standard also describes the "character reference" part of the
+ * tokenizer as nine separate states. Here, that algorithm is in
+ * `html.entities.consume_reference()`, which `html.decode()` uses too,
+ * so the two handle every edge case the same way because they share the
+ * code, not because the code was carefully copied.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
@@ -66,10 +66,10 @@ var _REPLACEMENT = '\uFFFD'
 /**
  * One token from the tokenizer.
  *
- * A single class covers all five token types rather than five
- * classes, because the tree builder dispatches on `type` on every
- * token and an inheritance check would be the hottest thing in the
- * parser. Which fields carry meaning depends on `type`:
+ * A single class is used for all five token types, instead of a class
+ * for each, because the tree builder checks `type` on every token, and
+ * an inheritance check would be the most frequent operation in the
+ * parser. Which fields are meaningful depends on `type`:
  *
  * | `type`        | fields that matter                                |
  * | ------------- | ------------------------------------------------- |
@@ -91,11 +91,12 @@ class Token {
   var type = ''
 
   /**
-   * The tag or doctype name, lowercased. Empty for other types.
+   * The tag or doctype name, in lowercase. It's empty for other types
+   * of token.
    *
-   * A doctype with no name at all (`<!DOCTYPE>`) has `name` set to
-   * `nil` rather than an empty string, because the standard treats
-   * "missing" and "empty" differently when deciding quirks mode.
+   * A doctype without a name (`<!DOCTYPE>`) has `name` set to `nil`,
+   * not to an empty string, because the standard treats a missing name
+   * and an empty name differently when deciding the quirks mode.
    */
   var name = ''
 
@@ -116,19 +117,19 @@ class Token {
   var attributes = {}
 
   /**
-   * True when the tag was written with a trailing slash, as in
-   * `<br/>`. The tree builder decides whether that means anything;
-   * on an HTML element that is not void, it does not.
+   * True if the tag was written with a trailing slash, as in `<br/>`.
+   * The tree builder decides whether that means anything. On an HTML
+   * element that isn't void, it doesn't.
    */
   var self_closing = false
 
   /**
    * Set by the tree builder when it has taken `self_closing` into
    * account, which only a void or foreign element can do. A start tag
-   * that reaches the end of tree construction with the slash still
-   * unacknowledged is a parse error, and this is what lets that be
-   * checked in one place rather than at every rule that handles a
-   * self-closing tag.
+   * that reaches the end of tree construction with its slash still
+   * unacknowledged is a parse error, and this lets that be checked in
+   * one place, instead of in every rule that handles a self-closing
+   * tag.
    */
   var acknowledged_self_closing = false
 
@@ -188,8 +189,8 @@ class Token {
   }
 
   /**
-   * A short, readable rendering of the token, meant for debugging and
-   * for test output rather than for round-tripping to markup.
+   * A short, readable description of the token, for debugging and test
+   * output, not for converting back to markup.
    *
    * @returns string
    */
@@ -286,20 +287,21 @@ class ParseError {
 /**
  * Turns markup into tokens, one call to `next_token()` at a time.
  *
- * The tokenizer's state is not entirely its own: which state it
- * should be in after a start tag depends on what the tree builder
- * decided to do with that tag. Two ways to bridge that:
+ * The tokenizer's state doesn't entirely depend on the tokenizer. Which
+ * state it should be in after a start tag depends on what the tree
+ * builder decided to do with that tag. There are two ways of handling
+ * that:
  *
- * - Driven by `html.parse()`, the tree builder calls `set_state()`
+ * - When `html.parse()` runs it, the tree builder calls `set_state()`
  *   itself, exactly as the standard describes.
- * - Used on its own (which is what `tokenize()` does), the tokenizer
- *   switches itself on `<script>`, `<style>`, `<title>`,
- *   `<textarea>`, `<plaintext>` and friends, which is what the tree
- *   builder would have told it to do anyway.
+ * - When it's used by itself, as `tokenize()` does, the tokenizer
+ *   switches state itself on `<script>`, `<style>`, `<title>`,
+ *   `<textarea>`, `<plaintext>` and similar elements. The tree builder
+ *   would have switched it to the same states.
  *
- * The second behaviour is controlled by the `auto_content_state`
- * option and is on by default, so a tokenizer you create by hand does
- * the useful thing without extra ceremony.
+ * The second behavior is controlled by the `auto_content_state` option,
+ * which is on by default, so a tokenizer you create yourself does the
+ * useful thing without any extra setup.
  */
 class Tokenizer {
 
@@ -338,10 +340,10 @@ class Tokenizer {
   var scripting = false
 
   /**
-   * Whether the tokenizer switches itself into RCDATA, RAWTEXT,
-   * script data or PLAINTEXT after the corresponding start tag. On
-   * for a standalone tokenizer; the tree builder turns it off and
-   * drives the state itself.
+   * Whether the tokenizer switches itself to RCDATA, RAWTEXT, script
+   * data or PLAINTEXT after the corresponding start tag. It's on for a
+   * tokenizer used by itself, and the tree builder turns it off and
+   * controls the state itself.
    */
   var auto_content_state = true
 
@@ -889,7 +891,7 @@ class Tokenizer {
     }
 
     if RAWTEXT_ELEMENTS.contains(name) or
-      (self.scripting and name == 'noscript') {
+        (self.scripting and name == 'noscript') {
       self.state = 'rawtext'
     }
   }
@@ -949,11 +951,10 @@ class Tokenizer {
   }
 
   /**
-   * Adds the attribute under construction to the current token.
+   * Adds the attribute being built to the current token.
    *
-   * A duplicate name is a parse error and the later attribute is
-   * dropped, which is what the standard requires and what every
-   * browser does.
+   * A duplicate name is a parse error, and the later attribute is
+   * dropped, as the standard requires and every browser does.
    */
   _finish_attribute() {
     if self._attribute_name.is_empty() {
@@ -981,7 +982,7 @@ class Tokenizer {
    * text, having already recorded any parse error it raised.
    *
    * The `&` has not been consumed when this is called. Whether the
-   * attribute flavour of the algorithm applies is decided by
+   * attribute flavor of the algorithm applies is decided by
    * _in_attribute_.
    *
    * @param bool in_attribute
@@ -1416,8 +1417,8 @@ class Tokenizer {
     }
 
     var appropriate = self._token != nil and
-      self._last_start_tag != nil and
-      self._token.name == self._last_start_tag
+        self._last_start_tag != nil and
+        self._token.name == self._last_start_tag
 
     if appropriate and c != nil {
       if _is_whitespace(c) {
@@ -1667,8 +1668,8 @@ class Tokenizer {
   }
 
   /**
-   * Inside a doubly escaped script block, where `</script>` is text
-   * rather than the end of the script.
+   * Inside a doubly escaped script block, where `</script>` is text,
+   * not the end of the script.
    */
   _script_data_double_escaped_state() {
     var c = self._consume()
@@ -1978,8 +1979,8 @@ class Tokenizer {
   }
 
   /**
-   * The shared body of the two quoted attribute value states; the
-   * only difference between them is which quote ends the value.
+   * The code shared by the two quoted attribute value states. The only
+   * difference between them is which quote ends the value.
    *
    * @param string quote
    */
@@ -2195,9 +2196,9 @@ class Tokenizer {
    * Whether a `<![CDATA[` at this point is a real CDATA section.
    *
    * The tree builder overrides this by setting `cdata_ok` before it
-   * asks for the next token; a standalone tokenizer has no way to
-   * know what namespace it is in, so it answers no and produces the
-   * bogus comment a browser would.
+   * asks for the next token. A tokenizer used by itself can't know
+   * which namespace it's in, so it answers no, and produces the bogus
+   * comment that a browser would.
    *
    * @returns bool
    */
@@ -2773,7 +2774,9 @@ class Tokenizer {
     }
 
     if c == '"' or c == '\'' {
-      self._error('missing-whitespace-between-doctype-public-and-system-identifiers')
+      self._error(
+        'missing-whitespace-between-doctype-public-and-system-identifiers',
+      )
       self._token.system_id = ''
       self.state = _quoted_system_state(c)
       return
@@ -2925,9 +2928,9 @@ class Tokenizer {
   }
 
   /**
-   * Skipping the rest of a doctype this tokenizer could not read.
-   * Note that the token is still emitted; the tree builder needs it
-   * to decide quirks mode.
+   * Skips the rest of a doctype that this tokenizer couldn't read. The
+   * token is still emitted, because the tree builder needs it to decide
+   * the quirks mode.
    */
   _bogus_doctype_state() {
     var c = self._consume()
@@ -3055,8 +3058,7 @@ def _quoted_system_state(quote: string) {
  * @returns bool
  */
 def _is_whitespace(c: string) {
-  return c == ' ' or c == '\n' or c == '\t' or
-    c == '\f' or c == '\r'
+  return c == ' ' or c == '\n' or c == '\t' or c == '\f' or c == '\r'
 }
 
 /**

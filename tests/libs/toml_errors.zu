@@ -33,12 +33,12 @@ def all_rejected(group, samples) {
 
     assert error != nil, group + ': ' + sample[0] + ' was accepted'
     assert instance_of(error, toml.TomlError),
-      group
-        + ': '
-        + sample[0]
-        + ' raised '
-        + typeof(error)
-        + ', not a TomlError'
+        group +
+            ': ' +
+            sample[0] +
+            ' raised ' +
+            typeof(error) +
+            ', not a TomlError'
   }
 
   ok(group + ' (${samples.length()} cases)')
@@ -96,8 +96,10 @@ echo ''
 echo 'What the rules still allow'
 
 all_accepted('the redefinitions TOML permits', [
-  ['a sub-table under a dotted table',
-    '[fruit]\napple.color = "red"\n[fruit.apple.texture]\nsmooth = true\n'],
+  [
+    'a sub-table under a dotted table',
+    '[fruit]\napple.color = "red"\n[fruit.apple.texture]\nsmooth = true\n',
+  ],
   ['a parent defined after its child', '[a.b]\nx = 1\n[a]\ny = 2\n'],
   ['a header returning to an earlier tree', '[a]\n[b]\n[a.c]\n'],
   ['a table under an array element', '[[a]]\n[a.b]\nx = 1\n'],
@@ -163,8 +165,10 @@ all_rejected('the string grammar', [
 all_accepted('the strings TOML does allow', [
   ['an escaped delimiter run', 'a = """he said \\""" loudly"""\n'],
   ['a tab inside a basic string', 'a = "one\ttwo"\n'],
-  ['an empty string of every kind',
-    'a = ""\n' + "b = ''\n" + 'c = """"""\n' + "d = ''''''\n"],
+  [
+    'an empty string of every kind',
+    'a = ""\n' + "b = ''\n" + 'c = """"""\n' + "d = ''''''\n",
+  ],
 ])
 
 echo ''
@@ -238,11 +242,11 @@ assert where.to_string().contains('3:'), 'and prints both'
 ok('a parse error carries its position')
 
 assert instance_of(toml.ParseError('x', 1, 1), toml.TomlError),
-  'ParseError hangs off TomlError'
+    'ParseError hangs off TomlError'
 assert instance_of(toml.EncodeError('x'), toml.TomlError),
-  'EncodeError hangs off TomlError'
+    'EncodeError hangs off TomlError'
 assert instance_of(toml.EditError('x'), toml.TomlError),
-  'EditError hangs off TomlError'
+    'EditError hangs off TomlError'
 assert instance_of(toml.TomlError('x'), Error), 'TomlError is an Error'
 ok('every error hangs off TomlError')
 
@@ -268,7 +272,7 @@ var through_value = edit_raises(@() {
 })
 
 assert instance_of(through_value, toml.EditError),
-  'setting through a value is an EditError'
+    'setting through a value is an EditError'
 ok('a path cannot run through a value')
 
 var over_table = edit_raises(@() {
@@ -278,7 +282,7 @@ var over_table = edit_raises(@() {
 })
 
 assert instance_of(over_table, toml.EditError),
-  'replacing a table with a value is refused'
+    'replacing a table with a value is refused'
 ok('a table cannot be replaced by a value')
 
 var wrong_kind = edit_raises(@() {
@@ -288,7 +292,7 @@ var wrong_kind = edit_raises(@() {
 })
 
 assert instance_of(wrong_kind, toml.EditError),
-  'an element outside the array is refused'
+    'an element outside the array is refused'
 ok('an array of tables checks its bounds')
 
 var not_an_array = edit_raises(@() {
@@ -298,7 +302,7 @@ var not_an_array = edit_raises(@() {
 })
 
 assert instance_of(not_an_array, toml.EditError),
-  'a table is not an array of tables'
+    'a table is not an array of tables'
 ok('a table cannot be reached as an array of tables')
 
 var through_aot = edit_raises(@() {
@@ -308,7 +312,7 @@ var through_aot = edit_raises(@() {
 })
 
 assert instance_of(through_aot, toml.EditError),
-  'a path through an array of tables needs an element'
+    'a path through an array of tables needs an element'
 ok('a path cannot run through an array of tables')
 
 var no_key = edit_raises(@() {
@@ -318,11 +322,11 @@ var no_key = edit_raises(@() {
 })
 
 assert instance_of(no_key, toml.EditError),
-  'commenting a key that is not there is refused'
+    'commenting a key that is not there is refused'
 ok('a comment needs a key to sit above')
 
 assert toml.edit('a = 1\n').remove('nope') == false,
-  'removing what is not there is not an error'
+    'removing what is not there is not an error'
 ok('a removal that finds nothing is quiet')
 
 echo ''

@@ -204,8 +204,7 @@ class Watching {
     if os.platform == 'windows' and !started.is_empty() {
       catch {
         os.kill(started.last().pid, 9)
-      } as error {
-      }
+      } as error {}
     }
 
     self.process.kill(15)
@@ -274,7 +273,8 @@ describe('zuri run --watch', @{
     expect(first.message).to_equal('v1')
     expect(first.page).to_equal('page one')
     expect(first.args).to_equal('--name Ada')
-    expect(run.output).to_contain('watching index.zu and the files it uses, Ctrl+C to stop')
+    expect(run.output)
+        .to_contain('watching index.zu and the files it uses, Ctrl+C to stop')
   })
 
   it('restarts when a module it imports changes', @{
@@ -292,7 +292,8 @@ describe('zuri run --watch', @{
 
     expect(starts[1].message).to_equal('v2')
     expect(starts[1].pid).not.to_equal(starts[0].pid)
-    expect(run.output).to_contain('lib${os.path_separator}greet.zu changed, restarting')
+    expect(run.output)
+        .to_contain('lib${os.path_separator}greet.zu changed, restarting')
   })
 
   it('restarts when a template it rendered changes', @{
@@ -377,7 +378,8 @@ describe('zuri run --watch', @{
     run.stop()
 
     expect(run.starts()[1].message).to_equal('back')
-    expect(run.output).to_contain('index.zu exited with status 3, waiting for a change')
+    expect(run.output)
+        .to_contain('index.zu exited with status 3, waiting for a change')
   })
 
   it('runs the program again once a broken module is fixed', @{
@@ -403,12 +405,11 @@ describe('zuri run --watch', @{
   })
 
   it('refuses a program that does not exist, the way run does', @{
-    var child = spawn(os.exe_path, ['run', '-w', 'missing.zu'], {
-      cwd: PROJECT,
-      stdin: 'null',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    var child = spawn(
+      os.exe_path,
+      ['run', '-w', 'missing.zu'],
+      { cwd: PROJECT, stdin: 'null', stdout: 'pipe', stderr: 'pipe' },
+    )
 
     expect(child.wait()).to_equal(1)
 
@@ -419,7 +420,11 @@ describe('zuri run --watch', @{
 })
 
 # The signals that stop watch mode, and their numbers.
-var SIGNALS = [['TERM', 15], ['INT', 2], ['HUP', 1]]
+var SIGNALS = [
+  ['TERM', 15],
+  ['INT', 2],
+  ['HUP', 1],
+]
 
 # Windows can only end watch mode outright, so how it stops on a signal
 # is a Unix question.

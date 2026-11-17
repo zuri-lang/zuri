@@ -1,13 +1,13 @@
 /**
  * @module naming
  *
- * The names a model takes when it does not say otherwise.
+ * The names that a model uses when it doesn't specify its own.
  *
- * A model's table is its class name in snake case, made plural by the
- * regular rules of English: `Post` is `posts`, `BlogPost` is
- * `blog_posts`, `Category` is `categories` and `Address` is
- * `addresses`. A word that makes its plural any other way, `Person` to
- * `people`, says its table with `model.table()`.
+ * A model's table name is its class name in snake case, made plural
+ * with the regular rules of English: `Post` becomes `posts`, `BlogPost`
+ * becomes `blog_posts`, `Category` becomes `categories` and `Address`
+ * becomes `addresses`. For a word with an irregular plural, such as
+ * `Person` and `people`, give the table name with `model.table()`.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -30,12 +30,14 @@ def snake(name: string) {
     var ch = name[i]
 
     if _UPPER.contains(ch) {
-      var after_lower = i > 0
-        and !_UPPER.contains(name[i - 1])
-        and name[i - 1] != '_'
-      var before_lower = i > 0 and i + 1 < length and
-        _UPPER.contains(name[i - 1]) and
-        !_UPPER.contains(name[i + 1]) and name[i + 1] != '_'
+      var after_lower = i > 0 and
+          !_UPPER.contains(name[i - 1]) and
+          name[i - 1] != '_'
+      var before_lower = i > 0 and
+          i + 1 < length and
+          _UPPER.contains(name[i - 1]) and
+          !_UPPER.contains(name[i + 1]) and
+          name[i + 1] != '_'
 
       if after_lower or before_lower {
         out.append('_')
@@ -51,21 +53,26 @@ def snake(name: string) {
 }
 
 /**
- * A word made plural by the regular rules: `s`, `x`, `z`, `ch` and
- * `sh` take `es`; a `y` after a consonant becomes `ies`; everything
- * else takes `s`. Only the last word of a snake case name changes.
+ * A word made plural by the regular rules. Words ending in `s`, `x`,
+ * `z`, `ch` and `sh` add `es`, a `y` after a consonant becomes `ies`,
+ * and everything else adds `s`. Only the last word of a snake case name
+ * changes.
  *
  * @param string word
  * @returns string
  */
 def plural(word: string) {
-  if word.ends_with('s') or word.ends_with('x') or word.ends_with('z') or
-    word.ends_with('ch') or word.ends_with('sh') {
+  if word.ends_with('s') or
+      word.ends_with('x') or
+      word.ends_with('z') or
+      word.ends_with('ch') or
+      word.ends_with('sh') {
     return word + 'es'
   }
 
-  if word.ends_with('y') and word.length() > 1 and
-    !_VOWELS.contains(word[word.length() - 2]) {
+  if word.ends_with('y') and
+      word.length() > 1 and
+      !_VOWELS.contains(word[word.length() - 2]) {
     return word[0, word.length() - 1] + 'ies'
   }
 

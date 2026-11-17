@@ -3,15 +3,16 @@
  *
  * C types as values.
  *
- * Every type the module works with is a `Type`: the built-in ones the
- * module exports (`ffi.int`, `ffi.double`, `ffi.size_t`), the ones built
- * from them (`ffi.pointer(ffi.char)`, `ffi.array(ffi.int, 4)`), records
- * built member by member, and every type a declaration names. A type
- * knows its size and alignment on this platform, and it is what every
- * conversion between a Zuri value and C memory is driven by.
+ * Every type the module works with is a `Type`. That includes the
+ * built-in types the module exports, such as `ffi.int`, `ffi.double`
+ * and `ffi.size_t`, the types built from them, such as
+ * `ffi.pointer(ffi.char)` and `ffi.array(ffi.int, 4)`, records built
+ * one member at a time, and every type named in a declaration. A type
+ * knows its size and alignment on the current platform, and every
+ * conversion between a Zuri value and C memory is based on it.
  *
- * Records are built with chained calls and are laid out the first time
- * anything needs their size, after which they can no longer change:
+ * Records are built with chained calls. They're laid out the first time
+ * anything needs their size, and after that they can't be changed:
  *
  * ```zuri,ignore
  * var Point = ffi.struct('Point')
@@ -40,7 +41,9 @@ class Type {
   var _handle
 
   @new() {
-    raise FfiError('types come from the ffi module, never from the Type constructor')
+    raise FfiError(
+      'types come from the ffi module, never from the Type constructor',
+    )
   }
 
   /**
@@ -143,7 +146,7 @@ class Type {
   }
 
   /**
-   * A pointer to this type; the same as `ffi.pointer(type)`.
+   * A pointer to this type. This is the same as `ffi.pointer(type)`.
    *
    * @returns Type
    */
@@ -152,11 +155,11 @@ class Type {
   }
 
   /**
-   * An array of `length` values of this type; the same as
+   * An array of `length` values of this type. This is the same as
    * `ffi.array(type, length)`.
    *
-   * @param number|nil length Leave out for an array of unknown length,
-   *   as a flexible array member is declared.
+   * @param number|nil length Leave it out for an array of unknown
+   *    length, as a flexible array member is declared.
    * @returns Type
    */
   array(length) {
@@ -268,7 +271,7 @@ class RecordType < Type {
   }
 
   /**
-   * Adds a bitfield, returning the record for chaining.
+   * Adds a bitfield, and returns the record for chaining.
    *
    * ```zuri,ignore
    * var Flags = ffi.struct('Flags')
@@ -278,15 +281,16 @@ class RecordType < Type {
    *   .add_bitfield('count', ffi.uint, 12)
    * ```
    *
-   * An empty name is an unnamed bitfield, which only takes up space;
-   * one of width zero ends the current storage unit, as in C.
+   * An empty name makes an unnamed bitfield, which only takes up space,
+   * and a width of zero ends the current storage unit, as in C.
    *
    * @param string name
    * @param Type type An integer, `bool` or enum type.
-   * @param number bits The width, at most the type's own.
+   * @param number bits The width, which can't be more than the type's
+   *    own width.
    * @returns self
-   * @throws FfiError when the type is not an integer type or the width
-   *   does not fit it.
+   * @throws FfiError if the type isn't an integer type, or the width
+   *    doesn't fit it.
    */
   add_bitfield(name: string, type, bits: number) {
     _ffi.record_add_field(self._handle, name, type, bits, nil)
@@ -320,13 +324,13 @@ class RecordType < Type {
   }
 
   /**
-   * Every member in declaration order, with the members of anonymous
+   * Every member, in declaration order, with the members of anonymous
    * members listed in their place.
    *
-   * Each is `{ name, type, offset, bits, bit_offset }`. `offset` is in
-   * bytes from the start of the record. For a bitfield, `bits` is its
-   * width and `bit_offset` the position of its first bit from the start
-   * of the record; both are `nil` for every other member.
+   * Each one is `{ name, type, offset, bits, bit_offset }`. `offset` is
+   * in bytes from the start of the record. For a bitfield, `bits` is
+   * its width, and `bit_offset` is the position of its first bit from
+   * the start of the record. Both are `nil` for every other member.
    *
    * @returns list
    */
@@ -357,8 +361,8 @@ class RecordType < Type {
   }
 
   /**
-   * For a Rust enum with fields, each variant's name and discriminant;
-   * `nil` for an ordinary record.
+   * For a Rust enum with fields, the name and discriminant of each
+   * variant, or `nil` for an ordinary record.
    *
    * @returns dict|nil
    */

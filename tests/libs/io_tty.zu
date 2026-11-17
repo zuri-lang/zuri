@@ -35,31 +35,34 @@ echo '  io.TTY: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 assert typeof(io.TTY) == 'class',
-  'io.TTY must be wired up as a real class on the io module'
+    'io.TTY must be wired up as a real class on the io module'
 ok('io.TTY is wired up')
 
 var t = io.TTY(io.stdout)
 assert typeof(t) == 'TTY',
-  'constructing io.TTY(io.stdout) must produce a TTY instance'
+    'constructing io.TTY(io.stdout) must produce a TTY instance'
 ok('TTY instance construction')
 
 assert !io.stdout.is_tty(),
-  'stdout in this harness is always a captured pipe, never a real terminal'
+    'stdout in this harness is always a captured pipe, never a real terminal'
 ok('is_tty() correctly reports false for a non-tty stream')
 
 assert raises(@() {
   t.get_size()
-}), 'get_size() on a non-tty stream must raise, not crash or silently lie'
+}),
+    'get_size() on a non-tty stream must raise, not crash or silently lie'
 ok('get_size() on a non-tty stream raises')
 
 assert raises(@() {
   t.get_attr()
-}), 'get_attr() on a non-tty stream must raise, not crash or silently lie'
+}),
+    'get_attr() on a non-tty stream must raise, not crash or silently lie'
 ok('get_attr() on a non-tty stream raises')
 
 assert raises(@() {
   io.TTY('not a file')
-}), 'TTY must reject a constructor argument that is not a file'
+}),
+    'TTY must reject a constructor argument that is not a file'
 ok('TTY rejects a non-file argument')
 
 # ---------------------------------------------------------------------------
@@ -72,28 +75,34 @@ ok('TTY rejects a non-file argument')
 # ---------------------------------------------------------------------------
 assert raises(@() {
   t.set_raw()
-}), 'set_raw() on a non-tty stream must raise, not crash or silently lie'
+}),
+    'set_raw() on a non-tty stream must raise, not crash or silently lie'
 ok('set_raw() on a non-tty stream raises')
 
 assert raises(@() {
   t.set_attr(io.TTY.TCSANOW, {})
-}), 'set_attr() on a non-tty stream must raise'
+}),
+    'set_attr() on a non-tty stream must raise'
 assert raises(@() {
   t.set_attr('not an int', {})
-}), 'set_attr() must reject a non-integer option'
+}),
+    'set_attr() must reject a non-integer option'
 assert raises(@() {
   t.set_attr(io.TTY.TCSANOW, 'not a dict')
-}), 'set_attr() must reject a non-dict attrs argument'
+}),
+    'set_attr() must reject a non-dict attrs argument'
 ok('set_attr() validates its arguments and raises on a non-tty stream')
 
 # exit_raw()/flush() don't touch tcgetattr/tcsetattr at all, so neither
 # raises against a non-tty stream; they're just safe no-ops there.
 assert !raises(@() {
   t.exit_raw()
-}), 'exit_raw() must not raise even against a non-tty stream'
+}),
+    'exit_raw() must not raise even against a non-tty stream'
 assert !raises(@() {
   t.flush()
-}), 'flush() must not raise even against a non-tty stream'
+}),
+    'flush() must not raise even against a non-tty stream'
 ok('exit_raw()/flush() are safe no-ops against a non-tty stream')
 
 # ---------------------------------------------------------------------------
@@ -120,39 +129,69 @@ ok('exit_raw()/flush() are safe no-ops against a non-tty stream')
 # and happen to be 0/1/2 on every POSIX platform this build targets.
 # They are all zero where termios does not exist, since there is no
 # value to read.
-assert io.TTY.TTY_IFLAG == 0 and io.TTY.TTY_OFLAG == 1 and io.TTY.TTY_CFLAG == 2
-  and io.TTY.TTY_LFLAG
-    == 3 and io.TTY.TTY_ISPEED == 4 and io.TTY.TTY_OSPEED == 5
-  and io.TTY.TTY_CC == 6, 'the TTY_* group indices are Zuri'
+assert io.TTY.TTY_IFLAG == 0 and
+    io.TTY.TTY_OFLAG == 1 and
+    io.TTY.TTY_CFLAG == 2 and
+    io.TTY.TTY_LFLAG == 3 and
+    io.TTY.TTY_ISPEED == 4 and
+    io.TTY.TTY_OSPEED == 5 and
+    io.TTY.TTY_CC == 6,
+    'the TTY_* group indices are Zuri'
 's own protocol, fixed on every platform'
 
 if os.platform == 'windows' {
-  assert io.TTY.TCSANOW == 0
-    and io.TTY.TCSADRAIN == 0
-    and io.TTY.TCSAFLUSH == 0,
-    'the TCSA options must read as zero on a platform with no termios'
+  assert io.TTY.TCSANOW == 0 and
+      io.TTY.TCSADRAIN == 0 and
+      io.TTY.TCSAFLUSH == 0,
+      'the TCSA options must read as zero on a platform with no termios'
 } else {
-  assert io.TTY.TCSANOW == 0
-    and io.TTY.TCSADRAIN == 1
-    and io.TTY.TCSAFLUSH == 2,
-    'TCSANOW/TCSADRAIN/TCSAFLUSH must match this platform'
+  assert io.TTY.TCSANOW == 0 and
+      io.TTY.TCSADRAIN == 1 and
+      io.TTY.TCSAFLUSH == 2,
+      'TCSANOW/TCSADRAIN/TCSAFLUSH must match this platform'
   's real termios values'
 }
 
 ok('the TTY_* group indices and TCSA option constants are correct')
 
 var real_flags = [
-  io.TTY.IGNBRK, io.TTY.BRKINT, io.TTY.IGNPAR, io.TTY.PARMRK, io.TTY.INPCK,
-  io.TTY.ISTRIP, io.TTY.INLCR, io.TTY.IGNCR, io.TTY.ICRNL, io.TTY.IXON,
-  io.TTY.IXOFF, io.TTY.IXANY, io.TTY.OPOST, io.TTY.ONLCR, io.TTY.CS5,
-  io.TTY.CS6, io.TTY.CS7, io.TTY.CS8, io.TTY.CSTOPB, io.TTY.CREAD,
-  io.TTY.PARENB, io.TTY.PARODD, io.TTY.HUPCL, io.TTY.CLOCAL, io.TTY.ECHOE,
-  io.TTY.ECHOK, io.TTY.ECHO, io.TTY.ECHONL, io.TTY.ISIG, io.TTY.ICANON,
-  io.TTY.IEXTEN, io.TTY.TOSTOP, io.TTY.NOFLSH,
+  io.TTY.IGNBRK,
+  io.TTY.BRKINT,
+  io.TTY.IGNPAR,
+  io.TTY.PARMRK,
+  io.TTY.INPCK,
+  io.TTY.ISTRIP,
+  io.TTY.INLCR,
+  io.TTY.IGNCR,
+  io.TTY.ICRNL,
+  io.TTY.IXON,
+  io.TTY.IXOFF,
+  io.TTY.IXANY,
+  io.TTY.OPOST,
+  io.TTY.ONLCR,
+  io.TTY.CS5,
+  io.TTY.CS6,
+  io.TTY.CS7,
+  io.TTY.CS8,
+  io.TTY.CSTOPB,
+  io.TTY.CREAD,
+  io.TTY.PARENB,
+  io.TTY.PARODD,
+  io.TTY.HUPCL,
+  io.TTY.CLOCAL,
+  io.TTY.ECHOE,
+  io.TTY.ECHOK,
+  io.TTY.ECHO,
+  io.TTY.ECHONL,
+  io.TTY.ISIG,
+  io.TTY.ICANON,
+  io.TTY.IEXTEN,
+  io.TTY.TOSTOP,
+  io.TTY.NOFLSH,
 ]
 for value in real_flags {
   assert is_number(value),
-    'every termios flag constant must be a real number, not nil or a dead placeholder'
+      'every termios flag constant must be a real number, not nil or a dead placeholder'
 }
 
 # Windows has no termios at all. These constants exist there only so
@@ -162,27 +201,39 @@ for value in real_flags {
 if os.platform == 'windows' {
   for value in real_flags {
     assert value == 0,
-      'a termios flag must read as zero on a platform with no termios'
+        'a termios flag must read as zero on a platform with no termios'
   }
   ok('the termios flag constants are all zero where termios does not exist')
 } else {
   assert io.TTY.CSIZE == (io.TTY.CS5 | io.TTY.CS6 | io.TTY.CS7 | io.TTY.CS8),
-    'CSIZE must be exactly the union of all four character-size bits'
+      'CSIZE must be exactly the union of all four character-size bits'
   assert io.TTY.CS8 != io.TTY.CS5 and io.TTY.CS8 != io.TTY.CS7,
-    'the four character-size constants must actually be distinct bit patterns'
-  ok('the platform-sourced termios flag constants are real, distinct, and internally consistent')
+      'the four character-size constants must actually be distinct bit patterns'
+  ok(
+    'the platform-sourced termios flag constants are real, distinct, and internally consistent',
+  )
 }
 
 var cc_indices = [
-  io.TTY.VEOF, io.TTY.VEOL, io.TTY.VERASE, io.TTY.VKILL, io.TTY.VINTR,
-  io.TTY.VQUIT, io.TTY.VSUSP, io.TTY.VSTART, io.TTY.VSTOP, io.TTY.VMIN,
+  io.TTY.VEOF,
+  io.TTY.VEOL,
+  io.TTY.VERASE,
+  io.TTY.VKILL,
+  io.TTY.VINTR,
+  io.TTY.VQUIT,
+  io.TTY.VSUSP,
+  io.TTY.VSTART,
+  io.TTY.VSTOP,
+  io.TTY.VMIN,
   io.TTY.VTIME,
 ]
 for index in cc_indices {
   assert is_number(index) and index >= 0,
-    'every VEOF/VERASE/etc control-character index must be a real, non-negative number'
+      'every VEOF/VERASE/etc control-character index must be a real, non-negative number'
 }
-ok('the platform-sourced c_cc control-character indices are real, non-negative numbers')
+ok(
+  'the platform-sourced c_cc control-character indices are real, non-negative numbers',
+)
 
 # ===========================================================================
 # Final summary

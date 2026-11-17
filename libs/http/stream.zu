@@ -1,12 +1,12 @@
 /**
  * @module stream
  *
- * The transport underneath everything else: a byte stream with buffering,
- * timeouts and optional TLS.
+ * The transport layer underneath everything else: a byte stream with
+ * buffering, timeouts and optional TLS.
  *
- * `Connection` is what both the client and the server read and write
- * through, so the protocol layers above never have to know whether they
- * are talking over TCP or over TLS.
+ * Both the client and the server read and write through a `Connection`,
+ * so the protocol layers above it never need to know whether they're
+ * using plain TCP or TLS.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -51,9 +51,9 @@ var _TIMEOUT_MARKERS = [
 ]
 
 /**
- * Whether a transport error message describes a timeout (or a
- * would-block, which a socket with a receive timeout reports as the
- * same condition) rather than a genuine failure.
+ * Whether a transport error message describes a timeout instead of a
+ * real failure. A would-block counts as a timeout, because a socket
+ * with a receive timeout reports both the same way.
  *
  * @param string message
  * @returns bool
@@ -102,10 +102,10 @@ class FileFeed {
   }
 
   /**
-   * The next piece, of at most `limit` bytes.
+   * The next piece, of up to `limit` bytes.
    *
    * @param number limit
-   * @returns ?bytes: `nil` once there is nothing more
+   * @returns ?bytes: `nil` once there's nothing left
    */
   next(limit) {
     if self._remaining <= 0 {
@@ -159,10 +159,10 @@ class BytesFeed {
   }
 
   /**
-   * The next piece, of at most `limit` bytes.
+   * The next piece, of up to `limit` bytes.
    *
    * @param number limit
-   * @returns ?bytes: `nil` once there is nothing more
+   * @returns ?bytes: `nil` once there's nothing left
    */
   next(limit) {
     var total = self._data.length()
@@ -191,20 +191,20 @@ class BytesFeed {
   /**
    * Here for parity with `FileFeed`. There is nothing to release.
    */
-  close() {
-  }
+  close() {}
 }
 
 /**
- * A buffered, message-oriented view of a connected socket.
+ * A buffered view of a connected socket, organized around messages.
  *
- * HTTP/1.1 is parsed a line at a time and then a body at a time, and
- * HTTP/2 a frame at a time; both want to read a few bytes without
- * paying for a syscall each time, and to write a head made of many
- * small pieces as one write. `Connection` sits between the protocol
- * code and either a plain `net.TcpStream` or a `net.tls.TlsStream`
- * and provides exactly that, plus the peer information the transports
- * stop reporting once TLS has consumed the underlying socket.
+ * HTTP/1.1 is parsed one line at a time and then one body at a time,
+ * and HTTP/2 one frame at a time. Both need to read a few bytes without
+ * a system call each time, and to write a head made of many small
+ * pieces as a single write. `Connection` sits between the protocol code
+ * and either a plain `net.TcpStream` or a `net.tls.TlsStream` and
+ * provides exactly that, along with the information about the peer that
+ * the transports stop reporting once TLS has taken over the underlying
+ * socket.
  *
  * Instances are created by `connect()` and `accept()` below, or by
  * `from_transport()` when the socket already exists.
@@ -284,7 +284,7 @@ class Connection {
   }
 
   /**
-   * The peer's address as text, worked out once rather than for every
+   * The peer's address as text, worked out once instead of for every
    * request on the connection.
    *
    * @returns ?string
@@ -404,16 +404,16 @@ class Connection {
   }
 
   /**
-   * Pulls in what has arrived, without waiting for more. This is what
-   * a readiness loop calls instead of any of the reads below, none of
-   * which it can afford, since each of them waits.
+   * Reads whatever has arrived, without waiting for more. A readiness
+   * loop calls this instead of any of the reads below, because each of
+   * those waits, which a readiness loop can't afford.
    *
-   * A connection that fails counts as one that closed: there is
-   * nothing more to read either way, and what was already read can
-   * still be answered.
+   * A connection that fails counts as one that has closed. Either way,
+   * no more data is coming, and what was already read can still be
+   * answered.
    *
-   * @returns ?number: the bytes added, `0` when the peer has closed
-   *    its write half, or `nil` when nothing has arrived
+   * @returns ?number: the number of bytes added, `0` when the peer has
+   *    closed its write half, or `nil` when nothing has arrived
    */
   fill_ready() {
     if self._eof {
@@ -489,20 +489,20 @@ class Connection {
   }
 
   /**
-   * Reads one CRLF-terminated line and returns it as a string with
-   * the terminator removed.
+   * Reads one line ending in CRLF and returns it as a string, without
+   * the line ending.
    *
-   * A bare LF is accepted as a line terminator as well. RFC 9112
-   * §2.2 permits a recipient to do so, and enough real clients send
-   * one that refusing would break them; a bare CR, on the other hand,
-   * is left in the data where it belongs.
+   * A bare LF is also accepted as a line ending. RFC 9112 §2.2 allows
+   * recipients to do this, and enough real clients send one that
+   * rejecting it would break them. A bare CR, on the other hand, is
+   * left in the data.
    *
-   * @param ?number limit: the longest line to tolerate, in bytes;
-   *    defaults to 8192
-   * @returns ?string: the line, or `nil` at a clean EOF before any
-   *    bytes of a line arrived
-   * @throws TooLargeError if the line exceeds `limit`
-   * @throws ProtocolError if EOF arrives mid-line
+   * @param ?number limit: the longest line to accept, in bytes.
+   *    Defaults to 8192.
+   * @returns ?string: the line, or `nil` at a clean end of stream
+   *    before any bytes of a line arrived
+   * @throws TooLargeError if the line is longer than `limit`
+   * @throws ProtocolError if the stream ends in the middle of a line
    * @throws TimeoutError, ConnectionError
    */
   read_line(limit) {
@@ -593,7 +593,10 @@ class Connection {
    *    or `[method, target, version, fields, size, consumed, authority, cookie]`
    */
   read_request_head(
-    max_line, max_header_size, max_header_count, header_timeout,
+    max_line,
+    max_header_size,
+    max_header_count,
+    header_timeout,
   ) {
     self._compact()
 
@@ -690,13 +693,14 @@ class Connection {
   /**
    * Reads until the peer closes its write half.
    *
-   * This is the framing of last resort - a response with neither
-   * `Content-Length` nor chunked encoding is delimited by the close
-   * itself (RFC 9112 §6.3). `limit` bounds how much will be
-   * accumulated so a peer that never closes cannot exhaust memory.
+   * This is the framing used as a last resort. A response with neither
+   * `Content-Length` nor chunked encoding ends when the connection
+   * closes (RFC 9112 §6.3). `limit` sets how much will be collected, so
+   * a peer that never closes the connection can't use up all the
+   * memory.
    *
-   * @param ?number limit: the most to accept, in bytes; `nil` for no
-   *    limit
+   * @param ?number limit: the maximum number of bytes to accept, or
+   *    `nil` for no limit
    * @returns bytes
    * @throws TooLargeError if `limit` is exceeded
    */
@@ -730,7 +734,9 @@ class Connection {
 
     while remaining > 0 {
       if self.buffered() == 0 and self._fill() == 0 {
-        raise ProtocolError('connection closed while discarding ${length} bytes')
+        raise ProtocolError(
+          'connection closed while discarding ${length} bytes',
+        )
       }
 
       var available = self.buffered()
@@ -827,8 +833,8 @@ class Connection {
    * @returns bool
    */
   output_is_heavy() {
-    return self._feed != nil
-      or self._out.length() - self._out_at >= _WRITE_HIGH_WATER
+    return self._feed != nil or
+        self._out.length() - self._out_at >= _WRITE_HIGH_WATER
   }
 
   /**
@@ -1008,13 +1014,14 @@ class Connection {
   }
 
   /**
-   * Sets how long a read may block before raising `TimeoutError`.
-   * Only effective on a plaintext connection; a `TlsStream` no longer
-   * owns a socket whose timeout can be changed, so a TLS connection's
-   * timeouts have to be set on the `TcpStream` before it is wrapped
-   * (which `connect()` and `accept()` below both do).
+   * Sets how long a read can block before raising a `TimeoutError`.
+   * This only works on an unencrypted connection. A `TlsStream` no
+   * longer owns a socket whose timeout can be changed, so the timeouts
+   * for a TLS connection have to be set on the `TcpStream` before it's
+   * wrapped, which `connect()` and `accept()` below both do.
    *
-   * @param number milliseconds: `0` or negative to block indefinitely
+   * @param number milliseconds: `0` or a negative number to block
+   *    forever
    */
   set_read_timeout(milliseconds) {
     if self._read_timeout == milliseconds {
@@ -1041,11 +1048,11 @@ class Connection {
   }
 
   /**
-   * Turns off Nagle's algorithm, so a response head goes out
-   * immediately rather than waiting for more data to coalesce with.
-   * Every HTTP server wants this; a request is answered by a burst
-   * that is then followed by silence, which is the exact case Nagle
-   * handles badly.
+   * Turns off Nagle's algorithm, so that a response head is sent
+   * immediately instead of waiting to be combined with more data. Every
+   * HTTP server wants this, because a request is answered with a burst
+   * of data followed by silence, which is exactly the case Nagle's
+   * algorithm handles badly.
    *
    * @param bool enabled
    */
@@ -1058,13 +1065,13 @@ class Connection {
   }
 
   /**
-   * Flushes anything still queued and closes the transport. Safe to
-   * call more than once. A failure while flushing is swallowed - the
-   * connection is going away regardless, and the caller has usually
-   * already handled whatever went wrong.
+   * Sends anything still queued and closes the transport. It's safe to
+   * call this more than once. A failure while sending is ignored,
+   * because the connection is going away anyway, and the caller has
+   * usually already handled whatever went wrong.
    *
-   * With output deferred to a readiness loop nothing here waits: what
-   * the socket does not take now is dropped.
+   * When output is deferred to a readiness loop, nothing here waits, so
+   * anything the socket doesn't accept immediately is dropped.
    */
   close() {
     if self._closed {
@@ -1208,7 +1215,9 @@ def connect(host: string, port: int, options: ?dict) {
     catch {
       tcp.close()
     }
-    raise ConnectionError('TLS handshake with ${host} failed: ${tls_error.message}')
+    raise ConnectionError(
+      'TLS handshake with ${host} failed: ${tls_error.message}',
+    )
   }
 
   return Connection(stream, peer, local)
@@ -1257,7 +1266,9 @@ def tunnel(proxy: dict, host: string, port: int, options: ?dict) {
     var status = carrier.read_line(8192)
 
     if status == nil {
-      raise ConnectionError('the proxy at ${proxy.host}:${proxy.port} closed the connection')
+      raise ConnectionError(
+        'the proxy at ${proxy.host}:${proxy.port} closed the connection',
+      )
     }
 
     var parts = status.split(' ')
@@ -1274,13 +1285,15 @@ def tunnel(proxy: dict, host: string, port: int, options: ?dict) {
 
     if code < 200 or code > 299 {
       raise ConnectionError(
-        'the proxy at ${proxy.host}:${proxy.port} refused to open a tunnel to ${target}: '
-          + status,
+        'the proxy at ${proxy.host}:${proxy.port} refused to open a tunnel to ${target}: ' +
+            status,
       )
     }
 
     if carrier.buffered() > 0 {
-      raise ConnectionError('the proxy at ${proxy.host}:${proxy.port} spoke before ${host} did')
+      raise ConnectionError(
+        'the proxy at ${proxy.host}:${proxy.port} spoke before ${host} did',
+      )
     }
   } as error {
     carrier.close()
@@ -1289,7 +1302,9 @@ def tunnel(proxy: dict, host: string, port: int, options: ?dict) {
       raise error
     }
 
-    raise ConnectionError('the tunnel through ${proxy.host}:${proxy.port} failed: ${error.message}')
+    raise ConnectionError(
+      'the tunnel through ${proxy.host}:${proxy.port} failed: ${error.message}',
+    )
   }
 
   if !options.get('secure', false) {
@@ -1362,13 +1377,13 @@ def _tls_accept_safe(client, config) {
 }
 
 /**
- * Turns a freshly accepted `TcpStream` into a `Connection`, running a
- * server-side TLS handshake first when `tls_config` is given.
+ * Turns a newly accepted `TcpStream` into a `Connection`, performing a
+ * server-side TLS handshake first if `tls_config` is given.
  *
- * @param TcpStream client: the stream `TcpStream.accept()` returned
- * @param ?dict options: `tls_config` (a `net.tls.TlsConfig`; when
- *    present the connection is wrapped in TLS), `read_timeout` and
- *    `write_timeout` (milliseconds)
+ * @param TcpStream client: the stream returned by `TcpStream.accept()`
+ * @param ?dict options: `tls_config` (a `net.tls.TlsConfig`, which
+ *    wraps the connection in TLS when present), and `read_timeout` and
+ *    `write_timeout` (in milliseconds)
  * @returns Connection
  * @throws ConnectionError if the TLS handshake fails
  */

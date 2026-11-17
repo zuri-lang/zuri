@@ -1,16 +1,16 @@
 /**
  * @module encoding
  *
- * The encodings a message uses to get eight bit data through a seven
- * bit pipe.
+ * The encodings that a message uses to get 8-bit data through a 7-bit
+ * channel.
  *
- * Mail headers are ASCII and mail bodies were historically ASCII too,
- * so everything else has to be spelled out in it. Bodies use base64 or
- * quoted-printable; headers use the encoded words of RFC 2047 and, for
- * parameters, the continuations of RFC 2231; IMAP writes mailbox names
- * in the modified UTF-7 of RFC 3501. This module implements all five
- * in both directions, plus the character sets a message is likely to
- * name.
+ * Mail headers are ASCII, and mail bodies used to be ASCII too, so
+ * everything else has to be encoded as ASCII. Bodies use base64 or
+ * quoted-printable. Headers use the encoded words of RFC 2047 and, for
+ * parameters, the continuations of RFC 2231. IMAP writes mailbox names
+ * in the modified UTF-7 of RFC 3501. This module implements all five in
+ * both directions, along with the character sets that a message is
+ * likely to use.
  *
  * ```zuri
  * import mail.encoding
@@ -36,7 +36,11 @@ import .errors { MessageError }
 # The transfer encodings a part's Content-Transfer-Encoding may name.
 # The first three leave the data alone and only describe it.
 var TRANSFER_ENCODINGS = [
-  '7bit', '8bit', 'binary', 'base64', 'quoted-printable',
+  '7bit',
+  '8bit',
+  'binary',
+  'base64',
+  'quoted-printable',
 ]
 
 # The line length RFC 2045 sets for an encoded body, counting the soft
@@ -58,10 +62,10 @@ var _Q_SAFE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!*+
 # control characters, which this maps to the punctuation and symbols
 # that live there instead.
 var _CP1252_HIGH = [
-  0x20ac, 0x81, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021,
-  0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0x8d, 0x017d, 0x8f,
-  0x90, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014,
-  0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x9d, 0x017e, 0x0178,
+  0x20ac, 0x81, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030,
+  0x0160, 0x2039, 0x0152, 0x8d, 0x017d, 0x8f, 0x90, 0x2018, 0x2019, 0x201c,
+  0x201d, 0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x9d,
+  0x017e, 0x0178,
 ]
 
 # The eight places iso-8859-15 differs from iso-8859-1, by the byte
@@ -122,8 +126,8 @@ def is_ascii(data) {
  * Encodes data as base64, wrapped into lines.
  *
  * @param string|bytes data
- * @param ?number width: Characters per line, `76` by default. Pass `0`
- *    for one unbroken line, which is what a header needs.
+ * @param ?number width: the number of characters per line, `76` by
+ *    default. Pass `0` for a single unbroken line, as a header needs.
  * @returns string
  */
 def encode_base64(data, width: ?number) {
@@ -186,10 +190,11 @@ def _decoded_base64(clean: bytes) {
 /**
  * Encodes data as quoted-printable.
  *
- * Bytes that can stand for themselves do; the rest become `=XX`. Lines
- * are kept within 76 characters with the soft breaks the encoding
- * defines, and whitespace at the end of a line is encoded so that a
- * transport which trims it cannot change what was sent.
+ * Bytes that can represent themselves are left as they are, and the
+ * others become `=XX`. Lines are kept within 76 characters with the
+ * soft line breaks that the encoding defines, and whitespace at the end
+ * of a line is encoded, so that a transport that trims it can't change
+ * what was sent.
  *
  * ```zuri
  * import mail.encoding
@@ -279,12 +284,12 @@ def _encode_trailing_space(out) {
 }
 
 /**
- * Decodes quoted-printable.
+ * Decodes quoted-printable data.
  *
- * Tolerant of what real messages contain: a soft break with a bare
- * newline rather than a carriage return and newline, and a lone `=`
- * that is not followed by two hex digits, which is passed through
- * rather than treated as a failure.
+ * It accepts what real messages contain, such as a soft line break
+ * followed by a bare line feed instead of a carriage return and line
+ * feed, and a lone `=` that isn't followed by two hexadecimal digits,
+ * which is passed through instead of being treated as an error.
  *
  * @param string|bytes text
  * @returns bytes
@@ -303,9 +308,9 @@ def decode_quoted_printable(text) {
       continue
     }
 
-    if index + 2 < raw.length()
-      and raw[index + 1] == 0x0d
-      and raw[index + 2] == 0x0a {
+    if index + 2 < raw.length() and
+        raw[index + 1] == 0x0d and
+        raw[index + 2] == 0x0a {
       index += 3
       continue
     }
@@ -334,16 +339,16 @@ def decode_quoted_printable(text) {
 }
 
 /**
- * Turns bytes into text, reading them as the character set names.
+ * Turns bytes into text, reading them in the given character set.
  *
- * The sets a message is likely to name are understood outright:
- * UTF-8, US-ASCII, the ISO 8859 Latin sets 1 and 15, windows-1252,
- * and UTF-16 in either byte order. A set this does not know is read as
- * UTF-8, which leaves the ASCII in it intact rather than discarding
- * the part that would have been readable.
+ * The character sets that a message is likely to use are supported
+ * directly: UTF-8, US-ASCII, the ISO 8859 Latin sets 1 and 15,
+ * windows-1252, and UTF-16 in either byte order. An unknown character
+ * set is read as UTF-8, which keeps the ASCII text intact, instead of
+ * discarding the part that could have been read.
  *
  * @param string|bytes raw
- * @param ?string charset: `utf-8` when not given.
+ * @param ?string charset: `utf-8` if it isn't given
  * @returns string
  */
 def decode_text(raw, charset: ?string) {
@@ -393,8 +398,12 @@ def _canonical_charset(charset: string) {
     return 'us-ascii'
   }
 
-  if name == 'latin1' or name == 'latin-1' or name == 'iso8859-1'
-    or name == 'iso_8859-1' or name == 'l1' or name == 'cp819' {
+  if name == 'latin1' or
+      name == 'latin-1' or
+      name == 'iso8859-1' or
+      name == 'iso_8859-1' or
+      name == 'l1' or
+      name == 'cp819' {
     return 'iso-8859-1'
   }
 
@@ -462,18 +471,18 @@ def _from_utf16(data, name: string) {
   var parts = []
 
   while at + 1 < data.length() {
-    var unit = big ?
-      (data[at] << 8) | data[at + 1] :
-      (data[at + 1] << 8) | data[at]
+    var unit = big
+        ? (data[at] << 8) | data[at + 1]
+        : (data[at + 1] << 8) | data[at]
 
     at += 2
 
     # A character outside the basic plane arrives as two units that
     # have to be put back together.
     if unit >= 0xd800 and unit <= 0xdbff and at + 1 < data.length() {
-      var low = big ?
-        (data[at] << 8) | data[at + 1] :
-        (data[at + 1] << 8) | data[at]
+      var low = big
+          ? (data[at] << 8) | data[at + 1]
+          : (data[at + 1] << 8) | data[at]
 
       if low >= 0xdc00 and low <= 0xdfff {
         at += 2
@@ -588,9 +597,8 @@ def _pick_method(text: string) {
 # up in ordinary text too and a header that merely looks encoded must
 # be left alone.
 def _scan_word(text: string, start: number) {
-  if !text[start, start + 2 > text.length()
-    ? text.length()
-    : start + 2].starts_with('=?') {
+  if !text[start, start + 2 > text.length() ? text.length() : start + 2]
+      .starts_with('=?') {
     return nil
   }
 
@@ -661,15 +669,15 @@ def _q_decode(body: string) {
 }
 
 /**
- * Reads the encoded words out of a header value and puts back the text
- * they stand for.
+ * Finds the encoded words in a header value and replaces them with the
+ * text they represent.
  *
- * Whitespace between two adjacent encoded words is dropped, which is
- * what lets a long subject be split across several of them without a
+ * Whitespace between two adjacent encoded words is removed, so that a
+ * long subject can be split across several encoded words without a
  * space appearing where none was written.
  *
- * Anything that is not a well-formed encoded word is left exactly as
- * it is, including text that merely begins with `=?`.
+ * Anything that isn't a well-formed encoded word is left exactly as it
+ * is, including text that just happens to start with `=?`.
  *
  * ```zuri
  * import mail.encoding
@@ -712,10 +720,10 @@ def decode_words(text: string) {
 
     var character = text[index]
 
-    if character == ' '
-      or character == '\t'
-      or character == '\r'
-      or character == '\n' {
+    if character == ' ' or
+        character == '\t' or
+        character == '\r' or
+        character == '\n' {
       gap += character
       index++
       continue
@@ -739,21 +747,22 @@ def decode_words(text: string) {
 }
 
 # The characters RFC 2231 lets a parameter value carry unencoded.
-var _ATTRIBUTE_SAFE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-  + '0123456789!#$&+-.^_`|~'
+var _ATTRIBUTE_SAFE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' +
+    '0123456789!#$&+-.^_`|~'
 
 # How much of one continuation line the value gets, leaving room for
 # the parameter name and the markers around it.
 var _PARAMETER_CHUNK = 50
 
 /**
- * Writes one parameter of a header, choosing the form its value needs.
+ * Writes one parameter of a header, choosing the form that its value
+ * needs.
  *
  * A short ASCII value is quoted and written as it is. A value with
- * characters a header cannot carry is written in the extended form of
- * RFC 2231, which names the character set. A long value is split
- * across numbered continuations, because a parameter may not run past
- * the end of a line.
+ * characters that a header can't carry is written in the extended form
+ * of RFC 2231, which names the character set. A long value is split
+ * across numbered continuations, because a parameter can't run past the
+ * end of a line.
  *
  * ```zuri
  * import mail.encoding
@@ -769,8 +778,8 @@ var _PARAMETER_CHUNK = 50
  *
  * @param string name
  * @param string value
- * @returns list of string, each `key=value` ready to be joined with
- *    `'; '`
+ * @returns list of string, each one `key=value`, ready to be joined
+ *    with `'; '`
  */
 def encode_parameter(name: string, value: string) {
   if is_ascii(value) and value.length() <= _PARAMETER_CHUNK * 2 {
@@ -832,9 +841,9 @@ def _percent_encode(value: string) {
     }
 
     parts.append(
-      '%'
-        + _HEX[(byte_value >> 4) & 0x0f].chr()
-        + _HEX[byte_value & 0x0f].chr(),
+      '%' +
+          _HEX[(byte_value >> 4) & 0x0f].chr() +
+          _HEX[byte_value & 0x0f].chr(),
     )
   }
 
@@ -971,15 +980,16 @@ def _percent_decode(text: string) {
 }
 
 /**
- * Encodes a part's body the way its `Content-Transfer-Encoding` says.
+ * Encodes a part's body as its `Content-Transfer-Encoding` says.
  *
- * `7bit`, `8bit` and `binary` describe the data rather than change it,
- * so they hand it back as it is.
+ * `7bit`, `8bit` and `binary` describe the data without changing it, so
+ * for those the data is returned as it is.
  *
  * @param string|bytes data
  * @param string encoding
  * @returns string
- * @throws MessageError if `encoding` is not one this understands.
+ * @throws MessageError if `encoding` isn't one that this function
+ *    understands.
  */
 def encode_body(data, encoding: string) {
   var name = encoding.lower()
@@ -1025,11 +1035,11 @@ def decode_body(data, encoding: ?string) {
 }
 
 /**
- * Picks the transfer encoding a body should use.
+ * Chooses the transfer encoding that a body should use.
  *
- * ASCII text that fits inside the line limit needs none. Text that is
- * mostly ASCII is cheaper as quoted-printable, which leaves it
- * readable; anything else is smaller as base64.
+ * ASCII text that fits within the line length limit doesn't need one.
+ * Text that's mostly ASCII is smaller as quoted-printable, which also
+ * keeps it readable, and anything else is smaller as base64.
  *
  * @param string|bytes data
  * @returns string one of `7bit`, `quoted-printable` or `base64`
@@ -1146,14 +1156,14 @@ def encode_mailbox_name(name: string) {
 }
 
 /**
- * Reads a mailbox name IMAP wrote in the modified UTF-7 of RFC 3501
- * back into the name a person reads.
+ * Converts a mailbox name that IMAP wrote in the modified UTF-7 of RFC
+ * 3501 back into the name a person would read.
  *
- * `&-` is `&`, and every other run between `&` and `-` is the base64,
- * with `,` for `/`, of the UTF-16 of the characters it stands for. A
- * run that does not decode, and an `&` with no `-` after it, are kept
- * exactly as they were sent, so a name a server wrote badly is still
- * shown rather than lost.
+ * `&-` is `&`, and every other run between `&` and `-` is the UTF-16
+ * form of the characters it represents, encoded in base64 with `,` in
+ * place of `/`. A run that can't be decoded, and an `&` without a `-`
+ * after it, are kept exactly as they were sent, so a name that a server
+ * wrote badly is still shown, instead of being lost.
  *
  * ```zuri
  * import mail.encoding
@@ -1167,7 +1177,7 @@ def encode_mailbox_name(name: string) {
  * Tom & Jerry
  * ```
  *
- * @param string name: the name as IMAP wrote it.
+ * @param string name: the name as IMAP wrote it
  * @returns string
  */
 def decode_mailbox_name(name: string) {

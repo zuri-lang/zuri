@@ -1,12 +1,12 @@
 /**
  * @module query
  *
- * Reading and writing a model's rows by conditions, as records.
+ * Reads and writes a model's rows as records, by conditions.
  *
  * `db.model(Post)` starts a query on a connection or a transaction.
- * Every method that narrows it returns a new query and leaves the one
- * it was called on as it was, so a query can be kept and built on in
- * more than one direction:
+ * Every method that narrows the query returns a new query, and leaves
+ * the one it was called on unchanged, so you can keep a query and build
+ * on it in more than one direction:
  *
  * ```zuri,ignore
  * var published = db.model(Post).where({ published: true })
@@ -17,24 +17,25 @@
  *
  * ### Conditions
  *
- * `where()` with a dictionary reads as the CRUD helpers' conditions
- * do: a value matches itself, `nil` matches null, a list matches any of
- * its values, and an empty list matches nothing. Anything else is a
- * fragment of SQL, with `?` for each value:
+ * `where()` with a dictionary works like the conditions of the CRUD
+ * helpers: a value matches itself, `nil` matches null, a list matches
+ * any of its values, and an empty list matches nothing. Anything else
+ * is a fragment of SQL, with a `?` for each value:
  *
  * ```zuri,ignore
  * db.model(Post).where('views > ? or featured = ?', [100, true])
  * ```
  *
- * Every condition must hold. A fragment is bracketed as it is added, so
- * an `or` inside one stays inside it.
+ * Every condition must be true. A fragment is put in parentheses when
+ * it's added, so an `or` inside it stays inside it.
  *
  * ### Associations
  *
- * `include()` loads associations along with the records, one query per
- * association rather than one per record, and a dotted name reaches
- * further: `include('comments.author')` loads every post's comments
- * and every comment's author, in three queries however many there are.
+ * `include()` loads associations together with the records, with one
+ * query per association instead of one per record. A dotted name goes
+ * further: `include('comments.author')` loads the comments of every
+ * post and the author of every comment in three queries, however many
+ * there are.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -73,14 +74,15 @@ class Query {
   @new(db, definition, state) {
     self._db = db
     self._definition = definition
-    self._state = state or {
-      wheres: [],
-      orders: [],
-      limit: nil,
-      offset: nil,
-      includes: [],
-      driver: nil,
-    }
+    self._state = state or
+        {
+          wheres: [],
+          orders: [],
+          limit: nil,
+          offset: nil,
+          includes: [],
+          driver: nil,
+        }
   }
 
   /**
@@ -113,15 +115,18 @@ class Query {
       )
     }
 
-    return self._with('wheres', [{ sql: '(${filter})', values: values or [] }])
+    return self._with('wheres', [
+      { sql: '(${filter})', values: values or [] },
+    ])
   }
 
   /**
-   * Narrows the query to rows not meeting conditions. A row whose
-   * column is null is not equal to any value, so it is among the rows a
-   * value excludes; `nil` excludes null itself.
+   * Narrows the query to the rows that don't meet the conditions. A row
+   * whose column is null isn't equal to any value, so a value excludes
+   * it too. `nil` excludes null itself.
    *
-   * @param dict filter Column to value, as `where()` reads one.
+   * @param dict filter Column names mapped to values, as `where()`
+   *    reads them.
    * @returns Query
    */
   where_not(filter: dict) {
@@ -173,7 +178,8 @@ class Query {
 
     if body == nil {
       raise ModelError(
-        '${self._definition.name} has no scope called ${name}', nil,
+        '${self._definition.name} has no scope called ${name}',
+        nil,
       )
     }
 
@@ -213,8 +219,9 @@ class Query {
    */
   all() {
     var built = self.to_sql()
-    var records = self._db.fetch_all(built.sql, built.values)
-      .map(@(row) => self._definition.build(row))
+    var records = self._db
+        .fetch_all(built.sql, built.values)
+        .map(@(row) => self._definition.build(row))
 
     return self._load(records, self._state.includes)
   }
@@ -227,8 +234,8 @@ class Query {
    */
   first() {
     var query = self._state.orders.is_empty()
-      ? self.order(self._definition.primary)
-      : self
+        ? self.order(self._definition.primary)
+        : self
     var records = query.limit(1).all()
 
     return records.is_empty() ? nil : records[0]
@@ -392,7 +399,7 @@ class Query {
     if !self._state.includes.is_empty() {
       raise ModelError(
         'stream() reads one record at a time and cannot load associations; ' +
-          'load them with load() on the records you need them for',
+            'load them with load() on the records you need them for',
         nil,
       )
     }
@@ -400,7 +407,8 @@ class Query {
     var built = self.to_sql()
 
     return RecordCursor(
-      self._db.stream(built.sql, built.values, nil), self._definition,
+      self._db.stream(built.sql, built.values, nil),
+      self._definition,
     )
   }
 
@@ -466,9 +474,9 @@ class Query {
    */
   delete() {
     var where = self._where()
-    return self._db.exec(
-      'delete from ${self._table()}${where.sql}', where.values,
-    ).rows_affected
+    return self._db
+        .exec('delete from ${self._table()}${where.sql}', where.values)
+        .rows_affected
   }
 
   /**
@@ -490,8 +498,8 @@ class Query {
    */
   from_sql(sql: string, params) {
     var records = self._db
-      .fetch_all(sql, params)
-      .map(@(row) => self._definition.build(row))
+        .fetch_all(sql, params)
+        .map(@(row) => self._definition.build(row))
     return self._load(records, self._state.includes)
   }
 
@@ -567,8 +575,8 @@ class Query {
 
     if driver == nil {
       var connection = hasprop(self._db, 'connection')
-        ? self._db.connection
-        : self._db
+          ? self._db.connection
+          : self._db
 
       driver = connection.driver()
       self._state.driver = driver
@@ -610,8 +618,8 @@ class Query {
         } else {
           var marks = ', '.join(value.map(@(_) => '?'))
           var sql = negated
-            ? '(${name} not in (${marks}) or ${name} is null)'
-            : '${name} in (${marks})'
+              ? '(${name} not in (${marks}) or ${name} is null)'
+              : '${name} in (${marks})'
 
           clauses.append({ sql, values: value })
         }
@@ -621,7 +629,10 @@ class Query {
           values: [value],
         })
       } else {
-        clauses.append({ sql: '${name} = ?', values: [value] })
+        clauses.append({
+          sql: '${name} = ?',
+          values: [value],
+        })
       }
     }
 
@@ -741,22 +752,26 @@ class Query {
     using association.kind {
       when 'belongs_to' {
         var owner_key = association.key == nil
-          ? target.primary
-          : association.key
+            ? target.primary
+            : association.key
         var keys = _keys(records, association.foreign_key)
         var found = _index(_batched(query, owner_key, keys), owner_key)
 
         for record in records {
           var key = getprop(record, association.foreign_key)
           setprop(
-            record, association.name, key == nil ? nil : found.get(key, nil),
+            record,
+            association.name,
+            key == nil ? nil : found.get(key, nil),
           )
         }
       }
       when 'has_one', 'has_many' {
         var keys = _keys(records, association.key)
         var children = _batched(
-          query.order(target.primary), association.foreign_key, keys,
+          query.order(target.primary),
+          association.foreign_key,
+          keys,
         )
         var grouped = {}
 
@@ -771,12 +786,12 @@ class Query {
         }
 
         for record in records {
-          var mine = grouped.get(
-            getprop(record, association.key), [],
-          )
+          var mine = grouped.get(getprop(record, association.key), [])
           var value = association.kind == HAS_MANY
-            ? mine
-            : mine.is_empty() ? nil : mine[0]
+              ? mine
+              : mine.is_empty()
+              ? nil
+              : mine[0]
 
           setprop(record, association.name, value)
         }
@@ -788,13 +803,15 @@ class Query {
         for chunk in _chunks(keys) {
           var marks = ', '.join(chunk.map(@(_) => '?'))
 
-          links.extend(self._db.fetch_all(
-            'select ${self._quote(association.foreign_key)} as owner, ' +
-              '${self._quote(association.other_key)} as other from ' +
-              '${self._driver().ddl().table_name(association.through)} where ' +
-              '${self._quote(association.foreign_key)} in (${marks})',
-            chunk,
-          ))
+          links.extend(
+            self._db.fetch_all(
+              'select ${self._quote(association.foreign_key)} as owner, ' +
+                  '${self._quote(association.other_key)} as other from ' +
+                  '${self._driver().ddl().table_name(association.through)} where ' +
+                  '${self._quote(association.foreign_key)} in (${marks})',
+              chunk,
+            ),
+          )
         }
 
         var others = []
@@ -824,14 +841,14 @@ class Query {
         }
 
         for record in records {
-          var mine = joined.get(
-            getprop(record, association.key), [],
-          )
+          var mine = joined.get(getprop(record, association.key), [])
 
-          mine.sort(@(a, b) => _compare(
-            getprop(a, target.primary),
-            getprop(b, target.primary),
-          ))
+          mine.sort(
+            @(a, b) => _compare(
+              getprop(a, target.primary),
+              getprop(b, target.primary),
+            ),
+          )
 
           setprop(record, association.name, mine)
         }

@@ -1,14 +1,14 @@
 # Zuri Documentation
 
-Everything written about the language lives here, as two books and the
-Zuri programs that generate and check them.
+Everything written about the language lives here: the book, the standard
+library reference, and the Zuri programs that generate and check them.
 
 | | |
 | --- | --- |
 | [`book/`](book) | **The Zuri Programming Language**, the narrative text |
-| [`reference/`](reference) | **The Zuri Standard Library**: one `book.toml`, generated from `libs/` |
-| [`site/`](site) | the landing page the two books sit under; the installers it serves live at the repository root |
-| [`tools/`](tools) | the generators, the audit, the verifier, the link checker |
+| [`reference/`](reference) | **The Zuri Standard Library**: a `doc.toml` and an introduction, the rest generated from `libs/` |
+| [`site/`](site) | the landing page the book and the reference sit under; the installers it serves live at the repository root |
+| [`tools/`](tools) | the build, the appendix generator, the audit, the verifier, the link checker |
 
 ## The Book
 
@@ -19,9 +19,9 @@ operators, decorated methods, every built-in function, every method on
 every built-in type, the standard library index, the error hierarchy
 and writing commands of your own.
 
-It is written as mdBook source under [`book/`](book), so it reads fine as
-plain markdown on GitHub and renders to a searchable site with
-`cargo run-docs`.
+It is written as Markdown under [`book/`](book), so it reads fine as
+plain markdown on GitHub, and `zuri doc` builds it into a searchable site;
+`cargo run-docs` does that and serves it.
 
 Start at [the introduction](book/src/ch00-00-introduction.md), or jump to
 what you need:
@@ -38,45 +38,43 @@ what you need:
 
 ## The Standard Library Reference
 
-**The Zuri Standard Library** is the other book: every module Zuri
-ships with, every public name in each one, and what each takes and
-returns. Read it with `cargo run-docs -- reference`.
+**The Zuri Standard Library** is the reference: every module Zuri ships
+with, every public name in each one, and what each takes and returns.
+Read it with `cargo run-docs -- reference`.
 
 It is **generated**, not written, and **none of it is kept in the
-repository**. `docs/reference` holds a `book.toml` and nothing else:
-the pages are written to `target/reference/src` and rendered into
+repository**. `docs/reference` holds a `doc.toml`, which asks for an API
+reference of `libs/`, and the `intro.md` its front page opens with. The
+pages are written to `target/reference/src` and rendered into
 `target/reference/html`, both build output, both thrown away by
 `cargo clean-docs`. A page and the doc block it came from therefore
 cannot disagree, because there is no page until one is generated.
 
 Every page comes from a doc block in [`libs/`](../libs), read with the
-`zuri` module's own parser.
+`zuri` module's own parser. It is made the way any project's API
+reference is, by `zuri doc generate`, which Chapter 30 of the book
+describes, and whose code is in [`cmds/doc/reference`](../cmds/doc/reference).
 
-`cargo build-docs` and `cargo run-docs -- reference` both generate it
-before rendering, so there is usually nothing to do by hand. To write
-the pages without rendering anything:
-
-```console
-$ cargo docs generate reference
-generating reference from libs/
-... modules, ... pages, ... documented names
-```
-
-Or run the generator directly:
+`zuri doc build` and `zuri doc serve` generate it again before
+rendering, so `cargo build-docs` and `cargo run-docs -- reference`
+leave nothing to do by hand. To write the pages without rendering
+anything:
 
 ```console
-$ zuri run docs/tools/reference/generate.zu
+$ cargo docs generate
+... files checked, no problems found
+The Zuri Standard Library: ... modules, ... names documented
+  target/reference/src
 ```
 
-Editing a page under `reference/src` is pointless; the next run
+Or run `zuri doc` directly:
+
+```console
+$ zuri doc generate docs/reference
+```
+
+Editing a page under `target/reference/src` is pointless; the next run
 overwrites it. Edit the library's doc block instead.
-
-A plain `cargo build` renders whichever books already have pages. On a
-fresh clone that is the book alone, and it says so:
-
-```console
-warning: the reference has no pages yet; run `cargo build-docs` to generate them
-```
 
 Three rules decide what appears:
 
@@ -87,15 +85,15 @@ Three rules decide what appears:
 - A member tagged `@internal` is left out, even though it is publicly
   named.
 - Every other module gets its own page, nested under its package. The
-  first unattached doc block carrying `@module` is that page's own
-  description.
+  first doc block carrying `@module` is that page's own description.
 
-The one hand-written part is
-[`tools/reference/catalogue.zu`](tools/reference/catalogue.zu), which
-decides which modules are grouped together and in what order, because
-no doc block can say that `hash` belongs beside `crypto` rather than
-beside `math`. A module added to `libs/` and not catalogued there stops
-the build rather than quietly vanishing from the contents.
+The one hand-written part is the list of `[[reference.groups]]` in
+[`reference/doc.toml`](reference/doc.toml), which decides which modules
+are grouped together and in what order, because no doc block can say
+that `hash` belongs beside `crypto` rather than beside `math`. A module
+added to `libs/` and left out of the groups is listed under Other
+Modules with a warning, and the strict build CI runs fails over it, so it
+cannot quietly vanish from the contents.
 
 ## Reading It Locally
 
@@ -104,8 +102,9 @@ $ cargo run-docs
 ```
 
 That builds the book and serves it at <http://localhost:3000> with live
-reload, so an edit to a chapter refreshes the page. Name the other book
-to serve that instead:
+reload, so an edit to a chapter refreshes the page. Name the reference
+to serve that instead, and an edit to a doc block in `libs/` refreshes
+its page:
 
 ```console
 $ cargo run-docs -- reference
@@ -137,20 +136,22 @@ target/site/reference/     the standard library reference
 That directory is the site exactly as it is served, so it can be opened
 locally before it is published. The landing page is ordinary HTML and
 CSS in [`site/`](site), edited like any other file here; to lay the site
-out again after changing it, without re-rendering either book:
+out again after changing it, without rendering the book or the reference
+again:
 
 ```console
 $ cargo docs site
 ```
 
-Both commands need [mdBook](https://rust-lang.github.io/mdBook). If it is
-not installed they offer to install it for you, and nothing is installed
-without your say-so.
+The book and the reference are both built by `zuri doc`, run with the
+`zuri` binary each `cargo` alias builds before it starts. That
+binary reads `libs/` and `cmds/` straight from this checkout, so a change
+to either shows in the books without another build. The same command
+works on its own, which is quicker while writing:
 
-A plain `cargo build` also rebuilds the book, but only when mdBook is
-already installed and only when something under `docs/book/src` actually
-changed. Without mdBook you get one line of warning and the build carries
-on, because the book is markdown that reads perfectly well unrendered.
+```console
+$ zuri doc serve docs/book
+```
 
 To throw the rendered output away:
 
@@ -223,24 +224,29 @@ runtime rather than in a stub and which is maintained by hand.
 
 ## The Tools
 
-Both books are generated and checked by Zuri programs in
-[`tools/`](tools). Four of them are shared, because both books read the
-same doc blocks and emit the same kind of markdown:
+The book and the reference are checked by Zuri programs in
+[`tools/`](tools), and the book's appendices are generated by one. The
+reference is generated by `zuri doc generate`. Both read the library's
+doc blocks through the standard library's own
+[`zuri.doc`](../libs/zuri/doc.zu) module, which holds the doc block
+grammar: prose, `@tag` lines, and the wrapping rule that decides where a
+tag ends. These programs serve both:
 
 | | |
 | --- | --- |
-| [`docs.zu`](tools/docs.zu) | the doc block grammar: prose, `@tag` lines, and the wrapping rule that decides where a tag ends |
-| [`markdown.zu`](tools/markdown.zu) | reflowing, wrapping, heading normalisation, escaping |
-| [`audit.zu`](tools/audit.zu) | checks every doc block in `libs/` |
+| [`audit.zu`](tools/audit.zu) | checks every doc block in `libs/` and `cmds/` |
 | [`verify.zu`](tools/verify.zu) | runs every example and compares its output |
-| [`links.zu`](tools/links.zu) | checks that every internal link and anchor resolves |
+| [`blocks.zu`](tools/blocks.zu) | pulls each runnable example, and the output it claims, out of a page for `verify.zu` |
+| [`site.zu`](tools/site.zu) | builds the book and the reference with `zuri doc` and lays out the website, for the `cargo` aliases |
 
-The rest is per-book: [`tools/book`](tools/book) generates the
-appendices, [`tools/reference`](tools/reference) generates the library
-reference.
+[`tools/book`](tools/book) generates the book's appendices. It writes its
+Markdown with the helpers the reference is written with, in
+[`cmds/doc/reference/text.zu`](../cmds/doc/reference/text.zu): reflowing,
+wrapping, heading levels and escaping.
 
-**A defect in a doc block becomes a defect in a book**, so the audit runs
-as part of both generators and reports anything it finds:
+**A defect in a doc block becomes a defect in the book or the
+reference**, so the appendix generator runs the audit, `site.zu` runs it
+before building the reference, and both report anything it finds:
 
 ```console
 $ zuri run docs/tools/audit.zu
@@ -263,15 +269,17 @@ found sixteen on its first run, among them a shell command tagged as
 Zuri, two `//` comments, a string in triple quotes, and a `??` operator
 the language does not have.
 
-Both generators still write their pages when the audit finds something —
-the renderers are defensive enough to produce a usable page, and a stale
-book helps nobody — but they exit non-zero so the problem is not missed.
+The pages are still written when the audit finds something, since the
+renderers are defensive enough to produce a usable page and a stale one
+helps nobody, but the problem is reported so it is not missed: the
+appendix generator exits non-zero, and `site.zu` prints a warning.
 
-Links are checked separately, across both books at once:
+Links are checked by `zuri doc` itself as it builds, against the pages
+and heading ids it actually wrote. A strict build fails over one that
+leads nowhere, which is how CI keeps them whole:
 
 ```console
-$ zuri run docs/tools/links.zu
-... pages checked, every link resolves
+$ zuri doc build docs/book --strict
 ```
 
 The images in the Imagine chapter are produced by

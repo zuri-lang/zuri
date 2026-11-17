@@ -20,11 +20,11 @@ import ..errors { ProtocolError }
 var EOS = 256
 
 /**
- * The number of bytes `data` would occupy once Huffman-encoded.
+ * The number of bytes that `data` would take up once Huffman-encoded.
  *
- * The encoder uses this to decide whether encoding is worth it at
- * all: HPACK lets a string go out as-is, and for a string of mostly
- * high-entropy bytes the encoded form is the longer one.
+ * The encoder uses this to decide whether encoding is worthwhile at
+ * all. HPACK allows a string to be sent as it is, and for a string made
+ * mostly of high-entropy bytes, the encoded form is the longer one.
  *
  * @param bytes data
  * @returns number
@@ -48,16 +48,17 @@ def encode(data) {
 /**
  * Decodes a Huffman-encoded string.
  *
- * The padding at the end must be the leading bits of EOS and no
- * longer than seven bits; anything else is a connection-level error
- * per RFC 7541 §5.2, since it is the shape a smuggled second header
- * takes.
+ * The padding at the end must be made of the leading bits of EOS and be
+ * no longer than seven bits. Anything else is a connection error, as
+ * RFC 7541 §5.2 requires, because that's what an attempt to smuggle in
+ * a second header looks like.
  *
  * @param bytes data
  * @param ?number start
  * @param ?number end
  * @returns bytes
- * @throws ProtocolError on invalid padding or an encoded EOS
+ * @throws ProtocolError if the padding is invalid or the string
+ *    contains an encoded EOS
  */
 def decode(data, start, end) {
   start = start != nil ? start : 0

@@ -49,8 +49,19 @@ const _HINT_TYPES = {
 
 # The arithmetic operators, whose result is a number when an operand is.
 const _ARITHMETIC = [
-  'Minus', 'Multiply', 'Divide', 'Floor', 'Percent', 'Pow',
-  'Amp', 'Bar', 'Xor', 'Tilde', 'Lshift', 'Rshift', 'Urshift',
+  'Minus',
+  'Multiply',
+  'Divide',
+  'Floor',
+  'Percent',
+  'Pow',
+  'Amp',
+  'Bar',
+  'Xor',
+  'Tilde',
+  'Lshift',
+  'Rshift',
+  'Urshift',
 ]
 
 /**
@@ -69,7 +80,11 @@ def builtin(name: string) {
  * @returns dict
  */
 def error_type() {
-  return { t: 'instance', of: { t: 'global', name: 'Error' }, loose: true }
+  return {
+    t: 'instance',
+    of: { t: 'global', name: 'Error' },
+    loose: true,
+  }
 }
 
 # Whether `type` is the built-in `name`.
@@ -133,7 +148,8 @@ def of(walker, node) {
     when 'Binary' return _binary(walker, node)
     when 'Condition' {
       return agree(
-        of(walker, node.fields.then), of(walker, node.fields.otherwise),
+        of(walker, node.fields.then),
+        of(walker, node.fields.otherwise),
       )
     }
     when 'Circuit' {
@@ -169,8 +185,8 @@ def _member(walker, node) {
   var object = of(walker, node.fields.object)
 
   return object == nil
-    ? nil
-    : { t: 'member', of: object, name: node.fields.name }
+      ? nil
+      : { t: 'member', of: object, name: node.fields.name }
 }
 
 def _self(walker, kind: string) {
@@ -216,8 +232,8 @@ def _binary(walker, node) {
   }
 
   return ['number', 'bigint', 'string', 'list', 'bytes'].contains(left.name)
-    ? left
-    : nil
+      ? left
+      : nil
 }
 
 /**
@@ -288,8 +304,8 @@ def _of_hint_type(walker, type) {
     var class_type = _named(walker, type.fields.class_name)
 
     return class_type == nil
-      ? nil
-      : { t: 'instance', of: class_type, loose: true }
+        ? nil
+        : { t: 'instance', of: class_type, loose: true }
   }
 
   return nil

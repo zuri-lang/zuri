@@ -36,19 +36,19 @@ var text = 'The quick brown fox jumps over the lazy dog. ' * 30
 var compressed = zlib.compress(text)
 assert typeof(compressed) == 'bytes', 'compress() must return bytes'
 assert compressed.length() < text.length(),
-  'compressing 30x repeated text must actually shrink it'
+    'compressing 30x repeated text must actually shrink it'
 # The zlib format's 2-byte header always starts with a CMF byte whose
 # low nibble is 8 (CM = deflate) for data produced this way.
 assert (compressed[0] & 0x0f) == 8,
-  'compressed output must start with a real zlib header (CM = deflate)'
+    'compressed output must start with a real zlib header (CM = deflate)'
 ok('compress() produces real, smaller-than-input zlib output')
 
 assert zlib.decompress(compressed).to_string() == text,
-  'decompress() must recover the exact original text'
+    'decompress() must recover the exact original text'
 ok('decompress() recovers the exact original content')
 
 assert zlib.decompress(zlib.compress('')).to_string() == '',
-  'an empty string must round-trip to itself'
+    'an empty string must round-trip to itself'
 ok('empty input round-trips correctly')
 
 # ---------------------------------------------------------------------------
@@ -57,22 +57,27 @@ ok('empty input round-trips correctly')
 var fast = zlib.compress(text, zlib.BEST_SPEED)
 var best = zlib.compress(text, zlib.BEST_COMPRESSION)
 assert zlib.decompress(fast).to_string() == text,
-  'BEST_SPEED output must still decompress correctly'
+    'BEST_SPEED output must still decompress correctly'
 assert zlib.decompress(best).to_string() == text,
-  'BEST_COMPRESSION output must still decompress correctly'
+    'BEST_COMPRESSION output must still decompress correctly'
 ok('compress() honors an explicit compression level and still round-trips')
 
 var filtered = zlib.compress(text, zlib.DEFAULT_COMPRESSION, zlib.FILTERED)
 assert zlib.decompress(filtered).to_string() == text,
-  'the FILTERED strategy must still round-trip correctly'
+    'the FILTERED strategy must still round-trip correctly'
 ok('compress() honors an explicit strategy and still round-trips')
 
 var raw = zlib.compress(
-  text, zlib.DEFAULT_COMPRESSION, zlib.DEFAULT_STRATEGY, -zlib.MAX_WBITS,
+  text,
+  zlib.DEFAULT_COMPRESSION,
+  zlib.DEFAULT_STRATEGY,
+  -zlib.MAX_WBITS,
 )
 assert zlib.decompress(raw, -zlib.MAX_WBITS).to_string() == text,
-  'a negative wbits (raw deflate, no zlib header) must round-trip when decompress() is told the same wbits'
-ok('compress()/decompress() support raw (headerless) DEFLATE via negative wbits')
+    'a negative wbits (raw deflate, no zlib header) must round-trip when decompress() is told the same wbits'
+ok(
+  'compress()/decompress() support raw (headerless) DEFLATE via negative wbits',
+)
 
 # ---------------------------------------------------------------------------
 # Binary content
@@ -82,8 +87,10 @@ iter var i = 0; i < 256; i++ {
   binary_data[i] = i
 }
 assert zlib.decompress(zlib.compress(binary_data)) == binary_data,
-  'every byte value 0..255 must survive compress()/decompress() unchanged'
-ok('binary content (all 256 byte values) survives compress/decompress unchanged')
+    'every byte value 0..255 must survive compress()/decompress() unchanged'
+ok(
+  'binary content (all 256 byte values) survives compress/decompress unchanged',
+)
 
 # ---------------------------------------------------------------------------
 # Streaming ZlibEncoder/ZlibDecoder
@@ -94,12 +101,12 @@ enc.write('streaming ')
 enc.write('zlib world')
 var stream_compressed = enc.finish()
 assert enc.finished(),
-  'finished() must be true once finish() has completed the stream'
+    'finished() must be true once finish() has completed the stream'
 ok('ZlibEncoder accumulates multiple write() calls before finish()')
 
 var dec = zlib.ZlibDecoder(stream_compressed)
 assert dec.read_as_string() == 'hello streaming zlib world',
-  'read_as_string() must decode the whole stream correctly'
+    'read_as_string() must decode the whole stream correctly'
 ok('ZlibDecoder decodes a stream produced by ZlibEncoder')
 
 # Regression: the shared GzipDecoder.reset() this class inherits had two
@@ -111,7 +118,7 @@ var dec2 = zlib.ZlibDecoder(stream_compressed)
 dec2.read(5)
 dec2.reset(stream_compressed)
 assert dec2.read_as_string() == 'hello streaming zlib world',
-  'ZlibDecoder.reset() with a fresh copy of the same stream must decode correctly, not fail as "not a valid deflate stream"'
+    'ZlibDecoder.reset() with a fresh copy of the same stream must decode correctly, not fail as "not a valid deflate stream"'
 ok('ZlibDecoder.reset() correctly reinitializes and can decode again')
 
 # ===========================================================================

@@ -40,11 +40,15 @@ echo '════════════════════════�
 # itself, but never externally visible.
 # ---------------------------------------------------------------------------
 assert plain_importer.use_internally() == 'pub',
-  'a plain wildcard import must still be usable by the importing file\'s own code'
-assert raises(@() { echo plain_importer.public_fn }),
-  'a name pulled in by a plain wildcard import must not be externally visible via GetField'
-assert raises(@() { plain_importer.public_fn() }),
-  'a name pulled in by a plain wildcard import must not be externally callable via Invoke'
+    'a plain wildcard import must still be usable by the importing file\'s own code'
+assert raises(@() {
+  echo plain_importer.public_fn
+}),
+    'a name pulled in by a plain wildcard import must not be externally visible via GetField'
+assert raises(@() {
+  plain_importer.public_fn()
+}),
+    'a name pulled in by a plain wildcard import must not be externally callable via Invoke'
 ok('a plain wildcard import stays local to the importing file')
 
 # ---------------------------------------------------------------------------
@@ -52,9 +56,9 @@ ok('a plain wildcard import stays local to the importing file')
 # this fix.
 # ---------------------------------------------------------------------------
 assert exported_importer.public_fn() == 'pub',
-  'an @-exported wildcard import must remain externally callable'
+    'an @-exported wildcard import must remain externally callable'
 assert typeof(exported_importer.PublicClass) == 'class',
-  'an @-exported wildcard import must re-export every public member, not just functions'
+    'an @-exported wildcard import must re-export every public member, not just functions'
 ok('an @-exported wildcard import is visible externally')
 
 # ---------------------------------------------------------------------------
@@ -76,19 +80,25 @@ ok('an @-exported wildcard import is visible externally')
 # distinguish "present and public" from "present and private" either.
 # ---------------------------------------------------------------------------
 assert plain_importer.use_private_internally() == 'priv',
-  'a plain wildcard import must still let the importing file use a sibling\'s underscore-prefixed helper internally'
+    'a plain wildcard import must still let the importing file use a sibling\'s underscore-prefixed helper internally'
 assert reflect.has_prop(plain_importer, '_private_fn'),
-  'an underscore-prefixed name from a wildcard import must still actually be present for internal use, not silently dropped'
-ok('a wildcard import still picks up a sibling file\'s underscore-prefixed helpers for internal use')
+    'an underscore-prefixed name from a wildcard import must still actually be present for internal use, not silently dropped'
+ok(
+  'a wildcard import still picks up a sibling file\'s underscore-prefixed helpers for internal use',
+)
 
 # ---------------------------------------------------------------------------
 # Chained re-export: a name a file only has via its OWN plain wildcard
 # import must not leak through a later @-exported wildcard re-import of
 # that file.
 # ---------------------------------------------------------------------------
-assert raises(@() { echo chained.public_fn }),
-  'a private wildcard-imported name must not transitively leak through a further @-exported wildcard re-import'
-ok('a private wildcard import does not transitively leak through a chained re-export')
+assert raises(@() {
+  echo chained.public_fn
+}),
+    'a private wildcard-imported name must not transitively leak through a further @-exported wildcard re-import'
+ok(
+  'a private wildcard import does not transitively leak through a chained re-export',
+)
 
 # ---------------------------------------------------------------------------
 # A module's own identity variables are not exports. A wildcard import
@@ -97,11 +107,11 @@ ok('a private wildcard import does not transitively leak through a chained re-ex
 # the imported file's path.
 # ---------------------------------------------------------------------------
 assert plain_importer.own_file().ends_with('plain_importer.zu'),
-  'a wildcard import must not overwrite the importing file\'s own __file__'
+    'a wildcard import must not overwrite the importing file\'s own __file__'
 assert plain_importer.own_root() == __root__,
-  'every module shares one __root__, and a wildcard import must not disturb it'
+    'every module shares one __root__, and a wildcard import must not disturb it'
 assert __file__ == __root__,
-  'a file run directly is its own entry point, wildcard imports notwithstanding'
+    'a file run directly is its own entry point, wildcard imports notwithstanding'
 ok('a wildcard import leaves __file__ and __root__ alone')
 
 # ===========================================================================

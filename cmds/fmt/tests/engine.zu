@@ -27,7 +27,9 @@ describe('format', @{
   })
 
   it('is a fixed point: formatting its own output changes nothing', @{
-    var once = format('def  g(a,b,c){var x={p:1,q:2}\nif a return x\nreturn [x,\n  a]}')
+    var once = format(
+      'def  g(a,b,c){var x={p:1,q:2}\nif a return x\nreturn [x,\n  a]}',
+    )
 
     expect(format(once)).to_be(once)
   })
@@ -44,14 +46,15 @@ describe('format', @{
     }
   })
 
-  # A conditional written across lines leaves its `?` on one line and its
-  # `:` on the next, and either may lead or trail its line.
-  it('keeps the space around a `?` and `:` written on separate lines', @{
+  # A conditional the source wrote across lines, with its `?` and `:`
+  # ending or opening them, is laid out from its code alone.
+  it('joins a conditional written across lines that fits on one', @{
     var trailing = 'var s = rest.is_empty() ?\n  lead :\n  lead + rest\n'
     var leading = 'var s = a ?\n  b\n  : c\n'
 
-    expect(format(trailing)).to_be(trailing)
-    expect(format(leading)).to_be(leading)
+    expect(format(trailing))
+        .to_be('var s = rest.is_empty() ? lead : lead + rest\n')
+    expect(format(leading)).to_be('var s = a ? b : c\n')
   })
 
   it('never touches the inside of an interpolated string', @{
@@ -97,24 +100,27 @@ describe('subscripts', @{
     expect(format('echo value[5, ]')).to_be('echo value[5,]\n')
     expect(format('echo value[2,5]')).to_be('echo value[2, 5]\n')
     expect(format('echo value[ 2 , 5 ]')).to_be('echo value[2, 5]\n')
-    expect(format('echo t[space + 1,text.length()]')).to_be(
-      'echo t[space + 1, text.length()]\n',
-    )
+    expect(format('echo t[space + 1,text.length()]'))
+        .to_be('echo t[space + 1, text.length()]\n')
     expect(format('echo value[f(1, 2),5]')).to_be('echo value[f(1, 2), 5]\n')
   })
 
   it('leaves a long subscript whole rather than breaking its commas', @{
     var source = 'var value = a_rather_long_receiver_name' +
-      '[first_index_expression, second_index_expression_here]'
+        '[first_index_expression, second_index_expression_here]'
 
     expect(format(source)).to_be(source + '\n')
   })
 
-  it('leaves a long slice from the start whole', @{
+  it('keeps the comma that opens a slice from the start when it breaks', @{
     var source = 'echo another_rather_long_receiver_name_for_testing_breaks' +
-      '[,some_deliberately_long_list_name.length() - 4]'
+        '[,some_deliberately_long_list_name.length() - 4]'
+    var formatted = format(source)
 
-    expect(format(source)).to_be(source + '\n')
+    expect(formatted).to_start_with(
+      'echo another_rather_long_receiver_name_for_testing_breaks[,some_',
+    )
+    expect(format(formatted)).to_be(formatted)
   })
 })
 
@@ -129,8 +135,7 @@ describe('refusals', @{
   it('refuses a source that does not parse, saying where', @{
     expect(@{
       format('if a b = 1 else b = 2')
-    })
-      .to_raise_instance_of(FormatError)
+    }).to_raise_instance_of(FormatError)
 
     catch {
       format('var = 2')

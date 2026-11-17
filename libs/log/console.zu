@@ -1,9 +1,9 @@
 /**
  * @module log.console
  *
- * `ConsoleTransport`: the default transport, printing to stdout
- * (or stderr for Error/Critical) with optional ANSI coloring by
- * level.
+ * `ConsoleTransport`, the default transport, which writes to standard
+ * output, or to standard error for `Error` and `Critical` messages,
+ * with optional ANSI colors for each level.
  */
 
 import .transport { Transport }
@@ -56,9 +56,9 @@ class ConsoleTransport < Transport {
     if self._use_colors {
       var color = self._color_for(level)
       if color != nil {
-        message = level == LogLevel.Critical ?
-          colors.text(colors.text(message, colors.style.bold), color) :
-          colors.text(message, color)
+        message = level == LogLevel.Critical
+            ? colors.text(colors.text(message, colors.style.bold), color)
+            : colors.text(message, color)
       }
     }
 

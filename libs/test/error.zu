@@ -1,13 +1,14 @@
 /**
  * @module test.error
  *
- * The errors the test module raises, kept in a module of their own so
- * that the assertion side and the runner side can both name them
+ * The errors that the test module raises. They're in a module of their
+ * own, so that both the assertions and the runner can refer to them
  * without importing each other.
  *
- * Only `AssertionError` normally reaches a test author, and only by
- * being caught for them. Everything else in here marks a mistake in
- * how the framework itself was used, and is meant to stop the run.
+ * Normally, only `AssertionError` reaches someone writing tests, and
+ * only because the framework catches it for them. Everything else here
+ * means the framework itself was used incorrectly, and is meant to stop
+ * the run.
  */
 
 /**
@@ -48,18 +49,18 @@ class AssertionError < Error {
   var received = nil
 
   /**
-   * Whether `expected` and `received` are worth showing.
+   * Whether `expected` and `received` should be shown.
    *
-   * `false` for a matcher whose failure the message already explains
-   * in full, such as `to_be_nil()`, where printing "expected nil,
-   * received nil" back would say nothing.
+   * It's `false` for a matcher whose message already explains the
+   * failure completely, such as `to_be_nil()`, where printing "expected
+   * nil, received nil" wouldn't add anything.
    */
   var has_values = false
 
   /**
    * Pre-rendered lines to print underneath the message: a structural
    * diff, the calls a mock actually received, a hint about a likely
-   * mistake. Each is one line, already coloured, with no indent of
+   * mistake. Each is one line, already colored, with no indent of
    * its own.
    */
   var details = []

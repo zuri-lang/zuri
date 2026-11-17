@@ -1,9 +1,10 @@
 # The Storage Layer
 
-Two files. One knows about the disk and nothing about tasks. The other
-knows about tasks and nothing about the disk.
+The storage layer consists of two files. One knows about the disk but
+nothing about tasks, and the other knows about tasks but nothing about the
+disk.
 
-## The File
+## The JSON File
 
 <span class="filename">Filename: storage/_json_store.zu</span>
 
@@ -73,33 +74,35 @@ def write_all(path: string, records: list) {
 }
 ```
 
-Four decisions in fifty lines.
+These fifty lines make four decisions.
 
-**A missing file is not an error.** A first run has nothing saved, and the
-program should start. A file that exists but cannot be parsed *is* an
-error, because the alternative is overwriting whatever was in there with an
-empty board.
+**A missing file isn't an error.** On the first run, nothing has been saved
+yet, and the program should still start. A file that exists but can't be
+parsed *is* an error, because otherwise its contents would be overwritten
+with an empty board.
 
-**The error message names the path.** The person reading it is looking at
-one line of a log.
+**The error message includes the path.** Whoever reads it is looking at a
+single line in a log.
 
-**The write is atomic.** Writing into a temporary file and renaming it into
-place means a process killed mid-write leaves the previous board intact,
-because a rename within a directory either happens or does not.
+**The write is atomic.** The data is written to a temporary file, which is
+then renamed into place. If the process is killed partway through a write,
+the previous board is left intact, because a rename within a directory
+either happens completely or not at all.
 
-**The handle is opened explicitly.** `write()` on a closed handle opens,
-writes and closes again, so two `write()` calls in `w` mode would each
-truncate the file. `open()` first, then write, then `close()`. That is the
-rule from [Chapter 9](ch09-00-files.md), and this is exactly where it
-bites.
+**The file handle is opened explicitly.** `write()` on a closed handle opens
+the file, writes to it and closes it again, so two `write()` calls in `w`
+mode would each truncate the file. Call `open()` first, then write, and then
+call `close()`. This is the rule from [Chapter 9](ch09-00-files.md), and
+this is exactly the kind of code where it matters.
 
 ## The Board
 
 `storage/index.zu` is the layer above. It holds `Task` objects, answers
-questions about them, and persists through `_json_store` — and it is the
-only thing in the application that knows a file is involved at all.
+questions about them and saves them using `_json_store`, and it's the only
+part of the application that knows a file is involved at all.
 
-Rather than read it as one hundred lines, here it is a piece at a time.
+Instead of reading it as a hundred lines all at once, let's go through it
+one piece at a time.
 
 ### The Error It Raises
 
@@ -124,19 +127,19 @@ class NotFoundError < Error {
 }
 ```
 
-A custom error class, four lines, and it earns them. Every layer above can
-say `instance_of(error, NotFoundError)` instead of matching on a message
-string, and the middleware in
-[Middleware, Logging and Errors](ch25-06-middleware.md) turns exactly this
-class into a 404. Had `get()` raised a plain `Error('not found')`, that
-mapping would be a substring search.
+This is a custom error class, and it's only four lines long, but it's worth
+it. Every layer above can check `instance_of(error, NotFoundError)` instead
+of matching against a message string, and the middleware in [Middleware,
+Logging and Errors](ch25-06-middleware.md) turns exactly this class into a
+404 response. If `get()` raised a plain `Error('not found')`, that check
+would have to search the message text.
 
-Note the two lines inside `@new`. `parent(message)` lets the base
-constructor set `message` and capture the stack trace; `self.type` is what
-makes the class name show up in logs and in the uncaught-error banner.
-Both are the pattern from [Chapter 7](ch07-00-error-handling.md).
+Notice the two lines inside `@new`. `parent(message)` lets the base
+constructor set `message` and record the stack trace, and `self.type` makes
+the class name appear in logs and in the message for an uncaught error. Both
+follow the pattern from [Chapter 7](ch07-00-error-handling.md).
 
-### The Fields and the Constructor
+### Fields and Constructor
 
 ```zuri,ignore
 /**
@@ -159,26 +162,27 @@ class Board {
   }
 ```
 
-Two fields, declared with `var` even though `@new` assigns both. The
-constructor could have declared them implicitly; writing them out means the
-class's shape is visible at the top without reading the constructor, and it
-is required the moment any other method assigns to them.
+There are two fields, both declared with `var`, even though `@new` assigns
+both of them. The constructor could have declared them itself, but writing
+them out means you can see the shape of the class at the top without reading
+the constructor, and it becomes necessary as soon as any other method
+assigns to them.
 
-The constructor does two things and no more. It works out **where** the
-file is, and it loads **what** is in it.
+The constructor does two things. It works out **where** the file is, and it
+loads **what's** in it.
 
-`directory or config.DATA_DIR` is the optional-parameter idiom from
-[Chapter 5](ch05-01-defining-functions.md). It is safe here precisely
-because a directory is never legitimately `''` or `0` — the falsy-default
-trap does not apply to paths.
+`directory or config.DATA_DIR` is the pattern for optional parameters from
+[Chapter 5](ch05-01-defining-functions.md). It's safe here because a
+directory can never sensibly be `''` or `0`, so the problem with falsy
+defaults doesn't apply to paths.
 
 The `map` on the second line is the boundary between two worlds.
-`read_all()` returns plain dictionaries, because that is what JSON is;
-`from_dict()` turns each into a real `Task`. **Everything above this line
-deals in objects, everything below it deals in dictionaries**, and this is
-the single place they meet.
+`read_all()` returns plain dictionaries, because that's what JSON contains,
+and `from_dict()` turns each one into a real `Task`. **Everything above this
+line works with objects, and everything below it works with dictionaries**,
+and this is the only place where the two meet.
 
-### Reading the Board
+### Reading From the Board
 
 ```zuri,ignore
   all() {
@@ -190,15 +194,15 @@ the single place they meet.
   }
 ```
 
-`all()` is a one-liner, and it hands back the real list rather than a copy
-— deliberate, because every caller in this application only reads it. If
-that changed, this is the line that would need `clone()`.
+`all()` is a single line, and it returns the actual list instead of a copy.
+That's intentional, because every caller in this application only reads the
+list. If that ever changed, this is the line that would need a `clone()`.
 
-`in_column()` is `filter()` and nothing else. It is a method rather than a
-loop at each call site so that "which column is this task in" is decided in
-one place.
+`in_column()` is just a call to `filter()`. It's a method rather than a loop
+in each place it's used, so that the question of which column a task is in
+is answered in one place.
 
-### Shaping It for the Page
+### Preparing Data for the Page
 
 ```zuri,ignore
   /**
@@ -216,23 +220,25 @@ one place.
   }
 ```
 
-This is the method the HTML template consumes, and three decisions inside
-it are worth naming.
+This is the method the HTML template uses, and it makes three decisions
+worth pointing out.
 
-**It iterates `config.COLUMNS`, not the tasks.** That means a column with
-no tasks still appears, as an empty column — which is what a board should
-look like. Grouping by walking the tasks instead would silently drop empty
-columns and produce them in whatever order the data happened to be in.
+**It loops over `config.COLUMNS`, not over the tasks.** That means a column
+without any tasks still appears, as an empty column, which is how a board
+should look. Grouping by looping over the tasks would silently leave out
+empty columns, and would produce the columns in whatever order the data
+happened to be in.
 
-**It returns `to_view()` results, not `Task` objects.** A view carries the
-formatted date and the `is_done` flag already computed, so the template
-never has to. [Server-Rendered Pages](ch25-05-pages.md) explains why that
-matters for templates specifically.
+**It returns the results of `to_view()`, not `Task` objects.** A view
+already contains the formatted date and the `is_done` flag, so the template
+doesn't have to calculate them. [Server-Rendered Pages](ch25-05-pages.md)
+explains why that's particularly important for templates.
 
-**`{ name, tasks }` uses the shorthand.** Both keys match the variables
-holding them, so writing `{ name: name, tasks: tasks }` would be noise.
+**`{ name, tasks }` uses the shorthand syntax.** Both keys have the same
+names as the variables that hold their values, so writing
+`{ name: name, tasks: tasks }` would just add noise.
 
-### Finding One
+### Finding a Single Task
 
 ```zuri,ignore
   /**
@@ -249,19 +255,20 @@ holding them, so writing `{ name: name, tasks: tasks }` would be noise.
   }
 ```
 
-The important decision is that **`get()` raises rather than returning
-`nil`**.
+The important decision here is that **`get()` raises an error instead of
+returning `nil`**.
 
-That choice propagates. Every caller either has a real task or has an
-error, so no route handler contains `if task == nil`. The alternative —
-returning `nil` — would put that check in five places and guarantee one of
-them was eventually forgotten, producing a `nil` field access somewhere far
-away from the cause.
+That choice affects everything that calls it. Every caller either has a real
+task or gets an error, so none of the route handlers need an
+`if task == nil` check. If `get()` returned `nil`, that check would have to
+appear in five places, and sooner or later one of them would be forgotten,
+causing an error when a field is read from `nil` somewhere far away from the
+real cause.
 
-The message includes the id, because the person reading the log has the
-request and nothing else.
+The message includes the ID, because whoever reads the log only has the
+request to go on.
 
-### Changing It
+### Changing the Board
 
 ```zuri,ignore
   add(title, options) {
@@ -291,23 +298,23 @@ request and nothing else.
   }
 ```
 
-All three follow one shape: **change the in-memory list, then save, then
-return what changed**.
+All three methods follow the same pattern: **change the list in memory, save
+it, and return what changed**.
 
-`update()` and `remove()` both start by calling `get()`, which means a bad
-id raises `NotFoundError` before anything is modified. There is no path
-that half-applies a change.
+`update()` and `remove()` both start by calling `get()`, so an invalid ID
+raises a `NotFoundError` before anything is changed. There's no way for a
+change to be only half applied.
 
-Each returns the affected task rather than nothing, which is what lets the
-JSON API answer with the created or updated record without a second
-lookup.
+Each method returns the task it affected instead of returning nothing, which
+lets the JSON API respond with the created or updated record without looking
+it up again.
 
-`remove_at(index_of(task))` rather than `remove(task)` is deliberate: list
-`remove()` compares by value, and two tasks with identical fields would
-make that ambiguous. Removing by position removes exactly the object
-`get()` found.
+Using `remove_at(index_of(task))` instead of `remove(task)` is intentional.
+The list's `remove()` compares by value, so two tasks with identical fields
+would make it ambiguous. Removing by position removes exactly the object
+that `get()` found.
 
-### Counting, and Saving
+### Counting and Saving
 
 ```zuri,ignore
   summary() {
@@ -326,35 +333,36 @@ make that ambiguous. Removing by position removes exactly the object
 }
 ```
 
-`summary()` walks the configured columns for the same reason `columns()`
-does: an empty column should report `0`, not be missing.
+`summary()` loops over the configured columns for the same reason
+`columns()` does: an empty column should be reported as `0`, not left out.
 
-`_save()` is the other side of the constructor's `map`. Objects go out as
-dictionaries via `to_dict()`, exactly as they came in through
-`from_dict()`. The two are a matched pair, and a field added to `Task`
-needs to appear in both or it will not survive a restart.
+`_save()` is the counterpart to the `map` in the constructor. Objects are
+written out as dictionaries using `to_dict()`, just as they were read in
+using `from_dict()`. The two methods go together, so if you add a field to
+`Task`, it has to appear in both, or it won't survive a restart.
 
-**`_save()` is private**, and that is the class's most important property.
-There is no public method that changes the board without persisting,
-because `add`, `update` and `remove` each call it and nothing else can. A
-caller cannot forget to save, because a caller is never given the choice.
+**`_save()` is private**, and that's the most important property of this
+class. There's no public method that changes the board without saving it,
+because `add`, `update` and `remove` all call `_save()`, and nothing else
+can. A caller can't forget to save, because a caller never gets the choice.
 
-### The Trade It Makes
+### The Trade-Off
 
-The whole board is held in memory and rewritten in full after every change.
+The whole board is kept in memory and completely rewritten after every
+change.
 
-For a board a team can read on one screen, that is the right trade: the
-code is simple enough to hold in your head, and a full rewrite of a few
-kilobytes is immaterial. It is also the first assumption to revisit if this
-ever has to hold a hundred thousand tasks, at which point the answer is
-[a real database](ch17-00-sql.md) rather than a cleverer file format.
+For a board small enough for a team to read on one screen, that's the right
+trade-off. The code is simple enough to keep in your head, and rewriting a
+few kilobytes doesn't matter. But it's also the first assumption to revisit
+if the board ever needs to hold a hundred thousand tasks, and at that point,
+the answer is [a real database](ch17-00-sql.md), not a cleverer file format.
 
 ## Concurrency
 
-`Board` holds the whole file in memory. Two processes writing the same
-`board.json` would each overwrite the other's changes, and the atomic
-rename does not fix that: it guarantees the file is never half-written, not
-that two writers agree.
+`Board` keeps the whole file in memory. If two processes wrote to the same
+`board.json`, each would overwrite the other's changes, and the atomic
+rename doesn't fix that. It guarantees that the file is never half written,
+but not that two writers agree.
 
-This application runs one server process, so the question does not arise.
-[Running It for Real](ch25-07-running-it.md) is where it does.
+This application only runs one server process, so the problem doesn't come
+up. [Running It for Real](ch25-07-running-it.md) is where it does.

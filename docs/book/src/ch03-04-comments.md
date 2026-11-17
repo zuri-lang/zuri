@@ -2,16 +2,16 @@
 
 ## Line Comments
 
-`#` runs to the end of the line:
+A `#` starts a comment that runs to the end of the line:
 
 ```zuri
 # Rates are quoted per thousand, not per unit.
-var rate = 0.0125  # 1.25%
+var rate = 0.0125 # 1.25%
 ```
 
 ## Block Comments
 
-`/* ... */` spans as many lines as you like, and **nests**:
+`/* ... */` can span as many lines as you like, and block comments **nest**:
 
 ```zuri
 /* This whole section is off.
@@ -19,16 +19,17 @@ var rate = 0.0125  # 1.25%
    Still off. */
 ```
 
-Nesting is worth knowing about, because it means commenting out a region
-that already contains a block comment works the way you expect, and it also
-means an unbalanced `/*` inside a comment swallows the rest of your file.
+Nesting matters for two reasons. You can comment out a section of code that
+already contains a block comment, and it works as you'd expect. But it also
+means that an unmatched `/*` inside a comment turns the rest of the file
+into a comment.
 
 ## Doc Blocks
 
-A block comment that opens with `/**` is a **doc block**. The parser keeps
-doc blocks in the syntax tree rather than discarding them, which is what
-lets the `zuri` module read a file's documentation without a separate
-parser. Put one directly above the thing it documents:
+A block comment that starts with `/**` is a **doc block**. The parser keeps
+doc blocks in the syntax tree instead of throwing them away, which is how
+the `zuri` module can read a file's documentation without needing a separate
+parser. Put a doc block directly above the thing it documents:
 
 ```zuri
 /**
@@ -45,31 +46,32 @@ def humanize(seconds) {
 }
 ```
 
-The tag vocabulary used across the standard library is:
+The standard library uses these tags:
 
 | Tag | Meaning |
 | --- | --- |
-| `@param {type} name: description` | one parameter |
-| `@returns type` | what the function gives back |
-| `@throws ErrorClass` | an error it can raise |
-| `@note` | something the caller must know |
-| `@default` | the default a parameter falls back to |
+| `@param {type} name: description` | Describes one parameter |
+| `@returns type` | Describes the return value |
+| `@throws ErrorClass` | Names an error the function can raise |
+| `@note` | Something the caller needs to know |
+| `@default` | The default value of a parameter |
 
-Two conventions from the standard library are worth copying. State the
-default of every optional parameter, and state what happens at the edges:
-an empty input, a zero length, a value out of range. Anything a caller
-would otherwise have to discover by experiment belongs in the doc block.
+Two habits from the standard library are worth copying. Document the default
+value of every optional parameter, and describe what happens in edge cases,
+such as an empty input, a length of zero or a value that's out of range. If
+a caller would otherwise have to find something out by trial and error, put
+it in the doc block.
 
-Doc blocks are not only for readers. Because the parser keeps them, a
-program can read them: `zuri.parse()` returns each one as a `DocBlock` node
-sitting immediately before the declaration it documents, which is enough to
-build a documentation generator in a few dozen lines.
-[Chapter 21](ch21-00-metaprogramming.md) shows how.
+Doc blocks aren't only for people reading the source. Because the parser
+keeps them, programs can read them too. `zuri.parse()` returns each doc
+block as a `DocBlock` node placed just before the declaration it documents,
+which is all you need to build a simple documentation generator in a few
+dozen lines. [Chapter 21](ch21-00-metaprogramming.md) shows how.
 
-## Commenting Style
+## Writing Good Comments
 
-A comment earns its place by explaining **why**, not **what**. The code
-already says what it does:
+A good comment explains **why** the code does something. The code itself
+already shows **what** it does:
 
 ```zuri,ignore
 # Bad: restates the code.

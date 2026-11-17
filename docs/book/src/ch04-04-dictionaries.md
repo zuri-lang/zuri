@@ -1,15 +1,15 @@
 # Dictionaries
 
-A dictionary maps keys to values and remembers the order you inserted
-them.
+A dictionary maps keys to values and remembers the order in which the keys
+were added.
 
 ```zuri
 var user = { name: 'Ada', age: 36 }
 var empty = {}
 ```
 
-A bare word key is a string, so `{ name: ... }` and `{ 'name': ... }` are
-the same. Keys may also be numbers:
+A key written as a bare word is a string, so `{ name: ... }` and
+`{ 'name': ... }` are the same. Keys can also be numbers:
 
 ```zuri
 echo { 1: 'one', 2.5: 'two-point-five' }
@@ -19,9 +19,9 @@ echo { 1: 'one', 2.5: 'two-point-five' }
 {1: one, 2.5: two-point-five}
 ```
 
-A key that is a bare identifier is always taken as that literal name. To
-compute a key, make it an expression the parser cannot mistake for a name,
-which in practice means wrapping it in parentheses:
+A key written as a bare identifier is always taken literally, as that name.
+To compute a key, write it as an expression that the parser can't mistake
+for a name. In practice, that means wrapping it in parentheses:
 
 ```zuri
 var key = 'dynamic'
@@ -35,7 +35,7 @@ echo { 'a' + 'b': 2 }
 {ab: 2}
 ```
 
-Assigning through brackets is usually clearer:
+Assigning with brackets is often clearer:
 
 ```zuri
 var d = {}
@@ -49,8 +49,8 @@ echo d
 
 ### Shorthand Keys
 
-When a key and the variable holding its value have the same name, write it
-once:
+When a key has the same name as the variable that holds its value, you only
+need to write it once:
 
 ```zuri
 var name = 'Ada'
@@ -63,13 +63,15 @@ echo { name, age }
 {name: Ada, age: 36}
 ```
 
-`{ name, age }` means exactly `{ name: name, age: age }`. This comes up
-constantly in functions that build a result out of locals they have just
-computed, and Zuri code uses the shorthand whenever the names line up.
+`{ name, age }` means exactly the same as `{ name: name, age: age }`. This
+is especially common in functions that build a result from local variables
+they've just computed, and Zuri code uses the shorthand whenever the names
+match.
 
 ### Nesting
 
-A value may be another dictionary, or a list, to any depth. Access chains:
+A value can be another dictionary or a list, nested to any depth. You can
+chain accesses to reach nested values:
 
 ```zuri
 var config = {
@@ -88,13 +90,13 @@ localhost
 web
 ```
 
-Dot and bracket access mix freely, because they are the same operation.
-Use the dot when the key is a fixed identifier and brackets when it is
-computed, contains punctuation, or is a number.
+You can mix dot and bracket access freely, because they do the same thing.
+Use a dot when the key is a fixed identifier, and brackets when it's
+computed, contains punctuation or is a number.
 
-## Reading
+## Reading Values
 
-Dot and bracket access are the same operation:
+Dot access and bracket access do the same thing:
 
 ```zuri
 var user = { name: 'Ada', age: 36 }
@@ -116,8 +118,8 @@ false
 [Ada, 36]
 ```
 
-Reading a key that is not there raises a `PropertyError`. `get()` is the
-safe form:
+Reading a key that doesn't exist raises a `PropertyError`. Use `get()` if
+the key might be missing:
 
 ```zuri
 echo user.get('name')
@@ -131,9 +133,9 @@ default
 true
 ```
 
-With no fallback, `get()` on a missing key returns `nil`.
+Without a fallback value, `get()` returns `nil` for a missing key.
 
-## Writing
+## Writing Values
 
 ```zuri
 var user = { name: 'Ada' }
@@ -149,11 +151,11 @@ echo user
 {name: Ada, city: London, age: 36, country: UK}
 ```
 
-Assignment through a dot, a bracket or `set()` all do the same thing, and
-all three create the key if it does not exist. `add()` is a synonym for
-`set()`.
+Assigning with a dot, with brackets or with `set()` all do the same thing,
+and all three create the key if it doesn't exist yet. `add()` is another
+name for `set()`.
 
-To take a key back out:
+To remove a key:
 
 ```zuri
 echo user.remove('city')
@@ -165,11 +167,11 @@ London
 false
 ```
 
-`remove()` returns the value that was there.
+`remove()` returns the value that was stored under the key.
 
-`clear()` empties the dictionary.
+`clear()` removes every key.
 
-## Merging
+## Merging Dictionaries
 
 ```zuri
 var defaults = { host: 'localhost', port: 8080 }
@@ -183,10 +185,11 @@ echo defaults
 {host: localhost, port: 9000}
 ```
 
-`extend()` mutates the receiver and the right-hand side wins on conflicts.
-There is no `+` on dictionaries.
+`extend()` changes the dictionary it's called on, and when both dictionaries
+have the same key, the value from the argument wins. Dictionaries don't
+support `+`.
 
-## Transforming
+## Transforming Dictionaries
 
 ```zuri
 var user = { name: 'Ada', age: 36, city: nil }
@@ -206,16 +209,18 @@ false
 3
 ```
 
-`compact()` drops entries whose value is `nil`.
+`compact()` removes entries whose value is `nil`.
 
-Every callback here takes **value, then key**, the same order lists use.
+All of these callbacks receive the **value first and the key second**, the
+same order that list callbacks use.
 
-## Walking
+## Iterating Over a Dictionary
 
-Every form below visits the pairs in **insertion order**, which is the
-order they were first added, not the order they were last written to.
+All of the approaches below visit the entries in **insertion order**, which
+is the order in which keys were first added, not the order in which they
+were last updated.
 
-### `for` With Two Variables, the Usual Form
+### `for` With Two Variables
 
 ```zuri
 var user = { name: 'Ada', age: 36 }
@@ -230,7 +235,8 @@ name = Ada
 age = 36
 ```
 
-Key first, value second. This is what you want almost every time.
+You get the key first and the value second. This is what you'll want nearly
+every time.
 
 ### `for` With One Variable Gives You the Values
 
@@ -247,9 +253,9 @@ Ada
 36
 ```
 
-This is worth stating plainly, because the equivalent loop in several other
-languages hands you the keys. In Zuri, one variable is always the value,
-whatever you are iterating.
+This is worth pointing out, because in several other languages the
+equivalent loop gives you the keys. In Zuri, a single variable always
+receives the values, whatever you're iterating over.
 
 ### `iter` Over the Keys, When You Need an Index
 
@@ -267,9 +273,9 @@ iter var i = 0; i < keys.length(); i++ {
 1. age = 36
 ```
 
-A dictionary has no positional index of its own, so `iter` walks the key
-list instead. Reach for it when you need to number the output, or to look
-ahead to the next key.
+A dictionary doesn't have positional indexes of its own, so `iter` loops
+over the list of keys instead. Use this when you need to number the output
+or look ahead to the next key.
 
 ### `each()`, With a Function
 
@@ -286,10 +292,11 @@ name -> Ada
 age -> 36
 ```
 
-The callback receives the **value first and the key second** — the reverse
-of `for`, matching every other `each()` in the language.
+The callback receives the **value first and the key second**. That's the
+opposite of `for`, but it's the same as every other `each()` in the
+language.
 
-### Walking Just One Side
+### Iterating Over Only the Keys or the Values
 
 ```zuri
 var user = { name: 'Ada', age: 36 }
@@ -307,12 +314,12 @@ age
 [Ada, 36]
 ```
 
-`keys()` and `values()` each return a plain list, so everything from
-[Lists](ch04-03-lists.md) applies: sort them, filter them, reduce them.
-Sorting `keys()` is how you get output in a stable order regardless of
-insertion.
+`keys()` and `values()` both return an ordinary list, so everything in
+[Lists](ch04-03-lists.md) applies. You can sort, filter or reduce them.
+Sorting `keys()` is how you get output in a predictable order, whatever
+order the keys were added in.
 
-## Converting
+## Converting Dictionaries
 
 ```zuri
 var user = { name: 'Ada', age: 36 }
@@ -328,16 +335,16 @@ name
 {name: Ada, age: 36}
 ```
 
-`to_list()` gives you two parallel lists, keys then values, not a list of
-pairs. `find_key()` searches by value and returns the first key holding
-it.
+`to_list()` returns two parallel lists, one of keys and one of values,
+rather than a list of pairs. `find_key()` searches by value and returns the
+first key that holds it.
 
 ## Dictionaries of Functions
 
-A dictionary value can be a function, and that turns a dictionary into a
-**dispatch table**: a set of named behaviours you can choose between at
-runtime by looking a name up. It is the structure that replaces `eval()`,
-and it is worth knowing well.
+A dictionary value can be a function, which turns the dictionary into a
+**dispatch table**: a set of named behaviors that you can choose between at
+run time by looking up a name. This is what you use in Zuri instead of
+`eval()`, so it's worth getting to know well.
 
 ```zuri
 def plus(a, b) {
@@ -345,19 +352,21 @@ def plus(a, b) {
 }
 
 var ops = {
-  plus: plus,
+  plus,
   minus: @(a, b) => a - b,
-  times: @(a, b) { return a * b },
+  times: @(a, b) {
+    return a * b
+  },
 }
 ```
 
-All three forms are equivalent: a named function by name, an arrow
-function, and an anonymous function with a body.
+The three entries are equivalent. The first is a named function, the second
+is an arrow function, and the third is an anonymous function with a body.
 
-### Calling One
+### Calling a Stored Function
 
-This is the part that surprises people, so it comes first. **You cannot
-call one with a dot in a single step:**
+This surprises a lot of people, so let's start with it. **You can't call a
+stored function with a dot in one step:**
 
 ```zuri,ignore
 echo ops.plus(1, 2)
@@ -367,18 +376,19 @@ echo ops.plus(1, 2)
 Unhandled TypeError: object of type dict does not define method 'plus'
 ```
 
-A dot followed by a call looks for a **method on the dictionary itself** —
-`length()`, `keys()`, `get()` and the rest — not for a value stored under
-that key. Dictionaries have no method called `plus`, so the call fails.
+A dot followed by a call looks for a **method of the dictionary itself**,
+such as `length()`, `keys()` or `get()`, not for a value stored under that
+key. Dictionaries don't have a method called `plus`, so the call fails.
 
-There are two forms that do work. Read the function out first:
+There are two ways that do work. You can read the function into a variable
+first:
 
 ```zuri
 def plus(a, b) {
   return a + b
 }
 
-var ops = { plus: plus, minus: @(a, b) => a - b }
+var ops = { plus, minus: @(a, b) => a - b }
 
 var chosen = ops.plus
 
@@ -389,7 +399,7 @@ echo chosen(1, 2)
 3
 ```
 
-Or index with brackets and call the result:
+Or you can use brackets and call the result:
 
 ```zuri
 var ops = { plus: @(a, b) => a + b, minus: @(a, b) => a - b }
@@ -401,8 +411,8 @@ echo ops['minus'](5, 2)
 3
 ```
 
-The bracket form is the one to reach for when the key is computed, which is
-the whole point of a dispatch table:
+Use the bracket form when the key is computed, which is the whole point of a
+dispatch table:
 
 ```zuri
 var ops = {
@@ -422,11 +432,11 @@ minus: 3
 times: 18
 ```
 
-### Beware of Names That Are Already Methods
+### Avoid Keys That Are Method Names
 
-A dictionary's own methods take priority over its keys when you use a dot
-call. Storing a function under `add`, `keys`, `get`, `length` or any other
-method name produces a call that succeeds and does the **wrong thing**:
+When you use a dot call, the dictionary's own methods take priority over its
+keys. If you store a function under `add`, `keys`, `get`, `length` or the
+name of any other method, the call will succeed but do the **wrong thing**:
 
 ```zuri
 def plus(a, b) {
@@ -444,17 +454,20 @@ nil
 [add, 1]
 ```
 
-`d.add(1, 2)` called the dictionary's own `add()`, which is a synonym for
-`set()` — so it stored the key `1` with the value `2` and returned `nil`.
-Nothing raised. The only sign is the extra key in the output.
+`d.add(1, 2)` called the dictionary's own `add()` method, which is another
+name for `set()`. So it stored the key `1` with the value `2` and returned
+`nil`. No error was raised, and the only sign that something went wrong is
+the extra key in the output.
 
-Two habits avoid this entirely: use bracket calls for dispatch tables, and
-avoid method names as keys. [Appendix E](appendix-05-06-dict.md) lists
-every name a dictionary already uses.
+Two habits will keep you out of trouble: use bracket calls for dispatch
+tables, and don't use method names as keys. [Appendix
+E](appendix-05-06-dict.md) lists all of the names that dictionaries already
+use.
 
-### A Dispatch Table in Practice
+### Example: A Command Dispatcher
 
-The pattern is a table of handlers, a lookup with a fallback, and a call:
+A dispatch table usually consists of a table of handlers, a lookup with a
+fallback, and a call:
 
 ```zuri
 def _unknown(args) {
@@ -487,20 +500,20 @@ hello, ada
 unknown command: explode
 ```
 
-`commands.get(args[0], _unknown)` is doing the work. A key that exists
-gives you its handler; one that does not gives you the fallback, so there
-is no separate `contains()` check and no branch for the error case.
+`commands.get(args[0], _unknown)` does most of the work. If the key exists,
+you get its handler. If it doesn't, you get the fallback. That means you
+don't need a separate `contains()` check or a branch for the error case.
 
-The important property is that **only the handlers in the table can ever
-run**. A user typing anything at all selects one of four functions you
-wrote, or the fallback. That is the difference between a program that
-handles input and one that executes it, and it is why Zuri has no
-`eval()`. [Chapter 21](ch21-00-metaprogramming.md) covers the reasoning.
+The important thing is that **only the handlers in the table can ever run**.
+Whatever the user types, it selects one of the four functions you wrote, or
+the fallback. That's the difference between a program that handles input and
+a program that executes it, and it's why Zuri doesn't have `eval()`.
+[Chapter 21](ch21-00-metaprogramming.md) explains the reasoning.
 
 ### Storing Methods
 
-`zuri.reflect.bind_method()` puts an instance's method in a table with the
-instance still attached:
+`zuri.reflect.bind_method()` stores an instance's method in a table while
+keeping the instance attached to it:
 
 ```zuri
 import zuri
@@ -532,13 +545,13 @@ echo counter.n
 2
 ```
 
-The bound method keeps its receiver, so calling it through the table
-changes the counter it came from.
+The bound method remembers its instance, so calling it through the table
+updates the counter it came from.
 
 ## Comparing Dictionaries
 
-`==` compares dictionaries by value, and **order is not part of the
-comparison**:
+`==` compares dictionaries by value, and **the order of the keys doesn't
+matter**:
 
 ```zuri
 echo { a: 1 } == { a: 1 }
@@ -552,28 +565,29 @@ false
 true
 ```
 
-A dictionary remembers its insertion order for iteration, but two
-dictionaries with the same pairs in different orders are equal. That is the
-opposite of lists, where order is the whole point.
+A dictionary remembers its insertion order when you iterate over it, but two
+dictionaries with the same entries in a different order are still equal.
+This is the opposite of lists, where order is part of what makes two lists
+equal.
 
-## Dictionaries Are References
+## Dictionaries Are Passed by Reference
 
-Like lists, assigning a dictionary shares it. `clone()` gives you a
-shallow copy.
+As with lists, assigning a dictionary to another variable shares it rather
+than copying it. `clone()` gives you a shallow copy.
 
-## Dictionaries and Objects
+## Dictionaries or Classes?
 
-A dictionary is the right shape for data with a variable set of keys:
-configuration, a parsed JSON document, a set of HTTP headers. When the
-keys are fixed and there is behaviour attached to them, that is a class.
+A dictionary is a good fit for data with a variable set of keys, such as
+configuration, a parsed JSON document or a set of HTTP headers. When the
+keys are fixed and there's behavior attached to them, use a class instead.
 [Chapter 6](ch06-00-classes.md) covers the difference.
 
-## A Worked Example
+## Example: Analyzing a Log
 
-Dictionaries are the natural shape for counting, grouping and indexing.
-This example does all three over a list of log lines: it counts how often
-each level appears, groups the messages under their level, and builds an
-index from a request id back to the line that mentioned it.
+Dictionaries are well suited to counting, grouping and indexing. This
+example does all three with a list of log lines. It counts how many times
+each level appears, groups the messages by level, and builds an index that
+maps each request ID to the line that mentions it.
 
 ```zuri
 var lines = [
@@ -622,19 +636,20 @@ echo by_request.get('zz', ['no such request'])
 [no such request]
 ```
 
-Four habits in there are worth taking away.
+There are four habits here that are worth copying.
 
-`counts.get(level, 0) + 1` is the counting idiom. `get()` with a fallback
-means you never have to check whether the key exists before adding to it.
+`counts.get(level, 0) + 1` is the usual way to count. Because `get()` has a
+fallback, you never have to check whether the key exists before adding to
+it.
 
-`if !grouped.contains(level) { grouped[level] = [] }` is the grouping
-idiom, and it has to be spelled out because `get()` would hand back a fresh
-default list each time rather than one you can keep appending to.
+`if !grouped.contains(level) { grouped[level] = [] }` is the usual way to
+group. You have to write it out, because `get()` would return a new default
+list each time instead of one you can keep appending to.
 
 `grouped.ERROR` and `by_request.a1` read keys with a dot, which works
-because both are valid identifiers. `by_request['b2']` would be needed if
-the key were computed or awkward.
+because both keys are valid identifiers. If a key were computed or contained
+unusual characters, you'd need brackets, as in `by_request['b2']`.
 
-And the whole thing preserves order. `counts` came out `INFO`, `WARN`,
-`ERROR` — the order those levels were first seen, not alphabetical and not
-arbitrary.
+Finally, the order is preserved throughout. `counts` lists `INFO`, `WARN`
+and `ERROR` in the order those levels first appeared, not in alphabetical or
+random order.

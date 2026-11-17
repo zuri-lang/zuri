@@ -34,7 +34,7 @@ echo '════════════════════════�
 
 var fixtures = os.get_env('ZURI_FFI_FIXTURES')
 assert fixtures,
-  'ZURI_FFI_FIXTURES names the directory the fixture libraries were built into'
+    'ZURI_FFI_FIXTURES names the directory the fixture libraries were built into'
 
 var windows = ffi.platform().os == 'windows'
 
@@ -56,7 +56,7 @@ ok('a C static library linked and loaded')
 
 var again = ffi.link([archive('ffifixture')], { cache })
 assert again.path() == c.path(),
-  'the same input links to the same cached library'
+    'the same input links to the same cached library'
 ok('the cache is keyed by content')
 
 # A Rust staticlib.
@@ -65,14 +65,14 @@ var rust = ffi.link(archive('ffirust'), { cache })
 var Point = ffi.struct('Point').add_field('x', ffi.f64).add_field('y', ffi.f64)
 var distance = rust.function('rs_distance', ffi.double, [Point, Point])
 assert distance({ x: 0, y: 0 }, { x: 6, y: 8 }) == 10,
-  'Rust code from a staticlib'
+    'Rust code from a staticlib'
 var greet = rust.function('rs_greet', ffi.pointer(ffi.char), [ffi.string])
-var free_text = rust.function(
-  'rs_string_free', ffi.void, [ffi.pointer(ffi.char)],
-)
+var free_text = rust.function('rs_string_free', ffi.void, [
+  ffi.pointer(ffi.char),
+])
 var hello = greet('linker').own(free_text)
 assert hello.read_string() == 'hello, linker',
-  'the standard library links in with it'
+    'the standard library links in with it'
 hello.free()
 ok('a Rust staticlib linked with the system libraries it needs')
 
@@ -82,29 +82,31 @@ var missing = caught(
   @() => ffi.link(os.join_paths(cache, 'nothing.a'), { cache }),
 )
 assert missing and missing.type == 'LinkError',
-  'a missing archive is a LinkError'
+    'a missing archive is a LinkError'
 
 var not_archive = os.join_paths(cache, 'fake.a')
 file(not_archive, 'w').write('not an archive')
 var e = caught(@() => ffi.link(not_archive, { cache }))
-assert e
-  and e.type == 'LinkError'
-  and e.message.contains('not a static library'),
-  'the content is checked'
+assert e and
+    e.type == 'LinkError' and
+    e.message.contains('not a static library'),
+    'the content is checked'
 
 e = caught(@() => ffi.link(archive('ffifixture'), { cache, frobnicate: true }))
 assert e and e.type == 'ValueError', 'an unknown option is refused'
 
 var fresh = os.join_paths(cache, 'fresh')
-e = caught(@() => ffi.link(archive('ffifixture'), {
-  cache: fresh,
-  libraries: ['zuri_no_such_library'],
-}))
+e = caught(
+  @() => ffi.link(archive('ffifixture'), {
+    cache: fresh,
+    libraries: ['zuri_no_such_library'],
+  }),
+)
 assert e and e.type == 'LinkError', 'a linker failure is a LinkError'
 ok('bad inputs are refused with the reason')
 
 assert ffi.default_link_cache().contains('zuri'),
-  'the default cache is a zuri directory'
+    'the default cache is a zuri directory'
 ok('the default cache')
 
 echo ''

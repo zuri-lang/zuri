@@ -1,13 +1,13 @@
 /**
  * @module canvas
  *
- * `Canvas`: the drawing surface. Every shape the module can draw is a
- * method on it.
+ * `Canvas`, the surface that everything is drawn on. Every shape the
+ * module can draw is a method of it.
  *
- * A canvas wraps an `Image`'s pixel buffer rather than copying it, so
- * drawing goes straight into the image being built. The shape methods
- * share three primitives underneath (span fill, blend, and stroke),
- * which is why a new shape rarely needs new native code.
+ * A canvas wraps the pixel buffer of an `Image` instead of copying it,
+ * so drawing goes straight into the image. The shape methods are all
+ * built on three underlying operations, filling spans, blending and
+ * stroking, so adding a shape rarely needs any new low-level code.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -23,12 +23,13 @@ import .constants { CAP_BUTT, CAP_ROUND, CAP_SQUARE }
 import .errors { BoundsError, ImageError }
 
 /**
- * How many sub-scanlines an anti-aliased fill samples per pixel row.
+ * The number of sub-scanlines that an anti-aliased fill samples in each
+ * row of pixels.
  *
- * Coverage is exact horizontally (a span's fractional ends are
- * measured, not sampled), so this only controls vertical quality.
- * Four is the point where a near-horizontal edge stops looking
- * stepped; eight is not visibly better and costs twice as much.
+ * Coverage is exact horizontally, because the fractional ends of a span
+ * are measured, not sampled, so this only controls vertical quality. At
+ * four samples, a nearly horizontal edge no longer looks stepped. Eight
+ * doesn't look any better and takes twice as long.
  */
 var _SUBSAMPLES = 4
 
@@ -42,34 +43,35 @@ var _MIN_ELLIPSE_SEGMENTS = 16
 var _MAX_ELLIPSE_SEGMENTS = 512
 
 /**
- * A mutable RGBA pixel surface and everything that draws onto one.
+ * A mutable surface of RGBA pixels, and everything that draws on it.
  *
- * `Canvas` is the lower half of `Image`: it owns the pixel buffer and
- * knows how to put colour into it, but nothing about files, formats or
- * resizing. It is separate mostly so the drawing code can be read on
- * its own, and it is rarely worth using directly; `Image` inherits all
- * of this.
+ * `Canvas` is the lower half of `Image`. It owns the pixel buffer and
+ * knows how to put color into it, but knows nothing about files,
+ * formats or resizing. It's separate mainly so that the drawing code
+ * can be read by itself. You'll rarely need to use it directly, because
+ * `Image` inherits all of it.
  *
- * ## How drawing works here
+ * ## How drawing works
  *
- * Every filled shape becomes a polygon and goes through one scanline
- * rasterizer, and every stroked shape becomes the polygon outlining
- * its stroke and goes through the same one. That means anti-aliasing,
- * clipping and the fill rule are implemented once rather than once per
- * primitive, and a shape this module does not offer can be drawn by
- * handing `fill_polygon()` the points for it.
+ * Every filled shape is turned into a polygon and drawn by a single
+ * scanline rasterizer, and every stroked shape is turned into the
+ * polygon around its stroke and drawn by the same rasterizer. So
+ * anti-aliasing, clipping and the fill rule are implemented once, not
+ * once for each kind of shape, and you can draw a shape that this
+ * module doesn't have a method for by passing its points to
+ * `fill_polygon()`.
  *
  * ## Coordinates
  *
- * The origin is the top-left corner. Integer coordinates fall on pixel
- * corners, not centres, so a rectangle from (0, 0) to (10, 10) covers
- * exactly the first ten pixels in each direction with no half-covered
- * edge. Fractional coordinates are meaningful and are what
- * anti-aliasing acts on.
+ * The origin is the top-left corner. Integer coordinates fall on the
+ * corners of pixels, not their centers, so a rectangle from (0, 0) to
+ * (10, 10) covers exactly the first ten pixels in each direction, with
+ * no half-covered edges. Fractional coordinates are meaningful, and
+ * anti-aliasing works on them.
  *
- * Drawing outside the surface is not an error. Anything that falls
- * outside is clipped away, which is what makes it safe to draw a shape
- * that only partly overlaps the image.
+ * Drawing outside the surface isn't an error. Anything outside it is
+ * clipped, so it's safe to draw a shape that only partly overlaps the
+ * image.
  */
 class Canvas {
 
@@ -94,12 +96,12 @@ class Canvas {
   /**
    * Wraps an existing pixel buffer.
    *
-   * The buffer is taken as-is and not copied, so the caller must not
-   * keep writing to it independently. `Image` is the supported way to
-   * get a `Canvas`; this constructor exists for code that already has
+   * The buffer is used as it is, not copied, so the caller mustn't keep
+   * writing to it separately. The supported way to get a `Canvas` is
+   * through `Image`, and this constructor is for code that already has
    * pixels from somewhere else.
    *
-   * @param bytes pixels: `width * height * 4` bytes of RGBA.
+   * @param bytes pixels: `width * height * 4` bytes of RGBA
    * @param number width
    * @param number height
    */
@@ -147,16 +149,17 @@ class Canvas {
   }
 
   /**
-   * The raw RGBA pixel buffer.
+   * The raw buffer of RGBA pixels.
    *
-   * This is the live buffer, not a copy: writing to it changes the
-   * image. Pixel `(x, y)` starts at byte `(y * width + x) * 4` and runs
-   * red, green, blue, alpha, with alpha straight rather than
+   * This is the buffer itself, not a copy, so writing to it changes the
+   * image. Pixel `(x, y)` starts at byte `(y * width + x) * 4` and is
+   * stored as red, green, blue and alpha, with straight alpha, not
    * premultiplied.
    *
-   * Handing this out is deliberate. Reading and writing bytes directly
-   * is far faster than a method call per pixel, so an operation this
-   * module does not provide can still be written efficiently in Zuri.
+   * The buffer is public. Reading and writing bytes directly is far
+   * faster than calling a method for each pixel, so an operation that
+   * this module doesn't provide can still be written efficiently in
+   * Zuri.
    *
    * @returns bytes
    */
@@ -167,19 +170,19 @@ class Canvas {
   /**
    * Replaces the surface's pixels with another buffer.
    *
-   * The buffer must hold exactly `width * height * 4` bytes, and is
-   * adopted rather than copied, so whatever produced it must not keep
+   * The buffer must be exactly `width * height * 4` bytes long. It's
+   * used as it is, not copied, so whatever produced it mustn't keep
    * writing to it afterwards.
    *
-   * The pair to `pixels()`: that one hands the buffer out so an
-   * operation this module does not provide can be written directly,
-   * and this one takes a buffer back. Saving a copy before a
-   * destructive filter and restoring it afterwards is the usual
-   * reason to want it.
+   * This is the counterpart of `pixels()`, which gives you the buffer
+   * so that you can write an operation this module doesn't provide.
+   * This method takes a buffer back. The usual reason to use it is to
+   * save a copy before a filter that can't be undone and restore it
+   * afterwards.
    *
    * @param bytes pixels
    * @returns self
-   * @throws ImageError When the buffer is the wrong size.
+   * @throws ImageError when the buffer is the wrong size.
    */
   set_pixels(pixels: bytes) {
     var expected = self._width * self._height * 4
@@ -187,7 +190,7 @@ class Canvas {
     if pixels.length() != expected {
       raise ImageError(
         'pixel buffer holds ${pixels.length()} bytes, but this ' +
-          '${self._width}x${self._height} surface needs ${expected}',
+            '${self._width}x${self._height} surface needs ${expected}',
       )
     }
 
@@ -270,7 +273,7 @@ class Canvas {
   /**
    * Sets the stroke width in pixels for lines and outlines.
    *
-   * Strokes are centred on the path, so a thickness of 4 puts 2 pixels
+   * Strokes are centered on the path, so a thickness of 4 puts 2 pixels
    * on each side. The default is 1.
    *
    * @param number thickness
@@ -288,26 +291,28 @@ class Canvas {
   /**
    * Sets how the two ends of an open stroke are finished.
    *
-   * `CAP_ROUND` (the default) ends in a half-disc, `CAP_SQUARE` in a
-   * square, and both reach half the stroke's width past the endpoint.
-   * `CAP_BUTT` stops exactly at it.
+   * `CAP_ROUND`, the default, ends in a half circle, and `CAP_SQUARE`
+   * ends in a square. Both extend half the stroke's width past the end
+   * point. `CAP_BUTT` stops exactly at the end point.
    *
-   * Reach for `CAP_BUTT` when the coordinates have to mean exactly
-   * what they say: segments meeting end to end, a scale bar of a known
-   * length, the pieces of a dashed line. The joins between a path's
-   * segments are always round and are not affected by this.
+   * Use `CAP_BUTT` when a line has to end exactly at its end points,
+   * such as for segments that meet end to end, a scale bar of a known
+   * length, or the pieces of a dashed line. The joins between the
+   * segments of a path are always round, and this doesn't affect them.
    *
    * ```zuri
    * chart.cap(CAP_BUTT).thickness(6)
    * chart.line(40, 200, 40, 40, '#334155')
    * ```
    *
-   * @param string style: `CAP_BUTT`, `CAP_ROUND` or `CAP_SQUARE`.
+   * @param string style: `CAP_BUTT`, `CAP_ROUND` or `CAP_SQUARE`
    * @returns self
    */
   cap(style) {
     if style != CAP_BUTT and style != CAP_ROUND and style != CAP_SQUARE {
-      raise ImageError("'${style}' is not a line cap, expected butt, round or square")
+      raise ImageError(
+        "'${style}' is not a line cap, expected butt, round or square",
+      )
     }
 
     self._cap = style
@@ -328,11 +333,11 @@ class Canvas {
   # ------------------------------------------------------------------
 
   /**
-   * Returns the colour at a pixel, or `nil` when the coordinates fall
+   * Returns the color of a pixel, or `nil` if the coordinates are
    * outside the image.
    *
-   * Clipping does not apply; a clip restricts what is written, not
-   * what can be read.
+   * Clipping doesn't apply here. A clip limits what's written, not what
+   * can be read.
    *
    * @param number x
    * @param number y
@@ -353,14 +358,14 @@ class Canvas {
   }
 
   /**
-   * Replaces the colour at a pixel, ignoring whatever was there.
+   * Replaces the color of a pixel, ignoring the color that was there.
    *
-   * This overwrites rather than blends, so drawing a half-transparent
-   * colour leaves a half-transparent pixel instead of compositing it
-   * over the old one. Use `blend_pixel()` for the compositing version,
-   * which is what every other drawing method uses.
+   * This overwrites the pixel instead of blending with it, so drawing a
+   * half-transparent color leaves a half-transparent pixel, instead of
+   * compositing the color over the old one. Use `blend_pixel()` to
+   * composite, as every other drawing method does.
    *
-   * Coordinates outside the image or outside the clip are ignored.
+   * Coordinates outside the image or the clip are ignored.
    *
    * @param number x
    * @param number y
@@ -406,7 +411,7 @@ class Canvas {
   }
 
   /**
-   * Composites a colour over the pixel already there, the way every
+   * Composites a color over the pixel already there, the way every
    * drawing operation does.
    *
    * Coordinates outside the image or outside the clip are ignored.
@@ -433,8 +438,10 @@ class Canvas {
     }
 
     if self._clip != nil {
-      if px < self._clip[0] or py < self._clip[1] or
-        px >= self._clip[2] or py >= self._clip[3] {
+      if px < self._clip[0] or
+          py < self._clip[1] or
+          px >= self._clip[2] or
+          py >= self._clip[3] {
         return false
       }
     }
@@ -443,29 +450,30 @@ class Canvas {
   }
 
   /**
-   * Source-over compositing of one pixel, in straight alpha.
+   * Composites one pixel with source-over blending, in straight alpha.
    *
-   * The single place colour reaches the buffer. Everything above ends
-   * up here, so clipping, bounds and the blend arithmetic are written
-   * once. Kept in terms of plain numbers rather than `Color` because
-   * a filled shape calls it once per pixel.
+   * This is the only place where color reaches the buffer. Everything
+   * else ends up here, so clipping, bounds checking and the blending
+   * arithmetic are written once. It works with plain numbers instead of
+   * `Color` objects, because a filled shape calls it once for every
+   * pixel.
    */
 
   /**
-   * Draws one hairline segment straight onto the buffer.
+   * Draws one hairline segment directly onto the buffer.
    *
-   * Steps along whichever axis the segment covers more of, one pixel
-   * column at a time, and works out that column's coverage directly.
-   * The work is proportional to the segment's length rather than to
-   * the area of its bounding box, which is what the general scanline
-   * path costs for a shape this thin.
+   * It steps along whichever axis the segment covers more of, one
+   * column of pixels at a time, and works out each column's coverage
+   * directly. The work is proportional to the length of the segment.
+   * The general scanline path would take time proportional to the area
+   * of the bounding box, which is large for a shape this thin.
    *
-   * The stroke this models is the same one the rasterizer would fill:
-   * a quad one pixel wide measured perpendicular to the line. A sloped
-   * line therefore spans a little over a pixel vertically in each
-   * column, and both rows it touches take a share of the colour. That
-   * is why this is not simply Wu's line, which would put a 45-degree
-   * diagonal entirely on one row and lose the softness.
+   * The stroke modeled here is the same one the rasterizer would fill:
+   * a quadrilateral one pixel wide, measured at right angles to the
+   * line. A sloping line therefore spans a little more than a pixel
+   * vertically in each column, and both rows it touches get a share of
+   * the color. That's why this isn't simply Wu's algorithm, which would
+   * put a 45-degree diagonal entirely on one row and lose the softness.
    *
    * Every write goes through `_blend`, so clipping and the surface
    * bounds are enforced exactly as they are everywhere else.
@@ -553,7 +561,7 @@ class Canvas {
 
           var sy = y0 + gradient * (sx - x0)
           var covered = (sy + half_span).min(row + 1) -
-            (sy - half_span).max(row)
+              (sy - half_span).max(row)
 
           if covered > 0 {
             total = total + covered
@@ -590,20 +598,20 @@ class Canvas {
   /**
    * Fills a polygon.
    *
-   * The points are a flat list of alternating x and y values, or a
-   * list of `[x, y]` pairs; both are accepted because both read
-   * naturally depending on where the points came from. The outline is
-   * closed automatically, so the last point does not need to repeat
+   * The points are either a flat list of alternating x and y values, or
+   * a list of `[x, y]` pairs. Both are accepted, because each reads
+   * more naturally depending on where the points came from. The outline
+   * is closed automatically, so the last point doesn't need to repeat
    * the first.
    *
-   * Self-intersecting outlines are filled by the non-zero winding
-   * rule by default, which is what fills a five-pointed star solid.
-   * Pass `{ even_odd: true }` for the other convention, which leaves
-   * the middle of that star empty.
+   * By default, an outline that crosses itself is filled with the
+   * non-zero winding rule, which fills a five-pointed star completely.
+   * Pass `{ even_odd: true }` for the even-odd rule, which leaves the
+   * middle of the star empty.
    *
    * @param list points
    * @param Color|string|number color
-   * @param ?dict options: `even_odd` (bool).
+   * @param ?dict options: `even_odd` (bool)
    * @returns self
    */
   fill_polygon(points, color, options) {
@@ -615,8 +623,8 @@ class Canvas {
 
     var paint = Color.parse(color)
     var even_odd = is_dict(options)
-      ? options.get('even_odd', false) == true
-      : false
+        ? options.get('even_odd', false) == true
+        : false
 
     self._scan_fill(flat, paint, even_odd)
     return self
@@ -751,9 +759,9 @@ class Canvas {
           continue
         }
 
-        var spans = even_odd ?
-          self._spans_even_odd(crossings) :
-          self._spans_non_zero(crossings)
+        var spans = even_odd
+            ? self._spans_even_odd(crossings)
+            : self._spans_non_zero(crossings)
 
         for span in spans {
           var left = span[0].max(start_x)
@@ -775,7 +783,12 @@ class Canvas {
           }
 
           self._accumulate(
-            coverage, start_x, end_x, span[0], span[1], step_weight,
+            coverage,
+            start_x,
+            end_x,
+            span[0],
+            span[1],
+            step_weight,
           )
         }
       }
@@ -785,7 +798,11 @@ class Canvas {
       }
 
       self._blend_row(
-        py, start_x + dirty_lo, dirty_hi - dirty_lo + 1, coverage, paint,
+        py,
+        start_x + dirty_lo,
+        dirty_hi - dirty_lo + 1,
+        coverage,
+        paint,
         dirty_lo,
       )
     }
@@ -804,15 +821,15 @@ class Canvas {
   }
 
   /**
-   * Every edge crossing of the horizontal line at `sample_y`, as
-   * `[x, direction]` pairs sorted by x. Direction is +1 for a
-   * downward edge and -1 for an upward one, which is what the non-zero
-   * rule counts.
+   * Every point where an edge crosses the horizontal line at
+   * `sample_y`, as `[x, direction]` pairs sorted by x. The direction is
+   * +1 for an edge going down and -1 for an edge going up, for the
+   * non-zero winding rule to count.
    *
-   * A vertex sitting exactly on the sample line would otherwise be
-   * counted twice; the half-open test (`y0 <= sample_y < y1`) is what
-   * prevents that, and is why the sample lines sit at pixel centres
-   * rather than on integers.
+   * A vertex exactly on the sample line would otherwise be counted
+   * twice. The half-open test, `y0 <= sample_y < y1`, prevents that,
+   * and it's why the sample lines are at the centers of pixels, not on
+   * integers.
    */
   _crossings(flat, count, sample_y) {
     var found = []
@@ -908,14 +925,14 @@ class Canvas {
   }
 
   /**
-   * Adds one span's horizontal coverage into the row buffer.
+   * Adds the horizontal coverage of one span to the row buffer.
    *
-   * The two end pixels get the fraction of themselves the span
-   * actually covers; everything between gets the full weight. This is
-   * where the horizontal half of anti-aliasing comes from, and it is
-   * exact rather than sampled.
+   * The pixels at each end get the fraction of themselves that the span
+   * actually covers, and every pixel in between gets the full weight.
+   * This is where the horizontal half of the anti-aliasing comes from,
+   * and it's exact, not sampled.
    *
-   * Returns true when anything was added.
+   * Returns true if anything was added.
    */
   _accumulate(coverage, start_x, end_x, from_x, to_x, weight) {
     var left = from_x.max(start_x)
@@ -946,9 +963,9 @@ class Canvas {
   /**
    * Blends one row of accumulated coverage.
    *
-   * Coverage scales the paint's alpha, so filling with a colour that
-   * is already half transparent through an edge pixel at half coverage
-   * lands at a quarter, which is what stacking the two would give.
+   * Coverage scales the alpha of the paint, so filling an edge pixel at
+   * half coverage with a color that's already half transparent gives a
+   * quarter, which is the same as drawing one over the other.
    */
   _blend_row(py, start_x, row_width, coverage, paint, offset) {
     _blend_coverage(
@@ -969,14 +986,14 @@ class Canvas {
   # ------------------------------------------------------------------
 
   /**
-   * Strokes a path by turning it into the polygon that outlines it,
-   * then filling that.
+   * Strokes a path by turning it into the polygon around it, and then
+   * filling that polygon.
    *
-   * Each segment becomes its own quadrilateral and each interior joint
-   * gets a round cap, rather than computing proper mitres. Overlapping
-   * quads would double-blend a translucent stroke, so they are filled
-   * as one polygon under the non-zero rule, which counts the overlap
-   * once.
+   * Each segment becomes its own quadrilateral, and each joint inside
+   * the path gets a round cap, instead of a proper miter. Overlapping
+   * quadrilaterals would blend a translucent stroke twice, so they're
+   * filled as one polygon with the non-zero rule, which only counts the
+   * overlap once.
    */
   _stroke(flat, color, closed, options) {
     var count = flat.length() / 2
@@ -1004,7 +1021,9 @@ class Canvas {
     }
 
     if cap != CAP_BUTT and cap != CAP_ROUND and cap != CAP_SQUARE {
-      raise ImageError("'${cap}' is not a line cap, expected butt, round or square")
+      raise ImageError(
+        "'${cap}' is not a line cap, expected butt, round or square",
+      )
     }
 
     var half = width / 2
@@ -1084,10 +1103,14 @@ class Canvas {
       var ny = dx / length * half
 
       pieces.append([
-        x0 + nx, y0 + ny,
-        x1 + nx, y1 + ny,
-        x1 - nx, y1 - ny,
-        x0 - nx, y0 - ny,
+        x0 + nx,
+        y0 + ny,
+        x1 + nx,
+        y1 + ny,
+        x1 - nx,
+        y1 - ny,
+        x0 - nx,
+        y0 - ny,
       ])
     }
 
@@ -1119,7 +1142,7 @@ class Canvas {
 
   /**
    * A filled circle used for stroke joints, kept private so it can
-   * take an already-parsed colour.
+   * take an already-parsed color.
    */
   _fill_disc(cx, cy, radius, paint) {
     if radius <= 0.5 {
@@ -1127,7 +1150,9 @@ class Canvas {
     }
 
     self._scan_fill(
-      self._ellipse_points(cx, cy, radius, radius, 0, 360, false), paint, false,
+      self._ellipse_points(cx, cy, radius, radius, 0, 360, false),
+      paint,
+      false,
     )
   }
 
@@ -1138,7 +1163,7 @@ class Canvas {
   /**
    * Draws a straight line between two points.
    *
-   * The line is `thickness()` pixels wide, centred on the path, and
+   * The line is `thickness()` pixels wide, centered on the path, and
    * anti-aliased unless that has been turned off.
    *
    * @param number x1
@@ -1156,7 +1181,7 @@ class Canvas {
   /**
    * Draws the outline of a rectangle.
    *
-   * The stroke is centred on the rectangle's edge, so half of a thick
+   * The stroke is centered on the rectangle's edge, so half of a thick
    * outline falls inside it and half outside.
    *
    * @param number x
@@ -1191,17 +1216,23 @@ class Canvas {
       return self
     }
 
-    return self.fill_polygon(
-      [x, y, x + width, y, x + width, y + height, x, y + height],
-      color,
-    )
+    return self.fill_polygon([
+      x,
+      y,
+      x + width,
+      y,
+      x + width,
+      y + height,
+      x,
+      y + height,
+    ], color)
   }
 
   /**
    * Draws the outline of a rectangle with rounded corners.
    *
    * A radius larger than half the shorter side is reduced to fit, so a
-   * very large radius gives a stadium shape rather than a broken one.
+   * very large radius gives a pill shape instead of a broken one.
    *
    * @param number x
    * @param number y
@@ -1209,7 +1240,7 @@ class Canvas {
    * @param number height
    * @param number radius
    * @param Color|string|number color
-   * @param ?dict options: `thickness`.
+   * @param ?dict options: `thickness`
    * @returns self
    */
   rounded_rect(x, y, width, height, radius, color, options) {
@@ -1238,7 +1269,8 @@ class Canvas {
     }
 
     return self.fill_polygon(
-      self._rounded_points(x, y, width, height, radius), color,
+      self._rounded_points(x, y, width, height, radius),
+      color,
     )
   }
 
@@ -1267,9 +1299,9 @@ class Canvas {
 
     for corner in corners {
       iter var i = 0; i <= steps; i++ {
-        var angle = (corner[2] + (corner[3] - corner[2]) * i / steps)
-          * math.PI
-          / 180
+        var angle = (corner[2] + (corner[3] - corner[2]) * i / steps) *
+            math.PI /
+            180
 
         points.append(corner[0] + angle.cos() * r)
         points.append(corner[1] + angle.sin() * r)
@@ -1282,8 +1314,8 @@ class Canvas {
   /**
    * Draws the outline of a circle.
    *
-   * @param number cx: The centre's x coordinate.
-   * @param number cy: The centre's y coordinate.
+   * @param number cx: The center's x coordinate.
+   * @param number cy: The center's y coordinate.
    * @param number radius
    * @param Color|string|number color
    * @param ?dict options: `thickness`.
@@ -1309,8 +1341,8 @@ class Canvas {
   /**
    * Draws the outline of an ellipse.
    *
-   * @param number cx: The centre's x coordinate.
-   * @param number cy: The centre's y coordinate.
+   * @param number cx: The center's x coordinate.
+   * @param number cy: The center's y coordinate.
    * @param number rx: The horizontal radius.
    * @param number ry: The vertical radius.
    * @param Color|string|number color
@@ -1346,7 +1378,8 @@ class Canvas {
     }
 
     return self.fill_polygon(
-      self._ellipse_points(cx, cy, rx, ry, 0, 360, false), color,
+      self._ellipse_points(cx, cy, rx, ry, 0, 360, false),
+      color,
     )
   }
 
@@ -1381,7 +1414,7 @@ class Canvas {
   }
 
   /**
-   * Fills a pie slice: an arc closed back through the centre.
+   * Fills a pie slice: an arc closed back through the center.
    *
    * @param number cx
    * @param number cy
@@ -1398,7 +1431,8 @@ class Canvas {
     }
 
     return self.fill_polygon(
-      self._ellipse_points(cx, cy, rx, ry, start, end, true), color,
+      self._ellipse_points(cx, cy, rx, ry, start, end, true),
+      color,
     )
   }
 
@@ -1420,7 +1454,8 @@ class Canvas {
     }
 
     return self.fill_polygon(
-      self._ellipse_points(cx, cy, rx, ry, start, end, false), color,
+      self._ellipse_points(cx, cy, rx, ry, start, end, false),
+      color,
     )
   }
 
@@ -1429,7 +1464,7 @@ class Canvas {
    *
    * The segment count scales with the arc's size so a small circle is
    * not paying for detail nobody can see and a large one does not go
-   * visibly polygonal. `to_center` adds the centre point, turning the
+   * visibly polygonal. `to_center` adds the center point, turning the
    * arc into a pie slice.
    */
   _ellipse_points(cx, cy, rx, ry, start, end, to_center) {
@@ -1444,8 +1479,9 @@ class Canvas {
     }
 
     var size = rx.max(ry)
-    var full = _MIN_ELLIPSE_SEGMENTS.max(_MAX_ELLIPSE_SEGMENTS.min((size
-      * 2).ceil()))
+    var full = _MIN_ELLIPSE_SEGMENTS.max(
+      _MAX_ELLIPSE_SEGMENTS.min((size * 2).ceil()),
+    )
     var steps = (2).max((full * sweep / 360).ceil())
 
     var points = []
@@ -1497,9 +1533,12 @@ class Canvas {
    * polygon's length to decide how many are needed.
    */
   _bezier_points(x1, y1, cx1, cy1, cx2, cy2, x2, y2) {
-    var rough = (cx1 - x1).abs() + (cy1 - y1).abs() +
-      (cx2 - cx1).abs() + (cy2 - cy1).abs() +
-      (x2 - cx2).abs() + (y2 - cy2).abs()
+    var rough = (cx1 - x1).abs() +
+        (cy1 - y1).abs() +
+        (cx2 - cx1).abs() +
+        (cy2 - cy1).abs() +
+        (x2 - cx2).abs() +
+        (y2 - cy2).abs()
 
     var steps = (8).max((256).min((rough / 3).ceil()))
     var points = []
@@ -1525,11 +1564,12 @@ class Canvas {
   # ------------------------------------------------------------------
 
   /**
-   * Paints every pixel of the surface, ignoring the clip and whatever
-   * was there before.
+   * Sets every pixel of the surface to a color, ignoring the clip and
+   * whatever was there before.
    *
-   * This is a replace, not a blend: filling with a transparent colour
-   * empties the image rather than leaving it unchanged.
+   * This replaces the pixels instead of blending with them, so filling
+   * with a transparent color clears the image, instead of leaving it
+   * unchanged.
    *
    * @param Color|string|number color
    * @returns self
@@ -1551,22 +1591,22 @@ class Canvas {
   }
 
   /**
-   * Flood fills the connected region of similar colour containing
+   * Flood-fills the connected area of similar color that contains
    * `(x, y)`.
    *
-   * Similarity is measured against the colour that was at the starting
-   * point, as the largest difference across the four channels.
-   * `tolerance` is that difference in 0-255 units, so 0 spreads only
-   * through exactly equal pixels and 255 fills everything.
+   * Similarity is measured against the color at the starting point, as
+   * the largest difference in any of the four channels. `tolerance` is
+   * that difference on a scale of 0 to 255, so 0 only spreads through
+   * pixels of exactly the same color, and 255 fills everything.
    *
-   * Filling is four-connected: it spreads up, down, left and right,
-   * but not diagonally, so a one-pixel diagonal line holds it back.
-   * The fill is never anti-aliased.
+   * The fill is four-connected: it spreads up, down, left and right,
+   * but not diagonally, so a diagonal line one pixel wide stops it. The
+   * fill is never anti-aliased.
    *
    * @param number x
    * @param number y
    * @param Color|string|number color
-   * @param ?number tolerance: - Default: 0.
+   * @param ?number tolerance: defaults to 0.
    * @returns self
    */
   flood_fill(x, y, color, tolerance) {
@@ -1589,15 +1629,19 @@ class Canvas {
 
     # Painting the seed colour over itself would never terminate, since
     # every filled pixel still matches.
-    if paint.r == seed[0] and paint.g == seed[1] and
-      paint.b == seed[2] and paint.a == seed[3] {
+    if paint.r == seed[0] and
+        paint.g == seed[1] and
+        paint.b == seed[2] and
+        paint.a == seed[3] {
       return self
     }
 
     # Scanline flood fill: each stack entry is a horizontal run to
     # paint, and only the runs above and below it need testing. That
     # visits far fewer pixels than pushing every neighbour.
-    var stack = [[px, px, py]]
+    var stack = [
+      [px, px, py],
+    ]
 
     while stack.length() > 0 {
       var run = stack.pop()
@@ -1606,13 +1650,13 @@ class Canvas {
       var row = run[2]
 
       # Grow the run outwards before painting it.
-      while left - 1 >= bounds[0]
-        and self._matches(left - 1, row, seed, limit) {
+      while left - 1 >= bounds[0] and
+          self._matches(left - 1, row, seed, limit) {
         left--
       }
 
-      while right + 1 < bounds[2]
-        and self._matches(right + 1, row, seed, limit) {
+      while right + 1 < bounds[2] and
+          self._matches(right + 1, row, seed, limit) {
         right++
       }
 
@@ -1661,7 +1705,7 @@ class Canvas {
   }
 
   /**
-   * True when a pixel is close enough to the flood fill's seed colour.
+   * True when a pixel is close enough to the flood fill's seed color.
    */
   _matches(px, py, seed, limit) {
     if px < 0 or py < 0 or px >= self._width or py >= self._height {
@@ -1684,14 +1728,13 @@ class Canvas {
   # ------------------------------------------------------------------
 
   /**
-   * Fills a rectangle with a linear gradient running between two
-   * points.
+   * Fills a rectangle with a linear gradient between two points.
    *
-   * The gradient's direction and length are the vector from
-   * `(x1, y1)` to `(x2, y2)`. Everything before the first point takes
-   * the first stop's colour and everything past the second takes the
-   * last stop's, so a short vector across a large area gives a hard
-   * transition with flat bands on either side.
+   * The direction and length of the gradient are given by the vector
+   * from `(x1, y1)` to `(x2, y2)`. Everything before the first point
+   * gets the color of the first stop, and everything after the second
+   * point gets the color of the last stop, so a short vector across a
+   * large area gives a sharp transition with flat bands on each side.
    *
    * ```zuri
    * # top to bottom, dark to light
@@ -1702,11 +1745,12 @@ class Canvas {
    * @param number y1
    * @param number x2
    * @param number y2
-   * @param list stops: Colours, or `[offset, colour]` pairs with the
-   *    offset from 0 to 1.
-   * @param ?dict options: `rect` (a `{x, y, width, height}` to confine
-   *    the fill to, default the whole surface), `blend` (bool, default
-   *    false: composite over what is there rather than replacing it).
+   * @param list stops: colors, or `[offset, color]` pairs with an
+   *    offset from 0 to 1
+   * @param ?dict options: `rect`, a `{x, y, width, height}` to limit
+   *    the fill to, which defaults to the whole surface, and `blend`, a
+   *    bool that defaults to false, to composite over what's there
+   *    instead of replacing it.
    * @returns self
    */
   linear_gradient(x1, y1, x2, y2, stops, options) {
@@ -1727,7 +1771,7 @@ class Canvas {
   }
 
   /**
-   * Fills a rectangle with a radial gradient spreading from a centre.
+   * Fills a rectangle with a radial gradient spreading from a center.
    *
    * ```zuri
    * # a soft vignette
@@ -1737,10 +1781,10 @@ class Canvas {
    * ], { blend: true })
    * ```
    *
-   * @param number cx: The centre's x coordinate.
-   * @param number cy: The centre's y coordinate.
+   * @param number cx: The center's x coordinate.
+   * @param number cy: The center's y coordinate.
    * @param number radius: Where the last stop lands.
-   * @param list stops: Colours, or `[offset, colour]` pairs.
+   * @param list stops: Colors, or `[offset, colour]` pairs.
    * @param ?dict options: `rect`, `blend`. The same as
    *    `linear_gradient()`.
    * @returns self
@@ -1780,7 +1824,7 @@ class Canvas {
 
   /**
    * Walks a rectangle, asking `position` where each pixel falls along
-   * the gradient and painting the colour the ramp holds there.
+   * the gradient and painting the color the ramp holds there.
    *
    * The ramp is precomputed, so the inner loop is one call, one index
    * and four byte writes: interpolating between stops per pixel would
@@ -1790,11 +1834,12 @@ class Canvas {
   /**
    * Paints a gradient ramp over `area`.
    *
-   * Hands off to a free function per gradient shape rather than taking
-   * a closure for the position. A closure asked once per pixel is a
-   * real call a million times over, and the loop body either side of it
-   * is only a few array reads; measured on a full-surface gradient the
-   * call alone was around a fifth of the total.
+   * It calls a separate function for each shape of gradient, instead of
+   * taking a closure that computes the position. A closure called once
+   * for each pixel is a real function call a million times over, and
+   * the rest of the loop is only a few array reads. Measured on a
+   * gradient filling the whole surface, the call alone took around a
+   * fifth of the total time.
    */
   _paint_ramp_linear(area, ramp, blend, x1, y1, dx, dy) {
     _paint_linear(
@@ -1838,11 +1883,11 @@ class Canvas {
   # ------------------------------------------------------------------
 
   /**
-   * Paints a colour through an 8-bit coverage mask.
+   * Paints a color through an 8-bit coverage mask.
    *
    * The mask is one byte per pixel, 0 for nothing and 255 for full
    * coverage, laid out row-major with no padding. Coverage scales the
-   * colour's alpha, so this is how anti-aliased text and any
+   * color's alpha, so this is how anti-aliased text and any
    * externally rasterized shape reach the surface.
    *
    * @param bytes mask
@@ -1894,14 +1939,15 @@ class Canvas {
 }
 
 /**
- * Turns a stop list into a 256-entry RGBA ramp.
+ * Turns a list of stops into a ramp of 256 RGBA entries.
  *
- * Stops may be bare colours, spaced evenly, or `[offset, colour]`
- * pairs with the offset running 0 to 1. Pairs need not be in order.
- * A single stop gives a flat ramp of that colour.
+ * Stops can be plain colors, which are spaced evenly, or
+ * `[offset, color]` pairs with an offset from 0 to 1. Pairs don't have
+ * to be in order. A single stop gives a flat ramp of that color.
  *
- * Precomputing the ramp is what keeps a gradient's inner loop to an
- * index and four byte writes rather than an interpolation per pixel.
+ * Computing the ramp in advance keeps a gradient's inner loop down to
+ * one lookup and four byte writes, instead of an interpolation for
+ * every pixel.
  */
 def _build_ramp(stops: list) {
   if stops.length() == 0 {
@@ -1916,8 +1962,10 @@ def _build_ramp(stops: list) {
 
     # A two-element list is ambiguous: [0.5, 'red'] is a stop, but
     # [255, 0] would be a malformed colour. A leading number settles it.
-    if is_list(entry) and entry.length() == 2 and is_number(entry[0]) and
-      !is_number(entry[1]) {
+    if is_list(entry) and
+        entry.length() == 2 and
+        is_number(entry[0]) and
+        !is_number(entry[1]) {
       offsets.append((0).max((1).min(entry[0])))
       paints.append(Color.parse(entry[1]))
       continue
@@ -1995,11 +2043,16 @@ def _build_ramp(stops: list) {
 /**
  * Source-over compositing of one pixel already known to be in range.
  *
- * The single place colour reaches a buffer. Straight (not
+ * The single place color reaches a buffer. Straight (not
  * premultiplied) alpha, everything in 0-255 fixed point.
  */
 def _blend_at(
-  pixels: bytes, at: number, r: number, g: number, b: number, a: number,
+  pixels: bytes,
+  at: number,
+  r: number,
+  g: number,
+  b: number,
+  a: number,
 ) {
   if a >= 255 {
     pixels[at] = r.round()
@@ -2037,10 +2090,10 @@ def _blend_at(
   var dst_weight = 255 - src_weight
 
   pixels[at] = ((r * src_weight + pixels[at] * dst_weight) / 255).round()
-  pixels[at + 1] = ((g * src_weight + pixels[at + 1] * dst_weight)
-    / 255).round()
-  pixels[at + 2] = ((b * src_weight + pixels[at + 2] * dst_weight)
-    / 255).round()
+  pixels[at + 1] = ((g * src_weight + pixels[at + 1] * dst_weight) / 255)
+      .round()
+  pixels[at + 2] = ((b * src_weight + pixels[at + 2] * dst_weight) / 255)
+      .round()
   pixels[at + 3] = out_a.round()
 }
 
@@ -2104,7 +2157,7 @@ def _blend_mask_row(
 }
 
 /**
- * Writes one colour over every pixel of a buffer.
+ * Writes one color over every pixel of a buffer.
  */
 def _fill_buffer(pixels: bytes, r: number, g: number, b: number, a: number) {
   var total = pixels.length()
@@ -2123,14 +2176,14 @@ def _fill_buffer(pixels: bytes, r: number, g: number, b: number, a: number) {
 /**
  * Paints a linear gradient over the given area.
  *
- * The ramp lookup and the four writes are spelled out in the loop
- * rather than factored into helpers. At one call per pixel the call
- * itself costs several times the work it wraps, because the JIT's
- * inliner only takes leaf functions whose every argument is a proven
- * number and a `bytes` buffer is not one.
+ * The ramp lookup and the four writes are written out in the loop
+ * instead of being moved into helper functions. With one call per
+ * pixel, the call itself would cost several times as much as the work
+ * it does, because the JIT only inlines leaf functions whose arguments
+ * are all known to be numbers, and a `bytes` buffer isn't one.
  *
- * A zero-length gradient vector leaves every pixel at the far end of
- * the ramp, which is what the projection converges to.
+ * A gradient vector of zero length leaves every pixel at the far end of
+ * the ramp, which is the value the projection approaches.
  */
 def _paint_linear(
   buffer: bytes,
@@ -2155,8 +2208,8 @@ def _paint_linear(
 
     iter var px = left; px < right; px++ {
       var step = flat
-        ? 255
-        : (((px + 0.5 - x1) * dx + oy * dy) / length_squared * 255).round()
+          ? 255
+          : (((px + 0.5 - x1) * dx + oy * dy) / length_squared * 255).round()
 
       if step < 0 {
         step = 0
@@ -2177,7 +2230,12 @@ def _paint_linear(
       }
 
       _blend_at(
-        buffer, at, ramp[from], ramp[from + 1], ramp[from + 2], ramp[from + 3],
+        buffer,
+        at,
+        ramp[from],
+        ramp[from + 1],
+        ramp[from + 2],
+        ramp[from + 3],
       )
     }
   }
@@ -2185,7 +2243,7 @@ def _paint_linear(
 
 /**
  * Paints a radial gradient over the given area, the ramp running from
- * the centre outwards and clamping past `radius`.
+ * the center outwards and clamping past `radius`.
  */
 def _paint_radial(
   buffer: bytes,
@@ -2227,7 +2285,12 @@ def _paint_radial(
       }
 
       _blend_at(
-        buffer, at, ramp[from], ramp[from + 1], ramp[from + 2], ramp[from + 3],
+        buffer,
+        at,
+        ramp[from],
+        ramp[from + 1],
+        ramp[from + 2],
+        ramp[from + 3],
       )
     }
   }

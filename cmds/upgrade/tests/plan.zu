@@ -89,9 +89,11 @@ describe('installation', @{
     installation(dir, 'old')
     remove(os.join_paths(dir, 'cmds'))
 
-    expect(failure(@{
-      plan.installation(os.join_paths(dir, 'zuri'), nil)
-    })).to_contain('not laid out the way a release is')
+    expect(
+      failure(@{
+        plan.installation(os.join_paths(dir, 'zuri'), nil)
+      }),
+    ).to_contain('not laid out the way a release is')
   })
 
   it('refuses one ZURI_ROOT points somewhere else', @{
@@ -99,18 +101,20 @@ describe('installation', @{
 
     installation(dir, 'old')
 
-    expect(failure(@{
-      plan.installation(
-        os.join_paths(dir, 'zuri'), os.join_paths(ROOT, 'elsewhere'),
-      )
-    })).to_contain('ZURI_ROOT points this runtime at')
+    expect(
+      failure(@{
+        plan.installation(
+          os.join_paths(dir, 'zuri'),
+          os.join_paths(ROOT, 'elsewhere'),
+        )
+      }),
+    ).to_contain('ZURI_ROOT points this runtime at')
   })
 
   it('says whether it can be written to', @{
     expect(plan.writable(ROOT)).to_be_true()
-    expect(plan.writable(os.join_paths(
-      ROOT, 'missing', 'deeper',
-    ))).to_be_false()
+    expect(plan.writable(os.join_paths(ROOT, 'missing', 'deeper')))
+        .to_be_false()
   })
 })
 
@@ -134,7 +138,8 @@ describe('swap', @{
   })
 
   it(
-    'puts the old installation back when a part is missing from the new one', @{
+    'puts the old installation back when a part is missing from the new one',
+    @{
       var root = os.join_paths(ROOT, 'installed')
       var staged = os.join_paths(ROOT, 'staged')
 
@@ -142,9 +147,11 @@ describe('swap', @{
       installation(staged, 'new')
       remove(os.join_paths(staged, 'zuri'))
 
-      expect(failure(@{
-        plan.swap(root, os.join_paths(root, 'zuri'), staged, 'stamp', 'linux')
-      })).to_contain('the installation was put back')
+      expect(
+        failure(@{
+          plan.swap(root, os.join_paths(root, 'zuri'), staged, 'stamp', 'linux')
+        }),
+      ).to_contain('the installation was put back')
 
       expect(read(root, 'zuri')).to_equal('old runtime\n')
       expect(read(root, 'libs/json.zu')).to_equal('old json\n')
@@ -157,7 +164,8 @@ describe('swap', @{
   )
 
   it(
-    'keeps the old executable aside on Windows, for the next start to clear', @{
+    'keeps the old executable aside on Windows, for the next start to clear',
+    @{
       var root = os.join_paths(ROOT, 'installed')
       var staged = os.join_paths(ROOT, 'staged')
 
@@ -167,7 +175,11 @@ describe('swap', @{
       put(os.join_paths(staged, 'zuri.exe'), 'new runtime\n')
 
       plan.swap(
-        root, os.join_paths(root, 'zuri.exe'), staged, 'stamp', 'windows',
+        root,
+        os.join_paths(root, 'zuri.exe'),
+        staged,
+        'stamp',
+        'windows',
       )
 
       expect(read(root, 'zuri.exe')).to_equal('new runtime\n')

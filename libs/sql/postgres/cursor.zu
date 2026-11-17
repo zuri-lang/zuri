@@ -1,12 +1,12 @@
 /**
  * @module cursor
  *
- * Reading a PostgreSQL result a batch at a time.
+ * Reads a PostgreSQL result a batch at a time.
  *
  * The server holds the result in a portal and sends as many rows as
- * each Execute asks for. When more remain it says so, and the next
- * Execute continues where the last stopped. Nothing but the current
- * batch is ever held on this side.
+ * each Execute message asks for. If there are more rows left, it says
+ * so, and the next Execute continues where the last one stopped. Only
+ * the current batch is ever held on the client.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -130,7 +130,7 @@ class PostgresCursor < DriverCursor {
 
   to_string() {
     return '<PostgresCursor ${self._portal}' +
-      '${self._closed ? " (closed)" : ""}>'
+        '${self._closed ? " (closed)" : ""}>'
   }
 
   @to_string() {

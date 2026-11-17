@@ -1,25 +1,28 @@
 /**
  * @module driver
  *
- * The contract every database adapter implements, and the capability
- * flags that let one adapter differ from another without the code
- * above them having to know which is in use.
+ * The interface that every database adapter implements, and the
+ * capability flags that let adapters differ without the code above them
+ * having to know which one is in use.
  *
- * An adapter supplies four things: a `Driver` that knows how to read a
- * connection string and open a connection, a `DriverConnection` that
- * runs statements, a `DriverStatement` for a prepared one, and a
- * `DriverCursor` for reading a result a batch at a time. Everything a
- * program touches directly is built on top of these, so an adapter
- * that implements them gets pooling, transactions, the CRUD helpers,
- * placeholder translation and the error hierarchy without writing any
- * of it.
+ * An adapter supplies four classes:
  *
- * The methods here raise `NotImplementedError`. An adapter that
- * forgets one fails where the gap is rather than somewhere further
- * down, and an adapter for an engine that genuinely cannot do
- * something raises `NotSupportedError` from its own override instead,
- * which reads differently on purpose: the first is an unfinished
- * adapter, the second is an honest limit of the engine.
+ * - A `Driver`, which reads a connection string and opens a connection.
+ * - A `DriverConnection`, which runs statements.
+ * - A `DriverStatement`, for a prepared statement.
+ * - A `DriverCursor`, for reading a result a batch at a time.
+ *
+ * Everything a program uses directly is built on these, so an adapter
+ * that implements them gets connection pooling, transactions, the CRUD
+ * helpers, placeholder translation and the error classes without
+ * writing any of them.
+ *
+ * The methods here raise `NotImplementedError`, so an adapter that's
+ * missing one fails at the missing method, not somewhere further on. An
+ * adapter for an engine that really can't do something should raise
+ * `NotSupportedError` from its own override instead. The two errors
+ * mean different things: the first means the adapter is unfinished, and
+ * the second means the engine has a limitation.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -55,41 +58,37 @@ var SERIALIZABLE = 'serializable'
 var READ_UNCOMMITTED = 'read uncommitted'
 
 /**
- * The capability flags a driver reports, with the value each takes
- * when a driver does not say otherwise.
+ * The capability flags that a driver reports, with the value each one
+ * has when a driver doesn't say otherwise.
  *
- * A driver's `capabilities()` starts from this and overrides what
- * differs, so a flag added here later does not break an adapter
- * written before it existed.
+ * A driver's `capabilities()` starts from these and overrides the ones
+ * that differ, so a flag added here later doesn't break an adapter that
+ * was written before it existed.
  *
  * | Flag | Meaning |
  * | - | - |
- * | `placeholder_style` | How the engine spells a parameter. |
+ * | `placeholder_style` | How the engine writes a parameter. |
  * | `named_parameters` | Whether the engine binds parameters by name. |
- * | `last_insert_id` | Whether the engine reports the id of the row just inserted. |
+ * | `last_insert_id` | Whether the engine reports the ID of the row just inserted. |
  * | `returning` | Whether `INSERT ... RETURNING` works. |
  * | `transactions` | Whether BEGIN, COMMIT and ROLLBACK work. |
- * | `savepoints` | Whether SAVEPOINT works, which is what nested transactions are built on. |
- * | `transactional_ddl` | Whether CREATE, ALTER and DROP stay inside
- *   a transaction, rather than committing it. |
- * | `isolation_levels` | The levels the engine will accept. |
- * | `server_side_cursors` | Whether a result can be read without the whole of it arriving first. |
- * | `prepared_statements` | Whether a statement can be compiled once and run repeatedly. |
- * | `multiple_statements` | Whether one call may carry several
- *   statements separated by semicolons. |
+ * | `savepoints` | Whether SAVEPOINT works. Nested transactions are built on it. |
+ * | `transactional_ddl` | Whether CREATE, ALTER and DROP stay inside a transaction, instead of committing it. |
+ * | `isolation_levels` | The isolation levels the engine accepts. |
+ * | `server_side_cursors` | Whether a result can be read before all of it has arrived. |
+ * | `prepared_statements` | Whether a statement can be compiled once and run many times. |
+ * | `multiple_statements` | Whether one call can contain several statements separated by semicolons. |
  * | `arrays` | Whether the engine has an array type. |
- * | `json` | Whether the engine has a JSON type, as opposed to storing JSON in text. |
+ * | `json` | Whether the engine has a JSON type, as opposed to storing JSON as text. |
  * | `blobs` | Whether the engine stores binary values. |
  * | `decimals` | Whether the engine has an exact decimal type. |
  * | `booleans` | Whether the engine has a real boolean type. |
- * | `upsert` | Whether an insert can update the row it collided
- *   with, however the engine spells it. |
- * | `schemas` | Whether tables live in named schemas. |
- * | `concurrent_writers` | Whether two connections can write at once. |
- * | `max_parameters` | Most parameters one statement may bind, or nil for no practical limit. |
- * | `identifier_quote` | The character an identifier is quoted with. |
- * | `default_port` | The port used when a connection string omits
- *   one, or nil for an engine with no port. |
+ * | `upsert` | Whether an insert can update the row it conflicted with, however the engine writes it. |
+ * | `schemas` | Whether tables belong to named schemas. |
+ * | `concurrent_writers` | Whether two connections can write at the same time. |
+ * | `max_parameters` | The largest number of parameters one statement can bind, or nil if there's no practical limit. |
+ * | `identifier_quote` | The character used to quote an identifier. |
+ * | `default_port` | The port used when a connection string doesn't give one, or nil for an engine with no port. |
  *
  * @returns dict
  */
@@ -123,8 +122,8 @@ def default_capabilities() {
 /**
  * Opens connections to one kind of database.
  *
- * A driver holds no connection of its own and no state worth sharing,
- * so one instance per engine is registered with `sql.register()` and
+ * A driver holds no connection and no other state of its own, so one
+ * instance for each engine is registered with `sql.register()` and
  * reused for every connection it opens.
  */
 class Driver {
@@ -132,7 +131,7 @@ class Driver {
    * The name this driver is registered under, such as `'sqlite'`.
    *
    * Appears on every error the adapter raises, so it wants to be the
-   * name a reader would recognise.
+   * name a reader would recognize.
    *
    * @returns string
    */
@@ -141,12 +140,12 @@ class Driver {
   }
 
   /**
-   * The URL schemes this driver claims, without the `://`.
+   * The URL schemes that this driver handles, without the `://`.
    *
-   * `sql.open()` picks a driver by matching a connection string's
-   * scheme against these, which is what lets the same call open any of
-   * the engines. Several are allowed: PostgreSQL answers to both
-   * `postgres` and `postgresql`.
+   * `sql.open()` chooses a driver by matching the scheme of a
+   * connection string against these, which is how the same call can
+   * open any of the engines. A driver can have several: PostgreSQL
+   * accepts both `postgres` and `postgresql`.
    *
    * @returns list[string]
    */
@@ -167,7 +166,7 @@ class Driver {
 
   /**
    * Turns a connection string or an options dictionary into the
-   * normalised options `connect()` takes.
+   * normalized options `connect()` takes.
    *
    * Each adapter reads the forms its own engine's tooling uses, so a
    * connection string copied from somewhere else works unchanged.
@@ -206,13 +205,14 @@ class Driver {
   }
 
   /**
-   * Quotes `name` so the engine reads it as an identifier whatever it
-   * contains or collides with.
+   * Quotes `name` so that the engine reads it as an identifier,
+   * whatever it contains and whatever it might be confused with.
    *
-   * The default doubles the engine's own quote character, which is
-   * what the SQL standard says and what the built-in adapters do,
-   * MySQL included once its quote character is taken into account.
-   * An engine whose quoting differs overrides this.
+   * The default doubles any of the engine's own quote characters, as
+   * the SQL standard specifies and as the built-in adapters do,
+   * including MySQL once its different quote character is taken into
+   * account. An engine that quotes identifiers differently overrides
+   * this.
    *
    * @param string name
    * @returns string
@@ -254,10 +254,10 @@ class Driver {
 }
 
 /**
- * One open connection to a database, as the layer above it sees one.
+ * An open connection to a database, as the layer above sees it.
  *
- * Adapters implement this; programs use `sql.Connection`, which wraps
- * it and adds everything that is the same across engines.
+ * Adapters implement this. Programs use `sql.Connection`, which wraps
+ * it and adds everything that's the same across engines.
  */
 class DriverConnection {
   /**
@@ -293,16 +293,18 @@ class DriverConnection {
   }
 
   /**
-   * Runs a statement and returns a cursor over its result rather than
-   * reading all of it.
+   * Runs a statement and returns a cursor over its result, instead of
+   * reading the whole result.
    *
-   * On an engine without server side cursors this still avoids holding
-   * every row at once only as far as the engine allows; the capability
-   * flag says which.
+   * On an engine without server-side cursors, this only avoids holding
+   * every row at once as far as the engine allows. The
+   * `server_side_cursors` capability flag says which kind of engine it
+   * is.
    *
    * @param string sql
    * @param list values
-   * @param dict options `{ batch }`, the rows to fetch at a time.
+   * @param dict options `{ batch }`, the number of rows to fetch at a
+   *    time.
    * @returns DriverCursor
    */
   open_cursor(sql: string, values: list, options: dict) {
@@ -358,7 +360,9 @@ class DriverConnection {
    * @param string name
    */
   release_savepoint(name: string) {
-    raise NotImplementedError('a connection has to implement release_savepoint()')
+    raise NotImplementedError(
+      'a connection has to implement release_savepoint()',
+    )
   }
 
   /**
@@ -381,10 +385,10 @@ class DriverConnection {
   }
 
   /**
-   * The id of the row most recently inserted on this connection.
+   * The ID of the row most recently inserted on this connection.
    *
-   * Only meaningful where `last_insert_id` is supported; elsewhere it
-   * raises `NotSupportedError`, and `Connection.insert()` uses
+   * This only works where `last_insert_id` is supported. Elsewhere it
+   * raises a `NotSupportedError`, and `Connection.insert()` uses
    * `RETURNING` instead.
    *
    * @returns number|bigint|nil
@@ -415,19 +419,17 @@ class DriverConnection {
   }
 
   /**
-   * This engine's introspection, which `Connection.schema` goes
-   * through.
+   * This engine's introspection, which `Connection.schema` uses.
    *
-   * The default refuses, so an adapter that has not written the
-   * queries says so plainly rather than reporting an empty database.
+   * By default it raises an error, so that an adapter without the
+   * introspection queries says so clearly, instead of reporting an
+   * empty database.
    *
    * @returns SchemaAdapter
    * @throws NotSupportedError if the adapter has no introspection.
    */
   schema_adapter() {
-    raise NotSupportedError(
-      'this adapter does not implement introspection',
-    )
+    raise NotSupportedError('this adapter does not implement introspection')
   }
 
   /**
@@ -510,7 +512,7 @@ class DriverStatement {
 }
 
 /**
- * A result being read a batch at a time rather than all at once.
+ * A result being read a batch at a time, instead of all at once.
  */
 class DriverCursor {
   /**
@@ -543,9 +545,9 @@ class DriverCursor {
 /**
  * The introspection queries for one engine.
  *
- * Every method returns the same shape whichever engine answered, which
- * is the whole point of routing introspection through here rather than
- * letting each program write its own `information_schema` query.
+ * Every method returns results in the same form whichever engine
+ * answered. That's the reason introspection goes through here, instead
+ * of each program writing its own `information_schema` queries.
  */
 class SchemaAdapter {
   /**

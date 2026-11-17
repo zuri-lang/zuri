@@ -1,12 +1,12 @@
 /**
  * @module errors
  *
- * Every error the module raises, under `ImageError` as their root.
+ * Every error the module raises, with `ImageError` as their base class.
  *
- * The subclasses separate the cases a caller treats differently: input
- * that is not an image it can read, output it cannot write, a format it
- * does not know, a coordinate outside the surface, and a font that will
- * not load.
+ * The subclasses separate the cases that a caller handles differently:
+ * input that isn't an image the module can read, output it can't write,
+ * a format it doesn't know, a coordinate outside the surface, and a
+ * font that can't be loaded.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -91,10 +91,10 @@ class FormatError < ImageError {
  * Raised when a rectangle, crop or resize falls outside the image, or
  * when a dimension is zero or negative.
  *
- * Drawing operations do not raise this. A line running off the edge of
- * the canvas is clipped, which is what every drawing API does and what
- * callers expect; it is only the operations that must return an image
- * of an exact size that have no sensible way to continue.
+ * Drawing operations don't raise this. A line that runs off the edge of
+ * the canvas is clipped, as in every drawing API, and as callers
+ * expect. Only operations that must return an image of an exact size
+ * have no sensible way to continue.
  *
  * @printable
  */

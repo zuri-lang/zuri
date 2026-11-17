@@ -3,16 +3,16 @@
  *
  * Addresses in native memory, and reading and writing through them.
  *
- * A `Pointer` is an address with, optionally, the type of what it points
- * at. The type is what `get()`, `set()` and the field methods read and
- * write, and the unit `add()` steps by; `read()` and `write()` take a
- * type of their own and work on any pointer.
+ * A `Pointer` is an address, optionally with the type of what it points
+ * to. The type is what `get()`, `set()` and the field methods read and
+ * write, and it's the unit that `add()` steps by. `read()` and
+ * `write()` take a type of their own, and work with any pointer.
  *
- * Memory this module allocated knows its own extent, and every access
- * through a pointer into it is checked against that extent and against
- * the memory having been freed. A pointer C handed back carries no
- * extent, so only a null pointer is caught; reading past what the C
- * library says is there is as undefined as it is in C.
+ * Memory that this module allocated knows its own size, and every
+ * access through a pointer into it is checked against that size and
+ * against the memory having been freed. A pointer returned by C has no
+ * known size, so only a null pointer is caught, and reading past what
+ * the C library says is there is as undefined as it is in C.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -39,7 +39,9 @@ class Pointer {
   var _handle
 
   @new() {
-    raise FfiError('pointers come from the ffi module, never from the Pointer constructor')
+    raise FfiError(
+      'pointers come from the ffi module, never from the Pointer constructor',
+    )
   }
 
   /**
@@ -53,8 +55,9 @@ class Pointer {
   }
 
   /**
-   * Whether the address is zero. A null pointer only exists as the
-   * result of arithmetic or `ffi.at(0)`; C returning one gives `nil`.
+   * Whether the address is zero. A null pointer can only come from
+   * arithmetic or from `ffi.at(0)`, because a null pointer returned by
+   * C becomes `nil`.
    *
    * @returns bool
    */
@@ -138,17 +141,17 @@ class Pointer {
   /**
    * Writes `value` as `type` at `offset` bytes from the pointer.
    *
-   * Nothing is written when the value does not convert, so a failed
-   * write never leaves half a value behind. Writing a record or array
-   * as a whole replaces every member; members the value leaves out keep
-   * what they held.
+   * If the value can't be converted, nothing is written, so a failed
+   * write never leaves half a value behind. Writing a whole record or
+   * array replaces every member, and members that the value leaves out
+   * keep their old values.
    *
    * @param Type type
    * @param any value
    * @param number|nil offset Defaults to 0.
-   * @throws PointerError for the reasons `read()` does.
-   * @throws TypeError when `value` cannot be stored as `type`.
-   * @throws RangeError when a number does not fit `type`.
+   * @throws PointerError for the same reasons as `read()`.
+   * @throws TypeError if `value` can't be stored as `type`.
+   * @throws RangeError if a number doesn't fit in `type`.
    */
   write(type, value, offset) {
     _ffi.ptr_write(self._handle, type, value, offset)
@@ -228,18 +231,19 @@ class Pointer {
   /**
    * Reads text.
    *
-   * With a `length`, exactly that many code units; without one, up to
-   * the first zero code unit, which must lie within the block when the
-   * block's extent is known.
+   * With a `length`, it reads exactly that many code units. Without
+   * one, it reads up to the first zero code unit, which must be inside
+   * the block if the block's size is known.
    *
    * @param number|nil length In code units, not bytes.
    * @param string|nil encoding `'utf-8'` (the default), `'utf-16'`,
-   *   `'utf-32'`, or `'wide'` for `wchar_t`, which is UTF-16 on Windows
-   *   and UTF-32 elsewhere.
+   *    `'utf-32'`, or `'wide'` for `wchar_t`, which is UTF-16 on
+   *    Windows and UTF-32 elsewhere.
    * @param number|nil offset In bytes. Defaults to 0.
    * @returns string
-   * @throws ValueError when the text is not valid in its encoding.
-   * @throws PointerError when there is no terminator inside a known block.
+   * @throws ValueError if the text isn't valid in its encoding.
+   * @throws PointerError if there's no terminator inside a block of
+   *    known size.
    */
   read_string(length, encoding, offset) {
     return _ffi.ptr_read_string(self._handle, length, encoding, offset)
@@ -354,12 +358,13 @@ class Pointer {
   }
 
   /**
-   * Releases owned memory now rather than when it is collected: memory
-   * from `ffi.alloc()` or `ffi.malloc()`, or taken over with `own()`.
-   * Every pointer into it refuses access from then on.
+   * Frees owned memory now, instead of when it's garbage collected.
+   * This applies to memory from `ffi.alloc()` or `ffi.malloc()`, or
+   * memory taken over with `own()`. Every pointer into the memory
+   * refuses access afterwards.
    *
-   * @throws PointerError when the pointer does not own its memory, does
-   *   not point at the start of it, or it has already been freed.
+   * @throws PointerError if the pointer doesn't own its memory, doesn't
+   *    point to the start of it, or the memory has already been freed.
    */
   free() {
     _ffi.ptr_free(self._handle)

@@ -61,7 +61,9 @@ describe('semantic tokens', @{
   it('colours each name by what it resolves to', @{
     var main = client.open(MAIN, nil)
     var source = client.texts[main]
-    var asked = { textDocument: { uri: main } }
+    var asked = {
+      textDocument: { uri: main },
+    }
     var answer = client.request('textDocument/semanticTokens/full', asked)
     var tokens = decode(source, answer.data)
 
@@ -72,25 +74,33 @@ describe('semantic tokens', @{
     expect(tokens['4:Point']).to_equal('class')
     expect(tokens['7:distance']).to_equal('method')
     expect(tokens['10:encode']).to_equal('function defaultLibrary')
-    client.notify('textDocument/didClose', { textDocument: { uri: main } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: main },
+    })
   })
 
   it('marks what is deprecated, static or read-only', @{
     var source = 'import .shapes { centre, UNIT }\necho centre()\necho UNIT\n'
     var address = client.open(SCRATCH, source)
-    var asked = { textDocument: { uri: address } }
+    var asked = {
+      textDocument: { uri: address },
+    }
     var answer = client.request('textDocument/semanticTokens/full', asked)
     var tokens = decode(source, answer.data)
 
     expect(tokens['1:centre']).to_equal('function deprecated')
     expect(tokens['2:UNIT']).to_equal('variable readonly')
-    client.notify('textDocument/didClose', { textDocument: { uri: address } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: address },
+    })
   })
 
   it('sends only what changed since the last tokens', @{
     var source = 'var a = 1\necho a\n'
     var address = client.open(SCRATCH, source)
-    var asked = { textDocument: { uri: address } }
+    var asked = {
+      textDocument: { uri: address },
+    }
     var first = client.request('textDocument/semanticTokens/full', asked)
 
     client.change(address, 'var a = 1\necho a\necho a\n')
@@ -104,7 +114,9 @@ describe('semantic tokens', @{
     expect(delta.edits[0].start).to_equal(first.data.length())
     expect(delta.edits[0].deleteCount).to_equal(0)
     expect(delta.edits[0].data).to_equal([1, 5, 1, 5, 0])
-    client.notify('textDocument/didClose', { textDocument: { uri: address } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: address },
+    })
   })
 
   it('answers for a range', @{
@@ -119,7 +131,9 @@ describe('semantic tokens', @{
     })
 
     expect(answer.data).to_equal([1, 4, 1, 5, 1])
-    client.notify('textDocument/didClose', { textDocument: { uri: address } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: address },
+    })
   })
 })
 
@@ -138,10 +152,16 @@ describe('inlay hints', @{
     )
 
     expect(shown).to_contain_all([
-      '4:17 x:', '4:20 y:', '5:18 x:', '5:21 y:', '5:24 radius:',
+      '4:17 x:',
+      '4:20 y:',
+      '5:18 x:',
+      '5:21 y:',
+      '5:24 radius:',
     ])
     expect(shown).to_contain_all(['4:8 : Point', '5:8 : Circle'])
-    client.notify('textDocument/didClose', { textDocument: { uri: main } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: main },
+    })
   })
 
   it("adds the parameter's documentation when resolved", @{
@@ -154,20 +174,23 @@ describe('inlay hints', @{
       },
     })
     var resolved = client.request(
-      'inlayHint/resolve', hints.find(@(h) => h.label == 'x:'),
+      'inlayHint/resolve',
+      hints.find(@(h) => h.label == 'x:'),
     )
 
     expect(resolved.tooltip.value).to_equal('`number` How far along.')
-    client.notify('textDocument/didClose', { textDocument: { uri: main } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: main },
+    })
   })
 })
 
 describe('code lenses', @{
   it('counts the uses of each declaration once resolved', @{
     var shapes = client.open(SHAPES, nil)
-    var lenses = client.request(
-      'textDocument/codeLens', { textDocument: { uri: shapes } },
-    )
+    var lenses = client.request('textDocument/codeLens', {
+      textDocument: { uri: shapes },
+    })
     var lines = client.texts[shapes].split('\n')
     var origin = lenses.find(
       @(l) => lines[l.range.start.line].contains('def origin'),
@@ -177,7 +200,9 @@ describe('code lenses', @{
     expect(resolved.command.title).to_equal('3 references')
     expect(resolved.command.command).to_equal('zuri.showReferences')
     expect(resolved.command.arguments[2].length()).to_equal(3)
-    client.notify('textDocument/didClose', { textDocument: { uri: shapes } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: shapes },
+    })
   })
 })
 
@@ -189,19 +214,21 @@ describe('hierarchies', @{
       textDocument: { uri: shapes },
       position: position(text, 'def orig', 0),
     })
-    var incoming = client.request(
-      'callHierarchy/incomingCalls', { item: items[0] },
-    )
+    var incoming = client.request('callHierarchy/incomingCalls', {
+      item: items[0],
+    })
     var callers = incoming.map(@(call) => call.from.name).sort()
 
     expect(callers).to_equal(['centre', 'main'])
 
-    var outgoing = client.request(
-      'callHierarchy/outgoingCalls', { item: items[0] },
-    )
+    var outgoing = client.request('callHierarchy/outgoingCalls', {
+      item: items[0],
+    })
 
     expect(outgoing.map(@(call) => call.to.name)).to_equal(['Point'])
-    client.notify('textDocument/didClose', { textDocument: { uri: shapes } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: shapes },
+    })
   })
 
   it('shows the classes above and below a class', @{
@@ -218,6 +245,8 @@ describe('hierarchies', @{
     var below = client.request('typeHierarchy/subtypes', { item: above[0] })
 
     expect(below.map(@(item) => item.name)).to_equal(['Circle'])
-    client.notify('textDocument/didClose', { textDocument: { uri: shapes } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: shapes },
+    })
   })
 })

@@ -2,21 +2,21 @@
  * @module html.node
  *
  * The document tree that `html.parse()` produces, and everything you
- * can do with it: walking it, querying it, reading and changing
- * attributes and content, and serializing any part of it back to
- * markup.
+ * can do with it: walk through it, query it, read and change attributes
+ * and content, and serialize any part of it back to markup.
  *
- * The shape follows the DOM closely enough that the names are
+ * The structure follows the DOM closely enough that the names are
  * familiar, without pretending to be a browser. Where this module
- * departs from the DOM it does so deliberately and says why in the
- * relevant doc block; the two differences worth knowing up front are:
+ * differs from the DOM, it does so on purpose, and the relevant
+ * documentation explains why. Two differences are worth knowing from
+ * the start:
  *
- * - `children` holds **every** child node (elements, text and
- *   comments alike), which is what the DOM calls `childNodes`. Use
+ * - `children` holds **every** child node, including elements, text and
+ *   comments, which is what the DOM calls `childNodes`. Use
  *   `child_elements()` when you only want elements.
- * - There are no property setters in Zuri, so every DOM property that
- *   can be written is a pair of methods: `text_content()` reads and
- *   `set_text_content()` writes.
+ * - Zuri doesn't have property setters, so every DOM property that can
+ *   be written is a pair of methods: `text_content()` reads it and
+ *   `set_text_content()` writes it.
  *
  * ```zuri
  * import html
@@ -81,27 +81,47 @@ var NODE_DOCUMENT_FRAGMENT = 11
  * take no end tag and still turn up in real documents.
  */
 var VOID_ELEMENTS = [
-  'area', 'base', 'basefont', 'bgsound', 'br', 'col', 'embed',
-  'frame', 'hr', 'img', 'input', 'keygen', 'link', 'meta', 'param',
-  'source', 'track', 'wbr',
+  'area',
+  'base',
+  'basefont',
+  'bgsound',
+  'br',
+  'col',
+  'embed',
+  'frame',
+  'hr',
+  'img',
+  'input',
+  'keygen',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
 ]
 
 /**
- * Elements whose text children are markup, not content: their text is
- * written out byte for byte and never escaped, because escaping it
- * would change what a stylesheet or a script means.
+ * Elements whose text children are code, not content. Their text is
+ * written out exactly as it is and never escaped, because escaping it
+ * would change what a stylesheet or script means.
  *
- * The serialization algorithm also lists `noscript` here, but only
- * when the scripting flag is enabled. This module parses with
- * scripting disabled by default, and in that mode a `<noscript>`
- * holds real elements rather than text, so leaving it out is right
- * for the default and safe for the other case: the worst that happens
- * to a document parsed with `scripting: true` is that its `<noscript>`
- * text comes back escaped, whereas including it would let hand-built
- * text inside a `<noscript>` serialize into live markup.
+ * The serialization algorithm also lists `noscript` here, but only when
+ * scripting is enabled. This module parses with scripting disabled by
+ * default, and in that mode a `<noscript>` element contains real
+ * elements, not text. Leaving it out is right for the default and safe
+ * for the other case. The worst that can happen to a document parsed
+ * with `scripting: true` is that its `<noscript>` text comes back
+ * escaped, whereas including it would let text added by hand inside a
+ * `<noscript>` element turn into live markup when it's serialized.
  */
 var RAW_TEXT_ELEMENTS = [
-  'style', 'script', 'xmp', 'iframe', 'noembed', 'noframes',
+  'style',
+  'script',
+  'xmp',
+  'iframe',
+  'noembed',
+  'noframes',
   'plaintext',
 ]
 
@@ -121,11 +141,11 @@ class HierarchyError < Error {
 }
 
 /**
- * The base class every node in a parsed document inherits from.
+ * The base class that every node in a parsed document inherits from.
  *
- * You never construct a `Node` directly; parsing produces `Document`,
- * `Element`, `Text`, `Comment` and `DocumentType` instances, and this
- * class is where the behaviour they share lives.
+ * You never create a `Node` directly. Parsing produces `Document`,
+ * `Element`, `Text`, `Comment` and `DocumentType` objects, and this
+ * class holds the behavior they share.
  *
  * @printable
  */
@@ -145,13 +165,13 @@ class Node {
   var parent_node = nil
 
   /**
-   * Every child of this node in document order: elements, text nodes
+   * Every child of this node, in document order: elements, text nodes
    * and comments together. This is the DOM's `childNodes`, not its
-   * `children`; `child_elements()` gives you the element-only view.
+   * `children`. `child_elements()` gives you only the elements.
    *
-   * Treat this list as read-only. Mutating it directly leaves the
-   * children's `parent_node` pointing at the wrong place; use
-   * `append_child()` and friends instead.
+   * Treat this list as read-only. Changing it directly leaves the
+   * children's `parent_node` pointing to the wrong place, so use
+   * `append_child()` and the related methods instead.
    */
   var children = []
 
@@ -444,13 +464,13 @@ class Node {
   }
 
   /**
-   * Calls _callback_ once for every node beneath this one, in
-   * document order. The node is passed as the only argument.
+   * Calls _callback_ once for every node under this one, in document
+   * order, with the node as the only argument.
    *
-   * Returning `false` from the callback prunes that node's subtree;
-   * any other return value (including `nil`) keeps walking. The walk
-   * reads `children` as it goes, so do not restructure the tree from
-   * inside the callback.
+   * If the callback returns `false`, the walk skips that node's
+   * children. Any other return value, including `nil`, continues the
+   * walk. The walk reads `children` as it goes, so don't restructure
+   * the tree from inside the callback.
    *
    * @param function callback
    */
@@ -508,9 +528,7 @@ class Node {
     var at = reference.index_in_parent()
 
     if at < 0 or id(reference.parent_node) != id(self) {
-      raise HierarchyError(
-        'the reference node is not a child of this node',
-      )
+      raise HierarchyError('the reference node is not a child of this node')
     }
 
     self.children.insert(node, at)
@@ -520,13 +538,13 @@ class Node {
   }
 
   /**
-   * Removes _node_ from this node's children and returns it. The
-   * removed node keeps its own children; only its link to this parent
-   * is broken.
+   * Removes _node_ from this node's children, and returns it. The
+   * removed node keeps its own children. Only its link to this parent
+   * is removed.
    *
    * @param Node node
    * @returns Node
-   * @throws HierarchyError when _node_ is not a child of this node.
+   * @throws HierarchyError if _node_ isn't a child of this node.
    */
   remove_child(node: Node) {
     if id(node.parent_node) != id(self) {
@@ -552,7 +570,9 @@ class Node {
    */
   replace_child(replacement: Node, existing: Node) {
     if id(existing.parent_node) != id(self) {
-      raise HierarchyError('the node being replaced is not a child of this node')
+      raise HierarchyError(
+        'the node being replaced is not a child of this node',
+      )
     }
 
     self._check_insertable(replacement)
@@ -610,15 +630,14 @@ class Node {
   }
 
   /**
-   * The concatenated text of every `Text` node beneath this one, in
-   * document order. Comments and doctypes contribute nothing.
+   * The text of every `Text` node under this one, joined together in
+   * document order. Comments and doctypes don't contribute anything.
    *
    * `Text` and `Comment` override this to return their own data.
    *
-   * Unlike the browser DOM, a `Document` answers this the same way an
-   * element does rather than returning nothing; being told the text of
-   * a document you just parsed is far more useful than being told
-   * `nil`.
+   * Unlike in the browser DOM, a `Document` returns its text just as an
+   * element does, instead of returning nothing, because the text of a
+   * document you've just parsed is far more useful than `nil`.
    *
    * @returns string
    */
@@ -669,17 +688,17 @@ class Node {
   }
 
   /**
-   * Parses _source_ as HTML in the context of this node and replaces
-   * all of its children with the result.
+   * Parses _source_ as HTML in the context of this node, and replaces
+   * all of the node's children with the result.
    *
-   * The parse runs the fragment parsing algorithm with this node as
-   * the context element, so `source` is interpreted exactly as it
-   * would be had it appeared inside this element in the original
-   * document. That matters: `'<td>x'` keeps its cell inside a `<tr>`
-   * and loses it anywhere else, which is what a browser does too.
+   * This uses the fragment parsing algorithm with this node as the
+   * context element, so `source` is interpreted exactly as if it had
+   * appeared inside this element in the original document. That
+   * matters: `'<td>x'` keeps its cell inside a `<tr>`, but loses it
+   * anywhere else, just as in a browser.
    *
-   * Nothing is executed and nothing is fetched; `<script>` content
-   * becomes an inert text node.
+   * Nothing is run and nothing is fetched. The content of a `<script>`
+   * element becomes an ordinary text node.
    *
    * @param string source
    * @returns Node
@@ -698,10 +717,10 @@ class Node {
   }
 
   /**
-   * The markup of this node including its own tags.
+   * The markup of this node, including its own tags.
    *
-   * For a `Document` this is the whole document; for a `Text` node it
-   * is the escaped text; for a `Comment` it is `<!--...-->`.
+   * For a `Document`, this is the whole document. For a `Text` node,
+   * it's the escaped text, and for a `Comment`, it's `<!--...-->`.
    *
    * @returns string
    */
@@ -750,15 +769,15 @@ class Node {
   }
 
   /**
-   * Appends this node's markup to _out_, a list of string pieces the
+   * Appends this node's markup to _out_, a list of strings that the
    * caller is expected to `join()`.
    *
-   * `outer_html()` is the friendly form of this and is what you
-   * normally want. Reach for this one when you are writing a large
-   * document out in pieces and would rather not build the whole string
-   * in memory first.
+   * `outer_html()` is the simpler form of this, and is what you
+   * normally want. Use this one when you're writing out a large
+   * document in pieces and don't want to build the whole string in
+   * memory first.
    *
-   * Every node class overrides it; the base implementation writes
+   * Every node class overrides this, and the base implementation writes
    * nothing.
    *
    * @param list out
@@ -798,15 +817,15 @@ class Node {
   }
 
   /**
-   * The first element beneath this node whose `id` attribute is
-   * _value_, or `nil` when there is none.
+   * The first element under this node whose `id` attribute is _value_,
+   * or `nil` if there isn't one.
    *
-   * Ids are compared exactly, including case: HTML does not fold the
-   * case of id values even though it folds tag names.
+   * IDs are compared exactly, including case. HTML doesn't fold the
+   * case of ID values, even though it folds the case of tag names.
    *
-   * A document with duplicate ids is malformed but perfectly
-   * parseable, and this returns the first one in document order,
-   * which is what browsers settled on.
+   * A document with duplicate IDs is invalid, but it can still be
+   * parsed, and this returns the first element with the ID in document
+   * order, as browsers do.
    *
    * @param string value
    * @returns ?Element
@@ -822,13 +841,13 @@ class Node {
   }
 
   /**
-   * Every element beneath this node carrying all of the classes in
+   * Every element under this node that has all of the classes in
    * _names_, in document order.
    *
-   * _names_ may be a single class name, several separated by
-   * whitespace, or a list of names; in every form an element must
-   * carry *all* of them to match. Class names are compared exactly,
-   * including case. An empty _names_ matches nothing.
+   * _names_ can be a single class name, several names separated by
+   * whitespace, or a list of names. In each case, an element must have
+   * *all* of them to match. Class names are compared exactly, including
+   * case. An empty _names_ matches nothing.
    *
    * ```zuri-repl
    * %> doc.get_elements_by_class_name('warning')
@@ -962,11 +981,11 @@ class Node {
 }
 
 /**
- * A run of character data in the tree.
+ * A run of text in the tree.
  *
- * The parser merges adjacent characters into as few `Text` nodes as
- * the tree construction algorithm allows, so a paragraph of prose is
- * normally one node rather than one per character.
+ * The parser combines adjacent characters into as few `Text` nodes as
+ * the tree construction algorithm allows, so a paragraph of text is
+ * normally a single node, not one node per character.
  *
  * @printable
  */
@@ -1029,9 +1048,10 @@ class Text < Node {
     # Inside a script or a stylesheet the text *is* the markup, so
     # escaping it would corrupt it. Everywhere else it has to be
     # escaped or the document cannot be read back.
-    if host != nil and host.is_element() and
-      host.namespace == HTML_NAMESPACE and
-      RAW_TEXT_ELEMENTS.contains(host.tag_name) {
+    if host != nil and
+        host.is_element() and
+        host.namespace == HTML_NAMESPACE and
+        RAW_TEXT_ELEMENTS.contains(host.tag_name) {
       out.append(self.data)
       return
     }
@@ -1121,8 +1141,8 @@ class DocumentType < Node {
   var name = ''
 
   /**
-   * The public identifier, or an empty string when the doctype has
-   * none. Legacy doctypes use this; `<!DOCTYPE html>` does not.
+   * The public identifier, or an empty string if the doctype doesn't
+   * have one. Old doctypes use this, but `<!DOCTYPE html>` doesn't.
    */
   var public_id = ''
 
@@ -1242,14 +1262,14 @@ class DocumentFragment < Node {
 class Document < Node {
 
   /**
-   * Which quirks mode the doctype (or the lack of one) put this
+   * The quirks mode that the doctype, or the lack of one, put this
    * document in: `'no-quirks'`, `'limited-quirks'` or `'quirks'`.
    *
-   * The value is decided by the tree construction algorithm from the
-   * doctype's name and identifiers. Nothing in this module changes
-   * behaviour based on it, but it is the answer to "would a browser
-   * have rendered this in quirks mode", which is worth knowing when
-   * you are auditing markup.
+   * The tree construction algorithm decides the value from the
+   * doctype's name and identifiers. Nothing in this module behaves
+   * differently because of it, but it tells you whether a browser would
+   * have rendered the page in quirks mode, which helps when you audit
+   * markup.
    */
   var mode = 'no-quirks'
 
@@ -1340,8 +1360,9 @@ class Document < Node {
     }
 
     for child in root.children {
-      if child.is_element() and child.tag_name == tag_name and
-        child.namespace == HTML_NAMESPACE {
+      if child.is_element() and
+          child.tag_name == tag_name and
+          child.namespace == HTML_NAMESPACE {
         return child
       }
     }
@@ -1533,7 +1554,7 @@ class ClassList {
 
   /**
    * Writes _classes_ back to the element. An empty list removes the
-   * attribute outright rather than leaving `class=""` behind.
+   * attribute completely, instead of leaving `class=""` behind.
    *
    * @param list classes
    * @returns ClassList
@@ -1563,11 +1584,11 @@ class ClassList {
 }
 
 /**
- * Appends every node beneath _node_ to _out_, in document order.
+ * Appends every node under _node_ to _out_, in document order.
  *
- * A module function rather than a method because a node has to call it
- * on its children, and Zuri keeps `_`-prefixed methods reachable only
- * through `self`.
+ * This is a module function, not a method, because a node has to call
+ * it on its children, and Zuri only allows methods whose names start
+ * with `_` to be called through `self`.
  *
  * @param Node node
  * @param list out
@@ -1625,20 +1646,20 @@ class Element < Node {
   var namespace = HTML_NAMESPACE
 
   /**
-   * The element's attributes, in source order, as a dictionary of
-   * name to value.
+   * The element's attributes, in source order, as a dictionary that
+   * maps names to values.
    *
-   * Names are lowercased for HTML elements. Foreign elements keep the
-   * adjusted names the standard defines, so an SVG element can carry
-   * `viewBox` and `xlink:href` with their capitals and prefixes
+   * Names are lowercase for HTML elements. Foreign elements keep the
+   * adjusted names that the standard defines, so an SVG element can
+   * have `viewBox` and `xlink:href` with their capitals and prefixes
    * intact.
    *
-   * A valueless attribute such as `<input disabled>` has an empty
-   * string as its value, never `nil`. Use `has_attribute()` to tell
-   * "absent" from "present but empty".
+   * An attribute without a value, such as `<input disabled>`, has an
+   * empty string as its value, never `nil`. Use `has_attribute()` to
+   * tell whether an attribute is missing or present but empty.
    *
-   * Prefer the accessor methods over writing to this dictionary
-   * directly; they are what keep name folding consistent.
+   * Use the accessor methods instead of writing to this dictionary
+   * directly, because they keep name folding consistent.
    */
   var attributes = {}
 
@@ -1652,12 +1673,12 @@ class Element < Node {
 
   /**
    * The line in the source where this element's start tag began,
-   * counting from 1, or `0` for an element that was built by hand
-   * rather than parsed.
+   * counting from 1, or `0` for an element that was created by code
+   * instead of being parsed.
    *
-   * Tooling that reports problems against the original markup needs
-   * somewhere to point, and the token carries the position anyway, so
-   * the parser hands it on. Nothing in this module reads it.
+   * Tools that report problems in the original markup need something to
+   * point to, and the token already has the position, so the parser
+   * passes it on. Nothing in this module uses it.
    */
   var source_line = 0
 
@@ -1668,13 +1689,13 @@ class Element < Node {
   var source_column = 0
 
   /**
-   * For a `<template>` element, the `DocumentFragment` holding its
-   * content. `nil` for every other element.
+   * For a `<template>` element, the `DocumentFragment` that holds its
+   * content, and `nil` for every other element.
    *
-   * Template content is deliberately not part of the element's
-   * children: the standard keeps it in a separate document fragment
-   * so it stays inert, and querying an element never walks into a
-   * template by accident.
+   * Template content isn't part of the element's children. The standard
+   * keeps it in a separate document fragment so that it stays inert,
+   * which means that querying an element never accidentally searches
+   * inside a template.
    */
   var content = nil
 
@@ -1751,18 +1772,18 @@ class Element < Node {
   }
 
   /**
-   * Sets the attribute _name_ to _value_, replacing any existing
-   * value and leaving the attribute's position among the others
-   * unchanged. A new attribute is appended after the existing ones.
+   * Sets the attribute _name_ to _value_, replacing any existing value,
+   * without changing the attribute's position among the others. A new
+   * attribute is added after the existing ones.
    *
-   * Pass an empty string for a valueless attribute such as
-   * `disabled`; there is no separate "no value" state.
+   * For an attribute without a value, such as `disabled`, pass an empty
+   * string. There's no separate "no value" state.
    *
    * @param string name
    * @param string value
    * @returns Element
-   * @throws ArgumentError when _name_ is empty or contains a
-   *   character that cannot appear in an attribute name.
+   * @throws ArgumentError if _name_ is empty, or contains a character
+   *    that can't appear in an attribute name.
    */
   set_attribute(name: string, value: string) {
     var key = self._attribute_key(name)
@@ -1820,9 +1841,9 @@ class Element < Node {
   }
 
   /**
-   * Records that the attribute _name_ belongs to _uri_. Called by the
-   * parser while adjusting foreign attributes; there is no reason to
-   * call it by hand.
+   * Records that the attribute _name_ belongs to the namespace _uri_.
+   * The parser calls this while adjusting foreign attributes, and
+   * there's no reason to call it yourself.
    *
    * @param string name
    * @param string uri
@@ -1901,12 +1922,12 @@ class Element < Node {
   }
 
   /**
-   * A `ClassList` view of this element's `class` attribute, for
-   * adding, removing and toggling classes.
+   * A `ClassList` view of this element's `class` attribute, for adding,
+   * removing and toggling classes.
    *
-   * A fresh view is returned on every call; because it reads and
-   * writes the attribute directly there is no state to keep, and two
-   * views of the same element behave identically.
+   * Each call returns a new view. Because a view reads and writes the
+   * attribute directly, it has no state of its own, so two views of the
+   * same element behave identically.
    *
    * @returns ClassList
    */
@@ -1926,16 +1947,16 @@ class Element < Node {
   }
 
   /**
-   * This element, or its nearest ancestor, matching the CSS selector
-   * _query_: or `nil` when neither this element nor any ancestor
-   * does.
+   * This element, or its nearest ancestor, that matches the CSS
+   * selector _query_, or `nil` if neither this element nor any of its
+   * ancestors matches.
    *
-   * The search starts at the element itself, which is what makes
-   * `el.closest('div')` return `el` when `el` is a `div`.
+   * The search starts with the element itself, which is why
+   * `el.closest('div')` returns `el` when `el` is a `div`.
    *
    * @param string query
    * @returns ?Element
-   * @throws SelectorError when _query_ is not valid.
+   * @throws SelectorError if _query_ isn't valid.
    */
   closest(query: string) {
     var compiled = selector.compile(query)
@@ -1992,10 +2013,9 @@ class Element < Node {
   /**
    * The markup of this element's children.
    *
-   * A `<template>` answers with its content fragment rather than with
-   * its own children, which are always empty. That matches the DOM,
-   * and it is the only way the question has a useful answer for a
-   * template.
+   * A `<template>` element returns its content fragment instead of its
+   * own children, which are always empty. That matches the DOM, and
+   * it's the only useful answer for a template.
    *
    * @returns string
    */

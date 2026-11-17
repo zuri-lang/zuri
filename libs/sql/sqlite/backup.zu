@@ -1,21 +1,22 @@
 /**
  * @module backup
  *
- * Copying a live SQLite database without stopping it.
+ * Copies a SQLite database while it's in use.
  *
  * Copying the file with the filesystem is only safe when nothing is
- * writing, which for a running application is never guaranteed.
- * SQLite's backup interface copies page by page and notices when the
- * source changes underneath, restarting the copy rather than producing
- * a file that is half of one state and half of another.
+ * writing to it, and that's never guaranteed for a running application.
+ * SQLite's backup API copies the database page by page and notices when
+ * the source changes during the copy. If it does, the copy starts
+ * again, instead of producing a file that's half one state and half
+ * another.
  *
  * ```zuri,ignore
  * db.native().backup_to('./snapshot.db')
  * ```
  *
- * That copies everything in one call. For a large database where the
- * pause matters, `Backup` copies in steps so other work can happen in
- * between.
+ * That copies everything in one call. For a large database where a
+ * pause matters, `Backup` copies in steps, so that other work can
+ * happen in between.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -67,7 +68,8 @@ class Backup {
 
     catch {
       return _sqlite.backup_step(
-        self._handle, pages == nil ? DEFAULT_PAGES : pages,
+        self._handle,
+        pages == nil ? DEFAULT_PAGES : pages,
       )
     } as error {
       reraise(error, nil)
@@ -133,10 +135,9 @@ class Backup {
       remaining_attempts--
 
       if remaining_attempts <= 0 {
-        raise SqlError(
-          'the source database stayed busy for the whole backup',
-          { driver: 'sqlite' },
-        )
+        raise SqlError('the source database stayed busy for the whole backup', {
+          driver: 'sqlite',
+        })
       }
     }
   }
@@ -171,16 +172,15 @@ class Backup {
 
   _open() {
     if self._closed {
-      raise ClosedError(
-        'this backup has already finished', { driver: 'sqlite' },
-      )
+      raise ClosedError('this backup has already finished', {
+        driver: 'sqlite',
+      })
     }
 
     if self._source.is_closed() or self._destination.is_closed() {
-      raise ClosedError(
-        'a connection this backup copies between was closed',
-        { driver: 'sqlite' },
-      )
+      raise ClosedError('a connection this backup copies between was closed', {
+        driver: 'sqlite',
+      })
     }
   }
 

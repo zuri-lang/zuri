@@ -1,12 +1,12 @@
 /**
  * @module server
  *
- * `HttpServer`: the server end of the module.
+ * `HttpServer`, the server side of the module.
  *
- * It accepts connections, speaks HTTP/1.1 or HTTP/2 as negotiated, runs
- * the middleware chain around the matched handler, and serves static
- * files when configured to. It can run single-threaded or hand
- * connections to a pool of workers.
+ * It accepts connections, uses HTTP/1.1 or HTTP/2 depending on what's
+ * negotiated, runs the middleware chain around the matching handler,
+ * and serves static files if you configure it to. It can run on a
+ * single thread or pass connections to a pool of workers.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -96,19 +96,20 @@ def _is_compressible(content_type) {
  * server.listen()
  * ```
  *
- * The pieces a server put in front of an application usually provides
- * are here rather than assumed: TLS with `use_tls()`, static files
- * with `serve_files()`, response compression, byte ranges,
- * conditional requests, keep-alive with bounded reuse, and limits on
- * every part of a request that a peer controls the size of.
+ * It includes the features that a server in front of an application
+ * would normally provide: TLS with `use_tls()`, static files with
+ * `serve_files()`, response compression, byte ranges, conditional
+ * requests, keep-alive connections with limited reuse, and limits on
+ * every part of a request whose size the client controls.
  *
  * @printable
  */
 class HttpServer {
 
   /**
-   * The address to bind to. Defaults to `'127.0.0.1'`, which accepts
-   * only local connections; bind `'0.0.0.0'` to accept from anywhere.
+   * The address to bind to. Defaults to `'127.0.0.1'`, which only
+   * accepts local connections. Bind to `'0.0.0.0'` to accept
+   * connections from anywhere.
    * @type string
    */
   var host = '127.0.0.1'
@@ -150,9 +151,9 @@ class HttpServer {
   var max_open_connections = 1024
 
   /**
-   * The most requests one connection may serve before it is closed.
-   * A ceiling here bounds the work a single client can pin to one
-   * worker; `0` or `nil` means unlimited.
+   * The maximum number of requests a single connection can serve before
+   * it's closed. This limits how much work a single client can tie to
+   * one worker. `0` or `nil` means no limit.
    * @type number
    */
   var max_keep_alive_requests = 0
@@ -185,8 +186,8 @@ class HttpServer {
   var header_timeout = 10
 
   /**
-   * The largest request body accepted, in bytes. Defaults to 10 MiB;
-   * raise it deliberately for a service that takes uploads.
+   * The largest request body accepted, in bytes. Defaults to 10 MiB. A
+   * service that accepts uploads may need to raise it.
    * @type number
    */
   var max_body_size = 10485760
@@ -205,34 +206,34 @@ class HttpServer {
   var compression = true
 
   /**
-   * The smallest response worth compressing, in bytes. Below roughly
-   * a packet's worth, compression costs more than it saves.
+   * Responses smaller than this many bytes aren't compressed. Below
+   * about the size of a packet, compression costs more than it saves.
    * @type number
    */
   var compression_min_size = 1024
 
   /**
    * How hard to compress, on the scale of whichever coding content
-   * negotiation lands on - brotli `0`-`11`, deflate `0`-`9`, zstd
-   * `1`-`22`. `nil`, the default, uses the per-coding defaults in
-   * `http.body`, which are chosen for compressing a response per
-   * request rather than for compressing a file once.
+   * negotiation chooses: brotli from `0` to `11`, deflate from `0` to
+   * `9`, or zstd from `1` to `22`. The default, `nil`, uses the default
+   * for each coding in `http.body`, which is chosen for compressing a
+   * response on every request, not for compressing a file once.
    *
-   * @note Raising this is rarely the win it looks like. Brotli at its
-   *    maximum costs on the order of a hundred times the CPU of `5`
-   *    and often produces a larger result; see
-   *    `http.body.DEFAULT_BROTLI_QUALITY`. Somewhere a response is
-   *    served enough times to be worth compressing hard, it is worth
-   *    compressing ahead of time instead - `serve_files()` can serve a
-   *    pre-compressed sibling with `precompressed`.
+   * @note Raising this rarely helps as much as it seems it would.
+   *    Brotli at its maximum level costs around a hundred times as much
+   *    CPU time as level `5`, and the result is often larger. See
+   *    `http.body.DEFAULT_BROTLI_QUALITY`. If a response is served
+   *    often enough to justify a higher level, compress it ahead of
+   *    time instead. `serve_files()` can serve a precompressed version
+   *    of a file with `precompressed`.
    * @type ?number
    */
   var compression_quality
 
   /**
-   * Whether `HttpRequest.client_ip()` should consult forwarding
-   * headers. Leave this off unless the server really is behind a
-   * proxy you control - see `client_ip()` for why.
+   * Whether `HttpRequest.client_ip()` should use forwarding headers.
+   * Leave this off unless the server really is behind a proxy you
+   * control. See `client_ip()` for the reasons.
    * @type bool
    */
   var trust_proxy = false
@@ -250,9 +251,9 @@ class HttpServer {
   var socket
 
   /**
-   * Whether to speak HTTP/2 when a client asks for it - through ALPN
-   * on a TLS connection, or through the connection preface on a
-   * cleartext one.
+   * Whether to use HTTP/2 when a client asks for it, either through
+   * ALPN on a TLS connection or through the connection preface on an
+   * unencrypted one.
    * @type bool
    */
   var http2 = true
@@ -270,6 +271,7 @@ class HttpServer {
   var _reply_listeners = []
   var _error_listeners = []
   var _static_mounts = []
+  var _halt
 
   /**
    * @param ?number port: defaults to `8000`
@@ -423,13 +425,13 @@ class HttpServer {
   }
 
   /**
-   * Adds a middleware, called for every request before the route
-   * handler.
+   * Adds a middleware, which is called for every request before the
+   * route handler.
    *
    * A middleware takes `(request, response, next)` and must call
-   * `next()` to let the rest of the chain run; not calling it is how
-   * a middleware short-circuits, which is exactly what an
-   * authentication or rate-limiting layer wants to do.
+   * `next()` to let the rest of the chain run. If it doesn't call
+   * `next()`, the request stops there. An authentication or
+   * rate-limiting layer does this to turn a request away.
    *
    * ```zuri
    * server.use(@(request, response, next) {
@@ -440,7 +442,8 @@ class HttpServer {
    * })
    * ```
    *
-   * Middleware run in the order they were added, outermost first.
+   * Middleware runs in the order it was added, starting with the
+   * outermost.
    *
    * @param function(3) middleware
    * @returns HttpServer: this same instance, for chaining
@@ -468,13 +471,14 @@ class HttpServer {
   }
 
   /**
-   * Sets the handler called when a route handler raises.
+   * Sets the handler that's called when a route handler raises an
+   * error.
    *
    * It takes `(request, response, error)` and is responsible for
-   * producing the response. Without one, the server sends a bare
-   * `500` and reports the error through `on_error()` listeners - it
-   * never puts an exception message in a response body, since that is
-   * how internal paths and query fragments end up on a user's screen.
+   * producing the response. Without one, the server sends a plain `500`
+   * and reports the error to any `on_error()` listeners. It never puts
+   * an error message in a response body, because that's how internal
+   * paths and parts of queries end up on a user's screen.
    *
    * @param function(3) handler
    * @returns HttpServer: this same instance, for chaining
@@ -485,8 +489,7 @@ class HttpServer {
   }
 
   /**
-   * Serves the files under `directory` at URLs beginning with
-   * `prefix`.
+   * Serves the files in `directory` at URLs that start with `prefix`.
    *
    * ```zuri
    * server.serve_files('/static', './public', { cache_age: 86400 })
@@ -494,9 +497,9 @@ class HttpServer {
    *
    * @param string prefix
    * @param string directory
-   * @param ?dict options: passed through to `StaticFiles` -
+   * @param ?dict options: passed on to `StaticFiles`. The options are
    *    `index_files`, `cache_age`, `etag`, `precompressed`,
-   *    `allow_dotfiles`, `fallback`
+   *    `allow_dotfiles` and `fallback`.
    * @returns HttpServer: this same instance, for chaining
    */
   serve_files(prefix: string, directory: string, options: ?dict) {
@@ -509,8 +512,8 @@ class HttpServer {
   }
 
   /**
-   * The router, for anything the convenience methods above do not
-   * cover - listing routes, or building a URL from a route name.
+   * The router, for anything the convenience methods above don't cover,
+   * such as listing the routes or building a URL from a route's name.
    *
    * @returns Router
    */
@@ -594,20 +597,22 @@ class HttpServer {
    * Turns on TLS, using the given PEM-encoded certificate chain and
    * private key.
    *
-   * `cert_chain` must be the server certificate followed by any
-   * intermediates - leaving the intermediates out is the single most
-   * common TLS misconfiguration, and it fails only for the clients
-   * that do not happen to have them cached.
+   * `cert_chain` must contain the server certificate followed by any
+   * intermediate certificates. Leaving out the intermediates is the
+   * most common TLS mistake, and it only fails for clients that don't
+   * already have them cached.
    *
    * @note The certificate and key are parsed when the first handshake
-   *    runs, not here, so a malformed or mismatched pair surfaces as a
-   *    failed connection rather than as a failed call to this method.
+   *    happens, not when this method is called, so an invalid or
+   *    mismatched pair shows up as a failed connection, and this method
+   *    doesn't raise an error for it.
    *
-   * @param string cert_chain: PEM, leaf first
+   * @param string cert_chain: PEM, starting with the server's own
+   *    certificate
    * @param string private_key: PEM
    * @param ?dict options: `alpn` (a list of protocol names),
-   *    `client_ca` (PEM roots for mutual TLS), `require_client_cert`,
-   *    `min_version` and `max_version`
+   *    `client_ca` (PEM root certificates for mutual TLS),
+   *    `require_client_cert`, `min_version` and `max_version`
    * @returns HttpServer: this same instance, for chaining
    */
   use_tls(cert_chain: string, private_key: string, options: ?dict) {
@@ -649,22 +654,19 @@ class HttpServer {
   }
 
   /**
-   * Loads the certificate and key from files rather than strings.
+   * Loads the certificate and private key from files instead of
+   * strings.
    *
    * @param string cert_path
-   * @param ?string key_path: defaults to `cert_path`, for a combined
-   *    PEM file
-   * @param ?dict options: as `use_tls()`
+   * @param ?string key_path: defaults to `cert_path`, for a PEM file
+   *    that contains both
+   * @param ?dict options: the same as for `use_tls()`
    * @returns HttpServer: this same instance, for chaining
    */
   load_certs(cert_path: string, key_path: ?string, options: ?dict) {
     var key = key_path == nil ? cert_path : key_path
 
-    return self.use_tls(
-      file(cert_path).read(),
-      file(key).read(),
-      options,
-    )
+    return self.use_tls(file(cert_path).read(), file(key).read(), options)
   }
 
   /**
@@ -743,7 +745,9 @@ class HttpServer {
     } as error
 
     if error {
-      raise HttpError('could not bind ${self.host}:${self.port}: ${error.message}')
+      raise HttpError(
+        'could not bind ${self.host}:${self.port}: ${error.message}',
+      )
     }
 
     self._acceptor = net.Acceptor(self.socket)
@@ -799,6 +803,10 @@ class HttpServer {
    * `net.Acceptor` interval of this call. `listen()` then closes every
    * connection it still holds, after giving what they have queued a
    * chance to go out.
+   *
+   * On the server `http.serve()` hands a worker, this stops the whole
+   * server, every worker and the accept loop, the same as the `stop`
+   * function `on_ready` is given.
    */
   close() {
     self._listening = false
@@ -808,18 +816,33 @@ class HttpServer {
         self.socket.close()
       }
     }
+
+    if self._halt != nil {
+      self._halt.close()
+    }
   }
 
   /**
-   * Serves every request on one already-accepted client socket, then
-   * closes it.
+   * Makes this server one worker of a server that stops when `halt`
+   * closes, so that `close()` closes `halt` and stops the whole server.
    *
-   * This is the whole per-connection pipeline - TLS handshake,
-   * keep-alive loop, parsing, dispatch, response - and is public so
-   * that a caller running its own accept loop (or handing sockets to
-   * worker isolates) can reuse it. Its reads wait for the peer, so that
-   * caller is serving one connection at a time. `listen()` is not: see
-   * `http.loop`.
+   * @internal Called by `http.serve()`.
+   * @param isolate.Channel halt
+   */
+  stop_with(halt) {
+    self._halt = halt
+  }
+
+  /**
+   * Serves every request on a client socket that has already been
+   * accepted, and then closes it.
+   *
+   * This is the complete pipeline for a connection, including the TLS
+   * handshake, the keep-alive loop, parsing, dispatching and the
+   * response. It's public so that a caller running its own accept loop,
+   * or passing sockets to worker isolates, can reuse it. Its reads wait
+   * for the client, so that caller only serves one connection at a
+   * time. `listen()` doesn't work that way. See `http.loop`.
    *
    * @param TcpStream client
    */
@@ -974,15 +997,16 @@ class HttpServer {
     }
 
     var request = self._accepted_head(
-      connection, self._read_request_head(connection),
+      connection,
+      self._read_request_head(connection),
     )
 
     if request == nil {
       return false
     }
 
-    if request.content_length() > 0
-      or request.headers.contains('transfer-encoding') {
+    if request.content_length() > 0 or
+        request.headers.contains('transfer-encoding') {
       connection.set_read_timeout(self.read_timeout)
     }
 
@@ -996,7 +1020,7 @@ class HttpServer {
       # An idle keep-alive connection timing out, or a peer closing
       # between requests, is the normal end of a connection.
       if instance_of(request, TimeoutError) or
-        instance_of(request, ConnectionError) {
+          instance_of(request, ConnectionError) {
         return nil
       }
 
@@ -1027,7 +1051,8 @@ class HttpServer {
    */
   request_from_head(connection, head) {
     return self._accepted_head(
-      connection, self._request_from_head_safe(connection, head),
+      connection,
+      self._request_from_head_safe(connection, head),
     )
   }
 
@@ -1083,9 +1108,9 @@ class HttpServer {
    * @returns bool: whether to keep the connection open
    */
   answer(connection, request, served) {
-    var is_final = self.max_keep_alive_requests != nil
-      and self.max_keep_alive_requests > 0
-      and served + 1 >= self.max_keep_alive_requests
+    var is_final = self.max_keep_alive_requests != nil and
+        self.max_keep_alive_requests > 0 and
+        served + 1 >= self.max_keep_alive_requests
 
     if !self._serve_one(connection, request, is_final) {
       return false
@@ -1112,9 +1137,10 @@ class HttpServer {
   }
 
   /**
-   * The session for a connection that speaks HTTP/2, for a caller that
-   * drives it rather than handing it to `serve_http2()`. Its first job
-   * is `start_server()`, which reads the whole connection preface.
+   * The session for an HTTP/2 connection, for a caller that drives the
+   * connection itself instead of passing it to `serve_http2()`. Its
+   * first job is `start_server()`, which reads the whole connection
+   * preface.
    *
    * @param Connection connection
    * @returns Http2Connection
@@ -1299,15 +1325,16 @@ class HttpServer {
       return false
     }
 
-    var opts = {
-      server_name: self.server_name,
-    }
+    var opts = { server_name: self.server_name }
     if is_final == true {
       opts['keep_alive'] = false
     }
 
     var keep_alive = self._write_response_safe(
-      connection, request, response, opts,
+      connection,
+      request,
+      response,
+      opts,
     )
     if keep_alive == nil {
       return false
@@ -1380,8 +1407,8 @@ class HttpServer {
         return false
       }
 
-      if !request.context.get('continued', false)
-        and !self._send_continue_safe(connection) {
+      if !request.context.get('continued', false) and
+          !self._send_continue_safe(connection) {
         return false
       }
     }
@@ -1430,7 +1457,8 @@ class HttpServer {
     if request.method == 'OPTIONS' and request.path == '*' {
       response.status = status.NO_CONTENT
       response.headers.set(
-        'Allow', 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS',
+        'Allow',
+        'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS',
       )
       return
     }
@@ -1599,7 +1627,9 @@ class HttpServer {
   _compress_body_safe(response, coding) {
     catch {
       var compressed = body.encode_content(
-        response.body, coding, self.compression_quality,
+        response.body,
+        coding,
+        self.compression_quality,
       )
 
       # Compression that makes a body bigger is worse than none.
@@ -1620,9 +1650,9 @@ class HttpServer {
 
     if instance_of(error, TooLargeError) {
       var message = error.message.lower()
-      code = message.contains('header') or message.contains('line') ?
-        status.REQUEST_HEADER_FIELDS_TOO_LARGE :
-        status.CONTENT_TOO_LARGE
+      code = message.contains('header') or message.contains('line')
+          ? status.REQUEST_HEADER_FIELDS_TOO_LARGE
+          : status.CONTENT_TOO_LARGE
     }
 
     self._report(error, connection)
@@ -1630,12 +1660,12 @@ class HttpServer {
     catch {
       var reason = status.reason(code)
       var head = 'HTTP/1.1 ${code} ${reason}\r\n' +
-        'Date: ${util.format_date()}\r\n' +
-        'Server: ${self.server_name}\r\n' +
-        'Content-Type: text/plain; charset=utf-8\r\n' +
-        'Content-Length: ${(code.to_string() + " " + reason).length()}\r\n' +
-        'Connection: close\r\n\r\n' +
-        '${code} ${reason}'
+          'Date: ${util.format_date()}\r\n' +
+          'Server: ${self.server_name}\r\n' +
+          'Content-Type: text/plain; charset=utf-8\r\n' +
+          'Content-Length: ${(code.to_string() + " " + reason).length()}\r\n' +
+          'Connection: close\r\n\r\n' +
+          '${code} ${reason}'
 
       connection.write(head)
       connection.flush()

@@ -1,13 +1,13 @@
 /**
  * @module model
  *
- * Rows as objects: a class per table, records that save and check
- * themselves, and the associations between them.
+ * Rows as objects: a class for each table, records that save and
+ * validate themselves, and the associations between them.
  *
- * A model is a class extending `Model`. Its fields are its table's
- * columns, read and written by name, and a static `define()` says the
- * rest: the table, how values are cast and checked, and what the model
- * is associated with.
+ * A model is a class that extends `Model`. Its fields are its table's
+ * columns, read and written by name, and a static `define()` method
+ * describes the rest: the table, how values are cast and checked, and
+ * the model's associations.
  *
  * ```zuri,ignore
  * import sql
@@ -57,26 +57,27 @@
  *
  * ### Records and connections
  *
- * `db.model(Post)` starts a `Query` on a connection or a transaction,
- * and every record method that touches the database takes the one to
- * use: `post.save(db)`, `post.delete(tx)`. A record never holds a
- * connection of its own, so the same record saves inside whichever
- * transaction the code saving it opened, and one kept after its
- * connection went back to a pool cannot write through a connection
- * that is now somebody else's.
+ * `db.model(Post)` starts a `Query` on a connection or a transaction.
+ * Every record method that uses the database takes the connection or
+ * transaction to use, as in `post.save(db)` or `post.delete(tx)`. A
+ * record never holds a connection of its own, so it's saved inside
+ * whichever transaction the code saving it opened, and a record kept
+ * after its connection has gone back to a pool can't write through a
+ * connection that now belongs to someone else.
  *
- * ### What is loaded
+ * ### Loading associations
  *
- * Associations are loaded when asked for: by `include()` on a query,
- * one query per association however many records there are, or by
- * `load()` on a record. A field holding an association is nil until
- * then. Each query builds its own records, so two queries reaching the
- * same row build two records of it, which are `==` to each other.
+ * Associations are only loaded when you ask for them, either with
+ * `include()` on a query, which runs one query per association however
+ * many records there are, or with `load()` on a record. Until then, a
+ * field that holds an association is `nil`. Each query builds its own
+ * records, so two queries that read the same row build two records for
+ * it, and the two are `==` to each other.
  *
  * ### Tables
  *
- * A model maps a table that exists; `sql.migrate` and `db.schema` are
- * what create and change it.
+ * A model maps a table that already exists. Use `sql.migrate` and
+ * `db.schema` to create and change tables.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -84,8 +85,14 @@
 import @.record { Model }
 import @.query { Query, RecordCursor }
 import @.definition {
-  Definition, Association, definition_of,
-  BELONGS_TO, HAS_ONE, HAS_MANY, BELONGS_TO_MANY, HOOKS,
+  Definition,
+  Association,
+  definition_of,
+  BELONGS_TO,
+  HAS_ONE,
+  HAS_MANY,
+  BELONGS_TO_MANY,
+  HOOKS,
 }
 import @.errors { ModelError, RecordNotFound, RecordInvalid, Errors }
 import @.casts { CASTS }

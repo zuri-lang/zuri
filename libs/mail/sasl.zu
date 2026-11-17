@@ -1,12 +1,12 @@
 /**
  * @module sasl
  *
- * The authentication mechanisms all three mail protocols share.
+ * The authentication mechanisms that all three mail protocols share.
  *
  * SMTP, IMAP and POP3 each have their own way of starting an
- * authentication exchange and their own way of carrying the bytes, but
- * what travels inside is the same in all three. This module holds the
- * mechanisms themselves, so none of the protocols has to.
+ * authentication exchange and of carrying the data, but the data itself
+ * is the same in all three. This module contains the mechanisms, so
+ * that none of the protocols has to.
  *
  * ```zuri
  * import mail.sasl
@@ -22,20 +22,20 @@
  * |ann|secret
  * ```
  *
- * ### What is here
+ * ### Mechanisms
  *
  * | mechanism | what it sends |
  * | - | - |
- * | `PLAIN` | the password, so it needs TLS under it |
- * | `LOGIN` | the same, one prompt at a time, for servers that only do this |
+ * | `PLAIN` | the password, so it needs TLS |
+ * | `LOGIN` | the same, one prompt at a time, for servers that only support this |
  * | `CRAM-MD5` | a keyed digest of the server's challenge |
- * | `SCRAM-SHA-1`, `SCRAM-SHA-256` | a proof the server checks without the password, and one back |
- * | `XOAUTH2`, `OAUTHBEARER` | a bearer token, which is what the large providers want |
- * | `EXTERNAL` | nothing: the client certificate already said who this is |
- * | `ANONYMOUS` | nothing, on purpose |
+ * | `SCRAM-SHA-1`, `SCRAM-SHA-256` | a proof that the server checks without the password, and a proof back from the server |
+ * | `XOAUTH2`, `OAUTHBEARER` | a bearer token, which is what the large providers require |
+ * | `EXTERNAL` | nothing, because the client certificate already identifies the client |
+ * | `ANONYMOUS` | nothing, by design |
  *
- * The clients pick the strongest mechanism both ends offer, in the
- * order `PREFERENCE` gives.
+ * The clients choose the strongest mechanism that both sides support,
+ * in the order given by `PREFERENCE`.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -49,14 +49,15 @@ import hash
 import .errors { AuthenticationError }
 
 /**
- * The mechanisms this implements, strongest first, which is the order
- * a client picks from what a server offers.
+ * The mechanisms implemented here, strongest first. Clients choose from
+ * the mechanisms a server offers in this order.
  *
- * `SCRAM` proves the password without sending it and proves the server
- * knew it too. `CRAM-MD5` proves it without sending it but proves
- * nothing about the server, and its digest is old. The rest send
- * something worth protecting, which is why every client here refuses
- * to use them without TLS.
+ * `SCRAM` proves the client knows the password without sending it, and
+ * also proves that the server knew it. `CRAM-MD5` proves the client
+ * knows the password without sending it, but proves nothing about the
+ * server, and its digest algorithm is old. The others send the password
+ * or a token in a form that anyone listening could reuse, so the
+ * clients in this package use them only over TLS.
  *
  * @type list
  */
@@ -83,31 +84,29 @@ var NEEDS_TLS = ['PLAIN', 'LOGIN', 'XOAUTH2', 'OAUTHBEARER']
 # The characters RFC 4013 maps to a space, and the ones it deletes.
 # Both lists are the ones that matter to a password typed by a person.
 var _TO_SPACE = [
-  0x00a0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005,
-  0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x200b, 0x202f, 0x205f,
-  0x3000,
+  0x00a0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006,
+  0x2007, 0x2008, 0x2009, 0x200a, 0x200b, 0x202f, 0x205f, 0x3000,
 ]
 
 var _DELETED = [
-  0x00ad, 0x034f, 0x1806, 0x180b, 0x180c, 0x180d, 0x200c, 0x200d,
-  0x2060, 0xfe00, 0xfe01, 0xfe02, 0xfe03, 0xfe04, 0xfe05, 0xfe06,
-  0xfe07, 0xfe08, 0xfe09, 0xfe0a, 0xfe0b, 0xfe0c, 0xfe0d, 0xfe0e,
-  0xfe0f, 0xfeff,
+  0x00ad, 0x034f, 0x1806, 0x180b, 0x180c, 0x180d, 0x200c, 0x200d, 0x2060,
+  0xfe00, 0xfe01, 0xfe02, 0xfe03, 0xfe04, 0xfe05, 0xfe06, 0xfe07, 0xfe08,
+  0xfe09, 0xfe0a, 0xfe0b, 0xfe0c, 0xfe0d, 0xfe0e, 0xfe0f, 0xfeff,
 ]
 
 /**
- * Prepares a username or password the way RFC 4013 says to, so that
- * two spellings of the same characters authenticate the same.
+ * Prepares a username or password as RFC 4013 describes, so that two
+ * ways of writing the same characters authenticate in the same way.
  *
  * The space mappings, the deletions and the prohibited characters are
- * all applied. Unicode normalisation is not, so text that needs it
- * must arrive already normalised; for anything typed on a keyboard in
- * any Latin script this makes no difference at all.
+ * all applied. Unicode normalization isn't, so text that needs it must
+ * already be normalized. For anything typed on a keyboard in a Latin
+ * script, this makes no difference.
  *
  * @param string text
  * @returns string
- * @throws AuthenticationError if the text holds a character that may
- *    not appear in a credential.
+ * @throws AuthenticationError if the text contains a character that
+ *    can't appear in a credential.
  */
 def prepare(text: string) {
   var out = []
@@ -128,12 +127,13 @@ def prepare(text: string) {
     # Control characters, the surrogate range, the private use areas
     # and the non-characters have no business in a credential, and a
     # server that saw them would not agree with us about what they are.
-    if code < 0x20 or code == 0x7f
-      or (code >= 0x80 and code <= 0x9f)
-      or (code >= 0xd800 and code <= 0xdfff)
-      or (code >= 0xe000 and code <= 0xf8ff)
-      or (code >= 0xfdd0 and code <= 0xfdef)
-      or (code & 0xfffe) == 0xfffe {
+    if code < 0x20 or
+        code == 0x7f or
+        (code >= 0x80 and code <= 0x9f) or
+        (code >= 0xd800 and code <= 0xdfff) or
+        (code >= 0xe000 and code <= 0xf8ff) or
+        (code >= 0xfdd0 and code <= 0xfdef) or
+        (code & 0xfffe) == 0xfffe {
       raise AuthenticationError('a credential cannot contain this character')
     }
 
@@ -234,8 +234,8 @@ class Mechanism {
 /**
  * `PLAIN`: the username and the password, separated by zero bytes.
  *
- * Everything worth having is on the wire, so this belongs under TLS
- * and nowhere else.
+ * Everything an attacker would want is sent over the connection, so
+ * only use this with TLS.
  *
  * @printable
  */
@@ -273,7 +273,7 @@ class Plain < Mechanism {
 /**
  * `LOGIN`: the username and the password again, one prompt at a time.
  *
- * Never standardised and entirely superseded by `PLAIN`, but some
+ * Never standardized and entirely superseded by `PLAIN`, but some
  * servers offer nothing else.
  *
  * @printable
@@ -366,8 +366,8 @@ def response(username: string, password: string, challenge) {
 }
 
 /**
- * `XOAUTH2`: a bearer token rather than a password, which is what
- * Google and Microsoft accept.
+ * `XOAUTH2`: a bearer token instead of a password, as used by Google
+ * and Microsoft.
  *
  * @printable
  */
@@ -407,7 +407,7 @@ class XOAuth2 < Mechanism {
 }
 
 /**
- * `OAUTHBEARER`: the standardised form of the same idea, from RFC
+ * `OAUTHBEARER`: the standardized form of the same idea, from RFC
  * 7628.
  *
  * @printable
@@ -522,9 +522,9 @@ def _scram_hash(digest: string, data) {
 }
 
 def _scram_hmac(digest: string, key, data) {
-  return digest == 'sha1' ?
-    hash.hmac(hash.sha1, key, data, true) :
-    hash.hmac(hash.sha256, key, data, true)
+  return digest == 'sha1'
+      ? hash.hmac(hash.sha1, key, data, true)
+      : hash.hmac(hash.sha256, key, data, true)
 }
 
 # A comma or an equals sign inside a username would be read as
@@ -563,15 +563,21 @@ class Scram < Mechanism {
   /**
    * @param string username
    * @param string password
-   * @param ?string digest: `sha256` when not given, or `sha1`.
+   * @param ?string digest: `sha256` if it isn't given, or `sha1`
    * @param ?string authorize_as
-   * @param ?string nonce: The client nonce. A fresh random one is
-   *    generated when not given, which is what every real exchange
-   *    wants; passing one is for reproducing a known exchange.
-   * @throws AuthenticationError if `digest` is neither.
+   * @param ?string nonce: the client nonce. If it isn't given, a new
+   *    random one is generated, as every real exchange needs. Pass one
+   *    only to reproduce a known exchange, such as a test vector.
+   * @throws AuthenticationError if `digest` is neither `sha256` nor
+   *    `sha1`.
    */
-  @new(username: string, password: string, digest: ?string,
-    authorize_as: ?string, nonce: ?string) {
+  @new(
+    username: string,
+    password: string,
+    digest: ?string,
+    authorize_as: ?string,
+    nonce: ?string,
+  ) {
     self.digest = digest == nil ? 'sha256' : digest.lower()
 
     if !_SCRAM_DIGESTS.contains(self.digest) {
@@ -595,9 +601,9 @@ class Scram < Mechanism {
   # The header that says what channel binding this client wants, which
   # is none, and which account it is acting as.
   _gs2() {
-    return self.authorize_as == '' ?
-      'n,,' :
-      'n,a=${_escape_name(self.authorize_as)},'
+    return self.authorize_as == ''
+        ? 'n,,'
+        : 'n,a=${_escape_name(self.authorize_as)},'
   }
 
   start() {
@@ -641,7 +647,12 @@ class Scram < Mechanism {
     var salt = base64.decode(fields.s)
     var size = _SCRAM_DIGESTS[self.digest].size
     var salted = hash.pbkdf2(
-      self.digest, self.password, salt, iterations, size, true,
+      self.digest,
+      self.password,
+      salt,
+      iterations,
+      size,
+      true,
     )
     var client_key = _scram_hmac(self.digest, salted, 'Client Key')
     var stored_key = _scram_hash(self.digest, client_key)
@@ -650,12 +661,13 @@ class Scram < Mechanism {
     var signature = _scram_hmac(self.digest, stored_key, message)
     var server_key = _scram_hmac(self.digest, salted, 'Server Key')
 
-    self._server_signature = base64.encode(_scram_hmac(
-      self.digest, server_key, message,
-    ))
+    self._server_signature = base64.encode(
+      _scram_hmac(self.digest, server_key, message),
+    )
     self._stage = 2
 
-    return '${without_proof},p=${base64.encode(_xor(client_key, signature))}'.to_bytes()
+    return '${without_proof},p=${base64.encode(_xor(client_key, signature))}'
+        .to_bytes()
   }
 
   _finish(text: string) {
@@ -683,7 +695,7 @@ class Scram < Mechanism {
 }
 
 /**
- * Builds a mechanism by name.
+ * Creates a mechanism by name.
  *
  * | credential | used by |
  * | - | - |
@@ -693,10 +705,10 @@ class Scram < Mechanism {
  * | `host`, `port` | `OAUTHBEARER` |
  * | `trace` | `ANONYMOUS` |
  *
- * @param string name: One of `PREFERENCE`.
+ * @param string name: one of the names in `PREFERENCE`
  * @param dict credentials
  * @returns Mechanism
- * @throws AuthenticationError if the name is not one of them, or a
+ * @throws AuthenticationError if the name isn't one of them, or a
  *    credential it needs is missing.
  */
 def of(name: string, credentials: dict) {

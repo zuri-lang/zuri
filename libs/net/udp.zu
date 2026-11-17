@@ -1,23 +1,18 @@
 /**
  * @module udp
  *
- * This module provides a complete implementation of the User
- * Datagram Protocol as specified in IETF RFC 768. It provides an
- * interface for sending and receiving individual datagrams,
- * including support for broadcast and multicast delivery.
+ * UDP sockets, for sending and receiving individual datagrams,
+ * including broadcast and multicast.
  *
- * Unlike TCP, UDP is connectionless: there is no handshake, no
- * guarantee of delivery or ordering, and no notion of a byte
- * stream - every send or receive operates on a single,
- * self-contained datagram.
+ * Unlike TCP, UDP has no connections. There's no handshake, no
+ * guarantee that datagrams arrive or arrive in order, and no stream of
+ * bytes. Every send or receive works on a single, self-contained
+ * datagram.
  *
- * It is meant to be used to provide more controlled and specific
- * UDP-based operating system features and for implementing
- * various standard and custom network protocols and
- * specifications.
+ * Use this module to work with UDP directly, for example to implement a
+ * standard or custom network protocol.
  *
- * The example below shows how to use this module for a simple
- * request/response exchange with a remote host.
+ * This example sends a request to a remote host and prints the reply:
  *
  * ```zuri
  * import net
@@ -30,9 +25,8 @@
  * socket.close()
  * ```
  *
- * A socket can also be bound to a local address to receive
- * datagrams from any sender, as shown below with a basic
- * listener on port 9000.
+ * A socket can also be bound to a local address, to receive datagrams
+ * from any sender. This example listens on port 9000:
  *
  * ```zuri
  * import net
@@ -96,42 +90,40 @@ class UdpSocket {
   }
 
   /**
-   * Connects this socket to a remote address. This does not
-   * perform a handshake - UDP is connectionless - it simply
-   * records `address` as the default peer for future
-   * `send()`/`receive()`/`peek()` calls, and filters out
-   * datagrams arriving from any other address. Calling this
-   * again re-targets the socket at a new peer.
+   * Connects this socket to a remote address. There's no handshake,
+   * because UDP has no connections. It records `address` as the default
+   * peer for future `send()`, `receive()` and `peek()` calls, and
+   * ignores datagrams that arrive from any other address. Calling this
+   * again points the socket at a new peer.
    *
-   * `address` may be a hostname or an IP literal, combined with
-   * a port, e.g. `'example.com:9000'` or `'127.0.0.1:9000'`. A
-   * hostname may resolve to several addresses; they are tried in
-   * turn and the first one that succeeds is used.
+   * `address` is a host name or an IP address, with a port, such as
+   * `'example.com:9000'` or `'127.0.0.1:9000'`. A host name can resolve
+   * to several addresses. They're tried in turn, and the first one that
+   * succeeds is used.
    *
-   * @param {string|SocketAddr} address: The host:port to treat
-   *    as the default peer
-   * @throws Error if resolution fails or every resolved address
-   *    is rejected
+   * @param {string|SocketAddr} address: the host and port to use as the
+   *    default peer
+   * @throws Error if resolution fails, or every resolved address is
+   *    rejected
    */
   connect(address) {
     _net_udp.udp_connect(self._ptr, _addr_string(address))
   }
 
   /**
-   * Binds this socket to `address`, allowing it to receive
-   * datagrams sent to that address.
+   * Binds this socket to `address`, so that it can receive datagrams
+   * sent to that address.
    *
-   * `address` may be a hostname or an IP literal combined with a
-   * port, e.g. `'0.0.0.0:9000'` or `'[::]:9000'`; port `0` asks
-   * the OS to assign an available ephemeral port, which can then
-   * be discovered via `local_address()`. If `address` resolves
-   * to multiple addresses, binding is attempted against each in
-   * turn until one succeeds.
+   * `address` is a host name or an IP address, with a port, such as
+   * `'0.0.0.0:9000'` or `'[::]:9000'`. Port `0` asks the operating
+   * system to choose a free port, which you can then find with
+   * `local_address()`. If `address` resolves to several addresses, each
+   * one is tried in turn until one can be bound.
    *
-   * @param {string|SocketAddr} address: The host:port to bind
+   * @param {string|SocketAddr} address: the host and port to bind to
    *    and receive on
-   * @throws Error if resolution fails or every resolved address
-   *    fails to bind (e.g. because it is already in use)
+   * @throws Error if resolution fails, or no resolved address can be
+   *    bound, for example because it's already in use
    */
   bind(address) {
     _net_udp.udp_bind(self._ptr, _addr_string(address))
@@ -218,35 +210,34 @@ class UdpSocket {
   }
 
   /**
-   * Peeks at the next incoming datagram from the connected peer
-   * without removing it from the socket's receive queue - a
-   * subsequent `receive()`/`peek()` call will still see it.
-   * Defaults to peeking a single byte when `length` is omitted.
+   * Looks at the next datagram from the connected peer without removing
+   * it from the socket's receive queue, so a later `receive()` or
+   * `peek()` call still sees it. If `length` is left out, it looks at a
+   * single byte.
    *
-   * Requires a connected socket, since (like `receive()`) it
-   * only reads from the peer set via `connect()`. Use
-   * `peek_from()` on a socket that is only bound.
+   * It needs a connected socket, because, like `receive()`, it only
+   * reads from the peer set with `connect()`. Use `peek_from()` on a
+   * socket that's only bound.
    *
-   * @param number length: The maximum number of bytes to peek
-   * @returns bytes up to `length` bytes of the pending datagram
-   * @throws Error on an underlying I/O error, or if this socket
-   *    has not been connected
+   * @param number length: the maximum number of bytes to look at
+   * @returns bytes up to `length` bytes of the waiting datagram
+   * @throws Error on an I/O error, or if this socket isn't connected
    */
   peek(length) {
     return _net_udp.udp_peek(self._ptr, length)
   }
 
   /**
-   * Peeks at the next incoming datagram from any sender without
-   * removing it from the socket's receive queue - a subsequent
-   * `receive_from()`/`peek_from()` call will still see it.
-   * Defaults to peeking a single byte when `length` is omitted.
-   * Unlike `peek()`, this does not require a connected socket.
+   * Looks at the next datagram from any sender without removing it from
+   * the socket's receive queue, so a later `receive_from()` or
+   * `peek_from()` call still sees it. If `length` is left out, it looks
+   * at a single byte. Unlike `peek()`, this doesn't need a connected
+   * socket.
    *
-   * @param number length: The maximum number of bytes to peek
-   * @returns {data: bytes, address: SocketAddr} the pending
-   *    datagram's bytes and the address it was sent from
-   * @throws Error on an underlying I/O error
+   * @param number length: the maximum number of bytes to look at
+   * @returns {data: bytes, address: SocketAddr} the waiting datagram's
+   *    bytes, and the address it was sent from
+   * @throws Error on an I/O error
    */
   peek_from(length) {
     var result = _net_udp.udp_peek_from(self._ptr, length)
@@ -278,15 +269,13 @@ class UdpSocket {
   }
 
   /**
-   * Retrieves and clears the value of the socket's `SO_ERROR`
-   * option - i.e. any pending error the OS has recorded for this
-   * socket without yet surfacing through a failed send or
-   * receive.
+   * Reads and clears the socket's `SO_ERROR` option, which is any error
+   * that the operating system has recorded for this socket but hasn't
+   * yet reported through a failed send or receive.
    *
-   * @returns ?string a description of the pending error, or
-   *    `nil` if there is none
-   * @throws Error on an underlying I/O error while querying the
-   *    socket
+   * @returns ?string a description of the pending error, or `nil` if
+   *    there isn't one
+   * @throws Error on an I/O error while querying the socket
    */
   get_error() {
     return _net_udp.udp_get_error(self._ptr)
@@ -403,26 +392,22 @@ class UdpSocket {
   }
 
   /**
-   * Receives a single datagram from the connected peer into a
-   * newly allocated byte buffer of up to `length` bytes.
-   * Requires a connected socket, since (like `peek()`) it only
-   * reads from the peer set via `connect()`. Use
-   * `receive_from()` on a socket that is only bound.
+   * Receives a single datagram from the connected peer, up to `length`
+   * bytes, in a new buffer. It needs a connected socket, because, like
+   * `peek()`, it only reads from the peer set with `connect()`. Use
+   * `receive_from()` on a socket that's only bound.
    *
-   * @note A datagram read is all-or-nothing per message: if the
-   *    incoming datagram is larger than `length`, the excess
-   *    bytes are discarded rather than being returned on a
-   *    subsequent call - this is unlike a TCP stream, where a
-   *    short read just leaves the rest to be read later.
+   * @note A datagram is read all at once or not at all. If the datagram
+   *    is larger than `length`, the extra bytes are discarded, instead
+   *    of being returned by the next call. That's different from a TCP
+   *    stream, where a short read just leaves the rest for later.
    *
-   * An empty result means an empty (zero-length) datagram was
-   * received, which is valid and distinct from there being
-   * nothing to receive.
+   * An empty result means that an empty datagram was received, which is
+   * valid, and different from there being nothing to receive.
    *
-   * @param number length: The maximum number of bytes to read
+   * @param number length: the maximum number of bytes to read
    * @returns bytes up to `length` bytes of the received datagram
-   * @throws Error on an underlying I/O error, or if the
-   *    configured read timeout elapses first
+   * @throws Error on an I/O error, or if the read timeout passes first
    */
   receive(length) {
     return _net_udp.udp_receive(self._ptr, length)
@@ -447,19 +432,16 @@ class UdpSocket {
   }
 
   /**
-   * Sends `data` as a single datagram to the connected peer.
-   * Requires a connected socket. Unlike a TCP stream's
-   * `write()`, a successful call always sends the entirety of
-   * `data` as one datagram - there is no concept of a partial
-   * send here, though very large datagrams may be rejected
-   * outright depending on the platform and network path.
+   * Sends `data` as a single datagram to the connected peer. It needs a
+   * connected socket. Unlike `write()` on a TCP stream, a successful
+   * call always sends all of `data` as one datagram. There are no
+   * partial sends, but very large datagrams can be rejected, depending
+   * on the platform and the network path.
    *
-   * @param {bytes|string} data: The bytes (or UTF-8 text) to
-   *    send
-   * @returns number the number of bytes sent (equal to the size
-   *    of `data` on success)
-   * @throws Error on an underlying I/O error, or if the
-   *    configured write timeout elapses first
+   * @param {bytes|string} data: the bytes, or UTF-8 text, to send
+   * @returns number the number of bytes sent, which is the size of
+   *    `data` on success
+   * @throws Error on an I/O error, or if the write timeout passes first
    */
   send(data) {
     return _net_udp.udp_send(self._ptr, data)
@@ -546,11 +528,10 @@ class UdpSocket {
   }
 
   /**
-   * Releases the underlying socket. It is advised to call this
-   * explicitly once you are done with the socket rather than
-   * relying on the Zuri garbage collector to do it for you
-   * eventually. Safe to call more than once, and safe to call on
-   * an instance that was never bound or connected.
+   * Releases the socket. Call this yourself when you've finished with
+   * the socket, instead of waiting for the garbage collector to do it
+   * eventually. It's safe to call more than once, and on an object that
+   * was never bound or connected.
    */
   close() {
     _net_udp.udp_close(self._ptr)

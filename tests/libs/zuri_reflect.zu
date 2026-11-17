@@ -60,10 +60,10 @@ class Dog < Animal {
 # kind()
 # ---------------------------------------------------------------------------
 assert zuri.reflect.kind(add) == 'function',
-  'a function must report kind function'
+    'a function must report kind function'
 assert zuri.reflect.kind(Animal) == 'class', 'a class must report kind class'
 assert zuri.reflect.kind(Animal('Rex')) == 'instance',
-  'an instance must report kind instance'
+    'an instance must report kind instance'
 assert zuri.reflect.kind(zuri) == 'module', 'a module must report kind module'
 assert zuri.reflect.kind(1) == 'number', 'a number must report kind number'
 ok('kind() reports the correct runtime type tag')
@@ -78,7 +78,8 @@ assert add_info.variadic == false, 'add is not variadic'
 assert add_info.is_method == false, 'add is a plain function, not a method'
 assert raises(@() {
   zuri.reflect.function_info(1)
-}), 'function_info on a non-function must raise'
+}),
+    'function_info on a non-function must raise'
 ok('function_info() describes a plain function correctly')
 
 # ---------------------------------------------------------------------------
@@ -88,21 +89,21 @@ var animal_info = zuri.reflect.class_info(Animal)
 assert animal_info.name == 'Animal', 'class_info must carry the class name'
 assert animal_info.superclass_name == nil, 'Animal has no superclass'
 assert animal_info.fields.contains('name'),
-  'class_info fields must include name'
+    'class_info fields must include name'
 assert animal_info.fields.contains('legs'),
-  'class_info fields must include legs'
+    'class_info fields must include legs'
 assert animal_info.methods.contains('speak'),
-  'class_info methods must include speak'
+    'class_info methods must include speak'
 assert animal_info.methods.speak.name == 'speak',
-  'a method entry must itself be function_info-shaped'
+    'a method entry must itself be function_info-shaped'
 
 var dog_info = zuri.reflect.class_info(Dog)
 assert dog_info.superclass_name == 'Animal',
-  'Dog must report Animal as its superclass'
+    'Dog must report Animal as its superclass'
 assert dog_info.methods.contains('bark'), 'Dog must have its own bark method'
 assert dog_info.methods.contains('speak'), 'Dog must inherit speak from Animal'
 assert dog_info.fields.contains('name'),
-  'Dog must inherit the name field from Animal'
+    'Dog must inherit the name field from Animal'
 ok('class_info() describes inheritance, methods, and fields correctly')
 
 # ---------------------------------------------------------------------------
@@ -111,25 +112,26 @@ ok('class_info() describes inheritance, methods, and fields correctly')
 var zuri_module_info = zuri.reflect.module_info(zuri)
 assert zuri_module_info.name == 'zuri', 'module_info must carry the module name'
 assert zuri_module_info.loaded == true,
-  'an already-imported module must report loaded'
+    'an already-imported module must report loaded'
 assert zuri_module_info.members.contains('tokenize'),
-  'module_info members must include tokenize'
+    'module_info members must include tokenize'
 assert zuri_module_info.members.tokenize == 'function',
-  'tokenize must be reported as a function member'
+    'tokenize must be reported as a function member'
 ok('module_info() describes a module and its members correctly')
 
 # ---------------------------------------------------------------------------
 # info() dispatch
 # ---------------------------------------------------------------------------
 assert zuri.reflect.info(add).name == 'add',
-  'info() must dispatch to function_info for a function'
+    'info() must dispatch to function_info for a function'
 assert zuri.reflect.info(Animal).name == 'Animal',
-  'info() must dispatch to class_info for a class'
+    'info() must dispatch to class_info for a class'
 assert zuri.reflect.info(zuri).name == 'zuri',
-  'info() must dispatch to module_info for a module'
+    'info() must dispatch to module_info for a module'
 assert raises(@() {
   zuri.reflect.info([1, 2, 3])
-}), 'info() on a list must raise'
+}),
+    'info() on a list must raise'
 ok('info() dispatches to the right description based on kind')
 
 # ---------------------------------------------------------------------------
@@ -138,46 +140,46 @@ ok('info() dispatches to the right description based on kind')
 var rex = Animal('Rex')
 assert zuri.reflect.has_prop(rex, 'name'), 'rex must have a name property'
 assert !zuri.reflect.has_prop(rex, 'nickname'),
-  'rex must not have an undeclared property'
+    'rex must not have an undeclared property'
 assert zuri.reflect.get_prop(rex, 'name') == 'Rex',
-  'get_prop must read the current value'
+    'get_prop must read the current value'
 var rex_props = zuri.reflect.get_props(rex)
 assert rex_props.contains('name'), 'get_props must include name'
 assert rex_props.contains('legs'), 'get_props must include legs'
 ok('has_prop()/get_prop()/get_props() work against a live instance')
 
 assert zuri.reflect.set_prop(rex, 'name', 'Max') == true,
-  'set_prop on an existing field must succeed'
+    'set_prop on an existing field must succeed'
 assert rex.name == 'Max', 'set_prop must actually update the instance'
 assert zuri.reflect.set_prop(rex, 'nickname', 'x') == false,
-  'set_prop on an undeclared field must return false, never silently create one'
+    'set_prop on an undeclared field must return false, never silently create one'
 assert !zuri.reflect.has_prop(rex, 'nickname'),
-  'the undeclared field must still not exist afterward'
+    'the undeclared field must still not exist afterward'
 ok('set_prop() updates an existing field and refuses an undeclared one')
 
 assert zuri.reflect.del_prop(rex, 'name') == true,
-  'del_prop on an existing field must succeed'
+    'del_prop on an existing field must succeed'
 assert rex.name == nil, 'del_prop must reset the field to nil'
 assert zuri.reflect.del_prop(rex, 'nickname') == false,
-  'del_prop on an undeclared field must return false'
+    'del_prop on an undeclared field must return false'
 ok('del_prop() resets an existing field and refuses an undeclared one')
 
 # ---------------------------------------------------------------------------
 # class_of()
 # ---------------------------------------------------------------------------
 assert zuri.reflect.class_of(Animal('Rex')) == Animal,
-  'class_of() returns the class itself'
+    'class_of() returns the class itself'
 assert zuri.reflect.class_of(Dog('Fido')) == Dog,
-  'a subclass instance reports the subclass'
+    'a subclass instance reports the subclass'
 assert zuri.reflect.class_of(Dog('Fido')) != Animal, 'and not its parent'
 assert zuri.reflect.class_of(Animal('Rex'))('Max').name == 'Max',
-  'the class it returns can be called'
+    'the class it returns can be called'
 
 var twin = elsewhere.Animal()
 assert typeof(twin) == typeof(Animal('Rex')),
-  'two classes named Animal give the same typeof()'
+    'two classes named Animal give the same typeof()'
 assert zuri.reflect.class_of(twin) == elsewhere.Animal,
-  'class_of() finds the right one'
+    'class_of() finds the right one'
 assert zuri.reflect.class_of(twin) != Animal, 'and tells it from the other'
 
 var by_class = {}
@@ -187,7 +189,7 @@ assert by_class.length() == 2, 'the two classes are different dictionary keys'
 
 for value in [nil, 1, 'text', [], {}, Animal, add, zuri] {
   assert zuri.reflect.class_of(value) == nil,
-    'class_of() is nil for anything but an instance'
+      'class_of() is nil for anything but an instance'
 }
 ok('class_of() returns the class an instance was built from')
 
@@ -195,9 +197,9 @@ ok('class_of() returns the class an instance was built from')
 # Module property access
 # ---------------------------------------------------------------------------
 assert zuri.reflect.has_prop(zuri, 'tokenize'),
-  'the zuri module must have a tokenize member'
+    'the zuri module must have a tokenize member'
 assert !zuri.reflect.has_prop(zuri, 'not_a_real_export'),
-  'a made-up member name must not be found'
+    'a made-up member name must not be found'
 ok('has_prop()/get_prop() also work against a module')
 
 assert zuri == zuri, 'a module equals itself'
@@ -210,42 +212,45 @@ ok('modules compare by identity')
 # ---------------------------------------------------------------------------
 var buddy = Dog('Buddy')
 assert zuri.reflect.has_method(buddy, 'speak'),
-  'Dog instances must have the inherited speak method'
+    'Dog instances must have the inherited speak method'
 assert zuri.reflect.has_method(buddy, 'bark'),
-  'Dog instances must have their own bark method'
+    'Dog instances must have their own bark method'
 assert !zuri.reflect.has_method(buddy, 'fly'),
-  'Dog instances must not have a fly method'
+    'Dog instances must not have a fly method'
 assert zuri.reflect.has_method(Dog, 'bark'),
-  'has_method must also accept a class directly'
+    'has_method must also accept a class directly'
 
 var bound_speak = zuri.reflect.bind_method(buddy, 'speak')
 assert bound_speak() == 'Buddy makes a sound',
-  'a bound method must call correctly with no receiver argument'
+    'a bound method must call correctly with no receiver argument'
 
 var raw_speak = zuri.reflect.get_method(buddy, 'speak')
 assert raises(@() {
   raw_speak()
-}), 'calling a raw unbound method with no receiver must fail'
-ok('has_method()/get_method()/bind_method() behave correctly, including the bound-vs-unbound distinction')
+}),
+    'calling a raw unbound method with no receiver must fail'
+ok(
+  'has_method()/get_method()/bind_method() behave correctly, including the bound-vs-unbound distinction',
+)
 
 zuri.reflect.set_prop(rex, 'name', 'Max')
 assert zuri.reflect.has_decorator(Animal, 'to_string'),
-  'Animal must implement the to_string decorator'
+    'Animal must implement the to_string decorator'
 assert !zuri.reflect.has_decorator(Animal, 'iter'),
-  'Animal must not implement an iter decorator'
+    'Animal must not implement an iter decorator'
 var decorator = zuri.reflect.get_decorator(rex, 'to_string')
 assert decorator() == 'Animal(Max)', 'a bound decorator must call correctly'
 assert raises(@() {
   zuri.reflect.get_decorator(rex, 'not_a_decorator')
 }),
-  'get_decorator on a missing decorator must raise'
+    'get_decorator on a missing decorator must raise'
 ok('has_decorator()/get_decorator() work correctly')
 
 # ---------------------------------------------------------------------------
 # pointer_type()
 # ---------------------------------------------------------------------------
 assert zuri.reflect.pointer_type(add) == nil,
-  'pointer_type on a non-pointer value must be nil'
+    'pointer_type on a non-pointer value must be nil'
 ok('pointer_type() returns nil for a non-pointer value')
 
 # gc() collects what nothing reaches and leaves live objects intact.
@@ -259,7 +264,7 @@ assert zuri.reflect.gc() == nil, 'gc() must return nil'
 zuri.reflect.gc()
 assert survivors.length() == 1000, 'gc() must keep a reachable list whole'
 assert survivors[0] == 'kept 0' and survivors[999] == 'kept 999',
-  'gc() must keep reachable strings intact, even when it moves them'
+    'gc() must keep reachable strings intact, even when it moves them'
 assert rex.name == 'Max', 'gc() must keep a reachable instance intact'
 ok('gc() runs a full collection on demand')
 

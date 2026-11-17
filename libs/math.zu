@@ -1,10 +1,8 @@
-/** 
+/**
  * @module math
  *
- * This module contains functions and constants to make
- * trigonometric and non-trigonometric mathematics a breeze. The
- * module also defines a couple of commonly used scientific and
- * mathematical constants such as `PI`.
+ * Mathematical functions, trigonometric and otherwise, and common
+ * mathematical and scientific constants such as `PI`.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */

@@ -1,0 +1,35 @@
+# The API reference of every published version: what it covers, and a
+# page of Markdown for each of its modules, generated from the doc
+# blocks in the version's own archive.
+#
+# `generator` says which version of the generator wrote them, so pages
+# written by an older one are written again the next time they are
+# asked for.
+
+import sql { Blueprint, Connection, Transaction }
+
+def up(db: Transaction|Connection) {
+  db.schema.create_table('version_docs', @(table: Blueprint) {
+    table.references('version_id', 'versions').on_delete('cascade')
+    table.integer('generator')
+    table.integer('names').default_value(0)
+    table.integer('documented').default_value(0)
+    table.text('modules')
+    table.text('warnings')
+    table.big_integer('created_at')
+    table.primary(['version_id'])
+  })
+
+  db.schema.create_table('doc_pages', @(table: Blueprint) {
+    table.references('version_id', 'versions').on_delete('cascade')
+    table.string('slug', 255).exact()
+    table.string('name', 255)
+    table.text('markdown')
+    table.primary(['version_id', 'slug'])
+  })
+}
+
+def down(db: Transaction|Connection) {
+  db.schema.drop_table('doc_pages')
+  db.schema.drop_table('version_docs')
+}

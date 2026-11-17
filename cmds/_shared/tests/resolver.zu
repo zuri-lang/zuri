@@ -62,7 +62,11 @@ def needs(ranges: dict) {
 describe('solve', @{
   it('picks the highest version of everything', @{
     var catalog = Catalog({
-      web: { '1.0.0': {}, '1.2.0': { json: '^1.0' }, '2.0.0': {} },
+      web: {
+        '1.0.0': {},
+        '1.2.0': { json: '^1.0' },
+        '2.0.0': {},
+      },
       json: { '1.0.0': {}, '1.4.0': {}, '2.0.0': {} },
     })
 
@@ -73,8 +77,12 @@ describe('solve', @{
 
   it('finds the version two dependents can share', @{
     var catalog = Catalog({
-      a: { '1.0.0': { c: '>=1.2.0' } },
-      b: { '1.0.0': { c: '<1.5.0' } },
+      a: {
+        '1.0.0': { c: '>=1.2.0' },
+      },
+      b: {
+        '1.0.0': { c: '<1.5.0' },
+      },
       c: { '1.0.0': {}, '1.2.0': {}, '1.4.0': {}, '1.6.0': {} },
     })
 
@@ -85,8 +93,13 @@ describe('solve', @{
 
   it('backs out of a choice that leads nowhere', @{
     var catalog = Catalog({
-      a: { '1.0.0': { c: '^1.0' }, '2.0.0': { c: '^2.0' } },
-      b: { '1.0.0': { c: '^1.0' } },
+      a: {
+        '1.0.0': { c: '^1.0' },
+        '2.0.0': { c: '^2.0' },
+      },
+      b: {
+        '1.0.0': { c: '^1.0' },
+      },
       c: { '1.0.0': {}, '2.0.0': {} },
     })
 
@@ -96,16 +109,17 @@ describe('solve', @{
   })
 
   it('keeps the version the lockfile already has, while it still fits', @{
-    var catalog = Catalog({
-      json: { '1.0.0': {}, '1.4.0': {}, '1.9.0': {} },
-    }, { json: '1.4.0' })
+    var catalog = Catalog(
+      {
+        json: { '1.0.0': {}, '1.4.0': {}, '1.9.0': {} },
+      },
+      { json: '1.4.0' },
+    )
 
-    expect(solve(
-      catalog, '0.1.0', needs({ json: '^1.0' }),
-    ).json).to_equal('1.4.0')
-    expect(solve(
-      catalog, '0.1.0', needs({ json: '>=1.5' }),
-    ).json).to_equal('1.9.0')
+    expect(solve(catalog, '0.1.0', needs({ json: '^1.0' })).json)
+        .to_equal('1.4.0')
+    expect(solve(catalog, '0.1.0', needs({ json: '>=1.5' })).json)
+        .to_equal('1.9.0')
   })
 
   it('never picks a pre-release nobody asked for', @{
@@ -113,12 +127,10 @@ describe('solve', @{
       json: { '1.0.0': {}, '1.1.0-rc.1': {} },
     })
 
-    expect(solve(
-      catalog, '0.1.0', needs({ json: '^1.0' }),
-    ).json).to_equal('1.0.0')
-    expect(solve(
-      catalog, '0.1.0', needs({ json: '^1.1.0-rc.1' }),
-    ).json).to_equal('1.1.0-rc.1')
+    expect(solve(catalog, '0.1.0', needs({ json: '^1.0' })).json)
+        .to_equal('1.0.0')
+    expect(solve(catalog, '0.1.0', needs({ json: '^1.1.0-rc.1' })).json)
+        .to_equal('1.1.0-rc.1')
   })
 
   it('does not look up packages nothing needs', @{
@@ -147,7 +159,9 @@ describe('solve', @{
     }
 
     var chosen = solve(
-      Catalog(packages), '0.1.0', needs({ a: '*', b: '*', c: '*', d: '^1' }),
+      Catalog(packages),
+      '0.1.0',
+      needs({ a: '*', b: '*', c: '*', d: '^1' }),
     )
 
     expect(chosen).to_equal({ a: '1.0.0', b: '1.0.0', c: '1.0.0', d: '1.0.0' })
@@ -157,8 +171,12 @@ describe('solve', @{
 describe('explaining a failure', @{
   it('names the requirements that cannot all hold', @{
     var catalog = Catalog({
-      a: { '1.0.0': { c: '^1.0' } },
-      b: { '1.0.0': { c: '^2.0' } },
+      a: {
+        '1.0.0': { c: '^1.0' },
+      },
+      b: {
+        '1.0.0': { c: '^2.0' },
+      },
       c: { '1.0.0': {}, '2.0.0': {} },
     })
 
@@ -178,21 +196,32 @@ describe('explaining a failure', @{
   })
 
   it('calls packages by the names they were published under', @{
-    var catalog = Catalog({
-      http_extra: { '1.0.0': { json_schema: '^1.0' } },
-      report_kit: { '1.0.0': { json_schema: '^2.0' } },
-      json_schema: { '1.0.0': {}, '2.0.0': {} },
-    }, nil, {
-      http_extra: 'http-extra',
-      report_kit: 'report-kit',
-      json_schema: 'json-schema',
-    })
+    var catalog = Catalog(
+      {
+        http_extra: {
+          '1.0.0': { json_schema: '^1.0' },
+        },
+        report_kit: {
+          '1.0.0': { json_schema: '^2.0' },
+        },
+        json_schema: { '1.0.0': {}, '2.0.0': {} },
+      },
+      nil,
+      {
+        http_extra: 'http-extra',
+        report_kit: 'report-kit',
+        json_schema: 'json-schema',
+      },
+    )
 
     var message = nil
 
     catch {
       solve(
-        catalog, '0.1.0', needs({ http_extra: '^1', report_kit: '^1' }), 'shop',
+        catalog,
+        '0.1.0',
+        needs({ http_extra: '^1', report_kit: '^1' }),
+        'shop',
       )
     } as error {
       message = error.message
@@ -205,7 +234,9 @@ describe('explaining a failure', @{
 
   it('says when no version of a package exists', @{
     var catalog = Catalog({
-      a: { '1.0.0': { missing: '^1.0' } },
+      a: {
+        '1.0.0': { missing: '^1.0' },
+      },
     })
 
     var message = nil

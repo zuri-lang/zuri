@@ -26,30 +26,30 @@ taskboard/
     api.zu
 ```
 
-Four decisions are worth explaining, because they are the ones that make
-the rest of the code short.
+Four design decisions are worth explaining, because they're what keep the
+rest of the code short.
 
-Before them, the shape itself. Every arrow in this application points one
-way:
+First, here's the overall structure. Every dependency in this application
+points in the same direction:
 
 ```text
 index.zu  ->  app.zu  ->  routes/  ->  storage/  ->  models/
 ```
 
-`routes` knows about `storage`; `storage` knows about `models`; `models`
-knows about nothing but `config`. Nothing points back the other way, which
-is what makes each layer readable on its own and testable without the ones
-above it. [Testing the Board](ch25-08-testing.md) is where that second
-half is cashed in.
+`routes` depends on `storage`, `storage` depends on `models`, and `models`
+depends only on `config`. Nothing depends on anything in the other
+direction, which means you can read each layer on its own, and test it
+without the layers above it. [Testing the Board](ch25-08-testing.md) is
+where that second benefit pays off.
 
-`config.zu` sits outside that chain — everything may read it, and it reads
-nothing. That is the one module allowed to be depended on from anywhere,
-and it earns the exemption by containing no behaviour at all.
+`config.zu` is outside that chain. Every module can use it, and it doesn't
+use anything itself. It's the only module that can be used from anywhere,
+and that's acceptable because it contains no behavior at all.
 
-## One Package per Responsibility
+## One Package for Each Responsibility
 
-`models`, `storage` and `routes` are packages: directories with an
-`index.zu`. The `index.zu` decides what is public:
+`models`, `storage` and `routes` are packages, which means they're
+directories with an `index.zu`. The `index.zu` decides what's public:
 
 <span class="filename">Filename: models/index.zu</span>
 
@@ -58,41 +58,43 @@ import @.task { * }
 ```
 
 That one line re-exports everything `task.zu` declares, so the rest of the
-application writes `import .models { Task }` and never needs to know there
-is a `task.zu` at all. Splitting `task.zu` into two files later changes
-that one line and nothing else.
+application can write `import .models { Task }` without needing to know that
+`task.zu` exists. If you later split `task.zu` into two files, you only need
+to change that one line.
 
 The `@` is what makes it a re-export rather than a private import. Without
-it, `models/index.zu` could use `Task` itself but nothing outside could
-reach it through `models` — the import would be local, and
-`import .models { Task }` elsewhere would fail. That distinction is the
-subject of [Exporting](ch08-00-modules.md#exporting), and this is the
-single most common place to get it wrong.
+it, `models/index.zu` could use `Task` itself, but nothing outside could get
+to it through `models`. The import would be local, and
+`import .models { Task }` elsewhere would fail. [Re-exporting
+Imports](ch08-00-modules.md#re-exporting-imports) covers this distinction,
+and this is the place where people most often get it wrong.
 
-The `index.zu` is therefore a deliberate, editable list of what a package
-offers, rather than an accident of which files happen to exist.
+So the `index.zu` is an intentional list of what a package offers, which you
+can edit, rather than an accident of which files happen to exist.
 
-## The Underscore Is Load-Bearing
+## The Underscore Matters
 
 `storage/_json_store.zu` starts with an underscore, so no module outside
-`storage` can import it. The compiler enforces that:
+`storage` can import it, and the compiler enforces that:
 
 ```console
 SyntaxError: Cannot import private items from module
 ```
 
-The point is not secrecy. It is that swapping the JSON file for a database
-means rewriting one file, and the compiler **guarantees** nothing else
-reached past the `Board` to touch it. Not "we checked and nothing does" —
-nothing can, and an attempt does not compile.
+The point isn't to keep anything secret. It's that if you replace the JSON
+file with a database, you only have to rewrite one file, and the compiler
+**guarantees** that nothing else went around the `Board` to use it directly.
+It's not that you checked and nothing does. Nothing can, because any attempt
+fails to compile.
 
-That guarantee is what turns a convention into a boundary. A comment saying
-"internal, do not use" is advice; a leading underscore is enforced.
+That guarantee is what turns a convention into a real boundary. A comment
+saying "internal, don't use" is only a suggestion, but a leading underscore
+is enforced.
 
-## `app.zu` and `index.zu` Are Separate
+## `app.zu` and `index.zu` Are Separate Files
 
-`app.zu` builds a fully configured server and returns it. `index.zu`
-starts one:
+`app.zu` builds a fully configured server and returns it. `index.zu` starts
+it:
 
 <span class="filename">Filename: index.zu</span>
 
@@ -116,31 +118,32 @@ if __root__ == __file__ {
 }
 ```
 
-Three things are happening in that short file.
+There are three things going on in that short file.
 
-**`if __root__ == __file__` is the whole trick.** `zuri run taskboard` runs the
-directory, finds `index.zu`, and the two are equal, so the body runs and
-the server starts. `import .taskboard` from another program leaves them
-different — `__root__` is that program's entry file — so nothing starts,
-and the importer gets `app.build()` to use however it likes. One file, both
-jobs, and [Chapter 8](ch08-00-modules.md) covers the idiom.
+**`if __root__ == __file__` does most of the work.** `zuri run taskboard`
+runs the directory, which runs `index.zu`, and the two values are equal, so
+the body runs and the server starts. If another program uses
+`import .taskboard`, the two values are different, because `__root__` is
+that program's entry file. So nothing starts, and the other program can use
+`app.build()` however it likes. One file handles both cases, and [Chapter
+8](ch08-00-modules.md) explains this pattern.
 
-**The signal handler is installed before serving.** `listen()` does not
-return, so anything that needs to happen on the way out has to be arranged
-first. `os.on_signal('INT', ...)` is what turns Ctrl+C into an orderly exit
-rather than a killed process.
+**The signal handler is installed before the server starts.** `listen()`
+doesn't return, so anything that needs to happen when the program stops has
+to be set up beforehand. `os.on_signal('INT', ...)` is what makes Ctrl+C
+shut the program down cleanly, instead of killing the process.
 
-**The log line comes before `listen()`**, so the address is printed the
-moment the process is ready rather than after it stops. It is one line, and
-it is the difference between "did it start?" and knowing.
+**The log message comes before `listen()`**, so the address is printed as
+soon as the process is ready, not after it stops. It's only one line, but it
+means you know the server started instead of having to guess.
 
-Note what `index.zu` does *not* do. It builds nothing, configures nothing
-and knows nothing about boards, templates or routes. Every one of those
-decisions is in `app.zu`, which is why the whole of
-[Middleware, Logging and Errors](ch25-06-middleware.md) can walk through
-one function and cover the entire assembly.
+Notice what `index.zu` *doesn't* do. It doesn't build or configure anything,
+and it doesn't know anything about boards, templates or routes. All of those
+decisions are in `app.zu`, which is why [Middleware, Logging and
+Errors](ch25-06-middleware.md) can go through a single function and cover
+how the whole application is put together.
 
-## Configuration Has Defaults
+## Configuration With Defaults
 
 <span class="filename">Filename: config.zu</span>
 
@@ -159,30 +162,30 @@ var STATIC_DIR = os.join_paths(HERE, 'static')
 var COLUMNS = ['todo', 'doing', 'done']
 ```
 
-Four things to notice.
+There are four things to notice.
 
-**Every environment lookup has a fallback**, so the application runs with
-no configuration at all. `git clone`, `zuri run taskboard`, and it works. A
-program that requires six environment variables before it will start is a
-program nobody tries.
+**Every environment variable has a fallback**, so the application runs
+without any configuration at all. You can run `git clone` and then
+`zuri run taskboard`, and it works. Nobody tries a program that needs six
+environment variables before it will start.
 
-**`PORT` is converted with `to_number()`.** Environment variables are
-always strings, and `'8000'` is not a port a socket will accept. The
-conversion is here, once, rather than at the place the port is used.
+**`PORT` is converted with `to_number()`.** Environment variables are always
+strings, and a socket won't accept `'8000'` as a port. The conversion
+happens here, once, instead of wherever the port is used.
 
-**`HERE` is derived from `__file__`, not from `os.cwd()`.** The templates
-and the stylesheet live next to the source, so the person running the
-program is not required to be standing in the right directory. This is the
-rule from [Chapter 9](ch09-00-files.md), and a web application is where
-ignoring it hurts most: the program starts, serves a page, and fails to
-find a template only once someone requests it.
+**`HERE` is based on `__file__`, not `os.cwd()`.** The templates and the
+stylesheet are stored next to the source code, so whoever runs the program
+doesn't need to be in the right directory. This is the rule from [Chapter
+9](ch09-00-files.md), and ignoring it causes the most trouble in a web
+application, where the program starts and serves a page, but only fails to
+find a template when someone requests it.
 
-**`COLUMNS` is here** because it is the one piece of knowledge the model,
-the storage layer and the templates all share. `_clean_column()` validates
-against it, `Board.columns()` and `Board.summary()` iterate it, and the
-template renders one section per entry. Adding a fourth column is a
-one-line change in this file, and every one of those follows.
+**`COLUMNS` is defined here** because it's the one piece of information that
+the model, the storage layer and the templates all share. `_clean_column()`
+validates against it, `Board.columns()` and `Board.summary()` loop over it,
+and the template renders one section for each entry. Adding a fourth column
+takes a one-line change in this file, and everything else follows.
 
-That is the test for whether something belongs in `config.zu`: not "is it a
-setting", but **"would changing it otherwise mean editing several files
-consistently?"**
+That's how to decide whether something belongs in `config.zu`. Don't ask "is
+it a setting?" Ask **"would changing it otherwise mean editing several files
+in the same way?"**

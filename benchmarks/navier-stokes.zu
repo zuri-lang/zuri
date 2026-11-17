@@ -92,9 +92,9 @@ def lin_solve(b, x, x0, a, c) {
 
       iter var i = 1; i <= WIDTH; i++ {
         const idx = row + i
-        x[idx] = (x0[idx]
-          + a * (x[idx - 1] + x[idx + 1] + x[prev + i] + x[next + i]))
-          * inv_c
+        x[idx] = (x0[idx] +
+                a * (x[idx - 1] + x[idx + 1] + x[prev + i] + x[next + i])) *
+            inv_c
       }
     }
 
@@ -148,7 +148,7 @@ def advect(b, d, d0, u, v, dt) {
       const row2 = row1 + ROW
 
       d[idx] = s0 * (t0 * d0[i0 + row1] + t1 * d0[i0 + row2]) +
-        s1 * (t0 * d0[i0 + 1 + row1] + t1 * d0[i0 + 1 + row2])
+          s1 * (t0 * d0[i0 + 1 + row1] + t1 * d0[i0 + 1 + row2])
     }
   }
 

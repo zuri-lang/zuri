@@ -171,7 +171,8 @@ def init_git(directory: string) {
 
   catch {
     var child = spawn(
-      'git', ['init', '--quiet'],
+      'git',
+      ['init', '--quiet'],
       { cwd: directory, stdout: 'pipe', stderr: 'pipe' },
     )
 

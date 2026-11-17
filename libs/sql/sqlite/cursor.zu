@@ -1,16 +1,16 @@
 /**
  * @module cursor
  *
- * Reading a SQLite result one row at a time.
+ * Reads a SQLite result one row at a time.
  *
- * SQLite computes rows as they are asked for rather than building the
- * whole result first, so a cursor here is the engine's own behaviour
- * exposed rather than a batching scheme layered on top. A query over a
- * large table holds one row at a time however long the table is.
+ * SQLite computes rows as they're requested, instead of building the
+ * whole result first, so a cursor here simply exposes the engine's own
+ * behavior, instead of adding batching on top of it. A query over a
+ * large table holds one row at a time, however long the table is.
  *
- * The statement a cursor is stepping belongs to it until it closes.
- * That is why the connection compiles a separate statement for each
- * cursor rather than lending one from its cache.
+ * The statement that a cursor is stepping through belongs to the cursor
+ * until it's closed. That's why the connection compiles a separate
+ * statement for each cursor, instead of lending one from its cache.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -49,12 +49,12 @@ class SqliteCursor < DriverCursor {
    *    `decoders_for()`.
    * @param string query The statement, for error messages.
    * @param bool owned Whether closing the cursor finalizes the
-   *    statement, which it does for a cursor the connection compiled
-   *    and does not for one belonging to a prepared statement the
+   *    statement. It does for a cursor that the connection compiled,
+   *    and doesn't for one that belongs to a prepared statement the
    *    caller still holds.
-   * @param dict|nil first `{ row }` when the first step was already
-   *    taken, `row` being the row it read or nil when it found none;
-   *    nil when the cursor takes every step itself.
+   * @param dict|nil first `{ row }` if the first step has already been
+   *    taken, where `row` is the row it read, or nil if it found none.
+   *    Nil if the cursor takes every step itself.
    */
   @new(connection, statement, columns, decoders, query, owned, first) {
     self._connection = connection
@@ -105,10 +105,10 @@ class SqliteCursor < DriverCursor {
       # Closing the connection releases the statement, so a step that
       # failed on a closed connection failed for that reason.
       if self._connection.is_closed() {
-        raise ClosedError(
-          'the connection this cursor reads from was closed',
-          { driver: 'sqlite', query: self._query },
-        )
+        raise ClosedError('the connection this cursor reads from was closed', {
+          driver: 'sqlite',
+          query: self._query,
+        })
       }
 
       reraise(error, self._query)
@@ -151,7 +151,7 @@ class SqliteCursor < DriverCursor {
 
   to_string() {
     return '<SqliteCursor ${self._columns.length()} columns' +
-      '${self._closed ? ", closed" : ""}>'
+        '${self._closed ? ", closed" : ""}>'
   }
 
   @to_string() {

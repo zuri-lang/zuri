@@ -1,8 +1,8 @@
 /**
  * @module jwt.token
  *
- * The `Token` class returned by `decode()` and `verify()` (when
- * `options.complete` is set).
+ * The `Token` class, which `decode()` returns, and which `verify()`
+ * returns when `options.complete` is set.
  */
 
 /**
@@ -120,14 +120,13 @@ class Token {
   }
 
   /**
-   * Returns a string representation of the token for debugging
-   * purposes. The output is not the encoded token; use the raw
-   * property for that.
+   * Returns a string describing the token, for debugging. This isn't
+   * the encoded token. Use the `raw` property for that.
    *
    * @return string
    */
   @to_string() {
     return '<Token alg=${self.header.get("alg", "?")} ' +
-      'sub=${self.payload.get("sub", "(none)")}>'
+        'sub=${self.payload.get("sub", "(none)")}>'
   }
 }

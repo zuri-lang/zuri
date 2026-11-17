@@ -5,10 +5,10 @@ import rpc
 
 var server = rpc.endpoint(rpc.stdio())
 
-server
-  .on_request('echo', @(params) => params)
-  .on_request('stop', @(params, context) {
+server.on_request('echo', @(params) => params).on_request(
+  'stop',
+  @(params, context) {
     context.endpoint.stop()
     return 'stopping'
-  })
-  .serve()
+  },
+).serve()

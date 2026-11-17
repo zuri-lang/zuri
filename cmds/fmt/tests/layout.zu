@@ -1,6 +1,5 @@
 # Tests for the layout: what each statement, declaration and expression
-# prints as, where a line too long for the width breaks, and how the
-# lines the author wrote are kept.
+# prints as, and where a line too long for the width breaks.
 
 import test { * }
 
@@ -14,96 +13,94 @@ def lines(source) {
 
 describe('blocks', @{
   it('opens a block, one statement to a line', @{
-    expect(lines('def add(a,b){return a+b}')).to_equal([
-      'def add(a, b) {', '  return a + b', '}',
-    ])
+    expect(lines('def add(a,b){return a+b}'))
+        .to_equal(['def add(a, b) {', '  return a + b', '}'])
   })
 
   it('indents two spaces for each level of nesting', @{
-    expect(lines('def f(){if x{return 1}}')).to_equal([
-      'def f() {', '  if x {', '    return 1', '  }', '}',
-    ])
+    expect(lines('def f(){if x{return 1}}'))
+        .to_equal(['def f() {', '  if x {', '    return 1', '  }', '}'])
   })
 
   it('splits statements joined by a semicolon', @{
     expect(lines('var a = 1; var b = 2')).to_equal(['var a = 1', 'var b = 2'])
   })
 
-  it('leaves an empty block as it was written', @{
+  it('closes up an empty block', @{
     expect(lines('def f() {}')).to_equal(['def f() {}'])
-    expect(lines('def f() {\n}')).to_equal(['def f() {', '}'])
+    expect(lines('def f() {\n}')).to_equal(['def f() {}'])
+    expect(lines('class C {\n\n}')).to_equal(['class C {}'])
   })
 
   it('joins else, while and as to the brace before them', @{
-    expect(lines('if a {\n  b()\n}\nelse {\n  c()\n}')).to_equal([
-      'if a {', '  b()', '} else {', '  c()', '}',
-    ])
-    expect(lines('do {\n  a()\n}\nwhile b')).to_equal([
-      'do {', '  a()', '} while b',
-    ])
+    expect(lines('if a {\n  b()\n}\nelse {\n  c()\n}'))
+        .to_equal(['if a {', '  b()', '} else {', '  c()', '}'])
+    expect(lines('do {\n  a()\n}\nwhile b'))
+        .to_equal(['do {', '  a()', '} while b'])
   })
 
   it('keeps an else if chain as one', @{
     expect(lines('if a { x() } else if b { y() } else { z() }')).to_equal([
-      'if a {', '  x()', '} else if b {', '  y()', '} else {', '  z()', '}',
+      'if a {',
+      '  x()',
+      '} else if b {',
+      '  y()',
+      '} else {',
+      '  z()',
+      '}',
     ])
   })
 })
 
 describe('explicit blocks', @{
   it('braces the body of an if, an else and a loop', @{
-    expect(lines('if a b = 1\nelse b = 2')).to_equal([
-      'if a {', '  b = 1', '} else {', '  b = 2', '}',
-    ])
+    expect(lines('if a b = 1\nelse b = 2'))
+        .to_equal(['if a {', '  b = 1', '} else {', '  b = 2', '}'])
     expect(lines('while a b()')).to_equal(['while a {', '  b()', '}'])
-    expect(lines('for x in xs echo x')).to_equal([
-      'for x in xs {', '  echo x', '}',
-    ])
+    expect(lines('for x in xs echo x'))
+        .to_equal(['for x in xs {', '  echo x', '}'])
   })
 
   it('braces a body written on the next line', @{
-    expect(lines('if !ok\n  raise Error(1)')).to_equal([
-      'if !ok {', '  raise Error(1)', '}',
-    ])
+    expect(lines('if !ok\n  raise Error(1)'))
+        .to_equal(['if !ok {', '  raise Error(1)', '}'])
   })
 
   it('takes a comment trailing the header or the body inside', @{
-    expect(lines('if a # why\n  b() # what')).to_equal([
-      'if a { # why', '  b() # what', '}',
-    ])
+    expect(lines('if a # why\n  b() # what'))
+        .to_equal(['if a { # why', '  b() # what', '}'])
   })
 
   # Braces would give the name a scope of its own, which changes what
   # the code after the `if` can see.
   it('leaves a body that declares a name unbraced', @{
     expect(lines('if a var b = 1')).to_equal(['if a var b = 1'])
-    expect(lines('if a\n  var b = 1\nelse\n  var b = 2')).to_equal([
-      'if a', '  var b = 1', 'else', '  var b = 2',
-    ])
+    expect(lines('if a\n  var b = 1\nelse\n  var b = 2'))
+        .to_equal(['if a', '  var b = 1', 'else', '  var b = 2'])
   })
 })
 
 describe('using', @{
   it('keeps a short arm on its line', @{
-    expect(lines('using x {\nwhen 1, 2 echo 1\ndefault echo 2\n}')).to_equal([
-      'using x {', '  when 1, 2 echo 1', '  default echo 2', '}',
-    ])
+    expect(lines('using x {\nwhen 1, 2 echo 1\ndefault echo 2\n}'))
+        .to_equal(['using x {', '  when 1, 2 echo 1', '  default echo 2', '}'])
   })
 
   it('braces an arm that would run past sixty columns', @{
     var source = 'using x {\n  when 1 echo \'a piece of text long enough to pass sixty columns\'\n}'
 
     expect(lines(source)).to_equal([
-      'using x {', '  when 1 {',
+      'using x {',
+      '  when 1 {',
       '    echo \'a piece of text long enough to pass sixty columns\'',
-      '  }', '}',
+      '  }',
+      '}',
     ])
   })
 
   it('leaves a braced arm braced', @{
-    expect(lines('using x {\n  when 1 {\n    a()\n  }\n}')).to_equal([
-      'using x {', '  when 1 {', '    a()', '  }', '}',
-    ])
+    expect(lines('using x {\n  when 1 {\n    a()\n  }\n}'))
+        .to_equal(['using x {', '  when 1 {', '    a()', '  }', '}'])
   })
 })
 
@@ -117,201 +114,346 @@ describe('statements', @{
       '}',
     ])
 
-    expect(lines(source)).to_equal([
-      'catch {',
-      '  a()',
-      '} as e {',
-      '  b(e)',
-      '}',
-    ])
+    expect(lines(source))
+        .to_equal(['catch {', '  a()', '} as e {', '  b(e)', '}'])
     expect(lines('catch { a() }')).to_equal(['catch {', '  a()', '}'])
   })
 
   it('keeps the space that shows an iter clause is empty', @{
-    expect(lines('iter ;i < n;i++ {\n  work()\n}')).to_equal([
-      'iter ; i < n; i++ {', '  work()', '}',
-    ])
+    expect(lines('iter ;i < n;i++ {\n  work()\n}'))
+        .to_equal(['iter ; i < n; i++ {', '  work()', '}'])
   })
 
   it('drops the parentheses an iter may be written with', @{
-    expect(lines('iter (var i = 0; i < n; i++) {\n  work()\n}')).to_equal([
-      'iter var i = 0; i < n; i++ {', '  work()', '}',
-    ])
+    expect(lines('iter (var i = 0; i < n; i++) {\n  work()\n}'))
+        .to_equal(['iter var i = 0; i < n; i++ {', '  work()', '}'])
   })
 
   it('writes return and raise with and without a value', @{
-    expect(lines('def f() {\n  return\n}')).to_equal([
-      'def f() {', '  return', '}',
-    ])
-    expect(lines('def f() {\n  raise Error(1)\n}')).to_equal([
-      'def f() {', '  raise Error(1)', '}',
-    ])
+    expect(lines('def f() {\n  return\n}'))
+        .to_equal(['def f() {', '  return', '}'])
+    expect(lines('def f() {\n  raise Error(1)\n}'))
+        .to_equal(['def f() {', '  raise Error(1)', '}'])
   })
 
   it('keeps the dots of an import as they were written', @{
-    expect(lines('import .. ..shared.config')).to_equal(['import .. ..shared.config'])
-    expect(lines('import ....shared.config')).to_equal(['import ....shared.config'])
-    expect(lines('import @.addr {SocketAddr,Ip}')).to_equal([
-      'import @.addr { SocketAddr, Ip }',
-    ])
+    expect(lines('import .. ..shared.config'))
+        .to_equal(['import .. ..shared.config'])
+    expect(lines('import ....shared.config'))
+        .to_equal(['import ....shared.config'])
+    expect(lines('import @.addr {SocketAddr,Ip}'))
+        .to_equal(['import @.addr { SocketAddr, Ip }'])
     expect(lines('import os {*}')).to_equal(['import os { * }'])
     expect(lines('import .sibling as sib')).to_equal(['import .sibling as sib'])
+  })
+
+  it('opens an import\'s names one to a line when they do not fit', @{
+    var source = 'import .layout { first_name, second_name, third_name, ' +
+        'fourth_name, fifth_name, sixth }'
+
+    expect(lines(source)).to_equal([
+      'import .layout {',
+      '  first_name,',
+      '  second_name,',
+      '  third_name,',
+      '  fourth_name,',
+      '  fifth_name,',
+      '  sixth,',
+      '}',
+    ])
   })
 })
 
 describe('declarations', @{
   it('lays out a class with its members in the order written', @{
     var source = 'class P < Base {\n  static var count = 0\n  var x\n' +
-      '  @new(x) {\n    self.x = x\n  }\n}'
+        '  @new(x) {\n    self.x = x\n  }\n}'
 
     expect(lines(source)).to_equal([
-      'class P < Base {', '  static var count = 0', '  var x', '',
-      '  @new(x) {', '    self.x = x', '  }', '}',
+      'class P < Base {',
+      '  static var count = 0',
+      '  var x',
+      '',
+      '  @new(x) {',
+      '    self.x = x',
+      '  }',
+      '}',
     ])
   })
 
   it('drops the def a method name may be written with', @{
-    expect(lines('class C {\n  def m() {}\n}')).to_equal([
-      'class C {', '  m() {}', '}',
-    ])
+    expect(lines('class C {\n  def m() {}\n}'))
+        .to_equal(['class C {', '  m() {}', '}'])
   })
 
   it('writes parameters with their types', @{
-    expect(lines('def f(a:int,b:?list|dict,...rest){}')).to_equal([
-      'def f(a: int, b: ?list|dict, ...rest) {}',
+    expect(lines('def f(a:int,b:?list|dict,...rest){}'))
+        .to_equal(['def f(a: int, b: ?list|dict, ...rest) {}'])
+  })
+
+  it('opens parameters one to a line when they do not fit', @{
+    var source = 'def configure(the_first_name: string, the_second_name: string, ' +
+        'the_third_name: number) {}'
+
+    expect(lines(source)).to_equal([
+      'def configure(',
+      '  the_first_name: string,',
+      '  the_second_name: string,',
+      '  the_third_name: number,',
+      ') {}',
+    ])
+  })
+
+  it('adds no trailing comma after a variadic parameter', @{
+    var source = 'def configure(the_first_name: string, the_second_name: string, ' +
+        '...the_remaining_names) {}'
+
+    expect(lines(source)).to_equal([
+      'def configure(',
+      '  the_first_name: string,',
+      '  the_second_name: string,',
+      '  ...the_remaining_names',
+      ') {}',
     ])
   })
 })
 
-# The line breaks in the source are the layout. A collection opened out
-# one item to a line, an expression continued across several, arguments
-# spread out on purpose: each is a decision the formatter keeps.
+# The layout depends on the code alone. Where the source broke a line
+# inside an expression does not matter.
 describe('the lines the author wrote', @{
-  it('keeps a list opened out one item to a line', @{
-    expect(lines('var xs = [\n  1,\n  2,\n  3\n]')).to_equal([
-      'var xs = [', '  1,', '  2,', '  3,', ']',
-    ])
+  it('joins a list that fits back onto one line', @{
+    expect(lines('var xs = [\n  1,\n  2,\n  3\n]'))
+        .to_equal(['var xs = [1, 2, 3]'])
   })
 
-  it('keeps a list written on one line on one line', @{
-    expect(lines('var xs = [1, 2, 3]')).to_equal(['var xs = [1, 2, 3]'])
-  })
-
-  it('keeps arguments where they were spread out', @{
-    expect(lines('f(alpha, beta,\n  gamma)')).to_equal([
-      'f(alpha, beta,', '  gamma)',
-    ])
-  })
-
-  it('opens the bracket that was opened, not the one around it', @{
-    expect(lines('f(g(\n  alpha,\n  beta,\n))')).to_equal([
-      'f(g(', '  alpha,', '  beta,', '))',
-    ])
-  })
-
-  it('keeps the side of an operator the author broke on', @{
-    expect(lines("var s = 'aaa' +\n  'bbb' +\n  'ccc'")).to_equal([
-      "var s = 'aaa' +", "  'bbb' +", "  'ccc'",
-    ])
-    expect(lines('var ok = a\n  and b')).to_equal(['var ok = a', '  and b'])
-  })
-
-  it('keeps a conditional broken across lines', @{
-    expect(lines('var s = a ?\n  b :\n  c')).to_equal([
-      'var s = a ?', '  b :', '  c',
-    ])
-    expect(lines('var s = a\n  ? b\n  : c')).to_equal([
-      'var s = a', '  ? b', '  : c',
-    ])
+  it('joins arguments and operators that fit', @{
+    expect(lines('f(alpha, beta,\n  gamma)'))
+        .to_equal(['f(alpha, beta, gamma)'])
+    expect(lines("var s = 'aaa' +\n  'bbb'"))
+        .to_equal(["var s = 'aaa' + 'bbb'"])
+    expect(lines('var ok = a\n  and b')).to_equal(['var ok = a and b'])
+    expect(lines('var s = a ?\n  b :\n  c')).to_equal(['var s = a ? b : c'])
   })
 
   it('keeps the blank line a block opens on', @{
-    expect(lines('class C {\n\n  m() {\n    return 1\n  }\n}')).to_equal([
-      'class C {', '', '  m() {', '    return 1', '  }', '}',
-    ])
+    expect(lines('class C {\n\n  m() {\n    return 1\n  }\n}'))
+        .to_equal(['class C {', '', '  m() {', '    return 1', '  }', '}'])
   })
 
   it('keeps one blank line where the author left several', @{
     expect(lines('a()\n\n\n\nb()')).to_equal(['a()', '', 'b()'])
   })
-})
 
-# A list the author broke keeps its lines only while they fit. Once a
-# line of several items runs past the width, the whole list is laid out
-# again, as many items to a line as fit.
-describe('realigning a list that runs past the width', @{
-  it('lays the list out again once one of its lines is too long', @{
+  it('keeps a blank line between the items of a list that opens out', @{
     var source = '\n'.join([
       'var xs = [',
-      '  alpha_long_item, beta_long_item, gamma_long_item, delta_long_item, epsilon_item,',
-      '  zeta,',
+      '  first_long_item_name,',
+      '',
+      '  second_long_item_name,',
+      '  third_long_item_name_here,',
       ']',
     ])
 
     expect(lines(source)).to_equal([
       'var xs = [',
-      '  alpha_long_item, beta_long_item, gamma_long_item, delta_long_item,',
-      '  epsilon_item, zeta,',
+      '  first_long_item_name,',
+      '',
+      '  second_long_item_name,',
+      '  third_long_item_name_here,',
       ']',
     ])
+    expect(lines('var xs = [\n  a,\n\n  b,\n]')).to_equal(['var xs = [a, b]'])
+  })
+})
+
+describe('lists and arguments', @{
+  it('keeps a list that fits on one line and drops its trailing comma', @{
+    expect(lines('var xs = [1, 2, 3,]')).to_equal(['var xs = [1, 2, 3]'])
   })
 
-  it('realigns arguments the same way', @{
-    var source = 'f(alpha_argument, beta_argument, gamma_argument, delta_argument, ' +
-      'epsilon_argument,\n  zeta)'
+  it('opens a list that does not fit one item to a line', @{
+    var source = 'foo(alpha_argument, beta_argument, gamma_argument, ' +
+        'delta_argument, epsilon_argument)'
 
     expect(lines(source)).to_equal([
-      'f(alpha_argument, beta_argument, gamma_argument, delta_argument,',
-      '  epsilon_argument, zeta)',
+      'foo(',
+      '  alpha_argument,',
+      '  beta_argument,',
+      '  gamma_argument,',
+      '  delta_argument,',
+      '  epsilon_argument,',
+      ')',
     ])
   })
 
-  # Packing cannot shorten a line holding one item, so a list written one
-  # item to a line stays that way around an item too long for any line.
-  it('leaves a list alone when the line too long holds one item', @{
+  it('opens each list that does not fit, outermost first', @{
+    var source = 'findings.append(Finding(path, 1, \'command has no doc ' +
+        'block\', \'zuri --help reads it\'))'
+
+    expect(lines(source)).to_equal([
+      'findings.append(',
+      '  Finding(path, 1, \'command has no doc block\', \'zuri --help reads it\'),',
+      ')',
+    ])
+  })
+
+  it('opens out a function given as the last argument on its own', @{
+    expect(lines('each(items, @{ work() })'))
+        .to_equal(['each(items, @{', '  work()', '})'])
+    expect(lines('describe(\'name\', @{ it(\'works\', @{ run() }) })'))
+        .to_equal([
+          'describe(\'name\', @{',
+          '  it(\'works\', @{',
+          '    run()',
+          '  })',
+          '})',
+        ])
+  })
+
+  it('opens out a collection given as the last argument on its own', @{
+    var source = 'var b = Button(label, { variant: ButtonVariant.FLEXIBLE, tint, ' +
+        'size: 18, weight: 2 })'
+
+    expect(lines(source)).to_equal([
+      'var b = Button(label, {',
+      '  variant: ButtonVariant.FLEXIBLE,',
+      '  tint,',
+      '  size: 18,',
+      '  weight: 2,',
+      '})',
+    ])
+  })
+
+  it('lets one argument follow the one that opens out', @{
+    expect(lines('wait(@{ work() }, 10)'))
+        .to_equal(['wait(@{', '  work()', '}, 10)'])
+  })
+
+  it('opens every argument when no single one can open out alone', @{
+    expect(lines('run(@{ a() }, @{ b() })')).to_equal([
+      'run(',
+      '  @{',
+      '    a()',
+      '  },',
+      '  @{',
+      '    b()',
+      '  },',
+      ')',
+    ])
+
+    var source = 'var r = Row([first_child, second_child, third_child, ' +
+        'fourth_child], { spacing: 12 })'
+
+    expect(lines(source)).to_equal([
+      'var r = Row(',
+      '  [first_child, second_child, third_child, fourth_child],',
+      '  { spacing: 12 },',
+      ')',
+    ])
+  })
+
+  it('opens every argument when the ones on the line do not fit', @{
+    var source = 'register(a_long_first_argument, a_long_second_argument, ' +
+        'a_third_argument_here, @{ work() })'
+
+    expect(lines(source)).to_equal([
+      'register(',
+      '  a_long_first_argument,',
+      '  a_long_second_argument,',
+      '  a_third_argument_here,',
+      '  @{',
+      '    work()',
+      '  },',
+      ')',
+    ])
+  })
+
+  it('opens a call inside a call rather than hugging it', @{
+    var source = 'var e = Expanded(Text(value, { style: caption, ' +
+        'align: TextAlign.END, max_lines: 1 }))'
+
+    expect(lines(source)).to_equal([
+      'var e = Expanded(',
+      '  Text(value, { style: caption, align: TextAlign.END, max_lines: 1 }),',
+      ')',
+    ])
+  })
+
+  it('opens a dictionary that holds a function one entry to a line', @{
+    expect(
+      lines(
+        'MenuItem(\'Copy\', { shortcut: \'cmd+c\', on_selected: @{ copy() } })',
+      ),
+    )
+        .to_equal([
+          'MenuItem(\'Copy\', {',
+          '  shortcut: \'cmd+c\',',
+          '  on_selected: @{',
+          '    copy()',
+          '  },',
+          '})',
+        ])
+  })
+
+  it('moves a string too long for any line onto a line of its own', @{
     var long = '\'' + 'x' * 80 + '\''
-    var source = '\n'.join(['var xs = [', '  a,', '  b,', '  ${long},', ']'])
 
-    expect(lines(source)).to_equal([
-      'var xs = [', '  a,', '  b,', '  ${long},', ']',
-    ])
-  })
-
-  it('keeps comments and blank lines where they were', @{
-    var source = '\n'.join([
-      'var xs = [',
-      '  alpha_long_item, beta_long_item, # first',
-      '  gamma_long_item, delta_long_item, epsilon_long_item, zeta_long_item, eta_long_item,',
-      '',
-      '  theta,',
-      ']',
-    ])
-
-    expect(lines(source)).to_equal([
-      'var xs = [',
-      '  alpha_long_item, beta_long_item, # first',
-      '  gamma_long_item, delta_long_item, epsilon_long_item, zeta_long_item,',
-      '  eta_long_item,',
-      '',
-      '  theta,',
-      ']',
-    ])
+    expect(lines('raise ArgsError(${long})'))
+        .to_equal(['raise ArgsError(', '  ${long},', ')'])
   })
 })
 
-# A dictionary that is mostly `key: value` pairs takes one pair to a line
-# whenever it does not stay on one line; one mostly of shorthand names
-# packs like a list.
-describe('dictionaries', @{
-  it('keeps a dictionary of pairs on one line while it fits', @{
-    expect(lines('var d = {name: \'server\', port: 8080}')).to_equal([
-      'var d = { name: \'server\', port: 8080 }',
+describe('collections', @{
+  it('fills a list of numbers, as many to a line as fit', @{
+    var numbers = []
+
+    iter var i = 0; i < 30; i++ {
+      numbers.append(100 + i)
+    }
+
+    var source = 'var xs = [${', '.join(numbers.map(@(n) => n.to_string()))}]'
+
+    expect(lines(source)).to_equal([
+      'var xs = [',
+      '  100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114,',
+      '  115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129,',
+      ']',
     ])
   })
 
-  it('puts a dictionary of pairs one pair to a line once it breaks', @{
+  it('opens a collection holding another, even one that fits', @{
+    expect(lines('var rooms = [[3, 4], [5, 6]]'))
+        .to_equal(['var rooms = [', '  [3, 4],', '  [5, 6],', ']'])
+    expect(lines('var windows = [Window(\'Main\', { size: Size(720, 420) })]'))
+        .to_equal([
+          'var windows = [',
+          '  Window(\'Main\', { size: Size(720, 420) }),',
+          ']',
+        ])
+    expect(lines('var d = { a: 1, b: [] }'))
+        .to_equal(['var d = { a: 1, b: [] }'])
+  })
+
+  it('keeps the rows of a collection holding a # comment', @{
+    var source = '\n'.join([
+      'var matrix = [',
+      '  1, 0, # first',
+      '  0,   1,',
+      ']',
+    ])
+
+    expect(lines(source))
+        .to_equal(['var matrix = [', '  1, 0, # first', '  0, 1,', ']'])
+  })
+
+  it('keeps a dictionary that fits on one line', @{
+    expect(lines('var d = {name: \'server\', port: 8080}'))
+        .to_equal(['var d = { name: \'server\', port: 8080 }'])
+  })
+
+  it('opens a dictionary that does not fit one entry to a line', @{
     var source = 'var config = { name: \'server\', host: \'localhost\', port: 8080, ' +
-      'secure: true, timeout: 30 }'
+        'secure: true, timeout: 30 }'
 
     expect(lines(source)).to_equal([
       'var config = {',
@@ -324,16 +466,7 @@ describe('dictionaries', @{
     ])
   })
 
-  it('puts a dictionary of pairs the author broke one pair to a line', @{
-    var source = 'var d = { name: \'server\', host: \'localhost\',\n  port: 8080 }'
-
-    expect(lines(source)).to_equal([
-      'var d = {', '  name: \'server\',', '  host: \'localhost\',',
-      '  port: 8080,', '}',
-    ])
-  })
-
-  it('keeps the comments and blank lines between pairs', @{
+  it('keeps the comments and blank lines between entries', @{
     var source = '\n'.join([
       'var d = {',
       '  name: \'server\', # who',
@@ -343,37 +476,26 @@ describe('dictionaries', @{
     ])
 
     expect(lines(source)).to_equal([
-      'var d = {', '  name: \'server\', # who', '', '  port: 8080,', '}',
-    ])
-  })
-
-  it('packs a dictionary of shorthand names like a list', @{
-    var source = 'var d = { alpha_name, beta_name, gamma_name, delta_name, ' +
-      'epsilon_name, zeta_name, eta }'
-
-    expect(lines(source)).to_equal([
       'var d = {',
-      '  alpha_name, beta_name, gamma_name, delta_name, epsilon_name, zeta_name, eta,',
+      '  name: \'server\', # who',
+      '',
+      '  port: 8080,',
       '}',
     ])
   })
-})
 
-describe('blank lines', @{
-  it('sets a declaration spanning lines off from its neighbours', @{
-    expect(lines('var a = 1\ndef f() {\n  g()\n}\nvar b = 2')).to_equal([
-      'var a = 1', '', 'def f() {', '  g()', '}', '', 'var b = 2',
+  it('moves a value made of operators onto a line of its own', @{
+    var source = 'var d = { total: first_value_with_a_long_name + ' +
+        'second_value_with_a_long_name + third_value_name }'
+
+    expect(lines(source)).to_equal([
+      'var d = {',
+      '  total:',
+      '      first_value_with_a_long_name +',
+      '      second_value_with_a_long_name +',
+      '      third_value_name,',
+      '}',
     ])
-  })
-
-  it('puts that blank line ahead of the comments leading in', @{
-    expect(lines('var a = 1\n# does f\ndef f() {\n  g()\n}')).to_equal([
-      'var a = 1', '', '# does f', 'def f() {', '  g()', '}',
-    ])
-  })
-
-  it('leaves no blank line before a closing brace', @{
-    expect(lines('def f() {\n  a()\n\n}')).to_equal(['def f() {', '  a()', '}'])
   })
 })
 
@@ -382,134 +504,149 @@ describe('comments', @{
     expect(lines('var x = 1 # note')).to_equal(['var x = 1 # note'])
   })
 
-  it('keeps a comment written among arguments', @{
-    expect(lines('foo(a, # first\n  b)')).to_equal(['foo(a, # first', '  b)'])
+  it('opens a list that holds a comment ending its line', @{
+    expect(lines('foo(a, # first\n  b)'))
+        .to_equal(['foo(', '  a, # first', '  b,', ')'])
   })
 
   it('keeps a comment between a brace and its else', @{
-    expect(lines('if a {\n  b()\n} # done\nelse {\n  c()\n}')).to_equal([
-      'if a {', '  b()', '} # done', 'else {', '  c()', '}',
-    ])
+    expect(lines('if a {\n  b()\n} # done\nelse {\n  c()\n}'))
+        .to_equal(['if a {', '  b()', '} # done', 'else {', '  c()', '}'])
   })
 
   it('moves a doc block with the code it documents', @{
-    expect(lines('class C {\n      /**\n       * Doc.\n       */\n  m() {}\n}')).to_equal([
-      'class C {', '  /**', '   * Doc.', '   */', '  m() {}', '}',
-    ])
+    expect(lines('class C {\n      /**\n       * Doc.\n       */\n  m() {}\n}'))
+        .to_equal(['class C {', '  /**', '   * Doc.', '   */', '  m() {}', '}'])
   })
 })
 
 describe('expressions', @{
   it('spaces operators, calls, subscripts and types by what they are', @{
-    expect(lines('var x=-a- -b+f(c)[0]*d.e')).to_equal(['var x = -a - -b + f(c)[0] * d.e'])
+    expect(lines('var x=-a- -b+f(c)[0]*d.e'))
+        .to_equal(['var x = -a - -b + f(c)[0] * d.e'])
     expect(lines('var r=1..n')).to_equal(['var r = 1..n'])
     expect(lines('x++')).to_equal(['x++'])
     expect(lines('var t=a?b:c')).to_equal(['var t = a ? b : c'])
   })
 
   it('writes a subscript with the commas that say what it reads', @{
-    expect(lines('echo [s[1,],s[,3],s[1,3],s[ 2 ]]')).to_equal([
-      'echo [s[1,], s[,3], s[1, 3], s[2]]',
-    ])
+    expect(lines('echo [s[1,],s[,3],s[1,3],s[ 2 ]]'))
+        .to_equal(['echo [s[1,], s[,3], s[1, 3], s[2]]'])
   })
 
   it('writes dictionaries with their shorthand', @{
-    expect(lines('var d={a:1,b,"c":c}')).to_equal(['var d = { a: 1, b, "c": c }'])
-    expect(lines('var d = {\n  name: name,\n}')).to_equal([
-      'var d = {', '  name,', '}',
-    ])
+    expect(lines('var d={a:1,b,"c":c}'))
+        .to_equal(['var d = { a: 1, b, "c": c }'])
+    expect(lines('var d = {\n  name: name,\n}')).to_equal(['var d = { name }'])
   })
 
   it('writes every spelling of a function value', @{
     expect(lines('var a=@(x)=>x')).to_equal(['var a = @(x) => x'])
     expect(lines('var a=@=>5')).to_equal(['var a = @ => 5'])
     expect(lines('var a=@{b()}')).to_equal(['var a = @{', '  b()', '}'])
-    expect(lines('var a=def(x){return x}')).to_equal([
-      'var a = def(x) {', '  return x', '}',
-    ])
-  })
-
-  it('opens a closure handed to a call at the closure alone', @{
-    expect(lines('each(items, @{ work() })')).to_equal([
-      'each(items, @{', '  work()', '})',
-    ])
+    expect(lines('var a=def(x){return x}'))
+        .to_equal(['var a = def(x) {', '  return x', '}'])
   })
 
   it('writes strings and numbers exactly as the source does', @{
-    expect(lines("echo ['a  ${'$'}{x}  b', 0xFF, 1_000, 2n, 1e3]")).to_equal([
-      "echo ['a  ${'$'}{x}  b', 0xFF, 1_000, 2n, 1e3]",
-    ])
+    expect(lines("echo ['a  ${'$'}{x}  b', 0xFF, 1_000, 2n, 1e3]"))
+        .to_equal(["echo ['a  ${'$'}{x}  b', 0xFF, 1_000, 2n, 1e3]"])
   })
 })
 
-describe('breaking long lines', @{
+describe('operators', @{
   it('leaves a line that fits alone', @{
     expect(lines('var x = a and b')).to_equal(['var x = a and b'])
   })
 
-  it('breaks a chain of and at every operator, the operator leading', @{
+  it('breaks after every operator of a run, two levels in', @{
     var source = 'var ok = alpha and beta and gamma and delta and epsilon and zeta and eta ' +
-      'and theta'
+        'and theta'
 
     expect(lines(source)).to_equal([
-      'var ok = alpha', '  and beta', '  and gamma', '  and delta',
-      '  and epsilon',
-      '  and zeta', '  and eta', '  and theta',
+      'var ok = alpha and',
+      '    beta and',
+      '    gamma and',
+      '    delta and',
+      '    epsilon and',
+      '    zeta and',
+      '    eta and',
+      '    theta',
     ])
   })
 
   it('breaks at the loosest operator first', @{
     var source = 'var ok = alpha_value_one and beta_value_two or gamma_value_three and ' +
-      'delta_value_four'
+        'delta_value_four'
 
     expect(lines(source)).to_equal([
-      'var ok = alpha_value_one and beta_value_two',
-      '  or gamma_value_three and delta_value_four',
+      'var ok = alpha_value_one and beta_value_two or',
+      '    gamma_value_three and delta_value_four',
     ])
   })
 
-  # A line opening with `-` is a statement of its own, so a sum holding
-  # a `-` breaks after each operator, never before one.
-  it('trails every operator of a sum that subtracts', @{
-    var source = 'var total = first_value_with_a_long_name + second_value_with_a_long_name' +
-      ' - third_value'
+  it('sets a condition\'s continued lines apart from the block', @{
+    var source = 'if first_condition_value and second_condition_value and ' +
+        'the_third_condition_value { go() }'
 
     expect(lines(source)).to_equal([
-      'var total = first_value_with_a_long_name +',
-      '  second_value_with_a_long_name -',
-      '  third_value',
+      'if first_condition_value and',
+      '    second_condition_value and',
+      '    the_third_condition_value {',
+      '  go()',
+      '}',
     ])
   })
+})
 
-  it('breaks a long conditional before its ? and :', @{
+describe('conditionals', @{
+  it('breaks before its ? and :, two levels in', @{
     var source = 'var items = group.kind == \'index\' ? group.items : ' +
-      'without_trailing_comma(group.items)'
+        'without_trailing_comma(group.items)'
 
     expect(lines(source)).to_equal([
-      'var items = group.kind == \'index\'', '  ? group.items',
-      '  : without_trailing_comma(group.items)',
+      'var items = group.kind == \'index\'',
+      '    ? group.items',
+      '    : without_trailing_comma(group.items)',
     ])
   })
 
-  it('fills a call across lines and adds a trailing comma', @{
-    var source = 'foo(alpha_argument, beta_argument, gamma_argument, delta_argument, ' +
-      'epsilon_argument, zeta)'
+  it('lays a chain of conditionals out as one list of cases', @{
+    var source = 'var size = n > 100 ? \'large\' : n > 5 ? \'medium\' : ' +
+        '\'small and then some more and more\''
 
     expect(lines(source)).to_equal([
-      'foo(',
-      '  alpha_argument, beta_argument, gamma_argument, delta_argument,',
-      '  epsilon_argument, zeta,', ')',
+      'var size = n > 100',
+      '    ? \'large\'',
+      '    : n > 5',
+      '    ? \'medium\'',
+      '    : \'small and then some more and more\'',
     ])
   })
 
-  it('breaks the innermost call when the outer one holds just it', @{
-    var source = 'findings.append(Finding(path, 1, \'command has no doc ' +
-      'block\', \'zuri --help reads it\'))'
+  it('indents a branch\'s own lines past its ? or :', @{
+    var source = 'var on_press = selection.is_empty() ? nil : @{ recall(selection[0]) }'
 
     expect(lines(source)).to_equal([
-      'findings.append(Finding(',
-      '  path, 1, \'command has no doc block\', \'zuri --help reads it\',',
-      '))',
+      'var on_press = selection.is_empty()',
+      '    ? nil',
+      '    : @{',
+      '        recall(selection[0])',
+      '      }',
+    ])
+  })
+})
+
+describe('chains', @{
+  it('opens the arguments of a lone call', @{
+    var source = 'var r = some_object.property.method(first_argument_name, ' +
+        'second_argument_name_too)'
+
+    expect(lines(source)).to_equal([
+      'var r = some_object.property.method(',
+      '  first_argument_name,',
+      '  second_argument_name_too,',
+      ')',
     ])
   })
 
@@ -517,18 +654,69 @@ describe('breaking long lines', @{
     var source = 'return items.filter(@(i) => i > 0).map(@(i) => i * 2).reduce(@(a, b) => a + b, 0)'
 
     expect(lines('def f() {\n  ${source}\n}')).to_equal([
-      'def f() {', '  return items', '    .filter(@(i) => i > 0)',
-      '    .map(@(i) => i * 2)',
-      '    .reduce(@(a, b) => a + b, 0)', '}',
+      'def f() {',
+      '  return items',
+      '      .filter(@(i) => i > 0)',
+      '      .map(@(i) => i * 2)',
+      '      .reduce(@(a, b) => a + b, 0)',
+      '}',
     ])
   })
 
-  it('leaves a single argument that cannot break where it is', @{
-    var source = 'raise ArgsError(\'' + 'x' * 80 + '\')'
+  it('keeps the property reads a chain opens with beside its value', @{
+    var source = 'var r = self.calculator.history.map(@(entry) => entry.to_dict())' +
+        '.filter(@(x) => x != nil)'
 
-    expect(lines(source)).to_equal([source])
+    expect(lines(source)).to_equal([
+      'var r = self.calculator.history',
+      '    .map(@(entry) => entry.to_dict())',
+      '    .filter(@(x) => x != nil)',
+    ])
   })
 
+  it('opens out a function given to a chain\'s last call', @{
+    expect(lines('things.map(@(e) { return e * 2 }).to_list()'))
+        .to_equal(['things.map(@(e) {', '  return e * 2', '}).to_list()'])
+  })
+
+  it('breaks before its calls when it starts from a call of one argument', @{
+    var source = 'expect(lines(\'def add(a,b){return a+b}\'))' +
+        '.to_equal([\'def add(a, b) {\', \'}\', \'\', \'\'])'
+
+    expect(lines(source)).to_equal([
+      'expect(lines(\'def add(a,b){return a+b}\'))',
+      '    .to_equal([\'def add(a, b) {\', \'}\', \'\', \'\'])',
+    ])
+  })
+
+  it('opens the value a chain starts from when the rest fits after it', @{
+    var source = 'var found = [first_long_element_name, second_long_element]' +
+        '.contains(needle_value)'
+
+    expect(lines(source)).to_equal([
+      'var found = [',
+      '  first_long_element_name,',
+      '  second_long_element,',
+      '].contains(needle_value)',
+    ])
+  })
+
+  it('keeps a call on a capitalized name with the name', @{
+    var source = 'var padding = EdgeInsets.symmetric({ horizontal: 12, ' +
+        'vertical: 8, other: 10, more: 1 })'
+
+    expect(lines(source)).to_equal([
+      'var padding = EdgeInsets.symmetric({',
+      '  horizontal: 12,',
+      '  vertical: 8,',
+      '  other: 10,',
+      '  more: 1,',
+      '})',
+    ])
+  })
+})
+
+describe('the width', @{
   it('never breaks after the = of a var', @{
     var source = 'var message = \'' + 'x' * 80 + '\''
 

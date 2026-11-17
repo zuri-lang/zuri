@@ -1,24 +1,20 @@
 /**
  * @module lz4
  *
- * This is the Lz4 submodule for the compress module.
+ * LZ4 compression and decompression.
  *
- * This modules provides two ways to use lz4. The first way is
- * through the `Lz4Decoder` and `Lz4Encoder` classes, which
- * implement a streaming encoder and decoder with the lz4 frame
- * format. Unless you have a specific reason to the contrary, you
- * should only use the Lz4 classes which implement the lz4 frame
- * format. Specifically, the lz4 frame format permits streaming
- * compression or decompression.
+ * You can use LZ4 in two ways. The first is with the `Lz4Decoder` and
+ * `Lz4Encoder` classes, which stream data in the LZ4 frame format.
+ * Unless you have a particular reason not to, use these classes,
+ * because the frame format supports streaming compression and
+ * decompression.
  *
- * The second way is through the `compress` and `decompress`
- * functions. These functions provide access to the lz4 block
- * format, and don’t support a streaming interface directly. You
- * should only use these types if you know you specifically need
- * the lz4 block format.
+ * The second is with the `compress()` and `decompress()` functions,
+ * which use the LZ4 block format, and don't support streaming. Only use
+ * these if you know you need the block format.
  *
- * @note The block format and the frame format are not
- *    interchangeable.
+ * @note The block format and the frame format can't be used in place of
+ *    each other.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */

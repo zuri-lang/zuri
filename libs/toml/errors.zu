@@ -1,17 +1,17 @@
 /**
  * @module errors
  *
- * Every error the `toml` module raises, under one root.
+ * Every error that the `toml` module raises, with one base class.
  *
- * `TomlError` is that root. The three subclasses separate the cases a
- * caller handles differently: text that is not TOML, a Zuri value that
- * has no TOML spelling, and an edit that contradicts the document it
- * was applied to.
+ * `TomlError` is the base class. Its three subclasses separate the
+ * cases that a caller handles differently: text that isn't valid TOML,
+ * a Zuri value that can't be written as TOML, and an edit that
+ * conflicts with the document it was applied to.
  *
- * Each one carries the detail a message alone cannot. `ParseError`
- * knows the line and column it stopped at, `EncodeError` knows the
- * type it could not write, and `EditError` knows the key path it
- * could not follow.
+ * Each one carries details that a message alone can't. A `ParseError`
+ * has the line and column where parsing stopped, an `EncodeError` has
+ * the type it couldn't write, and an `EditError` has the key path it
+ * couldn't follow.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
@@ -43,11 +43,11 @@ class TomlError < Error {
 }
 
 /**
- * Text that is not valid TOML.
+ * Text that isn't valid TOML.
  *
- * `line` and `column` are both 1-based and point at the character the
- * parser gave up on, which is where the fix goes. Both are `-1` when
- * the fault belongs to the document as a whole rather than to one
+ * `line` and `column` both count from 1, and point to the character
+ * where the parser gave up, which is where the fix belongs. Both are
+ * `-1` when the problem is with the document as a whole, not with one
  * position in it.
  *
  * ```zuri
@@ -99,15 +99,15 @@ class ParseError < TomlError {
 }
 
 /**
- * A Zuri value that cannot be written as TOML.
+ * A Zuri value that can't be written as TOML.
  *
- * TOML has no null, so a `nil` anywhere in a value raises this rather
- * than being written as something that reads back differently. The
- * same goes for a function, a class, a cyclic structure, and a
- * dictionary key that is not a string.
+ * TOML has no null, so a `nil` anywhere in a value raises this, instead
+ * of being written as something that reads back differently. The same
+ * applies to a function, a class, a structure that contains itself, and
+ * a dictionary key that isn't a string.
  *
- * `path` is the dotted key path the offending value sat at, so a
- * rejected leaf in a deep structure can be found without a search.
+ * `path` is the dotted key path of the value that caused the error, so
+ * a problem deep inside a structure can be found without searching.
  *
  * @printable
  */
@@ -138,14 +138,14 @@ class EncodeError < TomlError {
 }
 
 /**
- * An edit that the document cannot accept.
+ * An edit that the document can't accept.
  *
- * Raised when a key path runs through something that is not a table,
- * such as `set('a.b', 1)` on a document where `a` is already a string,
+ * It's raised when a key path goes through something that isn't a
+ * table, such as `set('a.b', 1)` on a document where `a` is a string,
  * and when a path is malformed or empty.
  *
- * `path` is the full dotted path as it was given, so the message names
- * what the caller asked for rather than the fragment that failed.
+ * `path` is the whole dotted path as it was given, so the message names
+ * what the caller asked for, not just the part that failed.
  *
  * @printable
  */

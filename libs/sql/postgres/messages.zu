@@ -1,11 +1,11 @@
 /**
  * @module messages
  *
- * Framing for the PostgreSQL wire protocol, version 3.
+ * Message framing for version 3 of the PostgreSQL wire protocol.
  *
- * Every message is a one byte tag, a four byte big-endian length that
- * counts itself, and then the body. The one exception is the startup
- * message, which has no tag because the server has not yet been told
+ * Every message is a one-byte tag, a four-byte big-endian length that
+ * includes itself, and then the body. The one exception is the startup
+ * message, which has no tag, because the server hasn't yet been told
  * which protocol version is in use.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
@@ -56,7 +56,7 @@ var AUTH_SASL_FINAL = 12
 var PROTOCOL_VERSION = 196608
 
 /**
- * The number the server recognises as a request to start TLS. It takes
+ * The number the server recognizes as a request to start TLS. It takes
  * the place of a protocol version in a startup-shaped message.
  */
 var SSL_REQUEST = 80877103
@@ -276,15 +276,15 @@ class Reader {
   }
 
   /**
-   * Reads the next message and returns its tag as a number, leaving its
-   * body where it arrived: from `start` to `end` in `buffer`.
+   * Reads the next message and returns its tag as a number. The body is
+   * left where it arrived, from `start` to `end` in `buffer`.
    *
-   * Nothing is copied, which is what a reply of many rows wants. The
-   * body is only there until the next read; `read_message()` is the
-   * form to use for one that has to outlast it.
+   * Nothing is copied, which matters for a reply with many rows. The
+   * body is only there until the next read, so use `read_message()` for
+   * one that has to be kept longer.
    *
-   * @returns number The tag's byte, such as 68 for a `DataRow`.
-   * @throws ConnectionError if the server closes first.
+   * @returns number The tag byte, such as 68 for a `DataRow`.
+   * @throws ConnectionError if the server closes the connection first.
    */
   next_message() {
     if self.buffer.length() - self._at < 5 {
@@ -317,10 +317,7 @@ class Reader {
   read_message() {
     var tag = self.next_message()
 
-    return {
-      tag: tag.chr(),
-      payload: self.buffer[self.start, self.end],
-    }
+    return { tag: tag.chr(), payload: self.buffer[self.start, self.end] }
   }
 
   # Reads from the stream until at least `count` unread bytes are
@@ -333,16 +330,15 @@ class Reader {
         chunk = self._stream.read(READ_SIZE)
       } as error {
         raise ConnectionError(
-          'the connection to the server failed while reading: ' +
-            error.message,
+          'the connection to the server failed while reading: ' + error.message,
           { driver: 'postgres' },
         )
       }
 
       if chunk == nil or chunk.length() == 0 {
-        raise ConnectionError(
-          'the server closed the connection', { driver: 'postgres' },
-        )
+        raise ConnectionError('the server closed the connection', {
+          driver: 'postgres',
+        })
       }
 
       # What was read already is dropped before more is added, so the
@@ -374,8 +370,5 @@ def read_cstring(payload, at: number) {
     end++
   }
 
-  return {
-    value: end > at ? payload[at, end].to_string() : '',
-    next: end + 1,
-  }
+  return { value: end > at ? payload[at, end].to_string() : '', next: end + 1 }
 }

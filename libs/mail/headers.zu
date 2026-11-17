@@ -1,14 +1,14 @@
 /**
  * @module headers
  *
- * The header block of a message: what is in it, in what order, and how
- * it is written back out.
+ * The header block of a message: what's in it, in what order, and how
+ * it's written out.
  *
- * Mail headers are not a dictionary. The same name can appear more
- * than once and the order matters, which is why `Received` traces a
- * route and why a signature covers the headers it covers. `Headers`
+ * Mail headers aren't a dictionary. The same name can appear more than
+ * once, and the order matters. That's how `Received` headers trace a
+ * route, and why a signature covers the headers it covers. `Headers`
  * keeps them as they were, matches names without regard to case, and
- * hands back one value or all of them as the caller asks.
+ * returns one value or all of them, as you ask.
  *
  * ```zuri
  * import mail.headers { Headers }
@@ -48,17 +48,27 @@ var LINE_WIDTH = 78
 # The headers whose values are addresses, so that `Message` knows which
 # ones to hand to the address parser without being told.
 var ADDRESS_HEADERS = [
-  'from', 'sender', 'reply-to', 'to', 'cc', 'bcc',
-  'resent-from', 'resent-sender', 'resent-to', 'resent-cc', 'resent-bcc',
-  'return-path', 'disposition-notification-to',
+  'from',
+  'sender',
+  'reply-to',
+  'to',
+  'cc',
+  'bcc',
+  'resent-from',
+  'resent-sender',
+  'resent-to',
+  'resent-cc',
+  'resent-bcc',
+  'return-path',
+  'disposition-notification-to',
 ]
 
 /**
  * Puts a folded header value back together.
  *
- * A header may be split across lines by starting the next one with
- * whitespace. Unfolding removes the line break and leaves the
- * whitespace, which is what it stood for.
+ * A header can be split across lines by starting each continuation line
+ * with whitespace. Unfolding removes each line break and keeps the
+ * whitespace after it.
  *
  * @param string text
  * @returns string
@@ -168,13 +178,12 @@ class Headers {
   /**
    * Reads a header block.
    *
-   * Lines that continue the one before them are joined back together.
-   * A line that is not a header and does not continue one is skipped,
-   * which is what lets a message with an mbox separator in front of it
-   * still be read.
+   * Continuation lines are joined to the line before them. A line that
+   * isn't a header and doesn't continue one is skipped, so a message
+   * with an mbox separator in front of it can still be read.
    *
-   * @param string|bytes text: The block, without the blank line that
-   *    ends it.
+   * @param string|bytes text: the block, without the blank line that
+   *    ends it
    * @returns Headers
    */
   static parse(text) {
@@ -227,10 +236,7 @@ class Headers {
    * @returns Headers itself.
    */
   add(name: string, value) {
-    self._entries.append({
-      name: _tidy(name),
-      value: _tidy('${value}'),
-    })
+    self._entries.append({ name: _tidy(name), value: _tidy('${value}') })
 
     return self
   }
@@ -248,10 +254,7 @@ class Headers {
    * @returns Headers itself.
    */
   prepend(name: string, value) {
-    self._entries.insert({
-      name: _tidy(name),
-      value: _tidy('${value}'),
-    }, 0)
+    self._entries.insert({ name: _tidy(name), value: _tidy('${value}') }, 0)
 
     return self
   }

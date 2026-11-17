@@ -1,7 +1,7 @@
 /**
  * @command lsp
- * @description Runs the Zuri language server for editor integration 
- *    and support.
+ * @description Runs the Zuri language server, which editors use for
+ *    code intelligence.
  *
  * Editors start the server themselves and talk to it over its
  * standard input and output:
@@ -31,24 +31,23 @@ import .server { Server }
 def main() {
   var parser = args.Parser('zuri lsp', false)
 
-  parser.description = 'Runs the Zuri language server for editor integration and support.'
-  parser.epilog = 'Editors start the server themselves; see the Editor Support chapter of the book.'
+  parser.description = 'Runs the Zuri language server, which editors use for code intelligence.'
+  parser.epilog = 'Editors start the server themselves. See the Editor Support chapter of the book.'
   parser.add_option(
-    'stdio', 'Talk over standard input and output, as the server always does',
+    'stdio',
+    'Communicate over standard input and output (the server always does)',
     nil,
   )
-  parser.add_option('log', 'Append the log to this file as well', {
+  parser.add_option('log', 'Also append the log to this file', {
     type: args.STRING,
     metavar: 'path',
   })
-  parser.add_option(
-    'log-level', 'How much to log: error, warn, info, debug or trace', {
-      type: args.CHOICE,
-      choices: logging.LEVELS,
-      value: logging.DEFAULT_LEVEL,
-      metavar: 'level',
-    },
-  )
+  parser.add_option('log-level', 'How much to log', {
+    type: args.CHOICE,
+    choices: logging.LEVELS,
+    value: logging.DEFAULT_LEVEL,
+    metavar: 'level',
+  })
 
   var parsed = parser.parse()
   var level = parsed.options.get('log-level', logging.DEFAULT_LEVEL)

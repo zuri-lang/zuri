@@ -1,0 +1,25 @@
+# Every public name a version's API reference documents, so a search
+# for one finds the package and the place it is documented.
+#
+# The keys a search compares are the name and its whole path, lower
+# cased; the page and the anchor say where the name is documented.
+
+import sql { Blueprint, Connection, Transaction }
+
+def up(db: Transaction|Connection) {
+  db.schema.create_table('symbols', @(table: Blueprint) {
+    table.id()
+    table.references('version_id', 'versions').on_delete('cascade').index()
+    table.string('path', 255)
+    table.string('path_key', 255).exact().index()
+    table.string('name_key', 255).exact().index()
+    table.string('kind', 16)
+    table.string('page', 255)
+    table.string('anchor', 255)
+    table.text('summary')
+  })
+}
+
+def down(db: Transaction|Connection) {
+  db.schema.drop_table('symbols')
+}

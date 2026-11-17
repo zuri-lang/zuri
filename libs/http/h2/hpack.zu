@@ -2,21 +2,21 @@
 /**
  * @module http.h2.hpack
  *
- * HPACK, the header compression HTTP/2 uses (RFC 7541).
+ * HPACK, the header compression that HTTP/2 uses (RFC 7541).
  *
- * A header block is a sequence of representations, each of which
- * either names an entry of a table both endpoints maintain, or spells
- * a field out. The static table below is fixed by the RFC; the
- * dynamic table is built as a connection runs, which is what makes
- * the *decoder* stateful - a block cannot be decoded without every
- * block that came before it on the same connection.
+ * A header block is a sequence of representations. Each one either
+ * refers to an entry in a table that both endpoints maintain, or spells
+ * out a field in full. The static table below is fixed by the RFC. The
+ * dynamic table is built up as a connection runs, and that's what makes
+ * the *decoder* stateful: a block can't be decoded without every block
+ * that came before it on the same connection.
  *
  * The encoder here uses the static table where it can and literals
- * everywhere else, and never adds to its own dynamic table. That
- * gives up some compression and buys a great deal: an encoder with no
- * dynamic table cannot desynchronise from a peer's decoder, and it
- * cannot leak one request's secrets into another's compression ratio,
- * which is the whole of the CRIME family of attacks.
+ * everywhere else, and never adds to its own dynamic table. That costs
+ * some compression, but gains a lot. An encoder without a dynamic table
+ * can't get out of sync with the peer's decoder, and it can't leak one
+ * request's secrets through the compression ratio of another, which is
+ * how the CRIME family of attacks works.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -208,8 +208,8 @@ class DynamicTable {
   var _capacity = 4096
 
   /**
-   * @param ?number capacity: the maximum table size in bytes;
-   *    defaults to HPACK's own default of 4096
+   * @param ?number capacity: the maximum table size, in bytes. Defaults
+   *    to 4096, the HPACK default.
    */
   @new(capacity) {
     self._entries = []
@@ -218,10 +218,10 @@ class DynamicTable {
   }
 
   /**
-   * Adds a field, evicting from the oldest end until it fits.
+   * Adds a field, evicting the oldest entries until it fits.
    *
-   * An entry larger than the whole table is not an error: RFC 7541
-   * §4.4 says to empty the table and add nothing, which is what
+   * An entry larger than the whole table isn't an error. RFC 7541 §4.4
+   * says to empty the table and not add the entry, and that's what
    * happens here.
    *
    * @param string name
@@ -361,14 +361,13 @@ class Decoder {
 
   /**
    * Decodes a complete header block into a list of `[name, value]`
-   * pairs, in the order they appeared - which HTTP/2 depends on, as
-   * repeated fields keep their order and `Set-Cookie` may appear many
-   * times.
+   * pairs, in the order they appeared. HTTP/2 depends on that order,
+   * because repeated fields keep their order, and `Set-Cookie` can
+   * appear many times.
    *
    * @param bytes block
    * @returns list
-   * @throws ProtocolError on a malformed block or one that exceeds a
-   *    limit
+   * @throws ProtocolError if the block is malformed or exceeds a limit
    */
   decode(block) {
     var res = _http.hpack_decode_block(
@@ -429,8 +428,8 @@ def _check_name(name) {
  * Encodes header blocks for one direction of one connection.
  *
  * Fields are matched against the static table, and anything not found
- * there is written out as a literal without indexing - see the module
- * note above for why the dynamic table is left empty.
+ * there is written as a literal without indexing. The module notes
+ * above explain why the dynamic table is left empty.
  */
 class Encoder {
 
@@ -454,7 +453,8 @@ class Encoder {
   /**
    * Encodes a list of `[name, value]` pairs into a header block.
    *
-   * Names must already be lowercase; HTTP/2 has no other kind.
+   * Names must already be lowercase, because HTTP/2 doesn't allow any
+   * other kind.
    *
    * @param list fields
    * @returns bytes

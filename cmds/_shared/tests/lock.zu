@@ -38,7 +38,9 @@ describe('Lock', @{
 
     # A process that has certainly exited.
     var child = spawn(
-      os.exe_path, ['--version'], { stdout: 'null', stderr: 'null' },
+      os.exe_path,
+      ['--version'],
+      { stdout: 'null', stderr: 'null' },
     )
     var gone = child.pid()
 

@@ -1,6 +1,6 @@
 # Inheritance
 
-A class extends another with `<`:
+To make a class inherit from another, use `<`:
 
 ```zuri
 class Shape {
@@ -35,21 +35,19 @@ echo Circle(1).describe()
 circle with area 3.141592653589793
 ```
 
-A subclass inherits every field and method. Single inheritance only; a
-class has at most one parent.
+A subclass inherits all of its parent's fields and methods. Zuri only
+supports single inheritance, so a class can have at most one parent.
 
-Note the direction of the arrow. `class Circle < Shape` creates a **new**
-class that borrows from `Shape`. Turning it around —
-`class Anything > Shape` — is a different declaration entirely: it adds
-methods to `Shape` itself and creates no class at all. See
-[Class Extensions](ch06-06-class-extensions.md).
+Pay attention to the direction of the arrow. `class Circle < Shape` creates
+a **new** class based on `Shape`. Reversing it to `class Anything > Shape`
+means something else entirely: it adds methods to `Shape` itself and doesn't
+create a class at all. See [Class Extensions](ch06-06-class-extensions.md).
 
-## Naming the Parent
+## Specifying the Parent Class
 
-A class is a value like any other, so the parent does not have to be a
-bare name in the current file. Anything an expression starting with a
-name can reach works, which is what lets you build on a class another
-module owns:
+A class is a value like any other, so the parent doesn't have to be a plain
+name declared in the current file. Any expression that starts with a name
+works, which lets you build on a class from another module:
 
 ```zuri
 import log
@@ -71,26 +69,27 @@ echo instance_of(MemoryTransport(), log.Transport)
 true
 ```
 
-Property access, indexing and calls all work the same way, so a parent
-picked out of a registry (`class Store < backends['redis']`) or handed
-back by a function (`class Store < chosen_backend()`) is as valid as a
-name. The expression is evaluated once, where the class is declared.
+Property access, indexing and calls all work the same way, so a parent taken
+from a registry (`class Store < backends['redis']`) or returned by a
+function (`class Store < chosen_backend()`) is just as valid as a name. The
+expression is evaluated once, at the point where the class is declared.
 
-The one rule is that it has to begin with a name. That is what keeps the
-`{` opening the body from ever being read as the start of a dictionary.
+The only rule is that the expression has to start with a name. That's what
+stops the `{` that opens the class body from being read as the start of a
+dictionary.
 
 ## `parent`
 
-`parent` means two related things.
+`parent` has two related uses.
 
-**`parent(args)`** calls the parent's constructor. That is the
-`parent('circle')` line in `Circle` above, and it comes first in `@new`,
-before the subclass sets up anything of its own. Calling it late means the
-parent's constructor overwrites what you just assigned; not calling it at
-all means the parent's fields are never initialised.
+**`parent(args)`** calls the parent class's constructor. That's the
+`parent('circle')` line in `Circle` above. Call it first in `@new`, before
+the subclass sets up anything of its own. If you call it later, the parent's
+constructor overwrites what you've just assigned, and if you don't call it
+at all, the parent's fields are never initialized.
 
 **`parent.method(args)`** calls the parent's version of a method that this
-class has overridden:
+class overrides:
 
 ```zuri
 class Square < Shape {
@@ -115,20 +114,20 @@ echo Square(2).describe()
 a square with area 4
 ```
 
-Note what happened there. `parent.describe()` ran `Shape`'s `describe`,
-which calls `self.area()`, which dispatched back to `Square`'s `area`. A
-method always dispatches on the actual object, not on the class the code
-was written in.
+Look at what happened there. `parent.describe()` ran `Shape`'s version of
+`describe`, which calls `self.area()`, and that call went to `Square`'s
+`area`. Method calls are always resolved on the actual object, not on the
+class where the calling code was written.
 
-## Overriding
+## Overriding Methods
 
-Redeclaring a method in a subclass replaces it. There is no keyword for it
-and no way to forbid it.
+To override a method, declare it again in the subclass. You don't need a
+keyword, and there's no way to prevent a method from being overridden.
 
-`describe()` above is the useful shape of this: a parent method written in
-terms of a method the child supplies. `Shape.area()` raises
-`NotImplementedError`, so a subclass that forgets to override it says so
-clearly:
+`describe()` above shows the most useful version of this: a parent method
+written in terms of a method that the child class provides. `Shape.area()`
+raises `NotImplementedError`, so a subclass that forgets to override it gets
+a clear error:
 
 ```zuri
 catch {
@@ -142,12 +141,12 @@ catch {
 blob must define area()
 ```
 
-That is Zuri's abstract method. There is no `abstract` keyword because
-there does not need to be one.
+That's how you write an abstract method in Zuri. There's no `abstract`
+keyword, because you don't need one.
 
-## A Subclass Without a Constructor
+## Subclasses Without a Constructor
 
-If a subclass declares no `@new`, it uses its parent's:
+If a subclass doesn't declare `@new`, it uses its parent's constructor:
 
 ```zuri
 class NoCtor < Shape {}
@@ -159,9 +158,9 @@ echo NoCtor('plain').name
 plain
 ```
 
-## Testing Ancestry
+## Checking a Class's Ancestors
 
-`instance_of()` walks the whole chain:
+`instance_of()` checks the entire inheritance chain:
 
 ```zuri
 echo instance_of(Circle(1), Shape)
@@ -173,7 +172,7 @@ true
 false
 ```
 
-`typeof()` gives the most specific class name, as a string:
+`typeof()` returns the name of the most specific class, as a string:
 
 ```zuri
 echo typeof(Circle(1))
@@ -183,20 +182,21 @@ echo typeof(Circle(1))
 Circle
 ```
 
-## The Depth Is Free
+## Deep Hierarchies Cost Nothing
 
-Inheritance chains cost nothing to walk at runtime. A method lookup on a
-class four levels deep is the same operation as one on a class with no
-parent, because every class's method table is complete at declaration time.
-Write the hierarchy the design wants.
+Inheritance chains have no cost at run time. Looking up a method on a class
+four levels deep is the same operation as looking it up on a class with no
+parent, because each class's method table is complete as soon as the class
+is declared. Design the hierarchy however your problem needs.
 
-## What You Write Instead of an Interface
+## Alternatives to Interfaces
 
-Zuri has single inheritance and no interfaces, so the two patterns below do
-the jobs an interface would do elsewhere.
+Zuri has single inheritance and no interfaces, but the two patterns below
+cover what you'd use an interface for in other languages.
 
-**A base class that raises.** When a base class needs every subclass to
-supply a method, declare it and raise:
+**A base class that raises an error.** When every subclass needs to provide
+a particular method, declare it in the base class and raise an error from
+it:
 
 ```zuri
 class Shape {
@@ -248,11 +248,11 @@ NotImplementedError: blob must define area()
 ```
 
 `describe()` calls `self.area()`, and `self` is the actual instance, so the
-subclass's version runs. That is the whole of dynamic dispatch in Zuri:
-there is nothing to declare and nothing to mark virtual.
+subclass's version runs. That's all there is to dynamic dispatch in Zuri.
+You don't need to declare anything or mark methods as virtual.
 
-**A parameter typed by the base class.** An annotation naming a class
-accepts any subclass of it, which is how you say "anything that is a
+**A parameter annotated with the base class.** A type annotation that names
+a class accepts any of its subclasses, so you can use it to say "any kind of
 Shape":
 
 ```zuri,ignore
@@ -261,15 +261,15 @@ def total_area(shapes: list) {
 }
 ```
 
-## Checking What Something Is
+## Checking the Type of a Value
 
-Two built-ins answer questions about an instance's type, and they answer
-**different** questions.
+There are two built-in functions for checking an instance's type, and they
+answer **different** questions.
 
 ### `instance_of(value, Class)`
 
-`instance_of()` asks "does this behave like a `Class`?", and it walks the
-whole inheritance chain to answer:
+`instance_of()` answers the question "can I treat this as a `Class`?", and
+it checks the whole inheritance chain to find out:
 
 ```zuri
 class Shape {}
@@ -292,14 +292,15 @@ false
 true
 ```
 
-`Ellipse` is two levels below `Shape` and still answers `true`. There is no
-depth limit: the check follows parents until it finds a match or runs out.
-A sibling — `Circle` against `Square` — is `false`, because siblings share
-an ancestor rather than a lineage.
+`Ellipse` is two levels below `Shape`, and the result is still `true`.
+There's no limit on depth, because the check follows the parents until it
+finds a match or reaches the top. A sibling class, such as `Circle` compared
+with `Square`, gives `false`, because siblings share an ancestor but neither
+descends from the other.
 
-**It never raises for the first argument.** Anything that is not an
-instance of the class simply answers `false`, including values that are not
-instances at all:
+**It never raises an error because of the first argument.** Anything that
+isn't an instance of the class just gives `false`, including values that
+aren't instances at all:
 
 ```zuri
 class Shape {}
@@ -317,11 +318,11 @@ false
 false
 ```
 
-That makes it safe to use as a guard on a value you know nothing about; no
-`is_instance()` check has to come first.
+This means it's safe to use as a check on a value you know nothing about,
+without calling `is_instance()` first.
 
-**A class is not an instance of itself.** Passing the class rather than an
-object gives `false`:
+**A class isn't an instance of itself.** If you pass the class instead of an
+object, the result is `false`:
 
 ```zuri
 class Shape {}
@@ -336,10 +337,11 @@ false
 true
 ```
 
-This trips people up when a variable might hold either. `Circle` is a
-class; `Circle()` is an instance; only the second is "a Shape".
+This catches people out when a variable might hold either one. `Circle` is a
+class and `Circle()` is an instance, and only the instance is a Shape.
 
-**The second argument must be a class**, and here it does raise:
+**The second argument has to be a class**, and here it does raise an error
+if it isn't:
 
 ```zuri
 class Shape {}
@@ -355,11 +357,11 @@ catch {
 instance_of() expects argument 2 to be a class, got string
 ```
 
-The class name as a *string* is the common version of this mistake. Pass
-the class itself.
+The most common version of this mistake is passing the class name as a
+*string*. Pass the class itself instead.
 
-A class held in a variable works, because the check is on the value rather
-than on the spelling:
+A class stored in a variable works, because the check uses the value, not
+the name you wrote:
 
 ```zuri
 class Base {}
@@ -374,7 +376,7 @@ echo instance_of(Derived(), Alias)
 true
 ```
 
-So does a class reached through a module:
+So does a class accessed through a module:
 
 ```zuri
 import set
@@ -386,10 +388,10 @@ echo instance_of(set([1, 2]), set.Set)
 true
 ```
 
-### It Is How the Error Hierarchy Works
+### How the Error Hierarchy Uses It
 
-Every built-in error inherits from `Error`, so `instance_of()` is what lets
-one handler sort them:
+All of the built-in errors inherit from `Error`, so `instance_of()` lets a
+single handler tell them apart:
 
 ```zuri
 echo instance_of(ValueError('bad'), Error)
@@ -401,14 +403,16 @@ true
 false
 ```
 
-That is the mechanism behind the "handle one kind, re-raise the rest"
-pattern in [Error Handling](ch07-00-error-handling.md), and behind mapping
-a domain error to an HTTP status in [Chapter 25](ch25-06-middleware.md).
+This is how the "handle one kind of error and re-raise the rest" pattern in
+[Error Handling](ch07-00-error-handling.md) works, as well as the mapping
+from domain errors to HTTP status codes in [Chapter
+25](ch25-06-middleware.md).
 
 ### `typeof(value)`
 
-`typeof()` asks a different question: "what exactly is this?". On an
-instance it names the **concrete** class, and it never mentions ancestors:
+`typeof()` answers a different question: "what exactly is this?" For an
+instance, it returns the name of its **actual** class, and it never mentions
+the parent classes:
 
 ```zuri
 class Shape {}
@@ -429,27 +433,27 @@ number
 string
 ```
 
-Note the third line. `typeof()` on the class itself answers `class`, not
-`Circle` — the class is a value of kind "class", and its name is not what
-`typeof()` reports.
+Look at the third line. `typeof()` on the class itself returns `class`, not
+`Circle`. The class is a value of type "class", and `typeof()` reports the
+type, not the class's name.
 
-### Which to Use
+### Which One to Use
 
 | Question | Use |
 | --- | --- |
-| can I treat this as a `Shape`? | `instance_of(x, Shape)` |
-| which exact class is this? | `typeof(x)` |
-| is this any instance at all? | `is_instance(x)` |
+| Can I treat this as a `Shape`? | `instance_of(x, Shape)` |
+| Which exact class is this? | `typeof(x)` |
+| Is this an instance of any class? | `is_instance(x)` |
 
-Reach for `instance_of()` by default. It is the one that respects
-inheritance, and code written with `typeof(x) == 'Circle'` breaks the day
-someone subclasses `Circle` — the subclass is a perfectly good `Circle`,
-and the string comparison says otherwise.
+Use `instance_of()` by default, because it takes inheritance into account.
+Code that checks `typeof(x) == 'Circle'` breaks as soon as someone
+subclasses `Circle`, since an instance of the subclass is a perfectly good
+`Circle`, but the string comparison says it isn't.
 
-### A Type Annotation Is the Same Check
+### Type Annotations Use the Same Check
 
-Annotating a parameter with a class name performs exactly the
-`instance_of()` test, at every call, with a better error message:
+Annotating a parameter with a class name performs the same test as
+`instance_of()` on every call, and gives a better error message:
 
 ```zuri
 class Shape {}
@@ -475,6 +479,5 @@ a shape of type Shape
 describe() expects parameter 'shape' (argument 1) to be a Shape, got number
 ```
 
-Prefer the annotation when the answer decides whether the function should
-run at all, and `instance_of()` when the answer decides which branch to
-take.
+Use an annotation when the answer decides whether the function should run at
+all, and `instance_of()` when the answer decides which branch to take.

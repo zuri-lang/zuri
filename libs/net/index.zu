@@ -1,20 +1,19 @@
 /**
  * @module net
  *
- * The `net` module provides networking primitives for
- * Transmission Control Protocol and User Datagram Protocol
- * communication as well as IP address manipulation interfaces.
+ * Networking: TCP and UDP sockets, Unix domain sockets, and IP
+ * addresses.
  *
  * - `TcpStream` communicates over TCP.
  * - `UdpSocket` communicates over UDP.
- * - `UnixStream` communicates over a unix domain socket, which is a
- *   path on the filesystem rather than an address on the network.
+ * - `UnixStream` communicates over a Unix domain socket, which is a
+ *   path on the filesystem instead of an address on the network.
  * - `Ip` parses, formats and classifies IP addresses.
- * - `SocketAddr` pairs an IP address with a port.
+ * - `SocketAddr` combines an IP address with a port.
  * - `net.tls` wraps a `TcpStream` in Transport Layer Security.
  * - `net.dtls` provides Datagram Transport Layer Security over UDP.
  * - `net.poll` waits on many sockets at once.
- * - `net.resolver` asks the domain name system questions of its own.
+ * - `net.resolver` sends its own queries to the Domain Name System.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

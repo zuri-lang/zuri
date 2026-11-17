@@ -1,8 +1,8 @@
 /**
  * @module convert
  *
- * Data conversion between hexadecimal, arbitrary numeric bases,
- * bytes, and decimal numbers.
+ * Converts data between hexadecimal, numbers in any base, bytes and
+ * decimal numbers.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
@@ -11,14 +11,14 @@ var _hex_table = '0123456789abcdef'
 var _base36_table = '0123456789abcdefghijklmnopqrstuvwxyz'
 
 /**
- * Converts a hexadecimal string of any (even) length to bytes.
+ * Converts a hexadecimal string of any even length to bytes.
  *
  * @param string str
  * @returns bytes
  * @raises TypeError if `str` isn't a string.
- * @raises ValueError if `str` has an odd number of characters: a
- *    hex string always encodes whole bytes, so an odd length is
- *    ambiguous rather than something this function guesses at.
+ * @raises ValueError if `str` has an odd number of characters. A
+ *    hexadecimal string always represents whole bytes, so an odd length
+ *    is ambiguous, and this function doesn't guess.
  */
 def hex_to_bytes(str) {
   if !is_string(str) {
@@ -26,7 +26,9 @@ def hex_to_bytes(str) {
   }
 
   if str.length() % 2 != 0 {
-    raise ValueError('hex string must have an even number of characters, got ${str.length()}')
+    raise ValueError(
+      'hex string must have an even number of characters, got ${str.length()}',
+    )
   }
 
   var length = str.length()
@@ -62,10 +64,9 @@ def bytes_to_hex(data) {
 }
 
 /**
- * Converts the given decimal number to a hexadecimal string. If
- * `digits` is given and the result is shorter, it's padded with
- * leading zeros; if the result is longer, it's truncated to the
- * least-significant `digits` characters.
+ * Converts a decimal number to a hexadecimal string. If `digits` is
+ * given and the result is shorter, it's padded with leading zeros, and
+ * if the result is longer, only its last `digits` characters are kept.
  *
  * @param number n
  * @param ?number digits
@@ -159,20 +160,19 @@ def octal_to_decimal(str) {
 }
 
 /**
- * Converts a decimal number to a string in the given `base`,
- * using `0`-`9` then `a`-`z` for digits beyond 9 (so base 16
- * produces lowercase hex, matching `decimal_to_hex()`). If `digits`
- * is given and the result is shorter, it's padded with leading
- * zeros; if longer, it's truncated to the least-significant
- * `digits` characters.
+ * Converts a decimal number to a string in the given `base`, using `0`
+ * to `9` and then `a` to `z` for digits above 9, so base 16 produces
+ * lowercase hexadecimal, as `decimal_to_hex()` does. If `digits` is
+ * given and the result is shorter, it's padded with leading zeros, and
+ * if it's longer, only its last `digits` characters are kept.
  *
  * @param number n
- * @param number base: Between `2` and `36`.
+ * @param number base: from `2` to `36`
  * @param ?number digits
  * @returns string
  * @raises TypeError if `n` isn't a number.
- * @raises ValueError if `base` is outside `2`-`36`, or if `digits`
- *    is given but isn't a number.
+ * @raises ValueError if `base` is outside `2` to `36`, or `digits` is
+ *    given but isn't a number.
  */
 def to_base(n, base, digits) {
   if !is_number(n) {
@@ -308,18 +308,18 @@ def bytes_to_decimal(data, little_endian) {
 }
 
 /**
- * Converts a decimal number to bytes, the reverse of
+ * Converts a decimal number to bytes. This is the reverse of
  * `bytes_to_decimal()`.
  *
- * @param number n: Must be non-negative: there's no signedness
- *    convention (two's complement vs. sign-magnitude) implied
- *    here, so a negative value is rejected rather than guessed at.
- * @param number length: The exact number of bytes to produce. If
- *    `n` doesn't fit in `length` bytes, the most significant
- *    (excess) bits are silently dropped, the same as fitting a
- *    number into a fixed-width integer type would.
- * @param ?bool little_endian: Default `false`: the most
- *    significant byte is written first. Set `true` for the least
+ * @param number n: must not be negative. There's no convention here for
+ *    signed numbers, such as two's complement, so a negative value is
+ *    rejected instead of being guessed at.
+ * @param number length: the exact number of bytes to produce. If `n`
+ *    doesn't fit in `length` bytes, the most significant bits are
+ *    silently dropped, as they are when a number is stored in a
+ *    fixed-width integer type.
+ * @param ?bool little_endian: defaults to `false`, which writes the
+ *    most significant byte first. Set it to `true` to write the least
  *    significant byte first.
  * @returns bytes
  * @raises TypeError if `n` isn't a number.

@@ -1,15 +1,15 @@
 /**
  * @module html.elements
  *
- * The element tables the tree construction algorithm consults on
+ * The element tables that the tree construction algorithm checks on
  * almost every token: which elements are "special", which are
  * formatting elements, which close which, and how SVG and MathML tag
- * and attribute names have to be repaired after the tokenizer has
- * lowercased them.
+ * and attribute names are corrected after the tokenizer has converted
+ * them to lowercase.
  *
- * These are data, lifted from the WHATWG HTML Living Standard. They
- * live apart from `html.parser` so the algorithm there reads as the
- * algorithm and not as a wall of lists.
+ * This is data taken from the WHATWG HTML Living Standard. It's kept
+ * separate from `html.parser` so that the algorithm there reads as an
+ * algorithm, not as a wall of lists.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
@@ -27,18 +27,88 @@ import .namespaces { XLINK_NAMESPACE, XML_NAMESPACE, XMLNS_NAMESPACE }
  * algorithm's own category.
  */
 var SPECIAL_HTML = [
-  'address', 'applet', 'area', 'article', 'aside', 'base',
-  'basefont', 'bgsound', 'blockquote', 'body', 'br', 'button',
-  'caption', 'center', 'col', 'colgroup', 'dd', 'details', 'dir',
-  'div', 'dl', 'dt', 'embed', 'fieldset', 'figcaption', 'figure',
-  'footer', 'form', 'frame', 'frameset', 'h1', 'h2', 'h3', 'h4',
-  'h5', 'h6', 'head', 'header', 'hgroup', 'hr', 'html', 'iframe',
-  'img', 'input', 'keygen', 'li', 'link', 'listing', 'main',
-  'marquee', 'menu', 'meta', 'nav', 'noembed', 'noframes',
-  'noscript', 'object', 'ol', 'p', 'param', 'plaintext', 'pre',
-  'script', 'search', 'section', 'select', 'source', 'style',
-  'summary', 'table', 'tbody', 'td', 'template', 'textarea',
-  'tfoot', 'th', 'thead', 'title', 'tr', 'track', 'ul', 'wbr',
+  'address',
+  'applet',
+  'area',
+  'article',
+  'aside',
+  'base',
+  'basefont',
+  'bgsound',
+  'blockquote',
+  'body',
+  'br',
+  'button',
+  'caption',
+  'center',
+  'col',
+  'colgroup',
+  'dd',
+  'details',
+  'dir',
+  'div',
+  'dl',
+  'dt',
+  'embed',
+  'fieldset',
+  'figcaption',
+  'figure',
+  'footer',
+  'form',
+  'frame',
+  'frameset',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'head',
+  'header',
+  'hgroup',
+  'hr',
+  'html',
+  'iframe',
+  'img',
+  'input',
+  'keygen',
+  'li',
+  'link',
+  'listing',
+  'main',
+  'marquee',
+  'menu',
+  'meta',
+  'nav',
+  'noembed',
+  'noframes',
+  'noscript',
+  'object',
+  'ol',
+  'p',
+  'param',
+  'plaintext',
+  'pre',
+  'script',
+  'search',
+  'section',
+  'select',
+  'source',
+  'style',
+  'summary',
+  'table',
+  'tbody',
+  'td',
+  'template',
+  'textarea',
+  'tfoot',
+  'th',
+  'thead',
+  'title',
+  'tr',
+  'track',
+  'ul',
+  'wbr',
   'xmp',
 ]
 
@@ -58,49 +128,89 @@ var SPECIAL_SVG = ['foreignObject', 'desc', 'title']
  * a fresh `<b>` inside the paragraph.
  */
 var FORMATTING_ELEMENTS = [
-  'a', 'b', 'big', 'code', 'em', 'font', 'i', 'nobr', 's',
-  'small', 'strike', 'strong', 'tt', 'u',
+  'a',
+  'b',
+  'big',
+  'code',
+  'em',
+  'font',
+  'i',
+  'nobr',
+  's',
+  'small',
+  'strike',
+  'strong',
+  'tt',
+  'u',
 ]
 
 /**
- * The HTML elements that make up the "in scope" barrier every scope
- * check shares. The narrower checks (list item scope, button scope)
- * add to this list rather than replacing it.
+ * The HTML elements that form the scope boundary that every scope check
+ * uses. The narrower checks, for list item scope and button scope, add
+ * to this list instead of replacing it.
  */
 var SCOPE_HTML = [
-  'applet', 'caption', 'html', 'table', 'td', 'th', 'marquee',
-  'object', 'template',
+  'applet',
+  'caption',
+  'html',
+  'table',
+  'td',
+  'th',
+  'marquee',
+  'object',
+  'template',
 ]
 
 /**
- * Elements whose end tag is implied by the start of a sibling, so
- * that `<li>a<li>b` produces two list items rather than nesting.
+ * Elements whose end tag is implied by the start of a sibling, so that
+ * `<li>a<li>b` produces two list items, not one inside the other.
  */
 var IMPLIED_END_TAGS = [
-  'dd', 'dt', 'li', 'optgroup', 'option', 'p', 'rb', 'rp', 'rt',
+  'dd',
+  'dt',
+  'li',
+  'optgroup',
+  'option',
+  'p',
+  'rb',
+  'rp',
+  'rt',
   'rtc',
 ]
 
 /**
- * Everything in {IMPLIED_END_TAGS} plus the elements only closed when
- * the standard says to generate implied end tags *thoroughly*, which
- * is what `</template>` and the table sections do.
+ * Everything in {IMPLIED_END_TAGS}, plus the elements that are only
+ * closed when the standard says to generate implied end tags
+ * *thoroughly*, as `</template>` and the table sections do.
  */
 var THOROUGH_IMPLIED_END_TAGS = [
-  'caption', 'colgroup', 'dd', 'dt', 'li', 'optgroup', 'option',
-  'p', 'rb', 'rp', 'rt', 'rtc', 'tbody', 'td', 'tfoot', 'th',
-  'thead', 'tr',
+  'caption',
+  'colgroup',
+  'dd',
+  'dt',
+  'li',
+  'optgroup',
+  'option',
+  'p',
+  'rb',
+  'rp',
+  'rt',
+  'rtc',
+  'tbody',
+  'td',
+  'tfoot',
+  'th',
+  'thead',
+  'tr',
 ]
 
 /**
- * The MathML elements whose children are parsed as HTML rather than
- * as MathML.
+ * The MathML elements whose children are parsed as HTML, not as MathML.
  */
 var MATHML_TEXT_INTEGRATION_POINTS = ['mi', 'mo', 'mn', 'ms', 'mtext']
 
 /**
- * The SVG elements whose children are parsed as HTML rather than as
- * SVG.
+ * The SVG elements whose children are parsed as HTML, not as SVG.
  */
 var SVG_HTML_INTEGRATION_POINTS = ['foreignObject', 'desc', 'title']
 
@@ -110,11 +220,50 @@ var SVG_HTML_INTEGRATION_POINTS = ['foreignObject', 'desc', 'title']
  * insertion point is reached.
  */
 var FOREIGN_BREAKOUT_TAGS = [
-  'b', 'big', 'blockquote', 'body', 'br', 'center', 'code', 'dd',
-  'div', 'dl', 'dt', 'em', 'embed', 'h1', 'h2', 'h3', 'h4', 'h5',
-  'h6', 'head', 'hr', 'i', 'img', 'li', 'listing', 'menu', 'meta',
-  'nobr', 'ol', 'p', 'pre', 'ruby', 's', 'small', 'span', 'strong',
-  'strike', 'sub', 'sup', 'table', 'tt', 'u', 'ul', 'var',
+  'b',
+  'big',
+  'blockquote',
+  'body',
+  'br',
+  'center',
+  'code',
+  'dd',
+  'div',
+  'dl',
+  'dt',
+  'em',
+  'embed',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'head',
+  'hr',
+  'i',
+  'img',
+  'li',
+  'listing',
+  'menu',
+  'meta',
+  'nobr',
+  'ol',
+  'p',
+  'pre',
+  'ruby',
+  's',
+  'small',
+  'span',
+  'strong',
+  'strike',
+  'sub',
+  'sup',
+  'table',
+  'tt',
+  'u',
+  'ul',
+  'var',
 ]
 
 /**
@@ -230,9 +379,7 @@ var SVG_ATTRIBUTES = {
 /**
  * The one MathML attribute whose case the tokenizer destroys.
  */
-var MATHML_ATTRIBUTES = {
-  definitionurl: 'definitionURL',
-}
+var MATHML_ATTRIBUTES = { definitionurl: 'definitionURL' }
 
 /**
  * Attributes in foreign content that belong to a namespace, mapping
@@ -316,8 +463,8 @@ var QUIRKS_PUBLIC_PREFIXES = [
 ]
 
 /**
- * The two public identifiers that put a document in quirks mode on
- * an exact match rather than a prefix match, in lowercase.
+ * The two public identifiers, in lowercase, that put a document in
+ * quirks mode only on an exact match, not on a prefix match.
  */
 var QUIRKS_PUBLIC_EXACT = [
   '-//w3o//dtd w3 html strict 3.0//en//',
@@ -348,7 +495,7 @@ var HTML4_TRANSITIONAL_PREFIXES = [
  * in lowercase.
  */
 var QUIRKS_SYSTEM_ID = 'http://www.ibm.com/data/dtd/v11/' +
-  'ibmxhtml1-transitional.dtd'
+    'ibmxhtml1-transitional.dtd'
 
 /**
  * True when the element _name_ in namespace _namespace_ is one of the
@@ -383,14 +530,14 @@ def is_special(namespace: string, name: string) {
  */
 def is_mathml_text_integration_point(element) {
   return element.namespace == MATHML_NAMESPACE and
-    MATHML_TEXT_INTEGRATION_POINTS.contains(element.tag_name)
+      MATHML_TEXT_INTEGRATION_POINTS.contains(element.tag_name)
 }
 
 /**
  * True when _element_ is an HTML integration point.
  *
  * An `<annotation-xml>` qualifies only when its `encoding` attribute
- * names an HTML flavour, which is how MathML embeds real markup.
+ * names an HTML flavor, which is how MathML embeds real markup.
  *
  * @param any element
  * @returns bool
@@ -412,7 +559,7 @@ def is_html_integration_point(element) {
   }
 
   return element.namespace == SVG_NAMESPACE and
-    SVG_HTML_INTEGRATION_POINTS.contains(element.tag_name)
+      SVG_HTML_INTEGRATION_POINTS.contains(element.tag_name)
 }
 
 /**
@@ -467,17 +614,16 @@ def _rename_attributes(attributes: dict, renames: dict) {
 }
 
 /**
- * Which quirks mode a doctype puts a document in.
+ * The quirks mode that a doctype puts a document in.
  *
- * _name_ may be `nil` for a doctype with no name at all, and the two
- * identifiers may be `nil` when the doctype omits them; all three
+ * _name_ can be `nil` for a doctype with no name at all, and the two
+ * identifiers can be `nil` when the doctype leaves them out. All three
  * cases mean something different to the algorithm, which is why they
- * are not folded into empty strings.
+ * aren't converted to empty strings.
  *
  * Returns `'no-quirks'`, `'limited-quirks'` or `'quirks'`. Nothing in
- * this module behaves differently between them, but knowing which one
- * a browser would have picked is exactly the question you are asking
- * when you audit a legacy document.
+ * this module behaves differently in the three modes. The result tells
+ * you how a browser would have rendered the document.
  *
  * @param ?string name
  * @param ?string public_id
@@ -485,8 +631,12 @@ def _rename_attributes(attributes: dict, renames: dict) {
  * @param bool force_quirks
  * @returns string
  */
-def doctype_mode(name: ?string, public_id: ?string, system_id: ?string,
-  force_quirks: bool) {
+def doctype_mode(
+  name: ?string,
+  public_id: ?string,
+  system_id: ?string,
+  force_quirks: bool,
+) {
   if force_quirks or name != 'html' {
     return 'quirks'
   }

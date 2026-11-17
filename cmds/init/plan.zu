@@ -70,7 +70,8 @@ def _git_config(key: string) {
 
   catch {
     var child = spawn(
-      'git', ['config', '--get', key],
+      'git',
+      ['config', '--get', key],
       { stdout: 'pipe', stderr: 'pipe' },
     )
 
@@ -139,16 +140,16 @@ def check_name(raw: string) {
 
   if name.length() > NAME_LIMIT {
     raise UsageError(
-      "'${name}' is ${name.length()} characters long, but a project name can be "
-        + 'at most ${NAME_LIMIT}',
+      "'${name}' is ${name.length()} characters long, but a project name can be " +
+          'at most ${NAME_LIMIT}',
     )
   }
 
   if !is_dict(name.match(_NAME_PATTERN)) {
     raise UsageError(
-      "'${name}' cannot be used as a project name; use lowercase letters, "
-        + 'digits, hyphens and underscores, and begin and end with a letter '
-        + 'or a digit',
+      "'${name}' cannot be used as a project name; use lowercase letters, " +
+          'digits, hyphens and underscores, and begin and end with a letter ' +
+          'or a digit',
     )
   }
 
@@ -169,8 +170,8 @@ def check_version(raw: string) {
 
   if !is_dict(version.match(_VERSION_PATTERN)) {
     raise UsageError(
-      "'${version}' is not a valid version; use major.minor.patch, such as "
-        + '${DEFAULT_VERSION}',
+      "'${version}' is not a valid version; use major.minor.patch, such as " +
+          '${DEFAULT_VERSION}',
     )
   }
 
@@ -453,60 +454,73 @@ def inside_git_repo(directory: string) {
 def parser() {
   var parser = args.Parser('zuri init', false)
 
-  parser.description = 'Creates a new Zuri package/project.'
-  parser.epilog = 'If no path is given, the project will be created in the current working directory.'
+  parser.description = 'Creates a new Zuri project.'
+  parser.epilog = 'If no path is given, the project is created in the current directory.'
 
   parser.add_index(
-    'path', 'Where the project goes, created if missing; os.cwd() by default',
+    'path',
+    'Where to create the project (the current directory by default)',
   )
 
   parser.add_option(
-    'name', 'The name of the project; the directory name by default',
+    'name',
+    "The project's name (the directory's name by default)",
     { short_name: 'n', type: args.STRING, metavar: 'name' },
   )
   parser.add_option(
-    'version', 'The version the project starts at, as major.minor.patch',
+    'version',
+    'The project\'s starting version, as major.minor.patch',
     { type: args.STRING, metavar: 'version' },
   )
+  parser.add_option('description', 'A one-line description of the project', {
+    short_name: 'd',
+    type: args.STRING,
+    metavar: 'text',
+  })
   parser.add_option(
-    'description', 'A single line saying what the project does',
-    { short_name: 'd', type: args.STRING, metavar: 'text' },
-  )
-  parser.add_option(
-    'author', 'Who wrote it, as "Name <email>"; taken from git by default',
+    'author',
+    'The project\'s authors, as "Name <email>" (taken from git by default)',
     { short_name: 'a', type: args.LIST, metavar: 'author' },
   )
   parser.add_option(
     'license',
-    'The license the project is released under, as an SPDX identifier',
+    'The project\'s license, as an SPDX identifier',
     { short_name: 'l', type: args.STRING, metavar: 'license' },
   )
+  parser.add_option('keywords', 'Keywords that help people find the project', {
+    short_name: 'k',
+    type: args.LIST,
+    metavar: 'keyword',
+  })
   parser.add_option(
-    'keywords', 'Keywords people might search for the project by',
-    { short_name: 'k', type: args.LIST, metavar: 'keyword' },
-  )
-  parser.add_option(
-    'homepage', 'The address of the project homepage or its documentation',
+    'homepage',
+    'The address of the project\'s homepage or documentation',
     { type: args.STRING, metavar: 'url' },
   )
   parser.add_option(
-    'repository', 'The address of the repository the source lives in',
+    'repository',
+    'The address of the project\'s source code repository',
     { type: args.STRING, metavar: 'url' },
   )
   parser.add_option(
-    'yes', 'Accept every default without asking any questions',
+    'yes',
+    'Accept all the defaults without asking any questions',
     { short_name: 'y' },
   )
-  parser.add_option(
-    'vcs', 'Whether to create a git repository; either git or none',
-    { type: args.CHOICE, choices: ['git', 'none'], metavar: 'kind' },
-  )
+  parser.add_option('vcs', 'Whether to create a git repository', {
+    type: args.CHOICE,
+    choices: ['git', 'none'],
+    metavar: 'kind',
+  })
   parser.add_option(
     'force',
-    'Rewrite project.toml even when a project already exists here', nil,
+    'Rewrite project.toml even if there\'s already a project here',
+    nil,
   )
   parser.add_option(
-    'dry-run', 'Show what would be written without writing anything', nil,
+    'dry-run',
+    'Show what would be written without writing anything',
+    nil,
   )
 
   return parser

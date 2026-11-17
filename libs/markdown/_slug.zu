@@ -1,0 +1,85 @@
+/**
+ * Generates heading identifiers the way GitHub and Pandoc do, so that a
+ * link written for a page rendered by either one still finds its
+ * heading here.
+ */
+
+import ._text { is_ascii_alnum, is_whitespace }
+
+# Whether a character outside ASCII is a letter, a number or a mark,
+# remembered once asked.
+var _word = {}
+
+def _is_word_character(c: string) {
+  if c.ord() < 128 {
+    return is_ascii_alnum(c)
+  }
+
+  var known = _word.get(c)
+
+  if known != nil {
+    return known
+  }
+
+  var found = c.match('/^[\\p{L}\\p{N}\\p{M}]$/u') != false
+
+  _word.set(c, found)
+
+  return found
+}
+
+/**
+ * Returns GitHub's identifier for _text_. The text is lowercased, each
+ * space becomes a hyphen, and everything except letters, numbers, `-`
+ * and `_` is removed.
+ */
+def github(text: string) {
+  var out = []
+
+  for c in text.lower() {
+    if c == ' ' {
+      out.append('-')
+    } else if c == '-' or c == '_' or _is_word_character(c) {
+      out.append(c)
+    }
+  }
+
+  return ''.join(out)
+}
+
+/**
+ * Returns Pandoc's identifier for _text_. The text is lowercased, each
+ * run of whitespace becomes a single hyphen, and everything except
+ * letters, numbers, `_`, `-` and `.` is removed, along with everything
+ * before the first letter.
+ */
+def pandoc(text: string) {
+  var out = []
+  var spaced = false
+
+  for c in text.lower() {
+    if is_whitespace(c) {
+      spaced = true
+
+      continue
+    }
+
+    if c == '-' or c == '_' or c == '.' or _is_word_character(c) {
+      if spaced and !out.is_empty() {
+        out.append('-')
+      }
+
+      spaced = false
+      out.append(c)
+    }
+  }
+
+  var slug = ''.join(out)
+  var i = 0
+
+  while i < slug.length() and !slug[i].is_alpha() {
+    i++
+  }
+
+  return slug[i,]
+}

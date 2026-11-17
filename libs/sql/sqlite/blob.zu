@@ -1,13 +1,13 @@
 /**
  * @module blob
  *
- * Reading and writing a single blob-valued cell a piece at a time.
+ * Reads and writes a single blob value a piece at a time.
  *
  * A large value stored in a database is usually read with a `select`,
- * which means the whole of it arrives at once. For a hundred megabyte
- * file that is a hundred megabytes of memory to move a copy from one
- * place to another. A blob handle opens one cell and reads or writes
- * windows of it, so the memory needed is the size of the window.
+ * which means the whole value arrives at once. For a 100 MB file,
+ * that's 100 MB of memory just to copy it from one place to another. A
+ * blob handle opens one cell and reads or writes parts of it, so you
+ * only need as much memory as each part.
  *
  * ```zuri,ignore
  * var blob = db.native().blob('main', 'files', 'content', id, false)
@@ -22,9 +22,9 @@
  * blob.close()
  * ```
  *
- * The cell has to exist and already be the right size: SQLite cannot
- * grow a blob through this interface. The usual approach is to insert
- * `zeroblob(n)` for the final size and then write into it.
+ * The cell has to exist already and be the right size, because SQLite
+ * can't grow a blob through this interface. The usual approach is to
+ * insert `zeroblob(n)` with the final size, and then write into it.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

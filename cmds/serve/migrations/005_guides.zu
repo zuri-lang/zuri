@@ -1,0 +1,19 @@
+# The guide each version ships, built into a site when the version is
+# published: its title, or `nil` when the version ships none, and what
+# stopped it being built, when something did.
+
+import sql { Blueprint, Connection, Transaction }
+
+def up(db: Transaction|Connection) {
+  db.schema.create_table('guides', @(table: Blueprint) {
+    table.references('version_id', 'versions').on_delete('cascade')
+    table.string('title', 255).nullable()
+    table.text('problem').nullable()
+    table.big_integer('built_at')
+    table.primary(['version_id'])
+  })
+}
+
+def down(db: Transaction|Connection) {
+  db.schema.drop_table('guides')
+}

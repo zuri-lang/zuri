@@ -1,15 +1,16 @@
 /**
  * @module decimal
  *
- * Exact decimal numbers, for the money column that must not be a
- * float.
+ * Exact decimal numbers, for money and other values that mustn't be
+ * stored as floats.
  *
- * PostgreSQL's `numeric` holds a decimal value exactly. A `number` in
- * Zuri is a double, which holds `0.1` only approximately, so reading a
- * balance of `0.10` into one and writing it back is not guaranteed to
- * store what was there before. `Decimal` keeps the value as an integer
- * and a scale, so `10.05` is exactly ten and five hundredths and stays
- * that way through every read and write.
+ * PostgreSQL's `numeric` type holds a decimal value exactly. A Zuri
+ * `number` is a double, which can only hold `0.1` approximately, so
+ * reading a balance of `0.10` into a number and writing it back isn't
+ * guaranteed to store the original value. `Decimal` keeps the value as
+ * an integer and a scale, so `10.05` is exactly ten and five
+ * hundredths, and stays that way however many times it's read and
+ * written.
  *
  * ```zuri,ignore
  * var price = Decimal('19.99')
@@ -19,9 +20,9 @@
  * # 3.9980
  * ```
  *
- * Addition, subtraction and multiplication are exact. Division is not,
- * in general, so it takes the number of decimal places to produce and
- * rounds half away from zero, the rule money is normally counted by.
+ * Addition, subtraction and multiplication are exact. Division
+ * generally isn't, so it takes the number of decimal places to produce,
+ * and rounds half away from zero, which is the usual rule for money.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -31,12 +32,12 @@ import .errors { QueryError }
 /**
  * An exact decimal number.
  *
- * Held as an integer and a scale: `unscaled` is the digits with the
- * point removed, `scale` is how many of them are after the point. So
- * `1.05` is `105` at scale 2, and `1.050` is `1050` at scale 3. The
- * two are equal in value and differ in how they print, which is what
- * lets a column declared `numeric(10, 3)` round trip without gaining
- * or losing a trailing zero.
+ * It's stored as an integer and a scale. `unscaled` is the digits
+ * without the decimal point, and `scale` is how many of them come after
+ * the point. So `1.05` is `105` with a scale of 2, and `1.050` is
+ * `1050` with a scale of 3. The two have the same value but are printed
+ * differently, so a column declared as `numeric(10, 3)` can be read and
+ * written back without gaining or losing a trailing zero.
  *
  * @printable
  */
@@ -54,9 +55,9 @@ class Decimal {
   var scale = 0
 
   /**
-   * Builds a decimal.
+   * Creates a decimal.
    *
-   * From text, which is the exact form and the one to prefer:
+   * From text, which is exact and is the form to prefer:
    *
    * ```zuri,ignore
    * Decimal('19.99')
@@ -70,17 +71,17 @@ class Decimal {
    * Decimal(19.99)
    * ```
    *
-   * Or from the parts, which is what the PostgreSQL adapter uses:
+   * Or from its parts, as the PostgreSQL adapter does:
    *
    * ```zuri,ignore
    * Decimal(1999, 2)
    * ```
    *
-   * @param string|number|bigint value The value, or its unscaled
-   *    digits when `scale` is given.
-   * @param number|nil scale The number of decimal places, when
-   *    `value` is the unscaled integer.
-   * @throws QueryError if the text is not a number.
+   * @param string|number|bigint value The value, or its unscaled digits
+   *    if `scale` is given.
+   * @param number|nil scale The number of decimal places, when `value`
+   *    is the unscaled integer.
+   * @throws QueryError if the text isn't a number.
    */
   @new(value, scale) {
     if scale != nil {
@@ -115,7 +116,7 @@ class Decimal {
 
     raise QueryError(
       'a decimal is built from text, a number or a bigint, not ' +
-        '${typeof(value)}',
+          '${typeof(value)}',
     )
   }
 
@@ -218,11 +219,12 @@ class Decimal {
   }
 
   /**
-   * The quotient to `places` decimal places, rounded half away from
-   * zero.
+   * The result of dividing by `other`, to `places` decimal places,
+   * rounded half away from zero.
    *
-   * Division is the one operation with no exact answer in general, so
-   * the number of places is required rather than guessed.
+   * Division is the one operation that doesn't have an exact answer in
+   * general, so the number of decimal places is required instead of
+   * being guessed.
    *
    * @param Decimal other
    * @param number places

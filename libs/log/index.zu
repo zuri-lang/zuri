@@ -1,18 +1,12 @@
 /**
  * @module log
  *
- * This module implements a simple and flexible event logging
- * system for all Zuri applications and modules. With support for
- * multiple transport systems as well as custom transports, this
- * module allows easy application logging and log shipping.
+ * Logging for Zuri applications and modules. Logs are sent to one or
+ * more transports, such as the console, a file or a transport of your
+ * own.
  *
- * The module selects defaults that is familiar for most end
- * use-cases in order to allow for a minimal need for
- * configurations so that you can start logging right out of the
- * box.
- *
- * Below is a very simple but powerful and complete usage of this
- * module:
+ * The defaults suit most programs, so you can start logging without any
+ * configuration:
  *
  * ```zuri-repl
  * %> import log
@@ -20,33 +14,27 @@
  * '2025-03-07T08:00:33+01:00 INFO [.]: Starting my application...'
  * ```
  *
- * > **IMPORTANT!**
+ * > **Note**
  * >
- * > Did you notice that `[.]`? That's because we are running in
- * > a REPL. By default, the `log` module provides information
- * > regarding the source of the log i.e. the application from
- * > which the log came from thereby allowing multiple
- * > applications log into the same transport pool without
- * > ambiguity.
+ * > The `[.]` is there because this example runs in the REPL.
+ * > By default, each log message includes the name of the
+ * > application it came from, so that several applications can
+ * > log to the same place without confusion.
  * >
- * > You can customize this name by setting the name on the
- * > transport via [[log.Transport.set_name]].
+ * > To change the name, set it on the transport with
+ * > [[log.Transport.set_name]].
  *
- * This module provides all functionalities at the module level,
- * allowing configurations to be carried across all files and
- * modules in the lifetime of an application.
+ * Everything is configured at the module level, so the configuration
+ * applies to every file and module for the lifetime of the application.
  *
- * While allowing creation of custom transports for logs, the
- * module provides transports for logging to the console
- * ([[log.ConsoleTransport]]) and files ([[log.FileTransport]])
- * out of the box. This covers the most simple use-cases for most
- * applications.
+ * The module includes transports for logging to the console
+ * ([[log.ConsoleTransport]]) and to files ([[log.FileTransport]]),
+ * which cover the needs of most applications, and you can also write
+ * your own.
  *
- * The default transport enabled is the [[log.ConsoleTransport]]
- * known as the [[log.default_transport()]] and need no extra
- * work to enable unless you have previously disabled it. The
- * example below shows how to enable the file transport to log to
- * a file on disk.
+ * The default transport, returned by [[log.default_transport()]], is a
+ * [[log.ConsoleTransport]], and it's enabled unless you've disabled it.
+ * This example adds a file transport, to log to a file on disk as well:
  *
  * ```zuri
  * import log
@@ -57,55 +45,47 @@
  * log.info('Finished setting up file log...')
  * ```
  *
- * If you check the file `mylog.log` now, you should see
- * something like this:
+ * The file `mylog.log` now contains something like this:
  *
  * ```sh
  * 2025-03-01T12:00:00+01:00 INFO [tmp]: Finished setting up file log...
  * ```
  *
- * In addition to the log appearing on the console, you can now
- * see the log in a persistent file. There are many ways to turn
- * off the console output and log to file alone.
+ * The message still appears on the console as well. To log only to the
+ * file, there are two ways to turn off the console output.
  *
- * Firstly, you can simple disable the default transport.
+ * The first is to disable the default transport:
  *
  * ```zuri
  * log.default_transport().disable()
  * ```
  *
- * The advantage to this approach is that while it disables the
- * default transport, the transport is still registered and you
- * can simple enable it at any time during the lifetime of the
- * application by doing the reverse:
+ * The transport stays registered, so you can enable it again at any
+ * time:
  *
  * ```zuri
  * log.default_transport().enable()
  * ```
  *
- * The same strategy applies to all transports as the `enable()`
- * and `disable()` method will be inherited from the
- * [[log.Transport]] class.
+ * Every transport has `enable()` and `disable()`, because they're
+ * inherited from [[log.Transport]].
  *
- * The second approach is to completely remove the transport from
- * the list of registered transports.
+ * The second way is to remove the transport from the list of registered
+ * transports:
  *
  * ```zuri
  * log.remove_transport(log.default_transport())
  * ```
  *
- * With this second approach, you'll need to register the
- * transport again should you want to continue logging to the
- * console. The same applies to all transport types.
+ * In that case, you have to register the transport again if you want to
+ * log to the console later. The same applies to every kind of
+ * transport.
  *
- * For more complex uses, the process of creating a custom
- * transport is really simple. To create a custom transport,
- * you'll need to create a class that inherits from
- * [[log.Transport]] and implement the `write()` method at a
- * minimum.
+ * To create a transport of your own, write a class that extends
+ * [[log.Transport]] and implements at least the `write()` method.
  *
- * The example below shows the creation of a custom transport
- * that outputs structured JSON data to the console.
+ * This example creates a transport that writes structured JSON to the
+ * console:
  *
  * ```zuri
  * # my_custom_transport.zu
@@ -142,21 +122,18 @@
  * log.info('Finished setting up json console log transport...')
  * ```
  *
- * You should be seeing something similar to the below if you run
- * the code:
+ * Running this prints something like:
  *
  * ```sh
  * {"logtime":1741376459,"records":["Finished setting up json console log transport..."],"name":"tmp","level":"Info"}
  * ```
  *
- * You can set multiple transports at the same time as well as
- * set them to only work at different log levels. Every transport
- * inherits the method [[log.Transport.set_level]] which allows
- * us set the minimum level at which a transport is available.
+ * You can have several transports at once, each logging from a
+ * different level. [[log.Transport.set_level]], which every transport
+ * inherits, sets the lowest level that a transport logs.
  *
- * There is also a global [[log.set_level]] function that allows
- * us to set the minimum log level at which all transports can
- * start logging.
+ * The [[log.set_level]] function sets the lowest level for all
+ * transports:
  *
  * ```zuri
  * import log
@@ -166,21 +143,16 @@
  * log.info('Finished setting up json console log transport...')
  * ```
  *
- * If you try the above code, you won't be seeing anything in the
- * console. This is because level [[log.Info]] is lower than the
- * minium required [[log.Warning]].
+ * This doesn't print anything, because [[log.Info]] is lower than
+ * [[log.Warning]].
  *
- * While every `Transport` implements the `format()` method,
- * users can override the format method by providing a format
- * function via the [[log.Transport.set_formatter]] method. This
- * allows using the same formatter across different transports.
+ * Every `Transport` has a `format()` method, but you can replace it by
+ * passing a function to [[log.Transport.set_formatter]]. That lets you
+ * use the same formatter for several transports.
  *
- * For example, in the previous example, if we had wanted to
- * serialize all logging irrespective of the transport into the
- * JSON format, a more appropriate solution would have been to
- * create a log format function and reuse it in all transports
- * instead of implementing a `JsonConsoleTransport`. The next
- * example shows one such implementation.
+ * In the previous example, if you wanted every transport to write JSON,
+ * it would be better to write a formatting function and use it for each
+ * transport, instead of writing a `JsonConsoleTransport`:
  *
  * ```zuri
  * import log
@@ -205,16 +177,11 @@
  * log.debug('This is a debug information')
  * ```
  *
- * Transport implementations should take note of this critical
- * information.
- *
- * > **IMPORTANT!**
+ * > **Note**
  * >
- * > Because the `log` module exports the a function, if you are
- * > not interested in all the shenanigans of logging level and
- * > simply want to do some quick logging, you can ignore the
- * > whole logging levels altogether and log at level
- * > [[log.None]] by simply calling the log module itself.
+ * > The `log` module can be called as a function. If you just
+ * > want to log something quickly and don't care about levels,
+ * > call the module itself, which logs at level [[log.None]]:
  * >
  * > ```zuri
  * > import log
@@ -222,14 +189,14 @@
  * > log('An anonymous log!')
  * > ```
  * >
- * > This bypasses every level filter (including the global
- * > [[log.set_level]] threshold) on every enabled transport;
- * > only [[log.Transport.disable]] can still silence it.
+ * > This skips every level filter, including the global
+ * > [[log.set_level]] threshold, on every enabled transport.
+ * > Only [[log.Transport.disable]] can stop it.
  *
- * ## Structured and namespaced logging
+ * ## Structured and named logging
  *
- * A trailing dict argument on any log call is treated as
- * structured fields rather than a plain message, rendered as
+ * If the last argument of a log call is a dictionary, it's treated as
+ * structured fields, not as part of the message, and written as
  * `key=value` pairs after the message:
  *
  * ```zuri
@@ -237,10 +204,9 @@
  * # ... INFO [.]: user signed in user_id=42
  * ```
  *
- * For a whole subsystem that should tag every one of its own log
- * lines with a name (and, optionally, a fixed set of fields),
- * use [[log.get_logger]] instead of the flat module-level
- * functions:
+ * For a subsystem that should label all of its log messages with a
+ * name, and optionally a fixed set of fields, use [[log.get_logger]]
+ * instead of the module-level functions:
  *
  * ```zuri
  * var db_log = log.get_logger('db').bind({ pool: 'primary' })

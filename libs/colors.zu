@@ -1,38 +1,31 @@
 /**
  * @module colors
  *
- * This module provides functionalities for color conversion and
- * manipulation.
+ * Converts and manipulates colors, and writes colored text to the
+ * terminal.
  *
- * This module also provides functionalities that enable
- * cross-platform colored terminal outputs that will allow you
- * create beautiful console apps that are user friendly.
- *
- * RGB conversion to other colors that return a floating point or
- * a list of floating points do so to allow users get absolute
- * precision since its really easy for callers to do a
- * `num.round()` on the components of the resulting list.
+ * Conversions from RGB to other color models that return a
+ * floating-point number, or a list of them, keep full precision,
+ * because it's easy for the caller to call `round()` on the results.
  *
  * ### Example
  *
- * The example below uses this module to create a success message
- * that will print correctly on almost all terminals (Only
- * Windows 10 version 1901+ supported. All linux and OSX
- * terminals are supported). Try it out!
+ * This example prints a success message in green, which works in almost
+ * every terminal: all terminals on Linux and macOS, and Windows 10
+ * version 1901 or later.
  *
  * ```zuri
  * import colors
  * colors.text('Successful!', colors.text_color.green)
  * ```
  *
- * The `text()` function can be nested. For example,
+ * Calls to `text()` can be nested:
  *
  * ```zuri
  * colors.text(colors.text('Successful!', colors.style.bold), colors.text_color.green)
  * ```
  *
- * The module also features multiple functions for color
- * conversion. For example,
+ * The module also has functions for converting between color models:
  *
  * ```zuri-repl
  * %> import colors
@@ -40,10 +33,8 @@
  * [0, 87.37864077669903, 33.009708737864095, 59.6078431372549]
  * ```
  *
- * The terminal colors also have simple wrappers that allow
- * supplied colors to `text()` from various color formats. For
- * example, we can specify the color from the HTML hexadecimal
- * color.
+ * `text()` also accepts colors given in other formats, such as a
+ * hexadecimal HTML color:
  *
  * ```zuri
  * import colors
@@ -172,9 +163,10 @@ def rgb_to_ansi256(r: int, g: int, b: int) {
     return (((r - 8) / 247) * 24).round() + 232
   }
 
-  return 16 + (36 * (r / 255 * 5).round()) +
-    (6 * (g / 255 * 5).round()) +
-    (b / 255 * 5).round()
+  return 16 +
+      (36 * (r / 255 * 5).round()) +
+      (6 * (g / 255 * 5).round()) +
+      (b / 255 * 5).round()
 }
 
 /**
@@ -228,12 +220,13 @@ def ansi256_to_ansi(code: int) {
 const _VALID_HEX_LENGTHS = [3, 4, 6, 8]
 
 /**
- * Whether _text_ is 3, 4, 6 or 8 hexadecimal digits, the four lengths
- * a color can be written in.
+ * Whether _text_ is 3, 4, 6 or 8 hexadecimal digits, which are the four
+ * lengths a color can be written in.
  *
- * A character loop rather than a regular expression, because
- * compiling a pattern costs far more than the comparison itself and
- * [[colors.hex_to_rgb]] sits under every color a drawing API parses.
+ * It uses a loop over the characters instead of a regular expression,
+ * because compiling a pattern costs far more than the comparison
+ * itself, and [[colors.hex_to_rgb]] runs for every color that a drawing
+ * API parses.
  */
 def _is_hex_digits(text) {
   var length = text.length()
@@ -247,8 +240,8 @@ def _is_hex_digits(text) {
 
     # 0-9, then a-f, then A-F.
     if (code < 48 or code > 57) and
-      (code < 97 or code > 102) and
-      (code < 65 or code > 70) {
+        (code < 97 or code > 102) and
+        (code < 65 or code > 70) {
       return false
     }
   }
@@ -260,9 +253,9 @@ def _is_hex_digits(text) {
  * Returns `true` if _color_ is a hexadecimal color that
  * [[colors.hex_to_rgb]] would accept, and `false` otherwise.
  *
- * A leading `#` is optional and the digits may be in either case.
- * This raises nothing, so it is the way to test a color before
- * converting it rather than converting inside a `catch`.
+ * A leading `#` is optional, and the digits can be in either case. This
+ * never raises an error, so use it to check a color before converting
+ * it, instead of converting inside a `catch`.
  *
  * ```zuri-repl
  * %> import colors
@@ -329,9 +322,9 @@ def hex_to_rgb(h: string) {
   var number = v.to_number(16)
 
   var a = (number & 0xFF) / 255,
-    b = (number & 0xFF00) >> 8,
-    g = (number & 0xFF0000) >> 16,
-    r = (number & 0xFF000000) >> 24
+      b = (number & 0xFF00) >> 8,
+      g = (number & 0xFF0000) >> 16,
+      r = (number & 0xFF000000) >> 24
 
   return [r, g, b, a]
 }
@@ -647,8 +640,8 @@ def rgb_to_xyz(r: int, g: int, b: int) {
   b = b > 0.04045 ? (((b + 0.055) / 1.055) ** 2.4) : (b / 12.92)
 
   var x = (r * 0.4124564) + (g * 0.3575761) + (b * 0.1804375),
-    y = (r * 0.2126729) + (g * 0.7151522) + (b * 0.072175),
-    z = (r * 0.0193339) + (g * 0.119192) + (b * 0.9503041)
+      y = (r * 0.2126729) + (g * 0.7151522) + (b * 0.072175),
+      z = (r * 0.0193339) + (g * 0.119192) + (b * 0.9503041)
 
   return [x * 100, y * 100, z * 100]
 }
@@ -676,8 +669,7 @@ def rgb_to_lab(r: int, g: int, b: int) {
   y = y > 0.008856 ? (y ** (1 / 3)) : (7.787 * y) + (16 / 116)
   z = z > 0.008856 ? (z ** (1 / 3)) : (7.787 * z) + (16 / 116)
 
-  var l = (116 * y) - 16,
-    a = 500 * (x - y)
+  var l = (116 * y) - 16, a = 500 * (x - y)
   b = 200 * (y - z)
 
   return [l, a, b]
@@ -724,8 +716,7 @@ def hsl_to_rgb(h: number, s: number, l: number) {
     t2 = l + s - l * s
   }
 
-  var t1 = 2 * l - t2,
-    rgb = [0, 0, 0]
+  var t1 = 2 * l - t2, rgb = [0, 0, 0]
 
   iter var i = 0; i < 3; i++ {
     t3 = h + 1 / 3 * -(i - 1)
@@ -792,10 +783,10 @@ def hsv_to_rgb(h: number, s: number, v: number) {
   v /= 100
 
   var hi = h.floor() % 6,
-    f = h - h.floor(),
-    x = (255 * v * (1 - s)).round(),
-    y = (255 * v * (1 - (s * f))).round(),
-    z = (255 * v * (1 - (s * (1 - f)))).round()
+      f = h - h.floor(),
+      x = (255 * v * (1 - s)).round(),
+      y = (255 * v * (1 - (s * f))).round(),
+      z = (255 * v * (1 - (s * (1 - f)))).round()
 
   v = (v * 255).round()
 
@@ -823,10 +814,7 @@ def hsv_to_hsl(h: number, s: number, v: number) {
   s /= 100
   v /= 100
 
-  var vmax = v.max(0.01),
-    l = (2 - s) * v,
-    lmax = (2 - s) * vmax,
-    sl = s * vmax
+  var vmax = v.max(0.01), l = (2 - s) * v, lmax = (2 - s) * vmax, sl = s * vmax
 
   # The divisor can be exactly 0 (e.g. s=0, v=1, where lmax works out to
   # 2), which would divide sl's already-zero numerator into NaN rather
@@ -861,8 +849,7 @@ def hwb_to_rgb(h: number, w: number, b: number) {
     h /= ratio
   }
 
-  var i = (6 * h).floor(),
-    v = 1 - b
+  var i = (6 * h).floor(), v = 1 - b
   var f = 6 * h - i
 
   if i & 0x01 != 0 {
@@ -954,17 +941,11 @@ def xyz_to_rgb(x: number, y: number, z: number) {
   b = (x * 0.0556434) + (y * -0.2040259) + (z * 1.0572252)
 
   # Assume sRGB
-  r = r > 0.0031308 ?
-    ((1.055 * (r ** (1.0 / 2.4))) - 0.055) :
-    r * 12.92
+  r = r > 0.0031308 ? ((1.055 * (r ** (1.0 / 2.4))) - 0.055) : r * 12.92
 
-  g = g > 0.0031308 ?
-    ((1.055 * (g ** (1.0 / 2.4))) - 0.055) :
-    g * 12.92
+  g = g > 0.0031308 ? ((1.055 * (g ** (1.0 / 2.4))) - 0.055) : g * 12.92
 
-  b = b > 0.0031308 ?
-    ((1.055 * (b ** (1.0 / 2.4))) - 0.055) :
-    b * 12.92
+  b = b > 0.0031308 ? ((1.055 * (b ** (1.0 / 2.4))) - 0.055) : b * 12.92
 
   r = 0.max(r).min(1)
   g = 0.max(g).min(1)
@@ -1028,7 +1009,10 @@ def lighten(hex: string, amount: number) {
   var out = hsl_to_rgb(hsl[0], hsl[1], (hsl[2] + amount).max(0).min(100))
 
   return rgb_to_hex(
-    out[0].round(), out[1].round(), out[2].round(), _alpha_byte(rgb[3]),
+    out[0].round(),
+    out[1].round(),
+    out[2].round(),
+    _alpha_byte(rgb[3]),
   )
 }
 
@@ -1059,7 +1043,10 @@ def saturate(hex: string, amount: number) {
   var out = hsl_to_rgb(hsl[0], (hsl[1] + amount).max(0).min(100), hsl[2])
 
   return rgb_to_hex(
-    out[0].round(), out[1].round(), out[2].round(), _alpha_byte(rgb[3]),
+    out[0].round(),
+    out[1].round(),
+    out[2].round(),
+    _alpha_byte(rgb[3]),
   )
 }
 
@@ -1089,8 +1076,8 @@ def grayscale(hex) {
 }
 
 /**
- * Returns _hex_ with each RGB channel inverted (`255 - channel`).
- * Alpha, if present, is left unchanged.
+ * Returns _hex_ with each RGB channel inverted (`255 - channel`). The
+ * alpha channel, if there is one, isn't changed.
  *
  * @param string hex
  * @returns string
@@ -1099,7 +1086,10 @@ def invert(hex: string) {
 
   var rgb = hex_to_rgb(hex)
   return rgb_to_hex(
-    255 - rgb[0], 255 - rgb[1], 255 - rgb[2], _alpha_byte(rgb[3]),
+    255 - rgb[0],
+    255 - rgb[1],
+    255 - rgb[2],
+    _alpha_byte(rgb[3]),
   )
 }
 
@@ -1175,11 +1165,11 @@ def relative_luminance(r, g, b) {
 }
 
 /**
- * Returns the WCAG 2.x contrast ratio between two colors, from 1
- * (no contrast) to 21 (black on white).
+ * Returns the WCAG 2.x contrast ratio between two colors, from 1 (no
+ * contrast) to 21 (black on white).
  *
- * A ratio of at least 4.5 meets WCAG AA for normal text (3 for
- * large text); 7 meets AAA (4.5 for large text).
+ * A ratio of at least 4.5 meets WCAG AA for normal text, or 3 for large
+ * text, and 7 meets AAA, or 4.5 for large text.
  *
  * @param string hex_a
  * @param string hex_b
@@ -1203,15 +1193,15 @@ def contrast_ratio(hex_a: string, hex_b: string) {
  * The CSS Color Level 4 named colors, mapped to their hexadecimal
  * values.
  *
- * Values carry no leading `#`, matching every other function in this
+ * The values don't start with `#`, like every other function in this
  * module that produces a hexadecimal color. Both the American and
- * British spellings of the greys are present, as are `rebeccapurple`
- * and `transparent`, which is the only entry with an alpha component
- * and therefore the only 8-digit one.
+ * British spellings of gray and grey are included, as are
+ * `rebeccapurple` and `transparent`. `transparent` is the only entry
+ * with an alpha component, and so the only one with eight digits.
  *
- * Keys are lower case with no separators; use [[colors.named]] rather
- * than indexing this directly if the name might arrive in mixed case
- * or spaced out.
+ * The keys are lowercase, without separators. Use [[colors.named]]
+ * instead of indexing this directly if a name might be in mixed case or
+ * contain spaces.
  *
  * @type dict
  */

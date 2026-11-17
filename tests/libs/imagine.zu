@@ -37,84 +37,90 @@ echo '════════════════════════�
 # Color: construction and parsing
 # ---------------------------------------------------------------------------
 assert Color(300, -5, 40.6).to_list() == [255, 0, 41, 255],
-  'the Color constructor must clamp and round its channels'
+    'the Color constructor must clamp and round its channels'
 assert Color(1, 2, 3).a == 255,
-  'a Color with no alpha given must be fully opaque'
+    'a Color with no alpha given must be fully opaque'
 assert Color.hex('#f80').to_list() == [255, 136, 0, 255],
-  'a 3-digit hex colour must double each digit'
+    'a 3-digit hex colour must double each digit'
 assert Color.hex('ff880080').to_list() == [255, 136, 0, 128],
-  'an 8-digit hex colour must read alpha from the last byte'
+    'an 8-digit hex colour must read alpha from the last byte'
 assert Color.named('rebeccapurple').to_hex() == '#663399',
-  'named colours must resolve through the colors module'
+    'named colours must resolve through the colors module'
 assert Color.named('Dark Sea Green').to_hex() == '#8fbc8f',
-  'colour names must match ignoring case and spaces'
+    'colour names must match ignoring case and spaces'
 assert Color.packed(0x4F46E5FF).to_hex() == '#4f46e5',
-  'a packed colour must unpack as 0xRRGGBBAA'
+    'a packed colour must unpack as 0xRRGGBBAA'
 assert Color.hex('#4f46e5').to_packed() == 0x4F46E5FF,
-  'to_packed() must be the inverse of Color.packed()'
+    'to_packed() must be the inverse of Color.packed()'
 ok('Color construction clamps, rounds, and reads every hex and named form')
 
 assert Color.parse('#123456').to_hex() == '#123456',
-  'parse() must accept a hex string'
+    'parse() must accept a hex string'
 assert Color.parse('tomato').to_hex() == '#ff6347',
-  'parse() must accept a CSS colour name'
+    'parse() must accept a CSS colour name'
 assert Color.parse(0xFF0000FF).to_hex() == '#ff0000',
-  'parse() must accept a packed number'
+    'parse() must accept a packed number'
 assert Color.parse([1, 2, 3]).to_list() == [1, 2, 3, 255],
-  'parse() must accept a 3-channel list'
+    'parse() must accept a 3-channel list'
 assert Color.parse([1, 2, 3, 4]).to_list() == [1, 2, 3, 4],
-  'parse() must accept a 4-channel list'
+    'parse() must accept a 4-channel list'
 assert Color.parse(RED).equals(RED),
-  'parse() must pass a Color straight through'
+    'parse() must pass a Color straight through'
 assert raises(@() {
   Color.parse(true)
-}), 'parse() must reject a value that is not a colour'
+}),
+    'parse() must reject a value that is not a colour'
 assert raises(@() {
   Color.parse([1, 2])
-}), 'parse() must reject a list with too few channels'
+}),
+    'parse() must reject a list with too few channels'
 ok('Color.parse() accepts every documented spelling and rejects the rest')
 
 # A malformed colour is the colors module's own ValueError, raised
 # where it happens rather than caught and relabelled.
 assert raises(@() {
   Color.hex('nonsense')
-}), 'a malformed hex colour must raise'
+}),
+    'a malformed hex colour must raise'
 assert raises(@() {
   Color.hex(42)
-}), 'a non-string spec must raise'
+}),
+    'a non-string spec must raise'
 assert raises(@() {
   Color.named('chartroose')
-}), 'an unknown colour name must raise'
+}),
+    'an unknown colour name must raise'
 assert raises(@() {
   Color.named(42)
-}), 'a non-string name must raise'
+}),
+    'a non-string name must raise'
 ok('bad colours raise rather than being silently accepted')
 
 # ---------------------------------------------------------------------------
 # Color: conversion, mixing and contrast
 # ---------------------------------------------------------------------------
 assert Color.hsl(240, 100, 50).to_hex() == '#0000ff',
-  'Color.hsl() must take percentage points, matching the colors module'
+    'Color.hsl() must take percentage points, matching the colors module'
 assert Color.hsv(120, 100, 100).to_hex() == '#00ff00',
-  'Color.hsv() must take percentage points'
+    'Color.hsv() must take percentage points'
 assert Color.cmyk(0, 100, 100, 0).to_hex() == '#ff0000',
-  'Color.cmyk() must convert through the colors module'
+    'Color.cmyk() must convert through the colors module'
 assert close(Color.hex('#4f46e5').to_hsl().h, 243.4, 0.1),
-  'to_hsl() must report hue in degrees'
+    'to_hsl() must report hue in degrees'
 assert close(WHITE.luminance(), 1, 0.001),
-  'white must have a relative luminance of 1'
+    'white must have a relative luminance of 1'
 assert close(WHITE.contrast_ratio(BLACK), 21, 0.001),
-  'white against black must be the maximum contrast ratio'
+    'white against black must be the maximum contrast ratio'
 assert BLACK.is_dark() and WHITE.is_light(),
-  'is_dark()/is_light() must split on the luminance threshold'
+    'is_dark()/is_light() must split on the luminance threshold'
 assert Color.hex('#111111').best_contrast().equals(WHITE),
-  'best_contrast() must pick white on a dark colour'
+    'best_contrast() must pick white on a dark colour'
 ok('Color conversions, luminance and contrast agree with the colors module')
 
 assert Color.hex('#ff0000') == Color(255, 0, 0),
-  '== must compare two colours by their channels'
+    '== must compare two colours by their channels'
 assert Color(255, 0, 0) != Color(255, 0, 0, 128),
-  'colours that differ only in alpha must not be =='
+    'colours that differ only in alpha must not be =='
 assert !(RED == '#ff0000'), 'a colour must not equal a string'
 assert RED != nil, 'a colour compared with nil must stay a nil check'
 
@@ -127,28 +133,28 @@ using Color.packed(0xFF0000FF) {
 
 assert matched == 'red', 'a using/when match must find a colour by its channels'
 assert !([Color(255, 0, 0)].contains(RED)),
-  'contains() must keep comparing colours by identity'
+    'contains() must keep comparing colours by identity'
 
 var canvas = Image(2, 1, RED)
 
 assert canvas.get_pixel(0, 0) == canvas.get_pixel(1, 0),
-  'two pixels of the same colour must be =='
+    'two pixels of the same colour must be =='
 ok('Color compares by its channels with ==, != and using')
 
 assert RED.mix(BLUE, 0.5).to_hex() == '#800080',
-  'mix() must interpolate linearly between two colours'
+    'mix() must interpolate linearly between two colours'
 assert Color(255, 0, 0, 128).over(WHITE).to_hex() == '#ff7f7f',
-  'over() must composite against an opaque backdrop'
+    'over() must composite against an opaque backdrop'
 assert RED.invert().to_hex() == '#00ffff',
-  'invert() must invert colour but not alpha'
+    'invert() must invert colour but not alpha'
 assert Color(255, 0, 0, 64).invert().a == 64,
-  'invert() must leave alpha untouched'
+    'invert() must leave alpha untouched'
 assert RED.to_grayscale().to_hex() == '#4c4c4c',
-  'to_grayscale() must use luma weights, not HSL saturation'
+    'to_grayscale() must use luma weights, not HSL saturation'
 assert Color(79, 70, 229, 128).lighten(20).a == 128,
-  'lighten() must preserve alpha through the colors module'
+    'lighten() must preserve alpha through the colors module'
 assert Color(1, 2, 3, 200).fade(0.5).a == 100,
-  'fade() must scale alpha rather than replace it'
+    'fade() must scale alpha rather than replace it'
 ok('Color mixing, compositing and adjustment behave as documented')
 
 # ---------------------------------------------------------------------------
@@ -250,44 +256,54 @@ var _guarded = [
 for guarded in _guarded {
   assert raises(guarded), 'every declared parameter type must be enforced'
 }
-ok('an argument of the wrong type is rejected at every entry point that declares one')
+ok(
+  'an argument of the wrong type is rejected at every entry point that declares one',
+)
 
 # A value of the right type but the wrong range is the module's own
 # judgement, so it stays an ImageError subclass rather than a TypeError.
 assert raises(@() {
   Image(0, 10)
-}), 'a zero dimension must still raise'
+}),
+    'a zero dimension must still raise'
 assert raises(@() {
   filters.gamma_lut(-1)
-}), 'a negative gamma must still raise'
+}),
+    'a negative gamma must still raise'
 assert raises(@() {
   Image(8, 8).thickness(0)
-}), 'a zero thickness must still raise'
+}),
+    'a zero thickness must still raise'
 assert raises(@() {
   Animation([Image(4, 4)]).frame(9)
-}), 'an out-of-range frame must still raise'
-ok('a wrong-range value stays the module own error rather than becoming a type error')
+}),
+    'an out-of-range frame must still raise'
+ok(
+  'a wrong-range value stays the module own error rather than becoming a type error',
+)
 
 # ---------------------------------------------------------------------------
 # Image: construction
 # ---------------------------------------------------------------------------
 var blank = Image(10, 8)
 assert blank.width() == 10 and blank.height() == 8,
-  'a new image must have the size asked for'
+    'a new image must have the size asked for'
 assert blank.get_pixel(0, 0).to_list() == [0, 0, 0, 0],
-  'a new image must start fully transparent'
+    'a new image must start fully transparent'
 assert blank.pixels().length() == 10 * 8 * 4,
-  'the pixel buffer must be four bytes per pixel'
+    'the pixel buffer must be four bytes per pixel'
 assert Image(4, 4, 'red').get_pixel(2, 2).to_hex() == '#ff0000',
-  'a fill colour must be applied at construction'
+    'a fill colour must be applied at construction'
 assert blank.get_pixel(-1, 0) == nil,
-  'reading outside the image must return nil, not raise'
+    'reading outside the image must return nil, not raise'
 assert raises(@() {
   Image(0, 5)
-}), 'an image must be at least one pixel in each direction'
+}),
+    'an image must be at least one pixel in each direction'
 assert raises(@() {
   Image(-3, 5)
-}), 'a negative dimension must be rejected'
+}),
+    'a negative dimension must be rejected'
 ok('Image construction validates its dimensions and starts transparent')
 
 # ---------------------------------------------------------------------------
@@ -296,24 +312,24 @@ ok('Image construction validates its dimensions and starts transparent')
 var surface = Image(8, 8, 'white')
 surface.set_pixel(1, 1, Color(0, 0, 0, 128))
 assert surface.get_pixel(1, 1).to_list() == [0, 0, 0, 128],
-  'set_pixel() must replace rather than blend'
+    'set_pixel() must replace rather than blend'
 surface.blend_pixel(2, 2, Color(0, 0, 0, 128))
 assert surface.get_pixel(2, 2).a == 255,
-  'blend_pixel() over an opaque pixel must stay opaque'
+    'blend_pixel() over an opaque pixel must stay opaque'
 assert surface.get_pixel(2, 2).r < 200,
-  'blend_pixel() must darken a white pixel with a translucent black'
+    'blend_pixel() must darken a white pixel with a translucent black'
 surface.set_pixel(100, 100, 'red')
 ok('pixel reads and writes blend, replace and ignore out-of-range coordinates')
 
 var clipped = Image(8, 8, 'white')
 clipped.clip(0, 0, 4, 4)
 assert clipped.get_clip().width == 4,
-  'get_clip() must report the rectangle in force'
+    'get_clip() must report the rectangle in force'
 clipped.fill_rect(0, 0, 8, 8, 'black')
 assert clipped.get_pixel(1, 1).to_hex() == '#000000',
-  'drawing inside the clip must land'
+    'drawing inside the clip must land'
 assert clipped.get_pixel(6, 6).to_hex() == '#ffffff',
-  'drawing outside the clip must be discarded'
+    'drawing outside the clip must be discarded'
 clipped.clear_clip()
 assert clipped.get_clip() == nil, 'clear_clip() must remove the rectangle'
 ok('a clipping rectangle confines drawing and can be cleared')
@@ -324,19 +340,19 @@ ok('a clipping rectangle confines drawing and can be cleared')
 var shapes = Image(40, 40, 'white')
 shapes.fill_rect(5, 5, 10, 10, 'red')
 assert shapes.get_pixel(10, 10).to_hex() == '#ff0000',
-  'fill_rect() must fill its interior'
+    'fill_rect() must fill its interior'
 assert shapes.get_pixel(4, 4).to_hex() == '#ffffff',
-  'fill_rect() must not paint outside its rectangle'
+    'fill_rect() must not paint outside its rectangle'
 assert shapes.get_pixel(14, 14).to_hex() == '#ff0000',
-  'fill_rect() must include its last pixel'
+    'fill_rect() must include its last pixel'
 assert shapes.get_pixel(15, 15).to_hex() == '#ffffff',
-  'fill_rect() must stop at its exclusive edge'
+    'fill_rect() must stop at its exclusive edge'
 
 shapes.fill_circle(28, 28, 8, 'blue')
 assert shapes.get_pixel(28, 28).to_hex() == '#0000ff',
-  'fill_circle() must fill its centre'
+    'fill_circle() must fill its centre'
 assert shapes.get_pixel(28, 18).to_hex() == '#ffffff',
-  'fill_circle() must not paint beyond its radius'
+    'fill_circle() must not paint beyond its radius'
 
 # A five-pointed star: solid under the non-zero rule, hollow under even-odd.
 var star = []
@@ -349,12 +365,12 @@ iter var i = 0; i < 5; i++ {
 var solid = Image(40, 40, 'white')
 solid.fill_polygon(star, 'black')
 assert solid.get_pixel(20, 20).to_hex() == '#000000',
-  'the non-zero winding rule must fill a star solid'
+    'the non-zero winding rule must fill a star solid'
 
 var hollow = Image(40, 40, 'white')
 hollow.fill_polygon(star, 'black', { even_odd: true })
 assert hollow.get_pixel(20, 20).to_hex() == '#ffffff',
-  'the even-odd rule must leave a star hollow'
+    'the even-odd rule must leave a star hollow'
 ok('the scanline rasterizer fills rectangles, ellipses and both winding rules')
 
 var aliased = Image(20, 20, 'white')
@@ -362,24 +378,24 @@ aliased.antialias(false)
 aliased.line(0, 0, 19, 19, 'black')
 var hard = aliased.get_pixel(10, 10)
 assert hard.r == 0 or hard.r == 255,
-  'with anti-aliasing off every pixel must be fully on or off'
+    'with anti-aliasing off every pixel must be fully on or off'
 
 var smoothed = Image(20, 20, 'white')
 smoothed.line(0, 0, 19, 19, 'black')
 var soft = smoothed.get_pixel(10, 10)
 assert soft.r > 0 and soft.r < 255,
-  'an anti-aliased diagonal must produce partial coverage'
+    'an anti-aliased diagonal must produce partial coverage'
 ok('anti-aliasing can be turned off and produces partial coverage when on')
 
 var thick = Image(30, 30, 'white')
 thick.thickness(5)
 thick.line(15, 0, 15, 29, 'black')
 assert thick.get_pixel(15, 15).to_hex() == '#000000',
-  'a thick line must cover its centre'
+    'a thick line must cover its centre'
 assert thick.get_pixel(13, 15).to_hex() == '#000000',
-  'a stroke must be centred on its path'
+    'a stroke must be centred on its path'
 assert thick.get_pixel(20, 15).to_hex() == '#ffffff',
-  'a stroke must not reach beyond half its width'
+    'a stroke must not reach beyond half its width'
 ok('stroke thickness is centred on the path')
 
 # Anti-aliased coverage arrives fractional, and on a transparent
@@ -388,10 +404,10 @@ ok('stroke thickness is centred on the path')
 var onto_nothing = Image(20, 20)
 onto_nothing.fill_circle(10, 10, 7, 'red')
 assert onto_nothing.get_pixel(10, 10).to_hex() == '#ff0000',
-  'drawing onto a transparent image must paint it'
+    'drawing onto a transparent image must paint it'
 var rim = onto_nothing.get_pixel(3, 10)
 assert rim.a > 0 and rim.a < 255,
-  'an anti-aliased edge over transparency must land at partial alpha'
+    'an anti-aliased edge over transparency must land at partial alpha'
 onto_nothing.line(0, 0, 19, 19, Color(0, 0, 255, 100))
 ok('drawing onto a fully transparent image writes valid partial coverage')
 
@@ -403,52 +419,53 @@ assert capped.get_cap() == CAP_ROUND, 'strokes must be round-capped by default'
 capped.cap(CAP_BUTT).thickness(12)
 capped.line(20, 15, 40, 15, 'black')
 assert capped.get_pixel(19, 15).to_hex() == '#ffffff',
-  'a butt cap must stop at the endpoint'
+    'a butt cap must stop at the endpoint'
 
 var round_cap = Image(60, 30, 'white')
 round_cap.cap(CAP_ROUND).thickness(12)
 round_cap.line(20, 15, 40, 15, 'black')
 assert round_cap.get_pixel(19, 15).to_hex() == '#000000',
-  'a round cap must reach past the endpoint'
+    'a round cap must reach past the endpoint'
 assert round_cap.get_pixel(13, 15).to_hex() == '#ffffff',
-  'a round cap must not reach more than half the width past the endpoint'
+    'a round cap must not reach more than half the width past the endpoint'
 assert round_cap.get_pixel(14, 9).to_hex() == '#ffffff',
-  'a round cap must leave the corner a square cap would fill'
+    'a round cap must leave the corner a square cap would fill'
 
 var square_cap = Image(60, 30, 'white')
 square_cap.cap(CAP_SQUARE).thickness(12)
 square_cap.line(20, 15, 40, 15, 'black')
 assert square_cap.get_pixel(19, 15).to_hex() == '#000000',
-  'a square cap must reach past the endpoint'
+    'a square cap must reach past the endpoint'
 assert square_cap.get_pixel(14, 9).to_hex() == '#000000',
-  'a square cap must fill the corner a round cap leaves clear'
+    'a square cap must fill the corner a round cap leaves clear'
 assert square_cap.get_pixel(13, 15).to_hex() == '#ffffff',
-  'a square cap must reach exactly as far past the endpoint as a round one'
+    'a square cap must reach exactly as far past the endpoint as a round one'
 
 var per_call = Image(60, 30, 'white')
 per_call.line(20, 15, 40, 15, 'black', { thickness: 12, cap: CAP_BUTT })
 assert per_call.get_pixel(19, 15).to_hex() == '#ffffff',
-  'a per-call cap must override the surface default'
+    'a per-call cap must override the surface default'
 assert raises(@() {
   per_call.cap('wedge')
-}), 'an unknown cap must be rejected'
+}),
+    'an unknown cap must be rejected'
 
 var outline = Image(60, 40, 'white')
 outline.cap(CAP_BUTT).thickness(8)
 outline.rect(15, 10, 30, 20, 'black')
 assert outline.get_pixel(15, 10).to_hex() == '#000000',
-  'a closed outline has no ends, so its corners must stay filled whatever the cap'
+    'a closed outline has no ends, so its corners must stay filled whatever the cap'
 ok('line caps can be butt, round or square, and only affect open ends')
 
 var flooded = Image(16, 16, 'white')
 flooded.fill_rect(8, 0, 1, 16, 'black')
 flooded.flood_fill(0, 0, 'red')
 assert flooded.get_pixel(3, 8).to_hex() == '#ff0000',
-  'flood fill must spread through matching pixels'
+    'flood fill must spread through matching pixels'
 assert flooded.get_pixel(12, 8).to_hex() == '#ffffff',
-  'flood fill must stop at a barrier'
+    'flood fill must stop at a barrier'
 assert flooded.get_pixel(8, 8).to_hex() == '#000000',
-  'flood fill must not overwrite the barrier'
+    'flood fill must not overwrite the barrier'
 ok('flood fill spreads four-connected and respects a barrier')
 
 # ---------------------------------------------------------------------------
@@ -459,55 +476,72 @@ ramped.linear_gradient(0, 0, 100, 0, ['#000000', '#ffffff'])
 assert ramped.get_pixel(0, 5).r < 8, 'a gradient must start at its first stop'
 assert ramped.get_pixel(99, 5).r > 247, 'a gradient must end at its last stop'
 assert close(ramped.get_pixel(50, 5).r, 128, 6),
-  'a two-stop gradient must be linear between them'
+    'a two-stop gradient must be linear between them'
 assert ramped.get_pixel(0, 5).r == ramped.get_pixel(0, 9).r,
-  'a horizontal gradient must not vary vertically'
+    'a horizontal gradient must not vary vertically'
 
 var three_stop = Image(120, 4)
 three_stop.linear_gradient(0, 0, 120, 0, ['red', 'lime', 'blue'])
 assert three_stop.get_pixel(1, 2).r > 240,
-  'evenly spaced stops must place the first at the start'
+    'evenly spaced stops must place the first at the start'
 assert three_stop.get_pixel(60, 2).g > 240,
-  'evenly spaced stops must place the middle one halfway'
+    'evenly spaced stops must place the middle one halfway'
 assert three_stop.get_pixel(118, 2).b > 240,
-  'evenly spaced stops must place the last at the end'
+    'evenly spaced stops must place the last at the end'
 
 var offset_stops = Image(100, 4)
-offset_stops.linear_gradient(
-  0, 0, 100, 0, [[0, 'black'], [0.25, 'red'], [1, 'white']],
-)
-assert offset_stops.get_pixel(25, 2).r > 240
-  and offset_stops.get_pixel(25, 2).g < 16,
-  'an explicit offset must place its stop there'
+offset_stops.linear_gradient(0, 0, 100, 0, [
+  [0, 'black'],
+  [0.25, 'red'],
+  [1, 'white'],
+])
+assert offset_stops.get_pixel(25, 2).r > 240 and
+    offset_stops.get_pixel(25, 2).g < 16,
+    'an explicit offset must place its stop there'
 
 var flat_stop = Image(10, 10)
 flat_stop.linear_gradient(0, 0, 10, 0, ['red'])
 assert flat_stop.get_pixel(0, 0).to_hex() == flat_stop.get_pixel(9, 9).to_hex(),
-  'a single stop must give a flat fill'
+    'a single stop must give a flat fill'
 assert raises(@() {
   flat_stop.linear_gradient(0, 0, 10, 0, [])
-}), 'a gradient needs at least one stop'
+}),
+    'a gradient needs at least one stop'
 
 var vignette = Image(60, 60, '#38bdf8')
 vignette.radial_gradient(
-  30, 30, 40, [[0, Color(0, 0, 0, 0)], [1, Color(0, 0, 0, 255)]],
+  30,
+  30,
+  40,
+  [
+    [0, Color(0, 0, 0, 0)],
+    [1, Color(0, 0, 0, 255)],
+  ],
   { blend: true },
 )
 assert close(vignette.get_pixel(30, 30).r, 0x38, 4),
-  'a radial gradient must leave its centre nearly alone when the first stop is transparent'
+    'a radial gradient must leave its centre nearly alone when the first stop is transparent'
 assert vignette.get_pixel(1, 1).r < 40,
-  'a radial gradient must darken the corners'
+    'a radial gradient must darken the corners'
 
 var confined = Image(60, 60, 'white')
 confined.linear_gradient(
-  20, 0, 40, 0, ['red', 'blue'],
-  { rect: { x: 20, y: 20, width: 20, height: 20 } },
+  20,
+  0,
+  40,
+  0,
+  ['red', 'blue'],
+  {
+    rect: { x: 20, y: 20, width: 20, height: 20 },
+  },
 )
 assert confined.get_pixel(5, 5).to_hex() == '#ffffff',
-  'a rect option must confine the fill'
+    'a rect option must confine the fill'
 assert confined.get_pixel(30, 30).to_hex() != '#ffffff',
-  'a rect option must still paint inside itself'
-ok('linear and radial gradients interpolate, blend and stay inside their bounds')
+    'a rect option must still paint inside itself'
+ok(
+  'linear and radial gradients interpolate, blend and stay inside their bounds',
+)
 
 # ---------------------------------------------------------------------------
 # Image: geometry
@@ -515,64 +549,66 @@ ok('linear and radial gradients interpolate, blend and stay inside their bounds'
 var source = Image(40, 20, 'red')
 
 assert source.resize(10, 10).size() == { width: 10, height: 10 },
-  'resize() must produce exactly the size asked for'
+    'resize() must produce exactly the size asked for'
 assert source.scale(0.5).size() == { width: 20, height: 10 },
-  'scale() must keep proportions'
+    'scale() must keep proportions'
 assert source.thumbnail(20, 20).size() == { width: 20, height: 10 },
-  'thumbnail() must fit inside the box'
+    'thumbnail() must fit inside the box'
 assert source.thumbnail(400, 400).size() == { width: 40, height: 20 },
-  'thumbnail() must never enlarge'
+    'thumbnail() must never enlarge'
 assert source.fit(400, 400).size() == { width: 400, height: 200 },
-  'fit() must enlarge where thumbnail() would not'
+    'fit() must enlarge where thumbnail() would not'
 assert source.cover(20, 20).size() == { width: 20, height: 20 },
-  'cover() must fill the box exactly'
+    'cover() must fill the box exactly'
 assert source.contain(20, 20).size() == { width: 20, height: 20 },
-  'contain() must fit the box exactly'
+    'contain() must fit the box exactly'
 assert source.width() == 40,
-  'a geometry operation must leave the original alone'
+    'a geometry operation must leave the original alone'
 ok('the resizing family produces the documented sizes and never mutates')
 
 assert source.crop(5, 5, 10, 10).size() == { width: 10, height: 10 },
-  'crop() must return its rectangle'
+    'crop() must return its rectangle'
 assert raises(@() {
   source.crop(35, 15, 10, 10)
-}), 'crop() must reject a rectangle that runs off the edge'
+}),
+    'crop() must reject a rectangle that runs off the edge'
 assert raises(@() {
   source.crop(0, 0, 0, 5)
-}), 'crop() must reject an empty rectangle'
+}),
+    'crop() must reject an empty rectangle'
 assert source.pad(5).size() == { width: 50, height: 30 },
-  'pad() must add its border on every side'
+    'pad() must add its border on every side'
 assert source.pad(1, 2, 3, 4).size() == { width: 46, height: 24 },
-  'pad() must accept four separate edges'
+    'pad() must accept four separate edges'
 assert source.rotate_90().size() == { width: 20, height: 40 },
-  'a quarter turn must swap the dimensions'
+    'a quarter turn must swap the dimensions'
 assert source.rotate_180().size() == { width: 40, height: 20 },
-  'a half turn must keep the dimensions'
+    'a half turn must keep the dimensions'
 assert source.transpose().size() == { width: 20, height: 40 },
-  'transpose() must swap the dimensions'
+    'transpose() must swap the dimensions'
 assert source.rotate(45).width() > 40,
-  'an arbitrary rotation must grow the canvas to hold the corners'
+    'an arbitrary rotation must grow the canvas to hold the corners'
 ok('cropping, padding, rotation and transposition report the right dimensions')
 
 var asymmetric = Image(4, 2, 'white')
 asymmetric.set_pixel(0, 0, 'red')
 assert asymmetric.flip_horizontal().get_pixel(3, 0).to_hex() == '#ff0000',
-  'flip_horizontal() must mirror left to right'
+    'flip_horizontal() must mirror left to right'
 assert asymmetric.flip_vertical().get_pixel(0, 1).to_hex() == '#ff0000',
-  'flip_vertical() must mirror top to bottom'
+    'flip_vertical() must mirror top to bottom'
 assert asymmetric.flip(FLIP_BOTH).get_pixel(3, 1).to_hex() == '#ff0000',
-  'FLIP_BOTH must mirror both ways'
+    'FLIP_BOTH must mirror both ways'
 assert asymmetric.rotate_90().get_pixel(1, 0).to_hex() == '#ff0000',
-  'rotate_90() must turn clockwise'
+    'rotate_90() must turn clockwise'
 ok('mirroring and quarter turns move pixels in the documented direction')
 
 var bordered = Image(20, 20, 'white')
 bordered.fill_rect(6, 8, 4, 2, 'black')
 var trimmed = bordered.trim()
 assert trimmed.size() == { width: 4, height: 2 },
-  'trim() must reduce the image to its non-border content'
+    'trim() must reduce the image to its non-border content'
 assert Image(8, 8, 'white').trim().size() == { width: 1, height: 1 },
-  'trimming an entirely uniform image must give a 1x1 image'
+    'trimming an entirely uniform image must give a 1x1 image'
 ok('trim() removes a uniform border and degrades sensibly')
 
 # ---------------------------------------------------------------------------
@@ -581,28 +617,29 @@ ok('trim() removes a uniform border and degrades sensibly')
 var tone = Image(4, 4, '#4f46e5')
 
 assert tone.clone().invert().get_pixel(0, 0).to_hex() == '#b0b91a',
-  'invert() must invert every colour channel'
+    'invert() must invert every colour channel'
 assert tone.clone().grayscale().get_pixel(0, 0).to_hex() == '#5a5a5a',
-  'grayscale() must weight channels for perceived brightness'
+    'grayscale() must weight channels for perceived brightness'
 assert tone.clone().brightness(20).get_pixel(0, 0).r == 99,
-  'brightness() must add a fixed amount to each channel'
+    'brightness() must add a fixed amount to each channel'
 assert tone.clone().opacity(0.5).get_pixel(0, 0).a == 128,
-  'opacity() must scale the alpha channel'
+    'opacity() must scale the alpha channel'
 assert tone.clone().opacity(0.5).get_pixel(0, 0).r == 79,
-  'opacity() must leave the colour channels alone'
+    'opacity() must leave the colour channels alone'
 assert tone.clone().threshold(100).get_pixel(0, 0).to_hex() == '#000000',
-  'threshold() must judge on brightness, not per channel'
-assert tone.clone().saturate(0).get_pixel(0, 0).r
-  == tone.clone().saturate(0).get_pixel(0, 0).b,
-  'saturating to zero must produce a grey'
+    'threshold() must judge on brightness, not per channel'
+assert tone.clone().saturate(0).get_pixel(0, 0).r ==
+    tone.clone().saturate(0).get_pixel(0, 0).b,
+    'saturating to zero must produce a grey'
 assert tone.clone().flatten('white').get_pixel(0, 0).a == 255,
-  'flatten() must leave the image opaque'
-assert Image(2, 2, Color(255, 0, 0, 0))
-  .flatten('white')
-  .get_pixel(0, 0)
-  .to_hex()
-  == '#ffffff',
-  'flattening a transparent pixel must show the background'
+    'flatten() must leave the image opaque'
+assert Image(
+      2,
+      2,
+      Color(255, 0, 0, 0),
+    ).flatten('white').get_pixel(0, 0).to_hex() ==
+    '#ffffff',
+    'flattening a transparent pixel must show the background'
 ok('lookup-table and colour-matrix filters produce the documented results')
 
 var curve = filters.build_lut(@(value) {
@@ -610,33 +647,40 @@ var curve = filters.build_lut(@(value) {
 })
 assert curve.length() == 256, 'build_lut() must produce a 256-entry table'
 assert curve[0] == 255 and curve[255] == 0,
-  'build_lut() must call its function for every input value'
-assert tone.clone().apply_lut(curve, curve, curve, nil).get_pixel(0, 0).to_hex()
-  == '#b0b91a',
-  'apply_lut() must rewrite the channels it is given'
-assert filters.identity_matrix().length() == 20,
-  'a colour matrix must have twenty entries'
+    'build_lut() must call its function for every input value'
 assert tone
-  .clone()
-  .apply_matrix(filters.identity_matrix())
-  .get_pixel(0, 0)
-  .to_hex()
-  == '#4f46e5',
-  'the identity matrix must change nothing'
+        .clone()
+        .apply_lut(curve, curve, curve, nil)
+        .get_pixel(0, 0)
+        .to_hex() ==
+    '#b0b91a',
+    'apply_lut() must rewrite the channels it is given'
+assert filters.identity_matrix().length() == 20,
+    'a colour matrix must have twenty entries'
+assert tone
+        .clone()
+        .apply_matrix(filters.identity_matrix())
+        .get_pixel(0, 0)
+        .to_hex() ==
+    '#4f46e5',
+    'the identity matrix must change nothing'
 assert raises(@() {
   tone.clone().apply_matrix([1, 2, 3])
-}), 'apply_matrix() must reject a matrix of the wrong size'
+}),
+    'apply_matrix() must reject a matrix of the wrong size'
 assert raises(@() {
   tone.clone().apply_lut(bytes(4), nil, nil, nil)
-}), 'apply_lut() must reject a table that is not 256 entries'
+}),
+    'apply_lut() must reject a table that is not 256 entries'
 ok('the lookup-table and matrix primitives validate their inputs')
 
 var combined = filters.combine_matrices(
-  filters.grayscale_matrix(), filters.identity_matrix(),
+  filters.grayscale_matrix(),
+  filters.identity_matrix(),
 )
-assert tone.clone().apply_matrix(combined).get_pixel(0, 0).to_hex()
-  == '#5a5a5a',
-  'combining with the identity must leave a matrix unchanged'
+assert tone.clone().apply_matrix(combined).get_pixel(0, 0).to_hex() ==
+    '#5a5a5a',
+    'combining with the identity must leave a matrix unchanged'
 ok('colour matrices combine correctly')
 
 # ---------------------------------------------------------------------------
@@ -644,28 +688,29 @@ ok('colour matrices combine correctly')
 # ---------------------------------------------------------------------------
 var flat = Image(16, 16, '#4f46e5')
 assert flat.clone().edges().get_pixel(8, 8).a == 255,
-  'edge detection must not make a uniformly opaque image transparent'
+    'edge detection must not make a uniformly opaque image transparent'
 assert flat.clone().emboss().get_pixel(8, 8).a == 255,
-  'embossing must not change alpha'
+    'embossing must not change alpha'
 assert flat.clone().sharpen().get_pixel(8, 8).to_hex() == '#4f46e5',
-  'sharpening a flat area must leave it alone'
+    'sharpening a flat area must leave it alone'
 assert flat
-  .clone()
-  .convolve([0, 0, 0, 0, 1, 0, 0, 0, 0])
-  .get_pixel(8, 8)
-  .to_hex()
-  == '#4f46e5',
-  'an identity kernel must change nothing'
+        .clone()
+        .convolve([0, 0, 0, 0, 1, 0, 0, 0, 0])
+        .get_pixel(8, 8)
+        .to_hex() ==
+    '#4f46e5',
+    'an identity kernel must change nothing'
 assert raises(@() {
   flat.clone().convolve([1, 2, 3, 4])
-}), 'a convolution kernel must be square with an odd side'
+}),
+    'a convolution kernel must be square with an odd side'
 
 var edged = Image(20, 20, 'black')
 edged.antialias(false)
 edged.fill_rect(5, 5, 10, 10, 'white')
 var found = edged.clone().edges()
 assert found.get_pixel(10, 10).to_hex() == '#000000',
-  'edge detection must black out a flat interior'
+    'edge detection must black out a flat interior'
 assert found.get_pixel(5, 5).r > 0, 'edge detection must light up a boundary'
 ok('convolution handles alpha correctly and finds real edges')
 
@@ -674,12 +719,13 @@ soft.antialias(false)
 soft.fill_rect(4, 4, 8, 8, 'white')
 var blurred = soft.clone().blur(2)
 assert blurred.get_pixel(3, 8).r > 0,
-  'a blur must spread colour past the original edge'
+    'a blur must spread colour past the original edge'
 assert blurred.get_pixel(8, 8).r > 200,
-  'a blur must leave the middle of a large area nearly intact'
+    'a blur must leave the middle of a large area nearly intact'
 assert raises(@() {
   soft.clone().blur(0)
-}), 'a blur radius must be greater than zero'
+}),
+    'a blur radius must be greater than zero'
 ok('the Gaussian blur spreads colour and validates its radius')
 
 var blocky = Image(16, 16)
@@ -690,9 +736,9 @@ iter var y = 0; y < 16; y++ {
 }
 var mosaic = blocky.clone().pixelate(8)
 assert mosaic.get_pixel(0, 0).to_hex() == mosaic.get_pixel(7, 7).to_hex(),
-  'every pixel in a block must end up the same colour'
+    'every pixel in a block must end up the same colour'
 assert mosaic.get_pixel(0, 0).to_hex() != mosaic.get_pixel(8, 8).to_hex(),
-  'separate blocks must keep their own averages'
+    'separate blocks must keep their own averages'
 ok('pixelate() averages each block independently')
 
 # ---------------------------------------------------------------------------
@@ -701,60 +747,63 @@ ok('pixelate() averages each block independently')
 var backdrop = Image(20, 20, 'white')
 var sprite = Image(8, 8, 'red')
 
-assert backdrop.clone().draw_image(sprite, 2, 2).get_pixel(5, 5).to_hex()
-  == '#ff0000',
-  'draw_image() must paint the source'
-assert backdrop.clone().draw_image(sprite, 2, 2).get_pixel(15, 15).to_hex()
-  == '#ffffff',
-  'draw_image() must not paint beyond the source'
-assert backdrop.clone().draw_image(sprite, -4, -4).get_pixel(0, 0).to_hex()
-  == '#ff0000',
-  'a negative position must clip rather than fail'
-assert backdrop.clone().draw_image(sprite, 18, 18).get_pixel(19, 19).to_hex()
-  == '#ff0000',
-  'a source hanging off the far edge must clip'
+assert backdrop.clone().draw_image(sprite, 2, 2).get_pixel(5, 5).to_hex() ==
+    '#ff0000',
+    'draw_image() must paint the source'
+assert backdrop.clone().draw_image(sprite, 2, 2).get_pixel(15, 15).to_hex() ==
+    '#ffffff',
+    'draw_image() must not paint beyond the source'
+assert backdrop.clone().draw_image(sprite, -4, -4).get_pixel(0, 0).to_hex() ==
+    '#ff0000',
+    'a negative position must clip rather than fail'
+assert backdrop.clone().draw_image(sprite, 18, 18).get_pixel(19, 19).to_hex() ==
+    '#ff0000',
+    'a source hanging off the far edge must clip'
 assert backdrop
-  .clone()
-  .draw_image(sprite, 2, 2, { opacity: 0.5 })
-  .get_pixel(5, 5).r
-  == 255,
-  'a half-opacity red over white must keep full red'
+        .clone()
+        .draw_image(sprite, 2, 2, { opacity: 0.5 })
+        .get_pixel(5, 5)
+        .r ==
+    255,
+    'a half-opacity red over white must keep full red'
 assert backdrop
-  .clone()
-  .draw_image(sprite, 2, 2, { opacity: 0.5 })
-  .get_pixel(5, 5).g
-  > 100,
-  'a half-opacity red over white must let white through'
+        .clone()
+        .draw_image(sprite, 2, 2, { opacity: 0.5 })
+        .get_pixel(5, 5)
+        .g >
+    100,
+    'a half-opacity red over white must let white through'
 assert backdrop
-  .clone()
-  .draw_image(sprite, 2, 2, { blend: BLEND_MULTIPLY })
-  .get_pixel(5, 5)
-  .to_hex()
-  == '#ff0000',
-  'multiplying red over white must give red'
+        .clone()
+        .draw_image(sprite, 2, 2, { blend: BLEND_MULTIPLY })
+        .get_pixel(5, 5)
+        .to_hex() ==
+    '#ff0000',
+    'multiplying red over white must give red'
 assert Image(8, 8, 'gray')
-  .draw_image(sprite, 0, 0, { blend: BLEND_MULTIPLY })
-  .get_pixel(4, 4)
-  .to_hex()
-  == '#800000',
-  'multiplying red over grey must darken it'
+        .draw_image(sprite, 0, 0, { blend: BLEND_MULTIPLY })
+        .get_pixel(4, 4)
+        .to_hex() ==
+    '#800000',
+    'multiplying red over grey must darken it'
 ok('compositing clips, honours opacity and applies blend modes')
 
 var self_drawn = Image(8, 8, 'red')
 self_drawn.draw_image(self_drawn, 2, 2)
 assert self_drawn.get_pixel(4, 4).to_hex() == '#ff0000',
-  'compositing an image onto itself must work rather than raise'
+    'compositing an image onto itself must work rather than raise'
 ok('an image can be composited onto itself')
 
 var placed = Image(20, 20, 'white')
 placed.place(Image(4, 4, 'red'), BOTTOM_RIGHT, { margin: 2 })
 assert placed.get_pixel(15, 15).to_hex() == '#ff0000',
-  'place() must honour its anchor and margin'
+    'place() must honour its anchor and margin'
 assert placed.get_pixel(19, 19).to_hex() == '#ffffff',
-  'place() must keep the margin clear'
+    'place() must keep the margin clear'
 assert raises(@() {
   placed.place(Image(2, 2), 'nowhere')
-}), 'place() must reject an unknown anchor'
+}),
+    'place() must reject an unknown anchor'
 ok('place() positions by anchor and validates it')
 
 var masked = Image(8, 8, 'red')
@@ -762,13 +811,14 @@ var stencil = Image(8, 8, 'black')
 stencil.fill_rect(0, 0, 4, 8, 'white')
 masked.mask(stencil)
 assert masked.get_pixel(1, 4).a == 255,
-  'a white mask must leave the image fully visible'
+    'a white mask must leave the image fully visible'
 assert masked.get_pixel(6, 4).a == 0, 'a black mask must hide the image'
 assert masked.get_pixel(1, 4).to_hex() == '#ff0000',
-  'masking must not change colour'
+    'masking must not change colour'
 assert raises(@() {
   masked.mask(Image(4, 4))
-}), 'a mask must be the same size as the image'
+}),
+    'a mask must be the same size as the image'
 ok('mask() takes alpha from another image and checks its size')
 
 # ---------------------------------------------------------------------------
@@ -778,45 +828,49 @@ var uniform = Image(20, 20, '#4f46e5')
 var counts = uniform.histogram()
 assert counts.red.length() == 256, 'a histogram must have a bucket per value'
 assert counts.red[79] == 400,
-  'every pixel of a uniform image must land in one bucket'
+    'every pixel of a uniform image must land in one bucket'
 assert Image(4, 4).histogram().red[0] == 0,
-  'fully transparent pixels must not be counted'
+    'fully transparent pixels must not be counted'
 
 var narrow = Image(64, 4)
 narrow.linear_gradient(0, 0, 64, 0, [Color(60, 60, 60), Color(190, 190, 190)])
 var stretched = narrow.clone().auto_levels()
 assert stretched.get_pixel(1, 2).r < narrow.get_pixel(1, 2).r,
-  'auto_levels() must pull the black point down'
+    'auto_levels() must pull the black point down'
 assert stretched.get_pixel(62, 2).r > narrow.get_pixel(62, 2).r,
-  'auto_levels() must push the white point up'
+    'auto_levels() must push the white point up'
 assert Image(8, 8).auto_levels().get_pixel(0, 0).a == 0,
-  'auto_levels() on an empty image must leave it alone'
+    'auto_levels() on an empty image must leave it alone'
 
 var halves = Image(4, 4, 'red')
 halves.fill_rect(0, 0, 2, 4, 'blue')
 assert halves.average_color().to_hex() == '#800080',
-  'average_color() must weight every visible pixel equally'
+    'average_color() must weight every visible pixel equally'
 assert Image(4, 4).average_color().a == 0,
-  'the average of nothing must be transparent'
+    'the average of nothing must be transparent'
 
 var patchy = Image(120, 120, '#4f46e5')
 patchy.fill_rect(0, 0, 60, 120, '#f472b6')
 patchy.fill_rect(0, 0, 20, 20, '#fbbf24')
 var dominant = patchy.dominant_colors(3)
 assert dominant.length() == 3,
-  'dominant_colors() must return as many as asked for'
+    'dominant_colors() must return as many as asked for'
 assert dominant[0].to_hex() == '#4f46e5', 'the largest area must come first'
 assert dominant[2].to_hex() == '#fbbf24', 'the smallest area must come last'
 
 assert uniform.difference(uniform.clone()) == 0,
-  'identical images must have no difference'
+    'identical images must have no difference'
 assert close(
-  Image(8, 8, 'black').difference(Image(8, 8, 'white')), 0.75, 0.001,
+  Image(8, 8, 'black').difference(Image(8, 8, 'white')),
+  0.75,
+  0.001,
 ),
-  'black against white must differ across three channels'
+    'black against white must differ across three channels'
 assert Image(8, 8).difference(Image(4, 4)) == 1,
-  'images of different sizes must be maximally different'
-ok('histograms, auto levels, averages and dominant colours read the image correctly')
+    'images of different sizes must be maximally different'
+ok(
+  'histograms, auto levels, averages and dominant colours read the image correctly',
+)
 
 # ---------------------------------------------------------------------------
 # Formats
@@ -829,74 +883,78 @@ for format in ['png', 'gif', 'bmp', 'tiff', 'webp', 'qoi', 'pnm', 'wbmp'] {
 
   var decoded = Image.decode(encoded)
   assert decoded.width() == 12 and decoded.height() == 9,
-    '${format} must survive a round trip at the same size'
+      '${format} must survive a round trip at the same size'
   assert decoded.format() == format,
-    '${format} must be recognised on the way back in'
+      '${format} must be recognised on the way back in'
 }
 ok('every self-describing format round-trips at the right size')
 
 var lossless = Image.decode(subject.encode('png'))
 assert lossless.get_pixel(6, 4).to_hex() == '#4f46e5',
-  'PNG must preserve colour exactly'
-assert Image.decode(subject.encode('qoi')).get_pixel(6, 4).to_hex()
-  == '#4f46e5',
-  'QOI must preserve colour exactly'
+    'PNG must preserve colour exactly'
+assert Image.decode(subject.encode('qoi')).get_pixel(6, 4).to_hex() ==
+    '#4f46e5',
+    'QOI must preserve colour exactly'
 
 var lossy = Image.decode(subject.encode('jpeg'))
 assert lossy.width() == 12, 'JPEG must round-trip at the right size'
 assert close(lossy.get_pixel(6, 4).r, 79, 8),
-  'JPEG must preserve colour approximately'
+    'JPEG must preserve colour approximately'
 ok('lossless formats preserve colour exactly and JPEG approximately')
 
 assert formats.from_extension('photo.JPG') == 'jpeg',
-  'extensions must map case-insensitively'
+    'extensions must map case-insensitively'
 assert formats.from_extension('/a.dir/photo') == nil,
-  'a dot in a directory name must not be read as an extension'
+    'a dot in a directory name must not be read as an extension'
 assert formats.normalize('.JPG') == 'jpeg',
-  'normalize() must accept a dotted, upper-case alias'
+    'normalize() must accept a dotted, upper-case alias'
 assert formats.mime_for('png') == 'image/png',
-  'each format must report its media type'
+    'each format must report its media type'
 assert formats.extension_for('jpeg') == 'jpg',
-  'each format must report a file extension'
+    'each format must report a file extension'
 assert raises(@() {
   formats.normalize('xyz')
-}), 'an unknown format name must be rejected'
+}),
+    'an unknown format name must be rejected'
 ok('format names, extensions and media types resolve both ways')
 
 assert probe(subject.encode('png')) == { format: 'png', width: 12, height: 9 },
-  'probe() must read dimensions from the header'
+    'probe() must read dimensions from the header'
 assert probe(bytes([1, 2, 3])) == nil,
-  'probe() must return nil for data that is not an image'
+    'probe() must return nil for data that is not an image'
 assert detect(subject.encode('gif')) == 'gif',
-  'detect() must identify a format from its content'
+    'detect() must identify a format from its content'
 assert detect(bytes(0)) == nil, 'detect() must return nil for an empty buffer'
 assert capabilities().encode.contains('avif'),
-  'AVIF must be reported as encodable'
+    'AVIF must be reported as encodable'
 assert !capabilities().decode.contains('avif'),
-  'AVIF must not be reported as decodable'
+    'AVIF must not be reported as decodable'
 ok('probing and capability reporting are honest about what this build can do')
 
 assert subject.encode('avif').length() > 0, 'AVIF must encode'
 assert raises(@() {
   Image.decode(subject.encode('avif'))
-}), 'decoding AVIF must raise rather than fail obscurely'
+}),
+    'decoding AVIF must raise rather than fail obscurely'
 assert raises(@() {
   Image.decode(bytes([0xFF, 0xD8, 0xFF]))
-}), 'a truncated image must raise DecodeError'
+}),
+    'a truncated image must raise DecodeError'
 assert raises(@() {
   Image.decode(bytes(0))
-}), 'an empty buffer must raise rather than produce an empty image'
+}),
+    'an empty buffer must raise rather than produce an empty image'
 ok('unsupported and malformed input raises instead of failing quietly')
 
 var one_bit = Image(16, 16, 'white')
 one_bit.fill_rect(0, 0, 8, 16, 'black')
 var wbmp = Image.decode(one_bit.to_wbmp())
 assert wbmp.size() == { width: 16, height: 16 },
-  'WBMP must round-trip at the right size'
+    'WBMP must round-trip at the right size'
 assert wbmp.get_pixel(2, 8).to_hex() == '#000000',
-  'WBMP must keep dark pixels dark'
+    'WBMP must keep dark pixels dark'
 assert wbmp.get_pixel(12, 8).to_hex() == '#ffffff',
-  'WBMP must keep light pixels light'
+    'WBMP must keep light pixels light'
 
 # A width above 127 needs a two-byte length field, which is the only
 # place the variable-length encoding's byte order is observable.
@@ -904,16 +962,16 @@ var wide = Image(300, 4, 'white')
 wide.fill_rect(0, 0, 150, 4, 'black')
 var wide_back = Image.decode(wide.to_wbmp())
 assert wide_back.size() == { width: 300, height: 4 },
-  'a WBMP wider than 127 pixels must encode its length across two bytes'
+    'a WBMP wider than 127 pixels must encode its length across two bytes'
 assert wide_back.get_pixel(10, 2).to_hex() == '#000000',
-  'a wide WBMP must keep its pixels in order'
+    'a wide WBMP must keep its pixels in order'
 assert wide_back.get_pixel(200, 2).to_hex() == '#ffffff',
-  'a wide WBMP must keep its pixels in order'
+    'a wide WBMP must keep its pixels in order'
 ok('the WBMP codec round-trips, including multi-byte dimensions')
 
 var url = subject.to_data_url('png')
 assert url.starts_with('data:image/png;base64,'),
-  'a data URL must carry the right media type'
+    'a data URL must carry the right media type'
 assert url.length() > 40, 'a data URL must carry the encoded image'
 ok('images encode as data URLs')
 
@@ -925,37 +983,40 @@ var animation = Animation(frames, 80, 0)
 
 assert animation.length() == 3, 'an animation must hold every frame given'
 assert animation.duration() == 240,
-  'the duration must be the sum of the frame delays'
+    'the duration must be the sum of the frame delays'
 assert animation.width() == 8 and animation.height() == 8,
-  'an animation must report its frames shared size'
+    'an animation must report its frames shared size'
 assert raises(@() {
   Animation([])
-}), 'an animation needs at least one frame'
+}),
+    'an animation needs at least one frame'
 assert raises(@() {
   Animation([Image(4, 4), Image(8, 8)])
-}), 'every frame must be the same size'
+}),
+    'every frame must be the same size'
 assert raises(@() {
   Animation([Image(4, 4)], [10, 20])
-}), 'a delay list must have one entry per frame'
+}),
+    'a delay list must have one entry per frame'
 
 var replayed = Animation.decode(animation.encode('gif'))
 assert replayed.length() == 3, 'every frame must survive a GIF round trip'
 assert replayed.format() == 'gif', 'a decoded animation must report its format'
 assert close(replayed.duration(), 240, 40),
-  'frame delays must survive a GIF round trip approximately'
+    'frame delays must survive a GIF round trip approximately'
 
 var greyed = animation.map(@(frame) {
   return frame.grayscale()
 })
 assert greyed.length() == 3, 'map() must keep every frame'
 assert greyed.frame(0).get_pixel(4, 4).r == greyed.frame(0).get_pixel(4, 4).b,
-  'map() must apply the function to each frame'
+    'map() must apply the function to each frame'
 assert animation.frame(0).get_pixel(4, 4).to_hex() == '#ff0000',
-  'map() must not disturb the original'
+    'map() must not disturb the original'
 assert animation.reverse().frame(0).get_pixel(4, 4).to_hex() == '#0000ff',
-  'reverse() must flip the frame order'
+    'reverse() must flip the frame order'
 assert Animation.decode(subject.encode('png')).length() == 1,
-  'a still image must decode as a one-frame animation'
+    'a still image must decode as a one-frame animation'
 ok('animations build, transform and round-trip through GIF')
 
 # ---------------------------------------------------------------------------
@@ -975,21 +1036,21 @@ if font != nil {
   assert metrics.descent <= 0, 'a font must report descent as zero or negative'
   assert font.pixel_size() == 20, 'a font must report the size it was asked for'
   assert font.size(10).pixel_size() == 10,
-    'size() must return the same face at another size'
+      'size() must return the same face at another size'
 
   var box = font.measure('Hello', nil)
   assert box.width > 0 and box.height > 0,
-    'measuring a string must give a real box'
+      'measuring a string must give a real box'
   assert box.lines == 1, 'a string with no newline is one line'
   assert font.measure('a\nb', nil).lines == 2, 'a newline must start a new line'
   assert font.measure('a\nb', nil).height > font.measure('a', nil).height,
-    'two lines must be taller than one'
+      'two lines must be taller than one'
   assert font.measure('mm', nil).width > font.measure('m', nil).width,
-    'a longer string must measure wider'
+      'a longer string must measure wider'
 
   var rendered = font.render('Hi', nil)
   assert rendered.coverage.length() == rendered.width * rendered.height,
-    'a coverage mask must be one byte per pixel'
+      'a coverage mask must be one byte per pixel'
 
   var written = Image(120, 40, 'white')
   written.text(4, 4, 'Hi', font, 'black')
@@ -1006,38 +1067,42 @@ if font != nil {
   assert darkest < 128, 'drawing text must actually put ink on the image'
   assert raises(@() {
     written.text(0, 0, 'x', nil, 'black')
-  }), 'drawing text without a font must raise'
+  }),
+      'drawing text without a font must raise'
 
   var prose = 'wrapping keeps whole words together wherever it can manage it'
   var lines = font.wrap(prose, 160).split('\n')
   assert lines.length() > 1,
-    'wrapping must break a long string into several lines'
+      'wrapping must break a long string into several lines'
 
   for line in lines {
     assert font.measure(line, nil).width <= 160,
-      'no wrapped line may exceed the width'
+        'no wrapped line may exceed the width'
   }
 
   assert font.wrap('a\nb', 500).split('\n').length() == 2,
-    'an existing newline must survive wrapping'
+      'an existing newline must survive wrapping'
   assert font
-    .wrap('Supercalifragilisticexpialidocious', 40)
-    .split('\n')
-    .length()
-    > 1,
-    'a word too long for the width must be broken'
+          .wrap('Supercalifragilisticexpialidocious', 40)
+          .split('\n')
+          .length() >
+      1,
+      'a word too long for the width must be broken'
   assert raises(@() {
     font.wrap('x', 0)
-  }), 'a wrap width must be greater than zero'
+  }),
+      'a wrap width must be greater than zero'
 
   var boxed = written.text_size(prose, font, { width: 160 })
   assert boxed.width <= 160,
-    'measuring with a width must measure the wrapped text'
+      'measuring with a width must measure the wrapped text'
   assert boxed.lines > 1,
-    'measuring with a width must report the wrapped line count'
+      'measuring with a width must report the wrapped line count'
 }
 
-ok('text measurement and rendering behave correctly (when a system font is available)')
+ok(
+  'text measurement and rendering behave correctly (when a system font is available)',
+)
 
 # ---------------------------------------------------------------------------
 # The built-in stroke font
@@ -1045,53 +1110,57 @@ ok('text measurement and rendering behave correctly (when a system font is avail
 var builtin = StrokeFont(24)
 
 assert builtin.pixel_size() == 24,
-  'the built-in font must report the size asked for'
+    'the built-in font must report the size asked for'
 assert builtin.size(12).pixel_size() == 12,
-  'size() must return the same font at another size'
+    'size() must return the same font at another size'
 assert builtin.name() == 'Imagine Stroke', 'the built-in font must name itself'
 assert instance_of(Font.builtin(20), StrokeFont),
-  'Font.builtin() must hand back the stroke font'
+    'Font.builtin() must hand back the stroke font'
 assert raises(@() {
   StrokeFont(0)
-}), 'a font size must be greater than zero'
+}),
+    'a font size must be greater than zero'
 assert raises(@() {
   StrokeFont(16, -1)
-}), 'a font weight must be greater than zero'
+}),
+    'a font weight must be greater than zero'
 
 var built_metrics = builtin.metrics()
 assert built_metrics.ascent > 0,
-  'the built-in font must report a positive ascent'
+    'the built-in font must report a positive ascent'
 assert built_metrics.descent < 0,
-  'the built-in font must report a negative descent'
+    'the built-in font must report a negative descent'
 assert close(built_metrics.line_height, 24, 0.001),
-  'the em is the size, so single-spaced lines sit exactly one size apart'
+    'the em is the size, so single-spaced lines sit exactly one size apart'
 
-assert builtin.has_glyph('A')
-  and builtin.has_glyph('~')
-  and builtin.has_glyph(' '),
-  'printable ASCII must be covered'
+assert builtin.has_glyph('A') and
+    builtin.has_glyph('~') and
+    builtin.has_glyph(' '),
+    'printable ASCII must be covered'
 assert !builtin.has_glyph('\u00e9'),
-  'a character outside ASCII must report as missing'
+    'a character outside ASCII must report as missing'
 
 var built_box = builtin.measure('Hello', nil)
 assert built_box.width > 0 and built_box.height > 0,
-  'measuring must give a real box'
+    'measuring must give a real box'
 assert built_box.lines == 1, 'a string with no newline is one line'
 assert builtin.measure('a\nb', nil).lines == 2,
-  'a newline must start a new line'
+    'a newline must start a new line'
 assert builtin.measure('mm', nil).width > builtin.measure('m', nil).width,
-  'a longer string must measure wider'
+    'a longer string must measure wider'
 assert builtin.measure('l', nil).width < builtin.measure('m', nil).width,
-  'glyphs must have their own advance widths'
+    'glyphs must have their own advance widths'
 assert close(
-  builtin.size(48).measure('Hello', nil).width, built_box.width * 2, 1.5,
+  builtin.size(48).measure('Hello', nil).width,
+  built_box.width * 2,
+  1.5,
 ),
-  'the font must scale linearly'
+    'the font must scale linearly'
 
 var built_render = builtin.render('Hi', nil)
-assert built_render.coverage.length()
-  == built_render.width * built_render.height,
-  'a coverage mask must be one byte per pixel'
+assert built_render.coverage.length() ==
+    built_render.width * built_render.height,
+    'a coverage mask must be one byte per pixel'
 
 var written_built = Image(160, 60, 'white')
 written_built.text(10, 10, 'Hi!', builtin, 'black')
@@ -1106,26 +1175,28 @@ iter var y = 0; y < 60; y++ {
   }
 }
 assert built_darkest < 100,
-  'the built-in font must actually put ink on the image'
+    'the built-in font must actually put ink on the image'
 
 var missing = Image(80, 60, 'white')
 missing.text(10, 10, '\u00e9', builtin, 'black')
 assert missing.get_pixel(40, 40).to_hex() != '#ffffff' or true,
-  'an unmapped character must draw the missing-glyph box'
+    'an unmapped character must draw the missing-glyph box'
 
 var built_lines = builtin
-  .wrap('the built in font wraps text the same way', 90)
-  .split('\n')
+    .wrap('the built in font wraps text the same way', 90)
+    .split('\n')
 assert built_lines.length() > 1, 'the built-in font must wrap'
 
 for line in built_lines {
   assert builtin.measure(line, nil).width <= 90,
-    'no wrapped line may exceed the width'
+      'no wrapped line may exceed the width'
 }
 
 assert builtin.weight(0.14).pixel_size() == 24,
-  'changing weight must keep the size'
-ok('the built-in stroke font measures, scales, wraps and draws without any font file')
+    'changing weight must keep the size'
+ok(
+  'the built-in stroke font measures, scales, wraps and draws without any font file',
+)
 
 # ===========================================================================
 # Final summary

@@ -1,17 +1,15 @@
 /**
  * @module html
  *
- * A complete HTML5 parser, DOM and serializer, following the [WHATWG
- * HTML Living Standard](https://html.spec.whatwg.org/multipage/).
+ * An HTML5 parser, DOM and serializer, following the [WHATWG HTML
+ * Living Standard](https://html.spec.whatwg.org/multipage/).
  *
- * Parse a page, walk it, query it with CSS selectors, change it, and
- * write it back out. Nothing here fetches anything over the network
- * and nothing here executes a script; `<script>` content is inert
- * text and always will be.
+ * You can parse a page, walk through it, query it with CSS selectors,
+ * change it, and write it out again. Nothing here fetches anything over
+ * the network or runs any scripts. The content of a `<script>` element
+ * is just text.
  *
- * ---
- *
- * ### Quick start
+ * ### A first example
  *
  * ```zuri
  * import html
@@ -33,35 +31,31 @@
  * }
  * ```
  *
- * Notice that neither `<li>` is closed and there is no `<html>`,
- * `<head>` or `<body>` anywhere. That is fine: the standard defines a
- * tree for every possible input, and this module builds it. Parsing
- * never raises on malformed markup.
+ * Neither `<li>` is closed, and there's no `<html>`, `<head>` or
+ * `<body>` anywhere. That's fine. The standard defines a tree for every
+ * possible input, and this module builds it, so parsing never raises an
+ * error on malformed markup.
  *
- * ---
- *
- * ### Finding things
+ * ### Finding elements
  *
  * | Method                          | Finds                        |
  * | ------------------------------- | ---------------------------- |
  * | `get_element_by_id(id)`         | the first element with that id |
  * | `get_elements_by_class_name(c)` | every element with those classes |
  * | `get_elements_by_tag_name(t)`   | every element with that tag  |
- * | `query_selector(sel)`           | the first CSS match          |
- * | `query_selector_all(sel)`       | every CSS match              |
+ * | `query_selector(sel)`           | the first match for a CSS selector |
+ * | `query_selector_all(sel)`       | every match for a CSS selector |
  * | `element.matches(sel)`          | whether this element matches |
- * | `element.closest(sel)`          | this element or its nearest matching ancestor |
+ * | `element.closest(sel)`          | this element or its nearest ancestor that matches |
  *
- * The selector syntax is a deliberately bounded subset: type, `*`,
- * `#id`, `.class`, `[attr]`, `[attr="value"]`, the combinators `>`,
- * `+` and `~`, descendant combination by whitespace, `:first-child`,
- * `:last-child`, `:nth-child()`, and comma-separated lists of all of
- * those. Anything outside it raises a `SelectorError` rather than
- * silently matching nothing.
+ * The selector syntax is an intentionally limited subset: type, `*`,
+ * `#id`, `.class`, `[attr]`, `[attr="value"]`, the combinators `>`, `+`
+ * and `~`, descendant selectors separated by whitespace,
+ * `:first-child`, `:last-child`, `:nth-child()`, and comma-separated
+ * lists of all of those. Anything else raises a `SelectorError`,
+ * instead of silently matching nothing.
  *
- * ---
- *
- * ### Changing things
+ * ### Changing a document
  *
  * ```zuri
  * import html
@@ -77,22 +71,20 @@
  * # <div class="box active" data-seen="yes"><p>new</p></div>
  * ```
  *
- * Zuri has no property setters, so every writable DOM property is a
- * pair of methods: `text_content()` reads and `set_text_content()`
- * writes, and likewise for `inner_html` and `outer_html`.
+ * Zuri doesn't have property setters, so every writable DOM property is
+ * a pair of methods: `text_content()` reads it and `set_text_content()`
+ * writes it, and the same goes for `inner_html` and `outer_html`.
  *
- * ---
+ * ### Writing it out
  *
- * ### Writing it back out
- *
- * `outer_html()` round-trips a node exactly. When you want the output
- * shaped for a particular audience, `minify()` strips what a browser
- * does not need and `format()` indents for a human:
+ * `outer_html()` reproduces a node exactly. When you want the output
+ * shaped for a particular reader, `minify()` removes what a browser
+ * doesn't need, and `format()` indents it for a person.
  *
  * A string is parsed as a whole document, so `<html>`, `<head>` and
- * `<body>` show up in the output the way a browser would produce
- * them. Pass `{ fragment: true }` when the input is a fragment and
- * you want just that fragment back:
+ * `<body>` appear in the output, as a browser would produce them. Pass
+ * `{ fragment: true }` when the input is a fragment and you only want
+ * that fragment back:
  *
  * ```zuri-repl
  * %> import html
@@ -105,37 +97,31 @@
  * </ul>
  * ```
  *
- * ---
- *
  * ### Escaping
  *
- * `encode()` makes text safe to embed and `decode()` resolves
- * character references. Decoding knows all 2231 named references, not
- * a shortlist:
+ * `encode()` makes text safe to include in a document, and `decode()`
+ * resolves character references. Decoding knows all 2231 named
+ * references, not just a shortlist:
  *
  * ```zuri-repl
  * %> import html
  * %> html.encode('<b>Tom & Jerry</b>')
  * '&lt;b&gt;Tom &amp; Jerry&lt;/b&gt;'
- * %> html.decode('caf&eacute; &#8212; &#x2603;')
- * 'café: ☃'
+ * %> html.decode('caf&eacute; &#169; &#x2603;')
+ * 'café © ☃'
  * ```
  *
- * ---
+ * ### Character encoding
  *
- * ### Encoding
- *
- * Input is UTF-8 text that has already been decoded, which is what a
- * Zuri string always is. There is no charset sniffing, no byte order
- * mark handling and no `<meta charset>` processing: if you are
- * reading bytes off a socket, decode them before they get here.
- *
- * ---
+ * The input is UTF-8 text that has already been decoded, which a Zuri
+ * string always is. There's no character set detection, no byte order
+ * mark handling and no `<meta charset>` processing. If you're reading
+ * bytes from a socket, decode them before passing them here.
  *
  * ### Parse errors
  *
- * HTML has no fatal errors, so a parse always succeeds. Every
- * conformance problem the standard defines is collected instead:
+ * HTML has no fatal errors, so parsing always succeeds. Every
+ * conformance problem that the standard defines is collected instead:
  *
  * ```zuri-repl
  * %> import html
@@ -145,8 +131,8 @@
  * unexpected-end-tag at 1:8
  * ```
  *
- * Each entry carries the standard's own error name, so you can look
- * it up, plus the line and column where it was noticed.
+ * Each entry has the standard's own name for the error, so you can look
+ * it up, along with the line and column where it was found.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */

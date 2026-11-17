@@ -1,16 +1,14 @@
 /**
- * # validate.validator
- *
- * Provides the `Validator` fluent builder.  Each method appends one rule
- * class (and its constructor arguments) to an internal chain.  The chain
- * is later resolved by `Schema`: it instantiates each rule with the
- * field name injected, then calls `validate(value)` in order.
- *
- * Rules stop executing for a field the moment one fails, unless
- * `bail(false)` has been explicitly disabled.  When `sometimes()` is set
- * and the field is absent or nil, the entire rule chain is skipped.
- *
  * @module validate.validator
+ *
+ * Defines `Validator`, the builder that rule chains are made with. Each
+ * method adds one rule class, with its arguments, to a list. `Schema`
+ * uses the list later: it creates each rule with the field name, and
+ * then calls `validate(value)` on each one in order.
+ *
+ * A field's rules stop running as soon as one fails, unless
+ * `bail(false)` was called. When `sometimes()` is set and the field is
+ * absent or empty, none of the field's rules run.
  */
 
 import .rules
@@ -704,7 +702,7 @@ class Validator {
   }
 
   /**
-   * The value must be a valid timezone identifier recognised by the `date`
+   * The value must be a valid timezone identifier recognized by the `date`
    * module (e.g. `"UTC"`, `"Africa/Lagos"`).
    *
    * @returns Validator

@@ -1,13 +1,12 @@
 /**
  * @module imagine
  *
- * Reading, writing, drawing and transforming raster images.
+ * Reads, writes, draws on and transforms raster images.
  *
- * `imagine` covers the whole path an image takes through a program:
+ * `imagine` covers everything a program usually does with an image:
  * decoding it from a file or an upload, resizing and cropping it,
- * adjusting its colour, drawing shapes and text onto it, compositing
- * several together, and writing the result back out in whatever format
- * suits.
+ * adjusting its colors, drawing shapes and text on it, combining
+ * several images, and writing the result in whatever format suits.
  *
  * ```zuri
  * import imagine { Image, Font, LANCZOS }
@@ -18,26 +17,27 @@
  *   .save('thumb.webp', { quality: 82 })
  * ```
  *
- * ## The shape of the API
+ * ## How the API works
  *
- * Almost everything is a method on [[imagine.Image]], and almost
- * everything returns an image, so operations chain. There is one rule
- * worth learning up front:
+ * Almost everything is a method of [[imagine.Image]], and almost
+ * everything returns an image, so operations can be chained. There's
+ * one rule to learn first:
  *
- * - **Operations that change the image's size return a new image.**
- *   `resize()`, `crop()`, `rotate()`, `flip()` and `pad()` leave the
- *   original alone.
+ * - **Operations that change the size of the image return a new
+ *   image.** `resize()`, `crop()`, `rotate()`, `flip()` and `pad()`
+ *   leave the original unchanged.
  * - **Everything else changes the image in place.** Drawing, filters
- *   and compositing modify the image you called them on and hand it
- *   back for chaining.
+ *   and compositing modify the image you call them on, and return it
+ *   for chaining.
  *
- * Call `clone()` when you want to keep an image before filtering it.
+ * Call `clone()` if you want to keep a copy of an image before
+ * filtering it.
  *
- * ## Colours
+ * ## Colors
  *
- * Anywhere a colour is expected you can write a [[imagine.Color]], a
- * hexadecimal string, a CSS colour name, a packed `0xRRGGBBAA` number,
- * or a list of channels. These are all the same red:
+ * Anywhere a color is expected, you can pass a [[imagine.Color]], a
+ * hexadecimal string, a CSS color name, a packed `0xRRGGBBAA` number or
+ * a list of channels. These are all the same red:
  *
  * ```zuri
  * image.fill(Color(255, 0, 0))
@@ -47,17 +47,17 @@
  * image.fill([255, 0, 0])
  * ```
  *
- * Alpha runs 0 (transparent) to 255 (opaque), as in CSS and PNG. The
- * colour space conversions come from [[colors]], so hue is in degrees
- * and saturation and lightness are in percentage points.
+ * Alpha goes from 0, transparent, to 255, opaque, as in CSS and PNG.
+ * The color space conversions come from [[colors]], so hue is in
+ * degrees, and saturation and lightness are percentages.
  *
  * ## Pixels
  *
- * An image is 8-bit RGBA with straight (not premultiplied) alpha, laid
- * out row by row with no padding, so pixel `(x, y)` begins at byte
- * `(y * width + x) * 4`. [[imagine.Canvas.pixels]] hands back that
- * buffer live, which is the fastest way to write an operation this
- * module does not provide:
+ * An image is 8-bit RGBA with straight alpha, not premultiplied, stored
+ * row by row with no padding, so pixel `(x, y)` starts at byte
+ * `(y * width + x) * 4`. [[imagine.Canvas.pixels]] returns that buffer
+ * itself, not a copy, and it's the fastest way to write an operation
+ * that this module doesn't provide:
  *
  * ```zuri
  * var buffer = image.pixels()
@@ -70,24 +70,24 @@
  *
  * ## Formats
  *
- * Read: PNG, JPEG, GIF, BMP, TIFF, TGA, WebP, QOI, ICO, PNM, WBMP.
- * Write: all of those plus AVIF.
+ * These formats can be read: PNG, JPEG, GIF, BMP, TIFF, TGA, WebP, QOI,
+ * ICO, PNM and WBMP. All of them can be written, and so can AVIF.
  *
- * AVIF is write-only, and TGA carries no signature of its own so it
- * can only be identified by its file extension or by naming the
- * format outright. [[imagine.capabilities]] reports what this build
- * can actually do, so a program can check rather than guess.
+ * AVIF can only be written, not read. TGA files have no signature, so a
+ * TGA image can only be identified by its file extension or by naming
+ * the format explicitly. [[imagine.capabilities]] reports what this
+ * build can actually do, so a program can check instead of guessing.
  *
- * Animated GIF and animated WebP are read through
- * [[imagine.Animation]], and animated GIF can be written.
+ * Animated GIF and animated WebP images are read through
+ * [[imagine.Animation]], and animated GIF images can be written.
  *
  * ## Drawing
  *
- * Every filled shape becomes a polygon and goes through one
- * anti-aliased scanline rasterizer, and every outline becomes the
- * polygon around its stroke and goes through the same one. Shapes this
- * module does not name can be drawn by handing
- * [[imagine.Canvas.fill_polygon]] the points.
+ * Every filled shape is turned into a polygon and drawn by a single
+ * anti-aliased scanline rasterizer, and every outline is turned into
+ * the polygon around its stroke and drawn by the same rasterizer. To
+ * draw a shape that this module doesn't have a method for, pass its
+ * points to [[imagine.Canvas.fill_polygon]].
  *
  * ```zuri
  * import imagine { Image, Color }
@@ -100,24 +100,25 @@
  *
  * ## Text
  *
- * Text needs a font, loaded from a file with [[imagine.Font.load]] or
- * found on the machine with [[imagine.Font.system]]. Glyphs are placed
- * by advance width with kerning; complex scripts that need shaping are
- * not supported, and the `Font` documentation says exactly what that
+ * Text needs a font, either loaded from a file with
+ * [[imagine.Font.load]] or found on the system with
+ * [[imagine.Font.system]]. Glyphs are positioned by their advance
+ * widths, with kerning. Complex scripts that need shaping aren't
+ * supported, and the `Font` documentation explains exactly what that
  * rules out.
  *
  * ## Memory
  *
- * Four bytes per pixel, so a 6000x4000 photograph occupies 96 MB
- * however small its file was. For images whose size you do not
- * control, [[imagine.probe]] reads the dimensions out of the header
- * without decoding anything.
+ * An image takes four bytes per pixel, so a 6000x4000 photograph takes
+ * 96 MB in memory, however small its file was. For images whose size
+ * you don't control, [[imagine.probe]] reads the dimensions from the
+ * header without decoding the image.
  *
  * ```zuri
  * var header = imagine.probe(upload)
  *
  * if header == nil or header.width * header.height > 40000000 {
- *   raise Exception('image is missing or too large')
+ *   raise Error('image is missing or too large')
  * }
  * ```
  *
@@ -180,7 +181,7 @@ def create(width, height, fill) {
  * decoding any pixels.
  *
  * Returns `{format, width, height}`, or `nil` when the data is not a
- * recognisable image. Reading a large JPEG's header costs microseconds
+ * recognizable image. Reading a large JPEG's header costs microseconds
  * where decoding it costs tens of milliseconds, which makes this the
  * right way to size up an upload before committing to it.
  *
@@ -203,12 +204,12 @@ def detect(data) {
 }
 
 /**
- * What this build can do, as a dictionary holding `decode`, `encode`
- * and `animated`, each a list of format names.
+ * What this build can do, as a dictionary with `decode`, `encode` and
+ * `animated`, each a list of format names.
  *
- * Worth checking rather than assuming: AVIF appears under `encode` but
- * not `decode`, and which formats are compiled in can differ between
- * builds.
+ * Check this instead of assuming that a format is available. AVIF
+ * appears under `encode` but not under `decode`, and the formats that
+ * are compiled in can differ between builds.
  *
  * @returns dict
  */

@@ -1,16 +1,16 @@
 # Models
 
-`sql` deals in rows, and a row is a dictionary. That is the right shape
-for a report or a script, and the wrong one for the heart of an
-application, where a post is something with rules: a title it must
-have, an author it belongs to, a slug that follows from its title.
-`sql.model` gives each table a class. Its records save, check and delete
-themselves, and reach the records they are associated with.
+`sql` works with rows, and a row is a dictionary. That's the right shape for
+a report or a script, but not for the core of an application, where a post
+is something with rules: it must have a title, it belongs to an author, and
+its slug is derived from its title. `sql.model` gives each table a class.
+Instances of the class, called records, can save, validate and delete
+themselves, and can load the records they're associated with.
 
 - [A First Model](#a-first-model)
 - [Declaring a Model](#declaring-a-model)
 - [Records](#records)
-- [Filling from Input](#filling-from-input)
+- [Assigning Input](#assigning-input)
 - [Validation](#validation)
 - [Hooks](#hooks)
 - [Queries](#queries)
@@ -18,12 +18,12 @@ themselves, and reach the records they are associated with.
 - [Transactions](#transactions)
 - [Casts](#casts)
 - [Records as Output](#records-as-output)
-- [What It Leaves to You](#what-it-leaves-to-you)
+- [Design Limits](#design-limits)
 
 ## A First Model
 
-A model is a class extending `Model`. Its fields are its table's
-columns:
+A model is a class that extends `Model`. Its fields are the columns of its
+table:
 
 ```zuri
 import sql
@@ -63,18 +63,19 @@ db.close()
 On Engines: 412
 ```
 
-`db.model(Post)` starts a query over the model's rows. Records take the
-connection to use on every call that touches the database: `save(db)`,
-`delete(db)`. A record never holds a connection of its own, so it saves
-inside whichever transaction the code saving it opened, and one kept
-after its connection went back to a pool cannot write through a
-connection that is now somebody else's.
+`db.model(Post)` starts a query over the model's rows. Methods that use the
+database, such as `save(db)` and `delete(db)`, take the connection to use as
+an argument. A record never holds onto a connection itself, so it's saved
+inside whichever transaction the calling code opened, and a record that's
+kept after its connection has gone back to a pool can't write through a
+connection that now belongs to someone else.
 
 ## Declaring a Model
 
-Every field the class declares that does not start with `_` is a column
-of the same name. Everything else about the model goes in a static
-`define()`, which is handed a definition to describe it on:
+Every field the class declares, apart from those that start with `_`, is a
+column with the same name. Everything else about the model goes in a static
+`define()` method, which receives a definition object to describe the model
+on:
 
 ```zuri,ignore
 class Post < Model {
@@ -85,55 +86,57 @@ class Post < Model {
   var created_at
   var updated_at
 
-  var author        # holds the association, once loaded
+  var author # holds the association, once loaded
 
   static define(model: Definition) {
-    model.table('articles')         # the plural of the class otherwise
-    model.primary_key('id')         # id otherwise
-    model.timestamps()              # created_at and updated_at
+    model.table('articles') # the plural of the class otherwise
+    model.primary_key('id') # id otherwise
+    model.timestamps() # created_at and updated_at
     model.cast('published', 'bool')
     model.belongs_to('author', Author)
     model.validate('title', validate.required().string().max_length(200))
     model.fillable(['title', 'published'])
     model.hidden(['internal_notes'])
-    model.transient(['preview'])    # fields that are not columns
+    model.transient(['preview']) # fields that are not columns
     model.scope('published', @(query, _) => query.where({ published: true }))
   }
 }
 ```
 
-A model's table is its class name in snake case, made plural by the
-regular rules of English: `Post` is `posts`, `BlogPost` is
-`blog_posts`, `Category` is `categories`, `Address` is `addresses`. A
-word whose plural is irregular names its table with `table()`.
+A model's table name is its class name in snake case, made plural using the
+regular rules of English, so `Post` becomes `posts`, `BlogPost` becomes
+`blog_posts`, `Category` becomes `categories` and `Address` becomes
+`addresses`. If a word has an irregular plural, set the table name with
+`table()`.
 
-`define()` runs once, the first time the model is used, not when its
-class is declared, so it names models declared after it in the same
-file. What it describes is checked against the class then: an
-association with no field to load into, or a cast on a field that is
-not a column, raises `ModelError` at that first use. A model's primary
-key is one column.
+`define()` runs once, the first time the model is used, not when the class
+is declared, so it can refer to models declared later in the same file. Its
+description is checked against the class at that point. An association
+without a field to load into, or a cast on a field that isn't a column,
+raises a `ModelError` the first time the model is used. A model's primary
+key is a single column.
 
-Records loaded from the database are built with no arguments, so a
-model's own `@new` takes none that are required, and passes attributes
-on with `parent(attributes)` when it takes them.
+Records loaded from the database are created without any arguments, so a
+model's own `@new` mustn't require any. If it accepts attributes, it should
+pass them on with `parent(attributes)`.
 
 ## Records
 
-Calling the class builds a record, from a dictionary of attributes when
-one is given. `create()` on a query builds one and saves it:
+Calling the class creates a record, using a dictionary of attributes if you
+pass one. `create()` on a query creates a record and saves it:
 
 ```zuri,ignore
 var draft = Post({ title: 'On Looms' })
 var saved = db.model(Post).create({ title: 'On Bugs' })
 ```
 
-Saving a new record inserts it. Every column still nil is left out of
-the insert, so the database's default fills it, and those columns are
-read back: the record holds what was stored. Saving a record that is
-already stored writes the columns that changed since it was loaded, and
-nothing at all when none did, so a column another process changed
-meanwhile is not overwritten by a save of a different one.
+Saving a new record inserts it. Any column that's still `nil` is left out of
+the insert, so the database fills in its default, and those columns are then
+read back, so the record holds what was actually stored. Saving a record
+that's already stored only writes the columns that have changed since it was
+loaded, and writes nothing if none have. That way, a column that another
+process changed in the meantime isn't overwritten when you save a different
+column.
 
 ```zuri
 import sql
@@ -189,22 +192,21 @@ On Analytical Engines
 false
 ```
 
-A list or dictionary changed in place counts as a change. A deleted
-record keeps its values, and saving it again inserts it anew.
-`key()` is the primary key's value, whatever the column is called.
+A list or dictionary that's changed in place counts as a change. A deleted
+record keeps its values, and saving it again inserts it as a new row.
+`key()` returns the value of the primary key, whatever the column is called.
 
-## Filling from Input
+## Assigning Input
 
-`fill()` assigns attributes from a dictionary, as a form or a request
-body supplies them, and it assigns only fillable columns: those the
-model lists with `fillable()`, or every column but the primary key and
-the timestamps when it lists none. A key that is not fillable raises
-`ModelError`, so a request cannot set a record's key, or a column it was
-never meant to reach, by sending one more field.
+`fill()` assigns attributes from a dictionary, such as one provided by a
+form or a request body. It only assigns fillable columns, which are the
+columns the model lists with `fillable()`, or if it doesn't list any, every
+column except the primary key and the timestamps. A key that isn't fillable
+raises a `ModelError`, so a request can't set a record's primary key, or any
+other column it was never meant to change, just by sending an extra field.
 
-The second argument takes the keys asked for and leaves the rest, which
-is the form to use with input that carries more than the record should
-take:
+The second argument lists the keys to use and ignores the rest. Use it with
+input that contains more than the record should accept:
 
 ```zuri,ignore
 post.fill(request.form(), ['title', 'body'])
@@ -212,9 +214,9 @@ post.fill(request.form(), ['title', 'body'])
 
 ## Validation
 
-A model checks itself before every save, with `validate` chains, with
-unique checks, and with a `validate()` of its own. A record that fails
-is not saved, and `save()` raises `RecordInvalid`:
+A model validates itself before every save, using `validate` rules,
+uniqueness checks and its own `validate()` method. A record that fails
+validation isn't saved, and `save()` raises a `RecordInvalid` error:
 
 ```zuri
 import sql
@@ -251,7 +253,11 @@ db.schema.create_table('authors', @(table: Blueprint) {
 
 db.model(Author).create({ name: 'Ada', born: 1815, died: 1852 })
 
-for attempt in [{ name: 'Ada' }, { name: 'Grace', born: 1906, died: 1900 }, { name: '' }] {
+for attempt in [
+  { name: 'Ada' },
+  { name: 'Grace', born: 1906, died: 1900 },
+  { name: '' },
+] {
   catch {
     db.model(Author).create(attempt)
   } as error {
@@ -272,40 +278,41 @@ true
 ```
 
 `RecordInvalid` is a `validate.ValidationError`, and its `errors` are the
-same `{ field, message }` list a form's validation reports, so the code
-answering a bad form with a 422 answers a bad record the same way.
-`is_valid(db)` runs the checks without saving, and `errors()` returns
-what the last one found.
+same `{ field, message }` list that form validation reports, so the code
+that responds to an invalid form with a 422 can respond to an invalid record
+in the same way. `is_valid(db)` runs the checks without saving, and
+`errors()` returns what the last check found.
 
-A unique check reports a taken value with the other failures. Only a
-unique index in the database stops two records saved at the same moment
-from taking the same value, so a unique column keeps one there too.
+A uniqueness check reports a value that's already taken along with the other
+failures. However, only a unique index in the database can stop two records
+that are saved at the same moment from getting the same value, so a unique
+column should have a unique index in the database as well.
 
 ## Hooks
 
-A model overrides any of these methods to run code at that point of a
-record's life. Each is handed the connection or transaction the record
-is going through:
+A model can override any of these methods to run code at that point in a
+record's life cycle. Each one receives the connection or transaction the
+record is using:
 
 | Hook | Runs |
 | --- | --- |
-| `before_validate(db)` | before the record is checked |
-| `validate(errors)` | as it is checked, to add failures of the model's own |
-| `after_validate(db)` | after it is checked, whatever was found |
-| `before_save(db)` | before it is written, new or not |
-| `before_create(db)` | before a new record is inserted |
-| `after_create(db)` | after it is inserted, with its key |
-| `before_update(db)` | before a stored record's changes are written |
-| `after_update(db)` | after they are written |
-| `after_save(db)` | after it is written, new or not |
-| `before_delete(db)` | before it is deleted |
-| `after_delete(db)` | after it is deleted |
-| `after_load()` | as a record is built from a row |
+| `before_validate(db)` | Before the record is validated |
+| `validate(errors)` | While it's validated, to add failures of the model's own |
+| `after_validate(db)` | After it's validated, whatever the result |
+| `before_save(db)` | Before it's written, whether it's new or not |
+| `before_create(db)` | Before a new record is inserted |
+| `after_create(db)` | After it's inserted, once it has its key |
+| `before_update(db)` | Before a stored record's changes are written |
+| `after_update(db)` | After the changes are written |
+| `after_save(db)` | After it's written, whether it's new or not |
+| `before_delete(db)` | Before it's deleted |
+| `after_delete(db)` | After it's deleted |
+| `after_load()` | When a record is created from a row |
 
-When a model has any of them, saving and deleting run in a transaction,
-or a savepoint inside one already open, so what a hook writes is undone
-with the rest when anything fails. A hook raises to stop the save or
-the delete:
+If a model defines any hooks, saving and deleting run inside a transaction,
+or a savepoint if a transaction is already open, so anything a hook writes
+is undone along with everything else if something fails. A hook can raise an
+error to stop the save or the delete:
 
 ```zuri
 import sql
@@ -346,8 +353,7 @@ echo db.model(Post).create({ title: 'On Engines' }).slug
 
 catch {
   db.model(Post).create({ title: 'Refused' })
-} as _error {
-}
+} as _error {}
 
 echo db.model(Post).count()
 echo db.fetch_column('select what from audit', nil, nil)
@@ -361,15 +367,15 @@ on-engines
 [created on-engines]
 ```
 
-A model's methods share a namespace with the hooks and with every
-method a record has, so a model does not declare one of the same name
-for anything else. A field may share a name with any of them.
+A model's methods share a namespace with the hooks and with every method a
+record has, so a model shouldn't declare a method with one of those names
+for any other purpose. A field can have the same name as any of them.
 
 ## Queries
 
-`db.model(Post)` is a `Query`. Every method that narrows it returns a
-new query and leaves the one it was called on as it was, so a query is
-kept and built on in more than one direction:
+`db.model(Post)` returns a `Query`. Every method that narrows a query
+returns a new query and leaves the original unchanged, so you can keep a
+query and build on it in several different directions:
 
 ```zuri
 import sql
@@ -384,7 +390,10 @@ class Post < Model {
 
   static define(model: Definition) {
     model.cast('published', 'bool')
-    model.scope('popular', @(query, least) => query.where('views >= ?', [least]))
+    model.scope(
+      'popular',
+      @(query, least) => query.where('views >= ?', [least]),
+    )
   }
 }
 
@@ -409,7 +418,9 @@ var published = db.model(Post).where({ published: true })
 echo published.count()
 echo published.order('views desc').limit(2).pluck('title')
 echo published.scope('popular', 500).pluck('title')
-echo db.model(Post).where({ title: ['On Looms', 'On Bugs'] }).count()
+echo db.model(Post).where({
+  title: ['On Looms', 'On Bugs'],
+}).count()
 echo db.model(Post).where_not({ published: true }).first().title
 echo db.model(Post).sum('views')
 echo db.model(Post).order('id').page(2, 3).records.map(@(post) => post.title)
@@ -427,15 +438,16 @@ On Looms
 [On Compilers]
 ```
 
-`where()` with a dictionary reads as the CRUD helpers' conditions do: a
-value matches itself, `nil` matches null, a list matches any of its
-values, and an empty list matches nothing. Anything else is a fragment
-of SQL, with `?` for each value, bracketed as it is added, so an `or`
-inside one stays inside it. Every condition must hold. `where_not()`
-excludes, and a row whose column is null is among the rows a value
-excludes, since null is not equal to anything.
+`where()` with a dictionary works the same way as the conditions for the
+CRUD helpers: a value matches itself, `nil` matches null, a list matches any
+of its values, and an empty list matches nothing. Anything other than a
+dictionary is a fragment of SQL, with a `?` for each value. The fragment is
+wrapped in parentheses when it's added, so an `or` inside it stays inside
+it. All conditions must be true. `where_not()` excludes matching rows, and a
+row whose column is null counts as excluded by any value, since null isn't
+equal to anything.
 
-What a query does with what it matches:
+Here's what a query can do with the rows it matches:
 
 ```zuri,ignore
 query.all()               # every record
@@ -455,41 +467,47 @@ query.from_sql('select posts.* from posts join ...', [...])
 query.to_sql()            # { sql, values }, as all() would run it
 ```
 
-A query is iterable: `for post in query` reads every record. `update()`
-and `delete()` change every matching row in one statement, without
-building records, so no validation runs and no hook is called;
-`update()` sets the `updated` timestamp unless it is given.
+A query is iterable, so `for post in query` reads every record. `update()`
+and `delete()` change every matching row in a single statement without
+creating records, so no validation or hooks run. `update()` sets the
+`updated` timestamp unless you provide a value for it.
 
-A scope is a reusable piece of a query, declared with `scope()` and
-applied with `query.scope(name, argument)`.
+A scope is a reusable part of a query. You declare it with `scope()` and
+apply it with `query.scope(name, argument)`.
 
 ## Associations
 
-Four kinds of association cover how tables refer to each other:
+There are four kinds of association, which cover the ways tables can refer
+to each other:
 
 | Declared as | Means | The key is |
 | --- | --- | --- |
-| `belongs_to('author', Author)` | this record holds another's key | `author_id` here |
-| `has_one('profile', Profile)` | another holds this one's key; at most one | `author_id` there |
-| `has_many('posts', Post)` | others hold this one's key | `author_id` there |
-| `belongs_to_many('tags', Tag)` | a table joins both keys | `post_id` and `tag_id` in `post_tag` |
+| `belongs_to('author', Author)` | This record holds another record's key | `author_id` in this table |
+| `has_one('profile', Profile)` | Another record holds this one's key, and there's at most one | `author_id` in the other table |
+| `has_many('posts', Post)` | Other records hold this one's key | `author_id` in the other table |
+| `belongs_to_many('tags', Tag)` | A join table holds both keys | `post_id` and `tag_id` in `post_tag` |
 
-Each name is also the field the association loads into, which the class
-declares. The keys are named for the class name in snake case and
-`_id`, and the join table for both class names in alphabetical order;
-options name them otherwise:
+Each name is also the field the association is loaded into, which the class
+has to declare. Keys are named after the class name in snake case, followed
+by `_id`, and the join table is named after both class names in alphabetical
+order. You can use options to choose different names:
 
 ```zuri,ignore
-model.belongs_to('writer', Author, { foreign_key: 'written_by', owner_key: 'id' })
+model.belongs_to('writer', Author, {
+  foreign_key: 'written_by',
+  owner_key: 'id',
+})
 model.has_many('posts', Post, { foreign_key: 'written_by', local_key: 'id' })
 model.belongs_to_many('tags', Tag, {
-  through: 'taggings', foreign_key: 'post_id', other_key: 'tag_id',
+  through: 'taggings',
+  foreign_key: 'post_id',
+  other_key: 'tag_id',
 })
 ```
 
-Associations are loaded when asked for. `include()` loads them along
-with the records, one query per association however many records there
-are, and a dotted name reaches what an association loads:
+Associations are only loaded when you ask for them. `include()` loads them
+along with the records, using one query per association however many records
+there are, and a dotted name loads an association of an association:
 
 ```zuri
 import sql
@@ -582,20 +600,22 @@ On Looms: []
 Ada
 ```
 
-A field holding an association is nil until it is loaded. `load()`
-loads one onto a record in hand and returns it; `query.load(records,
-names)` loads onto a list of them in one query per association.
-`related()` is a query over what an association reaches, to narrow
-further rather than load whole.
+A field that holds an association is `nil` until the association is loaded.
+`load()` loads an association onto a record you already have and returns the
+record, and `query.load(records, names)` loads associations onto a list of
+records, using one query per association. `related()` returns a query over
+the records an association refers to, so you can narrow it further instead
+of loading all of them.
 
-A record placed in a `belongs_to` field sets the key referring to it
-when the record holding it is saved, and has to be saved itself first.
-`attach()`, `detach()` and `sync()` join records through a
-`belongs_to_many` association's table, taking records or keys.
+When you assign a record to a `belongs_to` field, the key that refers to it
+is set when the record holding it is saved, and the assigned record has to
+be saved first. `attach()`, `detach()` and `sync()` link records through a
+`belongs_to_many` association's join table, and accept either records or
+keys.
 
 ## Transactions
 
-`tx.model(Post)` queries inside a transaction, and a record saved with
+`tx.model(Post)` runs a query inside a transaction, and a record saved with
 the transaction is saved inside it:
 
 ```zuri,ignore
@@ -611,31 +631,33 @@ db.transaction(@(tx) {
 
 ## Casts
 
-Most values arrive as the type they were stored as. A cast makes a
-field the same type on every engine where they differ, as it is read:
+Most values are read back as the type they were stored as. A cast makes sure
+a field has the same type on every engine, even where the engines differ, by
+converting it as it's read:
 
 | Cast | The field holds |
 | --- | --- |
-| `bool` | `true` or `false`, from a bool, a number, `'0'`, `'1'`, `'true'` or `'false'` |
-| `integer` | a whole number |
-| `number` | a number |
-| `decimal` | a `sql.Decimal` |
-| `string` | text |
-| `json` | a list or dictionary, from JSON text or one already decoded |
-| `date` | a `date.Date`, from one or from ISO 8601 text |
+| `bool` | `true` or `false`, converted from a bool, a number, `'0'`, `'1'`, `'true'` or `'false'` |
+| `integer` | A whole number |
+| `number` | A number |
+| `decimal` | A `sql.Decimal` |
+| `string` | Text |
+| `json` | A list or dictionary, decoded from JSON text if necessary |
+| `date` | A `date.Date`, converted from ISO 8601 text if necessary |
 
-MySQL has no boolean and returns `1`, and MariaDB keeps JSON as text, so
-a model running on either casts those columns: `cast('published',
-'bool')`, `cast('settings', 'json')`. Null stays `nil` under every cast,
-and a value that will not convert is left as it was read rather than
-lost.
+MySQL doesn't have a boolean type and returns `1`, and MariaDB stores JSON
+as text, so a model that runs on either of them should cast those columns,
+for example with `cast('published', 'bool')` and `cast('settings', 'json')`.
+Null stays `nil` under every cast, and a value that can't be converted is
+left as it was read instead of being lost.
 
 ## Records as Output
 
-`to_dict()` is a record's columns, but for the ones `hidden()` names,
-and every association that has been loaded, as dictionaries in turn.
-`json.encode()` writes a record as its `to_dict()`, so a record handed
-to a response leaves out a password's hash:
+`to_dict()` returns a record's columns, except for the ones listed with
+`hidden()`, along with every association that has been loaded, converted to
+dictionaries as well. `json.encode()` writes a record as its `to_dict()`, so
+a record passed to a response doesn't include something like a password
+hash:
 
 ```zuri
 import json
@@ -677,26 +699,25 @@ true
 <User 1>
 ```
 
-Two records are equal when they are of the same model and hold the
-same primary key; a record not yet saved equals only itself.
+Two records are equal if they belong to the same model and have the same
+primary key. A record that hasn't been saved yet is only equal to itself.
 
-## What It Leaves to You
+## Design Limits
 
-**Loading is explicit.** An association is loaded by `include()` or
-`load()`, never by reading its field, so a loop over records never
-turns into a query per record behind the code's back.
+**Associations are loaded explicitly.** An association is only loaded by
+`include()` or `load()`, never just by reading its field, so a loop over
+records never silently runs a query for each record.
 
-**Each query builds its own records.** Two queries reaching the same
-row build two records of it, which are `==` to each other. Nothing is
-cached between queries, so a record read is what the database held when
-it was read.
+**Each query creates its own records.** If two queries read the same row,
+you get two separate records for it, which are equal (`==`) to each other.
+Nothing is cached between queries, so a record always reflects what the
+database held when it was read.
 
-**Joins are SQL.** Conditions cover a model's own columns, and
-`related()` and `include()` cover associations. A join, a union or a
-window function is written as SQL and handed to `from_sql()`, which
-builds records from whatever it selects.
+**Joins are written in SQL.** Conditions cover a model's own columns, and
+`related()` and `include()` cover associations. For a join, a union or a
+window function, write the SQL yourself and pass it to `from_sql()`, which
+creates records from whatever the query selects.
 
-**Tables come from migrations.** A model maps a table that exists;
-[Migrations](ch17-02-migrations.md) and
-[Changing the Schema](ch17-01-schema-changes.md) are what create and
-change it.
+**Tables are created by migrations.** A model maps an existing table.
+[Migrations](ch17-02-migrations.md) and [Changing the
+Schema](ch17-01-schema-changes.md) are how you create and change tables.

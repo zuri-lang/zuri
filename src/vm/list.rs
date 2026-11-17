@@ -159,6 +159,13 @@ impl ListStorage {
     self.effective_cap()
   }
 
+  /// Whether the elements live in a buffer of the list's own rather than
+  /// inline, so dropping the list has memory to release.
+  #[inline]
+  pub fn owns_buffer(&self) -> bool {
+    !self.ptr.is_null()
+  }
+
   fn layout_for(cap: usize) -> Layout {
     Layout::array::<Value>(cap).expect("zuri: list capacity overflowed the address space")
   }

@@ -1,20 +1,20 @@
 /**
  * @module doc
  *
- * Reads Zuri's documentation comments: the doc blocks a
- * `zuri.parse()` tree keeps as `DocBlock` nodes, turned into prose
- * and a list of `@tag` entries, and paired with the declarations
- * they document.
+ * Reads Zuri's documentation comments. It turns the doc blocks that a
+ * `zuri.parse()` tree keeps as `DocBlock` nodes into prose and a list
+ * of `@tag` entries, and matches them with the declarations they
+ * document.
  *
- * A doc block is markdown prose followed by a run of tags. Each tag
- * starts a line with `@` and its name, and its text may wrap onto
- * the lines below it, which are recognised by their indentation.
- * A blank line ends the run of tags.
+ * A doc block is Markdown text followed by a run of tags. Each tag
+ * starts a line with `@` and its name, and its text can continue on the
+ * following lines, which are recognized by their indentation. A blank
+ * line ends the run of tags.
  *
  * ```zuri
  * import zuri
  *
- * # Spelled in pieces so this example can sit inside a doc block.
+ * # Written in pieces so that this example can go inside a doc block.
  * var open = '/' + '**'
  * var close = '*' + '/'
  *
@@ -35,12 +35,11 @@
  * }
  * ```
  *
- * Fenced code inside a block is kept as it is, with no line of it
- * read as a tag, and since Zuri block comments nest, an example
- * that opens a comment of its own does not end the block it sits
- * in.
+ * Fenced code inside a block is kept as it is, and none of its lines is
+ * read as a tag. Zuri block comments nest, so an example that opens a
+ * comment of its own doesn't end the block it's in.
  *
- * Several tags have a second spelling, read as the first:
+ * Some tags have a second spelling, which is read as the first:
  * `@return` as `@returns`, `@raises` as `@throws`, `@params` as
  * `@param`, and `@number` as `@numeric`.
  *
@@ -65,9 +64,27 @@ var _TAG_ALIASES = {
 # go, as in `@param ...number values`. Recognising them is what stops
 # a type being read as if it were the argument's name.
 var _TYPE_WORDS = [
-  'any', 'number', 'int', 'float', 'string', 'list', 'dict', 'bool',
-  'boolean', 'bytes', 'file', 'function', 'callable', 'range',
-  'bigint', 'instance', 'class', 'module', 'iterable', 'void', 'nil',
+  'any',
+  'number',
+  'int',
+  'float',
+  'string',
+  'list',
+  'dict',
+  'bool',
+  'boolean',
+  'bytes',
+  'file',
+  'function',
+  'callable',
+  'range',
+  'bigint',
+  'instance',
+  'class',
+  'module',
+  'iterable',
+  'void',
+  'nil',
   'pointer',
 ]
 
@@ -99,13 +116,13 @@ var _TYPE_WORDS = [
 class Tag {
 
   /**
-   * Returns a new {Tag}. Ordinary code receives these from
-   * `parse()` rather than building them.
+   * Returns a new {Tag}. Ordinary code gets these from `parse()`,
+   * instead of creating them.
    *
-   * @param string kind: The tag's name without its `@`
-   * @param string type: The type it names, or `''`
-   * @param string name: The name it names, or `''`
-   * @param string text: Its description
+   * @param string kind: the tag's name, without its `@`
+   * @param string type: the type it names, or `''`
+   * @param string name: the name it names, or `''`
+   * @param string text: its description
    */
   @new(kind: string, type: string, name: string, text: string) {
     self.kind = kind
@@ -141,11 +158,11 @@ class Tag {
 class Block {
 
   /**
-   * Returns a new {Block}. Ordinary code receives these from
-   * `parse()` and `attach()` rather than building them.
+   * Returns a new {Block}. Ordinary code gets these from `parse()` and
+   * `attach()`, instead of creating them.
    *
-   * @param list body: The prose, one string per line
-   * @param list tags: The block's {Tag}s, in source order
+   * @param list body: the text, one string per line
+   * @param list tags: the block's {Tag} objects, in source order
    */
   @new(body: list, tags: list) {
     self.body = body
@@ -153,8 +170,8 @@ class Block {
   }
 
   /**
-   * Every tag of one kind, in source order; an empty list when the
-   * block has none. `kind` is a tag's main spelling, such as
+   * Every tag of one kind, in source order, or an empty list if the
+   * block has none. `kind` is the tag's main spelling, such as
    * `'returns'`.
    *
    * @param string kind
@@ -254,12 +271,12 @@ class Block {
 class Attached {
 
   /**
-   * Returns a new {Attached}. Ordinary code receives these from
-   * `attach()` rather than building them.
+   * Returns a new {Attached}. Ordinary code gets these from `attach()`,
+   * instead of creating them.
    *
-   * @param Node node: The node, exactly as it sits in the list
-   * @param Block block: Its documentation
-   * @param bool documented: Whether a doc block was written above it
+   * @param Node node: the node, exactly as it is in the list
+   * @param Block block: its documentation
+   * @param bool documented: whether a doc block was written above it
    */
   @new(node, block: Block, documented: bool) {
     self.node = node
@@ -327,9 +344,9 @@ def _take_type(text: string) {
   # through its module, `http.Request`. So is a list of them written
   # `[Point]`.
   var is_class = !!root.match('/^([a-z_][a-z0-9_]*\.)*[A-Z][A-Za-z0-9_]*$/')
-  var is_list_of = bare.starts_with('[')
-    and bare.ends_with(']')
-    and bare.length() > 2
+  var is_list_of = bare.starts_with('[') and
+      bare.ends_with(']') and
+      bare.length() > 2
 
   if _TYPE_WORDS.contains(root.lower()) or is_class or is_list_of {
     return {
@@ -436,21 +453,21 @@ def _tidy(lines: list) {
 }
 
 /**
- * Parses the lines of a doc block into its prose and tags; the same
- * as `parse()` for text already split into lines.
+ * Parses the lines of a doc block into its text and tags. It's the same
+ * as `parse()`, for text that's already split into lines.
  *
- * Everything before the first tag is prose. Once tags start, a line
- * beginning with whitespace continues the tag above it, a line
- * beginning with `@` starts a new one, and a blank line ends the
- * run.
+ * Everything before the first tag is text. Once the tags start, a line
+ * that starts with whitespace continues the tag above it, a line that
+ * starts with `@` starts a new tag, and a blank line ends the run of
+ * tags.
  *
- * Each line is read from just after the `*` that starts a line of
- * a doc block, dropping that `*` and the one space after it, so
- * whatever indentation follows is what marks a continuation. A line
- * with no `*` is read from its first character that is not
- * whitespace, and so never continues a tag.
+ * Each line is read from just after the `*` at the start of a line of a
+ * doc block, removing that `*` and the space after it, so any
+ * indentation after that marks a continuation. A line without a `*` is
+ * read from its first character that isn't whitespace, and so never
+ * continues a tag.
  *
- * @param list lines: The block's text, one string per line
+ * @param list lines: the block's text, one string per line
  * @returns Block
  */
 def parse_lines(lines: list) {
@@ -565,19 +582,19 @@ def module_block(nodes: list) {
  * Pairs every node in a list of siblings with the doc block written
  * directly above it.
  *
- * A doc block documents the node that follows it and nothing else:
- * anything in between, a plain `#` comment included, breaks the
- * pairing. The module's own doc block, the first carrying an
- * `@module` tag, documents the module rather than the node after
- * it, so it is paired with nothing. Every node other than a doc
- * block comes back, in order, documented or not.
+ * A doc block documents the node after it and nothing else. Anything in
+ * between, including a plain `#` comment, breaks the pairing. The
+ * module's own doc block, which is the first one with an `@module` tag,
+ * documents the module, not the node after it, so it's paired with
+ * nothing. Every node except doc blocks is returned, in order, whether
+ * it's documented or not.
  *
- * `nodes` is any list of siblings: a file's top-level nodes, a
- * block's statements, or a class's `properties` or `methods`. A
- * top-level declaration that is a statement comes back as the
- * `Stmt` node wrapping it, exactly as it sits in the list.
+ * `nodes` is any list of siblings: a file's top-level nodes, a block's
+ * statements, or a class's `properties` or `methods`. A top-level
+ * declaration that's a statement is returned as the `Stmt` node that
+ * wraps it, exactly as it is in the list.
  *
- * @param list nodes: A list of sibling nodes from `zuri.parse()`
+ * @param list nodes: a list of sibling nodes from `zuri.parse()`
  * @returns list[Attached]
  */
 def attach(nodes: list) {

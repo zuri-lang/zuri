@@ -1,0 +1,80 @@
+/* Recursive functions called often enough to be compiled with a copy of
+ * themselves built in. Results pass back through both levels, a guard
+ * fails inside the copy when the data changes kind, and an error raised
+ * at depth carries one stack frame per level, as the uncompiled calls
+ * give them.
+ */
+
+def sum_to(n) {
+  if n <= 0 {
+    return 0
+  }
+  return n + sum_to(n - 1)
+}
+
+def walk(xs, i) {
+  if i == xs.length() {
+    return 0
+  }
+  return xs[i] + walk(xs, i + 1)
+}
+
+def depth(n) {
+  if n == 0 {
+    raise ValueError('bottom')
+  }
+  return depth(n - 1) + 1
+}
+
+def tree(d) {
+  if d == 0 {
+    return [nil, nil]
+  }
+  return [tree(d - 1), tree(d - 1)]
+}
+
+def count(node) {
+  if !node[0] {
+    return 1
+  }
+  return 1 + count(node[0]) + count(node[1])
+}
+
+var total = 0
+iter var i = 0; i < 3000; i++ {
+  total += sum_to(20)
+}
+echo total
+echo sum_to(1000)
+echo sum_to(10.5)
+
+var nums = [1, 2, 3, 4, 5, 6, 7, 8]
+iter var i = 0; i < 3000; i++ {
+  walk(nums, 0)
+}
+echo walk(nums, 0)
+echo walk([1, 2, 3, 0.5], 0)
+echo walk([0.25, 2, 3, 4, 5, 6], 0)
+echo walk([1, 'x', 3, 4], 0)
+
+var frames = 0
+iter var i = 0; i < 300; i++ {
+  catch {
+    depth(i % 7)
+  } as e {
+    frames += e.stacktrace.length()
+  }
+}
+echo frames
+catch {
+  depth(5)
+} as e {
+  echo e.message
+  echo e.stacktrace.length()
+}
+
+var nodes = 0
+iter var i = 0; i < 200; i++ {
+  nodes += count(tree(6))
+}
+echo nodes

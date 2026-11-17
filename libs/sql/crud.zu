@@ -1,22 +1,22 @@
 /**
  * @module crud
  *
- * Building the four statements that are the same everywhere.
+ * Builds the four statements that are the same on every engine.
  *
- * Inserting a row, updating rows that match, deleting rows that match
- * and selecting rows that match are written the same way against every
- * engine, apart from how identifiers are quoted and how placeholders
- * are spelled. Both of those come from the driver, so these builders
+ * Inserting a row, and updating, deleting and selecting the rows that
+ * match some conditions, are written the same way on every engine,
+ * except for how identifiers are quoted and how placeholders are
+ * written. Both of those come from the driver, so these builders
  * produce correct SQL for whichever adapter is active.
  *
- * This is not a query builder and is not trying to become one. There
- * is no join here, no subquery, no expression tree. Anything past a
- * flat list of equality where is written as SQL, which is a
- * better language for it than any chain of method calls.
+ * This isn't a query builder, and it isn't meant to become one. There
+ * are no joins, no subqueries and no expression trees. Anything more
+ * than a flat list of equality conditions should be written as SQL,
+ * which is a better language for it than a chain of method calls.
  *
- * Every value becomes a bound parameter. Nothing built here
- * interpolates a value into the statement text, which is what makes
- * these safe to hand user input.
+ * Every value is bound as a parameter. Nothing built here inserts a
+ * value into the text of the statement, so it's safe to pass user input
+ * to these builders.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -25,17 +25,18 @@ import .errors { QueryError }
 import .params { placeholder }
 
 /**
- * Marks a fragment of SQL to be used as written rather than bound.
+ * Marks a fragment of SQL to be used exactly as written, instead of
+ * being bound as a value.
  *
- * The escape hatch for the cases where a value is not a value:
+ * Use it for the cases where a value isn't really a value:
  *
  * ```zuri,ignore
  * db.update('posts', { views: sql.raw('views + 1') }, { id: 7 })
  * ```
  *
- * It is exactly as dangerous as it sounds. A `Raw` built from anything
- * a user supplied is a SQL injection, so build them from literals and
- * keep values in the parameters where they belong.
+ * It's exactly as dangerous as it sounds. A `Raw` built from anything a
+ * user supplied is a SQL injection, so only build one from literals,
+ * and keep values in the parameters where they belong.
  *
  * @printable
  */
@@ -90,23 +91,23 @@ def quote_table(driver, table: string) {
     return table
   }
 
-  return '.'.join(table
-    .split('.')
-    .map(@(part) => driver.quote_identifier(part)))
+  return '.'.join(
+    table.split('.').map(@(part) => driver.quote_identifier(part)),
+  )
 }
 
 /**
  * Builds the `WHERE` clause for a dictionary of conditions.
  *
- * A value of `nil` becomes `IS NULL` rather than `= NULL`, which no
- * row ever satisfies. A list becomes `IN (...)`, and an empty list
- * becomes a condition no row satisfies, which is what "in nothing"
- * means. A `Raw` is used as written.
+ * A value of `nil` becomes `IS NULL`, not `= NULL`, which no row ever
+ * matches. A list becomes `IN (...)`, and an empty list becomes a
+ * condition that no row matches, because nothing is in an empty list. A
+ * `Raw` is used as written.
  *
  * @param Driver driver
  * @param dict|nil filter
- * @param number start The binding position the first parameter takes.
- * @returns dict `{ clause, values }`, the clause empty when there are
+ * @param number start The binding position of the first parameter.
+ * @returns dict `{ clause, values }`, with an empty clause if there are
  *    no conditions.
  */
 def where(driver, filter, start: number) {
@@ -158,10 +159,7 @@ def where(driver, filter, start: number) {
     position++
   }
 
-  return {
-    clause: ' where ${' and '.join(parts)}',
-    values,
-  }
+  return { clause: ' where ${' and '.join(parts)}', values }
 }
 
 /**
@@ -171,8 +169,8 @@ def where(driver, filter, start: number) {
  * @param string table
  * @param dict values
  * @param string|nil returning A column to return, for engines that
- *    report an inserted id that way rather than through a last insert
- *    id. Ignored where the driver does not support `RETURNING`.
+ *    report an inserted ID that way instead of through a last insert
+ *    ID. It's ignored if the driver doesn't support `RETURNING`.
  * @returns dict `{ sql, values }`
  * @throws QueryError if `values` is empty.
  */
@@ -201,7 +199,7 @@ def insert(driver, table: string, values: dict, returning) {
   }
 
   var sql = 'insert into ${quote_table(driver, table)} ' +
-    '(${', '.join(columns)}) values (${', '.join(marks)})'
+      '(${', '.join(columns)}) values (${', '.join(marks)})'
 
   if returning != nil and driver.supports('returning') {
     sql += ' returning ${driver.quote_identifier(returning)}'
@@ -211,18 +209,19 @@ def insert(driver, table: string, values: dict, returning) {
 }
 
 /**
- * Builds an `INSERT` carrying several rows in one statement.
+ * Builds an `INSERT` that inserts several rows in one statement.
  *
- * Every row has to name the same columns, in any order; a row that
- * names a different set raises rather than being padded with nulls,
- * because a missing column and a null column mean different things.
+ * Every row has to have the same columns, in any order. A row with a
+ * different set of columns raises an error instead of being padded with
+ * nulls, because a missing column and a null column mean different
+ * things.
  *
  * @param Driver driver
  * @param string table
- * @param list rows Dictionaries of column to value.
+ * @param list rows Dictionaries that map column names to values.
  * @returns dict `{ sql, values }`
- * @throws QueryError if `rows` is empty, a row has no columns, or the
- *    rows disagree about which columns they have.
+ * @throws QueryError if `rows` is empty, if a row has no columns, or if
+ *    the rows don't all have the same columns.
  */
 def insert_many(driver, table: string, rows: list) {
   if rows.is_empty() {
@@ -245,9 +244,9 @@ def insert_many(driver, table: string, rows: list) {
     if row.length() != columns.length() {
       raise QueryError(
         'row ${index + 1} names ${row.length()} column' +
-          '${row.length() == 1 ? "" : "s"} where the first names ' +
-          '${columns.length()}; every row of one insert has to name the ' +
-          'same columns',
+            '${row.length() == 1 ? "" : "s"} where the first names ' +
+            '${columns.length()}; every row of one insert has to name the ' +
+            'same columns',
       )
     }
 
@@ -276,7 +275,7 @@ def insert_many(driver, table: string, rows: list) {
   }
 
   var sql = 'insert into ${quote_table(driver, table)} ' +
-    '(${', '.join(quoted)}) values ${', '.join(groups)}'
+      '(${', '.join(quoted)}) values ${', '.join(groups)}'
 
   return { sql, values: bound }
 }
@@ -284,10 +283,10 @@ def insert_many(driver, table: string, rows: list) {
 /**
  * Builds an `UPDATE`.
  *
- * An update with no where changes every row, which is
- * occasionally what someone means and usually not, so it has to be
- * asked for by passing `nil` rather than happening by default when a
- * condition dictionary turns out empty.
+ * An update without conditions changes every row. That's occasionally
+ * what someone wants, but usually not, so it has to be requested by
+ * passing `nil`. It never happens by default because a dictionary of
+ * conditions turned out to be empty.
  *
  * @param Driver driver
  * @param string table
@@ -322,8 +321,9 @@ def update(driver, table: string, values: dict, filter) {
   var clause = where(driver, filter, position)
 
   return {
-    sql: 'update ${quote_table(driver, table)} set ' +
-      '${', '.join(assignments)}${clause.clause}',
+    sql:
+        'update ${quote_table(driver, table)} set ' +
+        '${', '.join(assignments)}${clause.clause}',
     values: bound + clause.values,
   }
 }
@@ -376,7 +376,7 @@ def select(driver, table: string, filter, options) {
 
   var clause = where(driver, filter, 1)
   var sql = 'select ${projection} from ${quote_table(driver, table)}' +
-    clause.clause
+      clause.clause
 
   var order = settings.get('order', nil)
 

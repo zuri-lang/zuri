@@ -12,10 +12,10 @@ Installing json-schema 1.2.0
 Installed 2 packages.
 ```
 
-The newest version is taken and recorded in `project.toml` as a caret
-range, `http-extra = "^1.5.0"`. Name a range to choose otherwise, pass
-`--exact` to record `=1.5.0`, or `--dev` to add a development
-dependency:
+The newest version is installed and recorded in `project.toml` as a caret
+range, such as `http-extra = "^1.5.0"`. To choose a different version, give
+a range. Pass `--exact` to record `=1.5.0` instead, or `--dev` to add a
+development dependency:
 
 ```sh
 zuri install http-extra@^1.4
@@ -23,8 +23,8 @@ zuri install http-extra --exact
 zuri install fixtures --dev
 ```
 
-Everything the package needs is installed with it, and everything
-lands in `.zuri/libs` under its import name:
+Everything the package needs is installed along with it, and every package
+goes in `.zuri/libs` under its import name:
 
 ```text
 weather/
@@ -37,15 +37,15 @@ weather/
         └── json_schema/
 ```
 
-`zuri init` ignores `.zuri` in git, apart from `.zuri/cmds`, so
-installed packages are never committed. `project.toml` and
-`project.lock` are, and together they reproduce the directory.
+`zuri init` tells git to ignore `.zuri`, except for `.zuri/cmds`, so
+installed packages are never committed. `project.toml` and `project.lock`
+are committed, and together they're enough to recreate the directory.
 
 ## The Lockfile
 
-`project.lock` records the exact version of every package the project
-was resolved to, direct or not, where it came from, and the checksum of
-what was downloaded:
+`project.lock` records the exact version that every package was resolved to,
+whether it's a direct dependency or not, along with where it came from and
+the checksum of what was downloaded:
 
 ```toml
 version = 1
@@ -65,8 +65,8 @@ checksum = "sha256:c92464109e86305502e8acaca519d1f7cb2f515a3ab12f3aa26bd1ec67e66
 dependencies = []
 ```
 
-`zuri restore` installs exactly that, and is what a fresh checkout, a
-teammate or a build server runs:
+`zuri restore` installs exactly what the lockfile lists. It's what you run
+after a fresh checkout, and what a teammate or a build server runs:
 
 ```sh
 zuri restore
@@ -74,21 +74,22 @@ zuri restore --frozen
 zuri restore --production
 ```
 
-A package whose download does not match its recorded checksum is
-refused. `--frozen` refuses to go on when the lockfile no longer
-matches `project.toml` instead of resolving again, which is what a
-build that must install exactly what was reviewed wants.
-`--production` leaves out what only development dependencies need.
+A package whose download doesn't match its recorded checksum is rejected.
+`--frozen` stops with an error if the lockfile no longer matches
+`project.toml`, instead of resolving the dependencies again, which is what
+you want for a build that must install exactly what was reviewed.
+`--production` leaves out anything that only development dependencies need.
 
-`zuri install` with no package named does the same as `zuri restore`
-after a change to `project.toml`: it resolves only what changed and
-keeps every other package at its locked version.
+`zuri install` without a package name does the same as `zuri restore` after
+you've changed `project.toml`. It only resolves what changed, and keeps
+every other package at its locked version.
 
-## When Requirements Clash
+## Conflicting Requirements
 
-Every package gets exactly one version, chosen so that every
-requirement in the project holds at once. When no choice does, the
-install stops, changes nothing, and explains the clash step by step:
+Every package gets exactly one version, chosen so that every requirement in
+the project is satisfied at the same time. When that's not possible, the
+install stops without changing anything, and explains the conflict step by
+step:
 
 ```console
 $ zuri install report-kit
@@ -101,12 +102,12 @@ install: no set of versions satisfies every requirement:
     Because report-kit 1.0.0 cannot be used (3) and weather depends on report-kit *, version solving failed.
 ```
 
-Read from the bottom: `report-kit` needs `json-schema` 2, `http-extra`
-needs `json-schema` 1, and a project cannot have both. The way out is
-a newer `http-extra` that accepts `json-schema` 2, when there is one,
-or doing without one of the two.
+Read it from the bottom up: `report-kit` needs version 2 of `json-schema`,
+`http-extra` needs version 1, and a project can't have both. To fix it, use
+a newer version of `http-extra` that accepts version 2 of `json-schema`, if
+one exists, or stop using one of the two packages.
 
-## Updating
+## Updating Packages
 
 ```console
 $ zuri update --dry-run
@@ -115,9 +116,9 @@ Resolving dependencies
   json-schema  1.2.0    1.2.0   2.0.0 (breaking)
 ```
 
-`current` is what is installed, `wanted` the newest the declared range
-allows, and `latest` the newest there is, marked when moving to it can
-break code written against the current one.
+`current` is the installed version, `wanted` is the newest version the
+declared range allows, and `latest` is the newest version available, marked
+when updating to it could break code written against the current version.
 
 ```sh
 zuri update                        # everything, within its range
@@ -126,11 +127,11 @@ zuri update json-schema --latest   # move the range itself
 zuri update --check                # exit 1 when anything is out of date
 ```
 
-`--latest` rewrites the range in `project.toml` to the newest release,
-keeping an exact range exact, and says so for every move to a new major
+`--latest` changes the range in `project.toml` to the newest release,
+keeping an exact range exact, and points out every update to a new major
 version.
 
-## Removing
+## Removing Packages
 
 ```console
 $ zuri uninstall http-extra
@@ -139,11 +140,11 @@ Resolving dependencies
 Removed 1 package.
 ```
 
-Whatever was installed only because the package needed it goes too. A
-package something else still needs stays, and `zuri uninstall` says
-what needs it.
+Anything that was only installed because the package needed it is removed as
+well. A package that something else still needs is kept, and
+`zuri uninstall` tells you what needs it.
 
-## Looking Around
+## Getting Information About Packages
 
 ```console
 $ zuri info
@@ -160,12 +161,12 @@ weather
     └── json-schema 1.2.0
 ```
 
-A package whose declared range, locked version and installed version do
-not agree is marked: `missing`, `drifted`, `unlocked`, `extraneous`,
-or, with `--verify`, `modified` when its files changed since it was
-installed.
+A package whose declared range, locked version and installed version don't
+agree is marked with one of these states: `missing`, `drifted`, `unlocked`
+or `extraneous`. With `--verify`, a package whose files have changed since
+it was installed is marked as `modified`.
 
-The registry answers questions too:
+You can also ask the registry for information:
 
 ```console
 $ zuri search json
@@ -188,7 +189,7 @@ versions: 1.5.0, 1.4.2, 1.0.0 (yanked)
 
 ## Git and Local Packages
 
-A package does not have to be on a registry:
+A package doesn't have to come from a registry:
 
 ```sh
 zuri install --tag v1.2.0 --git https://example.com/tools.git
@@ -202,29 +203,30 @@ tools = { git = "https://example.com/tools.git", tag = "v1.2.0" }
 shared = { path = "../shared" }
 ```
 
-The package's name comes from its own `project.toml`. A git dependency
-is locked to the commit its tag, branch or revision pointed at and to
-the checksum of what that commit packs to, so `zuri restore` installs
-the same files long after the branch has moved. `zuri update` follows a
-branch to its newest commit. A path dependency is copied afresh each
-time the project is installed, which suits a package being worked on
-beside the project that uses it.
+The package's name is taken from its own `project.toml`. A git dependency is
+locked to the commit that its tag, branch or revision pointed to, and to the
+checksum of that commit's packaged files, so `zuri restore` installs the
+same files even after the branch has moved on. `zuri update` updates a
+branch dependency to its newest commit. A path dependency is copied again
+every time the project is installed, which suits a package that you're
+working on alongside the project that uses it.
 
-A published package can only depend on registry packages, since a git
-or path dependency means nothing on the machine of whoever installs it.
+A published package can only depend on packages from a registry, because a
+git or path dependency wouldn't mean anything on the machine of whoever
+installs it.
 
 ## Other Registries
 
-Packages come from the default registry, `https://pub.zurilang.org`,
-unless something says otherwise:
+Packages are installed from the default registry,
+`https://pub.zurilang.org`, unless you say otherwise:
 
 ```sh
 zuri install internal-tools --registry https://packages.example.com
 ```
 
-The dependency records the registry it came from, so everyone who
-installs the project gets it from the same place. A project that uses a
-registry often names it once:
+The dependency records which registry it came from, so everyone who installs
+the project gets it from the same place. A project that uses a registry
+often can give it a name once:
 
 ```toml
 [registries]
@@ -234,18 +236,19 @@ company = "https://packages.example.com"
 internal-tools = { version = "^2", registry = "company" }
 ```
 
-Aliases can also live in `$ZURI_HOME/config.toml` for your own use in
-every project. `default` there, or `ZURI_REGISTRY` in the environment,
-changes the registry used when nothing names one; a project that names
-its own `default` keeps it.
+You can also define aliases in `$ZURI_HOME/config.toml`, for your own use in
+every project. Setting `default` there, or setting `ZURI_REGISTRY` in the
+environment, changes the registry that's used when none is named, although a
+project that defines its own `default` keeps using it.
 
-A package never falls back from one registry to another. A package
-asked for from one registry is only ever installed from that registry,
-so a package with the same name elsewhere can never stand in for it.
+A package is never installed from a different registry as a fallback. A
+package requested from one registry is only ever installed from that
+registry, so a package with the same name on another registry can never be
+substituted for it.
 
 ## Install Scripts
 
-A package may name scripts to run around its installation:
+A package can specify scripts to run before and after it's installed:
 
 ```toml
 [hooks]
@@ -253,28 +256,29 @@ post-install = "scripts/setup.zu"
 pre-uninstall = "scripts/teardown.zu"
 ```
 
-A script can do anything the person running `zuri install` can, so a
-dependency's scripts run only when the project allows that package by
-name:
+A script can do anything that the person running `zuri install` can do, so a
+dependency's scripts only run if the project allows that package by name:
 
 ```toml
 [install]
 allow-hooks = ["native-sqlite"]
 ```
 
-The project's own scripts always run. `--allow-hooks` allows more for
-one run, and `--no-hooks` runs none. A script runs with `zuri run`,
-from the package's directory, with no shell in between, and must finish
-within ten minutes with status `0`; its output goes to a log under
-`$ZURI_HOME/logs`, which a failure names. `ZURI_PACKAGE_NAME`,
-`ZURI_PACKAGE_VERSION`, `ZURI_PACKAGE_DIR` and `ZURI_PROJECT_DIR` tell
-it where it is. A failing script undoes the whole install.
+The project's own scripts always run. `--allow-hooks` allows more packages
+for a single run, and `--no-hooks` doesn't run any scripts. A script runs
+with `zuri run`, from the package's directory, without a shell in between,
+and it has to finish within ten minutes with status `0`. Its output goes to
+a log file under `$ZURI_HOME/logs`, which is named in the error if the
+script fails. `ZURI_PACKAGE_NAME`, `ZURI_PACKAGE_VERSION`,
+`ZURI_PACKAGE_DIR` and `ZURI_PROJECT_DIR` tell the script where it's
+running. If a script fails, the whole install is undone.
 
-## Offline, Caches and Space
+## Working Offline, Caches and Disk Space
 
-Downloads are kept in a cache, checked by checksum, and shared by every
-project on the machine. `--offline` installs from the cache alone, and
-fails naming what is missing rather than reaching the network.
+Downloads are kept in a cache, checked against their checksums, and shared
+by every project on the machine. `--offline` installs packages from the
+cache only, and if something's missing, it fails with an error that names
+what's missing instead of using the network.
 
 ```sh
 zuri clean                  # the cache and the script logs
@@ -282,16 +286,16 @@ zuri clean --libs           # this project's installed packages
 zuri clean --older-than 30d
 ```
 
-Everything `zuri clean` removes comes back by itself, downloaded again
-or restored from the lockfile, the next time it is needed.
+Anything that `zuri clean` removes comes back automatically the next time
+it's needed, either downloaded again or restored from the lockfile.
 
-## The Environment
+## Environment Variables
 
 | Variable | What it does |
 | --- | --- |
-| `ZURI_HOME` | where your packages, settings and tokens live; `~/.zuri` by default |
-| `ZURI_CACHE` | where downloads are kept; `$ZURI_HOME/cache` by default |
-| `ZURI_REGISTRY` | the default registry, by alias or address |
-| `ZURI_TOKEN`, `ZURI_TOKEN_<ALIAS>` | a registry token, before the saved one |
-| `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` | the proxy every download goes through |
-| `NO_COLOR` | plain output |
+| `ZURI_HOME` | Where your packages, settings and tokens are stored. The default is `~/.zuri`. |
+| `ZURI_CACHE` | Where downloads are cached. The default is `$ZURI_HOME/cache`. |
+| `ZURI_REGISTRY` | The default registry, as an alias or an address |
+| `ZURI_TOKEN`, `ZURI_TOKEN_<ALIAS>` | A registry token, which takes priority over the saved one |
+| `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` | The proxy used for every download |
+| `NO_COLOR` | Turns off colored output |

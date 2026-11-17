@@ -1,9 +1,9 @@
 /**
  * @module jwt.jwks
  *
- * `Jwks`, plus `verify_with_jwks()`: resolving a token's signing key
- * from a JSON Web Key Set (RFC 7517) by its `kid` header, rather than
- * a single fixed secret/key.
+ * `Jwks` and `verify_with_jwks()`, which find a token's signing key in
+ * a JSON Web Key Set (RFC 7517) by its `kid` header, instead of using
+ * one fixed secret or key.
  */
 
 import .core { verify, header }
@@ -13,9 +13,9 @@ import .errors { AlgorithmError }
 import crypto
 
 /**
- * Parses a JSON Web Key Set document (a dict shaped like
- * `{ keys: [...] }`, exactly what `json.decode()` on a fetched JWKS
- * document produces) and resolves individual keys by their `kid`.
+ * Parses a JSON Web Key Set document and finds individual keys by their
+ * `kid`. The document is a dictionary shaped like `{ keys: [...] }`, as
+ * `json.decode()` returns it for a fetched JWKS document.
  *
  * ### Example
  *
@@ -110,22 +110,22 @@ def _jwk_to_pem(jwk) {
 }
 
 /**
- * Verifies a token by resolving its signing key from a JWKS
- * document rather than a single fixed secret.
+ * Verifies a token using a signing key from a JWKS document, instead of
+ * a single fixed secret.
  *
- * Reads the token's `kid` header parameter, resolves the matching
- * key in `jwks`, converts it to a PEM, and verifies the token with
- * it exactly as `verify()` would with that PEM passed directly.
+ * It reads the token's `kid` header parameter, finds the matching key
+ * in `jwks`, converts it to PEM, and verifies the token with it,
+ * exactly as `verify()` would if that PEM were passed directly.
  *
  * @param string token
  * @param Jwks jwks
- * @param ?dict options See `verify()` for the full reference; note
- *    that `algorithms` should still be set explicitly here, the same
- *    as with any other `verify()` call: resolving a key by `kid`
- *    says nothing about which algorithm is safe to trust it with.
+ * @param ?dict options See `verify()` for the full list. You should
+ *    still set `algorithms` explicitly here, as with any other
+ *    `verify()` call, because finding a key by `kid` says nothing about
+ *    which algorithms it's safe to trust that key with.
  * @return dict|Token
- * @throws AlgorithmError When the token has no `kid`, or no key in
- *    `jwks` matches it.
+ * @throws AlgorithmError if the token has no `kid`, or no key in `jwks`
+ *    matches it.
  * @throws MalformedTokenError
  * @throws SignatureError
  * @throws TokenExpiredError
@@ -137,7 +137,9 @@ def verify_with_jwks(token, jwks: Jwks, options) {
   var kid = tok_header.get('kid', nil)
 
   if kid == nil {
-    raise AlgorithmError('token has no kid header parameter; cannot resolve a JWKS key')
+    raise AlgorithmError(
+      'token has no kid header parameter; cannot resolve a JWKS key',
+    )
   }
 
   var pem = jwks.to_pem(kid)

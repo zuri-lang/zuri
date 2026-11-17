@@ -1,28 +1,25 @@
 /**
  * @module wire.filters
  *
- * The filters every Wire template starts with.
+ * The filters that every Wire template has available.
  *
- * A filter takes the value on the left of the `|` as its first
- * argument and whatever the template passed as the rest, so the one
- * written `price|round(2)` is called as `round(price, 2)`. An argument
- * a template leaves out arrives as `nil`, which is why nearly every
- * filter here states its default in its own doc block rather than
- * insisting the template spell it out.
+ * A filter receives the value to the left of the `|` as its first
+ * argument, followed by any arguments the template passed, so
+ * `price|round(2)` is called as `round(price, 2)`. An argument that a
+ * template leaves out is passed as `nil`, so almost every filter here
+ * has a default, which its documentation gives.
  *
- * `Wire.register_filter()` adds to this set and can replace anything in
- * it, so an application that wants `date` to mean its own thing is free
- * to say so.
+ * `Wire.register_filter()` adds filters to this set and can replace any
+ * of them, so an application can give `date` a meaning of its own.
  *
- * ### On escaping
+ * ### Escaping
  *
  * Almost every filter here returns a plain string, which Wire then
- * escapes for wherever it is going. The three that return markup
- * instead are `raw`, `nl2br` and `json_script`, and each of them says
- * so and says what it does about the text it was given. A filter that
- * returns markup built out of untrusted input is how a template engine
- * becomes a security hole, so the two that build markup escape their
- * input first.
+ * escapes for the place it's written. The three that return markup
+ * instead are `raw`, `nl2br` and `json_script`. Each of them says so,
+ * and explains what it does with the text it was given. A filter that
+ * builds markup from untrusted input would be a security hole, so the
+ * two that build markup escape their input first.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
@@ -34,8 +31,15 @@ import date as _date
 
 import .escape
 import .values {
-  Safe, compare, is_empty, is_safe, safe, stringify, truthy,
-  type_name, unwrap,
+  Safe,
+  compare,
+  is_empty,
+  is_safe,
+  safe,
+  stringify,
+  truthy,
+  type_name,
+  unwrap,
 }
 
 # --------------------------------------------------------------------
@@ -43,12 +47,13 @@ import .values {
 # --------------------------------------------------------------------
 
 /**
- * Marks a value as markup so Wire writes it out without escaping it.
+ * Marks a value as markup, so that Wire writes it out without escaping
+ * it.
  *
- * This is the only way to get live HTML out of a variable, and it is a
- * promise that the value is safe where it lands. Applying it to
- * anything a user supplied is a cross-site scripting hole; applying it
- * to markup your own code built is exactly what it is for.
+ * This is the only way to output live HTML from a variable, and using
+ * it is a promise that the value is safe where it's written. Using it
+ * on anything a user supplied creates a cross-site scripting hole. It's
+ * meant for markup that your own code built.
  *
  * ```wire
  * <div class="body">{{ article.rendered_html|raw }}</div>
@@ -62,16 +67,17 @@ def raw(value) {
 }
 
 /**
- * Escapes a value for a context other than the one it is being written
- * into, or escapes a value that was already marked safe.
+ * Escapes a value for a context other than the one it's being written
+ * into, or escapes a value that was already marked as safe.
  *
- * Wire escapes for the right context on its own, so this is only needed
- * when a value has to carry escaping it would not otherwise get: a URL
- * built into an ordinary attribute, say, or markup that reached the
- * template as `Safe` but should be shown rather than rendered.
+ * Wire escapes values for the right context automatically, so this is
+ * only needed when a value needs escaping that it wouldn't otherwise
+ * get. Examples are a URL written into an ordinary attribute, or markup
+ * that reached the template as `Safe` but should be displayed instead
+ * of rendered.
  *
  * _context_ is `'text'`, `'attribute'`, `'url'`, `'script'` or
- * `'style'` and defaults to `'text'`.
+ * `'style'`, and defaults to `'text'`.
  *
  * ```wire
  * <code>{{ snippet|escape }}</code>
@@ -81,7 +87,7 @@ def raw(value) {
  * @param any value
  * @param ?string context
  * @returns Safe
- * @throws ArgumentError when _context_ is not one Wire knows.
+ * @throws ArgumentError if _context_ isn't one that Wire knows
  */
 def escape_value(value, context) {
   var wanted = escape.CONTEXT_TEXT
@@ -90,8 +96,11 @@ def escape_value(value, context) {
   }
 
   var known = [
-    escape.CONTEXT_TEXT, escape.CONTEXT_ATTRIBUTE, escape.CONTEXT_URL,
-    escape.CONTEXT_SCRIPT, escape.CONTEXT_STYLE,
+    escape.CONTEXT_TEXT,
+    escape.CONTEXT_ATTRIBUTE,
+    escape.CONTEXT_URL,
+    escape.CONTEXT_SCRIPT,
+    escape.CONTEXT_STYLE,
   ]
 
   if !known.contains(wanted) {
@@ -135,8 +144,8 @@ def lower(value) {
  * The value with the first letter of every word in upper case and the
  * rest in lower case.
  *
- * Words are separated by whitespace, so `o'brien` becomes `O'brien`
- * rather than `O'Brien`. Names are harder than a filter can be.
+ * Words are separated by whitespace, so `o'brien` becomes `O'brien`,
+ * not `O'Brien`. Names are harder than a filter can handle.
  *
  * ```wire
  * {{ 'jane IS here'|title }}   {# Jane Is Here #}
@@ -169,11 +178,10 @@ def title(value) {
 }
 
 /**
- * The value with its first letter in upper case and the rest left
- * alone.
+ * The value with its first letter in upper case and the rest unchanged.
  *
- * Unlike `title` this touches nothing but the first character, which is
- * what a sentence wants.
+ * Unlike `title`, this only changes the first character, so it suits a
+ * sentence.
  *
  * ```wire
  * {{ 'hello THERE'|capitalize }}   {# Hello THERE #}
@@ -282,9 +290,8 @@ def replace(value, search, replacement) {
  * @throws ArgumentError when _width_ is missing or not a number.
  */
 def lpad(value, width, fill) {
-  return stringify(unwrap(value)).lpad(
-    _pad_width('lpad', width), _pad_fill(fill),
-  )
+  return stringify(unwrap(value))
+      .lpad(_pad_width('lpad', width), _pad_fill(fill))
 }
 
 /**
@@ -298,9 +305,8 @@ def lpad(value, width, fill) {
  * @throws ArgumentError when _width_ is missing or not a number.
  */
 def rpad(value, width, fill) {
-  return stringify(unwrap(value)).rpad(
-    _pad_width('rpad', width), _pad_fill(fill),
-  )
+  return stringify(unwrap(value))
+      .rpad(_pad_width('rpad', width), _pad_fill(fill))
 }
 
 /**
@@ -350,9 +356,9 @@ def nl2br(value) {
 /**
  * The value with every HTML tag removed, leaving only its text.
  *
- * The markup is really parsed rather than pattern-matched away, so
- * `<p title="a>b">x</p>` gives `x` and not `b">x`. The result is plain
- * text and is escaped like anything else when it is written out.
+ * The markup is actually parsed, not removed with a pattern, so
+ * `<p title="a>b">x</p>` gives `x`, not `b">x`. The result is plain
+ * text, and it's escaped like any other value when it's written out.
  *
  * ```wire
  * <meta name="description" content="{{ article.body|strip_tags|truncate(150) }}">
@@ -385,13 +391,18 @@ def slug(value) {
 }
 
 /**
- * The value percent encoded for use inside a URL.
+ * The value percent-encoded for use in a URL, in the same way as
+ * `url.encode()`. Reserved characters such as `/`, `&` and `#` are kept
+ * unless _reserved_ is `false`. Pass `false` for a single value in a
+ * query string: `/search?q={{ query|url_encode(false) }}`.
  *
  * @param any value
+ * @param ?bool reserved: whether to keep the reserved characters as
+ *    they are. Defaults to `true`.
  * @returns string
  */
-def url_encode(value) {
-  return _url.encode(stringify(unwrap(value)))
+def url_encode(value, reserved: ?bool) {
+  return _url.encode(stringify(unwrap(value)), false, reserved)
 }
 
 /**
@@ -531,7 +542,9 @@ def number_format(value, places, point, separator) {
   var digits = 0
   if places != nil {
     if !is_number(places) or places < 0 {
-      raise ArgumentError('"number_format" needs a number of places of zero or more')
+      raise ArgumentError(
+        '"number_format" needs a number of places of zero or more',
+      )
     }
 
     digits = places
@@ -629,15 +642,16 @@ def filesize(value, binary) {
 # --------------------------------------------------------------------
 
 /**
- * How many entries the value has.
+ * The number of entries in the value.
  *
- * Works on a string, a list, a dictionary or a byte string. `nil` has a
- * length of zero rather than being an error, so `x-if="items|length"`
- * reads correctly for a variable that was never supplied.
+ * This works on a string, a list, a dictionary or a byte string. `nil`
+ * has a length of zero instead of causing an error, so
+ * `x-if="items|length"` works correctly for a variable that was never
+ * supplied.
  *
  * @param any value
  * @returns number
- * @throws TypeError when the value is not something with a length.
+ * @throws TypeError if the value doesn't have a length
  */
 def length(value) {
   var subject = unwrap(value)
@@ -646,8 +660,10 @@ def length(value) {
     return 0
   }
 
-  if is_string(subject) or is_list(subject) or is_dict(subject) or
-    is_bytes(subject) {
+  if is_string(subject) or
+      is_list(subject) or
+      is_dict(subject) or
+      is_bytes(subject) {
     return subject.length()
   }
 
@@ -710,17 +726,19 @@ def join(value, glue) {
     between = stringify(glue)
   }
 
-  return between.join(_sequence('join', value).map(@(item) {
-    return stringify(unwrap(item))
-  }))
+  return between.join(
+    _sequence('join', value).map(@(item) {
+      return stringify(unwrap(item))
+    }),
+  )
 }
 
 /**
  * The entries in ascending order.
  *
- * _key_ names a field to sort by, for a list of dictionaries or
- * instances; leaving it out sorts the entries themselves. Sorting is
- * stable, and the original is not changed.
+ * _key_ is the name of a field to sort by, for a list of dictionaries
+ * or instances. If it's left out, the entries themselves are sorted.
+ * The sort is stable, and the original isn't changed.
  *
  * ```wire
  * <li x-for="users|sort('name')" x-value="user">{{ user.name }}</li>
@@ -729,7 +747,7 @@ def join(value, glue) {
  * @param any value
  * @param ?string key
  * @returns list
- * @throws TypeError when the value is not a sequence.
+ * @throws TypeError if the value isn't a sequence
  */
 def sort(value, key) {
   var items = _sequence('sort', value).clone()
@@ -793,11 +811,11 @@ def values(value) {
 }
 
 /**
- * The entries from _start_ up to but not including _end_.
+ * The entries from _start_ up to, but not including, _end_.
  *
  * _end_ defaults to the end of the sequence. A negative position counts
- * back from the end, and a range that falls outside the sequence gives
- * back whatever part of it does overlap rather than raising.
+ * back from the end, and a range that goes outside the sequence gives
+ * whatever part of it overlaps, instead of raising an error.
  *
  * ```wire
  * <li x-for="posts|slice(0, 5)" x-value="post">{{ post.title }}</li>
@@ -807,7 +825,7 @@ def values(value) {
  * @param number start
  * @param ?number end
  * @returns any
- * @throws TypeError when the value is not a sequence.
+ * @throws TypeError if the value isn't a sequence
  */
 def slice(value, start, end) {
   var subject = unwrap(value)
@@ -1133,8 +1151,8 @@ def _number(filter: string, value) {
 
   # A number that arrived as text, which is what a form field or a query
   # string always gives, is worth reading rather than refusing.
-  if is_string(subject)
-    and subject.trim().match('/^-?\\d+(\\.\\d+)?$/') != false {
+  if is_string(subject) and
+      subject.trim().match('/^-?\\d+(\\.\\d+)?$/') != false {
     return subject.trim().to_number()
   }
 
@@ -1250,13 +1268,13 @@ def _field(item, name: string) {
 }
 
 /**
- * _items_ ordered by each entry's _name_ field.
+ * _items_ sorted by the _name_ field of each entry.
  *
- * A merge sort, because Zuri's own `sort()` takes no comparison
- * function and this needs one, and because a merge sort is stable:
- * records that tie on the key keep the order they arrived in, which is
- * what makes sorting a table by one column and then another do what the
- * person clicking expects.
+ * This is a merge sort, for two reasons. Zuri's own `sort()` doesn't
+ * take a comparison function, and this needs one. A merge sort is also
+ * stable: records with the same key keep the order they arrived in, so
+ * sorting a table by one column and then by another does what the
+ * person clicking on the column headings expects.
  *
  * @param list items
  * @param string name

@@ -45,7 +45,7 @@ var MIN_PASSWORD = 10
 /** The longest password accepted. */
 var MAX_PASSWORD = 1024
 
-/** What a token starts with, so a leaked one can be recognised. */
+/** What a token starts with, so a leaked one can be recognized. */
 var TOKEN_PREFIX = 'nys_'
 
 var _ARGON2 = { t_cost: 2, m_cost: 19456, threads: 1 }
@@ -201,7 +201,9 @@ def scopes_of(requested) {
     }
 
     if !SCOPES.contains(trimmed) {
-      raise Error("'${trimmed}' is not a scope; a token can carry ${', '.join(SCOPES)}")
+      raise Error(
+        "'${trimmed}' is not a scope; a token can carry ${', '.join(SCOPES)}",
+      )
     }
 
     if !chosen.contains(trimmed) {

@@ -125,10 +125,7 @@ fn bytes(ctx: &mut ZuriContext) -> Result<Value, String> {
       .all(|f| f.is_number() && 0.0 <= f.as_number() && f.as_number() <= 255.0);
 
     if !is_valid_list {
-      return Err(format!(
-        "bytes() expects a list of numbers, got {}",
-        v.type_name()
-      ));
+      return Err("bytes() expects a list of numbers from 0 to 255".to_string());
     }
 
     let bytes = ctx.heap().alloc_bytes(

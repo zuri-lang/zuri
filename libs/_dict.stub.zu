@@ -1,68 +1,39 @@
 /**
  * # Dictionaries
  *
- * Zuri dictionaries are built on a powerful hashtable with fast
- * key lookups. Creating Zuri dictionaries are extremely similar
- * to how you create objects in JavaScript and for developers
- * coming from that language will find Zuri dictionaries very
- * familiar.
+ * A dictionary maps keys to values, and keeps its keys in the order
+ * they were added. Lookups by key are fast, because a dictionary is a
+ * hash table.
  *
- * ## Constructing a dictionary
+ * ## Creating a dictionary
  *
- * Zuri dictionaries are arbitrary key-value pairs separated by
- * colons (`:`) enclosed in braces (`{}`).
- *
- * For example:
+ * Write the entries between braces, with a colon between each key and
+ * its value:
  *
  * ```zuri-repl
  * %> {'name': 'Zuri', 'version': 0.5}
  * {name: Zuri, version: 0.5}
- * %> {}    # empty dictionary
+ * %> {}
  * {}
  * ```
  *
- * > While dictionary values can be any valid Zuri object, keys
- * > can only be one of [String](./strings), [Number](./numbers)
- * > or Boolean.
- *
- * For example:
- *
- * ```zuri-repl
- * %> {0: 'number', false: 'boolean', 'key': 'string'}
- * {0: number, false: boolean, key: string}
- * ```
- *
- * For string keys in a dictionary, the quotation may be excluded
- * given that the string contains no space or any non
- * alphanumeric character or the unquoted version equals to a
- * boolean value.
- *
- * For example:
+ * A key written as a plain word is a string, so the quotes can be left
+ * out:
  *
  * ```zuri-repl
  * %> {country: 'Nigeria', dial_code: 234, in_africa: true}
  * {country: Nigeria, dial_code: 234, in_africa: true}
  * ```
  *
- * ## Automatic value assignment
- *
- * Sometimes when creating a dictionary, it is very common to
- * have keys that already match the name of a variable that
- * already exists in scope. For example:
+ * Keys are usually strings, but numbers and booleans can be keys too:
  *
  * ```zuri-repl
- * %> var name = 'Paulina'
- * %> var my_dict = {name: name}
- * %> my_dict
- * {name: Paulina}
+ * %> {0: 'number', false: 'boolean', 'key': 'string'}
+ * {0: number, false: boolean, key: string}
  * ```
  *
- * Because of how common and frequent developers do this, Zuri
- * has an automatic value assignment feature for dictionaries
- * that allow you to assign variables to dictionary keys if they
- * are already within scope without rewriting them.
- *
- * For example,
+ * When a key has the same name as the variable that holds its value,
+ * you only need to write the name once:
  *
  * ```zuri-repl
  * %> var name = 'Kagawa'
@@ -70,89 +41,51 @@
  * {name: Kagawa}
  * ```
  *
- * ## Accessing members of a Dictionary
+ * ## Reading values
  *
- * Each key in a dictionary is a property of the given dictionary
- * and as such, dictionary like strings and lists support index
- * access.
- *
- * For example:
+ * Read a value with brackets, or with a dot when the key is a string
+ * that's a valid name:
  *
  * ```zuri-repl
  * %> var a = {name: 'Zuri', version: 0.5}
  * %> a['name']
  * 'Zuri'
- * ```
- *
- * And they also support property access whenever the key is a
- * string. For example, the above `a['name']` could also be
- * written as:
- *
- * ```zuri-repl
  * %> a.name
  * 'Zuri'
  * ```
  *
- * ## Looping through dictionaries
+ * ## Looping over a dictionary
  *
- * There are two ways to loop through a dictionary in Zuri. We
- * can loop through the dictionary itself using the specialized
- * _for_ loop, of loop through its keys using any of the _while_
- * or _iter_ loop.
- *
- * Below is an example looping through the dictionary itself
- * using the _for_ loop.
+ * A `for` loop with two variables gets each key and its value:
  *
  * ```zuri-repl
- * %> var person = {name: 'Ceaser', birth: '29AD', nation: 'Rome', position: 'Emperor'}
- * %> for x, y in person {
- * ..   print(x, '=', y)
+ * %> var person = {name: 'Caesar', nation: 'Rome'}
+ * %> for key, value in person {
+ * ..   echo '${key} = ${value}'
  * .. }
- * name = Ceaser
- * birth = 29AD
+ * name = Caesar
  * nation = Rome
- * position = Emperor
  * ```
  *
- * Unlike strings and lists, note that this _for_ loop takes two
- * variables. This is to allow us take the key into the first and
- * the value into the second variable respectively.
- *
- * If we only want to loop through the values without concern for
- * the keys, we can use a single variable to hold our value and
- * still iterate correctly. Note however that the corresponding
- * _key_ information will be lost in the loop.
- *
- * For example:
+ * With one variable, the loop gets only the values:
  *
  * ```zuri-repl
- * %> for x in person {
- * ..   echo x
+ * %> for value in person {
+ * ..   echo value
  * .. }
- * 'Ceaser'
- * '29AD'
- * 'Rome'
- * 'Emperor'
+ * Caesar
+ * Rome
  * ```
  *
- * The following example loops through the dictionary by looping
- * through the keys of the dictionary.
+ * To loop over the keys, use `keys()`:
  *
  * ```zuri-repl
- * %> var keys = person.keys()
- * %> iter var i = 0; i < keys.length(); i++ {
- * ..   print(keys[i], '=', person[keys[i]])
+ * %> for key in person.keys() {
+ * ..   echo key
  * .. }
- * name = Ceaser
- * birth = 29AD
- * nation = Rome
- * position = Emperor
+ * name
+ * nation
  * ```
- *
- * The technique presented above is to walk through the keys of
- * the dictionary and use the current key to index the
- * dictionary. While the example uses the _iter_ loop, the same
- * technique applies to the _while_ loop.
  */
 
 class dict {
@@ -272,15 +205,16 @@ class dict {
   compact() {}
 
   /**
-   * Returns `true` if any of the keys in the dictionary is equal
-   * to _x_, `false` otherwise.<br>
+   * Returns `true` if the dictionary has the key _key_, and `false`
+   * otherwise.
    *
    * For example:
    *
    * ```zuri-repl
-   * %> dict2.contains('name')
+   * %> var dict = {name: 'Zuri'}
+   * %> dict.contains('name')
    * true
-   * %> dict2.contains('street')
+   * %> dict.contains('street')
    * false
    * ```
    *
@@ -290,8 +224,7 @@ class dict {
   contains(key: string) {}
 
   /**
-   * Adds all key-value pairs in dictionary _x_ to the original
-   * dictionary.<br>
+   * Adds every entry of _dict_ to this dictionary.
    *
    * For example:
    *
@@ -429,20 +362,18 @@ class dict {
   to_list() {}
 
   /**
-   * Iterates over each key-value pair in the dictionary, calling
-   * the provided callback function with the value and key as
-   * arguments.
+   * Calls `callback` for each entry in the dictionary, with the value
+   * and the key as arguments.
    *
-   * @param {function} callback - The function to call for each
-   *    key-value pair.
-   * @throws {Error} If the callback is not a function.
+   * @param {function} callback The function to call for each entry.
+   * @throws {Error} If the callback isn't a function.
    * @returns {void}
    *
    * Example:
    *
    * ```zuri
-   * var myDict = {a: 1, b: 2, c: 3}
-   * myDict.each(@(value, key) {
+   * var scores = { a: 1, b: 2, c: 3 }
+   * scores.each(@(value, key) {
    *   echo '${key}: ${value}'
    * })
    *
@@ -455,53 +386,46 @@ class dict {
   each(callback: function) {}
 
   /**
-   * Creates a new dictionary containing only the key-value pairs
-   * for which the provided callback function returns true. The
-   * callback function is called with the value and key as
-   * arguments.
+   * Creates a new dictionary that contains only the entries for which
+   * `callback` returns true. The callback is called with the value and
+   * the key as arguments.
    *
-   * @param {function} callback - The function to test each
-   *    key-value pair. It should return true to keep the pair,
-   *    or false to exclude it.
-   * @throws {Error} If the callback is not a function.
+   * @param {function} callback The function that tests each entry. It
+   *    returns true to keep the entry, or false to leave it out.
+   * @throws {Error} If the callback isn't a function.
    * @returns {dict}
    *
    * Example:
    *
    * ```zuri
-   * var myDict = {a: 1, b: 2, c: 3}
-   * var filteredDict = myDict.filter(@(value, key) {
+   * var scores = { a: 1, b: 2, c: 3 }
+   * var high = scores.filter(@(value, key) {
    *   return value > 1
    * })
-   * echo filteredDict
+   * echo high
    *
-   * # Output: {'b': 2, 'c': 3}
+   * # Output: {b: 2, c: 3}
    * ```
    */
   filter(callback: function) {}
 
   /**
-   * Tests whether at least one key-value pair in the dictionary
-   * passes the test implemented by the provided callback
-   * function. The callback function is called with the value and
-   * key as arguments. The method returns true if the callback
-   * returns true for any key-value pair, otherwise it returns
-   * false.
+   * Returns true if `callback` returns true for at least one entry in
+   * the dictionary, and false otherwise. The callback is called with
+   * the value and the key as arguments.
    *
-   * @param {function} callback - The function to test each
-   *    key-value pair. It should return true to indicate a
-   *    passing pair, or false to indicate a failing pair.
-   * @throws {Error} If the callback is not a function.
+   * @param {function} callback The function that tests each entry.
+   * @throws {Error} If the callback isn't a function.
    * @returns {boolean}
    *
    * Example:
    *
    * ```zuri
-   * var myDict = {a: 1, b: 2, c: 3}
-   * var hasGreaterThanTwo = myDict.some(@(value, key) {
+   * var scores = { a: 1, b: 2, c: 3 }
+   * var any_above_two = scores.some(@(value, key) {
    *   return value > 2
    * })
-   * echo hasGreaterThanTwo
+   * echo any_above_two
    *
    * # Output: true
    * ```
@@ -509,26 +433,22 @@ class dict {
   some(callback: function) {}
 
   /**
-   * Tests whether all key-value pairs in the dictionary pass the
-   * test implemented by the provided callback function. The
-   * callback function is called with the value and key as
-   * arguments. The method returns true if the callback returns
-   * true for every key-value pair, otherwise it returns false.
+   * Returns true if `callback` returns true for every entry in the
+   * dictionary, and false otherwise. The callback is called with the
+   * value and the key as arguments.
    *
-   * @param {function} callback - The function to test each
-   *    key-value pair. It should return true to indicate a
-   *    passing pair, or false to indicate a failing pair.
-   * @throws {Error} If the callback is not a function.
+   * @param {function} callback The function that tests each entry.
+   * @throws {Error} If the callback isn't a function.
    * @returns {boolean}
    *
    * Example:
    *
    * ```zuri
-   * var myDict = {a: 1, b: 2, c: 3}
-   * var allGreaterThanZero = myDict.every(@(value, key) {
+   * var scores = { a: 1, b: 2, c: 3 }
+   * var all_positive = scores.every(@(value, key) {
    *   return value > 0
    * })
-   * echo allGreaterThanZero
+   * echo all_positive
    *
    * # Output: true
    * ```
@@ -536,27 +456,25 @@ class dict {
   every(callback: function) {}
 
   /**
-   * Reduces the dictionary to a single value by iteratively
-   * combining each key-value pair using the provided callback
-   * function. The callback function is called with the
-   * accumulator, value, key, and the dictionary itself as
-   * arguments. The method returns the final accumulated value
-   * after processing all key-value pairs in the dictionary.
+   * Reduces the dictionary to a single value, by combining the entries
+   * one at a time with `callback`. The callback is called with the
+   * accumulated value, the value, the key and the dictionary itself,
+   * and returns the new accumulated value. The method returns the final
+   * accumulated value.
    *
-   * @param {function} callback - The function to execute on each
-   *    key-value pair in the dictionary. It should return the
-   *    updated accumulator value after processing the pair.
-   * @param {any} initial - The initial value to use as the first
-   *    argument to the first call of the callback function.
-   * @throws {Error} If the callback is not a function.
+   * @param {function} callback The function to call for each entry.
+   *    It returns the updated accumulated value.
+   * @param {any} initial The value passed as the accumulated value to
+   *    the first call of `callback`.
+   * @throws {Error} If the callback isn't a function.
    * @returns {any}
    *
    * Example:
    *
    * ```zuri
-   * var myDict = {a: 1, b: 2, c: 3}
-   * var sum = myDict.reduce(@(accumulator, value, key) {
-   *   return accumulator + value
+   * var scores = { a: 1, b: 2, c: 3 }
+   * var sum = scores.reduce(@(total, value, key) {
+   *   return total + value
    * }, 0)
    * echo sum
    *

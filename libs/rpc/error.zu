@@ -1,9 +1,9 @@
 /**
  * @module error
  *
- * The error codes JSON-RPC defines and the errors `rpc` raises, kept
- * in a module of their own so every other part of `rpc` can use them.
- * Re-exported by `rpc`.
+ * The error codes that JSON-RPC defines, and the errors that `rpc`
+ * raises. They're in a module of their own, so that every other part of
+ * `rpc` can use them. The `rpc` module re-exports them.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -53,14 +53,14 @@ const SERVER_ERROR_MAX = -32000
  * A JSON-RPC error: what a request failed with, on either side of a
  * connection.
  *
- * Raised from a request handler, it answers the request: its `code`,
- * `message` and `data` go back to the caller as they are.
- * `Endpoint.request()` raises one when the other side answers a
- * request with an error.
+ * When a request handler raises one, it's the answer to the request,
+ * and its `code`, `message` and `data` are sent back to the caller
+ * unchanged. `Endpoint.request()` raises one when the other side
+ * answers a request with an error.
  *
- * JSON-RPC reserves the codes from `-32768` to `-32000` for itself;
+ * JSON-RPC reserves the codes from `-32768` to `-32000` for itself, and
  * the constants in this module name the ones it defines. An
- * application's own errors take any code outside that range.
+ * application's own errors can use any code outside that range.
  *
  * ```zuri
  * import rpc
@@ -174,10 +174,10 @@ class RpcHttpError < Error {
   /**
    * Returns a new {RpcHttpError}.
    *
-   * @param int status: The HTTP status the server answered with.
-   * @param string message: What went wrong.
-   * @param string body: The body the server sent with it, as text;
-   *    `''` for none.
+   * @param int status: the HTTP status the server answered with.
+   * @param string message: what went wrong.
+   * @param string body: the body the server sent with it, as text, or
+   *    `''` if there was none.
    */
   @new(status: int, message: string, body: string) {
     parent(message)

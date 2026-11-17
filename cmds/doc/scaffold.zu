@@ -1,0 +1,109 @@
+/**
+ * What `zuri doc init` writes: a `doc.toml`, a contents page and two
+ * chapters, enough to build and to show where everything goes. And
+ * what `zuri doc generate` starts a reference with.
+ *
+ * Each file is returned as a string, so what new documentation starts with
+ * can be read and tested without writing anything.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+/**
+ * The files of new documentation called _title_, by path from its
+ * directory.
+ *
+ * @param string title
+ * @returns dict
+ */
+def files(title: string) {
+  var quoted = title.replace('\\', '\\\\', false).replace('"', '\\"', false)
+
+  return {
+    'doc.toml': '\n'.join([
+      '[documentation]',
+      'title = "${quoted}"',
+      'description = ""',
+      'authors = []',
+      'language = "en"',
+      'source = "src"',
+      'output = "site"',
+      '',
+      '[site]',
+      '# The address the site is published at, for links search engines',
+      '# and the page for a missing address use.',
+      '# url = "https://example.com/docs/"',
+      '# repository = "https://github.com/you/project"',
+      '# edit = "https://github.com/you/project/edit/main/docs/src/{path}"',
+      '',
+    ]),
+    '.gitignore': '# The built site.\n/site/\n',
+    'src/SUMMARY.md': '\n'.join([
+      '# Summary',
+      '',
+      '[Introduction](introduction.md)',
+      '',
+      '- [Getting Started](getting-started.md)',
+      '',
+    ]),
+    'src/introduction.md': '\n'.join([
+      '# ${title}',
+      '',
+      'This page comes first. Every page is a Markdown file in `src`, and',
+      '`SUMMARY.md` lists them in the order they are read.',
+      '',
+    ]),
+    'src/getting-started.md': '\n'.join([
+      '# Getting Started',
+      '',
+      'A numbered chapter. Sections go in a list inside its item in',
+      '`SUMMARY.md`, each a page of its own.',
+      '',
+      '```zuri',
+      "echo 'Hello from ${quoted}'",
+      '```',
+      '',
+    ]),
+  }
+}
+
+/**
+ * The files of a new API reference called _title_, by path from its
+ * directory. Its pages are generated, so they are left out of git along
+ * with the site.
+ *
+ * @param string title
+ * @returns dict
+ */
+def reference_files(title: string) {
+  var quoted = title.replace('\\', '\\\\', false).replace('"', '\\"', false)
+
+  return {
+    'doc.toml': '\n'.join([
+      '# An API reference, generated from the doc blocks in the project by',
+      '# `zuri doc generate`. `zuri doc build` and `zuri doc serve` generate',
+      '# the pages again first, so the doc blocks are what to edit.',
+      '',
+      '[documentation]',
+      'title = "${quoted}"',
+      'source = "src"',
+      'output = "site"',
+      '',
+      '[reference]',
+      '# Patterns for files to leave out, relative to the project.',
+      '# exclude = ["internal/**"]',
+      '',
+      '# Groups of modules, each a part of the contents. Without them',
+      '# every module is listed in one list.',
+      '# [[reference.groups]]',
+      '# title = "Storage"',
+      '# description = "Where tasks are kept."',
+      '# modules = ["tasks.storage"]',
+      '',
+      '[site]',
+      '# url = "https://example.com/docs/reference/"',
+      '',
+    ]),
+    '.gitignore': '# The generated pages and the built site.\n/src/\n/site/\n',
+  }
+}

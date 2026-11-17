@@ -21,7 +21,9 @@ def actions_for(source: string, marker: string) {
     context: { diagnostics },
   })
 
-  client.notify('textDocument/didClose', { textDocument: { uri: address } })
+  client.notify('textDocument/didClose', {
+    textDocument: { uri: address },
+  })
 
   return found
 }
@@ -41,7 +43,9 @@ def titled(found: list, title: string) {
 }
 
 before_all(@{
-  client = Client(FIXTURE, { diagnostics: { delay: 0 } })
+  client = Client(FIXTURE, {
+    diagnostics: { delay: 0 },
+  })
   client.initialize(nil)
   client.wait_indexed()
 })
@@ -54,14 +58,14 @@ describe('quick fixes', @{
   it('imports a name another module exports', @{
     var source = 'echo origin()\n'
     var fix = titled(
-      actions_for(source, 'origin'), "Import 'origin' from '.shapes'",
+      actions_for(source, 'origin'),
+      "Import 'origin' from '.shapes'",
     )
 
     expect(fix.kind).to_equal('quickfix')
     expect(fix.isPreferred).to_be_true()
-    expect(applied(
-      source, fix,
-    )).to_equal('import .shapes { origin }\necho origin()\n')
+    expect(applied(source, fix))
+        .to_equal('import .shapes { origin }\necho origin()\n')
   })
 
   it('imports a module named like the missing name', @{
@@ -90,7 +94,8 @@ describe('quick fixes', @{
   it('removes an unused import', @{
     var source = 'import json\necho 1\n'
     var fix = titled(
-      actions_for(source, 'json'), "Remove the unused import of 'json'",
+      actions_for(source, 'json'),
+      "Remove the unused import of 'json'",
     )
 
     expect(applied(source, fix)).to_equal('echo 1\n')
@@ -99,18 +104,19 @@ describe('quick fixes', @{
   it('removes an unused element and leaves the rest of its import', @{
     var source = 'import .shapes { Point, UNIT }\necho Point(1, 2)\n'
     var fix = titled(
-      actions_for(source, 'UNIT'), "Remove 'UNIT' from the import",
+      actions_for(source, 'UNIT'),
+      "Remove 'UNIT' from the import",
     )
 
-    expect(applied(
-      source, fix,
-    )).to_equal('import .shapes { Point }\necho Point(1, 2)\n')
+    expect(applied(source, fix))
+        .to_equal('import .shapes { Point }\necho Point(1, 2)\n')
   })
 
   it('declares a field set outside @new', @{
     var source = 'class Box {\n  var size = 1\n\n  fill(v) {\n    self.value = v\n  }\n}\n'
     var fix = titled(
-      actions_for(source, 'value'), "Declare 'value' as a field of Box",
+      actions_for(source, 'value'),
+      "Declare 'value' as a field of Box",
     )
 
     expect(applied(source, fix)).to_equal(
@@ -135,7 +141,8 @@ describe('extract variable', @{
     var source = 'def f(a) {\n  echo a.length()\n  echo a.length() + 1\n}\n'
     var source_pure = 'def f(a) {\n  echo a * 2\n  echo a * 2 + 1\n}\n'
     var action = titled(
-      actions_for(source_pure, 'a * 2'), 'Extract all 2 copies into a variable',
+      actions_for(source_pure, 'a * 2'),
+      'Extract all 2 copies into a variable',
     )
 
     expect(applied(source_pure, action)).to_equal(
@@ -148,22 +155,28 @@ describe('extract variable', @{
     expect(found.some(@(a) => a.title.starts_with('Extract all'))).to_be_false()
   })
 
-  it_each([
+  it_each(
     [
-      'the condition of a loop',
-      'def f(a) {\n  while a > 0 {\n    a--\n  }\n}\n', 'a > 0',
+      [
+        'the condition of a loop',
+        'def f(a) {\n  while a > 0 {\n    a--\n  }\n}\n',
+        'a > 0',
+      ],
+      ['the right of and', 'def f(a, b) {\n  echo a and b.ok()\n}\n', 'b.ok()'],
+      ['a branch of ?:', 'def f(a) {\n  echo a ? a.x() : 0\n}\n', 'a.x()'],
+      [
+        'after a side effect',
+        'def f(a) {\n  echo a.push(1) + a.length()\n}\n',
+        'a.length()',
+      ],
     ],
-    ['the right of and', 'def f(a, b) {\n  echo a and b.ok()\n}\n', 'b.ok()'],
-    ['a branch of ?:', 'def f(a) {\n  echo a ? a.x() : 0\n}\n', 'a.x()'],
-    [
-      'after a side effect', 'def f(a) {\n  echo a.push(1) + a.length()\n}\n',
-      'a.length()',
-    ],
-  ], 'is not offered from $0', @(where, source, marker) {
-    var found = actions_for(source, marker)
+    'is not offered from $0',
+    @(where, source, marker) {
+      var found = actions_for(source, marker)
 
-    expect(found.some(@(a) => a.title.starts_with('Extract '))).to_be_false()
-  })
+      expect(found.some(@(a) => a.title.starts_with('Extract '))).to_be_false()
+    },
+  )
 })
 
 describe('extract function', @{
@@ -174,7 +187,7 @@ describe('extract function', @{
 
     expect(applied(source, action)).to_equal(
       'def f(a) {\n  var c = extracted(a)\n  echo c\n}\n\n' +
-        'def extracted(a) {\n  var b = a + 1\n  var c = b * 2\n\n  return c\n}\n',
+          'def extracted(a) {\n  var b = a + 1\n  var c = b * 2\n\n  return c\n}\n',
     )
   })
 
@@ -182,24 +195,30 @@ describe('extract function', @{
     var source = 'def f(a) {\n  var b = a + 1\n  var c = a * 2\n  echo b + c\n}\n'
     var found = actions_for(source, 'var b = a + 1\n  var c = a * 2')
     var result = applied(
-      source, titled(found, "Extract into function 'extracted'"),
+      source,
+      titled(found, "Extract into function 'extracted'"),
     )
 
     expect(result).to_contain('  var extracted_result = extracted(a)\n')
-    expect(result).to_contain('  var b = extracted_result.b\n  var c = extracted_result.c\n')
+    expect(
+      result,
+    ).to_contain('  var b = extracted_result.b\n  var c = extracted_result.c\n')
     expect(result).to_contain('  return { b, c }\n')
   })
 
   it('makes a private method of statements that use self', @{
     var source = 'class A {\n  var n = 1\n\n  show() {\n' +
-      '    var twice = self.n * 2\n    echo twice\n  }\n}\n'
+        '    var twice = self.n * 2\n    echo twice\n  }\n}\n'
     var found = actions_for(source, 'var twice = self.n * 2\n    echo twice')
     var result = applied(
-      source, titled(found, "Extract into method '_extracted'"),
+      source,
+      titled(found, "Extract into method '_extracted'"),
     )
 
     expect(result).to_contain('    self._extracted()\n')
-    expect(result).to_contain('  _extracted() {\n    var twice = self.n * 2\n    echo twice\n  }')
+    expect(result).to_contain(
+      '  _extracted() {\n    var twice = self.n * 2\n    echo twice\n  }',
+    )
   })
 
   it('is not offered for statements holding a return or leaving a loop', @{
@@ -219,36 +238,31 @@ describe('inline', @{
     var action = titled(actions_for(source, 'total'), "Inline variable 'total'")
 
     expect(action.kind).to_equal('refactor.inline')
-    expect(applied(
-      source, action,
-    )).to_equal('def f(a) {\n  echo (a + 1) * 2\n  echo (a + 1)\n}\n')
+    expect(applied(source, action))
+        .to_equal('def f(a) {\n  echo (a + 1) * 2\n  echo (a + 1)\n}\n')
   })
 
   it('moves a value with a side effect only to its single next use', @{
     var once = 'def f(a) {\n  var n = a.pop()\n  echo n\n}\n'
     var twice = 'def f(a) {\n  var n = a.pop()\n  echo n\n  echo n\n}\n'
 
-    expect(applied(
-      once, titled(actions_for(once, 'var n'), "Inline variable 'n'"),
-    )).to_equal(
-      'def f(a) {\n  echo a.pop()\n}\n',
-    )
-    expect(titled(
-      actions_for(twice, 'var n'), "Inline variable 'n'",
-    )).to_be_nil()
+    expect(
+      applied(once, titled(actions_for(once, 'var n'), "Inline variable 'n'")),
+    ).to_equal('def f(a) {\n  echo a.pop()\n}\n')
+    expect(titled(actions_for(twice, 'var n'), "Inline variable 'n'"))
+        .to_be_nil()
   })
 
   it(
-    'is not offered for a variable set again, or when what it reads changes', @{
+    'is not offered for a variable set again, or when what it reads changes',
+    @{
       var set_again = 'def f(a) {\n  var n = a\n  n = 2\n  echo n\n}\n'
       var read_changes = 'def f(a) {\n  var n = a + 1\n  a = 5\n  echo n\n}\n'
 
-      expect(titled(
-        actions_for(set_again, 'var n'), "Inline variable 'n'",
-      )).to_be_nil()
-      expect(titled(
-        actions_for(read_changes, 'var n'), "Inline variable 'n'",
-      )).to_be_nil()
+      expect(titled(actions_for(set_again, 'var n'), "Inline variable 'n'"))
+          .to_be_nil()
+      expect(titled(actions_for(read_changes, 'var n'), "Inline variable 'n'"))
+          .to_be_nil()
     },
   )
 
@@ -257,15 +271,15 @@ describe('inline', @{
     var title = "Inline every call of 'double' and remove it"
     var action = titled(actions_for(source, 'def double'), title)
 
-    expect(applied(
-      source, action,
-    )).to_equal('\necho (3 * 2)\necho ((1 + 1) * 2)\n')
+    expect(applied(source, action))
+        .to_equal('\necho (3 * 2)\necho ((1 + 1) * 2)\n')
   })
 
   it('inlines the one call under the cursor', @{
     var source = 'def double(n) {\n  return n * 2\n}\n\necho double(3)\necho double(4)\n'
     var action = titled(
-      actions_for(source, 'double(3)'), "Inline this call of 'double'",
+      actions_for(source, 'double(3)'),
+      "Inline this call of 'double'",
     )
 
     expect(applied(source, action)).to_contain('echo (3 * 2)\necho double(4)')
@@ -281,11 +295,12 @@ describe('formatting', @{
       options: { tabSize: 2, insertSpaces: true },
     })
 
-    expect(apply(
-      source, edits,
-    )).to_equal('def f(a) {\n  return a\n}\n\necho 1\n')
+    expect(apply(source, edits))
+        .to_equal('def f(a) {\n  return a\n}\n\necho 1\n')
     expect(edits.every(@(edit) => edit.range.start.line < 3)).to_be_true()
-    client.notify('textDocument/didClose', { textDocument: { uri: address } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: address },
+    })
   })
 
   it('keeps to the range asked for', @{
@@ -301,7 +316,9 @@ describe('formatting', @{
     })
 
     expect(apply(source, edits)).to_equal('var a = [1,2]\n\nvar b = [3, 4]\n')
-    client.notify('textDocument/didClose', { textDocument: { uri: address } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: address },
+    })
   })
 
   it('leaves a file with a syntax error as it is', @{
@@ -312,6 +329,8 @@ describe('formatting', @{
     })
 
     expect(edits).to_equal([])
-    client.notify('textDocument/didClose', { textDocument: { uri: address } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: address },
+    })
   })
 })

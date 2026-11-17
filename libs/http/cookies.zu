@@ -1,13 +1,14 @@
 /**
  * @module cookies
  *
- * Cookies, both halves of them: `Cookie` is one cookie with its
- * attributes, `CookieJar` is a store that applies the domain, path and
- * expiry rules when deciding what to send.
+ * Both sides of cookies. `Cookie` is a single cookie with its
+ * attributes, and `CookieJar` stores cookies and applies the domain,
+ * path and expiry rules when deciding which ones to send.
  *
  * The parsing and formatting functions handle the two header formats,
- * which are not symmetric: a request sends many cookies in one `Cookie`
- * header, a response sets one per `Set-Cookie`.
+ * which work differently: a request sends many cookies in one `Cookie`
+ * header, while a response sets each cookie in its own `Set-Cookie`
+ * header.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -48,13 +49,13 @@ def is_valid_value(value) {
 }
 
 /**
- * A single cookie, in either direction: the name/value pair a client
- * sends back in a `Cookie` header, or the full attribute set a server
- * sends in `Set-Cookie`.
+ * A single cookie, in either direction: either the name and value that
+ * a client sends back in a `Cookie` header, or the full set of
+ * attributes that a server sends in `Set-Cookie`.
  *
  * The attributes follow RFC 6265bis, including `SameSite` and the
- * `__Host-`/`__Secure-` name prefixes, whose rules are enforced by
- * `to_header()` rather than left to the caller to remember.
+ * `__Host-` and `__Secure-` name prefixes. `to_header()` enforces the
+ * rules for the prefixes, so the caller doesn't have to remember them.
  *
  * @printable
  */
@@ -73,9 +74,10 @@ class Cookie {
   var value
 
   /**
-   * The domain the cookie is sent to, or `nil` to scope it to exactly
-   * the host that set it. Note that a `Domain` attribute *widens*
-   * scope to subdomains; leaving it off is the narrower choice.
+   * The domain the cookie is sent to, or `nil` to limit it to the exact
+   * host that set it. Note that a `Domain` attribute *widens* the
+   * cookie's scope to include subdomains, so leaving it out is the more
+   * restrictive choice.
    * @type ?string
    */
   var domain
@@ -94,9 +96,9 @@ class Cookie {
   var expires
 
   /**
-   * Lifetime in seconds from now. Takes precedence over `expires` in
-   * every browser that supports it; `0` expires the cookie
-   * immediately.
+   * The cookie's lifetime, in seconds from now. Every browser that
+   * supports it gives it priority over `expires`. `0` expires the
+   * cookie immediately.
    * @type ?number
    */
   var max_age
@@ -165,7 +167,7 @@ class Cookie {
   /**
    * Renders the cookie as a `Set-Cookie` field value.
    *
-   * The name prefixes defined in RFC 6265bis §4.1.3 are honoured
+   * The name prefixes defined in RFC 6265bis §4.1.3 are honored
    * here: a `__Secure-` cookie is forced `Secure`, and a `__Host-`
    * cookie is forced `Secure`, pinned to `Path=/`, and stripped of
    * any `Domain`. Browsers reject cookies that carry a prefix without
@@ -227,10 +229,10 @@ class Cookie {
   }
 
   /**
-   * Whether the cookie's own attributes say it has already expired,
-   * as of `now` (default: the current time). A session cookie - one
-   * with neither `expires` nor `max_age` - is never expired by this
-   * test.
+   * Whether the cookie's own attributes say it has already expired, as
+   * of `now` (the current time by default). A session cookie, which has
+   * neither `expires` nor `max_age`, never counts as expired by this
+   * check.
    *
    * @param ?number now
    * @returns bool
@@ -267,8 +269,10 @@ def _is_token(name) {
 
   iter var i = 0; i < name.length(); i++ {
     var c = name[i].ord()
-    var ok = (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or
-      (c >= 97 and c <= 122) or "!#$%&'*+-.^_`|~".index_of(name[i]) > -1
+    var ok = (c >= 48 and c <= 57) or
+        (c >= 65 and c <= 90) or
+        (c >= 97 and c <= 122) or
+        "!#$%&'*+-.^_`|~".index_of(name[i]) > -1
 
     if !ok {
       return false
@@ -279,17 +283,17 @@ def _is_token(name) {
 }
 
 /**
- * Parses a request's `Cookie` header into a dictionary of name to
- * value.
+ * Parses a request's `Cookie` header into a dictionary that maps names
+ * to values.
  *
- * A cookie header is a flat `a=1; b=2` list with no attributes -
- * everything the server set is gone by the time it comes back, which
- * is why a server that needs to know a cookie's path or expiry has to
- * have stored that itself.
+ * A `Cookie` header is a simple `a=1; b=2` list without any attributes.
+ * Everything else the server set is gone by the time the cookie comes
+ * back, which is why a server that needs to know a cookie's path or
+ * expiry has to store that information itself.
  *
- * Malformed pairs are skipped rather than raising: a browser will
- * cheerfully send whatever junk any script on the page stored, and
- * refusing the whole request over one bad pair loses the good ones
+ * Invalid pairs are skipped instead of raising an error. A browser will
+ * happily send whatever any script on the page stored, and rejecting
+ * the whole request because of one bad pair would lose the good ones
  * too.
  *
  * @param string header
@@ -378,8 +382,8 @@ def parse_set_cookie(header) {
 
     var split = attribute.index_of('=')
     var key = split > -1
-      ? attribute[0, split].trim().lower()
-      : attribute.lower()
+        ? attribute[0, split].trim().lower()
+        : attribute.lower()
     var attribute_value = split > -1 ? attribute[split + 1,].trim() : ''
 
     using key {
@@ -451,16 +455,16 @@ def format_cookie_header(cookies: dict) {
 }
 
 /**
- * A client-side cookie store: keeps the cookies a server set, decides
- * which of them a later request is entitled to see, and forgets the
+ * A client-side cookie store. It keeps the cookies a server sets,
+ * decides which of them a later request should include, and forgets the
  * ones that have expired.
  *
- * The matching rules are RFC 6265 §5.4's: domain-match (an exact host
- * match, or a suffix match when the cookie carried a `Domain`),
- * path-match, and the `Secure` flag against the request's scheme.
- * Getting this wrong in either direction is a real problem - too
- * strict and sessions break, too loose and a cookie leaks to a host
- * that never should have seen it.
+ * The matching rules are the ones in RFC 6265 §5.4: domain matching (an
+ * exact host match, or a suffix match if the cookie has a `Domain`),
+ * path matching, and checking the `Secure` flag against the request's
+ * scheme. Getting this wrong in either direction causes real problems.
+ * If the rules are too strict, sessions break, and if they're too
+ * loose, a cookie leaks to a host that should never have seen it.
  */
 class CookieJar {
 
@@ -473,13 +477,13 @@ class CookieJar {
   /**
    * Records a cookie as having been set by `host`.
    *
-   * A cookie whose `Domain` is not a suffix of `host` is rejected
-   * outright - that is a server trying to set a cookie for a domain
-   * it does not control.
+   * A cookie whose `Domain` isn't a suffix of `host` is rejected,
+   * because that means a server is trying to set a cookie for a domain
+   * it doesn't control.
    *
    * @param Cookie cookie
-   * @param string host: the host of the response that set it
-   * @param ?string request_path: used to derive a default path
+   * @param string host: the host of the response that set the cookie
+   * @param ?string request_path: used to work out a default path
    * @returns bool: whether the cookie was accepted
    */
   store(cookie, host: string, request_path: ?string) {
@@ -488,8 +492,8 @@ class CookieJar {
 
     if domain {
       domain = domain.lower()
-      if domain != normalized_host
-        and !normalized_host.ends_with('.' + domain) {
+      if domain != normalized_host and
+          !normalized_host.ends_with('.' + domain) {
         return false
       }
     } else {

@@ -309,8 +309,8 @@ class BinaryConstraint < AbstractConstraint {
   # reached.
   choose_method(mark) {
     if self.v1.mark == mark {
-      if self.v2.mark != mark
-        and self.strength.stronger(self.v2.walk_strength) {
+      if self.v2.mark != mark and
+          self.strength.stronger(self.v2.walk_strength) {
         self.direction = FORWARD
       } else {
         self.direction = nil
@@ -319,8 +319,8 @@ class BinaryConstraint < AbstractConstraint {
     }
 
     if self.v2.mark == mark {
-      if self.v1.mark != mark
-        and self.strength.stronger(self.v1.walk_strength) {
+      if self.v1.mark != mark and
+          self.strength.stronger(self.v1.walk_strength) {
         self.direction = BACKWARD
       } else {
         self.direction = nil
@@ -419,7 +419,7 @@ class UnaryConstraint < AbstractConstraint {
 
   choose_method(mark) {
     self.satisfied = self.output.mark != mark and
-      self.strength.stronger(self.output.walk_strength)
+        self.strength.stronger(self.output.walk_strength)
     return nil
   }
 
@@ -459,8 +459,7 @@ class EditConstraint < UnaryConstraint {
     return true
   }
 
-  execute() {
-  }
+  execute() {}
 }
 
 # Holds a variable at its current value.
@@ -469,8 +468,7 @@ class StayConstraint < UnaryConstraint {
     parent(v, strength, planner)
   }
 
-  execute() {
-  }
+  execute() {}
 }
 
 class EqualityConstraint < BinaryConstraint {
@@ -840,7 +838,7 @@ def main() {
   }
 
   echo '${OUTER_ITERATIONS} runs of chain_test(${INNER_ITERATIONS}) and ' +
-    'projection_test(${INNER_ITERATIONS}) verified'
+      'projection_test(${INNER_ITERATIONS}) verified'
 }
 
 var start = time()

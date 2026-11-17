@@ -272,7 +272,7 @@ fn print_help() {
     palette.accent.paint("zuri")
   );
   println!(
-    "       {} run [PATH]         Run a script, a package, or project",
+    "       {} run [PATH]         Run a script, a package or a project",
     palette.accent.paint("zuri")
   );
   println!(

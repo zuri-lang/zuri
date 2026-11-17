@@ -23,7 +23,9 @@ const _INDEXING = 180
  */
 def capabilities() {
   return {
-    general: { positionEncodings: ['utf-16'] },
+    general: {
+      positionEncodings: ['utf-16'],
+    },
     workspace: {
       configuration: true,
       workspaceFolders: true,
@@ -42,7 +44,9 @@ def capabilities() {
       completion: {
         completionItem: { snippetSupport: true, labelDetailsSupport: true },
       },
-      hover: { contentFormat: ['markdown', 'plaintext'] },
+      hover: {
+        contentFormat: ['markdown', 'plaintext'],
+      },
       signatureHelp: {},
       definition: { linkSupport: false },
       documentSymbol: { hierarchicalDocumentSymbolSupport: true },
@@ -50,7 +54,10 @@ def capabilities() {
         codeActionLiteralSupport: {
           codeActionKind: {
             valueSet: [
-              'quickfix', 'refactor', 'refactor.extract', 'refactor.inline',
+              'quickfix',
+              'refactor',
+              'refactor.extract',
+              'refactor.inline',
             ],
           },
         },
@@ -58,11 +65,22 @@ def capabilities() {
       rename: { prepareSupport: true },
       foldingRange: { lineFoldingOnly: true },
       semanticTokens: {
-        requests: { range: true, full: { delta: true } },
+        requests: {
+          range: true,
+          full: { delta: true },
+        },
         formats: ['relative'],
       },
-      inlayHint: { resolveSupport: { properties: ['tooltip'] } },
-      publishDiagnostics: { tagSupport: { valueSet: [1, 2] } },
+      inlayHint: {
+        resolveSupport: {
+          properties: ['tooltip'],
+        },
+      },
+      publishDiagnostics: {
+        tagSupport: {
+          valueSet: [1, 2],
+        },
+      },
     },
     window: { workDoneProgress: true },
   }
@@ -109,9 +127,8 @@ def position(source: string, marker: string, shift: ?int, encoding: ?string) {
 
   var offset = at + marker.length() - (shift == nil ? 0 : shift)
 
-  return text
-    .LineIndex(source)
-    .position(offset, encoding == nil ? text.UTF16 : encoding)
+  return text.LineIndex(source)
+      .position(offset, encoding == nil ? text.UTF16 : encoding)
 }
 
 /**
@@ -153,9 +170,9 @@ def apply(source: string, edits: list) {
   var result = source
 
   for span in spans {
-    result = result[0, span.start]
-      + span.text
-      + result[span.end, result.length()]
+    result = result[0, span.start] +
+        span.text +
+        result[span.end, result.length()]
   }
 
   return result
@@ -181,16 +198,16 @@ class Client {
     self.answers = {}
     self.versions = {}
     self.texts = {}
-    self.child = spawn(os.exe_path, ['lsp'], {
-      stdin: 'pipe',
-      stdout: 'pipe',
-      stderr: 'inherit',
-      cwd: root,
-    })
+    self.child = spawn(
+      os.exe_path,
+      ['lsp'],
+      { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit', cwd: root },
+    )
     self.endpoint = rpc.endpoint(rpc.process(self.child))
 
     self.endpoint.on_notification(
-      'textDocument/publishDiagnostics', @(params, context) {
+      'textDocument/publishDiagnostics',
+      @(params, context) {
         self.diagnostics[params.uri] = params
       },
     )
@@ -232,10 +249,9 @@ class Client {
       processId: os.pid(),
       clientInfo: { name: 'zuri lsp tests' },
       rootUri: uri(self.root),
-      workspaceFolders: [{
-        uri: uri(self.root),
-        name: os.base_name(self.root),
-      }],
+      workspaceFolders: [
+        { uri: uri(self.root), name: os.base_name(self.root) },
+      ],
       capabilities: given == nil ? capabilities() : given,
       initializationOptions: { zuri: self.settings },
     })
@@ -305,7 +321,9 @@ class Client {
     self.texts[address] = content
     self.notify('textDocument/didChange', {
       textDocument: { uri: address, version: self.versions[address] },
-      contentChanges: [{ text: content }],
+      contentChanges: [
+        { text: content },
+      ],
     })
   }
 
@@ -349,7 +367,9 @@ class Client {
    */
   wait_indexed() {
     self.wait_for(
-      @() => self.logged('indexed '), 'the workspace to be indexed', _INDEXING,
+      @() => self.logged('indexed '),
+      'the workspace to be indexed',
+      _INDEXING,
     )
   }
 
@@ -396,8 +416,8 @@ class Client {
     self.wait_for(@() {
       var pushed = self.diagnostics.get(address, nil)
 
-      return pushed != nil
-        and (version == nil or pushed.get('version', nil) == version)
+      return pushed != nil and
+          (version == nil or pushed.get('version', nil) == version)
     }, 'diagnostics of ${address}')
 
     return self.diagnostics[address].diagnostics

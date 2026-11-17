@@ -1,0 +1,121 @@
+# Tests for turning a README into a page: the Markdown GitHub reads,
+# Zuri coloured by its lexer, and nothing a README could use against
+# the page it is shown on.
+
+import test { * }
+
+import ..markup
+import ..markup { render }
+
+describe('render', @{
+  it('reads the Markdown GitHub reads', @{
+    var page = render(
+      '# Weather\n\nSome *rain* and ~~sun~~.\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n',
+    )
+
+    expect(page).to_contain('<h1 id="user-content-weather">Weather</h1>')
+    expect(page).to_contain('<em>rain</em>')
+    expect(page).to_contain('<del>sun</del>')
+    expect(page).to_contain('<td>1</td>')
+  })
+
+  it('colours Zuri, whatever follows the language in the fence', @{
+    expect(
+      render('```zuri\necho \'hi\'\n```\n'),
+    ).to_contain('<span class="kw">echo</span> <span class="str">\'hi\'</span>')
+    expect(render('```zuri,ignore\nvar x = 1\n```\n'))
+        .to_contain('<span class="kw">var</span>')
+  })
+
+  it('writes any other language plain', @{
+    expect(render('```sh\necho <hi>\n```\n')).to_contain('echo &lt;hi&gt;')
+  })
+
+  it('shows a task list as checkboxes nobody can tick', @{
+    var page = render('- [x] done\n- [ ] not\n')
+
+    expect(page)
+        .to_contain('<li><input type="checkbox" checked disabled> done</li>')
+    expect(page).to_contain('<li><input type="checkbox" disabled> not</li>')
+  })
+
+  it('keeps no input but a checkbox, and nothing a checkbox carries', @{
+    var page = render(
+      '<input type="text" value="secret"> <input type="checkbox" onclick="steal()" name="x">\n',
+    )
+
+    expect(page).not.to_contain('text')
+    expect(page).not.to_contain('steal')
+    expect(page).to_contain('<input type="checkbox" disabled>')
+  })
+
+  it("links a footnote to the note under the README's own ids", @{
+    var page = render('Rain[^1].\n\n[^1]: Mostly.\n')
+
+    expect(
+      page,
+    ).to_contain('<a href="#user-content-fn-1" id="user-content-fnref-1">1</a>')
+    expect(page).to_contain('<li id="user-content-fn-1">')
+  })
+
+  it('takes a contents link to its heading', @{
+    var page = render('## Install\n\nSee [Install](#install).\n')
+
+    expect(page).to_contain('<h2 id="user-content-install">Install</h2>')
+    expect(page).to_contain('<a href="#user-content-install">Install</a>')
+  })
+
+  it('never gives the page an id of its own choosing', @{
+    expect(render('<p id="header">Hi</p>\n<a name="top"></a>\n'))
+        .to_contain('<p id="user-content-header">Hi</p>')
+    expect(render('<a name="top"></a>\n')).to_contain('name="user-content-top"')
+  })
+
+  it('makes addresses into links that lend the site nothing', @{
+    expect(render('See https://example.com.')).to_contain(
+      '<a href="https://example.com" rel="nofollow ugc noopener">https://example.com</a>',
+    )
+  })
+
+  it('keeps a relative link as it is', @{
+    expect(render('[the guide](docs/guide.md)'))
+        .to_contain('<a href="docs/guide.md">the guide</a>')
+  })
+
+  it('removes scripts, frames and handlers from raw HTML', @{
+    var page = render(
+      '<script>alert(1)</script>\n\n<iframe src="https://example.com"></iframe>\n\n<p onclick="steal()">Hello</p>\n\n<img src="a.png" onerror="steal()">\n',
+    )
+
+    expect(page).not.to_contain('script')
+    expect(page).not.to_contain('alert')
+    expect(page).not.to_contain('iframe')
+    expect(page).not.to_contain('steal')
+    expect(page).to_contain('<p>Hello</p>')
+    expect(page).to_contain('<img src="a.png">')
+  })
+
+  it('gives a script address nowhere to go', @{
+    var page = render('[click](javascript:alert(1))')
+
+    expect(page).to_contain('click')
+    expect(page).not.to_contain('javascript')
+  })
+})
+
+describe('inline', @{
+  it('renders one line, with names in braces as code', @{
+    expect(markup.inline('Reads *a* {Report} from {forecast()}.')).to_be(
+      'Reads <em>a</em> <code>Report</code> from <code>forecast()</code>.',
+    )
+  })
+
+  it('takes out what render takes out', @{
+    var line = markup.inline(
+      'Hi <script>alert(1)</script><img src="x" onerror="steal()">',
+    )
+
+    expect(line).not.to_contain('script')
+    expect(line).not.to_contain('steal')
+  })
+})

@@ -12,22 +12,22 @@ import .store { SessionStore }
 
 /**
  * Keeps sessions in a dictionary, for as long as the isolate that
- * made the store lives.
+ * created the store is running.
  *
- * It is the right store for a test, where a session has to survive a
- * handful of requests and nothing more, and for a single-process
- * development server. It is the wrong store for anything serving real
+ * This store is the right choice for tests, where a session only has to
+ * last for a few requests, and for a development server running in a
+ * single process. It's the wrong choice for anything that serves real
  * traffic:
  *
- * - Nothing survives a restart. Every session in flight ends when the
- *   process does, deploy included.
+ * - Nothing survives a restart. Every active session ends when the
+ *   process does, including during a deployment.
  * - Nothing is shared. `http.serve()` runs each worker in its own
- *   isolate with its own heap, so a browser whose next request lands
- *   on a different worker arrives with a session that worker has
- *   never heard of.
+ *   isolate with its own heap, so a browser whose next request goes to
+ *   a different worker arrives with a session that the worker has never
+ *   seen.
  *
  * `FileStore` has neither problem and needs no more setup than this
- * does, which is why it, and not this, is the default.
+ * store does, which is why it's the default instead of this one.
  *
  * @printable
  */

@@ -1,23 +1,24 @@
 /**
  * @module protocol
  *
- * The PostgreSQL frontend/backend protocol, version 3.
+ * Version 3 of the PostgreSQL frontend/backend protocol.
  *
- * A connection is a sequence of messages in both directions. The
- * client sends a request and then a Sync, and the server answers with
- * some number of messages ending in ReadyForQuery. Everything between
- * those two points belongs to the request, and nothing else may be
- * sent until it arrives, which is what makes this a state machine
- * rather than a set of independent calls.
+ * A connection is a sequence of messages in both directions. The client
+ * sends a request followed by a Sync message, and the server answers
+ * with some number of messages, ending with ReadyForQuery. Everything
+ * between those two points belongs to the request, and nothing else can
+ * be sent until ReadyForQuery arrives, which makes the protocol a state
+ * machine, not a set of independent calls.
  *
- * ### Why statements are described before they are bound
+ * ### Why statements are described before they're bound
  *
  * A value can be sent and received either as text or in the server's
- * own binary form, chosen per parameter and per column, and the choice
- * is made in the Bind message. To choose well, the types have to be
- * known first, which is what Describe reports. So a statement is
- * parsed and described once, and every execution after that reuses
- * what was learned. A statement run in a loop pays for this once.
+ * own binary format, chosen separately for each parameter and each
+ * column, and the choice is made in the Bind message. To choose well,
+ * the types have to be known first, and Describe is what reports them.
+ * So a statement is parsed and described once, and every later
+ * execution reuses what was learned. A statement run in a loop only
+ * pays for this once.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -27,8 +28,14 @@ import .auth
 import .errors { raise_for }
 import .messages { * }
 import .types {
-  read_int16, read_uint16, read_int32, read_uint32, text_of, write_int16,
-  write_int32, as_bytes,
+  read_int16,
+  read_uint16,
+  read_int32,
+  read_uint32,
+  text_of,
+  write_int16,
+  write_int32,
+  as_bytes,
 }
 
 # Every column read as text, which is what a simple query returns.
@@ -49,8 +56,8 @@ var _NULL_SIZE = 4294967295
 
 # What ends nearly every request: run the unnamed portal to the end,
 # then Sync. Built once, since it never varies.
-var _EXECUTE_ALL = Writer().cstring('').int32(0).frame('E')
-  + Writer().frame('S')
+var _EXECUTE_ALL = Writer().cstring('').int32(0).frame('E') +
+    Writer().frame('S')
 
 # The length that stands for a NULL parameter.
 var _NULL_LENGTH = write_int32(-1)
@@ -71,12 +78,11 @@ class Protocol {
   var parameters = {}
 
   /**
-   * Notifications received but not yet collected, each
-   * `{ channel, payload, pid }`.
+   * Notifications that have been received but not yet collected, each
+   * one `{ channel, payload, pid }`.
    *
-   * The server can send one at any point between messages, so they
-   * are gathered wherever they arrive rather than only when asked
-   * for.
+   * The server can send a notification at any point between messages,
+   * so they're collected wherever they arrive, not only when asked for.
    *
    * @type list
    */
@@ -113,7 +119,7 @@ class Protocol {
   }
 
   /**
-   * The process id the server gave this connection, which is what a
+   * The process ID the server gave this connection, which a
    * cancellation request has to name.
    *
    * @returns number|nil
@@ -336,7 +342,8 @@ class Protocol {
       self._send_execute(request)
 
       return self._collect(
-        request, self._decoders_of(request.get('columns', [])),
+        request,
+        self._decoders_of(request.get('columns', [])),
       )
     }
 
@@ -407,9 +414,7 @@ class Protocol {
 
     self._send(execute.frame('E') + Writer().frame('S'))
 
-    return self._collect(
-      request, self._decoders_of(request.get('columns', [])),
-    )
+    return self._collect(request, self._decoders_of(request.get('columns', [])))
   }
 
   /**
@@ -731,8 +736,10 @@ class Protocol {
     var offset = at + 2
 
     iter var index = 0; index < count; index++ {
-      var size = (buffer[offset] * 16777216) + (buffer[offset + 1] << 16) +
-        (buffer[offset + 2] << 8) + buffer[offset + 3]
+      var size = (buffer[offset] * 16777216) +
+          (buffer[offset + 1] << 16) +
+          (buffer[offset + 2] << 8) +
+          buffer[offset + 3]
       offset += 4
 
       if size == _NULL_SIZE {
@@ -776,9 +783,9 @@ class Protocol {
   # connection rather than the socket.
   _send(payload) {
     if self._closed {
-      raise ConnectionError(
-        'this connection has been closed', { driver: 'postgres' },
-      )
+      raise ConnectionError('this connection has been closed', {
+        driver: 'postgres',
+      })
     }
 
     catch {
@@ -787,8 +794,7 @@ class Protocol {
       self._closed = true
 
       raise ConnectionError(
-        'the connection to the server failed while writing: ' +
-          error.message,
+        'the connection to the server failed while writing: ' + error.message,
         { driver: 'postgres' },
       )
     }
@@ -896,7 +902,7 @@ class Protocol {
         if !auth.offers_scram(message.payload[4, message.payload.length()]) {
           raise ProtocolError(
             'the server offered no authentication mechanism this ' +
-              'adapter implements; it supports ${auth.SCRAM_SHA_256}',
+                'adapter implements; it supports ${auth.SCRAM_SHA_256}',
             { driver: 'postgres' },
           )
         }
@@ -921,7 +927,7 @@ class Protocol {
 
       raise ProtocolError(
         'the server asked for an authentication method this adapter ' +
-          'does not implement (${kind})',
+            'does not implement (${kind})',
         { driver: 'postgres' },
       )
     }
@@ -939,11 +945,7 @@ class Protocol {
 
     self._send(writer.frame('p'))
 
-    return {
-      nonce: client_nonce,
-      bare: first.bare,
-      server_signature: nil,
-    }
+    return { nonce: client_nonce, bare: first.bare, server_signature: nil }
   }
 
   _answer_scram(scram, password, challenge) {
@@ -974,10 +976,9 @@ class Protocol {
 
   _require_password(password, what) {
     if password == nil or password == '' {
-      raise ConnectionError(
-        'the server asked for ${what} and none was given',
-        { driver: 'postgres' },
-      )
+      raise ConnectionError('the server asked for ${what} and none was given', {
+        driver: 'postgres',
+      })
     }
   }
 }

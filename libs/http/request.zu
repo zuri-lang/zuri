@@ -1,12 +1,13 @@
 /**
  * @module request
  *
- * `HttpRequest`: one inbound request, with its method, target, headers
- * and body, plus the query string and route parameters already parsed.
+ * `HttpRequest`, a single incoming request, with its method, target,
+ * headers and body, plus its query string and route parameters, already
+ * parsed.
  *
- * The query-string functions are separate because they are useful on
- * their own: `build_query_string()` is what constructs a URL to request,
- * not only what reads one.
+ * The query string functions are separate because they're useful on
+ * their own. For example, `build_query_string()` helps you build a URL
+ * to request, not just read one.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -50,11 +51,11 @@ class HttpRequest {
 
   /**
    * The request target exactly as it appeared on the request line,
-   * before any decoding - `'/search?q=a%20b'`.
+   * before any decoding, such as `'/search?q=a%20b'`.
    *
-   * @note Route on `path`, not on this. This is the un-decoded,
-   *    un-normalised form and matching against it is how directory
-   *    traversal gets through.
+   * @note Route requests using `path`, not this. This is the form
+   *    before decoding and normalization, and matching on it is how
+   *    directory traversal attacks get through.
    * @type string
    */
   var target = '/'
@@ -74,9 +75,10 @@ class HttpRequest {
   var query_string = ''
 
   /**
-   * The decoded query parameters, as `name -> [value, ...]`. Always a
-   * list, since `?a=1&a=2` is legal and collapsing it loses data;
-   * `query_param()` gets at the common single-value case.
+   * The decoded query parameters, as `name -> [value, ...]`. Each value
+   * is always a list, because `?a=1&a=2` is valid and combining the
+   * values would lose data. `query_param()` handles the common case of
+   * a single value.
    * @type dict
    */
   var query = {}
@@ -107,8 +109,9 @@ class HttpRequest {
   var params = {}
 
   /**
-   * The request body. Empty until read; a server materialises it
-   * before dispatching unless the route opted into streaming.
+   * The request body. It's empty until it's read. A server reads it
+   * before dispatching the request, unless the route asked to stream
+   * it.
    * @type bytes
    */
   var body
@@ -116,9 +119,10 @@ class HttpRequest {
   /**
    * The address of the peer at the other end of the socket.
    *
-   * @note This is the immediate peer. Behind a proxy that is the
-   *    proxy, not the user - use `client_ip()`, which knows how to
-   *    consult the forwarding headers safely.
+   * @note This is the immediate peer. If there's a proxy in front of
+   *    the server, this is the proxy's address, not the user's. Use
+   *    `client_ip()`, which knows how to use the forwarding headers
+   *    safely.
    * @type ?string
    */
   var remote_address
@@ -144,16 +148,16 @@ class HttpRequest {
   var authority
 
   /**
-   * Free-form storage for whatever middleware wants to attach to a
-   * request - a resolved user, a request id, a database handle - so
-   * the handler can find it later.
+   * Storage for anything middleware wants to attach to a request, such
+   * as the current user, a request ID or a database handle, so that the
+   * handler can find it later.
    * @type dict
    */
   var context = {}
 
   /**
-   * The reader for the body, when the route asked to stream it rather
-   * than have it materialised. `nil` otherwise.
+   * The reader for the body, if the route asked to stream it instead of
+   * having it read in full. `nil` otherwise.
    * @type ?BodyReader
    */
   var body_reader
@@ -190,7 +194,7 @@ class HttpRequest {
    * Sets the request target and re-derives `path`, `query_string` and
    * `query` from it.
    *
-   * The path is percent-decoded and then normalised, in that order.
+   * The path is percent-decoded and then normalized, in that order.
    * Doing it the other way round is the classic traversal hole:
    * `%2e%2e%2f` looks like an ordinary segment until it is decoded.
    *
@@ -290,19 +294,19 @@ class HttpRequest {
   }
 
   /**
-   * This request's session.
+   * The request's session.
    *
-   * The session is put here by `http.session()`, so a server
-   * that never registered that middleware has none, and asking for
-   * one says so rather than handing back `nil` for a handler to
-   * misread as an empty session.
+   * The session is set up by `http.session()`, so a server that never
+   * registered that middleware doesn't have one. In that case, this
+   * raises an error instead of returning `nil`, which a handler might
+   * mistake for an empty session.
    *
    * ```zuri,ignore
    * request.session().set('account', account.id)
    * ```
    *
    * @returns Session
-   * @throws SessionError if the session middleware is not registered
+   * @throws SessionError if the session middleware isn't registered
    */
   session() {
     var current = self.context.get('session', nil)
@@ -310,7 +314,7 @@ class HttpRequest {
     if current == nil {
       raise SessionError(
         'this request has no session; register http.session() as ' +
-          'middleware on the server',
+            'middleware on the server',
       )
     }
 
@@ -384,11 +388,11 @@ class HttpRequest {
   /**
    * The submitted form fields, as `name -> value`, from either an
    * `application/x-www-form-urlencoded` or a `multipart/form-data`
-   * body. A body of neither type gives an empty dictionary rather
-   * than raising.
+   * body. A body of any other type gives an empty dictionary instead of
+   * raising an error.
    *
-   * Repeated names keep their first value here; use `form_all()` when
-   * a field can legitimately repeat.
+   * When a name is repeated, only its first value is kept. Use
+   * `form_all()` when a field can legitimately be repeated.
    *
    * @returns dict
    */
@@ -500,38 +504,39 @@ class HttpRequest {
   # ----------------------------------------------------------------
 
   /**
-   * The request's input as one dictionary, ready to hand to a
+   * The request's input as a single dictionary, ready to pass to a
    * validator.
    *
-   * With no argument, three sources are merged, each overriding the
-   * one before it:
+   * Without an argument, three sources are merged, each one overriding
+   * the one before it:
    *
-   * 1. route parameters, from the pattern that matched
-   * 2. query string parameters
-   * 3. the body - a JSON object's keys, or the submitted form fields
+   * 1. Route parameters from the pattern that matched
+   * 2. Query string parameters
+   * 3. The body: the keys of a JSON object, or the submitted form
+   *    fields
    *
-   * Pass `source` to take exactly one of them instead: `'params'`,
-   * `'query'` or `'body'`.
+   * Pass `source` to use only one of them: `'params'`, `'query'` or
+   * `'body'`.
    *
-   * A query or form field is a list on the wire, since a name may
-   * legally repeat. A name carrying exactly one value is flattened to
-   * that value here, so a rule expecting a string sees a string; a
-   * name carrying several stays a list. A field that must *always* be
-   * a list, however many values arrived, is better read through
-   * `form_all()` or `query` directly.
+   * A query or form field arrives as a list, because a name can
+   * legitimately be repeated. Here, a name with exactly one value is
+   * replaced by that value, so that a rule that expects a string sees a
+   * string, and a name with several values stays a list. If a field
+   * must *always* be a list, however many values arrived, read it with
+   * `form_all()` or from `query` directly.
    *
-   * Uploaded files are not included - nothing a schema can say about
-   * a file is expressible as a rule over its bytes. Reach them with
-   * `file()` and check them by hand.
+   * Uploaded files aren't included, because there's nothing useful a
+   * schema rule could say about a file's bytes. Get them with `file()`
+   * and check them yourself.
    *
-   * A JSON body that is not an object (an array, a bare string)
-   * contributes nothing, since there are no names to merge; read it
-   * with `json_body()` instead.
+   * A JSON body that isn't an object, such as an array or a plain
+   * string, doesn't contribute anything, because there are no names to
+   * merge. Read it with `json_body()` instead.
    *
-   * @param ?string source: `'params'`, `'query'`, `'body'`, or `'all'`
+   * @param ?string source: `'params'`, `'query'`, `'body'` or `'all'`
    *    (the default)
    * @returns dict
-   * @throws ValueError if `source` names something else
+   * @throws ValueError if `source` is something else
    */
   input(source: ?string) {
     var wanted = source == nil ? 'all' : source.lower()
@@ -584,11 +589,11 @@ class HttpRequest {
   }
 
   /**
-   * Validates the request's input against `schema` and returns the
-   * data that was validated.
+   * Validates the request's input against `schema` and returns the data
+   * that was validated.
    *
-   * `schema` is anything with a `check_or_raise()` method - a
-   * `validate.Schema` in practice:
+   * `schema` can be any object with a `check_or_raise()` method, which
+   * in practice means a `validate.Schema`:
    *
    * ```zuri
    * import validate
@@ -604,9 +609,10 @@ class HttpRequest {
    * })
    * ```
    *
-   * Failure raises the schema's own error - `validate.ValidationError`
-   * - carrying an `errors` list of `{ field, message }`. Catch it to
-   * turn it into whatever your API answers with:
+   * If validation fails, the schema's own error is raised, which is a
+   * `validate.ValidationError` with an `errors` list of
+   * `{ field, message }` entries. Catch it to turn it into whatever
+   * response your API sends:
    *
    * ```zuri
    * catch {
@@ -617,15 +623,16 @@ class HttpRequest {
    * }
    * ```
    *
-   * @note This deliberately does not import the `validate` module. Any
-   *    object exposing `check_or_raise(data)` works, and a server that
-   *    never validates anything never pays to load it.
+   * @note This method intentionally doesn't import the `validate`
+   *    module. Any object with a `check_or_raise(data)` method works,
+   *    and a server that never validates anything never has to load it.
    *
    * @param Schema schema
-   * @param ?string source: as `input()`; defaults to `'all'`
+   * @param ?string source: the same as for `input()`. Defaults to
+   *    `'all'`.
    * @returns dict: the input that was validated
-   * @throws ValidationError when the input does not satisfy the schema
-   * @throws TypeError if `schema` is not an object that can validate
+   * @throws ValidationError if the input doesn't satisfy the schema
+   * @throws TypeError if `schema` isn't an object that can validate
    */
   validate(schema, source: ?string) {
     # A cheap guard against the common slip of handing over the data
@@ -634,7 +641,7 @@ class HttpRequest {
     if !is_instance(schema) {
       raise TypeError(
         'validate() expects a schema built by validate.schema(), ' +
-          'got ${typeof(schema)}',
+            'got ${typeof(schema)}',
       )
     }
 
@@ -711,25 +718,25 @@ class HttpRequest {
   }
 
   /**
-   * The originating client's IP address.
+   * The IP address of the client that sent the request.
    *
-   * Directly served, that is simply the peer's address. Behind a
-   * reverse proxy the peer is the proxy, and the real client is in
-   * `X-Forwarded-For` or RFC 7239's `Forwarded` - but those are
-   * request headers, which is to say anyone can write anything in
-   * them.
+   * When clients connect to the server directly, this is the peer's
+   * address. Behind a reverse proxy, the peer is the proxy, and the
+   * real client's address is in `X-Forwarded-For` or in the `Forwarded`
+   * header from RFC 7239. Those are ordinary request headers, so a
+   * client can put anything it likes in them.
    *
-   * So they are only consulted when `trust_proxy` says to, and the
-   * value taken is the *rightmost* entry that is not itself one of
-   * `trusted`, walking in from the proxy end. Taking the leftmost
-   * entry - the common shortcut - hands an attacker whatever client
-   * IP they care to claim, which matters the moment an IP is used for
-   * rate limiting, allowlisting or audit.
+   * For that reason, they're only read when `trust_proxy` is set. The
+   * address used is the *rightmost* entry in the chain that isn't one
+   * of the `trusted` addresses, working back from the proxy. Taking the
+   * leftmost entry, which is a common shortcut, lets an attacker claim
+   * any address they like, and that matters as soon as the address is
+   * used for rate limiting, an allowlist or an audit log.
    *
-   * @param ?bool trust_proxy: whether to consult forwarding headers
-   *    at all; defaults to `false`
-   * @param ?list trusted: proxy addresses to skip over when walking
-   *    the chain
+   * @param ?bool trust_proxy: whether to read the forwarding headers at
+   *    all. Defaults to `false`.
+   * @param ?list trusted: the addresses of proxies to skip when working
+   *    back through the chain
    * @returns ?string
    */
   client_ip(trust_proxy: ?bool, trusted: ?list) {
@@ -804,9 +811,9 @@ class HttpRequest {
   }
 
   /**
-   * Whether the client would rather have JSON than HTML - the usual
-   * way to decide whether an error should be rendered as a page or
-   * returned as an object.
+   * Whether the client prefers JSON to HTML. This is the usual way to
+   * decide whether an error should be rendered as a page or returned as
+   * an object.
    *
    * @returns bool
    */
@@ -856,10 +863,10 @@ class HttpRequest {
   }
 
   /**
-   * Whether the request asks to switch to another protocol - a
-   * WebSocket handshake, or an HTTP/2 upgrade.
+   * Whether the request asks to switch to another protocol, as a
+   * WebSocket handshake or an HTTP/2 upgrade does.
    *
-   * @param ?string protocol: check for one specific protocol
+   * @param ?string protocol: a specific protocol to check for
    * @returns bool
    */
   is_upgrade(protocol: ?string) {
@@ -895,9 +902,10 @@ class HttpRequest {
   }
 
   /**
-   * Whether this method is idempotent - repeating it has the same
-   * effect as making it once (RFC 9110 §9.2.2). This is what decides
-   * whether a client may retry a request after a connection failure.
+   * Whether the request method is idempotent, meaning that making the
+   * same request several times has the same effect as making it once
+   * (RFC 9110 §9.2.2). This decides whether a client can safely retry a
+   * request after a connection failure.
    *
    * @returns bool
    */
@@ -988,13 +996,13 @@ def _strip_port(address) {
 }
 
 /**
- * Decodes an `application/x-www-form-urlencoded` string - a query
- * string, or a form body - into `name -> [value, ...]`.
+ * Decodes an `application/x-www-form-urlencoded` string, such as a
+ * query string or a form body, into `name -> [value, ...]`.
  *
- * `+` decodes to a space and `%xx` to the byte it names, both of
- * which apply to names as well as values. A parameter with no `=`
- * maps to an empty string rather than to `nil`, matching what every
- * server-side form API does with `?debug`.
+ * `+` is decoded as a space and `%xx` as the byte it represents, in
+ * names as well as in values. A parameter without an `=` maps to an
+ * empty string, not to `nil`, which is how every server-side form API
+ * treats `?debug`.
  *
  * @param ?string text
  * @returns dict

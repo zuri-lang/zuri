@@ -1,14 +1,14 @@
 /**
  * @module http
  *
- * A complete HTTP stack: a client, a server, and the pieces both are
- * built from.
+ * A complete HTTP stack, with a client, a server and the building
+ * blocks they share.
  *
- * The server is meant to face the internet directly. Everything that
- * is normally the reverse proxy's job - TLS, static files with byte
- * ranges and conditional requests, response compression, keep-alive,
- * request size limits, timeouts, forwarding-header handling - is here
- * rather than assumed to be somewhere in front.
+ * The server is designed to be exposed directly to the internet. It
+ * handles everything a reverse proxy would normally do in front of an
+ * application: TLS, static files with byte ranges and conditional
+ * requests, response compression, keep-alive connections, request size
+ * limits, timeouts and forwarding headers.
  *
  * ### Making a request
  *
@@ -19,11 +19,10 @@
  * ```
  *
  * The module-level `get()`, `post()`, `put()`, `patch()`, `delete()`,
- * `head()`, `options()` and `trace()` all go through one shared
- * client, which keeps its connections open between calls. For
- * anything that needs its own settings - a base URL, an
- * authorization header, a cookie jar, a custom certificate authority
- * - build a client of your own:
+ * `head()`, `options()` and `trace()` functions all use a single shared
+ * client, which keeps its connections open between calls. If you need
+ * different settings, such as a base URL, an authorization header, a
+ * cookie jar or a custom certificate authority, create your own client:
  *
  * ```zuri
  * var api = http.client('https://api.example.com', {
@@ -54,10 +53,11 @@
  * server.listen()
  * ```
  *
- * Routes match literal segments, `:name` parameters, and a trailing
- * catch-all, with the most specific pattern winning regardless of
- * registration order. `use()` adds middleware, which runs outermost
- * first and controls whether the rest of the chain runs at all:
+ * Routes can contain literal segments, `:name` parameters and a
+ * catch-all at the end, and the most specific pattern wins, whatever
+ * order the routes were registered in. `use()` adds middleware, which
+ * runs from the outside in and decides whether the rest of the chain
+ * runs:
  *
  * ```zuri
  * server.use(@(request, response, next) {
@@ -80,8 +80,8 @@
  * ### Using more than one core
  *
  * `listen()` serves connections on the calling thread. `serve()` runs
- * the same pipeline across a pool of isolates instead, one accept
- * loop handing connections to workers:
+ * the same pipeline on a pool of isolates instead, with a single accept
+ * loop that hands connections to the workers:
  *
  * ```zuri
  * # app.zu
@@ -102,31 +102,31 @@
  * http.serve(app.setup, { port: 3000, workers: 8 })
  * ```
  *
- * `setup` runs inside each worker, so everything it reaches for has to
- * be something an isolate can be handed. A module is not: a `setup`
- * that names an imported module belongs in a module itself, which the
- * isolate resolves by name and whose own imports are resolved again on
- * that side.
+ * `setup` runs inside each worker, so everything it uses must be
+ * something that can be passed to an isolate. Modules can't be passed,
+ * so a `setup` function that uses an imported module should be defined
+ * in a module of its own. The isolate then finds it by name and
+ * resolves its imports itself.
  *
  * ### What the module handles for you
  *
- * Requests are parsed strictly: a header name with whitespace before
- * its colon, two disagreeing `Content-Length` values, a
- * `Transfer-Encoding` alongside a `Content-Length`, an obsolete
- * folded header line - each of these is a way to make a proxy and an
- * origin server disagree about where one message ends and the next
- * begins, and each is refused rather than guessed at.
+ * Requests are parsed strictly. A header name with whitespace before
+ * its colon, two different `Content-Length` values, a
+ * `Transfer-Encoding` together with a `Content-Length`, and an obsolete
+ * folded header line can all make a proxy and an origin server disagree
+ * about where one message ends and the next begins, so each of them is
+ * rejected instead of guessed at.
  *
- * Bodies are decompressed on the way in and compressed on the way
- * out, cookies are parsed and rendered per RFC 6265, dates are read
- * in all three formats HTTP allows and written in the one it
+ * Bodies are decompressed when they arrive and compressed when they're
+ * sent, cookies are parsed and written according to RFC 6265, dates are
+ * read in all three formats HTTP allows and written in the one it
  * requires, and content negotiation follows the quality weights the
  * client actually sent.
  *
  * ### Sessions
  *
- * `http.session` keeps per-visitor state on the server and finds it
- * again by a cookie:
+ * `http.session` stores per-visitor state on the server, and finds it
+ * again using a cookie:
  *
  * ```zuri
  * import http.session
@@ -141,8 +141,9 @@
  * })
  * ```
  *
- * Sessions are kept in files by default, in a database through
- * `http.session.sql`, or anywhere else a `SessionStore` can reach.
+ * By default, sessions are stored in files. They can also be stored in
+ * a database with `http.session.sql`, or anywhere else a `SessionStore`
+ * can reach.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -178,12 +179,12 @@ var _shared = HttpClient()
 _shared.enable_cookies()
 
 /**
- * The shared client the module-level request functions use.
+ * The shared client that the module-level request functions use.
  *
- * Reach for this to change a setting that should apply to every
- * casual `http.get()` in a program - a proxy-wide certificate
- * authority, a longer timeout - and build your own `client()` for
- * anything more specific than that.
+ * Use this to change a setting that should apply to every simple
+ * `http.get()` in a program, such as a certificate authority or a
+ * longer timeout, and create your own `client()` for anything more
+ * specific.
  *
  * @returns HttpClient
  */
@@ -333,7 +334,10 @@ def server(port: ?number, host: ?string) {
  * @returns HttpServer
  */
 def tls_server(
-  port: number, cert_chain: string, private_key: string, host: ?string,
+  port: number,
+  cert_chain: string,
+  private_key: string,
+  host: ?string,
 ) {
   var instance = HttpServer(port, host)
   instance.use_tls(cert_chain, private_key)
@@ -342,25 +346,28 @@ def tls_server(
 }
 
 /**
- * Runs a server across a pool of isolates, one per core by default.
+ * Runs a server using a pool of isolates, one per CPU core by default.
  *
  * `setup` is called once inside each worker with that worker's own
- * `HttpServer`, and registers the routes, middleware and settings the
- * worker should serve with. It may be defined in the main script or in
- * a module, and may use whatever it imports; an imported module is
- * reloaded inside the worker rather than shared with it, so the worker
- * gets its own copy of that module's top-level state.
+ * `HttpServer`, and it registers the routes, middleware and settings
+ * the worker should use. It can be defined in the main script or in a
+ * module, and it can use anything it imports. An imported module is
+ * loaded again inside the worker instead of being shared with it, so
+ * each worker gets its own copy of the module's top-level state.
  *
- * The calling isolate binds the socket and accepts connections,
- * handing each one to a worker. It does not return until the server
- * is stopped.
+ * The calling isolate binds the socket and accepts connections, passing
+ * each one to a worker. It doesn't return until the server is stopped,
+ * either by the `stop` function passed to `on_ready` or by calling
+ * `close()` on the server a worker was given. Either one stops every
+ * worker, and each worker closes its connections after giving any
+ * queued data a chance to be sent.
  *
  * @param function(1) setup: receives the worker's `HttpServer`
  * @param ?dict options: `port` (default `8000`), `host` (default
- *    `'127.0.0.1'`), `workers` (default: the number of CPUs),
- *    `backlog` (how many accepted connections may wait for a free
- *    worker), plus `cert_chain`/`private_key` for TLS
- * @throws HttpError if the socket cannot be bound
+ *    `'127.0.0.1'`), `workers` (the number of CPUs by default),
+ *    `backlog` (how many accepted connections can wait for a free
+ *    worker), and `cert_chain` and `private_key` for TLS
+ * @throws HttpError if the socket can't be bound
  */
 def serve(setup, options: ?dict) {
   worker.serve(setup, options)

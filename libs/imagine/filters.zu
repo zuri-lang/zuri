@@ -1,13 +1,13 @@
 /**
  * @module filters
  *
- * The maths behind the filters: colour matrices, lookup tables and
+ * The math behind the filters: color matrices, lookup tables and
  * convolution kernels.
  *
- * `Image` exposes these as named methods, and this is where the numbers
- * those methods pass come from. Building a matrix, a LUT or a kernel
- * here and applying it yourself is how to get a filter the module does
- * not already name.
+ * `Image` provides these as named methods, and this is where the
+ * numbers those methods use come from. To get a filter that the module
+ * doesn't already have, build a matrix, a lookup table or a kernel here
+ * and apply it yourself.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -20,21 +20,21 @@ import .color { Color }
 import .errors { ImageError }
 
 /**
- * Rec. 601 luma weights.
+ * The Rec. 601 luma weights.
  *
- * These are what "grayscale" means to an image editor, and what
- * [[imagine.Color.to_grayscale]] uses, so a grey produced by
- * `Image.grayscale()` and one produced by `Color.to_grayscale()`
- * agree. They are deliberately not the WCAG linear-light weights that
- * [[colors.relative_luminance]] uses; those answer a different
- * question, about contrast rather than appearance.
+ * These are what "grayscale" means in an image editor, and what
+ * [[imagine.Color.to_grayscale]] uses, so a gray produced by
+ * `Image.grayscale()` and one produced by `Color.to_grayscale()` are
+ * the same. They're intentionally not the WCAG linear-light weights
+ * that [[colors.relative_luminance]] uses. Those answer a different
+ * question, about contrast instead of appearance.
  *
  * @type list
  */
 var LUMA = [0.299, 0.587, 0.114]
 
 /**
- * The luma weights the colour-matrix filters use, from the SVG and
+ * The luma weights the color-matrix filters use, from the SVG and
  * CSS filter specifications.
  *
  * Saturation and hue rotation are defined against these, so a
@@ -45,23 +45,18 @@ var LUMA = [0.299, 0.587, 0.114]
 var MATRIX_LUMA = [0.213, 0.715, 0.072]
 
 /**
- * The identity colour matrix: applying it changes nothing.
+ * The identity color matrix: applying it changes nothing.
  *
  * A useful starting point for building one by hand.
  *
  * @returns list
  */
 def identity_matrix() {
-  return [
-    1, 0, 0, 0, 0,
-    0, 1, 0, 0, 0,
-    0, 0, 1, 0, 0,
-    0, 0, 0, 1, 0,
-  ]
+  return [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0]
 }
 
 /**
- * A colour matrix that collapses every colour to its grey of equal
+ * A color matrix that collapses every color to its gray of equal
  * perceived brightness.
  *
  * @returns list
@@ -71,16 +66,11 @@ def grayscale_matrix() {
   var g = LUMA[1]
   var b = LUMA[2]
 
-  return [
-    r, g, b, 0, 0,
-    r, g, b, 0, 0,
-    r, g, b, 0, 0,
-    0, 0, 0, 1, 0,
-  ]
+  return [r, g, b, 0, 0, r, g, b, 0, 0, r, g, b, 0, 0, 0, 0, 0, 1, 0]
 }
 
 /**
- * A colour matrix approximating the warm brown cast of a sepia
+ * A color matrix approximating the warm brown cast of a sepia
  * photograph.
  *
  * The coefficients are the widely used Microsoft ones, which are what
@@ -90,20 +80,19 @@ def grayscale_matrix() {
  */
 def sepia_matrix() {
   return [
-    0.393, 0.769, 0.189, 0, 0,
-    0.349, 0.686, 0.168, 0, 0,
-    0.272, 0.534, 0.131, 0, 0,
-    0, 0, 0, 1, 0,
+    0.393, 0.769, 0.189, 0, 0, 0.349, 0.686, 0.168, 0, 0, 0.272, 0.534, 0.131,
+    0, 0, 0, 0, 0, 1, 0,
   ]
 }
 
 /**
- * A colour matrix that scales saturation.
+ * A color matrix that scales saturation.
  *
- * An amount of 0 removes all colour, 1 leaves the image alone, and
- * values above 1 push saturation past its original level. Amounts
- * below 0 pass through the grey point and out the other side, which
- * inverts hues; that is well defined but rarely what anyone wants.
+ * An amount of 0 removes all color, 1 leaves the image unchanged, and
+ * values above 1 increase the saturation beyond its original level.
+ * Amounts below 0 pass through gray and out the other side, which
+ * inverts the hues. That's well defined, but it's rarely what anyone
+ * wants.
  *
  * @param number amount
  * @returns list
@@ -115,15 +104,31 @@ def saturation_matrix(amount: number) {
   var inverse = 1 - amount
 
   return [
-    r + amount * (1 - r), g * inverse, b * inverse, 0, 0,
-    r * inverse, g + amount * (1 - g), b * inverse, 0, 0,
-    r * inverse, g * inverse, b + amount * (1 - b), 0, 0,
-    0, 0, 0, 1, 0,
+    r + amount * (1 - r),
+    g * inverse,
+    b * inverse,
+    0,
+    0,
+    r * inverse,
+    g + amount * (1 - g),
+    b * inverse,
+    0,
+    0,
+    r * inverse,
+    g * inverse,
+    b + amount * (1 - b),
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
   ]
 }
 
 /**
- * A colour matrix that rotates every hue around the colour wheel by
+ * A color matrix that rotates every hue around the color wheel by
  * an angle in degrees, leaving brightness and saturation alone.
  *
  * This is the rotation from the SVG filter specification, which
@@ -142,31 +147,38 @@ def hue_rotate_matrix(degrees: number) {
     0.213 + c * 0.787 - s * 0.213,
     0.715 - c * 0.715 - s * 0.715,
     0.072 - c * 0.072 + s * 0.928,
-    0, 0,
+    0,
+    0,
 
     0.213 - c * 0.213 + s * 0.143,
     0.715 + c * 0.285 + s * 0.140,
     0.072 - c * 0.072 - s * 0.283,
-    0, 0,
+    0,
+    0,
 
     0.213 - c * 0.213 - s * 0.787,
     0.715 - c * 0.715 + s * 0.715,
     0.072 + c * 0.928 + s * 0.072,
-    0, 0,
+    0,
+    0,
 
-    0, 0, 0, 1, 0,
+    0,
+    0,
+    0,
+    1,
+    0,
   ]
 }
 
 /**
- * A colour matrix that replaces every pixel's colour with a blend
- * between two colours chosen by its brightness, a duotone.
+ * A color matrix that replaces every pixel's color with a blend
+ * between two colors chosen by its brightness, a duotone.
  *
  * Dark pixels take _shadow_, light ones take _highlight_, and
  * everything between is interpolated. Alpha is untouched.
  *
- * @param Color|string|number shadow: The colour black maps to.
- * @param Color|string|number highlight: The colour white maps to.
+ * @param Color|string|number shadow: The color black maps to.
+ * @param Color|string|number highlight: The color white maps to.
  * @returns list
  */
 def duotone_matrix(shadow, highlight) {
@@ -184,15 +196,31 @@ def duotone_matrix(shadow, highlight) {
   var db = (high.b - low.b) / 255
 
   return [
-    r * dr, g * dr, b * dr, 0, low.r,
-    r * dg, g * dg, b * dg, 0, low.g,
-    r * db, g * db, b * db, 0, low.b,
-    0, 0, 0, 1, 0,
+    r * dr,
+    g * dr,
+    b * dr,
+    0,
+    low.r,
+    r * dg,
+    g * dg,
+    b * dg,
+    0,
+    low.g,
+    r * db,
+    g * db,
+    b * db,
+    0,
+    low.b,
+    0,
+    0,
+    0,
+    1,
+    0,
   ]
 }
 
 /**
- * Multiplies two colour matrices, giving one matrix with the effect
+ * Multiplies two color matrices, giving one matrix with the effect
  * of applying _first_ and then _second_.
  *
  * Combining matrices this way and applying the result once is both
@@ -291,9 +319,9 @@ def brightness_lut(delta: number) {
 }
 
 /**
- * A lookup table that pushes values away from or toward mid-grey.
+ * A lookup table that pushes values away from or toward mid-gray.
  *
- * The amount runs -100 (everything collapses to grey) through 0 (no
+ * The amount runs -100 (everything collapses to gray) through 0 (no
  * change) to 100 (everything is forced to black or white). This is
  * the contrast curve most image editors use.
  *
@@ -393,21 +421,26 @@ def scale_lut(factor: number) {
 }
 
 /**
- * A lookup table implementing a levels adjustment.
+ * A lookup table for a levels adjustment.
  *
  * Everything at or below _black_ becomes 0, everything at or above
- * _white_ becomes 255, and the range between is stretched to fill the
- * whole scale with _gamma_ applied along the way. This is the single
- * most useful correction for a flat or washed-out photograph.
+ * _white_ becomes 255, and the range in between is stretched to fill
+ * the whole scale, with _gamma_ applied. This is the most useful single
+ * correction for a flat or washed-out photograph.
  *
- * @param number black: The input value that becomes black, 0-255.
- * @param number white: The input value that becomes white, 0-255.
- * @param ?number gamma: The midtone curve - Default: 1 (linear).
+ * @param number black: the input value that becomes black, from 0 to
+ *    255
+ * @param number white: the input value that becomes white, from 0 to
+ *    255
+ * @param ?number gamma: the midtone curve. Defaults to 1, which is
+ *    linear.
  * @returns bytes
  */
 def levels_lut(black: number, white: number, gamma: ?number) {
   if white <= black {
-    raise ImageError('the white point (${white}) must be above the black point (${black})')
+    raise ImageError(
+      'the white point (${white}) must be above the black point (${black})',
+    )
   }
 
   var span = white - black
@@ -431,70 +464,54 @@ def levels_lut(black: number, white: number, gamma: ?number) {
 /**
  * A 3x3 sharpening kernel.
  *
- * The strength is how much the centre pixel is emphasised over its
- * neighbours; 1 is a moderate sharpen and values much above 3 start
- * producing halos around edges.
+ * The strength is how much the center pixel is emphasized over its
+ * neighbors. 1 is a moderate sharpen, and values much above 3 start to
+ * produce halos around edges.
  *
- * @param ?number strength: - Default: 1.
+ * @param ?number strength: defaults to 1.
  * @returns list
  */
 def sharpen_kernel(strength) {
   var amount = strength == nil ? 1 : strength
 
-  return [
-    0, -amount, 0,
-    -amount, 1 + 4 * amount, -amount,
-    0, -amount, 0,
-  ]
+  return [0, -amount, 0, -amount, 1 + 4 * amount, -amount, 0, -amount, 0]
 }
 
 /**
- * A 3x3 box blur kernel; every neighbour counts equally.
+ * A 3x3 box blur kernel, in which every neighbor counts equally.
  *
- * Cheaper than a Gaussian and visibly boxier. `Image.blur()` uses a
- * real Gaussian instead; this is here for the cases that want the
- * harder look, or a single very cheap pass.
+ * It's cheaper than a Gaussian blur, and looks noticeably blockier.
+ * `Image.blur()` uses a real Gaussian blur, and this kernel is for when
+ * you want the harder look, or a single very cheap pass.
  *
  * @returns list
  */
 def box_blur_kernel() {
-  return [
-    1, 1, 1,
-    1, 1, 1,
-    1, 1, 1,
-  ]
+  return [1, 1, 1, 1, 1, 1, 1, 1, 1]
 }
 
 /**
- * A 3x3 kernel that lifts edges into a grey relief.
+ * A 3x3 kernel that raises edges into a gray relief.
  *
- * Used with an offset of 128, so flat areas come out mid-grey rather
- * than black; `Image.emboss()` supplies that offset.
+ * It's used with an offset of 128, so that flat areas come out mid-gray
+ * instead of black. `Image.emboss()` supplies that offset.
  *
  * @returns list
  */
 def emboss_kernel() {
-  return [
-    -2, -1, 0,
-    -1, 1, 1,
-    0, 1, 2,
-  ]
+  return [-2, -1, 0, -1, 1, 1, 0, 1, 2]
 }
 
 /**
  * A 3x3 Laplacian kernel that leaves only the edges.
  *
- * Its weights sum to zero, so it needs an explicit divisor of 1
- * rather than the usual "divide by the sum".
+ * Its weights add up to zero, so it needs an explicit divisor of 1,
+ * instead of the usual divisor, which is the sum of the weights.
  *
  * @returns list
  */
 def edge_kernel() {
-  return [
-    -1, -1, -1,
-    -1, 8, -1,
-    -1, -1, -1,
-  ]
+  return [-1, -1, -1, -1, 8, -1, -1, -1, -1]
 }
 
 /**
@@ -503,39 +520,32 @@ def edge_kernel() {
  * @returns list
  */
 def mean_removal_kernel() {
-  return [
-    -1, -1, -1,
-    -1, 9, -1,
-    -1, -1, -1,
-  ]
+  return [-1, -1, -1, -1, 9, -1, -1, -1, -1]
 }
 
 /**
- * A 3x3 smoothing kernel weighted toward the centre pixel.
+ * A 3x3 smoothing kernel weighted toward the center pixel.
  *
  * A larger weight keeps more of the original and smooths less.
  *
- * @param ?number weight: The centre weight - Default: 8.
+ * @param ?number weight: the center weight. Defaults to 8.
  * @returns list
  */
 def smooth_kernel(weight) {
   var centre = weight == nil ? 8 : weight
 
-  return [
-    1, 1, 1,
-    1, centre, 1,
-    1, 1, 1,
-  ]
+  return [1, 1, 1, 1, centre, 1, 1, 1, 1]
 }
 
 /**
  * A square Gaussian kernel with the given standard deviation.
  *
- * `Image.blur()` uses a separable Gaussian instead, which is far
- * faster for anything but the smallest radius; this exists for code
- * that wants the kernel itself, to combine with another.
+ * `Image.blur()` uses a separable Gaussian blur instead, which is far
+ * faster for anything but the smallest radius. This is for code that
+ * wants the kernel itself, for example to combine it with another
+ * kernel.
  *
- * @param number sigma: Greater than zero.
+ * @param number sigma: greater than zero
  * @returns list
  */
 def gaussian_kernel(sigma: number) {

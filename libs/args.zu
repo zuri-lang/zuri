@@ -1,62 +1,60 @@
 /**
  * @module args
  *
- * This module provides a complete, batteries-included framework
- * for building command-line interfaces. It supports options
- * (flags), positional arguments, sub-commands with their own
- * option sets, automatic help generation, type coercion,
- * required arguments, deprecation warnings, choice validation,
- * abbreviated long-option matching, `--` end-of-options, and
- * `@file` argument expansion.
+ * A framework for building command-line interfaces. It supports options
+ * (flags), positional arguments, subcommands with their own options,
+ * automatically generated help, type conversion, required arguments,
+ * deprecation warnings, choices, abbreviated long options, `--` to end
+ * the options, and `@file` arguments.
  *
- * ### How a value reaches an option
+ * ### Passing a value to an option
  *
- * A long option takes its value either as the next argument or
- * attached with `=`; both spellings mean the same thing:
+ * A long option takes its value either as the next argument or after an
+ * `=`. Both mean the same thing:
  *
  * ```sh
  * $ zuri run myprogram.zu --name Alice
  * $ zuri run myprogram.zu --name=Alice
  * ```
  *
- * The split is on the first `=`, so `--path=a=b` sets `path` to
- * `a=b`. The attached form is the only way to pass a value that
- * begins with a dash, since `--name -5` reads `-5` as an option:
+ * The argument is split at the first `=`, so `--path=a=b` sets `path`
+ * to `a=b`. The `=` form is the only way to pass a value that starts
+ * with a dash, because `--name -5` reads `-5` as an option:
  *
  * ```sh
  * $ zuri run myprogram.zu --offset=-5
  * ```
  *
- * A short option takes its value as the next argument only.
- * `-n Alice` works; `-n=Alice` does not, because a short token is
- * a bundle of single-character flags and `=` is not one of them.
- * Every character in such a bundle has to name an option, so a
- * typo in `-vq` is an error rather than a silently dropped flag.
+ * A short option only takes its value as the next argument. `-n Alice`
+ * works, but `-n=Alice` doesn't, because a short argument is a group of
+ * single-character flags, and `=` isn't one of them. Every character in
+ * the group has to name an option, so a typo in `-vq` is an error,
+ * instead of a flag that's silently ignored.
  *
- * ### Quick start
+ * ### A first example
  *
  * ```zuri
  * import args
  *
  * var parser = args.Parser('myprogram')
  * parser.description = 'A friendly CLI tool.'
- * 
+ *
  * parser.add_option('name', 'Person to greet', {short_name: 'n', type: args.STRING})
  * parser.add_option('count', 'Number of greetings', {short_name: 'c', type: args.INT, value: 1})
- * 
+ *
  * var cmd = parser.add_command('call', 'Make a phone call')
  * cmd.add_option('verbose', 'Enable verbose output', {short_name: 'v'})
- * 
+ *
  * parser.parse()
  * ```
  *
- * Running the following command:
+ * Running this command:
  *
  * ```sh
  * zuri run myprogram.zu -h
  * ```
  *
- * Prints the following help output:
+ * prints this help:
  *
  * ```sh
  * Usage: myprogram [OPTIONS] [COMMAND]
@@ -66,7 +64,7 @@
  * OPTIONS:
  *   -h, --help           Show this help message and exit
  *   -n, --name <name>    Person to greet
- *   -c, --count <count>  Number of greetings (default: 1)
+ *   -c, --count <count>  Number of greetings [default: 1]
  *
  * COMMANDS:
  *   call  Make a phone call
@@ -74,7 +72,7 @@
  * Run "myprogram --help [COMMAND]" for help on a specific command.
  * ```
  *
- * Typical invocations:
+ * Some typical commands:
  *
  * ```sh
  * $ zuri run myprogram.zu -h
@@ -83,30 +81,28 @@
  * $ zuri run myprogram.zu call --help
  * ```
  *
- * If we change the last line of the program to `echo
- * parser.parse()` so that we can see the result of the parsing,
- * the following CLI call will yield the given result.
+ * If you change the last line of the program to `echo parser.parse()`,
+ * so that you can see the result, these commands print:
  *
  * ```sh
  * $ zuri run myprogram.zu --name "Kirk"
  * {options: {name: Kirk, count: 1}, command: nil, indexes: []}
- * 
+ *
  * $ zuri run myprogram.zu call
  * {options: {count: 1}, command: {name: call, value: nil}, indexes: []}
- * 
+ *
  * $ zuri run myprogram.zu call -v
  * {options: {verbose: true, count: 1}, command: {name: call, value: nil}, indexes: []}
  * ```
  *
- * Calling name without an option will yield the following
- * result/error:
+ * Passing `--name` without a value gives an error:
  *
  * ```sh
  * $ zuri run myprogram.zu --name
  * error: option --name expects <name>
  * ```
  *
- * You may even get help on a command directly like below:
+ * You can also ask for help on a command directly:
  *
  * ```sh
  * $ zuri run myprogram.zu --help call
@@ -120,15 +116,15 @@
  * GLOBAL OPTIONS:
  *   -h, --help           Show this help message and exit
  *   -n, --name <name>    Person to greet
- *   -c, --count <count>  Number of greetings (default: 1)
+ *   -c, --count <count>  Number of greetings [default: 1]
  * ```
  *
- * Options declared on the parser itself are global: they are accepted
- * before a command and after it alike, and a command's help lists them
- * under GLOBAL OPTIONS. When a command declares an option of the same
- * name, that option is the one its arguments reach.
+ * Options declared on the parser itself are global. They're accepted
+ * both before and after a command, and a command's help lists them
+ * under GLOBAL OPTIONS. If a command declares an option with the same
+ * name, the command's own option is the one that its arguments set.
  *
- * ### Return value of `parse()` is in the format:
+ * ### What `parse()` returns
  *
  * ```
  * {
@@ -149,31 +145,52 @@ import io
 # Public type constants
 # ---------------------------------------------------------------------------
 
-/** value type none: the option is a boolean flag */
+/**
+ * Value type for an option that takes no value. The option is `true`
+ * when it's given.
+ */
 var NONE = 0
 
-/** value type integer (accepts numbers, floors to integer) */
+/**
+ * Value type for an integer. A value such as `3.7` has its fractional
+ * part dropped.
+ */
 var INT = 1
 
-/** value type number */
+/** Value type for a number, which can have a fractional part. */
 var NUMBER = 2
 
 /**
- * value type boolean (accepts `1`/`0`, `true`/`false`,
- * `yes`/`no`, `on`/`off`).
+ * Value type for a boolean. The value can be `true`, `false`, `1`, `0`,
+ * `yes`, `no`, `on` or `off`, in any case.
  */
 var BOOL = 3
 
-/** value type string */
+/**
+ * Value type for a string. This is the default type of a positional
+ * argument.
+ */
 var STRING = 4
 
-/** value type list: the option may be supplied multiple times */
+/**
+ * Value type for a list. The option takes every word after it up to the
+ * next word that starts with `-`, and it can be given more than once to
+ * add to the list.
+ */
 var LIST = 5
 
-/** value type choice: value must be one of the `choices` list/dict */
+/**
+ * Value type for a value that has to be one of the `choices`. If
+ * `choices` is a dictionary, the value given has to be one of its keys,
+ * and the result is the value that the key maps to.
+ */
 var CHOICE = 6
 
-/** value type optional: value is consumed if the next token is not a flag */
+/**
+ * Value type for an option whose value can be left out. The option
+ * takes the next word as its value unless that word starts with `-`,
+ * and it's `true` when it has no value.
+ */
 var OPTIONAL = 7
 
 var _type_name = {
@@ -214,7 +231,7 @@ def _asks_for_help(words, index) {
 }
 
 # ---------------------------------------------------------------------------
-# ANSI / colour helpers
+# ANSI color helpers
 # ---------------------------------------------------------------------------
 
 # We emit ANSI only when stdout is a real terminal and NO_COLOR isn't
@@ -255,6 +272,17 @@ def _vpad(text, width) {
   return text + ' ' * (width - vlen)
 }
 
+# A list of choices as a sentence would write it: `a, b or c`.
+def _one_of(choices) {
+  var words = choices.map(@(choice) => choice.to_string())
+
+  if words.length() < 2 {
+    return ', '.join(words)
+  }
+
+  return ', '.join(words[0, words.length() - 1]) + ' or ' + words.last()
+}
+
 def _muted(text) {
   if !_use_color {
     return text
@@ -274,7 +302,8 @@ def _heading(text) {
     return text
   }
   return colors.text(
-    colors.text(text, colors.text_color.green), colors.style.bold,
+    colors.text(text, colors.text_color.green),
+    colors.style.bold,
   )
 }
 
@@ -283,7 +312,8 @@ def _accent(text) {
     return text
   }
   return colors.text(
-    colors.text(text, colors.text_color.cyan), colors.style.bold,
+    colors.text(text, colors.text_color.cyan),
+    colors.style.bold,
   )
 }
 
@@ -389,20 +419,18 @@ def _wrap_lines(text, width) {
 # ---------------------------------------------------------------------------
 
 /**
- * Coerces an `opts.get('type', ...)` result down to a plain integer
- * type constant (`NONE`, `INT`, `NUMBER`, ...), falling back to
- * _fallback_ if it isn't a number at all.
+ * Returns _raw_ as an integer type constant, such as `NONE` or `INT`,
+ * or _fallback_ if _raw_ isn't a number.
  */
 def _coerce_type(raw, fallback) {
   return is_number(raw) ? raw.int() : fallback
 }
 
 /**
- * Parses _value_ (always a raw string from the command line) as a
- * number, returning `nil` rather than `0` when it isn't one. Plain
- * `.to_number()` can't tell "0" from "not a number at all" apart
- * (both return `0`), which is exactly the distinction argument
- * coercion needs to raise a useful error.
+ * Parses _value_, a string from the command line, as a number. Returns
+ * `nil` if it isn't a number, so that the caller can report it.
+ * `to_number()` can't be used for this, because it returns `0` for a
+ * string that isn't a number.
  */
 def _parse_number(value) {
   if is_number(value) {
@@ -443,7 +471,9 @@ def _get_real_value(item, value) {
     if lv == 'false' or lv == '0' or lv == 'no' or lv == 'off' {
       return false
     }
-    raise ArgsError('expected a boolean (true/false/1/0/yes/no/on/off), got "${value}"')
+    raise ArgsError(
+      'expected a boolean (true/false/1/0/yes/no/on/off), got "${value}"',
+    )
   } else if item.type == STRING {
     return value.to_string()
   } else if item.type == LIST {
@@ -463,7 +493,13 @@ def _get_real_value(item, value) {
 # ---------------------------------------------------------------------------
 
 /**
- * Error raised for argument parsing errors.
+ * Raised when a parser is set up incorrectly, such as when two options
+ * have the same name, or when a default value can't be converted to its
+ * option's type.
+ *
+ * Mistakes on the command line aren't raised. The parser prints the
+ * error and the help text instead, and ends the program with exit
+ * status 1.
  */
 class ArgsError < Error {}
 
@@ -472,8 +508,17 @@ class ArgsError < Error {}
 # ---------------------------------------------------------------------------
 
 class _Option {
-  @new(long_name, help, short_name, type, value, choices,
-    required, metavar, deprecated) {
+  @new(
+    long_name,
+    help,
+    short_name,
+    type,
+    value,
+    choices,
+    required,
+    metavar,
+    deprecated,
+  ) {
     self.long_name = long_name
     self.help = help ? help : ''
     self.short_name = short_name
@@ -495,18 +540,23 @@ class _Optionable {
   var options = []
 
   /**
-   * Adds an option (flag) to this parser or command.
+   * Adds an option to this command, and returns the command so that
+   * calls can be chained.
    *
-   * `opts` keys:
+   * These keys can be given in `opts`:
    *
-   * - `short_name` (string): single-character alias (`-x`).
-   * - `type` (int): one of the type constants; default `NONE`.
-   * - `value` (any): default value when the option is absent.
-   * - `choices` (list|dict): restrict allowed values.
-   * - `required` (bool): error if the option is absent.
-   * - `metavar` (string): placeholder shown in help, defaulting to
-   *   the option's own name, lower-cased.
-   * - `deprecated` (bool): print a warning when the option is used.
+   * - `short_name` (string): a single-character alias, used as `-x`.
+   * - `type` (int): one of the value types, such as `INT` or `LIST`.
+   *   Defaults to `NONE`.
+   * - `value` (any): the value to use when the option isn't given.
+   * - `choices` (list or dict): the values allowed for an option of
+   *   type `CHOICE`.
+   * - `required` (bool): whether `parse()` reports an error when the
+   *   option isn't given.
+   * - `metavar` (string): the placeholder for the value in the help
+   *   text. Defaults to the option's name in lowercase.
+   * - `deprecated` (bool): whether to print a warning when the option
+   *   is used.
    *
    * @param string name
    * @param ?string help
@@ -532,7 +582,9 @@ class _Optionable {
       }
       var sn = opts.get('short_name')
       if sn != nil and o.short_name == sn {
-        raise ArgsError('short option "-${sn}" already in use by "--${o.long_name}"')
+        raise ArgsError(
+          'short option "-${sn}" already in use by "--${o.long_name}"',
+        )
       }
     }
 
@@ -555,8 +607,17 @@ class _Optionable {
     }
 
     self.options.append(
-      _Option(name, help, short_name, type, value, choices,
-        required, metavar, deprecated),
+      _Option(
+        name,
+        help,
+        short_name,
+        type,
+        value,
+        choices,
+        required,
+        metavar,
+        deprecated,
+      ),
     )
 
     if instance_of(self, _Command) {
@@ -617,27 +678,30 @@ class _Positional < _Optionable {
 # ---------------------------------------------------------------------------
 
 /**
- * A configurable command-line parser.
+ * A command-line parser.
  *
- * ### Properties you can set after construction
+ * ### Properties
  *
- * - `description` (string): paragraph shown between USAGE and
- *   OPTIONS.
- * - `epilog` (string): paragraph shown after all sections.
- * - `allow_abbrev` (bool): allow unambiguous long-option prefix
- *   matching. Defaults to `true`, like Python's argparse.
- * - `allow_atfile` (bool): expand `@filename` tokens by reading
- *   arguments from that file. Defaults to `true`.
+ * These can be set after the parser is created:
+ *
+ * - `description` (string): a paragraph shown in the help text, after
+ *   the usage line.
+ * - `epilog` (string): a paragraph shown at the end of the help text.
+ * - `allow_abbrev` (bool): whether a long option can be shortened to
+ *   any prefix that matches only one option, as in Python's argparse.
+ *   Defaults to `true`.
+ * - `allow_atfile` (bool): whether an argument such as `@args.txt` is
+ *   replaced by the arguments read from that file. Defaults to `true`.
  */
 class Parser < _Optionable {
 
   /**
-   * List of sub-commands registered with `add_command`.
+   * The commands added with `add_command()`.
    */
   var commands = []
 
   /**
-   * List of positional arguments registered with `add_index`.
+   * The positional arguments added with `add_index()`.
    */
   var indexes = []
 
@@ -650,19 +714,23 @@ class Parser < _Optionable {
   var allow_atfile = true
 
   /**
-   * The column width help text wraps to. Defaults to the `COLUMNS`
-   * environment variable, or 80 if that isn't set; see
-   * `_terminal_width()`. Override this directly if a fixed width is
-   * preferable to the environment-based guess.
+   * The width that the help text wraps to, in columns.
+   *
+   * The parser sets it when it's created, to the width of the terminal.
+   * If that can't be read, it uses the `COLUMNS` environment variable,
+   * and if that isn't set either, it uses 80. The detected width is
+   * kept between 40 and 120. You can set this to a fixed width
+   * yourself, or call `set_terminal_width()`, which also checks the
+   * value.
    */
   var terminal_width = 80
 
   /**
-   * Creates a new parser instance.
+   * Creates a parser.
    *
-   * @param string name The program name shown in usage lines.
-   * @param ?bool default_help Show help when invoked with no
-   *    arguments. Defaults to `true`.
+   * @param string name The program name shown in the usage line.
+   * @param ?bool default_help Whether to show the help text when the
+   *    program is run without arguments. Defaults to `true`.
    * @constructor
    */
   @new(name, default_help) {
@@ -682,9 +750,9 @@ class Parser < _Optionable {
     self.terminal_width = _terminal_width()
 
     # Built-in -h / --help
-    self.add_option(
-      'help', 'Show this help message and exit', { short_name: 'h' },
-    )
+    self.add_option('help', 'Show this help message and exit', {
+      short_name: 'h',
+    })
   }
 
   # -------------------------------------------------------------------------
@@ -692,17 +760,12 @@ class Parser < _Optionable {
   # -------------------------------------------------------------------------
 
   /**
-   * Overrides the column width help text wraps to, in place of the
-   * `terminal_width` this parser auto-detected at construction time
-   * (a real query of the terminal, the `COLUMNS` environment
-   * variable, or 80, in that order of preference; see
-   * `_terminal_width()`). Useful both for a program that wants a
-   * fixed layout regardless of environment, and for tests that need
-   * deterministic wrapping independent of whatever terminal actually
-   * ran them.
+   * Sets the width that the help text wraps to, in place of the width
+   * that the parser detected when it was created. Use it to get the
+   * same layout in any terminal, which tests usually need.
    *
-   * Equivalent to setting `terminal_width` directly; this exists
-   * purely for discoverability and to validate its argument.
+   * This does the same as setting `terminal_width`, except that it
+   * raises a `TypeError` if _width_ isn't a positive number.
    *
    * @param number width
    */
@@ -714,18 +777,23 @@ class Parser < _Optionable {
   }
 
   /**
-   * Adds an option (flag) to the top-level parser.
+   * Adds a global option to the parser. A global option can be given
+   * before or after a command.
    *
-   * `opts` keys can include any of:
+   * These keys can be given in `opts`:
    *
-   * - `short_name` (string): single-character alias (`-x`).
-   * - `type` (int): one of the type constants; default `NONE`.
-   * - `value` (any): default value when the option is absent.
-   * - `choices` (list|dict): restrict allowed values.
-   * - `required` (bool): error if the option is absent.
-   * - `metavar` (string): placeholder shown in help, defaulting to
-   *   the option's own name, lower-cased.
-   * - `deprecated` (bool): print a warning when the option is used.
+   * - `short_name` (string): a single-character alias, used as `-x`.
+   * - `type` (int): one of the value types, such as `INT` or `LIST`.
+   *   Defaults to `NONE`.
+   * - `value` (any): the value to use when the option isn't given.
+   * - `choices` (list or dict): the values allowed for an option of
+   *   type `CHOICE`.
+   * - `required` (bool): whether `parse()` reports an error when the
+   *   option isn't given.
+   * - `metavar` (string): the placeholder for the value in the help
+   *   text. Defaults to the option's name in lowercase.
+   * - `deprecated` (bool): whether to print a warning when the option
+   *   is used.
    *
    * @param string name
    * @param ?string help
@@ -736,18 +804,21 @@ class Parser < _Optionable {
   }
 
   /**
-   * Adds a sub-command.
+   * Adds a subcommand.
    *
-   * `opts` keys: - `type` {int}: expected type for the
-   * command's value argument - `action` {function}: called with
-   * `(options [, value])` after parsing - `choices` {list|dict}—
-   * restrict allowed values when `type` is `CHOICE` - `metavar`
-   * {string}: placeholder shown in help for the command's value,
-   * e.g. `'message'` for `git commit -m <message>` (default: the
-   * value type's name, lower-cased)
+   * These keys can be given in `opts`:
    *
-   * Returns the `_Command` object so you can chain `add_option`
-   * calls:
+   * - `type` (int): the type of the command's value, if it takes one.
+   * - `action` (function): a function to call after parsing, with the
+   *   options and the command's value.
+   * - `choices` (list or dict): the values allowed when `type` is
+   *   `CHOICE`.
+   * - `metavar` (string): the placeholder for the command's value in
+   *   the help text, such as `'message'` for `git commit -m <message>`.
+   *   Defaults to the name of the value's type, in lowercase.
+   *
+   * Returns the new command. Its `add_option()` returns the command
+   * too, so the calls can be chained:
    *
    * ```zuri
    * parser.add_command('push', 'Push changes').
@@ -789,27 +860,33 @@ class Parser < _Optionable {
   }
 
   /**
-   * Adds a positional (index-based) argument.
+   * Adds a positional argument.
    *
-   * `opts` keys: - `type` {int}: coercion type; default
-   * `STRING` - `value` {any}: default when argument is absent -
-   * `choices` {list|dict}: restrict allowed values - `required`
-   * {bool}: error if argument is absent (default `false`) -
-   * `metavar` {string}: display name in help
+   * These keys can be given in `opts`:
    *
-   * Without a `value`, a positional nobody supplied is simply missing
-   * from `parse()`'s `indexes` rather than sitting there as nil.
+   * - `type` (int): one of the value types. Defaults to `STRING`.
+   * - `value` (any): the value to use when the argument isn't given.
+   * - `choices` (list or dict): the values allowed when `type` is
+   *   `CHOICE`.
+   * - `required` (bool): whether `parse()` reports an error when the
+   *   argument isn't given. Defaults to `false`.
+   * - `metavar` (string): the name shown for the argument in the help
+   *   text.
    *
-   * A positional of type `LIST` takes every positional word from where
-   * it starts to the end of the command line, flags in between or not,
-   * and arrives in `indexes` as one list. It has to be the last
-   * positional declared, since nothing after it could ever receive a
-   * word.
+   * If a positional argument has no `value` and isn't given, it's left
+   * out of the `indexes` that `parse()` returns. It isn't added as
+   * `nil`.
+   *
+   * A positional argument of type `LIST` takes every remaining
+   * positional word on the command line, including words that come
+   * after options, and it appears in `indexes` as a single list. It has
+   * to be the last positional argument added.
    *
    * @param string name
    * @param ?string help
    * @param ?dict opts
-   * @raises ArgsError when a positional is added after a `LIST` one.
+   * @raises ArgsError if a positional argument is added after one of
+   *    type `LIST`.
    */
   add_index(name, help, opts) {
     if !is_string(name) {
@@ -832,40 +909,42 @@ class Parser < _Optionable {
 
     if !self.indexes.is_empty() and self.indexes.last().type == LIST {
       raise ArgsError(
-        'positional "${name}" cannot follow "${self.indexes.last().name}", which takes every '
-          + 'remaining word',
+        'positional "${name}" cannot follow "${self.indexes.last().name}", which takes every ' +
+            'remaining word',
       )
     }
 
-    self.indexes.append(_Positional(
-      name, help, type, choices, value, required, metavar,
-    ))
+    self.indexes.append(
+      _Positional(name, help, type, choices, value, required, metavar),
+    )
   }
 
   /**
-   * Parses command-line arguments and returns a dictionary of
-   * command, options, and indexes.
+   * Parses the command line, and returns a dictionary with the options,
+   * the command and the positional arguments.
    *
-   * By default this reads the real process arguments (`os.args`,
-   * skipping the interpreter and script path). Pass _custom_args_
-   * (a list of strings) to parse something else instead, e.g. a
-   * config-driven argument list, or a fixed list in a test.
+   * By default, this reads the arguments the program was started with,
+   * from `os.args`, leaving out the interpreter and the script path.
+   * Pass _custom_args_, a list of strings, to parse a different list,
+   * such as one built from a configuration file or a fixed list in a
+   * test.
    *
-   * Result shape:
+   * The result looks like this:
    * ```
    * {
-   *   options: dict,                # collected option values
-   *   command: nil | {name, value}, # command name and value (if any)
-   *   indexes: list                 # collected positional values
+   *   options: dict,                # the option values
+   *   command: nil | {name, value}, # the command and its value, if one was given
+   *   indexes: list                 # the positional argument values
    * }
    * ```
    *
-   * `indexes` holds one entry per positional that has a value, in the
-   * order they were declared: what the user supplied, then the declared
-   * default of any that follow. A positional that was not supplied and
-   * has no default is absent rather than nil, so `indexes.is_empty()`
-   * and `indexes.length()` answer what they look like they answer, and
-   * a program that wants its own fallback can reach for it:
+   * `indexes` has one entry for each positional argument that has a
+   * value, in the order they were added. That's each argument that was
+   * given, followed by the default value of any that weren't. An
+   * argument that wasn't given and has no default value is left out
+   * instead of being added as `nil`. This means that `indexes.length()`
+   * is the number of values you actually have, so a program can supply
+   * its own fallback:
    *
    * ```zuri
    * var path = parsed.indexes.is_empty() ? os.cwd() : parsed.indexes[0]
@@ -883,11 +962,7 @@ class Parser < _Optionable {
     }
 
     var cli_args = raw_args
-    var parsed_args = {
-      options: {},
-      command: nil,
-      indexes: [],
-    }
+    var parsed_args = { options: {}, command: nil, indexes: [] }
 
     var help_shown = false
     var command_found = false
@@ -937,9 +1012,10 @@ class Parser < _Optionable {
             os.exit(0)
           } else {
             # --help [command_name]?
-            var next = (i + 1 < cli_args.length()
-              and !cli_args[i + 1].starts_with('-')) ?
-              cli_args[i + 1] : nil
+            var next = (i + 1 < cli_args.length() and
+                    !cli_args[i + 1].starts_with('-'))
+                ? cli_args[i + 1]
+                : nil
             self._help_action(next)
           }
           i++
@@ -962,8 +1038,10 @@ class Parser < _Optionable {
         if matched == nil {
           # Unknown flag
           if command_found {
-            self._command_error(command.name,
-              'unknown option ${lookup} for command "${command.name}"')
+            self._command_error(
+              command.name,
+              'unknown option ${lookup} for command "${command.name}"',
+            )
           } else {
             self._option_error(lookup, 'unknown option: ${lookup}')
           }
@@ -972,13 +1050,17 @@ class Parser < _Optionable {
         # Consume the flag's value(s)
         for option in matched {
           if option.deprecated {
-            io.stderr.write(_warn('warning: option --${option.long_name} is deprecated\n'))
+            io.stderr.write(
+              _warn('warning: option --${option.long_name} is deprecated\n'),
+            )
           }
 
           if option.type == NONE {
             if inline != nil {
-              self._option_error(option.long_name,
-                'option --${option.long_name} takes no value')
+              self._option_error(
+                option.long_name,
+                'option --${option.long_name} takes no value',
+              )
             }
             parsed_args.options.set(option.long_name, true)
           } else if option.type == OPTIONAL {
@@ -993,8 +1075,8 @@ class Parser < _Optionable {
               }
               self._validate_choice(option, inline, '--${option.long_name}')
               parsed_args.options.set(option.long_name, attached)
-            } else if i + 1 < cli_args.length()
-              and !cli_args[i + 1].starts_with('-') {
+            } else if i + 1 < cli_args.length() and
+                !cli_args[i + 1].starts_with('-') {
               i++
               var v
               catch {
@@ -1004,7 +1086,9 @@ class Parser < _Optionable {
                 self._option_error(option.long_name, e.message)
               }
               self._validate_choice(
-                option, cli_args[i], '--${option.long_name}',
+                option,
+                cli_args[i],
+                '--${option.long_name}',
               )
               parsed_args.options.set(option.long_name, v)
             } else {
@@ -1021,16 +1105,18 @@ class Parser < _Optionable {
               lst.append(inline)
             } else {
               # Collect all following non-flag tokens as list elements
-              while i + 1 < cli_args.length()
-                and !cli_args[i + 1].starts_with('-') {
+              while i + 1 < cli_args.length() and
+                  !cli_args[i + 1].starts_with('-') {
                 i++
                 lst.append(cli_args[i])
               }
             }
 
             if lst.is_empty() {
-              self._option_error(option.long_name,
-                'option --${option.long_name} expects at least one value')
+              self._option_error(
+                option.long_name,
+                'option --${option.long_name} expects at least one value',
+              )
             }
             # Merge with any previously collected values (option may appear multiple times)
             var existing = parsed_args.options.get(option.long_name)
@@ -1045,17 +1131,18 @@ class Parser < _Optionable {
           } else {
             # All other typed options expect exactly one value token
             if inline == nil and
-              (i + 1 >= cli_args.length() or cli_args[i + 1].starts_with('-')) {
+                (i + 1 >= cli_args.length() or
+                    cli_args[i + 1].starts_with('-')) {
               var word = option.metavar
-                ? option.metavar
-                : option.long_name.lower()
-              var msg = 'option --${option.long_name} expects '
-                + _metavar(word, option.type)
+                  ? option.metavar
+                  : option.long_name.lower()
+              var msg = 'option --${option.long_name} expects ' +
+                  _metavar(word, option.type)
               if option.type == CHOICE and !option.choices.is_empty() {
                 var keys = is_dict(option.choices)
-                  ? option.choices.keys()
-                  : option.choices
-                msg += ': one of {\'${"', '".join(keys)}\'}'
+                    ? option.choices.keys()
+                    : option.choices
+                msg += ', one of ${_one_of(keys)}'
               }
               self._option_error(option.long_name, msg)
             }
@@ -1105,19 +1192,21 @@ class Parser < _Optionable {
 
               if command.type == CHOICE and !command.choices.is_empty() {
                 var keys = is_dict(command.choices)
-                  ? command.choices.keys()
-                  : command.choices
+                    ? command.choices.keys()
+                    : command.choices
                 if !keys.contains(raw_val) {
-                  self._command_error(command.name,
-                    'command "${command.name}" expects one of ' +
-                      '{\'${"', '".join(keys)}\'}, got "${raw_val}"')
+                  self._command_error(
+                    command.name,
+                    'command "${command.name}" must be given one of ' +
+                        '${_one_of(keys)}, not "${raw_val}"',
+                  )
                 }
               }
 
               if command.type == LIST {
                 var lst = [raw_val]
-                while i + 1 < cli_args.length()
-                  and !cli_args[i + 1].starts_with('-') {
+                while i + 1 < cli_args.length() and
+                    !cli_args[i + 1].starts_with('-') {
                   i++
                   lst.append(cli_args[i])
                 }
@@ -1126,13 +1215,15 @@ class Parser < _Optionable {
               } else {
                 parsed_args.command = { name: command.name, value: v }
               }
-            } else if command.type != OPTIONAL
-              and !_asks_for_help(cli_args, i + 1) {
+            } else if command.type != OPTIONAL and
+                !_asks_for_help(cli_args, i + 1) {
               var word = command.metavar
-                ? command.metavar
-                : _type_name[command.type]
-              self._command_error(command.name,
-                'command "${command.name}" expects ${_metavar(word, command.type)}')
+                  ? command.metavar
+                  : _type_name[command.type]
+              self._command_error(
+                command.name,
+                'command "${command.name}" expects ${_metavar(word, command.type)}',
+              )
             } else {
               parsed_args.command = { name: command.name, value: nil }
             }
@@ -1150,8 +1241,9 @@ class Parser < _Optionable {
 
       # A trailing LIST positional keeps gathering every word after its
       # first.
-      if idx_pos > 0 and idx_pos == self.indexes.length()
-        and self.indexes.last().type == LIST {
+      if idx_pos > 0 and
+          idx_pos == self.indexes.length() and
+          self.indexes.last().type == LIST {
         var gathering = self.indexes.last()
 
         self._validate_choice(gathering, arg, gathering.name)
@@ -1175,7 +1267,7 @@ class Parser < _Optionable {
         continue
       }
 
-      # --- unrecognised token ---
+      # --- unrecognized token ---
       if command_found {
         self._command_error(command.name, 'unexpected argument: ${arg}')
       } else {
@@ -1199,7 +1291,8 @@ class Parser < _Optionable {
       for opt in command.options {
         if opt.value != nil and !parsed_args.options.contains(opt.long_name) {
           parsed_args.options.add(
-            opt.long_name, _get_real_value(opt, opt.value),
+            opt.long_name,
+            _get_real_value(opt, opt.value),
           )
         }
       }
@@ -1226,7 +1319,8 @@ class Parser < _Optionable {
     for opt in self.options {
       if opt.required and !parsed_args.options.contains(opt.long_name) {
         self._option_error(
-          opt.long_name, 'required option --${opt.long_name} is missing',
+          opt.long_name,
+          'required option --${opt.long_name} is missing',
         )
       }
     }
@@ -1235,8 +1329,10 @@ class Parser < _Optionable {
     if command_found and command {
       for opt in command.options {
         if opt.required and !parsed_args.options.contains(opt.long_name) {
-          self._command_error(command.name,
-            'required option --${opt.long_name} is missing for command "${command.name}"')
+          self._command_error(
+            command.name,
+            'required option --${opt.long_name} is missing for command "${command.name}"',
+          )
         }
       }
     }
@@ -1244,11 +1340,11 @@ class Parser < _Optionable {
     # Required positional check
     iter var j = 0; j < self.indexes.length(); j++ {
       var idx = self.indexes[j]
-      if idx.required
-        and (j >= parsed_args.indexes.length()
-          or parsed_args.indexes[j] == nil) {
+      if idx.required and
+          (j >= parsed_args.indexes.length() or parsed_args.indexes[j] == nil) {
         self._option_error(
-          idx.name, 'required positional argument <${idx.name}> is missing',
+          idx.name,
+          'required positional argument <${idx.name}> is missing',
         )
       }
     }
@@ -1256,10 +1352,10 @@ class Parser < _Optionable {
     # -----------------------------------------------------------------------
     # Execute command action if provided
     # -----------------------------------------------------------------------
-    if command_found
-      and command
-      and command.action
-      and is_function(command.action) {
+    if command_found and
+        command and
+        command.action and
+        is_function(command.action) {
       command.action(
         parsed_args.options,
         parsed_args.command ? parsed_args.command.value : nil,
@@ -1270,8 +1366,8 @@ class Parser < _Optionable {
     # Show help if nothing was matched and default_help is on
     # -----------------------------------------------------------------------
     var has_input = parsed_args.command != nil or
-      parsed_args.options.length() > 0 or
-      parsed_args.indexes.length() > 0
+        parsed_args.options.length() > 0 or
+        parsed_args.indexes.length() > 0
 
     if !has_input and self._default_help and !help_shown {
       self._usage_hint()
@@ -1282,7 +1378,7 @@ class Parser < _Optionable {
   }
 
   /**
-   * Print the full help text and exit(0).
+   * Prints the full help text and ends the program with exit status 0.
    */
   help() {
     self._usage_hint()
@@ -1298,12 +1394,12 @@ class Parser < _Optionable {
     if item.type == CHOICE and !item.choices.is_empty() {
       var choices = is_dict(item.choices) ? item.choices.keys() : item.choices
       var raw = is_dict(item.choices)
-        ? (item.choices.contains(value) ? value : nil)
-        : value
+          ? (item.choices.contains(value) ? value : nil)
+          : value
       if !choices.contains(value) {
         self._option_error(
           item.long_name,
-          '${label} expects one of {\'${"', '".join(choices)}\'}, got "${value}"',
+          '${label} must be one of ${_one_of(choices)}, not "${value}"',
         )
       }
     }
@@ -1403,7 +1499,9 @@ class Parser < _Optionable {
         var handle = file(path, 'r')
 
         if !handle.exists() {
-          io.stderr.write(_error_text('error: cannot open argument file: ${path}\n'))
+          io.stderr.write(
+            _error_text('error: cannot open argument file: ${path}\n'),
+          )
           os.exit(1)
         }
 
@@ -1502,12 +1600,10 @@ class Parser < _Optionable {
   }
 
   /**
-   * Formats a single positional argument's own column, e.g.
-   * `<source>` or `[dest]`. A coercion type is only spelled out
-   * when it adds information beyond the name itself: INT/NUMBER/
-   * BOOL: since STRING (the default) says nothing a reader
-   * doesn't already know, and CHOICE's allowed values are already
-   * listed separately as a suffix.
+   * Formats the left-hand column of a positional argument's help row,
+   * such as `<source>` or `[dest]`. The type is shown only for `INT`,
+   * `NUMBER` and `BOOL`. `STRING` is the default and doesn't need to be
+   * stated, and the allowed values of a `CHOICE` are listed separately.
    */
   _positional_left(idx) {
     var word = idx.metavar ? idx.metavar : idx.name
@@ -1523,18 +1619,18 @@ class Parser < _Optionable {
     return left
   }
 
-  # Render one option row, properly padded
   /**
-   * Renders one two-column help row: `left` (already indented, e.g.
-   * `'  -n, --name <name>'`) padded out to the shared flag-column
-   * width, followed by `help_text` wrapped to whatever's left of
-   * `self.terminal_width`, with continuation lines aligned under the
-   * description column. `suffix` (tags/choices/default annotations,
-   * already `_muted()`-styled) is appended to the last line as-is,
-   * unwrapped: it's always short enough in practice that wrapping it
-   * would cost more clarity than it saves.
+   * Renders one help row in two columns. `left` is the already indented
+   * first column, such as `' -n, --name <name>'`, and it's padded to
+   * the shared column width. `help_text` is wrapped to the remaining
+   * width, with each continuation line starting under the description
+   * column.
+   *
+   * `notes` are short annotations such as `[default: 1]`. They're shown
+   * muted after the text, on its last line if they fit, or on a line of
+   * their own if they don't.
    */
-  _render_row(left, help_text, suffix, col_width) {
+  _render_row(left, help_text, notes, col_width) {
     var indent_width = col_width + 4
     var avail = self.terminal_width - indent_width
     if avail < 20 {
@@ -1542,23 +1638,53 @@ class Parser < _Optionable {
     }
 
     var lines = _wrap_lines(help_text, avail)
+
+    # Each note goes on the line so far when it fits, and starts a line
+    # of its own when it does not. The length counted is the visible
+    # one, since a muted note carries escape codes.
+    for note in notes {
+      var last = lines.last()
+
+      if _visual_len(last) + 1 + note.length() <= avail {
+        lines[lines.length() - 1] = last + ' ' + _muted(note)
+      } else {
+        lines.append(_muted(note))
+      }
+    }
+
     var out = [_vpad(left, indent_width) + lines[0]]
     iter var i = 1; i < lines.length(); i++ {
       out.append(' ' * indent_width + lines[i])
     }
 
-    var joined = '\n'.join(out)
-    if suffix != '' {
-      joined += suffix
+    return '\n'.join(out)
+  }
+
+  # The annotations an option or positional argument carries in the help.
+  # A positional argument lists its choices whatever its type.
+  _notes(item, tags, positional) {
+    var notes = []
+
+    if !tags.is_empty() {
+      notes.append('[${", ".join(tags)}]')
     }
-    return joined
+
+    if (positional or item.type == CHOICE) and !item.choices.is_empty() {
+      var keys = is_dict(item.choices) ? item.choices.keys() : item.choices
+      notes.append('[possible values: ${", ".join(keys)}]')
+    }
+
+    if item.value != nil and (positional or item.type != NONE) {
+      notes.append('[default: ${item.value}]')
+    }
+
+    return notes
   }
 
   _option_row(opt, col_width, indent) {
     var flag = self._format_flag(opt)
     var help_text = opt.help ? opt.help : _muted('<no description>')
 
-    var suffix = ''
     var tags = []
     if opt.required {
       tags.append('required')
@@ -1566,36 +1692,28 @@ class Parser < _Optionable {
     if opt.deprecated {
       tags.append('deprecated')
     }
-    if !tags.is_empty() {
-      suffix += ' ' + _muted('[${", ".join(tags)}]')
-    }
 
-    if opt.type == CHOICE and !opt.choices.is_empty() {
-      var keys = is_dict(opt.choices) ? opt.choices.keys() : opt.choices
-      suffix += ' ' + _muted('{\'${"', '".join(keys)}\'}')
-    }
-
-    if opt.value != nil and opt.type != NONE {
-      suffix += ' ' + _muted('(default: ${opt.value})')
-    }
-
-    return self._render_row('  ' + flag, help_text, suffix, col_width)
+    return self._render_row(
+      '  ' + flag,
+      help_text,
+      self._notes(opt, tags, false),
+      col_width,
+    )
   }
 
   # Render a command row
   _command_row(cmd, col_width) {
     var left = '  ' + self._command_left(cmd)
     var help_text = cmd.help ? cmd.help : _muted('<no description>')
-    return self._render_row(left, help_text, '', col_width)
+    return self._render_row(left, help_text, [], col_width)
   }
 
   /**
-   * A compact, single-line usage summary: `[OPTIONS]` stands in for
-   * the full flag list (spelled out in its own OPTIONS section
-   * instead) the way modern CLIs (`git`, `docker`, `gh`, ...) do,
-   * rather than cramming every flag inline; only positionals and the
-   * command slot, which affect the actual calling syntax directly,
-   * are still shown individually.
+   * Prints the one-line usage summary. `[OPTIONS]` stands in for the
+   * options, which have their own section in the help text, as they do
+   * in `git`, `docker` and `gh`. Only the positional arguments and the
+   * command are shown individually, because they decide the order of
+   * the words on the command line.
    */
   _usage_hint(command) {
     if !command {
@@ -1647,16 +1765,8 @@ class Parser < _Optionable {
         var left = '  ' + self._positional_left(idx)
 
         var help_text = idx.help ? idx.help : _muted('<no description>')
-        var suffix = ''
-        if !idx.choices.is_empty() {
-          var keys = is_dict(idx.choices) ? idx.choices.keys() : idx.choices
-          suffix += ' ' + _muted('{\'${"', '".join(keys)}\'}')
-        }
-        if idx.value != nil {
-          suffix += ' ' + _muted('(default: ${idx.value})')
-        }
 
-        echo self._render_row(left, help_text, suffix, cw)
+        echo self._render_row(left, help_text, self._notes(idx, [], true), cw)
       }
       echo ''
     }

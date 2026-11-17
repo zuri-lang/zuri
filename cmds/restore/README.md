@@ -1,31 +1,35 @@
 # restore
 
-Installs exactly the packages `project.lock` names.
+Installs the exact package versions recorded in the project's lockfile,
+`project.lock`.
 
 ```sh
 zuri restore [options]
 ```
 
-This is what a fresh checkout, a teammate or a build server runs. Every
-package installs at the version, and from the source, the lockfile
-pins, checked against the checksum it recorded. Packages already
-installed at those versions are left alone, and installed packages the
-lockfile no longer names are removed.
+Run it after cloning a project, or on a build server. Each package is
+installed at the version and from the source that the lockfile records,
+and checked against the checksum recorded there. Packages that are already
+installed at the right version are left alone, and installed packages that
+the lockfile no longer lists are removed.
 
-When the lockfile no longer matches `project.toml`, the project is
-resolved again and the lockfile rewritten. `--frozen` refuses instead,
-listing every difference, which is what a build that must install
-exactly what was reviewed wants.
+If the lockfile no longer matches `project.toml`, the project is resolved
+again and the lockfile is rewritten. With `--frozen`, the command stops
+with an error instead and lists every difference. Use `--frozen` in a
+build that has to install exactly what was reviewed.
 
-| Flag | What it does |
+## Options
+
+| Option | Description |
 | --- | --- |
-| `--frozen` | Refuse, rather than resolve again, when the lockfile is out of date. |
-| `-P, --production` | Leave out packages only development dependencies need. |
-| `--verify` | Check every installed package's files against what was installed, and reinstall any that changed. |
-| `-g, --global` | Restore the packages installed for this user. |
-| `--offline` | Use only what is already downloaded. |
-| `-n, --dry-run` | Show what would change. |
-| `--force` | Replace directories zuri did not install. |
-| `--no-hooks` | Run no scripts. |
-| `--allow-hooks <package...>` | Let these packages run their scripts. |
-| `-q, --quiet` | Print only the result. |
+| `--frozen` | Stop with an error instead of resolving again if `project.lock` is out of date. |
+| `-P, --production` | Leave out packages that only development dependencies need. |
+| `--verify` | Check whether any installed package has changed since it was installed, and reinstall any that has. |
+| `-g, --global` | Restore the packages installed for your user. |
+| `--offline` | Only use what's already downloaded. |
+| `-n, --dry-run` | Show what would change without changing anything. |
+| `--force` | Replace directories in `.zuri/libs` that weren't installed by zuri. |
+| `--no-hooks` | Don't run any install scripts. |
+| `--allow-hooks <package...>` | Allow these packages to run their scripts this time. |
+| `--insecure` | Allow sending a token over plain HTTP to another machine. |
+| `-q, --quiet` | Only print the result. |

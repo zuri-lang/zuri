@@ -1,14 +1,15 @@
 /**
  * @module blueprint
  *
- * A table's shape, described once for every engine.
+ * Describes the structure of a table once, for every database engine.
  *
  * A `Blueprint` is what `db.schema.create_table()` and
- * `db.schema.alter_table()` hand their body: a description of columns,
- * keys and indexes in Zuri, which the active adapter turns into the
- * statements its own engine understands. The same blueprint creates the
- * same table on SQLite, PostgreSQL, MySQL and MariaDB, which is what
- * lets one migration serve every database a program runs against.
+ * `db.schema.alter_table()` pass to their body. It describes columns,
+ * keys and indexes in Zuri, and the active adapter turns that
+ * description into the statements its engine understands. The same
+ * blueprint creates the same table on SQLite, PostgreSQL, MySQL and
+ * MariaDB, so one migration works with every database a program runs
+ * against.
  *
  * ```zuri,ignore
  * db.schema.create_table('posts', @(table: Blueprint) {
@@ -24,8 +25,8 @@
  *
  * ### Column types
  *
- * Each type is the same kind of value on every engine, stored the way
- * that engine stores it best.
+ * Each type holds the same kind of value on every engine, stored in the
+ * way that suits that engine best.
  *
  * | Method | SQLite | PostgreSQL | MySQL and MariaDB |
  * | - | - | - | - |
@@ -45,26 +46,27 @@
  * | `json()` | `json` | `jsonb` | `json` |
  * | `uuid()` | `char(36)` | `uuid` | `char(36)` |
  *
- * An `id()` is never handed out twice, even after the row holding the
- * highest one is deleted. A `decimal()` on SQLite holds at most 15
- * significant digits, the most a double keeps exactly, so a larger
- * precision raises `NotSupportedError` there rather than storing
- * digits that would quietly change.
+ * An `id()` is never reused, even after the row with the highest one is
+ * deleted. On SQLite, a `decimal()` holds at most 15 significant
+ * digits, which is the most a double can store exactly, so a larger
+ * precision raises a `NotSupportedError` there, instead of storing
+ * digits that might silently change.
  *
- * ### Columns are required unless they say otherwise
+ * ### Columns are required by default
  *
- * Every column is `NOT NULL` until `nullable()` says it may hold
- * nothing. A missing value is then an error the database reports,
- * rather than a null nobody meant to store.
+ * Every column is `NOT NULL` unless you call `nullable()` on it. A
+ * missing value is then an error reported by the database, not a null
+ * that nobody meant to store.
  *
  * ### Names
  *
- * Indexes, unique indexes and foreign keys are named for their table
- * and columns: `posts_author_id_index`, `posts_slug_unique`,
- * `posts_author_id_foreign`. Because the name is known, dropping one
- * takes its columns as readily as its name. A name past 63 characters,
- * the longest PostgreSQL keeps, is shortened and given a hash of the
- * whole so it stays unique.
+ * Indexes, unique indexes and foreign keys are named after their table
+ * and columns, for example `posts_author_id_index`, `posts_slug_unique`
+ * and `posts_author_id_foreign`. Because the name can be worked out
+ * from the columns, you can drop one by giving its columns just as
+ * easily as by giving its name. A name longer than 63 characters, the
+ * longest that PostgreSQL keeps, is shortened and given a hash of the
+ * full name, so that it stays unique.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -235,13 +237,13 @@ class ForeignKey {
    */
   name_on(table: string) {
     return self.name == nil
-      ? index_name(table, self.columns, 'foreign')
-      : self.name
+        ? index_name(table, self.columns, 'foreign')
+        : self.name
   }
 
   to_string() {
     return '<ForeignKey (${", ".join(self.columns)}) -> ' +
-      '${self.table} (${", ".join(self.references)})>'
+        '${self.table} (${", ".join(self.references)})>'
   }
 
   @to_string() {
@@ -358,8 +360,8 @@ class Column {
   var foreign
 
   /**
-   * Whether this redefines a column the table already has, rather than
-   * adding one.
+   * Whether this redefines a column that the table already has, instead
+   * of adding one.
    * @default false
    */
   var is_change = false
@@ -384,13 +386,14 @@ class Column {
   }
 
   /**
-   * Gives the column a default, used when an insert leaves it out.
+   * Gives the column a default, which is used when an insert leaves the
+   * column out.
    *
    * The value is written into the table definition as a literal of the
    * column's type: a string, a number, a bool, nil, a `sql.Decimal`, or
-   * for a `json()` column a list or dictionary. A `sql.Raw` is written
-   * as given, for a default that is an expression rather than a value;
-   * it is SQL, and the engine reads it as such.
+   * a list or dictionary for a `json()` column. A `sql.Raw` is written
+   * exactly as given, for a default that's an expression instead of a
+   * value. It's SQL, and the engine reads it as SQL.
    *
    * ```zuri,ignore
    * table.integer('views').default_value(0)
@@ -561,7 +564,7 @@ class Column {
     if self.foreign == nil {
       raise QueryError(
         '${what}() is for a column that references() another table, ' +
-          'and ${self.name} refers to none',
+            'and ${self.name} refers to none',
       )
     }
 
@@ -595,7 +598,7 @@ class Blueprint {
   var table
 
   /**
-   * Whether this creates the table rather than altering it.
+   * Whether this creates the table, as opposed to altering it.
    * @type bool
    */
   var creating
@@ -628,8 +631,8 @@ class Blueprint {
    */
   columns() {
     return self.operations
-      .filter(@(operation) => operation.kind == 'column')
-      .map(@(operation) => operation.column)
+        .filter(@(operation) => operation.kind == 'column')
+        .map(@(operation) => operation.column)
   }
 
   /**
@@ -689,12 +692,12 @@ class Blueprint {
   }
 
   /**
-   * An exact decimal of `precision` digits, `scale` of them after the
-   * point. Reads back as a `sql.Decimal`.
+   * An exact decimal with `precision` digits, `scale` of them after the
+   * decimal point. It's read back as a `sql.Decimal`.
    *
    * @param string name
-   * @param number precision From 1 to 65; at most 15 on SQLite.
-   * @param number|nil scale From 0 to `precision`, 0 when nil.
+   * @param number precision From 1 to 65, and at most 15 on SQLite.
+   * @param number|nil scale From 0 to `precision`. Nil means 0.
    * @returns Column
    * @throws QueryError if either is out of range.
    */
@@ -895,7 +898,7 @@ class Blueprint {
     if own.length() != referred.length() {
       raise QueryError(
         'a foreign key from ${own.length()} column${own.length() == 1 ? "" : "s"} ' +
-          'has to refer to as many, not ${referred.length()}',
+            'has to refer to as many, not ${referred.length()}',
       )
     }
 
@@ -938,10 +941,11 @@ class Blueprint {
   }
 
   /**
-   * Drops an index, by its name or by the columns it was made on.
+   * Drops an index, either by its name or by the columns it was created
+   * on.
    *
-   * @param string|list[string] name The name; a list is the columns,
-   *    and names the index `index_name()` gives them.
+   * @param string|list[string] name The name, or a list of the columns,
+   *    which gives the index the name that `index_name()` gives them.
    */
   drop_index(name) {
     self._drop('drop_index', name, 'index')
@@ -984,8 +988,8 @@ class Blueprint {
   _index(kind, columns, name) {
     var own = _names(columns)
     var chosen = name == nil
-      ? index_name(self.table, own, kind)
-      : _identifier(name, 'an index name')
+        ? index_name(self.table, own, kind)
+        : _identifier(name, 'an index name')
 
     self.operations.append({ kind, columns: own, name: chosen })
   }
@@ -995,8 +999,8 @@ class Blueprint {
 
     var columns = is_list(name) ? _names(name) : nil
     var resolved = columns != nil
-      ? index_name(self.table, columns, suffix)
-      : _identifier(name, 'an index name')
+        ? index_name(self.table, columns, suffix)
+        : _identifier(name, 'an index name')
 
     self.operations.append({ kind, name: resolved, columns })
   }
@@ -1040,11 +1044,13 @@ def _names(value) {
 
 # A whole number within bounds, or a QueryError naming what it was for.
 def _whole(value, low, high, what) {
-  if !is_number(value)
-    or value != value.floor()
-    or value < low
-    or value > high {
-    raise QueryError('${what} is a whole number from ${low} to ${high}, not ${value}')
+  if !is_number(value) or
+      value != value.floor() or
+      value < low or
+      value > high {
+    raise QueryError(
+      '${what} is a whole number from ${low} to ${high}, not ${value}',
+    )
   }
 }
 

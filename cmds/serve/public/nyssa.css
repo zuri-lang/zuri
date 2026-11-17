@@ -31,6 +31,13 @@
   --warn-paper: #fff4e5;
   --warn-edge: #f5c889;
 
+  /* Zuri code, coloured by the language's own lexer. */
+  --code-keyword: #744baa;
+  --code-string: #0f7b55;
+  --code-number: #b35a00;
+  --code-comment: #8a8e9e;
+  --code-decorator: #c2371a;
+
   --wide: 80rem;
   --gut: clamp(1rem, 4vw, 3rem);
 
@@ -57,6 +64,11 @@
     --danger: #ff7a5c;
     --warn-paper: #2a2112;
     --warn-edge: #6b4a17;
+    --code-keyword: #c3a6f2;
+    --code-string: #74d4a2;
+    --code-number: #f5b062;
+    --code-comment: #7d8294;
+    --code-decorator: #ff8f73;
   }
 }
 
@@ -124,6 +136,32 @@ pre {
   border-radius: var(--r-md);
   background: var(--paper-2);
   line-height: 1.5;
+}
+
+pre .kw,
+.code-view .kw {
+  color: var(--code-keyword);
+}
+
+pre .str,
+.code-view .str {
+  color: var(--code-string);
+}
+
+pre .num,
+.code-view .num {
+  color: var(--code-number);
+}
+
+pre .com,
+.code-view .com {
+  color: var(--code-comment);
+  font-style: italic;
+}
+
+pre .dec,
+.code-view .dec {
+  color: var(--code-decorator);
 }
 
 h1,
@@ -1173,6 +1211,16 @@ th.number {
   border-top: 1px solid var(--edge);
 }
 
+/* A task list's item shows its checkbox in place of a bullet. */
+.prose li:has(> input[type="checkbox"]) {
+  list-style: none;
+}
+
+.prose li > input[type="checkbox"] {
+  margin: 0 0.4rem 0 -1.3rem;
+  vertical-align: middle;
+}
+
 .docs {
   display: grid;
   grid-template-columns: 15rem minmax(0, 1fr);
@@ -1347,4 +1395,190 @@ th.number {
   padding-block: 1.25rem;
   border-top: 1px solid var(--slab-edge);
   font-size: 0.82rem;
+}
+
+/* The API tab: the modules down the side, and the page of one beside them. */
+.api {
+  display: grid;
+  grid-template-columns: minmax(0, 13rem) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+.api-modules {
+  position: sticky;
+  top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+.api-modules a {
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.api-modules a:hover {
+  color: var(--ink);
+  background: var(--edge);
+}
+
+.api-modules a[aria-current] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.api-modules .depth-1 {
+  padding-left: 1.25rem;
+}
+
+.api-modules .depth-2,
+.api-modules .depth-3,
+.api-modules .depth-4 {
+  padding-left: 2rem;
+}
+
+@media (max-width: 720px) {
+  .api {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .api-modules {
+    position: static;
+  }
+}
+
+/* The Source tab: every file of a version, or one of them, numbered. */
+.source-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 0.88rem;
+}
+
+.source-files li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--edge);
+}
+
+.source-path {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+}
+
+.code-view {
+  overflow-x: auto;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-md);
+  background: var(--paper-2);
+}
+
+.code-view table {
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.code-view td {
+  padding: 0 1rem 0 0;
+  border: 0;
+  vertical-align: top;
+}
+
+.code-view .line-number {
+  width: 1%;
+  padding: 0 0.75rem;
+  text-align: right;
+  color: var(--faint);
+  user-select: none;
+}
+
+.code-view .line-number a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.code-view .line code {
+  padding: 0;
+  background: none;
+  white-space: pre;
+}
+
+.code-view tr:target {
+  background: var(--warn-paper);
+}
+
+.code-view tr:target .line-number {
+  color: var(--ink);
+}
+
+/* A line or a heading an address points at stops clear of the header. */
+.code-view tr,
+.prose :is(h1, h2, h3, h4, h5, h6, li, sup) {
+  scroll-margin-top: 6rem;
+}
+
+/* The names a search found, above the packages it found. */
+.names {
+  margin: 0 0 2rem;
+}
+
+.names h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: var(--muted);
+}
+
+.names ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.names li {
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--edge);
+}
+
+.names li > a code {
+  font-size: 0.95rem;
+  color: var(--accent);
+}
+
+.names .badge {
+  margin: 0 0.4rem;
+}
+
+.names p {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+}
+
+/* A long list of modules scrolls on its own, beside the page. */
+.api-modules {
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.std {
+  padding-top: 2rem;
+  padding-bottom: 3rem;
+}
+
+.coverage {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
 }

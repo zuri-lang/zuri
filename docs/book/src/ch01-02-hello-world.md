@@ -1,14 +1,14 @@
 # Hello, World!
 
-Make a directory, put one file in it, and run it.
+Create a directory, put one file in it, and run it.
 
 ```console
 $ mkdir hello
 $ cd hello
 ```
 
-Create a file called `main.zu`. The `.zu` extension is what the runtime
-looks for when resolving imports, so get in the habit early.
+Create a file called `main.zu`. The runtime looks for the `.zu` extension
+when it resolves imports, so it's a good habit to use it from the start.
 
 <span class="filename">Filename: main.zu</span>
 
@@ -16,38 +16,38 @@ looks for when resolving imports, so get in the habit early.
 echo 'Hello, world!'
 ```
 
-Run it:
+Then run it:
 
 ```console
 $ zuri run main.zu
 Hello, world!
 ```
 
-That is the whole program. No `main` function, no imports, no boilerplate.
-A Zuri file is a script, and its top level is code that runs.
+That's the entire program. You don't need a `main` function, imports or any
+boilerplate. A Zuri file is a script, and the code at its top level runs
+when you run the file.
 
-## Anatomy of One Line
+## A Closer Look
 
 ```zuri
 echo 'Hello, world!'
 ```
 
-`echo` is a **keyword**, not a function. You do not write `echo(...)`, you
-write `echo` followed by an expression. It prints the value and adds a
-newline.
+`echo` is a **keyword**, not a function. Instead of `echo(...)`, you write
+`echo` followed by an expression. It prints the value followed by a newline.
 
-Strings are written between single or double quotes, and the two are
-identical in meaning. Most Zuri code uses single quotes and saves double
-quotes for strings that contain an apostrophe.
+Strings can be written in single or double quotes, and both mean the same
+thing. Most Zuri code uses single quotes, and double quotes for strings that
+contain an apostrophe.
 
-There is no semicolon. Zuri ends a statement at the end of the line. You
-*can* write a semicolon if you want two statements on one line, but almost
-nobody does.
+There's no semicolon at the end. A statement ends at the end of the line.
+You *can* use a semicolon to put two statements on one line, but that's
+rarely done.
 
 ## `echo` and `print`
 
-There is also a `print()` function, and the difference is worth learning
-now because it bites people later.
+There's also a `print()` function. It's worth knowing how it differs from
+`echo` now, because the difference can catch you out later.
 
 ```zuri
 echo 'first'
@@ -63,21 +63,21 @@ second
 thirdfourth
 ```
 
-`echo` appends a newline; `print()` does not, and it takes any number of
-arguments. Use `echo` for output meant for a human reading a terminal, and
-`print()` when you are assembling output character by character.
+`echo` adds a newline and `print()` doesn't, and `print()` accepts any
+number of arguments. Use `echo` for output that someone will read in a
+terminal, and `print()` when you're building up output piece by piece.
 
 ## Running a Directory
 
-`run` takes a directory as readily as a file. Point it at one and it
-looks for `index.zu` inside and runs that:
+`run` accepts a directory as well as a file. When you give it a directory,
+it looks for an `index.zu` file inside and runs that:
 
 ```console
 $ zuri run hello
 Hello, world!
 ```
 
-If there is no `index.zu`, you get told so plainly:
+If there's no `index.zu`, it tells you:
 
 ```console
 $ zuri run hello
@@ -86,12 +86,12 @@ $ zuri run hello
   Reason: No entrypoint found in the directory
 ```
 
-This is the same rule the module system uses for packages, which we will
-get to in [Chapter 8](ch08-00-modules.md). A directory with an `index.zu`
-is a unit you can run *or* import.
+The module system uses the same rule for packages, which we'll look at in
+[Chapter 8](ch08-00-modules.md). A directory with an `index.zu` can be
+either run *or* imported.
 
-Leave the path off and `run` launches the directory you are standing in,
-which is how a project is usually started:
+If you leave out the path, `run` runs the current directory. This is the
+usual way to start a project:
 
 ```console
 $ cd hello
@@ -99,20 +99,20 @@ $ zuri run
 Hello, world!
 ```
 
-Everything after the path belongs to the program rather than to `zuri`,
-so a script reads its own flags exactly as it would anywhere else:
+Any arguments after the path are passed to your program, not to `zuri`, so a
+script can read its own flags the same way it would anywhere else:
 
 ```console
 $ zuri run main.zu --name Ada --verbose
 ```
 
-[Chapter 20](ch20-00-args.md) covers reading them.
+[Chapter 20](ch20-00-args.md) explains how to read them.
 
-## Running It Again on Every Change
+## Rerunning on Every Change
 
-While you work on a program, `--watch`, or `-w` for short, keeps it
-running and starts it again from the top each time a file it uses
-changes:
+While you're working on a program, the `--watch` flag (or `-w` for short)
+keeps it running and restarts it from the beginning whenever one of its
+files changes:
 
 ```console
 $ zuri run -w
@@ -121,40 +121,38 @@ Hello, world!
 index.zu finished, waiting for a change
 ```
 
-The files it uses are the entry file and every module imported from it,
-the [Wire](ch14-00-wire.md) templates it renders, and the project's
-`project.toml` and `.env` files. Zuri learns the first two from the
-program as it runs, so a module imported only halfway through is watched
-from the moment it loads. Files the program writes itself, such as logs,
-databases and uploads, never restart it.
+The watched files are the entry file, every module it imports, the
+[Wire](ch14-00-wire.md) templates it renders, and the project's
+`project.toml` and `.env` files. Zuri discovers modules and templates as the
+program runs, so a module that's only imported partway through is watched
+from the moment it's loaded. Files the program writes itself, such as logs,
+databases and uploads, don't trigger a restart.
 
-The lines watch mode adds go to standard error, so the program's own
-output can still be piped on its own. A program that exits waits there
-for the next change, and one that fails to start because of a mistake is
-started again as soon as the mistake is fixed. Ctrl+C stops both the
-program and watch mode.
+Watch mode writes its own messages to standard error, so you can still pipe
+the program's output somewhere else. If the program exits, watch mode waits
+for the next change. If it fails to start because of a mistake in the code,
+it's started again as soon as you fix the mistake. Press Ctrl+C to stop both
+the program and watch mode.
 
-The flag goes straight after `run`. After the path it belongs to the
-program like every other argument, so `zuri run . -w` hands `-w` to the
-program.
+The flag has to come right after `run`. Anything after the path is passed to
+the program, so `zuri run . -w` passes `-w` to your program instead.
 
 ## Starting a Project
 
-One file is where everybody starts, and it stops being enough about as
-soon as there are two of them. `zuri init` writes the layout a project
-grows into:
+Everyone starts with a single file, but once you have a second one you'll
+want some structure. `zuri init` creates the layout for a new project:
 
 ```console
 $ zuri init myproject
 ```
 
-Run in a terminal, it asks what the project is called, what version it
-starts at and who wrote it, offering an answer to each. Press enter to
-take what it offers. Run anywhere there is nobody to ask — a script, a
-CI job — it takes those answers itself, which `--yes` also says
-outright.
+When you run it in a terminal, it asks for the project's name, its starting
+version and its author, and suggests an answer for each. Press Enter to
+accept the suggestion. When there's nobody to answer, such as in a script or
+a CI job, it uses the suggested answers automatically. You can also ask for
+that explicitly with `--yes`.
 
-What it leaves behind:
+Here's what it creates:
 
 ```text
 myproject/
@@ -169,7 +167,7 @@ myproject/
   .gitattributes
 ```
 
-It runs, and its tests pass, before you have written anything:
+The project runs, and its tests pass, before you've written any code:
 
 ```console
 $ cd myproject
@@ -185,7 +183,7 @@ $ zuri test
   2 passed  •  2 total
 ```
 
-The root `index.zu` is two things at once:
+The root `index.zu` does two jobs:
 
 <span class="filename">Filename: index.zu</span>
 
@@ -197,15 +195,14 @@ if __root__ == __file__ {
 }
 ```
 
-The import re-exports everything `app` declares, so another project can
-`import myproject` and reach all of it. The `if` starts the application,
-but only when this file is the one that was run: `__root__` is the file
-`zuri` was pointed at, and `__file__` is the file the line is written
-in. Importing the project leaves `main()` alone. That is the Zuri
-spelling of a main guard, and it is worth knowing early because every
-runnable package uses it.
+The import re-exports everything that `app` declares, so another project can
+`import myproject` and use all of it. The `if` statement starts the
+application, but only when this file is the one being run. `__root__` is the
+file that `zuri` was started with, and `__file__` is the file that contains
+the line. When the project is imported, `main()` isn't called. This is how
+Zuri writes a main guard, and you'll see it in every runnable package.
 
-`app/index.zu` is the application itself. Whatever it exports, the
+`app/index.zu` contains the application itself. Whatever it exports, the
 project exports:
 
 <span class="filename">Filename: app/index.zu</span>
@@ -220,7 +217,7 @@ def main() {
 }
 ```
 
-`project.toml` is what the project is, for anything that reads it:
+`project.toml` describes the project for any tool that reads it:
 
 ```toml
 [project]
@@ -233,39 +230,53 @@ license = "MIT"
 [dependencies]
 ```
 
-The name comes from the directory, the author from `git config`, and a
-git repository is created unless there is already one above. `zuri init
---help` has the rest, and every question it asks has a flag that answers
-it:
+The name is taken from the directory and the author from `git config`. A git
+repository is created as well, unless the directory is already inside one.
+Run `zuri init --help` to see the other options. Each question that `init`
+asks can also be answered with a flag:
 
 ```console
 $ zuri init myproject --name web-server --license Apache-2.0 --yes
 ```
 
-Run inside a directory that already has files, `init` adds what is
-missing and writes over nothing. Run where a project already is, it
-refuses rather than overwrite one.
+If you run `init` in a directory that already contains files, it adds the
+files that are missing and doesn't overwrite anything. If the directory
+already contains a project, `init` stops without changing it.
 
-[Chapter 8](ch08-00-modules.md) is where packages and re-exports are
-covered properly, and [Chapter 25](ch25-00-task-board.md) grows this
-layout into a full application.
+[Chapter 8](ch08-00-modules.md) covers packages and re-exports in detail,
+and [Chapter 25](ch25-00-task-board.md) builds this layout into a full
+application.
 
 ## Formatting
 
-`zuri fmt` lays out Zuri source in one house style: two spaces to a
-level, one statement to a line, an explicit block wherever one belongs,
-spacing the way a reader expects it, and lines past eighty columns broken
-where the expression holds together least. Line breaks you made yourself
-are kept, so a list you laid out one entry to a line stays that way.
+`zuri fmt` formats Zuri source code in a single, consistent style: two
+spaces per indentation level, one statement per line, explicit blocks where
+they belong, conventional spacing, and lines longer than 80 columns broken
+at sensible points. Line breaking follows the rules of the Dart formatter. A
+list of arguments or items stays on one line if it fits, and otherwise goes
+one item per line. A list or dictionary that contains another one is always
+expanded, as `rooms` is below. When a call has a single function or
+collection among its arguments, only that argument is expanded, as in
+`each(items, @{`. The layout depends only on the code, so it doesn't matter
+where you broke lines inside an expression. Blank lines between statements
+are kept.
 
-Here is a file written in a hurry:
+Here's a file written in a hurry:
 
 <span class="filename">Filename: rooms.zu</span>
 
 ```zuri
-def area(width,height){return width*height}
-var rooms=[ [3,4],[5,6] ]
-for room in rooms { echo area(room[0],room[1]) }
+def area(width, height) {
+  return width * height
+}
+
+var rooms = [
+  [3, 4],
+  [5, 6],
+]
+for room in rooms {
+  echo area(room[0], room[1])
+}
 ```
 
 ```console
@@ -281,22 +292,25 @@ def area(width, height) {
   return width * height
 }
 
-var rooms = [[3, 4], [5, 6]]
+var rooms = [
+  [3, 4],
+  [5, 6],
+]
 for room in rooms {
   echo area(room[0], room[1])
 }
 ```
 
-Given a directory, `zuri fmt` formats every `.zu` file beneath it apart
-from the packages a project has installed, and with no path at all it
-formats the current directory. It never changes what a program does:
-before it writes a file, it parses its own result and checks that the
-program and every comment in it are exactly what it started with, and a
-file it cannot format that way is left as it was.
+If you give `zuri fmt` a directory, it formats every `.zu` file in it,
+except for packages the project has installed. With no path, it formats the
+current directory. Formatting never changes what a program does. Before
+writing a file, the formatter parses its own output and checks that the code
+and all of its comments are unchanged. If it can't format a file that way,
+it leaves the file alone.
 
-`--dry-run` writes nothing. It names each file that would change, and
-exits with status 1 when any would, which is the check a commit hook or
-a CI job wants:
+With `--dry-run`, nothing is written. The formatter lists each file that
+would change and exits with status 1 if there are any, which is what you
+want in a commit hook or a CI job:
 
 ```console
 $ zuri fmt --dry-run
@@ -304,37 +318,41 @@ would format /home/ada/myproject/app/extra.zu
 1 file would change. 3 files were already formatted.
 ```
 
-Your editor runs the same formatter through the language server, on a
-whole file or a selection; [Chapter 29](ch29-00-editors.md) sets that
-up.
+Your editor uses the same formatter through the language server, for a whole
+file or a selection. [Chapter 29](ch29-00-editors.md) explains how to set
+that up.
 
 ## Commands
 
-A first word that is not `run` names a command instead of a path:
+If the first word after `zuri` isn't `run`, it's treated as the name of a
+command rather than a path:
 
 ```console
 $ zuri greet Ada
 Hello, Ada!
 ```
 
-A command is a `.zu` file, or a directory with an `index.zu`, sitting in
-a `cmds` directory. A project keeps its own in `.zuri/cmds`, so either of
-these answers to `zuri greet`:
+A command is either a `.zu` file or a directory with an `index.zu`, inside a
+`cmds` directory. A project keeps its own commands in `.zuri/cmds`, so
+either of these will run as `zuri greet`:
 
 ```text
 .zuri/cmds/greet.zu           # a command in one file
 .zuri/cmds/greet/index.zu     # a command with room to grow
 ```
 
-The directory wins if both are there, so a command that has outgrown one
-file takes over the name as soon as its `index.zu` lands. Until then the
-directory is not a command, and the file goes on answering.
+If both exist, the directory is used. This means that when a command grows
+too big for one file, the directory takes over as soon as you add its
+`index.zu`. Until then, the directory isn't a command and the file is still
+used.
 
-The commands the runtime itself ships live in the `cmds` directory beside
-the executable, and those win over a project's. Everything after the name
-is forwarded to the command untouched, flags included.
+The commands that come with the runtime live in the `cmds` directory next to
+the executable, and they take priority over a project's own commands.
+Everything after the command name is passed to the command unchanged,
+including flags.
 
-A name that matches nothing is refused rather than guessed at:
+If a name doesn't match any command, `zuri` reports an error instead of
+guessing:
 
 ```console
 $ zuri gret Ada
@@ -343,8 +361,8 @@ $ zuri gret Ada
   Reason: Unknown command
 ```
 
-A command says what it is in its own doc block, with two tags. `zuri
---help` lists every command it can reach by exactly those:
+A command describes itself in its doc comment, using two tags. `zuri --help`
+uses them to list every command it can find:
 
 <span class="filename">Filename: .zuri/cmds/greet.zu</span>
 
@@ -384,7 +402,8 @@ PROJECT COMMANDS:
 Run "zuri <command> --help" for help on a specific command.
 ```
 
-A description too long for one line carries on below it, indented:
+If a description doesn't fit on one line, continue it on the lines below,
+indented:
 
 ```zuri,ignore
 /**
@@ -394,8 +413,8 @@ A description too long for one line carries on below it, indented:
  */
 ```
 
-Two flags sit outside all of this and run nothing. `zuri --help` is the
-listing above, and `zuri --version` reports just the build:
+Two flags don't run anything at all. `zuri --help` prints the list shown
+above, and `zuri --version` prints the build information:
 
 ```console
 $ zuri --version
@@ -403,4 +422,4 @@ Zuri 0.1.0 (running on ZuriVM 0.1.0)
 Build No. => 2026-09-10 23:19:10 UTC
 ```
 
-Both take the short spelling too, `-h` and `-v`.
+Both also have short forms, `-h` and `-v`.

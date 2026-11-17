@@ -1,0 +1,284 @@
+[
+  {
+    "markdown": "* foo\n\tbar\n",
+    "html": "<ul>\n<li>foo\nbar</li>\n</ul>\n",
+    "example": 1,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "<a>  \nx\n",
+    "html": "<a>  \nx\n",
+    "example": 2,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "<h1>lorem</h1>\n\n<h2>lorem</h2>\n\n<h3>lorem</h3>\n\n<h4>lorem</h4>\n\n<h5>lorem</h5>\n\n<h6>lorem</h6>\n",
+    "html": "<h1>lorem</h1>\n<h2>lorem</h2>\n<h3>lorem</h3>\n<h4>lorem</h4>\n<h5>lorem</h5>\n<h6>lorem</h6>\n",
+    "example": 3,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "hi\n--\t\n",
+    "html": "<h2>hi</h2>\n",
+    "example": 4,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "**。**话\n",
+    "html": "<p>**。**话</p>\n",
+    "example": 5,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "a***b* c*\n",
+    "html": "<p>a*<em><em>b</em> c</em></p>\n",
+    "example": 6,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "[\\]: test\n",
+    "html": "<p>[]: test</p>\n",
+    "example": 7,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "^_test_\n",
+    "html": "<p>^<em>test</em></p>\n",
+    "example": 8,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "# foo\t#\t\n",
+    "html": "<h1>foo</h1>\n",
+    "example": 9,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "[link](a\\ b)\n",
+    "html": "<p>[link](a\\ b)</p>\n",
+    "example": 10,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "City:\n<span itemprop=\"contentLocation\" itemscope itemtype=\"https://schema.org/City\">\n  <meta itemprop=\"name\" content=\"Springfield\">\n</span>\n",
+    "html": "<p>City:\n<span itemprop=\"contentLocation\" itemscope itemtype=\"https://schema.org/City\">\n<meta itemprop=\"name\" content=\"Springfield\">\n</span></p>\n",
+    "example": 11,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "[XSS](javascript&amp;colon;alert%28&#039;XSS&#039;%29)\n",
+    "html": "<p><a href=\"javascript&amp;colon;alert%28'XSS'%29\">XSS</a></p>\n",
+    "example": 12,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "[link](https://www.example.com/home/%25batty)\n",
+    "html": "<p><a href=\"https://www.example.com/home/%25batty\">link</a></p>\n",
+    "example": 13,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "</script>\n\n</pre>\n\n</style>\n",
+    "html": "</script>\n</pre>\n</style>\n",
+    "example": 14,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "[a](<b) c>\n",
+    "html": "<p>[a](&lt;b) c&gt;</p>\n",
+    "example": 15,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "*failed to be italic!*\\\ntext\n",
+    "html": "<p><em>failed to be italic!</em><br />\ntext</p>\n",
+    "example": 16,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "a <?\n?>\n",
+    "html": "<p>a <?\n?></p>\n",
+    "example": 17,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "[\\\nfoo]: /uri\n\n[\\\nfoo]\n",
+    "html": "<p><a href=\"/uri\"><br />\nfoo</a></p>\n",
+    "example": 18,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "- <script>\n- some text\nsome other text\n</script>\n",
+    "html": "<ul>\n<li>\n<script>\n</li>\n<li>some text\nsome other text\n</script></li>\n</ul>\n",
+    "example": 19,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "*****Hello*world****\n",
+    "html": "<p>**<em><strong>Hello<em>world</em></strong></em></p>\n",
+    "example": 20,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "[foo][one two\n  three]\n\n[one two three]: /url \"title\"\n",
+    "html": "<p><a href=\"/url\" title=\"title\">foo</a></p>\n",
+    "example": 21,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "```\nabc\n```     \n",
+    "html": "<pre><code>abc\n</code></pre>\n",
+    "example": 22,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "<!docType html>\n",
+    "html": "<!docType html>\n",
+    "example": 23,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "x <!A>\n",
+    "html": "<p>x <!A></p>\n",
+    "example": 24,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "## Case 1\n\n- > a\n  >\n- b\n\n\n## Case 2\n\n- > - a\n  >\n- b\n\n\n## Case 3\n\n- > > a\n  >\n- b\n\n\n## Case 4\n\n- > # a\n  >\n- b\n\n\n## Case 5\n\n- ```\n  The following line is part of code block.\n\n- b\n\n## Case 6\n\n-     The following line is **not** part of code block.\n      \n- b\n\n## Case 7\n\n- <pre>The following line is part of HTML block.\n\n- </pre>\n- b\n",
+    "html": "<h2>Case 1</h2>\n<ul>\n<li>\n<blockquote>\n<p>a</p>\n</blockquote>\n</li>\n<li>b</li>\n</ul>\n<h2>Case 2</h2>\n<ul>\n<li>\n<blockquote>\n<ul>\n<li>a</li>\n</ul>\n</blockquote>\n</li>\n<li>b</li>\n</ul>\n<h2>Case 3</h2>\n<ul>\n<li>\n<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n</blockquote>\n</li>\n<li>b</li>\n</ul>\n<h2>Case 4</h2>\n<ul>\n<li>\n<blockquote>\n<h1>a</h1>\n</blockquote>\n</li>\n<li>b</li>\n</ul>\n<h2>Case 5</h2>\n<ul>\n<li>\n<pre><code>The following line is part of code block.\n\n</code></pre>\n</li>\n<li>b</li>\n</ul>\n<h2>Case 6</h2>\n<ul>\n<li>\n<pre><code>The following line is **not** part of code block.\n</code></pre>\n</li>\n<li>\n<p>b</p>\n</li>\n</ul>\n<h2>Case 7</h2>\n<ul>\n<li>\n<pre>The following line is part of HTML block.\n\n</li>\n<li>\n</pre>\n</li>\n<li>b</li>\n</ul>\n",
+    "example": 25,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "## Case 1\n\n- [aaa]: /\n\n  [aaa]: /\n- b\n\n\n## Case 2\n\n- a\n\n  [aaa]: /\n- b\n\n\n## Case 3\n\n- [aaa]: /\n\n  a\n- b\n",
+    "html": "<h2>Case 1</h2>\n<ul>\n<li></li>\n<li>\n<p>b</p>\n</li>\n</ul>\n<h2>Case 2</h2>\n<ul>\n<li>\n<p>a</p>\n</li>\n<li>\n<p>b</p>\n</li>\n</ul>\n<h2>Case 3</h2>\n<ul>\n<li>\n<p>a</p>\n</li>\n<li>\n<p>b</p>\n</li>\n</ul>\n",
+    "example": 26,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "__!_!__\n\n__!x!__\n\n**!*!**\n\n---\n\n_*__*_*\n\n_*xx*_*\n\n_*__-_-\n\n_*xx-_-\n",
+    "html": "<p><strong>!_!</strong></p>\n<p><strong>!x!</strong></p>\n<p><strong>!*!</strong></p>\n<hr />\n<p><em><em>__</em></em>*</p>\n<p><em><em>xx</em></em>*</p>\n<p><em>*__-</em>-</p>\n<p><em>*xx-</em>-</p>\n",
+    "example": 27,
+    "section": "Regression tests"
+  },
+  {
+    "markdown": "```language-r\nx <- 1\n```\n\n```r\nx <- 1\n```\n",
+    "html": "<pre><code class=\"language-r\">x &lt;- 1\n</code></pre>\n<pre><code class=\"language-r\">x &lt;- 1\n</code></pre>\n",
+    "example": 28,
+    "section": "277:"
+  },
+  {
+    "markdown": "&parag;\n\n&para\n\n&para;\n",
+    "html": "<p>&amp;parag;</p>\n<p>&amp;para</p>\n<p>¶</p>\n",
+    "example": 29,
+    "section": "278"
+  },
+  {
+    "markdown": "[test]:example\n\"\"third [test]\n",
+    "html": "<p>&quot;&quot;third <a href=\"example\">test</a></p>\n",
+    "example": 30,
+    "section": "281"
+  },
+  {
+    "markdown": "x<!x>\n\nx<!>\n",
+    "html": "<p>x<!x></p>\n<p>x&lt;!&gt;</p>\n",
+    "example": 31,
+    "section": "283"
+  },
+  {
+    "markdown": "foo <!-- test --->\n\nfoo <!-- test ---->\n\nfoo <!----->\n\nfoo <!-- test --> more -->\n",
+    "html": "<p>foo <!-- test ---></p>\n<p>foo <!-- test ----></p>\n<p>foo <!-----></p>\n<p>foo <!-- test --> more --&gt;</p>\n",
+    "example": 32,
+    "section": "285"
+  },
+  {
+    "markdown": "\u000bVertical Tab\u000b\n\n\fForm Feed\f\n\n NBSP (U+00A0) NBSP \n\n Em Space (U+2003) Em Space \n\n Line Separator (U+2028) Line Separator \n\n Paragraph Separator (U+2029) Paragraph Separator \n\n　全角スペース (U+3000) 全形空白　\n\n﻿ZWNBSP (U+FEFF) ZWNBSP﻿\n",
+    "html": "<p>\u000bVertical Tab\u000b</p>\n<p>\fForm Feed\f</p>\n<p> NBSP (U+00A0) NBSP </p>\n<p> Em Space (U+2003) Em Space </p>\n<p> Line Separator (U+2028) Line Separator </p>\n<p> Paragraph Separator (U+2029) Paragraph Separator </p>\n<p>　全角スペース (U+3000) 全形空白　</p>\n<p>﻿ZWNBSP (U+FEFF) ZWNBSP﻿</p>\n",
+    "example": 33,
+    "section": "261"
+  },
+  {
+    "markdown": "a**a∇**a\n\na**∇a**a\n\na**a𝜵**a\n\na**𝜵a**a\n",
+    "html": "<p>a**a∇**a</p>\n<p>a**∇a**a</p>\n<p>a**a𝜵**a</p>\n<p>a**𝜵a**a</p>\n",
+    "example": 34,
+    "section": "296"
+  },
+  {
+    "markdown": "![asdf <asdf> [asdf](asdf)](asdf.gif)\n",
+    "html": "<p><img src=\"asdf.gif\" alt=\"asdf  asdf\" /></p>\n",
+    "example": 35,
+    "section": "306:"
+  },
+  {
+    "markdown": "- ```\n    \n  ```\n\n```\n  \n```\n",
+    "html": "<ul>\n<li>\n<pre><code>  \n</code></pre>\n</li>\n</ul>\n<pre><code>  \n</code></pre>\n",
+    "example": 36,
+    "section": "306:"
+  },
+  {
+    "markdown": "[I]: /a\n\n[ı]: /b\n\n[a][i] [b][ı]\n",
+    "html": "<p><a href=\"/a\">a</a> <a href=\"/b\">b</a></p>\n",
+    "example": 37,
+    "section": "306:"
+  },
+  {
+    "markdown": "[FIQ]: /a\n\n[Fıq]: /b\n\n[a][fiq] [b][fıQ]\n",
+    "html": "<p><a href=\"/a\">a</a> <a href=\"/b\">b</a></p>\n",
+    "example": 38,
+    "section": "306:"
+  },
+  {
+    "markdown": "[I]: /a\n\n[ı]\n",
+    "html": "<p>[ı]</p>\n",
+    "example": 39,
+    "section": "306:"
+  },
+  {
+    "markdown": "<http://&gt;>\n",
+    "html": "<p><a href=\"http://%3E\">http://&gt;</a></p>\n",
+    "example": 40,
+    "section": "306:"
+  },
+  {
+    "markdown": "```&#x9;js\n```\n```&#x20;js\n```\n``` js\n```\n```js&#x9;\n```\n```js&#x20;\n```\n```js \n```\n```js&#x9;a\n```\n```js&#x20;a\n```\n```js a\n```\n",
+    "html": "<pre><code class=\"language-js\"></code></pre>\n<pre><code class=\"language-js\"></code></pre>\n<pre><code class=\"language-js\"></code></pre>\n<pre><code class=\"language-js\"></code></pre>\n<pre><code class=\"language-js\"></code></pre>\n<pre><code class=\"language-js\"></code></pre>\n<pre><code class=\"language-js\"></code></pre>\n<pre><code class=\"language-js\"></code></pre>\n<pre><code class=\"language-js\"></code></pre>\n",
+    "example": 41,
+    "section": "255"
+  },
+  {
+    "markdown": "[x]: fizz\n\n[x]: buzz\n===\n[x]\n",
+    "html": "<p>===\n<a href=\"fizz\">x</a></p>\n",
+    "example": 42,
+    "section": "255"
+  },
+  {
+    "markdown": "[x]: fizz\n\n[x]: buzz\nTitle\n===\n[x]\n",
+    "html": "<h1>Title</h1>\n<p><a href=\"fizz\">x</a></p>\n",
+    "example": 43,
+    "section": "255"
+  },
+  {
+    "markdown": "[a]: b\n---\n",
+    "html": "<hr />\n",
+    "example": 44,
+    "section": "255"
+  },
+  {
+    "markdown": "[a]: b\n===\n",
+    "html": "<p>===</p>\n",
+    "example": 45,
+    "section": "255"
+  },
+  {
+    "markdown": "[a]: b\n---\n\n[a]: b\n===\n",
+    "html": "<hr />\n<p>===</p>\n",
+    "example": 46,
+    "section": "255"
+  },
+  {
+    "markdown": "[a]: b\nFoo\n---\n\n[a]\n",
+    "html": "<h2>Foo</h2>\n<p><a href=\"b\">a</a></p>\n",
+    "example": 47,
+    "section": "255"
+  }
+]

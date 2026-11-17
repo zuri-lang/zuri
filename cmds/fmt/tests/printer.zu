@@ -1,14 +1,16 @@
-# Tests for the printer: when a group stays on one line, how a fill
-# packs its parts, and where each kind of indentation puts a line.
+# Tests for the printer: when a group stays on one line, which layout a
+# first_fit takes, how a fill packs its parts, and where each line is
+# indented.
 
 import test { * }
 
 import ..doc { * }
 import ..printer { render }
 
-# A call's argument list, laid out the way the formatter lays one out.
+# A call's argument list laid out the way the formatter lays one out:
+# on one line, or one argument to a line with a trailing comma.
 def call(name, args: list) {
-  var parts = []
+  var parts = [SOFTLINE]
   var index = 0
 
   for arg in args {
@@ -16,16 +18,29 @@ def call(name, args: list) {
       parts.append(LINE)
     }
 
-    parts.append(index < args.length() - 1 ? '${arg},' : arg)
+    parts.append(index < args.length() - 1 ? [arg, ','] : arg)
     index += 1
   }
 
   return [
     name,
-    group(base([
-      '(', nest([SOFTLINE, fill(parts)]), if_break(',', ''), SOFTLINE, ')',
-    ])),
+    group([
+      '(',
+      nest([parts, if_break(',', '')]),
+      SOFTLINE,
+      ')',
+    ]),
   ]
+}
+
+# A block, the way a function's body is laid out.
+def block(statement) {
+  return broken_group([
+    '@{',
+    nest([HARDLINE, statement]),
+    HARDLINE,
+    '}',
+  ])
 }
 
 describe('groups', @{
@@ -34,59 +49,92 @@ describe('groups', @{
   })
 
   it('breaks a group that does not fit, and only then adds the if_break', @{
-    expect(render(call('f', ['alpha', 'beta', 'gamma']), 18)).to_be(
-      'f(\n  alpha, beta,\n  gamma,\n)',
-    )
+    expect(render(call('f', ['alpha', 'beta', 'gamma']), 18))
+        .to_be('f(\n  alpha,\n  beta,\n  gamma,\n)')
   })
 
   it('counts what follows a group on its line when deciding', @{
-    var doc = [call('f', ['a', 'b']), ' + a_long_tail']
+    var doc = [
+      call('f', ['a', 'b']),
+      ' + a_long_tail',
+    ]
 
-    expect(render(doc, 12)).to_be('f(\n  a, b,\n) + a_long_tail')
+    expect(render(doc, 12)).to_be('f(\n  a,\n  b,\n) + a_long_tail')
   })
 
-  # A block inside a group opens on lines of its own whatever the group
-  # decides, so the group only has to fit up to where the block opens.
-  it('only has to fit as far as a line that always breaks', @{
-    var block = base(['@{', nest([HARDLINE, 'work()']), HARDLINE, '}'])
-
-    expect(render(call('each', ['items', block]), 20)).to_be(
-      'each(items, @{\n  work()\n})',
-    )
+  # A group holding a block can never sit on one line, so it breaks
+  # whatever the width.
+  it('breaks a group that holds a block', @{
+    expect(render(call('each', ['items', block('work()')]), 80))
+        .to_be('each(\n  items,\n  @{\n    work()\n  },\n)')
   })
-
-  # Breaking after a line that is already past the width moves the
-  # rest onto a line of its own and leaves the long one as long as it
-  # was, so the group stays whole.
-  it(
-    'keeps a group whole when its line runs past the width before it can break',
-    @{
-      var doc = ['a_long_head(', group(indent(['x', LINE, '- 4'])), ')']
-
-      expect(render(doc, 10)).to_be('a_long_head(x - 4)')
-    },
-  )
 
   it('never lays a broken group out on one line', @{
     expect(render(broken_group(['a', LINE, 'b']), 80)).to_be('a\nb')
   })
 })
 
+describe('first_fit', @{
+  # The layouts of `each(items, @{ work() })`: the block opening out on
+  # its own, or every argument on a line of its own.
+  def layouts() {
+    var hugged = ['each(items, ', block('work()'), ')']
+
+    return first_fit([
+      hugged,
+      call('each', ['items', block('work()')]),
+    ])
+  }
+
+  # A block opens on lines of its own whatever the layout around it, so
+  # a layout only has to fit as far as the brace.
+  it('takes the first layout whose opening line fits', @{
+    expect(render(layouts(), 20)).to_be('each(items, @{\n  work()\n})')
+  })
+
+  it('takes the last layout when none fits', @{
+    expect(render(layouts(), 12))
+        .to_be('each(\n  items,\n  @{\n    work()\n  },\n)')
+  })
+
+  it('lays a free part out on its own inside a layout taken flat', @{
+    var doc = first_fit([
+      [
+        'x.f',
+        free(call('', ['alpha', 'beta'])),
+      ],
+      broken_group([
+        'x',
+        nest(nest([SOFTLINE, '.f(alpha, beta)'])),
+      ]),
+    ])
+
+    expect(render(doc, 10)).to_be('x.f(\n  alpha,\n  beta,\n)')
+  })
+
+  # A layout marked whole is only worth having when nothing in it has to
+  # break any further.
+  it('takes a whole layout only when every one of its lines fits', @{
+    def doc(name) {
+      var chain = broken_group(nest(nest([SOFTLINE, name])))
+
+      return first_fit([
+        whole(['head', chain]),
+        [
+          'head',
+          free(call('.f', ['a'])),
+        ],
+      ])
+    }
+
+    expect(render(doc('.go()'), 10)).to_be('head\n    .go()')
+    expect(render(doc('.a_long_name()'), 10)).to_be('head.f(a)')
+  })
+})
+
 describe('fills', @{
   it('packs as many parts on a line as fit', @{
     var parts = ['aaa,', LINE, 'bbb,', LINE, 'ccc,', LINE, 'ddd']
-
-    expect(render(fill(parts), 9)).to_be('aaa, bbb,\nccc, ddd')
-  })
-
-  it('keeps the breaks the author wrote while every line fits', @{
-    var parts = ['aaa,', LINE, 'bbb,', KEPTLINE, 'ccc']
-
-    expect(render(fill(parts), 9)).to_be('aaa, bbb,\nccc')
-  })
-
-  it('lays the parts out again once a line of several runs past the width', @{
-    var parts = ['aaa,', LINE, 'bbb,', LINE, 'ccc,', KEPTLINE, 'ddd']
 
     expect(render(fill(parts), 9)).to_be('aaa, bbb,\nccc, ddd')
   })
@@ -98,36 +146,38 @@ describe('fills', @{
   # The last part shares its line with whatever follows the fill, a
   # trailing comma or a closer, and has to fit along with it.
   it('measures its last part with what follows it on the line', @{
-    var doc = [fill(['aaaa', LINE, 'bbbb']), ',)']
+    var doc = [
+      fill(['aaaa', LINE, 'bbbb']),
+      ',)',
+    ]
 
     expect(render(doc, 10)).to_be('aaaa\nbbbb,)')
   })
 })
 
 describe('indentation', @{
-  it('indents one level past the line an indent starts on', @{
-    var doc = ['x = ', group(indent(['alpha', LINE, '+ beta']))]
-
-    expect(render(doc, 10)).to_be('x = alpha\n  + beta')
-  })
-
   it('nests one level past what holds it', @{
     var doc = [
-      'a {', nest([HARDLINE, 'b', nest([HARDLINE, 'c'])]), HARDLINE, '}',
+      'a {',
+      nest([
+        HARDLINE,
+        'b',
+        nest([HARDLINE, 'c']),
+      ]),
+      HARDLINE,
+      '}',
     ]
 
     expect(render(doc, 80)).to_be('a {\n  b\n    c\n}')
   })
 
-  # `f(g(` opened together closes together: each closer returns to the
-  # line its opener is on rather than stepping back one level at a time.
-  it('returns a closer to the line its opener is on', @{
-    var inner = broken_group(base([
-      'g(', nest([HARDLINE, 'x,']), HARDLINE, ')',
-    ]))
-    var doc = ['f(', inner, ')']
+  it('continues an expression two levels in', @{
+    var doc = [
+      'x = ',
+      group(continued(['alpha +', LINE, 'beta'])),
+    ]
 
-    expect(render(doc, 80)).to_be('f(g(\n  x,\n))')
+    expect(render(doc, 10)).to_be('x = alpha +\n    beta')
   })
 
   it('leaves no spaces at the end of a line or on an empty one', @{
@@ -139,7 +189,12 @@ describe('choices and comments', @{
   it('takes the first choice while it fits within its limit', @{
     var doc = [
       'when 1',
-      choose(12, ' a()', [' {', nest([HARDLINE, 'a()']), HARDLINE, '}']),
+      choose(12, ' a()', [
+        ' {',
+        nest([HARDLINE, 'a()']),
+        HARDLINE,
+        '}',
+      ]),
     ]
 
     expect(render(doc, 80)).to_be('when 1 a()')
@@ -148,7 +203,12 @@ describe('choices and comments', @{
   it('takes the second choice past its limit, whatever the width', @{
     var doc = [
       'when 1',
-      choose(8, ' a()', [' {', nest([HARDLINE, 'a()']), HARDLINE, '}']),
+      choose(8, ' a()', [
+        ' {',
+        nest([HARDLINE, 'a()']),
+        HARDLINE,
+        '}',
+      ]),
     ]
 
     expect(render(doc, 80)).to_be('when 1 {\n  a()\n}')

@@ -1,23 +1,24 @@
 /**
  * @module types
  *
- * Reading SQLite values back as the types a column was declared to
- * hold.
+ * Reads SQLite values back as the types their columns were declared
+ * with.
  *
- * SQLite stores five things and remembers nothing about intent. A
- * boolean goes in as 1 and comes back as the number 1; a timestamp
- * goes in as text and comes back as text. What it does keep is the
- * type each column was *declared* with, and that is enough to put the
- * value back the way it went in.
+ * SQLite stores five kinds of value and doesn't record anything about
+ * what they were meant to be. A boolean is stored as 1 and comes back
+ * as the number 1, and a timestamp is stored as text and comes back as
+ * text. What SQLite does keep is the type each column was *declared*
+ * with, and that's enough to give the value back in the form it was
+ * stored in.
  *
- * So decoding here is driven by the declaration and never by the
- * value. A column declared `BOOLEAN` yields `true` and `false`; one
- * declared `INTEGER` yields the number 1 even when every row in it
- * happens to be 0 or 1. Guessing from content would make the type of a
- * result depend on the rows it happened to return, which is the kind
- * of thing that works until the day a table has different data in it.
+ * So decoding here depends on the declared type, never on the value. A
+ * column declared `BOOLEAN` gives `true` and `false`, and a column
+ * declared `INTEGER` gives the number 1, even if every row in it
+ * happens to be 0 or 1. Guessing from the contents would make the type
+ * of a result depend on which rows it returned, which works until the
+ * day the table has different data in it.
  *
- * A column with no declared type, which is what an expression has,
+ * A column with no declared type, such as the result of an expression,
  * comes back exactly as SQLite stored it.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
@@ -104,11 +105,11 @@ def conversion_for(declared) {
 /**
  * Applies one column's conversion to one stored value.
  *
- * NULL stays `nil` whatever the column was declared as. A value that
- * will not convert, such as text in a `DATETIME` column that is not a
- * timestamp, comes back as it was stored rather than as `nil`: losing
- * the value would be a worse answer than handing back the text that is
- * actually in the database.
+ * NULL stays `nil` whatever type the column was declared with. A value
+ * that can't be converted, such as text in a `DATETIME` column that
+ * isn't a timestamp, is returned as it was stored, not as `nil`. Losing
+ * the value would be worse than returning the text that's actually in
+ * the database.
  *
  * @param any value The value as SQLite stored it.
  * @param string|nil conversion From `conversion_for()`.

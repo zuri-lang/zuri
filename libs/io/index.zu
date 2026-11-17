@@ -1,28 +1,23 @@
 /**
  * @module io
  *
- * This module provides interfaces for working with to I/O stream
- * and TTYs as well as expose the operating system standard I/O
- * for easy access.
+ * Streams, terminals, and the operating system's standard input, output
+ * and error streams.
  *
- * Some I/O operations that should belong to this module have
- * been merged as core features and offered as built-in functions
- * for Zuri. Specifically file I/O features that can be accessed
- * via the built-in `file()` function.
+ * File I/O isn't here. It's built into the language, through the
+ * `file()` function.
  *
- * The standard I/O streams are also files and you can call
- * almost all file methods on them. Whenever a file method is not
- * supported, you'll get an error message telling you that such
- * operation is not supported for standard streams.
+ * The standard streams are files too, and you can call almost every
+ * file method on them. If a method isn't supported for a standard
+ * stream, it raises an error that says so.
  *
  * ### Example
  *
- * The following example shows how to use the `io` module for
- * accepting user name and printing the result.
+ * This example asks for the user's name and prints it:
  *
  * ```zuri
  * import io
- * 
+ *
  * var name = io.readline('What is your name?')
  * echo name
  * ```
@@ -65,13 +60,12 @@ var SEEK_END = 2
 #------------------------------------------------------------------------------------------------
 
 /**
- * Stdin is a file handle to the standard input file of the
- * system.
+ * The standard input stream of the process.
  *
- * It is opened in binary mode (`'rb'`), so `stdin.read()` and
- * `stdin.gets()` return `bytes`, never a string. Whatever is piped
- * into a program is arbitrary data, and decoding it as text before
- * the program has asked for text can only lose information.
+ * It's opened in binary mode (`'rb'`), so `stdin.read()` and
+ * `stdin.gets()` return `bytes`, never a string. Whatever is piped into
+ * a program can be arbitrary data, and decoding it as text before the
+ * program asks for text could only lose information.
  *
  * Call `.to_string()` on the result when the input really is text:
  *
@@ -82,9 +76,9 @@ var SEEK_END = 2
  * var text = raw.to_string()         # decoded, replacing bad bytes
  * ```
  *
- * `to_string()` substitutes U+FFFD for undecodable bytes rather than
- * raising. To reject malformed input instead, inspect the bytes
- * yourself before decoding.
+ * `to_string()` replaces bytes that can't be decoded with U+FFFD,
+ * instead of raising an error. To reject malformed input instead, check
+ * the bytes yourself before decoding them.
  *
  * @type file
  */
@@ -158,13 +152,14 @@ def capture_begin() {
 }
 
 /**
- * Ends the innermost capture and returns everything it collected.
+ * Ends the innermost capture, and returns everything it collected.
  *
- * The text comes back exactly as written, trailing newline included.
- * Bytes that are not valid UTF-8 decode to U+FFFD rather than
- * raising, so a whole frame is never lost over one stray byte.
+ * The text is returned exactly as it was written, including the final
+ * line break. Bytes that aren't valid UTF-8 are decoded as U+FFFD
+ * instead of raising an error, so a whole capture is never lost because
+ * of one stray byte.
  *
- * @returns string: the captured output, or `nil` when no capture was
+ * @returns string: the captured output, or `nil` if no capture was
  *    open.
  */
 def capture_end() {
@@ -253,14 +248,14 @@ def putc(c) {
 }
 
 /**
- * Reads character(s) from standard input.
+ * Reads characters from standard input.
  *
- * When length is given, gets `length` number of characters else,
- * gets a single character.
+ * If `length` is given, it reads `length` bytes, and otherwise it reads
+ * a single character.
  *
- * `length` counts bytes, not codepoints, so asking for fewer bytes
- * than a multi-byte character occupies yields a replacement
- * character rather than half of one.
+ * `length` counts bytes, not code points, so asking for fewer bytes
+ * than a multi-byte character takes up gives you a replacement
+ * character, not half of the character.
  *
  * @returns char|string
  */

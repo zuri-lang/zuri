@@ -1,30 +1,30 @@
 /**
  * @module connection
  *
- * A SQLite connection, as the layer above the adapters sees one.
+ * A SQLite connection, as the layer above the adapters sees it.
  *
- * SQLite has no server, so a connection here is an open database file
- * (or an in-memory database) and the handle onto it. That difference
- * shows through in a few places, and this is where each of them is
- * dealt with.
+ * SQLite has no server, so a connection here is an open database file,
+ * or an in-memory database, and the handle to it. That difference shows
+ * in a few places, and this is where each one is handled.
  *
  * ### Transactions
  *
  * SQLite has one transaction per connection and no nesting, so nested
- * transactions are savepoints, as they are for every other adapter.
- * Its isolation levels are not levels but locking modes: `BEGIN
- * DEFERRED` takes no lock until the first statement, `BEGIN IMMEDIATE`
- * takes the write lock at once. Serializable maps onto IMMEDIATE,
- * which is what actually delivers it, and the levels SQLite cannot
- * approximate raise rather than being quietly accepted.
+ * transactions are savepoints, as they are for every other adapter. Its
+ * isolation levels aren't really levels but locking modes:
+ * `BEGIN DEFERRED` doesn't take a lock until the first statement, and
+ * `BEGIN IMMEDIATE` takes the write lock straight away. Serializable
+ * maps to IMMEDIATE, which is what actually provides it, and the levels
+ * that SQLite can't approximate raise an error instead of being
+ * silently accepted.
  *
  * ### One writer
  *
- * A SQLite database takes one writer at a time. Where another engine
- * would queue, SQLite returns `SQLITE_BUSY`, which this adapter turns
- * into a `TimeoutError` once the busy timeout expires. Setting a busy
- * timeout is what turns a burst of contention into a wait rather than
- * an error, so connections open with one already set.
+ * A SQLite database allows one writer at a time. Where another engine
+ * would queue a write, SQLite returns `SQLITE_BUSY`, which this adapter
+ * turns into a `TimeoutError` once the busy timeout has passed. A busy
+ * timeout is what turns a burst of contention into a wait instead of an
+ * error, so connections are opened with one already set.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -32,8 +32,11 @@
 import _sqlite
 
 import ..driver {
-  DriverConnection, READ_COMMITTED, REPEATABLE_READ,
-  SERIALIZABLE, READ_UNCOMMITTED,
+  DriverConnection,
+  READ_COMMITTED,
+  REPEATABLE_READ,
+  SERIALIZABLE,
+  READ_UNCOMMITTED,
 }
 import ..errors { ClosedError, NotSupportedError, QueryError, TransactionError }
 import .backup { Backup }
@@ -147,10 +150,7 @@ class SqliteConnection < DriverConnection {
 
     _sqlite.reset(statement)
 
-    return {
-      rows_affected: affected,
-      last_insert_id: inserted,
-    }
+    return { rows_affected: affected, last_insert_id: inserted }
   }
 
   /**
@@ -200,22 +200,19 @@ class SqliteConnection < DriverConnection {
       }
     }
 
-    return {
-      columns: described.columns,
-      rows,
-    }
+    return { columns: described.columns, rows }
   }
 
   /**
-   * Runs a statement and hands back a cursor over its result.
+   * Runs a statement and returns a cursor over its result.
    *
-   * The statement is compiled fresh rather than taken from the cache,
-   * because the cursor keeps it for as long as it is reading.
+   * The statement is compiled fresh instead of being taken from the
+   * cache, because the cursor keeps it for as long as it's reading.
    *
    * @param string sql
    * @param list values
-   * @param dict options Unused; SQLite produces rows on demand
-   *    already, so there is no batch size to choose.
+   * @param dict options Not used. SQLite already produces rows on
+   *    demand, so there's no batch size to choose.
    * @returns SqliteCursor
    */
   open_cursor(sql: string, values: list, options: dict) {
@@ -404,11 +401,11 @@ class SqliteConnection < DriverConnection {
   }
 
   /**
-   * Asks a running statement on this connection to stop.
+   * Asks a statement that's running on this connection to stop.
    *
-   * The statement fails rather than being killed, and the connection
-   * stays usable. Meant for a long query on a connection another
-   * isolate is waiting on.
+   * The statement fails, but it isn't killed, and the connection can
+   * still be used. This is meant for a long query on a connection that
+   * another isolate is waiting for.
    */
   interrupt() {
     self._open()
@@ -436,7 +433,11 @@ class SqliteConnection < DriverConnection {
    * @returns Blob
    */
   blob(
-    database: string, table: string, column: string, rowid: number, writable,
+    database: string,
+    table: string,
+    column: string,
+    rowid: number,
+    writable,
   ) {
     self._open()
 
@@ -445,7 +446,12 @@ class SqliteConnection < DriverConnection {
 
     catch {
       handle = _sqlite.blob_open(
-        self._handle, database, table, column, rowid, wanted,
+        self._handle,
+        database,
+        table,
+        column,
+        rowid,
+        wanted,
       )
     } as error {
       reraise(error, nil)
@@ -455,12 +461,12 @@ class SqliteConnection < DriverConnection {
   }
 
   /**
-   * Starts a copy of this database into `destination`.
+   * Starts copying this database into `destination`.
    *
    * @param SqliteConnection destination An open connection to copy
-   *    into, which must not be this one.
-   * @param dict|nil options `source` and `target` name which attached
-   *    database on each side; both default to `'main'`.
+   *    into. It mustn't be this connection.
+   * @param dict|nil options `source` and `target` name the attached
+   *    database on each side. Both default to `'main'`.
    * @returns Backup
    */
   backup(destination, options) {
@@ -484,21 +490,21 @@ class SqliteConnection < DriverConnection {
   }
 
   /**
-   * Copies this database to a file, all in one call.
+   * Copies this database to a file, in one call.
    *
-   * The file is created if it is not there. An existing one is copied
-   * over rather than appended to, so a snapshot taken repeatedly to
-   * the same path replaces itself.
+   * The file is created if it doesn't exist. An existing file is
+   * overwritten, not appended to, so a snapshot taken repeatedly to the
+   * same path replaces itself each time.
    *
    * ```zuri,ignore
    * db.native().backup_to('./snapshot.db', nil)
    * ```
    *
-   * For a copy that is not a file, or one taken in steps, open the
-   * destination yourself and use `backup()`.
+   * To copy into something other than a file, or to copy in steps, open
+   * the destination yourself and use `backup()`.
    *
    * @param string path
-   * @param dict|nil options As `backup()` takes.
+   * @param dict|nil options The same options as `backup()` takes.
    */
   backup_to(path: string, options) {
     var destination = self.driver.connect(self.driver.parse_dsn(path))
@@ -517,7 +523,7 @@ class SqliteConnection < DriverConnection {
   }
 
   /**
-   * Adds a function to this connection, written in Zuri.
+   * Adds a function written in Zuri to this connection.
    *
    * ```zuri,ignore
    * db.native().create_function('initials', 1, @(name) {
@@ -527,25 +533,27 @@ class SqliteConnection < DriverConnection {
    * db.query('select initials(name) from authors')
    * ```
    *
-   * The function runs inside the engine, once per row, so it can be
-   * used anywhere an expression can. It must not touch the connection
-   * it was registered on; SQLite is in the middle of a statement when
-   * it calls, and reentering would deadlock.
+   * The function runs inside the engine, once for each row, so it can
+   * be used anywhere an expression can. It mustn't use the connection
+   * it was registered on. SQLite is in the middle of a statement when
+   * it calls the function, and using the connection again would
+   * deadlock.
    *
    * @param string name
-   * @param number arity How many arguments, or -1 for any number.
+   * @param number arity The number of arguments, or -1 for any number.
    * @param function body
-   * @param dict|nil options `deterministic` says the result depends
-   *    only on the arguments, which lets SQLite use the function in an
-   *    index and hoist it out of loops. True unless said otherwise.
+   * @param dict|nil options `deterministic` says that the result
+   *    depends only on the arguments, which lets SQLite use the
+   *    function in an index and move it out of loops. It's true unless
+   *    you say otherwise.
    */
   create_function(name: string, arity: number, body: function, options) {
     self._open()
 
     var settings = options or {}
-    var deterministic = settings.contains('deterministic') ?
-      settings.deterministic :
-      true
+    var deterministic = settings.contains('deterministic')
+        ? settings.deterministic
+        : true
 
     catch {
       _sqlite.create_function(self._handle, name, arity, deterministic, body)
@@ -582,7 +590,10 @@ class SqliteConnection < DriverConnection {
    * @param function finish
    */
   create_aggregate(
-    name: string, arity: number, step: function, finish: function,
+    name: string,
+    arity: number,
+    step: function,
+    finish: function,
   ) {
     self._open()
 
@@ -669,15 +680,15 @@ class SqliteConnection < DriverConnection {
   }
 
   /**
-   * Consulted for every action a statement wants to take, as the
-   * statement is compiled rather than as it runs.
+   * Called for every action a statement wants to take, when the
+   * statement is compiled, not when it runs.
    *
-   * The callable is passed the action code and the four strings SQLite
-   * supplies about it, and answers `'allow'`, `'deny'` or `'ignore'`.
-   * Anything else counts as denial, so a handler that falls off the
-   * end fails closed.
+   * The handler is passed the action code and the four strings that
+   * SQLite supplies about it, and returns `'allow'`, `'deny'` or
+   * `'ignore'`. Anything else counts as `'deny'`, so a handler that
+   * returns nothing fails safe.
    *
-   * @param function|nil handler Nil clears it.
+   * @param function|nil handler Nil removes the handler.
    */
   set_authorizer(handler) {
     self._open()
@@ -764,11 +775,7 @@ class SqliteConnection < DriverConnection {
     }
 
     var statement = self._prepare_raw(sql)
-    var entry = {
-      statement,
-      described: describe(statement),
-      used: self._clock,
-    }
+    var entry = { statement, described: describe(statement), used: self._clock }
 
     self._cache.set(sql, entry)
 
@@ -786,10 +793,10 @@ class SqliteConnection < DriverConnection {
     }
 
     if prepared.statement == nil {
-      raise QueryError(
-        'this text contains no statement to run',
-        { driver: 'sqlite', query: sql },
-      )
+      raise QueryError('this text contains no statement to run', {
+        driver: 'sqlite',
+        query: sql,
+      })
     }
 
     if !prepared.tail.trim().is_empty() {
@@ -797,7 +804,7 @@ class SqliteConnection < DriverConnection {
 
       raise QueryError(
         'this text contains more than one statement; run them one at ' +
-          'a time, or use exec() for a script',
+            'a time, or use exec() for a script',
         { driver: 'sqlite', query: sql },
       )
     }
@@ -835,25 +842,24 @@ class SqliteConnection < DriverConnection {
 
     raise NotSupportedError(
       'sqlite has no ${isolation} isolation; it offers read committed, ' +
-        'repeatable read and serializable',
+          'repeatable read and serializable',
       { driver: 'sqlite' },
     )
   }
 
   _assert_in_transaction(what) {
     if _sqlite.autocommit(self._handle) {
-      raise TransactionError(
-        'there is no open transaction to ${what}',
-        { driver: 'sqlite' },
-      )
+      raise TransactionError('there is no open transaction to ${what}', {
+        driver: 'sqlite',
+      })
     }
   }
 
   _open() {
     if self._closed {
-      raise ClosedError(
-        'this sqlite connection was closed', { driver: 'sqlite' },
-      )
+      raise ClosedError('this sqlite connection was closed', {
+        driver: 'sqlite',
+      })
     }
   }
 

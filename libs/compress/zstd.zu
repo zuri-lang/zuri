@@ -1,11 +1,10 @@
 /**
  * @module zstd
  *
- * This is the Zstd submodule for the compress module. It
- * implements zstd compression levels -8 through 4 (Fast and
- * DFast strategies), targeting high-speed compression for data
- * transfers. It produces standard zstd frames decompressible by
- * any compliant decoder.
+ * Zstandard compression and decompression. It supports zstd compression
+ * levels from -8 to 4, using the Fast and DFast strategies, which suit
+ * fast data transfer. It produces standard zstd frames that any
+ * compliant decoder can decompress.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
@@ -80,22 +79,21 @@ class ZstdEncoder {
   var _ptr
 
   /**
-   * Creates a new streaming Zstd encoder at the given level
-   * (-8..=4).
+   * Creates a streaming Zstandard encoder at the given level, from -8
+   * to 4.
    *
-   * Negative levels (-8 through -1) unlocks zstd's fastest
-   * compression tiers. They can be useful when throughput
-   * matters more than ratio.
+   * The negative levels, from -8 to -1, use zstd's fastest compression
+   * modes, which are useful when speed matters more than the
+   * compression ratio.
    *
-   * Level 0 maps to the module's default which is currently
-   * level 1.
+   * Level 0 means the module's default, which is currently level 1.
    *
-   * Positive levels spend more match-finding work for better
-   * ratios while staying in the Fast/DFast range.
+   * The positive levels do more work finding matches, for a better
+   * ratio, while staying within the Fast and DFast strategies.
    *
-   * @param ?number level - Default 1
-   * @param ?number window_log - Default 10
-   * @param ?bool ldm - Default false
+   * @param ?number level: defaults to 1.
+   * @param ?number window_log: defaults to 10.
+   * @param ?bool ldm: defaults to false.
    */
   @new(level, window_log, ldm) {
     self._ptr = _compress.zstd_new_encoder(level, window_log, ldm)

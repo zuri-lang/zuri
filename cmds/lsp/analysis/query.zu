@@ -175,8 +175,8 @@ def at(summary: dict, offset: int) {
     var candidate = all[i]
 
     if candidate.start <= offset and offset <= candidate.end {
-      if best == nil
-        or candidate.end - candidate.start < best.end - best.start {
+      if best == nil or
+          candidate.end - candidate.start < best.end - best.start {
         best = candidate
       }
     }
@@ -217,8 +217,8 @@ def canonical(linker, path: string, occurrence: dict) {
         var global = linker.builtins.global(occurrence.name)
 
         return global == nil
-          ? nil
-          : { path: global.summary.path, index: global.index }
+            ? nil
+            : { path: global.summary.path, index: global.index }
       }
 
       if target == STARRED {
@@ -368,22 +368,20 @@ def references(linker, target: dict, paths: list, include_declaration: bool) {
         continue
       }
 
-      var is_declaration = occurrence.kind == 'decl'
-        and path == target.path
-        and (
-          occurrence.index == target.index
-        )
+      var is_declaration = occurrence.kind == 'decl' and
+          path == target.path and
+          (occurrence.index == target.index)
 
       if is_declaration and !include_declaration {
         continue
       }
 
       var several = is_declaration
-        ? nil
-        : declarations(linker, path, occurrence)
+          ? nil
+          : declarations(linker, path, occurrence)
       var named = several == nil
-        ? same(canonical(linker, path, occurrence), target)
-        : several.some(@(ref) => same(ref, target))
+          ? same(canonical(linker, path, occurrence), target)
+          : several.some(@(ref) => same(ref, target))
 
       if is_declaration or named {
         var write = occurrence.kind == 'ref' and occurrence.flags & 1 != 0

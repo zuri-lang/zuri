@@ -1,53 +1,54 @@
 # test
 
-Runs a project's test files, each in a process of its own, and reports
-them together. It is `test.conduct()` behind a command line, so a
-project gets a test runner without writing one.
+Runs a project's test files, each in its own process, and reports the
+results together. It's a command-line front end for `test.conduct()`, so
+a project doesn't need a test runner of its own.
 
-## Running it
+## Usage
 
 ```sh
 zuri test [target]
 ```
 
-With no target it runs the `tests` directory here:
+With no target, it runs the tests in the `tests` directory:
 
 ```sh
 zuri test
 ```
 
-With one it runs a single file, whose `.zu` ending is optional, or a
-whole directory:
+With a target, it runs a single file, with or without the `.zu`
+extension, or every file in a directory:
 
 ```sh
 zuri test mytest            # tests/mytest.zu
 zuri test mytest.zu         # the same file
 zuri test tests/api.zu      # the same file, by its path
-zuri test deep              # tests/deep, whole
+zuri test deep              # every file in tests/deep
 zuri test cmds/fmt/tests    # a directory anywhere in the project
 ```
 
-A name is looked for under `tests` first, so a test keeps its own name
-even when something else in the project shares it. If nothing there
-matches the name as written, it is looked for once more by filename
-alone anywhere under `tests`, so a file in a subdirectory answers to its
-own name. Two files of that name is reported rather than guessed at.
+A name is looked up in `tests` first, so a test can be run by its name
+even if something else in the project has the same name. If nothing in
+`tests` matches the name as written, it's looked up again by file name
+alone, anywhere under `tests`, so a file in a subdirectory can be run by
+its name too. If two files have that name, you get an error instead of a
+guess.
 
-The run exits `1` when anything failed, so a CI job needs nothing added
-to it.
+The command exits with status 1 if any test failed, so a CI job doesn't
+need any extra checks.
 
-## Flags
+## Options
 
-| Flag | What it does |
+| Option | Description |
 | --- | --- |
-| `-j, --jobs <count>` | How many files to run at once. `auto` is one per CPU. Default `1`. |
-| `-t, --timeout <duration>` | How long to give a single file before killing it. `500ms`, `30s`, `2m`, `1h`, or a bare number of milliseconds. Default: no limit. |
-| `-b, --bail [count]` | Stop after this many failing files. On its own, stop at the first. Default: never stop early. |
-| `-m, --match <pattern...>` | Filename patterns to run, instead of `*.zu`. |
-| `-i, --ignore <pattern...>` | Filename patterns to skip, instead of `_*`, `.*` and `index.zu`. |
-| `--no-recursive` | Only the files directly in the directory. |
-| `-e, --env <assignment...>` | Extra environment for every test process, as `KEY=VALUE`. |
-| `-l, --list` | Print the files that would run, one to a line, and stop. |
+| `-j, --jobs <count>` | How many files to run at once, or `auto` for one per CPU. Defaults to `1`. |
+| `-t, --timeout <duration>` | How long a single file can run before it's stopped, such as `500ms`, `30s`, `2m` or `1h`, or a number of milliseconds. There's no limit by default. |
+| `-b, --bail [count]` | Stop after this many files fail, or after the first failure if no count is given. By default, every file runs. |
+| `-m, --match <pattern...>` | File name patterns to run, instead of `*.zu`. |
+| `-i, --ignore <pattern...>` | File name patterns to skip, instead of `_*`, `.*` and `index.zu`. |
+| `--no-recursive` | Only run the files directly in the directory, not in subdirectories. |
+| `-e, --env <assignment...>` | Extra environment variables for every test process, as `KEY=VALUE`. |
+| `-l, --list` | Print the files that would run, one per line, and stop. |
 
 ```sh
 zuri test --jobs auto --timeout 30s
@@ -56,27 +57,26 @@ zuri test --match '*_test.zu' '*_spec.zu'
 zuri test --list | xargs wc -l
 ```
 
-`--bail` and the two pattern flags take as many words as follow them,
-so put the target ahead of them, or close them with `--`:
+`--bail` and the two pattern options take every word that follows them,
+so put the target before them, or end them with `--`:
 
 ```sh
 zuri test mytest --bail
 zuri test --match '*_test.zu' -- mytest
 ```
 
-A count for `--bail` has to be attached, `--bail=3`, for the same
-reason: a count written as a separate word is indistinguishable from
-the target.
+For the same reason, a count for `--bail` has to be attached to it, as in
+`--bail=3`. A count written as a separate word can't be told apart from a
+target.
 
-`--match` and `--ignore` choose among the files in a directory. Naming
-one file has already chosen, so the two together are refused rather
-than quietly resolved.
+`--match` and `--ignore` choose which files in a directory to run, so they
+can't be combined with a target that names a single file.
 
-## Writing the tests
+## Writing tests
 
-Nothing here is required of a test file. It is an ordinary Zuri script
-that declares its tests with the `test` module, equally runnable on its
-own with `zuri run`:
+A test file doesn't need anything special. It's an ordinary Zuri script
+that declares its tests with the `test` module, and you can also run it by
+itself with `zuri run`:
 
 ```zuri,ignore
 import test { * }
@@ -88,16 +88,16 @@ describe('parse', @{
 })
 ```
 
-## How it is built
+## Source files
 
-- `plan.zu` — the argument parser, the rules that turn a target into a
-  directory and a file, and the ones that turn flags into `conduct()`
+- `plan.zu`: the argument parser, the rules that turn a target into a
+  directory and a file, and the rules that turn options into `conduct()`
   options.
-- `index.zu` — the command itself, the entry point `zuri test` runs.
+- `index.zu`: the command itself, which `zuri test` runs.
 
-The running is `test.conduct()`, unchanged: one process per file,
-reported in discovery order, with `index.zu` and the conductor's own
-script left out of what it finds.
+The tests are run by `test.conduct()`, unchanged. Each file runs in its own
+process, and the files are reported in the order they were found. The
+directory's `index.zu` and the conductor's own script aren't run as tests.
 
 ## Tests
 

@@ -34,14 +34,16 @@ echo '════════════════════════�
 var s = set([1, 2, 2, 3, 1])
 assert s.length() == 3, 'constructing from a list must deduplicate elements'
 assert s.contains(2) == true and s.contains(99) == false,
-  'contains() must reflect actual membership'
+    'contains() must reflect actual membership'
 assert set().is_empty() == true, 'an empty set must report is_empty()'
 assert s.is_empty() == false, 'a non-empty set must not report is_empty()'
-ok('construction deduplicates, and contains()/length()/is_empty() agree with it')
+ok(
+  'construction deduplicates, and contains()/length()/is_empty() agree with it',
+)
 
 var from_dict = set({ a: 1, b: 2 })
 assert from_dict.contains('a') and from_dict.contains('b'),
-  'constructing from a dict must use its keys as elements'
+    'constructing from a dict must use its keys as elements'
 ok('construction from a dict uses its keys')
 
 # ---------------------------------------------------------------------------
@@ -52,16 +54,18 @@ var b = set([2, 3, 4])
 
 assert a.union(b).equals(set([1, 2, 3, 4])), 'union() must combine both sets'
 assert a.intersect(b).equals(set([2, 3])),
-  'intersect() must keep only shared elements'
+    'intersect() must keep only shared elements'
 assert a.difference(b).equals(set([1])),
-  'difference() must keep only elements unique to self'
+    'difference() must keep only elements unique to self'
 assert a.symmetric_difference(b).equals(set([1, 4])),
-  'symmetric_difference() must keep elements in exactly one set'
-ok('union()/intersect()/difference()/symmetric_difference() compute the correct new sets')
+    'symmetric_difference() must keep elements in exactly one set'
+ok(
+  'union()/intersect()/difference()/symmetric_difference() compute the correct new sets',
+)
 
 assert (a + b).equals(a.union(b)), '+ must be equivalent to union()'
 assert (a - b).equals(a.difference(b)),
-  '- must be equivalent to difference(), not intersect()'
+    '- must be equivalent to difference(), not intersect()'
 ok('+ and - operators match union() and difference() respectively')
 
 # ---------------------------------------------------------------------------
@@ -71,35 +75,37 @@ var small = set([1, 2])
 var big = set([1, 2, 3])
 
 assert small.is_subset(big) == true,
-  'a strictly smaller, fully-contained set must be a subset'
+    'a strictly smaller, fully-contained set must be a subset'
 assert big.is_subset(small) == false,
-  'a strictly larger set can never be a subset of a smaller one'
+    'a strictly larger set can never be a subset of a smaller one'
 assert big.is_superset(small) == true,
-  'a strictly larger set containing the other must be a superset'
+    'a strictly larger set containing the other must be a superset'
 assert small.is_superset(big) == false,
-  'a strictly smaller set can never be a superset of a larger one'
+    'a strictly smaller set can never be a superset of a larger one'
 assert big.is_subset(big) == true, 'a set must be a subset of itself'
 assert big.is_superset(big) == true, 'a set must be a superset of itself'
-ok('is_subset()/is_superset() give the mathematically correct answer, including equal sets')
+ok(
+  'is_subset()/is_superset() give the mathematically correct answer, including equal sets',
+)
 
 assert set([1, 2]).is_disjoint(set([3, 4])) == true,
-  'two sets with no shared elements must be disjoint'
+    'two sets with no shared elements must be disjoint'
 assert set([1, 2]).is_disjoint(set([2, 3])) == false,
-  'two sets with a shared element must not be disjoint'
+    'two sets with a shared element must not be disjoint'
 ok('is_disjoint() correctly detects shared elements')
 
 # ---------------------------------------------------------------------------
 # equals() and ==
 # ---------------------------------------------------------------------------
 assert set([1, 2, 3]).equals(set([3, 2, 1])) == true,
-  'equals() must ignore element order'
+    'equals() must ignore element order'
 assert set([1, 2]).equals(set([1, 2, 3])) == false,
-  'equals() must be false for sets of different size'
+    'equals() must be false for sets of different size'
 assert set([1, 2, 3]) == set([3, 2, 1]),
-  '== must compare contents the way equals() does'
+    '== must compare contents the way equals() does'
 assert set([1, 2]) != set([1, 2, 3]), '!= must be the negation of =='
 assert !(set([1, 2]) == [1, 2]),
-  'a set must not equal a list holding the same elements'
+    'a set must not equal a list holding the same elements'
 assert set([1]) != nil, 'comparing a set with nil must stay a nil check'
 ok('equals() and == both compare contents, ignoring order')
 
@@ -109,13 +115,13 @@ ok('equals() and == both compare contents, ignoring order')
 var m = set()
 assert m.add(1) == true, 'add() of a genuinely new element must return true'
 assert m.add(1) == false,
-  'add() of an already-present element must return false and not duplicate it'
+    'add() of an already-present element must return false and not duplicate it'
 assert m.length() == 1, 'a duplicate add() must not grow the set'
 ok('add() reports whether the element was actually new')
 
 assert m.remove(1) == true, 'remove() of a present element must return true'
 assert m.remove(1) == false,
-  'remove() of an already-absent element must return false, not raise'
+    'remove() of an already-absent element must return false, not raise'
 ok('remove() reports whether the element was actually present')
 
 var p = set([42])
@@ -123,7 +129,8 @@ assert p.pop() == 42, 'pop() on a single-element set must return that element'
 assert p.is_empty(), 'pop() must actually remove the element'
 assert raises(@() {
   set().pop()
-}), 'pop() on an empty set must raise'
+}),
+    'pop() on an empty set must raise'
 ok('pop() removes and returns an element, and raises when the set is empty')
 
 var c = set([1, 2, 3])
@@ -137,26 +144,28 @@ ok('clear() empties the set')
 var u1 = set([1, 2])
 assert u1.update(set([2, 3, 4])) == u1, 'update() must return self for chaining'
 assert u1.equals(set([1, 2, 3, 4])),
-  'update() must merge the other set in place'
+    'update() must merge the other set in place'
 ok('update() mutates in place and matches union()')
 
 var u2 = set([1, 2, 3])
 u2.intersection_update(set([2, 3, 4]))
 assert u2.equals(set([2, 3])),
-  'intersection_update() must keep only shared elements, in place'
+    'intersection_update() must keep only shared elements, in place'
 ok('intersection_update() mutates in place and matches intersect()')
 
 var u3 = set([1, 2, 3])
 u3.difference_update(set([2, 3]))
 assert u3.equals(set([1])),
-  'difference_update() must remove shared elements, in place'
+    'difference_update() must remove shared elements, in place'
 ok('difference_update() mutates in place and matches difference()')
 
 var u4 = set([1, 2, 3])
 u4.symmetric_difference_update(set([2, 3, 4]))
 assert u4.equals(set([1, 4])),
-  'symmetric_difference_update() must keep elements in exactly one set, in place'
-ok('symmetric_difference_update() mutates in place and matches symmetric_difference()')
+    'symmetric_difference_update() must keep elements in exactly one set, in place'
+ok(
+  'symmetric_difference_update() mutates in place and matches symmetric_difference()',
+)
 
 # ---------------------------------------------------------------------------
 # Iteration, including the empty-set edge case
@@ -166,7 +175,7 @@ for item in set([10, 20, 30]) {
   seen.append(item)
 }
 assert seen == [10, 20, 30],
-  'iteration must visit every element in insertion order'
+    'iteration must visit every element in insertion order'
 ok('iterating a non-empty set visits every element in order')
 
 var empty_seen = []
@@ -174,8 +183,10 @@ for item in set() {
   empty_seen.append(item)
 }
 assert empty_seen.is_empty(),
-  'iterating an empty set must terminate immediately rather than crash'
-ok('iterating an empty set terminates cleanly instead of indexing out of bounds')
+    'iterating an empty set must terminate immediately rather than crash'
+ok(
+  'iterating an empty set terminates cleanly instead of indexing out of bounds',
+)
 
 # ---------------------------------------------------------------------------
 # clone() / to_list() / each()
@@ -184,7 +195,7 @@ var original = set([1, 2, 3])
 var copy = original.clone()
 copy.add(4)
 assert original.length() == 3 and copy.length() == 4,
-  'clone() must be an independent copy, not a shared reference'
+    'clone() must be an independent copy, not a shared reference'
 ok('clone() produces an independent copy')
 
 var each_seen = []
@@ -192,14 +203,14 @@ set([1, 2, 3]).each(@(item, index) {
   each_seen.append(item)
 })
 assert each_seen == [1, 2, 3],
-  'each() must visit every element in insertion order'
+    'each() must visit every element in insertion order'
 
 var each_indexes = []
 set([10, 20, 30]).each(@(item, index) {
   each_indexes.append(index)
 })
 assert each_indexes == [0, 1, 2],
-  'each() must also pass the correct positional index'
+    'each() must also pass the correct positional index'
 ok('each() visits every element in order and passes the correct index')
 
 # ---------------------------------------------------------------------------
@@ -209,26 +220,28 @@ ok('each() visits every element in order and passes the correct index')
 # "the class does not implement '@to_json'") went unnoticed.
 # ---------------------------------------------------------------------------
 assert set([1, 2, 3]).to_list() == [1, 2, 3],
-  'to_list() must return every element in insertion order'
+    'to_list() must return every element in insertion order'
 assert set().to_list() == [],
-  'to_list() on an empty set must return an empty list'
+    'to_list() on an empty set must return an empty list'
 
 var tl = set([1, 2, 3])
 var tl_copy = tl.to_list()
 tl_copy.append(99)
 assert tl.to_list() == [1, 2, 3],
-  'to_list() must return an independent copy, not a live reference'
+    'to_list() must return an independent copy, not a live reference'
 
 assert is_string(set([1, 2]).to_string()), 'to_string() must return a string'
-assert set([1, 2]).to_string().contains('1')
-  and set([1, 2]).to_string().contains('2'),
-  'to_string() must include every element'
+assert set([1, 2]).to_string().contains('1') and
+    set([1, 2]).to_string().contains('2'),
+    'to_string() must include every element'
 assert set().to_string().contains('0'), 'to_string() must reflect an empty set'
 's length correctly'
 
 assert json.encode(set([1, 2, 3])) == json.encode([1, 2, 3]),
-  '@to_json() must let json.encode() serialize a Set as its element list (was completely broken)'
-ok('to_string()/to_list()/to_json() are all correct, including json.encode() integration')
+    '@to_json() must let json.encode() serialize a Set as its element list (was completely broken)'
+ok(
+  'to_string()/to_list()/to_json() are all correct, including json.encode() integration',
+)
 
 # ---------------------------------------------------------------------------
 # Non-mutation: union()/intersect()/difference()/symmetric_difference()
@@ -241,7 +254,7 @@ nm_a.intersect(nm_b)
 nm_a.difference(nm_b)
 nm_a.symmetric_difference(nm_b)
 assert nm_a.equals(set([1, 2, 3])) and nm_b.equals(set([2, 3, 4])),
-  'union()/intersect()/difference()/symmetric_difference() must never mutate either input set'
+    'union()/intersect()/difference()/symmetric_difference() must never mutate either input set'
 ok('the non-mutating set operations genuinely leave both inputs untouched')
 
 # ---------------------------------------------------------------------------
@@ -252,20 +265,32 @@ ok('the non-mutating set operations genuinely leave both inputs untouched')
 # ---------------------------------------------------------------------------
 assert raises(@() {
   set('not a list or dict')
-}), 'set() constructor must reject a string'
+}),
+    'set() constructor must reject a string'
 assert raises(@() {
   set(42)
-}), 'set() constructor must reject a number'
+}),
+    'set() constructor must reject a number'
 
-for method_name in ['union', 'intersect', 'difference', 'symmetric_difference',
-  'is_disjoint', 'is_subset', 'is_superset', 'equals',
-  'update', 'intersection_update', 'difference_update',
-  'symmetric_difference_update'] {
+for method_name in [
+  'union',
+  'intersect',
+  'difference',
+  'symmetric_difference',
+  'is_disjoint',
+  'is_subset',
+  'is_superset',
+  'equals',
+  'update',
+  'intersection_update',
+  'difference_update',
+  'symmetric_difference_update',
+] {
   var s1 = set([1, 2])
   assert raises(@() {
     s1[method_name]([1, 2])
   }),
-    '${method_name}() must reject a plain list instead of a Set'
+      '${method_name}() must reject a plain list instead of a Set'
 }
 ok('every Set-typed method rejects a non-Set argument via its real type gate')
 

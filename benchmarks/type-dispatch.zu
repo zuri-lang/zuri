@@ -53,8 +53,21 @@ def weigh(v) {
 }
 
 var items = [
-  1, 'abc', [1, 2, 3], Boxed(7), true, nil,
-  2.5, '', [], Boxed('xyz'), false, [4, [5, 6]],
+  1,
+  'abc',
+  [1, 2, 3],
+  Boxed(7),
+  true,
+  nil,
+  2.5,
+  '',
+  [],
+  Boxed('xyz'),
+  false,
+  [
+    4,
+    [5, 6],
+  ],
 ]
 
 var start = time()

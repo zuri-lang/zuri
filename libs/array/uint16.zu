@@ -1,11 +1,11 @@
 /**
  * @module uint16
  *
- * `UInt16Array`: a packed array of unsigned 16-bit integers, 2 bytes per
- * element.
+ * `UInt16Array`, a packed array of 16-bit unsigned integers, with 2
+ * bytes per element.
  *
- * `UINT16_MAX` and `UINT16_MIN` bound what an element
- * may be; a value outside them raises rather than wrapping.
+ * `UINT16_MAX` and `UINT16_MIN` are the limits for an element. A value
+ * outside them raises an error, instead of wrapping around.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
@@ -64,9 +64,9 @@ class UInt16Array < Array {
   }
 
   /**
-   * Returns a new UInt16Array over `[start, end)` of this array
-   * (both default to the whole array; negative bounds count from
-   * the end).
+   * Returns a new `UInt16Array` with the elements from `start` up to,
+   * but not including, `end`. Both default to the whole array, and
+   * negative values count from the end.
    *
    * @param ?number start
    * @param ?number end

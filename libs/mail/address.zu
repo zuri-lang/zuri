@@ -1,14 +1,13 @@
 /**
  * @module address
  *
- * Reading and writing the addresses in a mail header.
+ * Reads and writes the addresses in a mail header.
  *
- * An address in a header is rarely just an address. It can carry a
- * display name, the name can be quoted or encoded, either can have
- * comments buried in it, and a header can list several of them or
- * gather them into a named group. This module turns all of that into
- * `Address` objects, and turns them back into a header a server will
- * accept.
+ * An address in a header is rarely just an address. It can have a
+ * display name, the name can be quoted or encoded, either of them can
+ * contain comments, and a header can list several addresses or collect
+ * them into a named group. This module turns all of that into `Address`
+ * objects, and turns them back into a header that a server will accept.
  *
  * ```zuri
  * import mail.address
@@ -40,8 +39,8 @@ var _SPECIALS = '()<>[]:;@\\,."'
 
 # The characters an atom may contain, which is what decides whether a
 # local part or a display name can be written without quotes.
-var _ATEXT = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-  + "0123456789!#$%&'*+-/=?^_`{|}~"
+var _ATEXT = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' +
+    "0123456789!#$%&'*+-/=?^_`{|}~"
 
 /**
  * One address, with the display name that was written alongside it.
@@ -83,9 +82,9 @@ class Address {
       raise MessageError('an address needs a local part: ${spec}')
     }
 
-    self.address = self.domain == '' ?
-      _write_local(self.local) :
-      '${_write_local(self.local)}@${self.domain}'
+    self.address = self.domain == ''
+        ? _write_local(self.local)
+        : '${_write_local(self.local)}@${self.domain}'
   }
 
   /**
@@ -128,8 +127,8 @@ class Address {
       return false
     }
 
-    return self.local == other.local
-      and self.domain.lower() == other.domain.lower()
+    return self.local == other.local and
+        self.domain.lower() == other.domain.lower()
   }
 
   /**
@@ -409,8 +408,11 @@ def _parse_item(tokens: list, at: number) {
   while index < tokens.length() {
     var token = tokens[index]
 
-    if token.kind == 'special' and (token.value == '<' or token.value == ':'
-      or token.value == ',' or token.value == ';') {
+    if token.kind == 'special' and
+        (token.value == '<' or
+            token.value == ':' or
+            token.value == ',' or
+            token.value == ';') {
       break
     }
 
@@ -418,9 +420,9 @@ def _parse_item(tokens: list, at: number) {
     index++
   }
 
-  if index >= tokens.length()
-    or tokens[index].value == ','
-    or tokens[index].value == ';' {
+  if index >= tokens.length() or
+      tokens[index].value == ',' or
+      tokens[index].value == ';' {
     return { item: _build(_addr_spec_of(prefix), ''), end: index }
   }
 
@@ -450,8 +452,8 @@ def _parse_item(tokens: list, at: number) {
   index++
 
   while index < tokens.length() and tokens[index].value != ';' {
-    if tokens[index].kind == 'space'
-      or (tokens[index].kind == 'special' and tokens[index].value == ',') {
+    if tokens[index].kind == 'space' or
+        (tokens[index].kind == 'special' and tokens[index].value == ',') {
       index++
       continue
     }
@@ -480,9 +482,9 @@ def _parse_item(tokens: list, at: number) {
 /**
  * Reads every address in a header value, keeping the groups.
  *
- * Entries that are not addresses at all are left out rather than
- * raising, because one unusable entry in a `To` header is no reason to
- * refuse the whole message.
+ * Entries that aren't addresses at all are left out, instead of raising
+ * an error, because one unusable entry in a `To` header is no reason to
+ * reject the whole message.
  *
  * @param string text
  * @returns list of `Address` and `Group`
@@ -495,8 +497,8 @@ def parse_groups(text: string) {
   while at < tokens.length() {
     var token = tokens[at]
 
-    if token.kind == 'space'
-      or (token.kind == 'special' and token.value == ',') {
+    if token.kind == 'space' or
+        (token.kind == 'special' and token.value == ',') {
       at++
       continue
     }

@@ -1,14 +1,14 @@
 /**
  * @module os.watch
  *
- * Filesystem events: being told when files and directories change,
- * rather than looking to see whether they have.
+ * Filesystem events, which tell you when files and directories change,
+ * so you don't have to keep checking.
  *
  * A `Watcher` asks the operating system to report changes as they
- * happen, through the mechanism each platform provides for it: inotify
- * on Linux, FSEvents on macOS, `ReadDirectoryChangesW` on Windows and
+ * happen, using the mechanism that each platform provides: inotify on
+ * Linux, FSEvents on macOS, `ReadDirectoryChangesW` on Windows and
  * kqueue on the BSDs. Nothing is polled. A watcher waiting for a change
- * costs no CPU until one happens, and the change is reported as soon as
+ * uses no CPU until one happens, and the change is reported as soon as
  * the operating system delivers it.
  *
  * ```zuri
@@ -24,83 +24,86 @@
  * }
  * ```
  *
- * ### What is reported
+ * ### What's reported
  *
  * Every event has a `kind`:
  *
- * - `'create'`: an entry now stands at `path`. It was created, or was
+ * - `'create'`: there's now an entry at `path`. It was created, or
  *   renamed or moved there, which includes a file renamed over an
- *   existing one. Many editors save a file exactly that way, by writing
- *   a new copy and renaming it over the original, so saving in them is
- *   reported as `'create'`.
- * - `'modify'`: the file or directory at `path` changed in place, its
- *   contents or its metadata (permissions, ownership, modification
- *   time). A `touch` of an existing file is a `'modify'`.
- * - `'remove'`: nothing stands at `path` any more. It was deleted, or
- *   renamed or moved away. A rename is a `'remove'` of the old path and
- *   a `'create'` of the new one, on every platform.
- * - `'rescan'`: the operating system dropped events, typically because
- *   too many changes arrived too quickly for it to queue. Anything under
- *   `path` may have changed, and anything watched at all when `path` is
- *   `nil`.
- * - `'exit'`: a process the watcher follows has exited. See `follow()`.
+ *   existing one. Many editors save a file in exactly that way, by
+ *   writing a new copy and renaming it over the original, so saving in
+ *   those editors is reported as `'create'`.
+ * - `'modify'`: the file or directory at `path` changed in place,
+ *   either its contents or its metadata, such as permissions, ownership
+ *   or modification time. A `touch` of an existing file is a
+ *   `'modify'`.
+ * - `'remove'`: there's nothing at `path` any more. It was deleted, or
+ *   renamed or moved away. On every platform, a rename is a `'remove'`
+ *   of the old path and a `'create'` of the new one.
+ * - `'rescan'`: the operating system dropped events, usually because
+ *   too many changes arrived too quickly for it to queue them. Anything
+ *   under `path` might have changed, or anything being watched at all
+ *   if `path` is `nil`.
+ * - `'exit'`: a process that the watcher follows has exited. See
+ *   `follow()`.
  *
  * Reading a file, or opening one without writing to it, is never
  * reported.
  *
- * A file saved by an editor, a formatter or `git` is reported the
- * moment it is saved, on every platform. The platforms differ only for
- * a file a program writes through a handle it holds open between
- * writes, such as a log it keeps appending to: Linux reports each
+ * A file saved by an editor, a formatter or `git` is reported as soon
+ * as it's saved, on every platform. The platforms only differ for a
+ * file that a program writes through a handle it keeps open between
+ * writes, such as a log file it keeps appending to. Linux reports each
  * write, macOS reports the change when the program closes the file, and
- * Windows when the program closes it or the system writes its cache to
- * disk.
+ * Windows reports it when the program closes the file or the system
+ * flushes its cache to disk.
  *
- * On macOS a change made just before `add()` can be reported after it,
- * because FSEvents hands changes over asynchronously. Call `next()`
- * with a short timeout until it returns `nil` to set aside anything
- * already on its way.
+ * On macOS, a change made just before `add()` can be reported after it,
+ * because FSEvents delivers changes asynchronously. To discard anything
+ * that's already on its way, call `next()` with a short timeout until
+ * it returns `nil`.
  *
- * Each event is checked against the filesystem as `next()` hands it
- * over, so it describes the path as it is at that moment. A file
- * created and removed again before the events are read is reported only
- * as removed. A file removed and then created again is reported only as
- * created. Changes that have not been handed over yet are merged, so a
- * file written in several steps while nobody was reading is reported
- * once.
+ * Each event is checked against the filesystem when `next()` returns
+ * it, so it describes the path as it is at that moment. A file that was
+ * created and removed again before the events were read is only
+ * reported as removed. A file that was removed and then created again
+ * is only reported as created. Changes that haven't been returned yet
+ * are merged, so a file written in several steps while nothing was
+ * reading is reported once.
  *
  * ### Paths
  *
- * Every path is resolved through its links when it is added, and every
+ * Every path is resolved through any links when it's added, and every
  * event names the resolved path, so a watch added as `'./src'` reports
  * `/home/ada/project/src/main.zu`. On Windows and macOS, whose
- * filesystems look names up without regard to case, a path matches
- * however its case was spelled when it was added.
+ * filesystems ignore case when they look up names, a path matches
+ * however its case was written when it was added.
  *
  * ### Limits
  *
- * Each platform caps how many directories one process can watch, and
- * `add()` raises once the cap is reached. On macOS the cap is about a
- * twelfth of the process's limit on open files, so the first watcher a
- * process creates raises the soft limit as far as the hard limit and
- * the kernel allow. Processes it starts afterwards inherit the raised
- * limit.
+ * Each platform limits how many directories a process can watch, and
+ * `add()` raises an error once the limit is reached. On macOS, the
+ * limit is about a twelfth of the process's limit on open files, so the
+ * first watcher a process creates raises the soft limit as far as the
+ * hard limit and the kernel allow. Processes that it starts afterwards
+ * inherit the raised limit.
  *
  * ### Signals
  *
- * A signal with a callback registered through `os.on_signal()` cuts a
- * wait short: `next()` returns `nil` at once and the callback runs, as
- * it would between any two statements. A watcher can therefore wait for
- * as long as it likes and still shut down promptly on Ctrl+C.
+ * A signal with a callback registered through `os.on_signal()` ends a
+ * wait early: `next()` returns `nil` immediately, and the callback
+ * runs, as it would between any two statements. So a watcher can wait
+ * as long as it likes and still shut down promptly when you press
+ * Ctrl+C.
  *
  * ### Isolates
  *
- * A watcher belongs to the isolate that created it and cannot be sent
- * to another. An isolate that wants to watch creates a watcher of its
- * own. Signal callbacks run only on the main thread, so a signal does
- * not cut short a wait inside an isolate. Cancelling the isolate does:
- * `next()` returns `nil` within the pool's cancellation interval, and
- * `isolate.is_cancelled()` says why.
+ * A watcher belongs to the isolate that created it, and can't be sent
+ * to another isolate. An isolate that wants to watch for changes
+ * creates its own watcher. Signal callbacks only run on the main
+ * thread, so a signal doesn't end a wait inside an isolate, but
+ * cancelling the isolate does: `next()` returns `nil` within the pool's
+ * cancellation interval, and `isolate.is_cancelled()` tells you why.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -157,17 +160,17 @@ class WatchEvent {
 
 /**
  * Watches files and directories for changes, and child processes for
- * their exit, and reports both as `WatchEvent`s in the order they
- * happen.
+ * their exit, and reports both as `WatchEvent` objects in the order
+ * they happen.
  *
- * A watcher starts out watching nothing. `add()` gives it paths,
+ * A new watcher doesn't watch anything. `add()` gives it paths,
  * `follow()` gives it processes, and `next()` waits for whatever
- * happens first. Iterating a watcher with `for` calls `next()` for you
- * and runs until the watcher is closed.
+ * happens first. Looping over a watcher with `for` calls `next()` for
+ * you, and continues until the watcher is closed.
  *
- * Every watcher holds operating system resources until it is closed or
- * collected. Call `close()` once a watcher is no longer needed rather
- * than leaving it to the garbage collector.
+ * Every watcher holds operating system resources until it's closed or
+ * garbage collected. Call `close()` when you no longer need a watcher,
+ * instead of leaving it to the garbage collector.
  *
  * ```zuri
  * import os

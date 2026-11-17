@@ -1,13 +1,13 @@
 /**
  * @module h1
  *
- * HTTP/1.1 on the wire (RFC 9110 and RFC 9112): reading a request line
- * and its headers, writing a status line and its headers, and the
+ * The HTTP/1.1 wire format (RFC 9110 and RFC 9112): reading a request
+ * line and its headers, writing a status line and its headers, and the
  * chunked transfer encoding.
  *
- * This is the layer `HttpServer` and `HttpClient` sit on when the
- * connection is not HTTP/2. `DEFAULT_LIMITS` is what stops a malformed
- * or hostile peer from making the parser allocate without bound.
+ * `HttpServer` and `HttpClient` use this layer whenever a connection
+ * isn't using HTTP/2. `DEFAULT_LIMITS` stops a malformed or malicious
+ * peer from making the parser allocate unlimited memory.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -80,20 +80,20 @@ def parse_version(text: string) {
 }
 
 /**
- * Reads one request off a connection: the request line, the header
- * section, and enough framing information to read the body.
+ * Reads a single request from a connection: the request line, the
+ * header section, and enough framing information to read the body.
  *
- * The body is *not* read. `request.body_reader` is left positioned at
- * its first byte, so the caller decides whether to materialise it,
- * stream it, or refuse it - which is the only way to answer a
- * 10 GiB upload with a `413` instead of accepting it first.
+ * The body *isn't* read. `request.body_reader` is left at the first
+ * byte of the body, so the caller can decide whether to read it all,
+ * stream it or reject it. That's the only way to respond to a 10 GiB
+ * upload with a `413` before accepting it.
  *
  * @param Connection connection
- * @param ?dict options: any of `max_line_size`, `max_header_size`,
+ * @param ?dict options: any of `max_line_size`, `max_header_size` and
  *    `max_header_count`
- * @returns ?HttpRequest: `nil` when the peer closed the connection
+ * @returns ?HttpRequest: `nil` if the peer closed the connection
  *    cleanly between messages
- * @throws ProtocolError on a malformed message
+ * @throws ProtocolError on an invalid message
  * @throws TooLargeError if a limit is exceeded
  */
 def read_request(connection, options: ?dict) {
@@ -168,7 +168,10 @@ def request_from_head(connection, parsed) {
   }
 
   request.body_reader = body.reader_for(
-    connection, request.headers, true, false,
+    connection,
+    request.headers,
+    true,
+    false,
   )
 
   return request
@@ -231,9 +234,9 @@ def send_continue(connection) {
 /**
  * Whether the connection should be kept open after this exchange.
  *
- * HTTP/1.1 keeps connections open unless told otherwise; HTTP/1.0
- * closes them unless told otherwise. Either side can ask to close,
- * and either side asking is enough.
+ * HTTP/1.1 keeps connections open unless told otherwise, and HTTP/1.0
+ * closes them unless told otherwise. Either side can ask to close the
+ * connection, and a request from either side is enough.
  *
  * @param HttpRequest request
  * @param HttpResponse response
@@ -256,25 +259,25 @@ def should_keep_alive(request, response) {
 }
 
 /**
- * Writes a response to a connection and returns whether the
- * connection is still usable afterwards.
+ * Writes a response to a connection, and returns whether the connection
+ * can still be used afterwards.
  *
- * Framing is decided here rather than by the caller, because it has
- * to agree with the status, the method, and the kind of body:
+ * The framing is decided here instead of by the caller, because it has
+ * to match the status, the method and the kind of body:
  *
- * - a `1xx`, `204` or `304`, and any response to `HEAD`, sends no
- *   body at all no matter what the body holds;
- * - a body of known size gets a `Content-Length`;
- * - a streamed body gets chunked encoding on HTTP/1.1, and on
- *   HTTP/1.0 - which has no chunked encoding - is delimited by
- *   closing the connection.
+ * - A `1xx`, `204` or `304` response, and any response to a `HEAD`
+ *   request, never has a body, whatever the body contains.
+ * - A body of known size gets a `Content-Length`.
+ * - A streamed body uses chunked encoding on HTTP/1.1. On HTTP/1.0,
+ *   which doesn't support chunked encoding, the end of the body is
+ *   marked by closing the connection.
  *
  * @param Connection connection
  * @param HttpRequest request
  * @param HttpResponse response
  * @param ?dict options: `server_name` for the `Server` header, and
- *    `keep_alive` to force the connection decision
- * @returns bool: whether the connection may be reused
+ *    `keep_alive` to force the decision about the connection
+ * @returns bool: whether the connection can be reused
  * @throws ConnectionError, TimeoutError
  */
 def write_response(connection, request, response, options: ?dict) {
@@ -307,7 +310,8 @@ def write_response(connection, request, response, options: ?dict) {
   # a clock, and caches need it to compute freshness at all.
   response.headers.set_default('Date', util.format_date())
   response.headers.set_default(
-    'Server', options.get('server_name', SERVER_NAME),
+    'Server',
+    options.get('server_name', SERVER_NAME),
   )
 
   var streaming = false
@@ -325,9 +329,9 @@ def write_response(connection, request, response, options: ?dict) {
       known_length = source[3]
     }
 
-    if method == 'HEAD'
-      and known_length != nil
-      and !response.headers.contains('content-length') {
+    if method == 'HEAD' and
+        known_length != nil and
+        !response.headers.contains('content-length') {
       response.headers.set('Content-Length', known_length)
     }
 
@@ -472,14 +476,13 @@ def _write_file(connection, path, offset, length) {
 }
 
 /**
- * The writer handed to a streaming response body.
+ * The writer passed to a streaming response body.
  *
- * `write()` sends data as it is produced, framed as chunked transfer
- * encoding when that is how the response was framed, and raw
- * otherwise. `flush()` pushes what has been written all the way to
- * the socket, which is what makes a progress feed or a
- * server-sent-event stream actually arrive rather than sit in a
- * buffer.
+ * `write()` sends data as it's produced, using chunked transfer
+ * encoding if that's how the response is framed, and sending it as is
+ * otherwise. `flush()` pushes everything written so far to the socket.
+ * Call it to make a progress feed or a stream of server-sent events
+ * reach the client instead of waiting in a buffer.
  */
 class ChunkWriter {
 
@@ -500,9 +503,9 @@ class ChunkWriter {
   /**
    * Writes part of the body.
    *
-   * A zero-length write is dropped rather than sent, since a
-   * zero-length chunk is the end-of-body marker and sending one early
-   * would truncate the response.
+   * A write of zero bytes is skipped instead of sent, because a chunk
+   * of zero bytes marks the end of the body, and sending one early
+   * would cut the response short.
    *
    * @param {bytes|string} data
    */
@@ -534,12 +537,12 @@ class ChunkWriter {
   }
 
   /**
-   * Ends the body, writing the terminating chunk when the response is
-   * chunked. Called for you when the streaming handler returns.
+   * Ends the body, and writes the final chunk if the response is
+   * chunked. This is called for you when the streaming handler returns.
    *
    * @param ?Headers trailers: trailer fields to send after the last
-   *    chunk; only meaningful for a chunked body, and only ever read
-   *    by a client that announced `TE: trailers`
+   *    chunk. These only have an effect for a chunked body, and are
+   *    only read by clients that sent `TE: trailers`.
    */
   finish(trailers) {
     if self._finished {
@@ -572,9 +575,8 @@ class ChunkWriter {
  * @param Connection connection
  * @param HttpRequest request
  * @param ?dict options: `body` (`bytes`), and `origin_form` (default
- *    `true`) to control whether the target is written as a path or as
- *    an absolute URL, which is what a request to a forward proxy
- *    needs
+ *    `true`), which controls whether the target is written as a path or
+ *    as an absolute URL, as a request to a forward proxy needs
  * @throws ConnectionError, TimeoutError
  */
 def write_request(connection, request, options: ?dict) {
@@ -597,16 +599,15 @@ def write_request(connection, request, options: ?dict) {
 }
 
 /**
- * Reads a response off a connection.
+ * Reads a response from a connection.
  *
- * Interim `1xx` responses are consumed and skipped, since they are
- * part of the exchange rather than its result. A `101` is returned as
- * it is: that one *is* the result, and the caller is switching
- * protocols on the strength of it.
+ * Interim `1xx` responses, such as `100 Continue`, are read and
+ * skipped. The exception is `101 Switching Protocols`, which is
+ * returned, because the caller needs it to switch to the new protocol.
  *
  * @param Connection connection
- * @param HttpRequest request: the request being answered; its method
- *    decides the response's framing
+ * @param HttpRequest request: the request being answered. Its method
+ *    determines how the response is framed.
  * @param ?dict options: `max_line_size`, `max_header_size`,
  *    `max_header_count`, `max_body_size`, `decode_content` (default
  *    `true`), and `stream` (default `false`) to leave the body unread
@@ -636,8 +637,9 @@ def read_response(connection, request, options: ?dict) {
 
   response.request_method = method
 
-  var bodiless = method == 'HEAD' or status.is_bodiless(response.status) or
-    response.status == 101
+  var bodiless = method == 'HEAD' or
+      status.is_bodiless(response.status) or
+      response.status == 101
 
   # A 2xx answer to CONNECT establishes a tunnel; everything after the
   # head is tunnelled bytes, not a body.
@@ -655,7 +657,9 @@ def read_response(connection, request, options: ?dict) {
 
   response.body = reader.read_all(_limit(options, 'max_body_size'))
 
-  if options.get('decode_content', true) {
+  # A response with no body has nothing to decode, whatever its coding
+  # header says: the header describes the body a GET would have had.
+  if !bodiless and options.get('decode_content', true) {
     var encoding = response.headers.get('content-encoding', nil)
 
     if encoding != nil and !encoding.trim().is_empty() {

@@ -6,7 +6,7 @@
   <p x-if="item.description">{{ item.description }}</p>
   <footer>
     <ul class="tags" x-if="item.keywords">
-      <li x-for="item.keywords" x-value="word"><a class="tag" href="/search?q={{ word|url_encode }}">{{ word }}</a></li>
+      <li x-for="item.keywords" x-value="word"><a class="tag" href="/search?q={{ word|url_encode(false) }}">{{ word }}</a></li>
     </ul>
     <span>{{ item.downloads|number_format }} downloads</span>
     <span>Updated {{ item.updated|date('j M Y') }}</span>

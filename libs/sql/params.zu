@@ -1,34 +1,34 @@
 /**
  * @module params
  *
- * Rewriting a statement's placeholders into whatever the active
+ * Rewrites the placeholders in a statement into the form the active
  * adapter expects.
  *
- * Engines disagree about how a parameter is spelled. PostgreSQL wants
- * `$1`, SQLite accepts `?1`, others want a bare `?`. Without a
+ * Engines disagree about how to write a parameter. PostgreSQL wants
+ * `$1`, SQLite accepts `?1`, and others want a plain `?`. Without a
  * translation step, switching adapters would mean rewriting every
  * statement in a program, which is most of what makes changing
- * database an ordeal.
+ * databases so painful.
  *
- * So `sql` defines one spelling and translates. Statements are written
- * with `?` for positional parameters or `:name` for named ones, and
- * each adapter's driver declares which form it needs.
+ * So `sql` defines one way of writing placeholders, and translates it.
+ * You write statements with `?` for positional parameters or `:name`
+ * for named ones, and each adapter's driver declares which form it
+ * needs.
  *
  * ```zuri,ignore
  * translate('select * from t where a = ? and b = ?', [1, 2], NUMBERED)
  * # { sql: 'select * from t where a = $1 and b = $2', values: [1, 2] }
  * ```
  *
- * The scanner understands enough SQL to know when a `?` or a `:` is
- * not a placeholder: inside a string, a quoted identifier, a bracketed
- * identifier, a comment, or a PostgreSQL dollar-quoted body, and in
- * the `::` cast operator. A statement that needs the literal character
- * rather than a placeholder writes `??`, which becomes a single `?`.
- * That matters for PostgreSQL, where `?` is a JSON containment
- * operator.
+ * The scanner understands enough SQL to know when a `?` or a `:` isn't
+ * a placeholder: inside a string, a quoted identifier, a bracketed
+ * identifier, a comment or a PostgreSQL dollar-quoted body, and in the
+ * `::` cast operator. To write a literal question mark instead of a
+ * placeholder, write `??`, which becomes a single `?`. That matters on
+ * PostgreSQL, where `?` is a JSON operator.
  *
- * Nothing here escapes a value or builds SQL out of one. Values are
- * bound by the engine, always.
+ * Nothing here escapes a value or builds SQL from one. Values are
+ * always bound by the engine.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -47,9 +47,9 @@ var QUESTION = 'question'
 var NUMBERED = 'numbered'
 
 /**
- * `?1`, `?2` and so on. SQLite, which accepts a bare `?` too but is
- * given explicit indices so a repeated named parameter can be bound
- * once rather than once per mention.
+ * `?1`, `?2` and so on, for SQLite. SQLite also accepts a plain `?`,
+ * but it's given explicit indices so that a named parameter used more
+ * than once can be bound once, instead of once for each use.
  */
 var INDEXED = 'indexed'
 
@@ -73,13 +73,15 @@ def _is_ident_rest(ch) {
  * The placeholder text for the parameter at `position`, counting from
  * one.
  *
- * Used by the statement builders in `crud`, which generate SQL and so
- * need to spell placeholders themselves rather than translate them.
+ * The statement builders in `crud` use this, because they generate SQL
+ * and so have to write placeholders themselves instead of translating
+ * them.
  *
  * @param string style One of `QUESTION`, `NUMBERED` or `INDEXED`.
- * @param number position The parameter's 1 based binding position.
+ * @param number position The parameter's binding position, counting
+ *    from 1.
  * @returns string
- * @throws QueryError if `style` is not one this module defines.
+ * @throws QueryError if `style` isn't one that this module defines.
  */
 def placeholder(style: string, position: number) {
   if style == QUESTION {
@@ -126,12 +128,12 @@ def _skip_quoted(sql, start, closer) {
 }
 
 /**
- * Reads a PostgreSQL dollar-quote opener at `start`, returning the tag
- * including both dollars, or `nil` when this is not one.
+ * Reads a PostgreSQL dollar-quote opener at `start`, and returns the
+ * tag including both dollar signs, or `nil` if there isn't one there.
  *
- * `$$` and `$tag$` open a body in which nothing is escaped and nothing
- * is a placeholder. A lone `$` followed by a digit is a PostgreSQL
- * positional parameter rather than a tag, and is left alone.
+ * `$$` and `$tag$` start a body in which nothing is escaped and nothing
+ * is a placeholder. A single `$` followed by a digit is a PostgreSQL
+ * positional parameter, not a tag, and is left alone.
  */
 def _dollar_tag(sql, start) {
   var n = sql.length()
@@ -618,21 +620,21 @@ def bind_plan(plan: dict, params) {
     if !is_list(params) {
       raise QueryError(
         'this statement uses ? placeholders, so its parameters have ' +
-          'to be a list, not ${typeof(params)}',
+            'to be a list, not ${typeof(params)}',
       )
     }
 
     if positional > params.length() {
       raise QueryError(
         'the statement has more ? placeholders than the ' +
-          '${params.length()} values given',
+            '${params.length()} values given',
       )
     }
 
     if positional < params.length() {
       raise QueryError(
         '${params.length()} values were given for a statement with ' +
-          '${positional} ? placeholder${positional == 1 ? "" : "s"}',
+            '${positional} ? placeholder${positional == 1 ? "" : "s"}',
       )
     }
 
@@ -648,7 +650,7 @@ def bind_plan(plan: dict, params) {
   if !is_dict(params) {
     raise QueryError(
       'this statement uses :name placeholders, so its parameters ' +
-        'have to be a dictionary, not ${typeof(params)}',
+          'have to be a dictionary, not ${typeof(params)}',
     )
   }
 
@@ -656,7 +658,7 @@ def bind_plan(plan: dict, params) {
     if !params.contains(name) {
       raise QueryError(
         'the statement mentions :${name}, which the parameters ' +
-          'do not hold',
+            'do not hold',
       )
     }
   }

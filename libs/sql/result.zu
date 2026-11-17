@@ -1,14 +1,14 @@
 /**
  * @module result
  *
- * What a statement hands back: the rows of a query, or the count of a
- * statement that changed something.
+ * What a statement returns: the rows of a query, or the number of rows
+ * that a statement changed.
  *
- * Rows are dictionaries keyed by column name, which is what makes
- * `row.title` read the way it does. Where that is not enough, because
- * a join selected two columns of the same name or because position is
- * what matters, `columns` and `tuples()` give the ordered view of the
- * same result.
+ * Rows are dictionaries keyed by column name, which is why you can
+ * write `row.title`. When that isn't enough, because a join selected
+ * two columns with the same name or because the position of a column
+ * matters, `columns` and `tuples()` give an ordered view of the same
+ * result.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -45,12 +45,12 @@ class ResultSet {
   var columns = []
 
   /**
-   * The rows, each a dictionary keyed by column name.
+   * The rows, each one a dictionary keyed by column name.
    *
-   * Where two columns share a name the later one wins, which is worth
-   * knowing before selecting `id` from both sides of a join. Aliasing
-   * one of them in the query is the fix; `tuples()` is the escape
-   * hatch when it cannot be.
+   * If two columns have the same name, the later one wins. Keep this in
+   * mind when you select `id` from both sides of a join. To avoid it,
+   * give one of them an alias in the query. If you can't, use
+   * `tuples()`.
    *
    * @type list[dict]
    */
@@ -178,10 +178,11 @@ class ResultSet {
   }
 
   /**
-   * The rows as lists of values in column order, rather than as
+   * The rows as lists of values in column order, instead of as
    * dictionaries.
    *
-   * This is the view that survives duplicate column names.
+   * Unlike `rows`, this view keeps every column when two columns have
+   * the same name.
    *
    * @returns list[list]
    */
@@ -201,7 +202,7 @@ class ResultSet {
       if column < 0 or column >= self.columns.length() {
         raise QueryError(
           'column ${column} is out of range for a result with ' +
-            '${self.columns.length()} columns',
+              '${self.columns.length()} columns',
         )
       }
 
@@ -216,15 +217,15 @@ class ResultSet {
 
     raise QueryError(
       'this result has no column named ${column}; it has ' +
-        '${', '.join(self.column_names())}',
+          '${', '.join(self.column_names())}',
     )
   }
 
   to_string() {
     return '<ResultSet ${self.rows.length()} row' +
-      '${self.rows.length() == 1 ? "" : "s"}, ' +
-      '${self.columns.length()} column' +
-      '${self.columns.length() == 1 ? "" : "s"}>'
+        '${self.rows.length() == 1 ? "" : "s"}, ' +
+        '${self.columns.length()} column' +
+        '${self.columns.length() == 1 ? "" : "s"}>'
   }
 
   @key(previous) {
@@ -286,7 +287,7 @@ class ExecResult {
     var id = self.last_insert_id != nil ? ', id ${self.last_insert_id}' : ''
 
     return '<ExecResult ${self.rows_affected} row' +
-      '${self.rows_affected == 1 ? "" : "s"} affected${id}>'
+        '${self.rows_affected == 1 ? "" : "s"} affected${id}>'
   }
 
   @to_string() {

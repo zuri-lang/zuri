@@ -1,15 +1,14 @@
 # Function Methods
 
-Every method on the built-in `function` type, with its signature, what
-it returns, and the cases where it does something other than the obvious
-thing.
+Every method of the built-in `function` type, with its signature, what
+it returns, and any behavior you might not expect.
 
 | Method | Returns | Summary |
 | --- | --- | --- |
 | [`name()`](#name) | `string` | The function's declared name. |
 | [`arity()`](#arity) | `number` | How many parameters the function declares, counting a variadic one as a single parameter. |
 | [`is_variadic()`](#is_variadic) | `bool` | Whether the last parameter is variadic (`...name`). |
-| [`call(...args: list)`](#call) | `any` | Calls the function with the given arguments and returns its result. |
+| [`call(...args: list)`](#call) | `any` | Calls the function with the given arguments, and returns its result. |
 | [`apply(args: list)`](#apply) | `any` | Calls the function with the arguments in a list, and returns its result. |
 | [`to_string()`](#to_string) | `string` | The function rendered for display, as `<function NAME(ARITY)>`, with a trailing `...` on the arity when the function is variadic. |
 
@@ -20,8 +19,8 @@ name() -> string
 ```
 
 The function's declared name. An anonymous function is named `@anon`
-followed by a number, counted in the order the compiler met it; a bound
-method reports the method's own name, not its class's.
+followed by a number, in the order the compiler found it. A bound method
+reports the method's own name, not its class's name.
 
 ```zuri-repl
 %> def named(a, b, ...c) {}
@@ -76,9 +75,9 @@ true
 call(...args: list) -> any
 ```
 
-Calls the function with the given arguments and returns its result. The
-same as calling it directly; useful when the function is held in a
-variable and the call site reads better spelled out.
+Calls the function with the given arguments, and returns its result.
+This is the same as calling it directly. It can make the code clearer
+when the function is stored in a variable.
 
 ```zuri-repl
 %> def add(a, b) { return a + b }
@@ -88,9 +87,9 @@ variable and the call site reads better spelled out.
 
 **Parameters**
 
-- `args` (`...any`) — The arguments to call with.
+- `args` (`...any`): the arguments to call it with
 
-**Returns** `any` — Whatever the function returns.
+**Returns** `any`: Whatever the function returns.
 
 **Raises** anything the called function raises.
 
@@ -101,7 +100,8 @@ apply(args: list) -> any
 ```
 
 Calls the function with the arguments in a list, and returns its result.
-`call()` takes them written out; this one takes them in a list.
+`call()` takes the arguments separately, and this method takes them in a
+list.
 
 ```zuri-repl
 %> def add(a, b) { return a + b }
@@ -112,19 +112,19 @@ Calls the function with the arguments in a list, and returns its result.
 [1, [2, 3]]
 ```
 
-A list shorter than the function's arity leaves the remaining parameters
-`nil`, exactly as calling it directly with too few arguments does; a
-longer one overflows into a variadic parameter, or is discarded when
-there is none.
+If the list is shorter than the number of parameters, the remaining
+parameters are `nil`, just as when you call the function directly with
+too few arguments. If it's longer, the extra arguments go into a
+variadic parameter, or are discarded if there isn't one.
 
 **Parameters**
 
-- `args` (`list`) — The arguments to call with, in order.
+- `args` (`list`): the arguments to call it with, in order
 
-**Returns** `any` — Whatever the function returns.
+**Returns** `any`: Whatever the function returns.
 
-**Raises** `TypeError` when `args` is not a list, and anything the
-called function raises.
+**Raises** `TypeError` if `args` isn't a list, and anything the called
+function raises.
 
 ## `to_string()`
 

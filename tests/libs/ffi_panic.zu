@@ -16,11 +16,14 @@ def assert_contained(task, name) {
   }
 
   assert instance_of(caught, isolate.IsolateError),
-    '${name}: a panic must surface as an IsolateError'
+      '${name}: a panic must surface as an IsolateError'
   assert caught.message.contains('debug_panic'),
-    '${name}: the IsolateError must carry the panic message'
+      '${name}: the IsolateError must carry the panic message'
   echo '${name} passed'
 }
 
 assert_contained(ffi_panic_isolate.panic_in_callback, 'callback')
-assert_contained(ffi_panic_isolate.panic_in_compiled_callback, 'compiled callback')
+assert_contained(
+  ffi_panic_isolate.panic_in_compiled_callback,
+  'compiled callback',
+)

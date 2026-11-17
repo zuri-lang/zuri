@@ -5,7 +5,14 @@ import os
 import test { * }
 
 import ..plan {
-  UsageError, bail_of, env_of, jobs_of, options, parser, resolve, timeout_of,
+  UsageError,
+  bail_of,
+  env_of,
+  jobs_of,
+  options,
+  parser,
+  resolve,
+  timeout_of,
 }
 
 # A tree of empty files standing in for a project, so resolution can be
@@ -41,41 +48,38 @@ describe('resolve', @{
   })
 
   it('finds a test file by its bare name', @{
-    expect(resolve(
-      'alpha', FIXTURE,
-    )).to_equal({ directory: TESTS, file: 'alpha.zu' })
+    expect(resolve('alpha', FIXTURE))
+        .to_equal({ directory: TESTS, file: 'alpha.zu' })
   })
 
   it('finds the same file with its extension written out', @{
-    expect(resolve(
-      'alpha.zu', FIXTURE,
-    )).to_equal({ directory: TESTS, file: 'alpha.zu' })
+    expect(resolve('alpha.zu', FIXTURE))
+        .to_equal({ directory: TESTS, file: 'alpha.zu' })
   })
 
   it('finds a test file by the path it sits at', @{
     expect(resolve('tests/alpha.zu', FIXTURE))
-      .to_equal({ directory: TESTS, file: 'alpha.zu' })
+        .to_equal({ directory: TESTS, file: 'alpha.zu' })
   })
 
   it('takes a directory under tests whole', @{
     expect(resolve('deep', FIXTURE))
-      .to_equal({ directory: os.join_paths(TESTS, 'deep'), file: nil })
+        .to_equal({ directory: os.join_paths(TESTS, 'deep'), file: nil })
   })
 
   it('takes a directory that is nowhere near tests', @{
     expect(resolve('pkg', FIXTURE))
-      .to_equal({ directory: os.join_paths(FIXTURE, 'pkg'), file: nil })
+        .to_equal({ directory: os.join_paths(FIXTURE, 'pkg'), file: nil })
   })
 
   it('takes a file that is nowhere near tests', @{
-    expect(resolve(
-      'loose', FIXTURE,
-    )).to_equal({ directory: FIXTURE, file: 'loose.zu' })
+    expect(resolve('loose', FIXTURE))
+        .to_equal({ directory: FIXTURE, file: 'loose.zu' })
   })
 
   it('reaches into a subdirectory for a name it finds nowhere else', @{
     expect(resolve('solo', FIXTURE))
-      .to_equal({ directory: os.join_paths(TESTS, 'deep'), file: 'solo.zu' })
+        .to_equal({ directory: os.join_paths(TESTS, 'deep'), file: 'solo.zu' })
   })
 
   it('says so rather than choosing between two files of one name', @{
@@ -188,38 +192,39 @@ describe('options', @{
   })
 
   it('carries the flags through to conduct', @{
-    expect(chosen(['-j', '4', '-t', '30s', '--bail=2', '-e', 'A=1'])).to_equal({
-      jobs: 4,
-      timeout: 30000,
-      bail: 2,
-      env: { A: '1' },
-    })
+    expect(chosen(['-j', '4', '-t', '30s', '--bail=2', '-e', 'A=1']))
+        .to_equal({
+          jobs: 4,
+          timeout: 30000,
+          bail: 2,
+          env: { A: '1' },
+        })
   })
 
   it('replaces the discovery lists rather than adding to them', @{
-    expect(chosen(['-m', '*_test.zu', '-i', '_*', '--no-recursive'])).to_equal({
-      match: ['*_test.zu'],
-      ignore: ['_*'],
-      recursive: false,
-    })
+    expect(chosen(['-m', '*_test.zu', '-i', '_*', '--no-recursive']))
+        .to_equal({
+          match: ['*_test.zu'],
+          ignore: ['_*'],
+          recursive: false,
+        })
   })
 
   it('narrows to one file, ignoring nothing and looking no deeper', @{
-    expect(options(parse([]), 'alpha.zu')).to_equal({
-      match: ['alpha.zu'],
-      ignore: [],
-      recursive: false,
-    })
+    expect(options(parse([]), 'alpha.zu'))
+        .to_equal({
+          match: ['alpha.zu'],
+          ignore: [],
+          recursive: false,
+        })
   })
 
   it('refuses a discovery flag alongside a single file', @{
     expect(@{
       options(parse(['-m', '*.zu']), 'alpha.zu')
-    })
-      .to_raise_instance_of(UsageError)
+    }).to_raise_instance_of(UsageError)
     expect(@{
       options(parse(['-i', '_*']), 'alpha.zu')
-    })
-      .to_raise_instance_of(UsageError)
+    }).to_raise_instance_of(UsageError)
   })
 })

@@ -1,0 +1,96 @@
+/**
+ * markdown_spec.zu
+ *
+ * The `markdown` module against the published conformance suites, each
+ * example compared byte for byte with the HTML the suite gives:
+ *
+ * - `commonmark.json`: every example of the CommonMark specification,
+ *   version 0.31.2 (CC BY-SA 4.0, spec.commonmark.org).
+ * - `gfm.json`: the table, strikethrough, autolink, tag filter and
+ *   task list examples of the GitHub Flavored Markdown specification,
+ *   then cmark-gfm's own extension tests (CC BY-SA 4.0, github/cmark-gfm).
+ * - `smart.json`: commonmark.js's smart punctuation tests.
+ * - `regression.json`: the regression tests cmark and commonmark.js
+ *   share.
+ */
+
+import json
+import os
+import markdown
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def examples(name: string) {
+  var path = os.join_paths(os.dir_name(__file__), 'markdown_fixture', name)
+
+  return json.decode(file(path).read())
+}
+
+# Renders every example of _name_ with _options_ and fails on the first
+# that differs, showing both.
+def check(name: string, options: dict) {
+  var md = markdown(options)
+  var cases = examples(name)
+
+  for example in cases {
+    var got = md.render(example.markdown)
+
+    # An example whose HTML is `<IGNORE>` only has to render at all.
+    if example.html.starts_with('<IGNORE>') {
+      continue
+    }
+
+    assert got == example.html,
+        '${name} example ${example.example} (${example.section})\n' +
+            'markdown: ${json.encode(example.markdown)}\n' +
+            'expected: ${json.encode(example.html)}\n' +
+            'got:      ${json.encode(got)}'
+  }
+
+  return cases.length()
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  markdown — conformance suites'
+echo '═══════════════════════════════════════════════════════'
+
+var count = check('commonmark.json', { preset: 'commonmark', html: true })
+ok('all ${count} CommonMark 0.31.2 examples')
+
+count = check('gfm.json', {
+  preset: 'gfm',
+  html: true,
+  alerts: false,
+  emoji: false,
+})
+ok('all ${count} GFM extension examples')
+
+count = check('smart.json', { preset: 'commonmark', html: true, smart: true })
+ok('all ${count} smart punctuation examples')
+
+count = check('regression.json', { preset: 'commonmark', html: true })
+ok('all ${count} regression examples')
+
+# The same CommonMark examples with every extension that cannot change
+# their meaning turned on: the extensions must not disturb anything
+# they do not recognise.
+count = check('commonmark.json', {
+  preset: 'commonmark',
+  html: true,
+  heading_ids: false,
+  abbreviations: true,
+  task_lists: true,
+  alerts: true,
+  footnotes: true,
+})
+ok('extensions that do not apply leave all ${count} examples alone')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} conformance checks passed.'
+echo '═══════════════════════════════════════════════════════'

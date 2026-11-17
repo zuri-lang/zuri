@@ -12,7 +12,7 @@ var SCRATCH = os.join_paths(FIXTURE, 'scratch.zu')
 # The runtime's own message for an argument of the wrong type.
 def expects(function_name: string, param: string, position: int, got: string) {
   return "${function_name}() expects parameter '${param}' (argument ${position}) " +
-    'to be a number, got ${got}'
+      'to be a number, got ${got}'
 }
 
 # What a field set outside `@new` is told.
@@ -59,7 +59,9 @@ describe('pushed', @{
   var client = nil
 
   before_all(@{
-    client = Client(FIXTURE, { diagnostics: { delay: 0 } })
+    client = Client(FIXTURE, {
+      diagnostics: { delay: 0 },
+    })
     client.initialize(nil)
     client.wait_indexed()
   })
@@ -72,22 +74,23 @@ describe('pushed', @{
     var address = client.open(SCRATCH, PROBLEMS)
     var rows = summarise(client.diagnostics_of(address))
 
-    expect(rows).to_equal([
-      [2, 'missing-member', "module '.shapes' has no member 'Nowhere'"],
-      [3, 'module-not-found', "cannot find module '.missing'"],
-      [4, 'module-not-found', "cannot find module 'nothing_here'"],
-      [7, 'unknown-member', "'lenght' is not a member of Point"],
-      [8, 'undefined-name', "'undefined_name' is not defined"],
-      [9, 'missing-member', "module 'json' has no member 'encod'"],
-      [10, 'argument-type', expects('move', 'dx', 1, 'string')],
-      [11, 'missing-argument', expects('move', 'dy', 2, 'nil')],
-      [12, 'missing-argument', expects('@new', 'x', 1, 'nil')],
-      [12, 'missing-argument', expects('@new', 'y', 2, 'nil')],
-      [13, 'deprecated', "'centre' is deprecated: Use origin() instead."],
-      [16, 'unused', "'unused' is never used"],
-      [18, 'unreachable', 'this code is never reached'],
-      [23, 'undeclared-field', "'value' is not a field of Box: " + DECLARE],
-    ])
+    expect(rows)
+        .to_equal([
+          [2, 'missing-member', "module '.shapes' has no member 'Nowhere'"],
+          [3, 'module-not-found', "cannot find module '.missing'"],
+          [4, 'module-not-found', "cannot find module 'nothing_here'"],
+          [7, 'unknown-member', "'lenght' is not a member of Point"],
+          [8, 'undefined-name', "'undefined_name' is not defined"],
+          [9, 'missing-member', "module 'json' has no member 'encod'"],
+          [10, 'argument-type', expects('move', 'dx', 1, 'string')],
+          [11, 'missing-argument', expects('move', 'dy', 2, 'nil')],
+          [12, 'missing-argument', expects('@new', 'x', 1, 'nil')],
+          [12, 'missing-argument', expects('@new', 'y', 2, 'nil')],
+          [13, 'deprecated', "'centre' is deprecated: Use origin() instead."],
+          [16, 'unused', "'unused' is never used"],
+          [18, 'unreachable', 'this code is never reached'],
+          [23, 'undeclared-field', "'value' is not a field of Box: " + DECLARE],
+        ])
   })
 
   it('marks the unused and the deprecated for the editor to fade and strike', @{
@@ -110,9 +113,9 @@ describe('pushed', @{
       }
     }
 
-    client.notify(
-      'textDocument/didClose', { textDocument: { uri: uri(SCRATCH) } },
-    )
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: uri(SCRATCH) },
+    })
   })
 
   it('reports syntax errors, and the compiler only for source that parses', @{
@@ -127,16 +130,20 @@ describe('pushed', @{
     # `f` is a public function another file may import, so it is
     # never unused.
     expect(rows.map(@(row) => row[1])).to_equal(['compile'])
-    client.notify('textDocument/didClose', { textDocument: { uri: address } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: address },
+    })
   })
 
   it('stays quiet about what cannot be told', @{
     var source = 'def f(anything) {\n  return anything.whatever + anything.more()\n}\n' +
-      'echo f({ a: 1 }).b\necho { a: 1 }.zzz\n'
+        'echo f({ a: 1 }).b\necho { a: 1 }.zzz\n'
     var address = client.open(SCRATCH, source)
 
     expect(client.diagnostics_of(address)).to_equal([])
-    client.notify('textDocument/didClose', { textDocument: { uri: address } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: address },
+    })
   })
 
   it('checks a file again when a module it imports changes', @{
@@ -147,7 +154,9 @@ describe('pushed', @{
     var shapes_path = os.join_paths(FIXTURE, 'shapes.zu')
     var shapes = client.open(shapes_path, nil)
     var renamed = client.texts[shapes].replace(
-      'def origin()', 'def start()', false,
+      'def origin()',
+      'def start()',
+      false,
     )
 
     client.change(shapes, renamed)
@@ -159,8 +168,12 @@ describe('pushed', @{
 
     expect(message).to_equal("module '.shapes' has no member 'origin'")
 
-    client.notify('textDocument/didClose', { textDocument: { uri: shapes } })
-    client.notify('textDocument/didClose', { textDocument: { uri: main } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: shapes },
+    })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: main },
+    })
   })
 })
 
@@ -168,7 +181,9 @@ describe('pulled', @{
   var client = nil
 
   before_all(@{
-    client = Client(FIXTURE, { diagnostics: { scope: 'workspace' } })
+    client = Client(FIXTURE, {
+      diagnostics: { scope: 'workspace' },
+    })
 
     var asked = capabilities()
 
@@ -183,9 +198,9 @@ describe('pulled', @{
 
   it('answers a document pull, and says when nothing changed', @{
     var address = client.open(SCRATCH, 'echo gone\n')
-    var first = client.request(
-      'textDocument/diagnostic', { textDocument: { uri: address } },
-    )
+    var first = client.request('textDocument/diagnostic', {
+      textDocument: { uri: address },
+    })
 
     expect(first.kind).to_equal('full')
     expect(first.items.length()).to_equal(1)
@@ -196,18 +211,19 @@ describe('pulled', @{
     })
 
     expect(second).to_equal({ kind: 'unchanged', resultId: first.resultId })
-    client.notify('textDocument/didClose', { textDocument: { uri: address } })
+    client.notify('textDocument/didClose', {
+      textDocument: { uri: address },
+    })
   })
 
   it('answers a workspace pull with every file nobody has open', @{
-    var answer = client.request(
-      'workspace/diagnostic', { previousResultIds: [] },
-    )
+    var answer = client.request('workspace/diagnostic', {
+      previousResultIds: [],
+    })
     var files = answer.items.map(@(item) => item.uri.split('/').last()).sort()
 
-    expect(files).to_equal([
-      'area.zu', 'checks.zu', 'index.zu', 'main.zu', 'shapes.zu',
-    ])
+    expect(files)
+        .to_equal(['area.zu', 'checks.zu', 'index.zu', 'main.zu', 'shapes.zu'])
     var clean = answer.items.every(
       @(item) => item.kind == 'full' and item.items.is_empty(),
     )
@@ -222,7 +238,9 @@ describe('pulled', @{
 
 describe('settings', @{
   it('reports nothing once diagnostics are turned off', @{
-    var client = Client(FIXTURE, { diagnostics: { delay: 0 } })
+    var client = Client(FIXTURE, {
+      diagnostics: { delay: 0 },
+    })
 
     client.initialize(nil)
 
@@ -230,11 +248,12 @@ describe('settings', @{
 
     expect(client.diagnostics_of(address).length()).to_equal(2)
 
-    client.settings = { diagnostics: { delay: 0, enable: false } }
-    client.notify(
-      'workspace/didChangeConfiguration',
-      { settings: { zuri: client.settings } },
-    )
+    client.settings = {
+      diagnostics: { delay: 0, enable: false },
+    }
+    client.notify('workspace/didChangeConfiguration', {
+      settings: { zuri: client.settings },
+    })
     var cleared = @() => client.diagnostics[address].diagnostics.is_empty()
 
     client.wait_for(cleared, 'diagnostics cleared')
@@ -242,15 +261,15 @@ describe('settings', @{
     client.settings = {
       diagnostics: { delay: 0, enable: true, unusedHints: false },
     }
-    client.notify(
-      'workspace/didChangeConfiguration',
-      { settings: { zuri: client.settings } },
-    )
+    client.notify('workspace/didChangeConfiguration', {
+      settings: { zuri: client.settings },
+    })
 
     var one = @() => client.diagnostics[address].diagnostics.length() == 1
 
     client.wait_for(one, 'one diagnostic')
-    expect(client.diagnostics[address].diagnostics[0].code).to_equal('undefined-name')
+    expect(client.diagnostics[address].diagnostics[0].code)
+        .to_equal('undefined-name')
     client.stop()
   })
 })

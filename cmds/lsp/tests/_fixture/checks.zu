@@ -13,6 +13,13 @@ describe('points', @{
   })
 })
 
-it_each([[1, 2], [2, 4]], 'doubles $0 to $1', @(a, b) {
-  expect(a * 2).to_equal(b)
-})
+it_each(
+  [
+    [1, 2],
+    [2, 4],
+  ],
+  'doubles $0 to $1',
+  @(a, b) {
+    expect(a * 2).to_equal(b)
+  },
+)

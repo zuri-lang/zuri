@@ -1,25 +1,25 @@
 /**
  * @module wire.loader
  *
- * Turning the path written in an `x-include` into a file on disk, and
- * refusing to when it points somewhere it should not.
+ * Resolves the path given to `x-include` to a file on disk, and refuses
+ * to when it points somewhere it shouldn't.
  *
- * ### The root is a boundary, not a starting point
+ * ### The root is a boundary
  *
  * Every template path resolves inside the root directory and nowhere
- * else. A path that climbs out of it with `..`, and an absolute path
- * that names somewhere else entirely, are both refused rather than
- * followed.
+ * else. A path that climbs out of the root with `..`, or an absolute
+ * path that names a different location, is refused.
  *
- * That matters because template paths are not always written by the
- * person who wrote the template. The moment a path is built out of
- * anything a request supplied, as `x-include="themes/{{ theme }}/head"`
- * does, an unbounded loader turns an include into a way to read any file
- * the process can reach. Wire treats the root as a boundary so that the
- * worst a hostile value can do is fail to find a template.
+ * This matters because template paths aren't always written by the
+ * person who wrote the template. As soon as a path is built from
+ * something a request supplied, as in
+ * `x-include="themes/{{ theme }}/head"`, a loader without a boundary
+ * would turn an include into a way to read any file the process can
+ * access. Because Wire treats the root as a boundary, the worst a
+ * hostile value can do is fail to find a template.
  *
  * Symbolic links are followed and then checked, so a link inside the
- * root pointing outside it is refused too.
+ * root that points outside it is refused too.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
@@ -87,7 +87,10 @@ class Loader {
 
     if wanted.is_empty() {
       raise TemplateNotFoundError(
-        'a template path cannot be empty', from, line, column,
+        'a template path cannot be empty',
+        from,
+        line,
+        column,
       )
     }
 
@@ -96,7 +99,10 @@ class Loader {
 
       if !os.path_contains(self.root, full) {
         raise TemplateNotFoundError(
-          'template "${path}" is outside the template root', from, line, column,
+          'template "${path}" is outside the template root',
+          from,
+          line,
+          column,
         )
       }
 
@@ -110,7 +116,9 @@ class Loader {
       if !os.path_contains(self.root, _canonical(full)) {
         raise TemplateNotFoundError(
           'template "${path}" links outside the template root',
-          from, line, column,
+          from,
+          line,
+          column,
         )
       }
 
@@ -119,7 +127,9 @@ class Loader {
 
     raise TemplateNotFoundError(
       'template "${path}" was not found under ${self.root}',
-      from, line, column,
+      from,
+      line,
+      column,
     )
   }
 
@@ -141,7 +151,10 @@ class Loader {
       return file(full).read()
     } as e {
       raise TemplateNotFoundError(
-        'template "${full}" could not be read: ${e.message}', full, 0, 0,
+        'template "${full}" could not be read: ${e.message}',
+        full,
+        0,
+        0,
       )
     }
   }

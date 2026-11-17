@@ -24,7 +24,7 @@ def round_trip(text) {
   var doc = toml.edit(text)
 
   assert doc.to_string() == text,
-    'round trip changed ' + text.replace('/\n/', '\\n')
+      'round trip changed ' + text.replace('/\n/', '\\n')
 
   return doc.to_value()
 }
@@ -37,12 +37,12 @@ echo 'Scalars'
 
 var scalars = round_trip(
   'str = "hello"\n' +
-    'lit = \'C:\\path\'\n' +
-    'int = 42\n' +
-    'neg = -17\n' +
-    'flt = 3.14\n' +
-    'yes = true\n' +
-    'no = false\n',
+      'lit = \'C:\\path\'\n' +
+      'int = 42\n' +
+      'neg = -17\n' +
+      'flt = 3.14\n' +
+      'yes = true\n' +
+      'no = false\n',
 )
 
 assert scalars['str'] == 'hello', 'a basic string decodes'
@@ -55,11 +55,11 @@ ok('every scalar type')
 
 var escapes = round_trip(
   'a = "tab\\there"\n' +
-    'b = "nl\\nhere"\n' +
-    'c = "quote\\"here"\n' +
-    'd = "back\\\\here"\n' +
-    'e = "\\u00e9"\n' +
-    'f = "\\U0001F600"\n',
+      'b = "nl\\nhere"\n' +
+      'c = "quote\\"here"\n' +
+      'd = "back\\\\here"\n' +
+      'e = "\\u00e9"\n' +
+      'f = "\\U0001F600"\n',
 )
 
 assert escapes['a'] == 'tab\there', 'the tab escape'
@@ -68,14 +68,11 @@ assert escapes['c'] == 'quote"here', 'the quote escape'
 assert escapes['d'] == 'back\\here', 'the backslash escape'
 assert escapes['e'] == 'é', 'a four-digit unicode escape'
 assert escapes['f'].length() == 1,
-  'an eight-digit unicode escape is one character'
+    'an eight-digit unicode escape is one character'
 ok('every escape TOML defines')
 
 var bases = round_trip(
-  'h = 0xDEADBEEF\n' +
-    'o = 0o755\n' +
-    'b = 0b11010110\n' +
-    'u = 1_000_000\n',
+  'h = 0xDEADBEEF\n' + 'o = 0o755\n' + 'b = 0b11010110\n' + 'u = 1_000_000\n',
 )
 
 assert bases['h'] == 3735928559, 'a hexadecimal integer'
@@ -86,11 +83,11 @@ ok('every integer base, and digit separators')
 
 var floats = round_trip(
   'a = 5e+22\n' +
-    'b = -0.01\n' +
-    'c = 6.626e-34\n' +
-    'd = inf\n' +
-    'e = -inf\n' +
-    'f = nan\n',
+      'b = -0.01\n' +
+      'c = 6.626e-34\n' +
+      'd = inf\n' +
+      'e = -inf\n' +
+      'f = nan\n',
 )
 
 assert floats['a'] == 5e22, 'an exponent'
@@ -106,17 +103,17 @@ echo 'Integer width'
 
 var wide = round_trip(
   'max = 9223372036854775807\n' +
-    'min = -9223372036854775808\n' +
-    'safe = 9007199254740991\n',
+      'min = -9223372036854775808\n' +
+      'safe = 9007199254740991\n',
 )
 
 assert is_bigint(wide['max']), 'an integer past 2^53 decodes as a bigint'
 assert wide['max'].to_string() == '9223372036854775807',
-  'every digit of a 64-bit integer survives'
+    'every digit of a 64-bit integer survives'
 assert wide['min'].to_string() == '-9223372036854775808',
-  'the most negative 64-bit integer survives'
+    'the most negative 64-bit integer survives'
 assert is_number(wide['safe']) and !is_bigint(wide['safe']),
-  'an integer a double can carry stays a number'
+    'an integer a double can carry stays a number'
 ok('the 64-bit range, and where bigint takes over')
 
 echo ''
@@ -124,13 +121,13 @@ echo 'Strings that span lines'
 
 var multi = round_trip(
   'a = """\nfirst\nsecond"""\n' +
-    'b = \'\'\'\nraw \\n stays\'\'\'\n' +
-    'c = """one \\\n    two"""\n' +
-    'd = """"quoted""""\n',
+      'b = \'\'\'\nraw \\n stays\'\'\'\n' +
+      'c = """one \\\n    two"""\n' +
+      'd = """"quoted""""\n',
 )
 
 assert multi['a'] == 'first\nsecond',
-  'a multi-line string drops the break after its opening quotes'
+    'a multi-line string drops the break after its opening quotes'
 assert multi['b'] == 'raw \\n stays', 'a multi-line literal takes no escapes'
 assert multi['c'] == 'one two', 'a trailing backslash folds the line'
 assert multi['d'] == '"quoted"', 'a quote may sit against the delimiter'
@@ -141,12 +138,12 @@ echo 'Timestamps'
 
 var stamps = round_trip(
   'odt = 1979-05-27T07:32:00Z\n' +
-    'off = 1979-05-27T00:32:00-07:00\n' +
-    'ldt = 1979-05-27T07:32:00\n' +
-    'spc = 1979-05-27 07:32:00\n' +
-    'ld = 1979-05-27\n' +
-    'lt = 07:32:00\n' +
-    'fr = 07:32:00.999999\n',
+      'off = 1979-05-27T00:32:00-07:00\n' +
+      'ldt = 1979-05-27T07:32:00\n' +
+      'spc = 1979-05-27 07:32:00\n' +
+      'ld = 1979-05-27\n' +
+      'lt = 07:32:00\n' +
+      'fr = 07:32:00.999999\n',
 )
 
 assert instance_of(stamps['odt'], toml.DateTime), 'an offset date-time'
@@ -154,27 +151,27 @@ assert stamps['odt'].offset_minutes == 0, 'Z is a zero offset'
 assert stamps['off'].offset_minutes == -420, 'a negative offset is minutes west'
 assert instance_of(stamps['ldt'], toml.LocalDateTime), 'a local date-time'
 assert instance_of(stamps['spc'], toml.LocalDateTime),
-  'a space may stand in for the T'
+    'a space may stand in for the T'
 assert instance_of(stamps['ld'], toml.LocalDate), 'a local date'
 assert instance_of(stamps['lt'], toml.LocalTime), 'a local time'
 assert stamps['fr'].nanosecond == 999999000,
-  'fractional seconds are nanoseconds'
+    'fractional seconds are nanoseconds'
 ok('all four temporal types')
 
 assert stamps['odt'].to_string() == '1979-05-27T07:32:00Z',
-  'an offset date-time prints as TOML spells it'
+    'an offset date-time prints as TOML spells it'
 assert stamps['ld'].to_date().year == 1979, 'a local date converts to a Date'
 assert stamps['odt'].to_date().gmt_offset == 0,
-  'an offset survives the conversion'
+    'an offset survives the conversion'
 assert toml.LocalDate(2026, 9, 19).equals(toml.LocalDate(2026, 9, 19)),
-  'equals() compares by value'
+    'equals() compares by value'
 assert toml.LocalDate(2026, 9, 19) == toml.LocalDate(2026, 9, 19),
-  '== compares the way equals() does'
-assert toml.DateTime(1979, 5, 27, 7, 32, 0, 0, 0)
-  != toml.DateTime(1979, 5, 27, 7, 32, 0, 0, 60),
-  'two timestamps with different offsets are not =='
+    '== compares the way equals() does'
+assert toml.DateTime(1979, 5, 27, 7, 32, 0, 0, 0) !=
+    toml.DateTime(1979, 5, 27, 7, 32, 0, 0, 60),
+    'two timestamps with different offsets are not =='
 assert !toml.LocalDate(2026, 9, 19).equals(toml.LocalDate(2026, 9, 20)),
-  'two different days are not equal'
+    'two different days are not equal'
 ok('temporal values print, convert and compare')
 
 echo ''
@@ -182,10 +179,10 @@ echo 'Collections'
 
 var lists = round_trip(
   'empty = []\n' +
-    'ints = [1, 2, 3]\n' +
-    'mixed = ["a", 1, true]\n' +
-    'nested = [[1, 2], [3]]\n' +
-    'spread = [\n  1,\n  2,\n]\n',
+      'ints = [1, 2, 3]\n' +
+      'mixed = ["a", 1, true]\n' +
+      'nested = [[1, 2], [3]]\n' +
+      'spread = [\n  1,\n  2,\n]\n',
 )
 
 assert lists['empty'] == [], 'an empty array'
@@ -193,10 +190,12 @@ assert lists['ints'] == [1, 2, 3], 'an array of integers'
 assert lists['mixed'].length() == 3, 'an array may hold mixed types'
 assert lists['nested'][0] == [1, 2], 'arrays nest'
 assert lists['spread'] == [1, 2],
-  'an array may span lines with a trailing comma'
+    'an array may span lines with a trailing comma'
 ok('arrays, nested, mixed and multi-line')
 
-var inline = round_trip('pt = { x = 1, y = 2 }\ndeep = { a = { b = 1 } }\nnone = {}\n')
+var inline = round_trip(
+  'pt = { x = 1, y = 2 }\ndeep = { a = { b = 1 } }\nnone = {}\n',
+)
 
 assert inline['pt']['x'] == 1, 'an inline table decodes'
 assert inline['deep']['a']['b'] == 1, 'inline tables nest'
@@ -206,13 +205,11 @@ ok('inline tables')
 echo ''
 echo 'Tables'
 
-var tables = round_trip(
-  '[a]\nx = 1\n\n[b]\ny = 2\n\n[a.c]\nz = 3\n',
-)
+var tables = round_trip('[a]\nx = 1\n\n[b]\ny = 2\n\n[a.c]\nz = 3\n')
 
 assert tables['a']['x'] == 1, 'a table holds its own keys'
 assert tables['a']['c']['z'] == 3,
-  'a sub-table declared out of order still nests'
+    'a sub-table declared out of order still nests'
 assert tables['b']['y'] == 2, 'a table between a table and its child'
 ok('tables, including headers written out of tree order')
 
@@ -224,7 +221,7 @@ ok('dotted keys')
 
 var aot = round_trip(
   '[[fruit]]\nname = "apple"\n\n[[fruit.variety]]\nname = "red"\n\n' +
-    '[[fruit]]\nname = "banana"\n',
+      '[[fruit]]\nname = "banana"\n',
 )
 
 assert aot['fruit'].length() == 2, 'an array of tables collects its elements'
@@ -235,10 +232,10 @@ ok('arrays of tables')
 
 var keys = round_trip(
   '"quoted key" = 1\n' +
-    "'literal key' = 2\n" +
-    '"" = 3\n' +
-    'a . b = 4\n' +
-    '1234 = 5\n',
+      "'literal key' = 2\n" +
+      '"" = 3\n' +
+      'a . b = 4\n' +
+      '1234 = 5\n',
 )
 
 assert keys['quoted key'] == 1, 'a quoted key may hold spaces'
@@ -253,12 +250,15 @@ echo 'Whitespace, comments and line endings'
 
 assert round_trip('') == {}, 'an empty document is an empty table'
 assert round_trip('# just a comment\n') == {},
-  'a document may hold only comments'
+    'a document may hold only comments'
 assert round_trip('a = 1') == { a: 1 }, 'a final newline is not required'
 assert round_trip('\r\na = 1\r\n[t]\r\nk = 2\r\n')['t']['k'] == 2,
-  'CRLF line endings are preserved'
-assert round_trip('# lead\n\n[t]  # beside the header\nx = 1   # beside the value\n')['t']['x'] == 1,
-  'comments sit above and beside without disturbing the value'
+    'CRLF line endings are preserved'
+assert round_trip(
+      '# lead\n\n[t]  # beside the header\nx = 1   # beside the value\n',
+    )['t']['x'] ==
+    1,
+    'comments sit above and beside without disturbing the value'
 ok('blank lines, comments, CRLF and a missing final newline')
 
 var bom = (65279).chr() + 'a = 1\n'
@@ -270,31 +270,33 @@ ok('a byte order mark')
 echo ''
 echo 'Editing'
 
-var doc = toml.edit('# top\n[package]\nname = "app"     # the name\nversion = "0.9.0"\n')
+var doc = toml.edit(
+  '# top\n[package]\nname = "app"     # the name\nversion = "0.9.0"\n',
+)
 
 doc.set('package.version', '1.0.0')
 
 assert doc.to_string() ==
-  '# top\n[package]\nname = "app"     # the name\nversion = "1.0.0"\n',
-  'replacing a value leaves every other byte alone'
+    '# top\n[package]\nname = "app"     # the name\nversion = "1.0.0"\n',
+    'replacing a value leaves every other byte alone'
 ok('a replaced value keeps its line')
 
 doc.set('package.name', 'renamed')
 
 assert doc.to_string().contains('name = "renamed"     # the name'),
-  'the spacing and the trailing comment survive a replacement'
+    'the spacing and the trailing comment survive a replacement'
 ok('spacing and a trailing comment survive')
 
 doc.set('package.license', 'MIT')
 
 assert doc.to_string().ends_with('version = "1.0.0"\nlicense = "MIT"\n'),
-  'a new key is appended to the table that should hold it'
+    'a new key is appended to the table that should hold it'
 ok('a new key joins its table')
 
 doc.table('dependencies').set('http', '^2.0')
 
 assert doc.to_string().ends_with('\n[dependencies]\nhttp = "^2.0"\n'),
-  'a new table is appended as a block, separated by a blank line'
+    'a new table is appended as a block, separated by a blank line'
 ok('a new table block')
 
 assert doc.remove('package.license') == true, 'remove reports what it did'
@@ -305,12 +307,12 @@ ok('removing a key')
 var commented = toml.edit('[a]\n# the old note\nx = 1\n')
 
 assert commented.table('a').comment('x') == 'the old note',
-  'a comment reads back without its marker'
+    'a comment reads back without its marker'
 
 commented.table('a').set_comment('x', 'the new note')
 
 assert commented.to_string() == '[a]\n# the new note\nx = 1\n',
-  'a comment is replaced in place'
+    'a comment is replaced in place'
 
 commented.table('a').set_comment('x', nil)
 
@@ -328,12 +330,12 @@ var grown = toml.edit('')
 grown.array_of_tables('bin').append().set('name', 'serve')
 grown.array_of_tables('bin').append().set('name', 'build')
 
-assert grown.to_string()
-  == '[[bin]]\nname = "serve"\n\n[[bin]]\nname = "build"\n',
-  'appending to an array of tables writes a block each time'
+assert grown.to_string() ==
+    '[[bin]]\nname = "serve"\n\n[[bin]]\nname = "build"\n',
+    'appending to an array of tables writes a block each time'
 assert grown.array_of_tables('bin').length() == 2, 'the array knows its length'
 assert grown.array_of_tables('bin').element(0).get('name') == 'serve',
-  'an element can be read back'
+    'an element can be read back'
 ok('growing an array of tables')
 
 var deep = toml.edit('')
@@ -341,7 +343,7 @@ var deep = toml.edit('')
 deep.set('a.b.c', 1)
 
 assert deep.to_string() == '[a.b]\nc = 1\n',
-  'missing parents are created as one header'
+    'missing parents are created as one header'
 ok('a path creates the tables it needs')
 
 var dotty = toml.edit('a.b = 1\n')
@@ -349,7 +351,7 @@ var dotty = toml.edit('a.b = 1\n')
 dotty.set('a.c', 2)
 
 assert dotty.to_string() == 'a.b = 1\na.c = 2\n',
-  'a table created by a dotted key is extended with another dotted key'
+    'a table created by a dotted key is extended with another dotted key'
 ok('a dotted table stays dotted')
 
 var unterminated = toml.edit('a = 1')
@@ -357,7 +359,7 @@ var unterminated = toml.edit('a = 1')
 unterminated.set('b', 2)
 
 assert unterminated.to_string() == 'a = 1\nb = 2\n',
-  'a file with no final newline gains one before the new key'
+    'a file with no final newline gains one before the new key'
 ok('a missing final newline is closed before appending')
 
 echo ''
@@ -386,7 +388,7 @@ ok('a document and a table are iterable')
 
 assert toml.parse('a = 1\n') == { a: 1 }, 'parse returns a plain dictionary'
 assert toml.edit('a = 1\n').to_value() == { a: 1 },
-  'a document projects the same value parse returns'
+    'a document projects the same value parse returns'
 ok('parse and to_value agree')
 
 echo ''

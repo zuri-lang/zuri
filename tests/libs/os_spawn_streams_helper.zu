@@ -12,11 +12,11 @@ if os.args.length() > 2 and os.args[2] == 'linger' {
   io.stdout.write('')
   io.stderr.write('')
 
-  spawn(os.exe_path, ['run', __file__, 'linger'], {
-    stdin: 'null',
-    stdout: 'null',
-    stderr: 'null',
-  })
+  spawn(
+    os.exe_path,
+    ['run', __file__, 'linger'],
+    { stdin: 'null', stdout: 'null', stderr: 'null' },
+  )
 
   echo 'started a program that outlives this one'
 }

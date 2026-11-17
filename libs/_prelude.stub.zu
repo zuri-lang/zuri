@@ -1,11 +1,11 @@
 /**
  * # Errors
  *
- * Every error in Zuri is an instance of `Error` or of a class
- * built on it. The classes here are ordinary Zuri: the runtime
- * runs this file before any program, so each of them is defined
- * in every file with no import, and subclassing one works exactly
- * like subclassing anything else.
+ * Every error in Zuri is an instance of `Error`, or of a class based on
+ * it. The classes here are written in ordinary Zuri. The runtime runs
+ * this file before any program, so all of them are available in every
+ * file without an import, and you can subclass them in the same way as
+ * any other class.
  *
  * ```zuri-repl
  * %> var e = ValueError('bad input')
@@ -17,11 +17,11 @@
  */
 
 /**
- * The root of every error. Raise it for a general failure with
- * nothing more specific to say, and build on it for an error of
- * your own.
+ * The base class of every error. Raise it for a general failure that no
+ * more specific error class describes, and extend it to define an error
+ * of your own.
  *
- * `instance_of(e, Error)` holds for every error, and a parameter
+ * `instance_of(e, Error)` is true for every error, and a parameter
  * typed `Error` accepts any of them.
  */
 class Error {

@@ -1,17 +1,17 @@
 # Programming a Bookmark Keeper
 
-We are going to build something small and real: a command-line bookmark
-keeper. It asks you for a title and a URL, stores what you give it in a
-JSON file, and lets you list, search and delete entries later.
+In this chapter we'll build a small but useful program: a command-line
+bookmark keeper. It asks for a title and a URL, saves them to a JSON file,
+and lets you list, search and delete bookmarks later.
 
-By the end of this chapter you will have used variables, functions, lists,
-dictionaries, loops, branching, string methods, file handling, JSON and
-error handling. We will not explain any of them thoroughly. That is what
-Chapters 3 to 8 are for. The goal here is to see a whole program, working,
-before we take it apart.
+Along the way, you'll use variables, functions, lists, dictionaries, loops,
+branches, string methods, files, JSON and error handling. We won't explain
+any of them in depth here, because that's what Chapters 3 to 8 are for. The
+goal of this chapter is to show you a complete, working program before we
+look at each part in detail.
 
-Follow along by typing the code rather than copying it. Mistakes are the
-fastest way to learn what the error messages mean.
+Try typing the code in yourself instead of copying it. Making mistakes is
+the quickest way to learn what the error messages mean.
 
 ## Setting Up
 
@@ -20,7 +20,7 @@ $ mkdir bookmarks
 $ cd bookmarks
 ```
 
-Create `main.zu` and start with the modules we will need:
+Create `main.zu` and start by importing the modules we'll need:
 
 <span class="filename">Filename: main.zu</span>
 
@@ -38,14 +38,15 @@ $ zuri run main.zu
 Bookmark keeper.
 ```
 
-Three things to notice. `import` brings in a module and binds it to a name
-you then reach through with a dot. `var` declares a variable. A `.zu` file's
-top level is just code, running from top to bottom.
+There are three things to notice here. `import` loads a module and binds it
+to a name, and you use a dot to reach what's inside it. `var` declares a
+variable. And the top level of a `.zu` file is ordinary code that runs from
+top to bottom.
 
-## Asking a Question
+## Asking for Input
 
-The `io` module has `readline()`, which prints a prompt and waits for the
-user to type a line:
+The `io` module has a `readline()` function, which prints a prompt and waits
+for the user to type a line:
 
 ```zuri,ignore
 var title = io.readline('Title: ')
@@ -58,20 +59,20 @@ Title: Zuri docs
 You typed: Zuri docs
 ```
 
-The value that comes back includes whatever the user typed, whitespace
-included, so we almost always follow it with `.trim()`:
+The returned value contains exactly what the user typed, including any
+spaces, so you'll almost always call `.trim()` on it:
 
 ```zuri,ignore
 var title = io.readline('Title: ').trim()
 ```
 
-`trim()` is a **method** on strings. Every value in Zuri has methods,
-numbers, booleans and `nil` included, and you call them with a dot.
+`trim()` is a **method** of strings. In Zuri, every value has methods,
+including numbers, booleans and `nil`, and you call them with a dot.
 
 ## Storing One Bookmark
 
-A bookmark has a title, a URL and some tags. The natural shape for that is
-a **dictionary**: a set of keys with values attached.
+A bookmark has a title, a URL and some tags. The natural way to represent
+that is a **dictionary**, which is a set of keys, each with a value.
 
 ```zuri
 var bookmark = {
@@ -81,9 +82,9 @@ var bookmark = {
 }
 ```
 
-Square brackets make a **list**, an ordered sequence. Curly braces make a
-dictionary. You read a dictionary's values with a dot, the same way you
-reach into a module:
+Square brackets create a **list**, which is an ordered sequence of values.
+Curly braces create a dictionary. You read a value from a dictionary with a
+dot, just as you do with a module:
 
 ```zuri,ignore
 echo bookmark.title
@@ -95,8 +96,9 @@ Zuri docs
 [lang, docs]
 ```
 
-Zuri has a shorthand you will use constantly. When the key you want and the
-variable holding its value have the same name, write the name once:
+Zuri has a shorthand that you'll use all the time. When a key has the same
+name as the variable that holds its value, you only need to write the name
+once:
 
 ```zuri
 var title = 'Zuri docs'
@@ -105,12 +107,13 @@ var url = 'https://zuri.dev'
 var bookmark = { title, url }
 ```
 
-That is exactly the same dictionary as `{ title: title, url: url }`, with
-half the noise.
+This creates the same dictionary as `{ title: title, url: url }`, but it's
+shorter and easier to read.
 
 ## Many Bookmarks
 
-One bookmark is a dictionary. Many bookmarks is a list of them:
+A single bookmark is a dictionary, so a collection of bookmarks is a list of
+dictionaries:
 
 ```zuri
 var bookmarks = []
@@ -127,8 +130,8 @@ echo bookmarks.length()
 
 ## Saving to Disk
 
-The `json` module turns Zuri values into text and back. `file()` opens a
-file; `'w'` means open it for writing.
+The `json` module converts Zuri values to text and back. `file()` opens a
+file, and `'w'` opens it for writing.
 
 ```zuri
 def save(bookmarks) {
@@ -138,13 +141,13 @@ def save(bookmarks) {
 }
 ```
 
-`def` declares a function. The parameter list needs no types (though it can
-have them; see [Chapter 5](ch05-03-type-annotations.md)). The body is a
-block, and blocks in Zuri always use braces.
+`def` declares a function. The parameters don't need types, although you can
+add them (see [Chapter 5](ch05-03-type-annotations.md)). The body is a
+block, and in Zuri, blocks always use braces.
 
-That second argument to `json.encode()` is `compact`. It defaults to `true`,
-which gives you one dense line. Passing `false` asks for the indented form,
-which is what you want in a file a human might open:
+The second argument to `json.encode()` is called `compact`. It defaults to
+`true`, which puts everything on one dense line. Passing `false` gives you
+indented output instead, which is easier to read if someone opens the file:
 
 ```json
 [
@@ -158,11 +161,12 @@ which is what you want in a file a human might open:
 ]
 ```
 
-## Loading From Disk, Carefully
+## Loading the File Safely
 
-Reading is where a real program has to start thinking about what can go
-wrong. The file might not exist yet. It might exist and contain garbage
-because someone edited it by hand. Neither should stop the program.
+Reading the file is where a real program has to think about what might go
+wrong. The file might not exist yet. Or it might exist but contain invalid
+JSON because someone edited it by hand. Neither case should crash the
+program.
 
 ```zuri
 def load() {
@@ -181,24 +185,26 @@ def load() {
 }
 ```
 
-Two new pieces here.
+This code introduces two new things.
 
-The first is `${...}` inside a string. That is **interpolation**: the
-expression between the braces is evaluated and its value spliced into the
-string. It works in both single- and double-quoted strings.
+The first is `${...}` inside a string. This is called **interpolation**: the
+expression inside the braces is evaluated, and its value is inserted into
+the string. Interpolation works in both single-quoted and double-quoted
+strings.
 
-The second is `catch`. Zuri does not have `try`. You write `catch { ... }`
-around the code that might fail, and `as error { ... }` to handle it. If
-nothing goes wrong, the handler never runs. If something does, `error` is
-an object with a `message`, a `type` and a `stacktrace`.
+The second is `catch`. Zuri doesn't have `try`. Instead, you wrap the code
+that might fail in `catch { ... }` and handle the error in
+`as error { ... }`. If nothing goes wrong, the handler doesn't run. If
+something does, `error` is an object with `message`, `type` and `stacktrace`
+properties.
 
-Notice there is no `finally`. Zuri does not have one. Code after the
-`catch` statement runs either way, which covers most of what `finally` is
-used for.
+There's no `finally` either. Code after the `catch` statement runs whether
+or not there was an error, which covers most of the things `finally` is
+normally used for.
 
 ## Adding a Bookmark
 
-Now we can put the pieces together:
+Now we can put these pieces together:
 
 ```zuri
 def add(bookmarks) {
@@ -215,7 +221,11 @@ def add(bookmarks) {
   bookmarks.append({
     title,
     url,
-    tags: tags.is_empty() ? [] : tags.split(',').map(@(t) { return t.trim() }),
+    tags: tags.is_empty()
+        ? []
+        : tags.split(',').map(@(t) {
+            return t.trim()
+          }),
   })
 
   save(bookmarks)
@@ -223,31 +233,32 @@ def add(bookmarks) {
 }
 ```
 
-The tags line packs in three ideas.
+The line that builds the tags uses three new ideas.
 
-`cond ? a : b` is the conditional operator: if `cond` is truthy the whole
-expression is `a`, otherwise `b`.
+`cond ? a : b` is the conditional operator. If `cond` is truthy, the result
+is `a`. Otherwise, it's `b`.
 
-`split(',')` cuts a string into a list at every comma.
+`split(',')` splits a string into a list at each comma.
 
-`map()` takes a function and applies it to every element, giving back a new
-list. `@(t) { return t.trim() }` is an **anonymous function**: `@` followed
-by a parameter list and a body. You can also spell it `def(t) { ... }`; `@`
-is the shorthand and it is what most Zuri code uses for a one-liner.
+`map()` calls a function on every element of a list and returns a new list
+of the results. `@(t) { return t.trim() }` is an **anonymous function**,
+written as `@` followed by a parameter list and a body. You can also write
+it as `def(t) { ... }`, but `@` is the shorthand, and it's what most Zuri
+code uses for short functions.
 
-There is a shorter form still. When the body is a single expression that
-you want returned, `=>` replaces the braces and the `return`:
+There's an even shorter form. When the body is a single expression whose
+value you want to return, you can use `=>` instead of the braces and the
+`return`:
 
 ```zuri,ignore
 tags.split(',').map(@(t) => t.trim())
 ```
 
-That is the same function written three ways.
-[Chapter 5](ch05-02-closures.md) covers every spelling, and when each one
-reads best.
+These are three ways of writing the same function. [Chapter
+5](ch05-02-closures.md) covers all of the forms and when to use each one.
 
-Also notice `or` rather than `||`. Zuri spells its logical operators `and`,
-`or` and `!`.
+Notice also that the code uses `or` instead of `||`. Zuri's logical
+operators are `and`, `or` and `!`.
 
 ## Printing a Bookmark
 
@@ -262,8 +273,8 @@ def show(bookmark, index) {
 }
 ```
 
-`join` lives on the string, not on the list, and it reads exactly as it
-works: take this separator, and stitch that list together with it.
+`join` is a method of the string, not of the list. It reads naturally: take
+this separator and use it to join the items in that list.
 
 ## Listing and Searching
 
@@ -280,11 +291,11 @@ def list_all(bookmarks) {
 }
 ```
 
-`each()` calls your function once per element, handing it the **value
-first** and the **index second**. That order catches people out; it is the
+`each()` calls your function once for every element, passing the **value
+first** and the **index second**. This order surprises some people. It's the
 same for lists, dictionaries and strings.
 
-Search is a filter plus a test:
+Searching is a filter combined with a test:
 
 ```zuri
 def find(bookmarks) {
@@ -294,7 +305,9 @@ def find(bookmarks) {
     if bookmark.title.lower().contains(needle) {
       return true
     }
-    return bookmark.tags.some(@(tag) { return tag.lower() == needle })
+    return bookmark.tags.some(@(tag) {
+      return tag.lower() == needle
+    })
   })
 
   if hits.is_empty() {
@@ -308,9 +321,9 @@ def find(bookmarks) {
 }
 ```
 
-`filter()` keeps the elements your function returns `true` for. `some()`
-answers "is this true of at least one element?" and stops at the first one
-that matches.
+`filter()` keeps the elements for which your function returns `true`.
+`some()` checks whether a condition is true for at least one element, and it
+stops as soon as it finds one.
 
 ## Removing a Bookmark
 
@@ -337,15 +350,17 @@ def remove(bookmarks) {
 }
 ```
 
-`to_number()` converts a string; `bookmarks[position]` indexes a list;
-`remove_at()` deletes by position and shifts the rest down.
+`to_number()` converts a string to a number, `bookmarks[position]` gets an
+element of a list by its index, and `remove_at()` removes the element at a
+given position and moves the remaining elements down.
 
-The bounds check is not optional politeness. Indexing a list past its end
-raises an error, and an unhandled error ends the program.
+The bounds check is necessary. Reading past the end of a list raises an
+error, and an error that isn't handled ends the program.
 
 ## The Main Loop
 
-The last piece is a loop that reads a command and dispatches on it:
+The last piece is a loop that reads a command and decides what to do with
+it:
 
 ```zuri,ignore
 def main() {
@@ -354,7 +369,10 @@ def main() {
   echo 'Bookmark keeper. ${bookmarks.length()} saved.'
 
   while true {
-    var command = io.readline('\n(a)dd (l)ist (f)ind (r)emove (q)uit > ').trim().lower()
+    var command = io
+        .readline('\n(a)dd (l)ist (f)ind (r)emove (q)uit > ')
+        .trim()
+        .lower()
 
     using command {
       when 'a' add(bookmarks)
@@ -375,16 +393,16 @@ def main() {
 main()
 ```
 
-`using` is Zuri's multi-way branch, and `when` is its branch keyword. It
-compares the subject against each `when` value and runs the first match;
-`default` catches everything else. A `when` whose body is a single short
-statement can stay on one line, which is what makes the dispatch table
-above readable. Anything longer gets a block.
+`using` is Zuri's multi-way branch statement, and each branch starts with
+`when`. It compares the value against each `when` and runs the first branch
+that matches. The `default` branch handles everything else. When a branch's
+body is a single short statement, it can stay on the same line, which keeps
+a dispatch table like this one easy to read. Longer bodies need a block.
 
-Unlike a C `switch`, there is no fall-through and no `break` to remember.
-One branch runs, then the statement is over.
+Unlike `switch` in C, there's no fall-through, so you don't need `break`.
+One branch runs, and then the statement is finished.
 
-## The Whole Program
+## The Complete Program
 
 <span class="filename">Filename: main.zu</span>
 
@@ -429,7 +447,11 @@ def add(bookmarks) {
   bookmarks.append({
     title,
     url,
-    tags: tags.is_empty() ? [] : tags.split(',').map(@(t) { return t.trim() }),
+    tags: tags.is_empty()
+        ? []
+        : tags.split(',').map(@(t) {
+            return t.trim()
+          }),
   })
 
   save(bookmarks)
@@ -463,7 +485,9 @@ def find(bookmarks) {
     if bookmark.title.lower().contains(needle) {
       return true
     }
-    return bookmark.tags.some(@(tag) { return tag.lower() == needle })
+    return bookmark.tags.some(@(tag) {
+      return tag.lower() == needle
+    })
   })
 
   if hits.is_empty() {
@@ -503,7 +527,10 @@ def main() {
   echo 'Bookmark keeper. ${bookmarks.length()} saved.'
 
   while true {
-    var command = io.readline('\n(a)dd (l)ist (f)ind (r)emove (q)uit > ').trim().lower()
+    var command = io
+        .readline('\n(a)dd (l)ist (f)ind (r)emove (q)uit > ')
+        .trim()
+        .lower()
 
     using command {
       when 'a' add(bookmarks)
@@ -524,7 +551,7 @@ def main() {
 main()
 ```
 
-A session looks like this:
+Here's what a session looks like:
 
 ```console
 $ zuri run main.zu
@@ -545,15 +572,15 @@ Saved "Zuri docs".
 Bye.
 ```
 
-## What You Just Learned
+## Summary
 
-You wrote a program with persistent state, user input, error recovery and a
-command loop, in about a hundred lines, using nothing that is not in the
-box.
+You've just written a program with persistent state, user input, error
+handling and a command loop, in about a hundred lines, using only what comes
+with Zuri.
 
-Along the way you met: `var`, `def`, `if`/`else`, `while`, `using`/`when`,
-`catch`/`as`, `return`, lists, dictionaries, dictionary shorthand, string
-interpolation, the conditional operator, anonymous functions, and a handful
-of built-in methods.
+Along the way, you've seen `var`, `def`, `if`/`else`, `while`,
+`using`/`when`, `catch`/`as`, `return`, lists, dictionaries, the dictionary
+shorthand, string interpolation, the conditional operator, anonymous
+functions and a number of built-in methods.
 
-The next six chapters take every one of those and explain it properly.
+The next six chapters explain each of these in detail.

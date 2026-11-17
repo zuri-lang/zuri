@@ -1,0 +1,292 @@
+# Tests for turning documentation into a site: what each page holds,
+# what the site around the pages holds, and what a build reports.
+
+import json
+import os
+import os.tempfile { create_temp_dir }
+import test { * }
+
+import ..documentation { load }
+import ..config { parse }
+import ..render { Renderer, inline_html, plain_text }
+import ..site { Site, clean }
+
+var DIR = nil
+
+def put(path: string, text: string) {
+  var full = os.join_paths(DIR, path)
+
+  os.create_dir(os.dir_name(full), 0c755, true)
+  file(full, 'w').write(text)
+}
+
+def read(path: string) {
+  return file(os.join_paths(DIR, path)).read()
+}
+
+def exists(path: string) {
+  return file(os.join_paths(DIR, path)).exists()
+}
+
+# Small documentation with a part, sections, a draft and an image.
+def write_docs(settings: ?string) {
+  put(
+    'doc.toml',
+    settings == nil ? '[documentation]\ntitle = "Guide"\n' : settings,
+  )
+  put(
+    'src/SUMMARY.md',
+    '# Summary\n\n[Welcome](README.md)\n\n# Using It\n\n- [Setup](setup.md)\n  - [Unix](setup/unix.md)\n- [Later]()\n',
+  )
+  put(
+    'src/README.md',
+    '# Welcome\n\nRead [the setup](setup.md#first-steps) first.\n\n![a chart](images/chart.png)\n',
+  )
+  put(
+    'src/setup.md',
+    '# Setup\n\n## First Steps\n\n<span class="filename">Filename: main.zu</span>\n\n```zuri\necho \'hi\'\n```\n\n```console\nhi\n```\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\nSee [Unix](setup/unix.md) and [home](https://example.com).\n',
+  )
+  put(
+    'src/setup/unix.md',
+    '# Unix\n\nBack to [the start](../README.md).\n\n## Shells\n\nText.\n',
+  )
+  put('src/images/chart.png', 'not really a picture')
+}
+
+def build(settings: ?string) {
+  write_docs(settings)
+
+  var config = parse(read('doc.toml'), DIR)
+
+  return Site(load(config)).build()
+}
+
+before_each(@{
+  DIR = create_temp_dir('zuri-doc-site-')
+})
+
+after_each(@{
+  os.remove_dir(DIR, true)
+})
+
+describe('a page', @{
+  it('links to other pages at the pages they become', @{
+    build(nil)
+
+    var welcome = read('site/index.html')
+    var unix = read('site/setup/unix.html')
+
+    expect(welcome).to_contain('href="setup.html#first-steps"')
+    expect(unix).to_contain('href="../index.html"')
+  })
+
+  it('leaves a link out of the documentation alone', @{
+    build(nil)
+    expect(read('site/setup.html')).to_contain('href="https://example.com"')
+  })
+
+  it('gives a heading a link to itself', @{
+    build(nil)
+    expect(
+      read('site/setup.html'),
+    ).to_contain('<h2 id="first-steps"><a class="anchor" href="#first-steps"')
+  })
+
+  it('joins output to the code that printed it, under its caption', @{
+    build(nil)
+
+    var page = read('site/setup.html')
+
+    expect(page).to_contain(
+      '<figure class="code has-output has-caption"><figcaption>main.zu</figcaption>',
+    )
+    expect(page).to_contain('<figure class="code output follows-code">')
+    expect(page).not.to_contain('class="filename"')
+    expect(page).to_contain('<span class="kw">echo</span>')
+  })
+
+  it('scrolls a wide table within the page', @{
+    build(nil)
+    expect(read('site/setup.html')).to_contain('<div class="table-wrap">')
+  })
+
+  it('shows where it is in the documentation', @{
+    build(nil)
+
+    var page = read('site/setup/unix.html')
+
+    expect(page).to_contain('1.1 · Using It')
+    expect(page).to_contain('aria-current="page"')
+    expect(page).to_contain('rel="prev" href="../setup.html"')
+  })
+
+  it('lists its headings beside it', @{
+    build(nil)
+    expect(read('site/setup/unix.html'))
+        .to_contain('<a href="#shells">Shells</a>')
+  })
+
+  it('lists a draft without a link', @{
+    build(nil)
+    expect(read('site/index.html'))
+        .to_contain('<li class="toc-item toc-draft">')
+  })
+})
+
+describe('the site', @{
+  it('writes every page, the print page, the 404 page and the assets', @{
+    var report = build(nil)
+
+    for path in [
+      'site/index.html',
+      'site/setup.html',
+      'site/setup/unix.html',
+      'site/print.html',
+      'site/404.html',
+      'site/search-index.js',
+      'site/assets/doc.css',
+      'site/assets/doc.js',
+      'site/assets/fonts/literata-normal-latin.woff2',
+      'site/assets/favicon.svg',
+      'site/images/chart.png',
+      'site/.nojekyll',
+    ] {
+      expect(exists(path)).to_be_true()
+    }
+
+    expect(exists('site/README.md')).to_be_false()
+    expect(report.pages).to_be(5)
+    expect(report.warnings).to_equal([])
+  })
+
+  it('indexes every section for searching', @{
+    build(nil)
+
+    var text = read('site/search-index.js')
+    var data = json.decode(
+      text[text.index_of('{'), text.last_index_of('}') + 1],
+    )
+
+    expect(data.pages.map(@(p) => p[0]))
+        .to_equal(['index.html', 'setup.html', 'setup/unix.html'])
+    expect(data.sections.map(@(s) => s[2])).to_contain('First Steps')
+  })
+
+  it('makes the links between pages work on the print page', @{
+    build(nil)
+
+    var print = read('site/print.html')
+
+    expect(print).to_contain('id="page-setup-unix"')
+    expect(print).to_contain('href="#page-index"')
+    expect(print).to_contain('id="page-setup--first-steps"')
+  })
+
+  it('writes a sitemap and canonical addresses when it knows its address', @{
+    build(
+      '[documentation]\ntitle = "Guide"\n[site]\nurl = "https://example.com/guide"\n',
+    )
+
+    expect(read('site/sitemap.xml'))
+        .to_contain('<loc>https://example.com/guide/setup.html</loc>')
+    expect(
+      read('site/setup.html'),
+    ).to_contain('rel="canonical" href="https://example.com/guide/setup.html"')
+    expect(read('site/404.html')).to_contain('<base href="/guide/">')
+  })
+
+  it('sends an old address on to a new one', @{
+    build(
+      '[documentation]\ntitle = "Guide"\n[redirects]\n"old/setup.html" = "setup.html"\n',
+    )
+
+    expect(read('site/old/setup.html')).to_contain('url=../setup.html')
+  })
+
+  it('leaves chapters unnumbered when asked to', @{
+    build('[documentation]\ntitle = "Guide"\n[site]\nnumbers = false\n')
+    expect(read('site/setup/unix.html')).not.to_contain('toc-number')
+  })
+})
+
+describe('links that lead nowhere', @{
+  it('are reported with the file and line they are on', @{
+    write_docs(nil)
+    put(
+      'src/setup/unix.md',
+      '# Unix\n\n[a](../setup.md#nothing) [b](missing.md) [c](gone.png)\n',
+    )
+
+    var report = Site(load(parse(read('doc.toml'), DIR))).build()
+
+    expect(report.warnings.length()).to_be(3)
+    expect(report.warnings[0])
+        .to_contain('unix.md:3: setup.md has no heading or id #nothing')
+    expect(report.warnings[1])
+        .to_contain('links to setup/missing.md, which SUMMARY.md does not list')
+    expect(
+      report.warnings[2],
+    ).to_contain('links to setup/gone.png, which is not in the documentation')
+  })
+})
+
+describe('the output directory', @{
+  it('is replaced by every build', @{
+    build(nil)
+    put('site/stale.html', 'old')
+    build(nil)
+
+    expect(exists('site/stale.html')).to_be_false()
+  })
+
+  it('is refused when it holds something other than a site', @{
+    write_docs(nil)
+    put('site/notes.txt', 'mine')
+
+    var message = nil
+
+    catch {
+      Site(load(parse(read('doc.toml'), DIR))).build()
+    } as error {
+      message = error.message
+    }
+
+    expect(message).to_contain('not a site')
+    expect(exists('site/notes.txt')).to_be_true()
+  })
+
+  it('is removed by clean', @{
+    build(nil)
+
+    expect(clean(parse(read('doc.toml'), DIR))).to_be_true()
+    expect(exists('site')).to_be_false()
+    expect(os.dir_exists(os.join_paths(DIR, 'site'))).to_be_false()
+  })
+})
+
+describe('text', @{
+  it('keeps code and emphasis in a title', @{
+    write_docs(nil)
+    put('src/setup.md', '# The `run()` *call*\n')
+
+    var config = parse(read('doc.toml'), DIR)
+    var docs = load(config)
+    var renderer = Renderer(docs)
+    var page = renderer.render(docs.chapters[1])
+
+    expect(page.heading).to_be('The run() call')
+    expect(
+      renderer.md.parse('# A `b` *c*').children.map(@(n) => inline_html(n)),
+    ).to_equal(['A <code>b</code> <em>c</em>'])
+  })
+
+  it('spaces out the blocks of a section for searching', @{
+    write_docs(nil)
+
+    var docs = load(parse(read('doc.toml'), DIR))
+    var renderer = Renderer(docs)
+    var doc = renderer.md.parse('- one\n- two\n\nthree')
+
+    expect(plain_text(doc)).to_be('one two three')
+  })
+})

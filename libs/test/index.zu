@@ -1,8 +1,8 @@
 /**
  * @module test
  *
- * A testing framework: suites, assertions, mocks, snapshots,
- * lifecycle hooks, and reports worth reading.
+ * A testing framework with suites, assertions, mocks, snapshots, setup
+ * and teardown hooks, and readable reports.
  *
  * ```zuri
  * import test { * }
@@ -37,26 +37,25 @@
  *
  * ## Importing
  *
- * `import test { * }` is the form to use in a test file. It brings
- * `describe`, `it`, `expect`, `mock`, the hooks and `run` into scope,
- * which is what makes a test read as a test rather than as a series
- * of calls into a module.
+ * Use `import test { * }` in a test file. It brings `describe`, `it`,
+ * `expect`, `mock`, the hooks and `run` into scope, so that a test
+ * reads like a test instead of a series of calls into a module.
  *
- * `import test` is there for anything that is not a test file, and
- * qualifies the same names: `test.conduct('tests')`, `test.run()`.
- * The two can be combined when a test file wants both.
+ * Use `import test` in anything that isn't a test file. It gives you
+ * the same names, qualified, such as `test.conduct('tests')` and
+ * `test.run()`. A test file can use both forms if it needs to.
  *
- * ## Declaring
+ * ## Declaring tests
  *
- * `describe(name, body)` groups tests and may be nested as deeply as
- * the subject calls for. `it(name, body)` declares one. Neither runs
- * anything: they build a tree, and the tree is run once the file has
- * finished declaring everything in it. That is what makes focusing,
- * filtering and counting possible at all.
+ * `describe(name, body)` groups tests, and groups can be nested as
+ * deeply as you need. `it(name, body)` declares a test. Neither one
+ * runs anything. They build a tree, which is run once the file has
+ * finished declaring everything. That's what makes focusing, filtering
+ * and counting tests possible.
  *
- * The run happens on its own, through `os.at_exit()`. Call `run()`
- * explicitly when you want to pass options or read the `Summary` back;
- * doing so takes over, and nothing runs a second time.
+ * The run starts by itself, through `os.at_exit()`. Call `run()`
+ * yourself when you want to pass options or read the `Summary` it
+ * returns. The explicit call takes over, and nothing runs twice.
  *
  * ### Focusing and skipping
  *
@@ -69,12 +68,12 @@
  * it_todo('handle an empty payload')
  * ```
  *
- * As soon as anything is marked `only`, everything not marked `only`
- * and not inside something marked `only` is skipped. `skip` always
- * wins over `only`.
+ * As soon as anything is marked `only`, everything that isn't marked
+ * `only`, and isn't inside something marked `only`, is skipped. `skip`
+ * always takes priority over `only`.
  *
- * `it('name')` with no body is a todo as well: it is reported as one
- * and counts towards nothing.
+ * `it('name')` without a body is also a todo. It's reported as one, and
+ * doesn't count towards anything.
  *
  * ### Table-driven tests
  *
@@ -88,11 +87,11 @@
  * })
  * ```
  *
- * Each row becomes one test. `$0`, `$1` and so on in the name are
+ * Each row becomes one test. In the name, `$0`, `$1` and so on are
  * replaced with that row's values, and `$#` with the row number.
  * `describe_each()` does the same for whole suites.
  *
- * ### Per-test options
+ * ### Options for each test
  *
  * ```zuri,ignore
  * it('reaches the network', @{ ... }, { retries: 2, tags: ['slow'] })
@@ -102,10 +101,10 @@
  *
  * | Option | What it does |
  * | --- | --- |
- * | `retries` | run the body again on failure, up to this many times; passing after a retry is reported as flaky |
+ * | `retries` | runs the body again if it fails, up to this many times. A test that passes after a retry is reported as flaky. |
  * | `failing` | the test passes when the body fails, and fails when it passes |
- * | `timeout` | fail the test if it took longer than this many milliseconds |
- * | `tags` | a list of labels to filter on |
+ * | `timeout` | fails the test if it took longer than this many milliseconds |
+ * | `tags` | a list of labels to filter by |
  *
  * ## Hooks
  *
@@ -121,25 +120,26 @@
  * })
  * ```
  *
- * `before_all` runs once, immediately before the first test in its
- * suite that is actually going to run, and not at all for a suite
- * everything was filtered out of. `after_all` runs after the last one,
- * and runs even when `before_all` failed, so it must cope with a setup
- * that got only part of the way. `before_each` runs outermost first and `after_each` innermost
- * first, and `after_each` runs even when the test failed.
+ * `before_all` runs once, just before the first test in its suite
+ * that's actually going to run, and doesn't run at all for a suite
+ * whose tests were all filtered out. `after_all` runs after the last
+ * test, and runs even if `before_all` failed, so it must handle a setup
+ * that only partly completed. `before_each` runs outermost first, and
+ * `after_each` innermost first, and `after_each` runs even if the test
+ * failed.
  *
- * ## Asserting
+ * ## Assertions
  *
- * `expect(value)` gives an object carrying every matcher, each of
- * which negates through `.not` and returns itself so several read as
- * one:
+ * `expect(value)` returns an object with every matcher. Each matcher
+ * can be negated with `.not`, and returns the same object, so you can
+ * chain several:
  *
  * ```zuri
  * expect(port).to_be_int().to_be_between(1024, 65535)
  * expect(items).not.to_be_empty()
  * ```
  *
- * The full list is in {test.expect}. In short:
+ * The full list is in {test.expect}. In summary:
  *
  * - **equality**: `to_be`, `to_equal`, `to_be_same_as`,
  *   `to_be_close_to`, `to_be_within`, `to_match_object`
@@ -173,10 +173,10 @@
  * - **snapshots**: `to_match_snapshot`
  * - **anything else**: `to_satisfy`
  *
- * `fail(message)` fails outright, for the branch that should never be
+ * `fail(message)` fails immediately, for a branch that should never be
  * reached. `assertions(n)` and `has_assertions()` fail a test that
- * did not assert what it said it would, which is how a test proves
- * that the callback it put its assertions in actually ran.
+ * didn't make the assertions it said it would, which is how a test
+ * proves that the callback containing its assertions actually ran.
  *
  * ## Mocking
  *
@@ -188,9 +188,9 @@
  * expect(send).to_have_been_called_with('hello')
  * ```
  *
- * `spy_on(object, 'key')` replaces a function in place and restores
- * it after the test, whether the test passed or not. See {test.mock}
- * for what can and cannot be spied on.
+ * `spy_on(object, 'key')` replaces a function in place, and restores it
+ * after the test, whether the test passed or not. See {test.mock} for
+ * what can and can't be spied on.
  *
  * ## Snapshots
  *
@@ -198,59 +198,57 @@
  * expect(render(invoice)).to_match_snapshot()
  * ```
  *
- * The first run records the value beside the test file and passes;
- * later runs compare against it. See {test.snapshot} for the file
- * format, how to update them, and why a brand new snapshot fails on
- * CI.
+ * The first run records the value in a file next to the test file, and
+ * passes. Later runs compare the value with the recording. See
+ * {test.snapshot} for the file format, how to update snapshots, and why
+ * a new snapshot fails on CI.
  *
- * ## Running
+ * ## Running tests
  *
- * `run()` takes an options dictionary:
+ * `run()` takes a dictionary of options:
  *
  * | Option | Default | What it does |
  * | --- | --- | --- |
  * | `reporter` | `'spec'` | `spec`, `dot`, `tap`, `junit`, `json`, `ndjson`, `silent`, or a `Reporter` of your own |
- * | `filter` | `nil` | run only tests whose full name contains this, or matches it when it is a regular expression |
- * | `tags` | `nil` | run only tests carrying one of these tags |
- * | `exclude_tags` | `nil` | skip tests carrying one of these tags |
- * | `bail` | `0` | stop after this many failures; `0` never stops |
- * | `shuffle` | `false` | run in a random order, to catch tests that depend on each other |
- * | `seed` | `nil` | the seed to shuffle with; one is chosen and reported when not given |
- * | `slow` | `300` | milliseconds past which a test's time is highlighted |
- * | `timeout` | `0` | a budget applied to every test; `0` means none |
- * | `retries` | `0` | retries applied to every test |
- * | `capture` | `true` | collect each test's output and show it only when it fails |
- * | `verbose` | `false` | show a passing test's output as well |
- * | `update_snapshots` | `ZURI_UPDATE_SNAPSHOTS` | rewrite snapshots instead of checking them |
- * | `ci` | `CI` | treat a brand new snapshot as a failure |
- * | `exit` | `false` | exit the process with the run's status when it finishes |
+ * | `filter` | `nil` | only runs tests whose full name contains this, or matches it if it's a regular expression |
+ * | `tags` | `nil` | only runs tests with one of these tags |
+ * | `exclude_tags` | `nil` | skips tests with one of these tags |
+ * | `bail` | `0` | stops after this many failures. `0` never stops. |
+ * | `shuffle` | `false` | runs tests in a random order, to catch tests that depend on each other |
+ * | `seed` | `nil` | the seed for shuffling. If it isn't given, one is chosen and reported. |
+ * | `slow` | `300` | the number of milliseconds after which a test's time is highlighted |
+ * | `timeout` | `0` | a time limit for every test. `0` means no limit. |
+ * | `retries` | `0` | the number of retries for every test |
+ * | `capture` | `true` | collects each test's output, and only shows it if the test fails |
+ * | `verbose` | `false` | shows the output of passing tests as well |
+ * | `update_snapshots` | `ZURI_UPDATE_SNAPSHOTS` | rewrites snapshots instead of checking them |
+ * | `ci` | `CI` | treats a new snapshot as a failure |
+ * | `exit` | `false` | exits the process with the run's status when it finishes |
  *
- * `filter` and `reporter` can also come from `ZURI_TEST_FILTER` and
- * `ZURI_TEST_REPORTER`, which is what lets one command be pointed at
- * one test without editing the file.
+ * `filter` and `reporter` can also be set with `ZURI_TEST_FILTER` and
+ * `ZURI_TEST_REPORTER`, so that you can run a single test from the
+ * command line without editing the file.
  *
- * `run()` returns a `Summary`; `summary.exit_code()` is `0` when
- * everything passed. A file that never calls `run()` gets the same
- * status: the automatic run sets it through `os.set_exit_code()` when
- * anything failed, so CI needs nothing added.
+ * `run()` returns a `Summary`, and `summary.exit_code()` is `0` if
+ * everything passed. A file that never calls `run()` gets the same exit
+ * status, because the automatic run sets it with `os.set_exit_code()`
+ * when anything fails, so CI doesn't need anything extra.
  *
  * ## More than one file
  *
- * `conduct(directory)` finds every test file under a directory, runs
- * each in a process of its own, and reports them together. A file
- * that hangs or crashes takes nothing else down with it. See
- * {test.conduct}.
+ * `conduct(directory)` finds every test file in a directory, runs each
+ * one in a process of its own, and reports them together. A file that
+ * hangs or crashes doesn't affect the others. See {test.conduct}.
  *
- * `zuri test` is that call behind a command line, and is all a
- * project needs to run its `tests` directory:
+ * `zuri test` is that call with a command line in front of it, and it's
+ * all a project needs to run its `tests` directory:
  *
  * ```console
  * $ zuri test
  * $ zuri test pricing      # just tests/pricing.zu
  * ```
  *
- * Call `conduct()` yourself when the run wants to be under the
- * project's own control:
+ * Call `conduct()` yourself when the project needs to control the run:
  *
  * ```zuri,ignore
  * # tests/index.zu
@@ -267,7 +265,12 @@ import .runner
 
 import @.error { AssertionError, TestSetupError }
 import @.expect {
-  Expect, expect, fail, assertions, has_assertions, capture_output,
+  Expect,
+  expect,
+  fail,
+  assertions,
+  has_assertions,
+  capture_output,
 }
 import @.mock { Mock, mock, spy_on }
 import @.reporter { Reporter }
@@ -310,8 +313,8 @@ def describe_only(name: string, body: function) {
 }
 
 /**
- * Skips this suite. Its tests are still declared, still counted, and
- * still listed; they simply do not run.
+ * Skips this suite. Its tests are still declared, counted and listed,
+ * but they don't run.
  *
  * @param string name
  * @param function body
@@ -365,10 +368,11 @@ def it_skip(name: string, body: ?function, options: ?dict) {
 }
 
 /**
- * Notes a test that has not been written yet.
+ * Records a test that hasn't been written yet.
  *
- * It is listed in the report and counts towards nothing, which is the
- * point: a todo is a reminder that survives being committed.
+ * It's listed in the report, and doesn't count towards anything. That's
+ * the point: a todo is a reminder that stays in the code when it's
+ * committed.
  *
  * @param string name
  * @returns Case
@@ -430,14 +434,16 @@ def it_each(table: list, name: string, body: function, options: ?dict) {
   for row in _rows_of(table) {
     var values = row
 
-    declared.append(runner.it(
-      _fill(name, values, number),
-      @{
-        return body.apply(values)
-      },
-      options,
-      nil,
-    ))
+    declared.append(
+      runner.it(
+        _fill(name, values, number),
+        @{
+          return body.apply(values)
+        },
+        options,
+        nil,
+      ),
+    )
 
     number++
   }
@@ -475,13 +481,11 @@ def describe_each(table: list, name: string, body: function) {
   for row in _rows_of(table) {
     var values = row
 
-    declared.append(runner.describe(
-      _fill(name, values, number),
-      @{
+    declared.append(
+      runner.describe(_fill(name, values, number), @{
         return body.apply(values)
-      },
-      'normal',
-    ))
+      }, 'normal'),
+    )
 
     number++
   }
@@ -588,7 +592,7 @@ def reset() {
 }
 
 /**
- * Forces colour in the report on or off, overriding what the
+ * Forces color in the report on or off, overriding what the
  * environment said.
  *
  * @param bool on

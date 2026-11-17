@@ -71,7 +71,7 @@ echo '════════════════════════�
 # ---------------------------------------------------------------------------
 assert watch.active() == false, 'a program run normally is not under watch mode'
 assert watch.depends_on(__file__) == false,
-  'depends_on() must do nothing outside watch mode'
+    'depends_on() must do nothing outside watch mode'
 ok('outside watch mode both functions answer false and do nothing')
 
 # ---------------------------------------------------------------------------
@@ -87,41 +87,51 @@ var nested = os.join_paths(dir, 'nested.zu')
 
 write(helper, 'def answer() {\n  return 42\n}\n')
 write(data, '{"rules": []}')
-write(nested, '\n'.join([
-  'import zuri.watch',
-  '',
-  'echo "nested " + watch.active().to_string()',
-]))
+write(
+  nested,
+  '\n'.join([
+    'import zuri.watch',
+    '',
+    'echo "nested " + watch.active().to_string()',
+  ]),
+)
 
 # The paths reach the program as arguments, since a Windows path written
 # into a string literal would read as escapes.
-write(program, '\n'.join([
-  'import isolate',
-  'import os',
-  'import json',
-  'import zuri.watch',
-  'import .helper',
-  '',
-  'echo "active " + watch.active().to_string()',
-  'echo "variable " + (os.get_env("ZURI_WATCH_REPORT") == nil ? "gone" : "visible")',
-  'echo "declared " + watch.depends_on(os.args[2]).to_string()',
-  'echo "again " + watch.depends_on(os.args[2]).to_string()',
-  'watch.depends_on(os.args[2])',
-  'watch.depends_on(os.args[3])',
-  'echo helper.answer()',
-  'echo "isolate " + isolate.spawn(helper.answer).join(10).to_string()',
-  '',
-  'var child = os.spawn(os.exe_path, ["run", os.args[4]], { stdout: "pipe" })',
-  '',
-  'child.wait()',
-  'echo child.read_stdout().to_string().trim()',
-]))
+write(
+  program,
+  '\n'.join([
+    'import isolate',
+    'import os',
+    'import json',
+    'import zuri.watch',
+    'import .helper',
+    '',
+    'echo "active " + watch.active().to_string()',
+    'echo "variable " + (os.get_env("ZURI_WATCH_REPORT") == nil ? "gone" : "visible")',
+    'echo "declared " + watch.depends_on(os.args[2]).to_string()',
+    'echo "again " + watch.depends_on(os.args[2]).to_string()',
+    'watch.depends_on(os.args[2])',
+    'watch.depends_on(os.args[3])',
+    'echo helper.answer()',
+    'echo "isolate " + isolate.spawn(helper.answer).join(10).to_string()',
+    '',
+    'var child = os.spawn(os.exe_path, ["run", os.args[4]], { stdout: "pipe" })',
+    '',
+    'child.wait()',
+    'echo child.read_stdout().to_string().trim()',
+  ]),
+)
 
-var child = os.spawn(os.exe_path, ['run', program, data, missing, nested], {
-  stdout: 'pipe',
-  stderr: 'pipe',
-  env: { ZURI_WATCH_REPORT: report },
-})
+var child = os.spawn(
+  os.exe_path,
+  ['run', program, data, missing, nested],
+  {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env: { ZURI_WATCH_REPORT: report },
+  },
+)
 
 var status = child.wait()
 var output = child.read_stdout().to_string() + child.read_stderr().to_string()
@@ -129,15 +139,15 @@ var output = child.read_stdout().to_string() + child.read_stderr().to_string()
 assert status == 0, 'the program must run cleanly, got ${status}:\n${output}'
 assert output.contains('active true'), 'active() must be true under watch mode'
 assert output.contains('declared true'),
-  'depends_on() must say it recorded the file'
+    'depends_on() must say it recorded the file'
 assert output.contains('again true'),
-  'declaring a file again must still answer true under watch mode'
+    'declaring a file again must still answer true under watch mode'
 ok('under watch mode active() and depends_on() answer true')
 
 assert output.contains('variable gone'),
-  'the runtime must remove the variable, so nothing the program starts reports into the file'
+    'the runtime must remove the variable, so nothing the program starts reports into the file'
 assert output.contains('nested false'),
-  'a program started by the watched one must not be under watch mode'
+    'a program started by the watched one must not be under watch mode'
 ok('the report reaches no further than the program watch mode started')
 
 var found = entries(report)
@@ -146,18 +156,18 @@ assert entry_for(found, program) != nil, 'the entry file must be reported'
 assert entry_for(found, helper) != nil, 'an imported module must be reported'
 assert entry_for(found, data) != nil, 'a declared file must be reported'
 assert entry_for(found, nested) == nil,
-  'nothing the nested program read may be reported'
+    'nothing the nested program read may be reported'
 ok('the entry file, its modules, and declared files are all reported')
 
 var helpers = found.filter(@(e) => e.path == helper).length()
 var datas = found.filter(@(e) => e.path == data).length()
 
 assert output.contains('isolate 42'),
-  'the isolate must have loaded the module too'
+    'the isolate must have loaded the module too'
 assert helpers == 1,
-  'a module loaded again by an isolate must be reported once, got ${helpers}'
+    'a module loaded again by an isolate must be reported once, got ${helpers}'
 assert datas == 1,
-  'a file declared three times must be reported once, got ${datas}'
+    'a file declared three times must be reported once, got ${datas}'
 ok('each file is reported once, however many times it is read')
 
 var root = os.get_env('ZURI_ROOT', '')
@@ -169,17 +179,17 @@ if root.is_empty() {
 var libs = os.real_path(os.join_paths(root, 'libs'))
 
 assert !found.some(@(e) => e.path.starts_with(libs + os.path_separator)),
-  'the standard library must never be reported, got ${found}'
+    'the standard library must never be reported, got ${found}'
 ok('the standard library is left out of the report')
 
 var later = entry_for(found, missing)
 
 assert entry_for(found, helper).fingerprint == content_of(helper),
-  'a module is fingerprinted by the bytes the runtime read'
+    'a module is fingerprinted by the bytes the runtime read'
 assert entry_for(found, data).fingerprint == content_of(data),
-  'a declared file is fingerprinted by its content'
+    'a declared file is fingerprinted by its content'
 assert later != nil and later.fingerprint == '-',
-  'a declared file with nothing at it yet is reported with a dash'
+    'a declared file with nothing at it yet is reported with a dash'
 ok('every entry carries the fingerprint hash.fnv1a_64() gives its content')
 
 os.remove_dir(dir, true)

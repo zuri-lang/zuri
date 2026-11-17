@@ -1,27 +1,37 @@
 /**
  * @module errors
  *
- * Turning MySQL's error numbers into the shared error classes.
+ * Maps MySQL's error numbers to the shared error classes.
  *
  * MySQL reports two things about a failure: its own error number, such
- * as 1062 for a duplicate key, and a five character SQLSTATE. The
- * number is the specific one and the SQLSTATE is the portable one, so
- * mapping works on the number where a case is worth telling apart and
- * falls back to the SQLSTATE class otherwise. An error number this
- * table has never seen still lands somewhere sensible.
+ * as 1062 for a duplicate key, and a five-character SQLSTATE. The error
+ * number is specific, and the SQLSTATE is portable, so the mapping uses
+ * the error number where it's useful to distinguish a case, and falls
+ * back to the SQLSTATE class otherwise. That way, an error number that
+ * isn't in the table still maps to a sensible class.
  *
- * MariaDB shares both schemes and most of the numbers, and the few it
- * adds sit in the same SQLSTATE classes, so nothing here needs to know
- * which server answered.
+ * MariaDB uses both schemes and most of the same numbers, and the few
+ * numbers it adds are in the same SQLSTATE classes, so nothing here
+ * needs to know which server answered.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
 import ..errors {
-  SqlError, ConnectionError, AuthenticationError, TimeoutError,
-  QueryError, IntegrityError, UniqueViolation, ForeignKeyViolation,
-  NotNullViolation, CheckViolation, TransactionError,
-  SerializationError, DeadlockError, NotSupportedError,
+  SqlError,
+  ConnectionError,
+  AuthenticationError,
+  TimeoutError,
+  QueryError,
+  IntegrityError,
+  UniqueViolation,
+  ForeignKeyViolation,
+  NotNullViolation,
+  CheckViolation,
+  TransactionError,
+  SerializationError,
+  DeadlockError,
+  NotSupportedError,
 }
 
 /**

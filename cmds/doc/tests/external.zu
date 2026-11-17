@@ -1,0 +1,177 @@
+# Tests for checking the links that lead out of documentation, against
+# a server on this machine, so nothing here needs the network.
+
+import http
+import isolate
+import os
+import os.tempfile { create_temp_dir }
+import test { * }
+
+import ..build { build }
+import ..config { load }
+import ..external { check, is_checked }
+
+# A server that answers some addresses and not others, until it is asked
+# for `/stop`.
+def _serve(ports) {
+  var server = http.server(0, '127.0.0.1')
+
+  server.keep_alive_timeout = 500
+  server.get('/ok', @(request, response) {
+    response.text('fine')
+  })
+  server.get('/gone', @(request, response) {
+    response.text('gone', 404)
+  })
+  server.get('/busy', @(request, response) {
+    response.text('slow down', 429)
+  })
+  server.head('/picky', @(request, response) {
+    response.text('', 405)
+  })
+  server.get('/picky', @(request, response) {
+    response.text('fine')
+  })
+  server.get('/stop', @(request, response) {
+    response.text('stopping')
+    server.close()
+  })
+
+  server.bind()
+  ports.send(server.address().to_string())
+
+  while server.is_listening() {
+    var client
+
+    catch {
+      client = server.accept()
+    } as error
+
+    if error {
+      break
+    }
+
+    server.serve_connection(client)
+  }
+}
+
+var BASE = nil
+var SERVER = nil
+var DIR = nil
+
+before_all(@{
+  var ports = isolate.channel()
+
+  SERVER = isolate.spawn(_serve, ports)
+  BASE = 'http://${ports.recv()}'
+})
+
+after_all(@{
+  catch {
+    http.get(BASE + '/stop')
+  } as error {}
+
+  SERVER.join()
+})
+
+before_each(@{
+  DIR = os.real_path(create_temp_dir('zuri-doc-external-'))
+})
+
+after_each(@{
+  os.remove_dir(DIR, true)
+})
+
+def put(path: string, text: string) {
+  var full = os.join_paths(DIR, path)
+
+  os.create_dir(os.dir_name(full), 0c755, true)
+  file(full, 'w').write(text)
+}
+
+def reasons(urls: list) {
+  return check(urls.map(@(url) => { url })).map(@(broken) => broken.reason)
+}
+
+describe('check', @{
+  it('passes an address that answers', @{
+    expect(
+      check([
+        { url: BASE + '/ok' },
+      ]),
+    ).to_equal([])
+  })
+
+  it('reports an address that answers with an error', @{
+    expect(reasons([BASE + '/gone'])).to_equal(['answered 404'])
+  })
+
+  it('asks again with GET when HEAD is refused', @{
+    expect(
+      check([
+        { url: BASE + '/picky' },
+      ]),
+    ).to_equal([])
+  })
+
+  it('counts being told to slow down as an answer', @{
+    expect(
+      check([
+        { url: BASE + '/busy' },
+      ]),
+    ).to_equal([])
+  })
+
+  it('reports an address nothing answers at', @{
+    var found = reasons(['http://127.0.0.1:1/'])
+
+    expect(found.length()).to_be(1)
+    expect(found[0]).to_contain('could not be reached')
+  })
+
+  it('reports every link to a broken address, asking for it once', @{
+    var broken = check([
+      { url: BASE + '/gone', where: 'a.md:1' },
+      { url: BASE + '/ok', where: 'a.md:2' },
+      { url: BASE + '/gone#part', where: 'b.md:7' },
+    ])
+
+    expect(broken.map(@(each) => each.link.where))
+        .to_equal(['a.md:1', 'b.md:7'])
+  })
+})
+
+describe('is_checked', @{
+  it('takes http and https addresses only', @{
+    expect(is_checked('https://example.com')).to_be_true()
+    expect(is_checked('HTTP://example.com')).to_be_true()
+    expect(is_checked('mailto:ada@example.com')).to_be_false()
+    expect(is_checked('setup.md')).to_be_false()
+  })
+})
+
+describe('build with external checks', @{
+  it('warns about each broken link out, with where it is', @{
+    put('doc.toml', '[documentation]\ntitle = "Guide"\n')
+    put('src/SUMMARY.md', '# Summary\n\n[Welcome](welcome.md)\n')
+    put(
+      'src/welcome.md',
+      '# Welcome\n\nSee [this](${BASE}/ok) and [that](${BASE}/gone).\n\n![chart](${BASE}/gone)\n',
+    )
+
+    var built = build(load(DIR), false, true)
+
+    expect(built[0].external.length()).to_be(2)
+    expect(built[0].external[0])
+        .to_contain('welcome.md:3: ${BASE}/gone answered 404')
+    expect(built[0].external[1]).to_contain('welcome.md:5:')
+  })
+
+  it('asks for nothing unless told to', @{
+    put('doc.toml', '[documentation]\ntitle = "Guide"\n')
+    put('src/SUMMARY.md', '# Summary\n\n[Welcome](welcome.md)\n')
+    put('src/welcome.md', '# Welcome\n\n[that](${BASE}/gone)\n')
+
+    expect(build(load(DIR))[0].external).to_equal([])
+  })
+})

@@ -2,19 +2,19 @@
  * @module framing
  *
  * How messages are told apart in a stream of bytes. A stream carries
- * one message after another with nothing to mark where one ends, so
- * each is framed: {HeaderFraming} puts a header giving its length in
- * front of it, and {LineFraming} ends it with a line break. A
+ * one message after another, with nothing to mark where one ends, so
+ * each message is framed. {HeaderFraming} puts a header with its length
+ * in front of it, and {LineFraming} ends it with a line break. A
  * transport that already keeps messages apart, as a WebSocket does,
- * needs no framing of its own, and {MessageFraming} takes each of its
- * reads as one whole message.
+ * doesn't need framing of its own, and {MessageFraming} treats each
+ * read from it as one whole message.
  *
- * A framing is fed the bytes as they arrive, in whatever pieces they
- * arrive in, and hands back each message once the whole of it is
- * there. It frames the other way too, turning a message's text into
- * the bytes to send.
+ * A framing is given the bytes as they arrive, in whatever pieces they
+ * arrive in, and returns each message once all of it is there. It works
+ * in the other direction too, turning the text of a message into the
+ * bytes to send.
  *
- * Re-exported by `rpc`.
+ * The `rpc` module re-exports it.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -149,7 +149,9 @@ class HeaderFraming {
 
         if blank < 0 {
           if self._buffer.length() > _MAX_HEADER {
-            raise RpcFramingError('a header block ran past ${_MAX_HEADER} bytes')
+            raise RpcFramingError(
+              'a header block ran past ${_MAX_HEADER} bytes',
+            )
           }
 
           break
@@ -193,7 +195,9 @@ class HeaderFraming {
 
       if name == 'content-length' {
         if !value.is_number() {
-          raise RpcFramingError("Content-Length is not a whole number: '${value}'")
+          raise RpcFramingError(
+            "Content-Length is not a whole number: '${value}'",
+          )
         }
 
         length = value.to_number()
@@ -207,7 +211,9 @@ class HeaderFraming {
     }
 
     if length > self._max_size {
-      raise RpcFramingError('a message of ${length} bytes is over the ${self._max_size}-byte limit')
+      raise RpcFramingError(
+        'a message of ${length} bytes is over the ${self._max_size}-byte limit',
+      )
     }
 
     return length
@@ -450,7 +456,9 @@ class MessageFraming {
   feed(data: bytes) {
     if data.length() > self._max_size {
       var size = data.length()
-      raise RpcFramingError('a message of ${size} bytes is over the ${self._max_size}-byte limit')
+      raise RpcFramingError(
+        'a message of ${size} bytes is over the ${self._max_size}-byte limit',
+      )
     }
 
     return data.is_empty() ? [] : [data]

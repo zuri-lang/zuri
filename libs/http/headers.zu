@@ -1,13 +1,13 @@
 /**
  * @module headers
  *
- * `Headers`: a case-insensitive, order-preserving multimap, because HTTP
- * header names do not compare case-sensitively and some headers may
- * legitimately appear more than once.
+ * `Headers`, a case-insensitive multimap that preserves order. HTTP
+ * header names are compared without regard to case, and some headers
+ * can legitimately appear more than once.
  *
- * The validation functions enforce what a name and a value may contain,
- * which is what keeps a header value carrying a newline from splitting
- * one response into two.
+ * The validation functions check what a header name and value can
+ * contain, which prevents a header value containing a newline from
+ * splitting one response into two.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -79,16 +79,16 @@ def is_valid_name(name) {
 }
 
 /**
- * Whether `value` is a legal HTTP field value.
+ * Whether `value` is a valid HTTP field value.
  *
- * The rule that actually matters here is that a value may not contain
- * CR, LF, or NUL. Letting any of those through is response splitting:
- * a value carrying `\r\n` ends the field early and lets whoever
- * supplied it inject headers, or a whole second response, into the
+ * The important rule is that a value can't contain CR, LF or NUL.
+ * Allowing any of them would make response splitting possible: a value
+ * containing `\r\n` ends the field early, and lets whoever provided it
+ * inject extra headers, or even a whole second response, into the
  * stream.
  *
- * Leading and trailing whitespace is not part of the value and is
- * stripped before the check rather than rejected.
+ * Leading and trailing whitespace isn't part of the value, so it's
+ * removed before the check instead of being rejected.
  *
  * @param string value
  * @returns bool
@@ -98,12 +98,14 @@ def is_valid_value(value) {
 }
 
 /**
- * The conventional spelling of a field name, e.g. `'content-type'`
- * becomes `'Content-Type'` and `'etag'` becomes `'ETag'`.
+ * The conventional capitalization of a field name. For example,
+ * `'content-type'` becomes `'Content-Type'` and `'etag'` becomes
+ * `'ETag'`.
  *
- * Field names are case-insensitive on the wire, so this is purely
- * cosmetic - but it is the casing every other HTTP implementation
- * emits, and some badly written clients do compare case-sensitively.
+ * Field names are case-insensitive in HTTP, so this only affects how a
+ * name looks. However, it's the capitalization that other HTTP
+ * implementations use, and some badly written clients do compare names
+ * case-sensitively.
  *
  * @param string name
  * @returns string
@@ -127,17 +129,17 @@ def canonical_name(name: string) {
 }
 
 /**
- * An ordered, case-insensitive, multi-value collection of HTTP header
- * fields.
+ * An ordered collection of HTTP header fields, with case-insensitive
+ * names and support for repeated fields.
  *
- * Field names are matched without regard to case, so `headers.get('content-type')`
- * and `headers.get('Content-Type')` are the same lookup, while the
- * spelling a field was first added under is what gets written back
- * out. Insertion order is preserved.
+ * Field names are matched regardless of case, so
+ * `headers.get('content-type')` and `headers.get('Content-Type')` look
+ * up the same field, and a field is written out with the capitalization
+ * it was first added with. Insertion order is preserved.
  *
- * A field may legally appear more than once. `set()` replaces every
- * occurrence, `add()` appends another one, `get()` returns the first,
- * and `get_all()` returns them all:
+ * A field can legitimately appear more than once. `set()` replaces
+ * every occurrence, `add()` adds another one, `get()` returns the first
+ * and `get_all()` returns all of them:
  *
  * ```zuri
  * var h = http.Headers()
@@ -148,10 +150,10 @@ def canonical_name(name: string) {
  * h.get_all('accept')  # ['text/html', 'application/json']
  * ```
  *
- * Every name and value is validated on the way in. A name that isn't
- * a token, or a value carrying CR, LF or NUL, raises rather than being
- * quietly sanitised, because a value that can inject a newline is a
- * response-splitting bug wherever it eventually lands.
+ * Every name and value is validated when it's added. A name that isn't
+ * a valid token, or a value containing CR, LF or NUL, raises an error
+ * instead of being silently cleaned up, because a value that can inject
+ * a newline causes a response splitting bug wherever it ends up.
  *
  * @printable
  * @serializable
@@ -221,13 +223,13 @@ class Headers {
   }
 
   /**
-   * All values for `name` joined with `', '` - the form RFC 9110 §5.3
-   * defines as equivalent to repeating the field - or `fallback` when
-   * the field is absent.
+   * All the values of `name` joined with `', '`, which RFC 9110 §5.3
+   * defines as equivalent to repeating the field, or `fallback` if the
+   * field isn't present.
    *
-   * Never use this for `Set-Cookie`; commas are legal inside a cookie
-   * value and joining them corrupts the result. `get_all()` is the
-   * right call there.
+   * Never use this for `Set-Cookie`. Commas are allowed inside a cookie
+   * value, so joining the values corrupts them. Use `get_all()`
+   * instead.
    *
    * @param string name
    * @param ?any fallback
@@ -267,7 +269,10 @@ class Headers {
       self._fields.remove(key)
     }
 
-    self._fields[key] = [name, [text]]
+    self._fields[key] = [
+      name,
+      [text],
+    ]
     self._size += name.length() + text.length() + 4
 
     return self
@@ -293,7 +298,10 @@ class Headers {
     var entry = self._fields.get(key, nil)
 
     if entry == nil {
-      self._fields[key] = [name, [text]]
+      self._fields[key] = [
+        name,
+        [text],
+      ]
     } else {
       entry[1].append(text)
     }
@@ -304,9 +312,9 @@ class Headers {
   }
 
   /**
-   * Sets `name` to `value` only if the field is not already present.
-   * Used throughout this module for defaults a caller is free to
-   * override - `Date`, `Server`, `User-Agent` and friends.
+   * Sets `name` to `value` only if the field isn't already present.
+   * This module uses it for defaults that a caller can override, such
+   * as `Date`, `Server` and `User-Agent`.
    *
    * @param string name
    * @param {string|number|bool} value
@@ -320,8 +328,8 @@ class Headers {
   }
 
   /**
-   * Removes every value of `name`. Removing an absent field does
-   * nothing rather than failing.
+   * Removes every value of `name`. Removing a field that isn't present
+   * does nothing.
    *
    * @param string name
    * @returns Headers: this same instance, for chaining
@@ -354,11 +362,11 @@ class Headers {
    * Whether `name` is present and one of its comma-separated tokens
    * equals `token`, compared case-insensitively.
    *
-   * This is the correct way to ask about the list-valued fields that
-   * drive protocol decisions - `Connection: keep-alive, Upgrade`,
-   * `Transfer-Encoding: gzip, chunked` - where a naive substring test
-   * would happily match `keep-alive-ish` and a naive equality test
-   * would miss the second token entirely.
+   * This is the correct way to check the list-valued fields that
+   * control the protocol, such as `Connection: keep-alive, Upgrade` or
+   * `Transfer-Encoding: gzip, chunked`. A simple substring check would
+   * also match `keep-alive-ish`, and a simple equality check would miss
+   * the second token completely.
    *
    * @param string name
    * @param string token
@@ -441,9 +449,9 @@ class Headers {
   }
 
   /**
-   * Calls `callback(name, value)` once per field occurrence, in
-   * insertion order - so a field present three times triggers three
-   * calls, which is exactly what writing the block back out needs.
+   * Calls `callback(name, value)` once for each occurrence of a field,
+   * in insertion order, so a field that appears three times causes
+   * three calls. That's what writing the header block back out needs.
    *
    * @param function(2) callback
    */
@@ -489,7 +497,7 @@ class Headers {
   }
 
   /**
-   * The number of bytes this block would occupy once serialised,
+   * The number of bytes this block would occupy once serialized,
    * counting the `': '` and `CRLF` around every value. Servers use
    * this to enforce a header-size limit as fields arrive.
    *
@@ -528,9 +536,9 @@ class Headers {
   }
 
   /**
-   * Rewrites every field name to its conventional casing, e.g.
-   * `content-type` to `Content-Type`. Purely cosmetic; names remain
-   * case-insensitive either way.
+   * Changes every field name to its conventional capitalization, such
+   * as `content-type` to `Content-Type`. This only affects how the
+   * names look, since they're case-insensitive either way.
    *
    * @returns Headers: this same instance, for chaining
    */
@@ -543,14 +551,15 @@ class Headers {
 
   /**
    * Removes the hop-by-hop fields listed in RFC 9110 §7.6.1, which
-   * describe one connection rather than the message itself and must
-   * never be forwarded on to another connection. The set includes
-   * anything named by this message's own `Connection` field, which is
-   * how an endpoint declares an extra hop-by-hop field.
+   * apply only to a single connection and must not be forwarded to the
+   * next one. This includes any field named in the message's own
+   * `Connection` field, which is how an endpoint declares an extra
+   * hop-by-hop field.
    *
-   * A reverse proxy that forgets this is how a client-supplied
-   * `Transfer-Encoding` reaches an upstream that frames it
-   * differently - the classic smuggling setup.
+   * If a reverse proxy forgets to do this, a client's
+   * `Transfer-Encoding` can reach an upstream server that frames the
+   * message differently, which is the classic setup for request
+   * smuggling.
    *
    * @returns Headers: this same instance, for chaining
    */
@@ -581,7 +590,7 @@ class Headers {
   }
 
   /**
-   * Serialises the block in wire format: `Name: value\r\n` per
+   * Serializes the block in wire format: `Name: value\r\n` per
    * occurrence, with no terminating blank line (the caller decides
    * where the block ends, since a trailer section ends differently to
    * a head).
@@ -683,21 +692,22 @@ class Headers {
 }
 
 /**
- * Parses a raw header block - everything between a start line and the
- * blank line that ends the head - into a `Headers`.
+ * Parses a raw header block, meaning everything between a start line
+ * and the blank line that ends the head, into a `Headers`.
  *
- * Obsolete line folding (a continuation line starting with a space) is
- * rejected outright rather than unfolded: RFC 9112 §5.2 deprecated it,
- * and treating it as data is the safer reading given how differently
- * intermediaries handle it.
+ * Obsolete line folding, where a continuation line starts with a space,
+ * is rejected instead of being unfolded. RFC 9112 §5.2 deprecated it,
+ * and since intermediaries handle it in different ways, rejecting it is
+ * the safer choice.
  *
- * @param string block: the header lines, without the trailing blank line
- * @param ?bool strict: when `true` (the default), a field appearing
- *    more than once that is defined to appear at most once raises
- *    instead of being folded
+ * @param string block: the header lines, without the trailing blank
+ *    line
+ * @param ?bool strict: when `true` (the default), a field that's
+ *    defined to appear at most once raises an error if it appears more
+ *    than once, instead of being combined
  * @returns Headers
- * @throws ProtocolError on a malformed field, a folded line, or a
- *    duplicated singleton field
+ * @throws ProtocolError on an invalid field, a folded line, or a
+ *    repeated field that should only appear once
  */
 /**
  * Parses a single header line and records it into `target`.
@@ -783,8 +793,8 @@ def parse(block: string, strict: ?bool) {
 }
 
 /**
- * Whether a field with this name must be repeated rather than folded
- * into one comma-separated value when written out.
+ * Whether a field with this name must be written out as separate
+ * fields, instead of being combined into one comma-separated value.
  *
  * @param string name
  * @returns bool

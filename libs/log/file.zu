@@ -1,8 +1,8 @@
 /**
  * @module log.file
  *
- * `FileTransport`: sends log streams to a file on disk, with
- * optional size-based rotation.
+ * `FileTransport`, which writes logs to a file on disk, with optional
+ * rotation based on size.
  */
 
 import .transport { Transport }
@@ -29,8 +29,7 @@ class FileTransport < Transport {
   var file
 
   /**
-   * Returns a new instance of FileTransport and opens a file
-   * handle to the the file specified in the path.
+   * Creates a `FileTransport`, and opens the file at the given path.
    *
    * @param string path
    * @constructor

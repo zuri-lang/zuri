@@ -38,8 +38,6 @@ In about 24 hours, Claude Opus 5 read the entire codebase, asked various questio
 
 On this one, Claude Opus 5 did a good job! I believe it excels at this kind of stuff.
 
-While mdBook will be phased out over time to replace it with Zuri's own alternative (maybe `Doka` &mdash; which predates this repository and does about the same job), where it stands now at commit `1472fca` works just fine.
-
 ---
 
 _Oct 19, 2026 03:55 AM GMT+1_

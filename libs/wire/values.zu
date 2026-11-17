@@ -1,9 +1,9 @@
 /**
  * @module wire.values
  *
- * How Wire reads the values a template is given: what counts as true,
- * what a value looks like once it reaches the page, and how a string
- * says that it is already markup and must not be escaped again.
+ * How Wire reads the values that a template is given: what counts as
+ * true, what a value looks like once it's written to the page, and how
+ * a string marks itself as markup that mustn't be escaped again.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
@@ -68,12 +68,12 @@ class Safe {
 }
 
 /**
- * Marks _value_ as markup that Wire must not escape.
+ * Marks _value_ as markup that Wire mustn't escape.
  *
- * A `Safe` passed back in is returned unchanged rather than wrapped
- * twice. Anything that is not already a string is rendered with
- * `stringify()` first, so `safe(nil)` is an empty string rather than
- * the word "nil".
+ * If a `Safe` value is passed in, it's returned unchanged instead of
+ * being wrapped twice. Anything that isn't already a string is
+ * converted with `stringify()` first, so `safe(nil)` is an empty
+ * string, not the word "nil".
  *
  * @param any value
  * @returns Safe
@@ -114,12 +114,12 @@ def unwrap(value) {
 }
 
 /**
- * What _value_ looks like once it reaches the page, before escaping.
+ * What _value_ looks like once it's written to the page, before
+ * escaping.
  *
- * `nil` renders as an empty string rather than as the word "nil",
- * which is what lets an optional variable be dropped into a page
- * without a guard around it. Everything else is rendered by its own
- * `to_string()`.
+ * `nil` is written as an empty string, not as the word "nil", so that
+ * an optional variable can be used in a page without a check around it.
+ * Everything else is converted with its own `to_string()`.
  *
  * @param any value
  * @returns string
@@ -137,23 +137,23 @@ def stringify(value) {
 }
 
 /**
- * Whether _value_ counts as true in an `x-if`, an `x-not`, or a
- * boolean operator inside an expression.
+ * Whether _value_ counts as true in an `x-if`, an `x-not` or a boolean
+ * operator inside an expression.
  *
- * Wire deliberately does not reuse Zuri's own truthiness here, because
- * one of Zuri's answers is wrong for a template: Zuri treats an empty
- * list and an empty dictionary as true, so `x-if="items"` would render
- * a section for a search that found nothing. Wire treats an empty
+ * Wire intentionally doesn't use Zuri's own truthiness rules here,
+ * because one of them is wrong for templates. Zuri treats an empty list
+ * and an empty dictionary as true, so `x-if="items"` would render a
+ * section for a search that found nothing. Wire treats an empty
  * collection as false.
  *
- * Everything else agrees with Zuri: `nil` and `false` are false, zero
- * and `NaN` are false while every other number is true, an empty
- * string is false, and anything Wire has no special knowledge of (an
- * instance, a function, a range) is true.
+ * In every other case, Wire agrees with Zuri. `nil` and `false` are
+ * false. Zero and `NaN` are false, and every other number is true. An
+ * empty string is false. Anything Wire has no special rules for, such
+ * as an instance, a function or a range, is true.
  *
  * A variable that was never supplied arrives here as `nil`, which is
- * why an optional section can be written as `x-if="user"` with nothing
- * else around it.
+ * why an optional section can be written as `x-if="user"` without
+ * anything else around it.
  *
  * @param any value
  * @returns bool
@@ -195,12 +195,12 @@ def truthy(value) {
 }
 
 /**
- * Whether _value_ has nothing in it, for the `empty` filter and for
- * anything else that wants the question asked of a collection rather
- * than of a value in general.
+ * Whether _value_ is empty, for the `empty` filter and for anything
+ * else that needs to ask that question about a collection, not about a
+ * value in general.
  *
- * `nil` is empty. A number is never empty, not even zero; that is a
- * question about truthiness, not about emptiness.
+ * `nil` is empty. A number is never empty, not even zero, because
+ * that's a question about truthiness, not emptiness.
  *
  * @param any value
  * @returns bool
@@ -232,18 +232,20 @@ def is_blank(text: string) {
 }
 
 /**
- * Orders _a_ before, with or after _b_, returning `-1`, `0` or `1`.
+ * Compares _a_ with _b_, and returns `-1`, `0` or `1` if _a_ comes
+ * before, in the same place as, or after _b_.
  *
- * Zuri's ordering operators only take numbers, so anything a template
- * sorts or compares that is not one has to be ordered here. Strings are
- * compared a character at a time by code point, which puts them in the
- * order a person expects for one alphabet and in a defined order for
- * everything else. Two values of different kinds are ordered by how
- * they render, which is arbitrary but stable, and stable is what a sort
- * actually needs.
+ * Zuri's comparison operators only accept numbers, so anything else
+ * that a template sorts or compares has to be ordered here. Strings are
+ * compared one character at a time by code point, which puts them in
+ * the order people expect for a single alphabet, and in a consistent
+ * order for everything else. Two values of different types are ordered
+ * by how they're rendered, which is arbitrary but stable, and stability
+ * is what a sort actually needs.
  *
- * `nil` sorts before everything, so a record missing the field being
- * sorted on still appears rather than dropping out of the list.
+ * `nil` sorts before everything else, so a record that's missing the
+ * field being sorted on still appears, instead of disappearing from the
+ * list.
  *
  * @param any a
  * @param any b
@@ -266,7 +268,7 @@ def compare(a, b) {
   }
 
   var numeric = (is_number(left) or is_bigint(left)) and
-    (is_number(right) or is_bigint(right))
+      (is_number(right) or is_bigint(right))
 
   if numeric {
     if left < right {
@@ -402,29 +404,47 @@ def invoke(target, arguments: list) {
 
   if count == 5 {
     return target(
-      arguments[0], arguments[1], arguments[2], arguments[3],
+      arguments[0],
+      arguments[1],
+      arguments[2],
+      arguments[3],
       arguments[4],
     )
   }
 
   if count == 6 {
     return target(
-      arguments[0], arguments[1], arguments[2], arguments[3],
-      arguments[4], arguments[5],
+      arguments[0],
+      arguments[1],
+      arguments[2],
+      arguments[3],
+      arguments[4],
+      arguments[5],
     )
   }
 
   if count == 7 {
     return target(
-      arguments[0], arguments[1], arguments[2], arguments[3],
-      arguments[4], arguments[5], arguments[6],
+      arguments[0],
+      arguments[1],
+      arguments[2],
+      arguments[3],
+      arguments[4],
+      arguments[5],
+      arguments[6],
     )
   }
 
   if count == 8 {
     return target(
-      arguments[0], arguments[1], arguments[2], arguments[3],
-      arguments[4], arguments[5], arguments[6], arguments[7],
+      arguments[0],
+      arguments[1],
+      arguments[2],
+      arguments[3],
+      arguments[4],
+      arguments[5],
+      arguments[6],
+      arguments[7],
     )
   }
 
@@ -434,9 +454,9 @@ def invoke(target, arguments: list) {
 }
 
 /**
- * Wire's name for _value_'s type, used in error messages so that a
- * complaint reads "expected a list, got a number" rather than naming
- * an internal class.
+ * Wire's name for the type of _value_, used in error messages so that
+ * they read "expected a list, got a number" instead of naming an
+ * internal class.
  *
  * @param any value
  * @returns string

@@ -1,19 +1,19 @@
 /**
- * Returns the current epoch time to the microseconds resolution.
- * 
- * Example:
- * 
+ * Returns the current time as a Unix timestamp, with microsecond
+ * resolution.
+ *
+ * For example:
+ *
  * ```zuri-repl
  * %> time()
  * 1686787200.123456
  * ```
- * 
- * The time is returned as a floating point number where the integer 
- * part represents the number of seconds since the epoch and the 
- * fractional part represents the microseconds.
- * 
- * @note The epoch time is the number of seconds that have elapsed 
- *    since January 1, 1970 (midnight UTC/GMT).
+ *
+ * The result is a floating-point number. The integer part is the number
+ * of seconds since the Unix epoch, and the fractional part holds the
+ * microseconds.
+ *
+ * @note The Unix epoch is midnight UTC on January 1, 1970.
  * @returns {number}
  */
 def time() {}
@@ -168,18 +168,17 @@ def setprop(obj: instance, prop: string, value: any) {}
 def id(x: any) {}
 
 /**
- * Prints the given arguments to standard output.
+ * Writes its arguments to standard output.
  *
- * Unlike `echo` (which always appends a newline and only ever
- * prints one value), `print()` writes every argument
- * back-to-back with no separator and no trailing newline. It
- * also critically writes a `bytes` object as RAW bytes rather
- * than its `Display` text. That raw-byte path is what lets a
- * script stream binary output (e.g. a PBM/PNG image body one
- * scanline at a time).
+ * Unlike `echo`, which always adds a line break and only prints one
+ * value, `print()` writes all its arguments one after another, with no
+ * separator and no line break at the end. It also writes a `bytes`
+ * value as raw bytes, instead of as its text representation, so a
+ * script can stream binary output, such as the body of a PBM or PNG
+ * image one row at a time.
  *
- * @note In the REPL, it also appends a newline at the end.
- * @param ...any values: Any number of arguments to print
+ * @note In the REPL, it also adds a line break at the end.
+ * @param ...any values: the values to print
  * @return void
  */
 def print(...values) {}
@@ -196,13 +195,12 @@ def print(...values) {}
 def rand(x: ?number, y: ?number) {}
 
 /**
- * Returns `true` if x is a bigint or `false` otherwise. A bigint is
- * a distinct type from `number` created either with the `n`
- * literal suffix (`123n`) or by an operation whose result overflows
- * what a regular `number` can represent exactly. `is_number(x)` and
- * `is_int(x)` are both `false` for a bigint even though it holds an
- * integer value; check `is_bigint(x)` separately when a value might
- * be either.
+ * Returns `true` if `x` is a bigint, and `false` otherwise. A bigint is
+ * a different type from `number`, created either with the `n` suffix on
+ * a literal (`123n`) or by an integer literal too large for a signed
+ * 64-bit integer. `is_number(x)` and `is_int(x)` both return `false`
+ * for a bigint, even though it holds an integer, so check
+ * `is_bigint(x)` separately when a value could be either.
  *
  * @param {any} x The value to check.
  * @returns {boolean}
@@ -327,19 +325,20 @@ def is_file(x: any) {}
 def is_iterable(x: any) {}
 
 /**
- * The path of the file it is read in. In the file a program was
- * started from, it is the path the program was started with; in an
- * imported module, it is the module's full path.
+ * The path of the file in which it's used. In the file that the program
+ * was started from, it's the path the program was started with. In an
+ * imported module, it's the module's full path.
  *
  * @type string
  */
 var __file__ = ''
 
 /**
- * The path of the file the program was started from, the same in
- * every module of one run and in every isolate, so `__root__ ==
- * __file__` holds in that one file alone. That is how a file serves
- * both as a module others import and as a program of its own:
+ * The path of the file that the program was started from. It's the same
+ * in every module and every isolate of a single run, so
+ * `__root__ == __file__` is only true in that one file. That's how a
+ * file can work both as a module that other files import and as a
+ * program by itself:
  *
  * ```zuri
  * def main() {
@@ -351,8 +350,8 @@ var __file__ = ''
  * }
  * ```
  *
- * `__root__` and `__file__` are both set when a file runs; the
- * REPL, which runs no file, defines neither.
+ * `__root__` and `__file__` are both set when a file runs. The REPL
+ * doesn't run a file, so it defines neither.
  *
  * @type string
  */

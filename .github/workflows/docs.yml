@@ -43,10 +43,6 @@ jobs:
         with:
           key: docs
 
-      - uses: peaceiris/actions-mdbook@v2
-        with:
-          mdbook-version: 'latest'
-
       # The patched crates are built from vendor/patches rather than
       # committed, and the workspace does not load without them.
       - name: Patch crates
@@ -126,19 +122,24 @@ jobs:
               pass
           PY
 
-      # The `zuri` binary has to exist before the docs tool runs: the
-      # reference's pages are written by a Zuri program, and the tool
-      # invokes the interpreter sitting beside it.
+      # The whole site is built by Zuri: the reference's pages are
+      # generated from `libs/`, and the book and the reference are both
+      # built by `zuri doc`.
       - name: Build the interpreter
         run: cargo build --locked
 
       # One command does the lot: it writes the reference's pages from
-      # the doc blocks in `libs/`, copies the shared theme into each
-      # book, renders both with mdBook, and lays the finished website
-      # out under `target/site` with the landing page from `docs/site`
-      # over the top.
+      # the doc blocks in `libs/`, builds the book and the reference with
+      # `zuri doc`, and lays the finished website out under `target/site`
+      # with the landing page from `docs/site` over the top. What the cache
+      # kept of the last build is cleaned away first, since zuri doc will
+      # not build over a site it cannot recognise as its own.
       - name: Build the site
-        run: cargo build-docs
+        run: |
+          ./target/debug/zuri run docs/tools/site.zu clean
+          ./target/debug/zuri run docs/tools/site.zu build
+        env:
+          ZURI_ROOT: ${{ github.workspace }}
 
       # Only what the build assembled is published, and only rendered
       # HTML ever reaches it: the reference's markdown stays behind in

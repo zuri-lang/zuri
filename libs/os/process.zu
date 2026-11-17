@@ -1,7 +1,7 @@
 /**
  * @module os.process
  *
- * Process identity, subprocess execution, and signal handling.
+ * Process identity, running other programs, and handling signals.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
@@ -9,27 +9,26 @@
 import _os
 
 /**
- * Executes the given shell (or command prompt for Windows)
- * commands and returns a dictionary containing the exit code and
- * the output as string.
+ * Runs a command in the shell (or the command prompt on Windows), and
+ * returns a dictionary with its exit code and output.
  *
- * `exec()` accepts multiple string arguments and concatenates
- * them together with a space in between before executing.
+ * `exec()` accepts several string arguments, and joins them with spaces
+ * before running the command.
  *
- * The returned dictionary contains the following:
+ * The returned dictionary contains:
  *
- * - `exit_code`: number - The exit code of the program. Any
- * number other than zero (0) should be treated as a failure. -
- * `output`: string - The output of the program.
+ * - `exit_code`: the program's exit code, a number. Any value other
+ *   than zero means that the command failed.
+ * - `output`: the program's output, as a string.
  *
- * `exec()` is the simple, blocking one-shot convenience: run a
- * command, wait for it, get back its exit code and combined output.
- * `spawn()` is for everything `exec()` doesn't cover: streaming a
- * child's stdout/stderr as it's produced, writing to its stdin,
- * overriding its working directory or environment, or checking on
- * it without blocking.
+ * `exec()` is the simple way to run a command: it waits for the command
+ * to finish, and returns its exit code and all of its output. `spawn()`
+ * covers everything else: reading a program's standard output and
+ * standard error as they're produced, writing to its standard input,
+ * changing its working directory or environment, or checking on it
+ * without waiting.
  *
- * Example,
+ * For example:
  *
  * ```zuri-repl
  * %> os.exec('ls', '-l')
@@ -38,12 +37,12 @@ import _os
  * -rw-r--r--  1 username  staff  197 Mar  5 05:13 myprogram.zu'}
  * ```
  *
- * @note this blocks until the command finishes and buffers its
- *    entire output in memory; for a long-running command, one you
- *    need to feed input to, or one whose output you want to
- *    process as it arrives, use `spawn()` instead.
+ * @note This waits until the command finishes, and keeps all of its
+ *    output in memory. For a command that runs for a long time, that
+ *    needs input, or whose output you want to process as it arrives,
+ *    use `spawn()` instead.
  * @param {...string} cmd
- * @returns string
+ * @returns dict
  */
 def exec(...args) {
   for arg in args {
@@ -100,10 +99,10 @@ def set_exit_code(code: number) {
 /**
  * Registers `callback` to run when the program ends.
  *
- * Handlers run last registered first, whether the program reached the
- * end of its script, called `exit()`, or stopped on an uncaught
- * error. Registering several is fine, and a handler may register
- * another one which will also run.
+ * Handlers run in reverse order of registration, whether the program
+ * reached the end of its script, called `exit()` or stopped because of
+ * an uncaught error. You can register several, and a handler can
+ * register another one, which also runs.
  *
  * ```zuri
  * import os
@@ -123,15 +122,15 @@ def set_exit_code(code: number) {
  * report written
  * ```
  *
- * @note a handler that raises is reported on standard error and the
- *    remaining handlers still run, so one failed cleanup cannot
- *    cancel the others.
- * @note `exit()` called from inside a handler exits immediately with
- *    that code; the handlers that have not run yet do not run.
- * @note a handler does not run when the process is killed by a signal
- *    nothing handled, since nothing gets to run at that point.
- * @note in the REPL the program is the session, so a handler runs when
- *    the session ends and not after the line that registered it.
+ * @note If a handler raises an error, the error is reported on standard
+ *    error and the remaining handlers still run, so one failed cleanup
+ *    can't stop the others.
+ * @note Calling `exit()` from inside a handler exits immediately with
+ *    that code, and the handlers that haven't run yet don't run.
+ * @note A handler doesn't run when the process is killed by a signal
+ *    that nothing handles, because nothing gets to run at that point.
+ * @note In the REPL, the program is the whole session, so a handler
+ *    runs when the session ends, not after the line that registered it.
  * @param function callback
  */
 def at_exit(callback: function) {
@@ -148,13 +147,13 @@ def pid() {
 }
 
 /**
- * The current process's parent's id.
+ * The ID of the current process's parent.
  *
- * @note Windows has no call that asks for this directly. It is
- *    answered there by searching a snapshot of the running processes
- *    for this one and reading the parent recorded against it, which
- *    yields `0` rather than raising if the snapshot cannot be taken
- *    or this process is not in it.
+ * @note Windows has no direct way to ask for this. There, it's found by
+ *    searching a snapshot of the running processes for this one, and
+ *    reading the parent recorded for it. If the snapshot can't be taken
+ *    or this process isn't in it, it returns `0` instead of raising an
+ *    error.
  * @returns int
  */
 def ppid() {
@@ -162,12 +161,12 @@ def ppid() {
 }
 
 /**
- * Sends `signal` to the process identified by `pid`.
+ * Sends `signal` to the process with the ID `pid`.
  *
- * Signal `0` sends nothing. It runs the same existence and permission
- * checks every other signal does and then stops, which makes it the
- * way to ask whether a process is still running and still yours to
- * signal:
+ * Signal `0` doesn't send anything. It runs the same checks for
+ * existence and permission as every other signal, and then stops, so
+ * it's the way to find out whether a process is still running and
+ * whether you're allowed to signal it:
  *
  * ```zuri
  * var alive = true
@@ -181,22 +180,20 @@ def ppid() {
  * echo alive  # true
  * ```
  *
- * @note Windows has no way to signal a process by id, so it accepts
- *    only the numbers it can carry out exactly: `0` to test for the
- *    process, and `9` or `15` to end it. Every other number raises
- *    there rather than ending the process anyway, because ending a
- *    process outright is a different outcome from asking it to stop,
- *    not a near-enough one. A process ended this way never runs its
- *    own `on_signal()` callback and gets no chance to clean up. Its
- *    exit status is `128 + signal`, the same number a Unix caller
- *    would have read for it.
+ * @note Windows can't signal a process by its ID, so it only accepts
+ *    the numbers it can carry out exactly: `0` to check for the
+ *    process, and `9` or `15` to end it. Any other number raises an
+ *    error there, instead of ending the process anyway, because ending
+ *    a process outright isn't the same as asking it to stop. A process
+ *    ended this way never runs its own `on_signal()` callback, and has
+ *    no chance to clean up. Its exit status is `128 + signal`, which is
+ *    the same number a Unix caller would see.
  * @param int pid
- * @param ?int signal: Default `15` (`SIGTERM`), matching the
- *    `kill(1)` command's own default.
+ * @param ?int signal: defaults to `15` (`SIGTERM`), which is also the
+ *    default of the `kill(1)` command.
  * @returns bool
- * @raises Error if `pid` doesn't name a process this one has
- *    permission to signal, or if `signal` is one this platform
- *    cannot carry out.
+ * @raises Error if `pid` isn't a process that this process is allowed
+ *    to signal, or if this platform can't carry out `signal`.
  */
 def kill(pid: int, signal: ?int) {
   if signal == nil {
@@ -208,19 +205,18 @@ def kill(pid: int, signal: ?int) {
 
 /**
  * Registers `callback` to run when this process receives the named
- * signal, for handling things like Ctrl+C gracefully instead of
- * being torn down immediately.
+ * signal, so that you can handle things like Ctrl+C cleanly, instead of
+ * the program being stopped immediately.
  *
- * `callback` takes no arguments. It runs on the main thread,
- * between bytecode instructions: never from a background thread:
- * so it's safe for it to do anything ordinary Zuri code can do,
- * including raising, which propagates the same way an uncaught
- * error from any other code would.
+ * `callback` takes no arguments. It runs on the main thread, between
+ * bytecode instructions, never on a background thread, so it can do
+ * anything ordinary Zuri code can do, including raising an error, which
+ * is handled like an uncaught error anywhere else.
  *
  * ### What the callback returns decides what happens next
  *
- * Returning a truthy value means the callback has taken
- * responsibility for the signal, and the program carries on:
+ * If the callback returns a truthy value, it has dealt with the signal,
+ * and the program carries on:
  *
  * ```zuri
  * os.on_signal('INT', def {
@@ -229,12 +225,12 @@ def kill(pid: int, signal: ?int) {
  * })
  * ```
  *
- * Returning anything falsy means it hasn't, and the signal then gets
- * the default action it would have had if nothing were registered:
- * for `'INT'`, `'TERM'` and `'HUP'`, terminating the process with the
- * conventional `128 + signal number` status. A callback that just
- * cleans up and falls off the end returns `nil`, which is falsy, so
- * it shuts down without needing to call `exit()`:
+ * If it returns anything falsy, the signal gets the default action it
+ * would have had without a callback. For `'INT'`, `'TERM'` and `'HUP'`,
+ * that ends the process with the usual `128 + signal number` status. A
+ * callback that just cleans up and doesn't return anything returns
+ * `nil`, which is falsy, so the program shuts down without having to
+ * call `exit()`:
  *
  * ```zuri
  * os.on_signal('INT', def {
@@ -243,44 +239,43 @@ def kill(pid: int, signal: ?int) {
  * })
  * ```
  *
- * That default is deliberate. A handler that only logged and always
- * kept running would leave Ctrl+C unable to stop the program at all,
- * which is a much worse thing to do by accident than to shut down.
+ * That default is intentional. A handler that only logged a message and
+ * always kept the program running would make it impossible to stop the
+ * program with Ctrl+C, which is a much worse accident than shutting
+ * down.
  *
- * Truthiness here is the language's own, so `return 0` and
- * `return ''` decline exactly as `return false` does. Call
- * `os.exit()` when you want a specific exit status instead.
+ * Truthiness here follows the language's own rules, so `return 0` and
+ * `return ''` don't keep the program running, just like `return false`.
+ * Call `os.exit()` when you want a particular exit status.
  *
- * Supported signal names are `'INT'` (Ctrl+C), `'TERM'`, `'HUP'`
- * (Unix only), and `'BREAK'` (Windows only); names are matched
- * case-insensitively, and carry no `SIG` prefix. Registering a new
- * callback for a name that already has one replaces it: there's no
- * stacking of multiple handlers for the same signal.
+ * The supported signal names are `'INT'` (Ctrl+C), `'TERM'`, `'HUP'`
+ * (Unix only) and `'BREAK'` (Windows only). Names are case-insensitive,
+ * and are written without the `SIG` prefix. Registering a callback for
+ * a name that already has one replaces it, because each signal has only
+ * one handler.
  *
  * ### On Windows
  *
- * Windows has no signals. A callback registered here becomes a console
- * control handler, so it runs for console events and nothing else:
- * `'INT'` for Ctrl+C, `'BREAK'` for Ctrl+Break, and `'TERM'` for the
- * console window being closed. Nothing another process does with
- * `kill()` ever reaches it, including this process calling `kill()`
- * on its own id.
+ * Windows has no signals. There, a callback becomes a console control
+ * handler, so it only runs for console events: `'INT'` for Ctrl+C,
+ * `'BREAK'` for Ctrl+Break, and `'TERM'` when the console window is
+ * closed. Nothing another process does with `kill()` ever reaches it,
+ * even when this process calls `kill()` on its own ID.
  *
- * `'TERM'` is weaker there than it looks. The console is closing
- * either way, so Windows allows the callback a few seconds and then
- * ends the process regardless of what it returned: a truthy return
- * cannot keep the program running, the way it can for a real
- * `SIGTERM`. Treat `'TERM'` on Windows as a short window to flush
- * what matters, not as a signal you can decline.
+ * `'TERM'` is weaker on Windows than it looks. The console is closing
+ * either way, so Windows gives the callback a few seconds and then ends
+ * the process, whatever the callback returned. A truthy return value
+ * can't keep the program running, as it can for a real `SIGTERM`. Treat
+ * `'TERM'` on Windows as a short chance to save what matters, not as a
+ * signal you can ignore.
  *
- * @note only takes effect for the main thread's own execution;
- *    code running inside an `isolate` worker isn't affected by a
- *    handler registered here.
- * @note a signal delivered during a blocking native call (`sleep()`,
- *    a blocking `Process.wait()`, blocking file/network I/O, ...)
- *    isn't seen until that call returns and bytecode execution
- *    resumes, the same limitation every cooperative signal-handling
- *    system has.
+ * @note This only affects the main thread. Code running in an `isolate`
+ *    worker isn't affected by a handler registered here.
+ * @note A signal that arrives during a blocking native call, such as
+ *    `sleep()`, a blocking `Process.wait()` or blocking file or network
+ *    I/O, isn't handled until that call returns and bytecode starts
+ *    running again. Every cooperative signal handling system has this
+ *    limitation.
  * @param string name
  * @param function callback
  * @returns bool
@@ -330,17 +325,17 @@ class Process {
   }
 
   /**
-   * Reads from the child's stdout. While the child runs, this blocks
-   * until at least one byte has been produced or its stdout has hit
-   * EOF, and returns what has arrived so far. Once `wait()` or
-   * `try_wait()` has seen the child exit, it returns everything the
-   * child wrote that has not been read yet, waiting for its stdout to
-   * hit EOF first.
+   * Reads from the child process's standard output. While the child is
+   * running, this waits until at least one byte has been produced, or
+   * its standard output has ended, and returns what has arrived so far.
+   * Once `wait()` or `try_wait()` has seen the child exit, it returns
+   * everything the child wrote that hasn't been read yet, after waiting
+   * for its standard output to end.
    *
-   * @param ?int length: The maximum number of bytes to return; all
-   *    available output if not given.
+   * @param ?int length: the maximum number of bytes to return. If it
+   *    isn't given, all available output is returned.
    * @returns bytes
-   * @raises Error if this process's stdout wasn't opened with
+   * @raises Error if this process's standard output wasn't opened with
    *    `stdout: 'pipe'`.
    */
   read_stdout(length: ?int) {
@@ -423,34 +418,35 @@ class Process {
 }
 
 /**
- * Spawns `cmd` as a new subprocess and returns a `Process` handle
- * to it immediately, without waiting for it to finish.
+ * Starts `cmd` as a new process and returns a `Process` handle for it
+ * straight away, without waiting for it to finish.
  *
- * `cmd` names a program to run, not a command line for a shell to
- * interpret. Nothing here expands a variable, splits on whitespace,
- * follows a pipe or knows what a shell builtin is, so a name only a
- * shell would recognise raises rather than running: `echo` is a builtin
- * on Windows with no executable behind it, and `cat` is not present
- * there at all. Use `exec()` when a shell is what you want.
+ * `cmd` is the name of a program to run, not a command line for a shell
+ * to interpret. Nothing here expands variables, splits on whitespace,
+ * follows pipes or knows about shell built-in commands, so a name that
+ * only a shell would recognize raises an error instead of running. For
+ * example, `echo` is a built-in command on Windows with no executable
+ * behind it, and `cat` doesn't exist there at all. Use `exec()` when
+ * you want a shell.
  *
- * `options` may include:
+ * `options` can include:
  *
- * - `cwd`: `?string`: the child's working directory. Defaults to
- *   this process's own current working directory.
- * - `env`: `?dict`: extra environment variables for the child,
- *   merged into a copy of this process's own environment by
- *   default (set `env_replace: true` for the child to receive
- *   *only* what's in `env`, nothing inherited).
- * - `env_replace`: `?bool`: see `env` above. Default `false`.
- * - `stdin`, `stdout`, `stderr`: `?string`, one of `'pipe'`
- *   (readable/writable through the returned `Process`), `'inherit'`
- *   (shares this process's own stream), or `'null'` (discarded).
- *   `stdin` defaults to `'inherit'`; `stdout` and `stderr` default
- *   to `'pipe'`. Do not confuse `'null'` with `nil`. `'null'`
- *   alludes to `/dev/null` on unix devices which has the same
- *   behavior.
+ * - `cwd`, a `?string`: the child's working directory. Defaults to this
+ *   process's current working directory.
+ * - `env`, a `?dict`: extra environment variables for the child. By
+ *   default, they're added to a copy of this process's environment. Set
+ *   `env_replace: true` to give the child only what's in `env`, with
+ *   nothing inherited.
+ * - `env_replace`, a `?bool`: see `env`. Defaults to `false`.
+ * - `stdin`, `stdout` and `stderr`, each a `?string`: one of `'pipe'`,
+ *   which makes the stream readable or writable through the returned
+ *   `Process`, `'inherit'`, which shares this process's own stream, or
+ *   `'null'`, which discards it. `stdin` defaults to `'inherit'`, and
+ *   `stdout` and `stderr` default to `'pipe'`. Don't confuse `'null'`
+ *   with `nil`. `'null'` refers to `/dev/null` on Unix, which behaves
+ *   the same way.
  *
- * Example,
+ * For example:
  *
  * ```zuri-repl
  * %> var p = os.spawn('grep', ['zuri'], { stdin: 'pipe' })
@@ -459,19 +455,19 @@ class Process {
  * %> p.close_stdin()
  * %> p.read_stdout().to_string()
  * hello zuri
- * 
+ *
  * %> p.wait()
  * 0
  * ```
  *
  * @param string cmd
- * @param ?list args: The command's own arguments (not shell-
- *    interpreted the way `exec()`'s combined string is: each
- *    element is passed to the child as one literal argument).
+ * @param ?list args: the command's arguments. They aren't interpreted
+ *    by a shell, as `exec()`'s combined string is, and each element is
+ *    passed to the child as a single argument.
  * @param ?dict options
  * @returns Process
- * @raises Error if `cmd` couldn't be spawned at all (not found, no
- *    permission, ...).
+ * @raises Error if `cmd` couldn't be started at all, for example
+ *    because it wasn't found or permission was denied.
  */
 def spawn(cmd: string, args: ?list, options: ?dict) {
   if args == nil {

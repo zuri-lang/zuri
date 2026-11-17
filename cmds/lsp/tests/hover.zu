@@ -13,10 +13,15 @@ var client = nil
 def hover_at(source: string, marker: string, shift) {
   var address = client.open(SCRATCH, source)
   var at = position(source, marker, shift)
-  var asked = { textDocument: { uri: address }, position: at }
+  var asked = {
+    textDocument: { uri: address },
+    position: at,
+  }
   var answer = client.request('textDocument/hover', asked)
 
-  client.notify('textDocument/didClose', { textDocument: { uri: address } })
+  client.notify('textDocument/didClose', {
+    textDocument: { uri: address },
+  })
 
   return answer == nil ? nil : answer.contents.value
 }
@@ -25,28 +30,35 @@ def hover_at(source: string, marker: string, shift) {
 def help_at(source: string, marker: string) {
   var address = client.open(SCRATCH, source)
   var at = position(source, marker, 0)
-  var asked = { textDocument: { uri: address }, position: at }
+  var asked = {
+    textDocument: { uri: address },
+    position: at,
+  }
   var answer = client.request('textDocument/signatureHelp', asked)
 
-  client.notify('textDocument/didClose', { textDocument: { uri: address } })
+  client.notify('textDocument/didClose', {
+    textDocument: { uri: address },
+  })
 
   return answer
 }
 
 var SOURCE = 'import json\nimport .shapes { Point, Circle, UNIT }\n\n' +
-  'var here = Point(3, 4)\nvar ring = Circle(0, 0, 1)\n' +
-  'echo here.distance(ring)\necho UNIT\necho json.encode(here.x)\nprint(here)\n'
+    'var here = Point(3, 4)\nvar ring = Circle(0, 0, 1)\n' +
+    'echo here.distance(ring)\necho UNIT\necho json.encode(here.x)\nprint(here)\n'
 
 var UNION = 'import sql { Blueprint, Connection, Transaction }\n\n' +
-  'def up(db: Transaction|Connection) {\n' +
-  "  db.schema.create_table('posts', @(table: Blueprint) {\n" +
-  '    table.id()\n' +
-  '  })\n' +
-  "  db.exec('select 1', nil)\n" +
-  '}\n'
+    'def up(db: Transaction|Connection) {\n' +
+    "  db.schema.create_table('posts', @(table: Blueprint) {\n" +
+    '    table.id()\n' +
+    '  })\n' +
+    "  db.exec('select 1', nil)\n" +
+    '}\n'
 
 before_all(@{
-  client = Client(FIXTURE, { diagnostics: { delay: 0 } })
+  client = Client(FIXTURE, {
+    diagnostics: { delay: 0 },
+  })
   client.initialize(nil)
   client.wait_indexed()
 })
@@ -73,15 +85,13 @@ describe('hover', @{
   })
 
   it('shows the type a variable is inferred to hold', @{
-    expect(hover_at(
-      SOURCE, 'var here', 1,
-    )).to_start_with('```zuri\nvar here: Point\n```')
+    expect(hover_at(SOURCE, 'var here', 1))
+        .to_start_with('```zuri\nvar here: Point\n```')
   })
 
   it('shows the value of a constant', @{
-    expect(hover_at(
-      SOURCE, 'echo UNIT', 1,
-    )).to_start_with('```zuri\nconst UNIT = 1\n```')
+    expect(hover_at(SOURCE, 'echo UNIT', 1))
+        .to_start_with('```zuri\nconst UNIT = 1\n```')
   })
 
   it('shows a module and its overview', @{
@@ -99,11 +109,10 @@ describe('hover', @{
 
   it('shows what parent stands for', @{
     var source = 'import .shapes { Point }\nclass P < Point {\n' +
-      '  @new() {\n    parent(1, 2)\n  }\n}\n'
+        '  @new() {\n    parent(1, 2)\n  }\n}\n'
 
-    expect(hover_at(
-      source, 'parent', 2,
-    )).to_start_with('```zuri\nclass Point\n```')
+    expect(hover_at(source, 'parent', 2))
+        .to_start_with('```zuri\nclass Point\n```')
   })
 
   it('shows nothing where nothing is named', @{
@@ -111,9 +120,8 @@ describe('hover', @{
   })
 
   it('shows a parameter of a union type as it is written', @{
-    expect(hover_at(UNION, 'def up(db', 0)).to_contain(
-      'db: Transaction|Connection',
-    )
+    expect(hover_at(UNION, 'def up(db', 0))
+        .to_contain('db: Transaction|Connection')
   })
 
   it('shows a member reached through a union as each type declares it', @{
@@ -129,21 +137,24 @@ describe('signature help', @{
   it('marks the parameter being written', @{
     var help = help_at(SOURCE + 'here.move(1, ', 'here.move(1, ')
 
-    expect(help.signatures[0].label).to_equal('Point.move(dx: number, dy: number)')
+    expect(help.signatures[0].label)
+        .to_equal('Point.move(dx: number, dy: number)')
     expect(help.activeParameter).to_equal(1)
   })
 
   it('shows a constructor by its class', @{
     var help = help_at(SOURCE + 'Circle(', 'print(here)\nCircle(')
 
-    expect(help.signatures[0].label).to_equal('Circle(x: number, y: number, radius: number)')
+    expect(help.signatures[0].label)
+        .to_equal('Circle(x: number, y: number, radius: number)')
     expect(help.activeParameter).to_equal(0)
   })
 
   it("carries each parameter's documentation", @{
     var help = help_at(SOURCE + 'Point(', 'here)\nPoint(')
 
-    expect(help.signatures[0].parameters[0].documentation.value).to_equal('`number` How far along.')
+    expect(help.signatures[0].parameters[0].documentation.value)
+        .to_equal('`number` How far along.')
   })
 
   it('stays on a variadic parameter', @{
@@ -167,7 +178,8 @@ describe('signature help', @{
   it('finds the call being written inside a method', @{
     var head = 'def apply(items, fn, start) {\n  return items\n}\n\nclass Box {\n  f() {\n'
     var past = help_at(
-      head + '    apply([1], @(x) {\n      return x\n    }, ', '}, ',
+      head + '    apply([1], @(x) {\n      return x\n    }, ',
+      '}, ',
     )
     var inside = help_at(
       head + '    apply([1], @(x) {\n      return apply(x, ',
