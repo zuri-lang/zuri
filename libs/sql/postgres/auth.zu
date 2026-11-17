@@ -1,12 +1,12 @@
 /**
  * @module auth
  *
- * The authentication exchanges a PostgreSQL server can ask for.
+ * The authentication exchanges that a PostgreSQL server can ask for.
  *
- * Which one happens is the server's choice, made from its
- * `pg_hba.conf`. A modern server asks for SCRAM-SHA-256; older ones
- * ask for MD5, which PostgreSQL itself now discourages; and a server
- * set to `trust` asks for nothing at all.
+ * The server chooses which one to use, based on its `pg_hba.conf`. A
+ * modern server asks for SCRAM-SHA-256. Older servers ask for MD5,
+ * which PostgreSQL itself now discourages. A server set to `trust`
+ * doesn't ask for anything.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -18,17 +18,16 @@ import hash
 import ..errors { AuthenticationError }
 
 /**
- * The mechanism this adapter implements. Channel binding is not
- * offered, so the server sees plain SCRAM-SHA-256 rather than the
- * `-PLUS` variant.
+ * The mechanism this adapter implements. Channel binding isn't offered,
+ * so the server sees plain SCRAM-SHA-256, not the `-PLUS` variant.
  */
 var SCRAM_SHA_256 = 'SCRAM-SHA-256'
 
 /**
  * Builds the response to an MD5 password request.
  *
- * The scheme is `md5(md5(password + user) + salt)`, hex encoded, with
- * a literal `md5` in front. It is weak and PostgreSQL says so; it is
+ * The scheme is `md5(md5(password + user) + salt)`, hex-encoded, with a
+ * literal `md5` in front. It's weak, and PostgreSQL says so, but it's
  * here because servers still ask for it.
  *
  * @param string user
@@ -44,11 +43,11 @@ def md5_response(user: string, password: string, salt) {
 }
 
 /**
- * A fresh SCRAM nonce.
+ * A new SCRAM nonce.
  *
- * It has to be unpredictable: the nonce is what stops a recorded
- * exchange being replayed, so it comes from the system's random
- * source rather than from `rand()`.
+ * It has to be unpredictable, because the nonce is what stops a
+ * recorded exchange from being replayed, so it comes from the system's
+ * random source, not from `rand()`.
  *
  * @returns string
  */
@@ -87,14 +86,14 @@ def offers_scram(payload) {
 }
 
 /**
- * The client's opening SCRAM message.
+ * The client's first SCRAM message.
  *
- * The username is left empty, which is what PostgreSQL expects: it
- * takes the user from the startup message and ignores this one.
+ * The username is left empty, as PostgreSQL expects. It takes the user
+ * from the startup message and ignores this one.
  *
  * @param string client_nonce
- * @returns dict `{ bare, full }`, the second with the channel binding
- *    header the exchange is signed over.
+ * @returns dict `{ bare, full }`, where `full` includes the channel
+ *    binding header that the exchange is signed over.
  */
 def client_first(client_nonce: string) {
   var bare = 'n=,r=${client_nonce}'

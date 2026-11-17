@@ -21,23 +21,24 @@
  */
 
 /**
- * Base class for every error this module and its adapters raise.
+ * The base class for every error that this module and its adapters
+ * raise.
  *
- * Catch this to catch anything a database can do. The subclasses below
- * separate the cases worth handling differently, and every one of them
- * is a `SqlError`, so a broad catch never misses one.
+ * Catch it to catch anything a database can raise. The subclasses below
+ * distinguish the cases worth handling differently, and every one of
+ * them is a `SqlError`, so a broad catch never misses one.
  *
  * @printable
  */
 class SqlError < Error {
   /**
-   * The engine's own error code, as the engine spells it.
+   * The engine's own error code, in the engine's own form.
    *
-   * A number for SQLite (an extended result code, such as `2067` for a
-   * unique constraint) and for MySQL (its own error number, such as
-   * `1062` for a duplicate key), a string for PostgreSQL (the SQLSTATE,
-   * such as `'23505'`). `nil` when the error came from `sql` itself
-   * rather than from an engine.
+   * For SQLite, it's a number, the extended result code, such as `2067`
+   * for a unique constraint. For MySQL, it's also a number, MySQL's own
+   * error number, such as `1062` for a duplicate key. For PostgreSQL,
+   * it's a string, the SQLSTATE, such as `'23505'`. It's `nil` when the
+   * error came from `sql` itself, not from an engine.
    *
    * @default nil
    */
@@ -66,9 +67,9 @@ class SqlError < Error {
    * The statement that failed, as it was sent to the engine.
    *
    * This is the translated statement, with the adapter's own
-   * placeholders in it, not the `?` form that was written. That is
-   * deliberate: it is the text the engine actually rejected, which is
-   * the text worth putting in a log.
+   * placeholders in it, not the `?` form that was written. That's
+   * intentional: it's the text that the engine actually rejected, and
+   * that's the text worth logging.
    *
    * `nil` for errors raised outside the execution of a statement.
    *
@@ -77,12 +78,12 @@ class SqlError < Error {
   var query
 
   /**
-   * Builds an error, optionally carrying the engine's own detail.
+   * Creates an error, optionally with the engine's own details.
    *
-   * `details` is a dictionary; any of `code`, `sqlstate`, `driver` and
-   * `query` it holds are copied onto the error and the rest ignored.
-   * Adapters fill it in. Application code raising one of these by hand
-   * can leave it out entirely.
+   * `details` is a dictionary. Any of `code`, `sqlstate`, `driver` and
+   * `query` that it contains are copied onto the error, and anything
+   * else is ignored. Adapters fill it in. Application code that raises
+   * one of these errors itself can leave it out.
    *
    * @param string message
    * @param dict|nil details
@@ -111,12 +112,12 @@ class SqlError < Error {
 }
 
 /**
- * The database could not be reached, or the connection dropped.
+ * The database couldn't be reached, or the connection was dropped.
  *
- * A network failure, a refused connection, a server that is not
- * running, a database file that cannot be opened. Retrying is often
- * reasonable; the same query against the same data may well succeed
- * once the cause clears.
+ * For example, a network failure, a refused connection, a server that
+ * isn't running, or a database file that can't be opened. It's often
+ * reasonable to retry, because the same query against the same data may
+ * well succeed once the cause has cleared.
  *
  * @printable
  */
@@ -125,23 +126,24 @@ class ConnectionError < SqlError {}
 /**
  * The server rejected the credentials.
  *
- * A `ConnectionError`, because the connection is what failed, but
- * worth separating: no amount of retrying fixes a wrong password.
+ * It's a `ConnectionError`, because the connection is what failed, but
+ * it's worth distinguishing, because retrying never fixes a wrong
+ * password.
  *
  * @printable
  */
 class AuthenticationError < ConnectionError {}
 
 /**
- * The server sent something the adapter could not make sense of.
+ * The server sent something the adapter couldn't make sense of.
  *
- * A `ConnectionError` because that is what it means in practice: the
- * conversation has lost its place, so nothing further on this
- * connection can be trusted and a pool holding it should discard it
- * rather than lend it out again.
+ * It's a `ConnectionError` because that's what it means in practice.
+ * The exchange has lost its place, so nothing more on this connection
+ * can be trusted, and a pool holding the connection should discard it
+ * instead of lending it out again.
  *
- * Seeing one means either a bug in the adapter or something between
- * it and the server that is not the server.
+ * It means either a bug in the adapter, or something between the
+ * adapter and the server that isn't the server.
  *
  * @printable
  */
@@ -172,10 +174,10 @@ class QueryError < SqlError {}
 /**
  * A constraint rejected the data.
  *
- * Catch this to handle any constraint violation without caring which;
- * the subclasses are there when the difference matters, as it does
- * when a duplicate key means "already exists" and a foreign key
- * violation means "referenced row is gone".
+ * Catch this to handle any constraint violation without caring which
+ * one it was. The subclasses are there for when the difference matters,
+ * for example when a duplicate key means "already exists" and a foreign
+ * key violation means "the referenced row is gone".
  *
  * @printable
  */
@@ -222,11 +224,11 @@ class CheckViolation < IntegrityError {}
 class TransactionError < SqlError {}
 
 /**
- * Two transactions could not both be treated as though they ran alone.
+ * Two transactions couldn't both be treated as though each ran alone.
  *
- * The engine gave up on one of them rather than produce a result that
- * serial execution could not have produced. Retrying the whole
- * transaction is the correct response, and usually succeeds.
+ * The engine gave up on one of them, instead of producing a result that
+ * running them one after the other couldn't have produced. The right
+ * response is to retry the whole transaction, which usually succeeds.
  *
  * @printable
  */
@@ -244,7 +246,7 @@ class SerializationError < TransactionError {}
 class DeadlockError < TransactionError {}
 
 /**
- * Something went wrong with a connection pool rather than with a
+ * Something went wrong with a connection pool, as opposed to with a
  * database.
  *
  * @printable
@@ -252,12 +254,11 @@ class DeadlockError < TransactionError {}
 class PoolError < SqlError {}
 
 /**
- * Every connection was busy and none came free within the acquire
- * timeout.
+ * Every connection in the pool was in use when one was requested.
  *
- * Either the pool is too small for the load or connections are being
- * held longer than they should be; a connection acquired and not
- * released is the usual cause.
+ * Either the pool is too small for the load, or connections are being
+ * held for longer than they should be. The usual cause is a connection
+ * that was acquired and never released.
  *
  * @printable
  */

@@ -1,33 +1,33 @@
 /**
  * @module ed25519
  *
- * Ed25519 signing over a key derived from a password, which is what
- * MariaDB's `client_ed25519` authentication is built on.
+ * Ed25519 signing with a key derived from a password, which MariaDB's
+ * `client_ed25519` authentication is based on.
  *
- * ### Why this is not `crypto.ed25519`
+ * ### Why this doesn't use `crypto.ed25519`
  *
- * An ordinary Ed25519 private key is a 32 byte seed, and signing
- * begins by hashing that seed into the 64 bytes the signature is
- * actually computed from. MariaDB skips the seed: it hashes the
- * password into those 64 bytes directly, so the user's password takes
- * the place of the expanded key rather than the place of the seed.
+ * A normal Ed25519 private key is a 32-byte seed, and signing starts by
+ * hashing the seed into the 64 bytes that the signature is actually
+ * computed from. MariaDB skips the seed and hashes the password
+ * directly into those 64 bytes, so the user's password takes the place
+ * of the expanded key, not of the seed.
  *
- * Nothing in `crypto.ed25519` can express that, since it takes a
- * PEM-encoded key and does its own expansion internally. So the curve
- * arithmetic lives here, where the one thing that needs it is.
+ * `crypto.ed25519` can't do that, because it takes a PEM-encoded key
+ * and expands it internally. So the curve arithmetic is implemented
+ * here, next to the only code that needs it.
  *
  * ### Correctness
  *
- * Everything below the password derivation is Ed25519 exactly as
- * RFC 8032 specifies it, and is checked against that document's test
- * vectors and against `crypto.ed25519` over random keys.
+ * Everything after the password derivation is Ed25519 exactly as RFC
+ * 8032 specifies it. It's tested against the test vectors in that
+ * document, and against `crypto.ed25519` with random keys.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
 import hash
 
-/** The field prime, 2^255 - 19. */
+/** The field prime, 2^255 minus 19. */
 var P = (2n ** 255n) - 19n
 
 /** The order of the base point's subgroup. */

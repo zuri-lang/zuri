@@ -1,15 +1,15 @@
 /**
  * @module html.elements
  *
- * The element tables the tree construction algorithm consults on
+ * The element tables that the tree construction algorithm checks on
  * almost every token: which elements are "special", which are
  * formatting elements, which close which, and how SVG and MathML tag
- * and attribute names have to be repaired after the tokenizer has
- * lowercased them.
+ * and attribute names are corrected after the tokenizer has converted
+ * them to lowercase.
  *
- * These are data, lifted from the WHATWG HTML Living Standard. They
- * live apart from `html.parser` so the algorithm there reads as the
- * algorithm and not as a wall of lists.
+ * This is data taken from the WHATWG HTML Living Standard. It's kept
+ * separate from `html.parser` so that the algorithm there reads as an
+ * algorithm, not as a wall of lists.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
@@ -145,9 +145,9 @@ var FORMATTING_ELEMENTS = [
 ]
 
 /**
- * The HTML elements that make up the "in scope" barrier every scope
- * check shares. The narrower checks (list item scope, button scope)
- * add to this list rather than replacing it.
+ * The HTML elements that form the scope boundary that every scope check
+ * uses. The narrower checks, for list item scope and button scope, add
+ * to this list instead of replacing it.
  */
 var SCOPE_HTML = [
   'applet',
@@ -162,8 +162,8 @@ var SCOPE_HTML = [
 ]
 
 /**
- * Elements whose end tag is implied by the start of a sibling, so
- * that `<li>a<li>b` produces two list items rather than nesting.
+ * Elements whose end tag is implied by the start of a sibling, so that
+ * `<li>a<li>b` produces two list items, not one inside the other.
  */
 var IMPLIED_END_TAGS = [
   'dd',
@@ -179,9 +179,9 @@ var IMPLIED_END_TAGS = [
 ]
 
 /**
- * Everything in {IMPLIED_END_TAGS} plus the elements only closed when
- * the standard says to generate implied end tags *thoroughly*, which
- * is what `</template>` and the table sections do.
+ * Everything in {IMPLIED_END_TAGS}, plus the elements that are only
+ * closed when the standard says to generate implied end tags
+ * *thoroughly*, as `</template>` and the table sections do.
  */
 var THOROUGH_IMPLIED_END_TAGS = [
   'caption',
@@ -205,14 +205,12 @@ var THOROUGH_IMPLIED_END_TAGS = [
 ]
 
 /**
- * The MathML elements whose children are parsed as HTML rather than
- * as MathML.
+ * The MathML elements whose children are parsed as HTML, not as MathML.
  */
 var MATHML_TEXT_INTEGRATION_POINTS = ['mi', 'mo', 'mn', 'ms', 'mtext']
 
 /**
- * The SVG elements whose children are parsed as HTML rather than as
- * SVG.
+ * The SVG elements whose children are parsed as HTML, not as SVG.
  */
 var SVG_HTML_INTEGRATION_POINTS = ['foreignObject', 'desc', 'title']
 
@@ -465,8 +463,8 @@ var QUIRKS_PUBLIC_PREFIXES = [
 ]
 
 /**
- * The two public identifiers that put a document in quirks mode on
- * an exact match rather than a prefix match, in lowercase.
+ * The two public identifiers, in lowercase, that put a document in
+ * quirks mode only on an exact match, not on a prefix match.
  */
 var QUIRKS_PUBLIC_EXACT = [
   '-//w3o//dtd w3 html strict 3.0//en//',
@@ -616,17 +614,17 @@ def _rename_attributes(attributes: dict, renames: dict) {
 }
 
 /**
- * Which quirks mode a doctype puts a document in.
+ * The quirks mode that a doctype puts a document in.
  *
- * _name_ may be `nil` for a doctype with no name at all, and the two
- * identifiers may be `nil` when the doctype omits them; all three
+ * _name_ can be `nil` for a doctype with no name at all, and the two
+ * identifiers can be `nil` when the doctype leaves them out. All three
  * cases mean something different to the algorithm, which is why they
- * are not folded into empty strings.
+ * aren't converted to empty strings.
  *
  * Returns `'no-quirks'`, `'limited-quirks'` or `'quirks'`. Nothing in
- * this module behaves differently between them, but knowing which one
- * a browser would have picked is exactly the question you are asking
- * when you audit a legacy document.
+ * this module behaves differently in the three modes, but knowing which
+ * one a browser would have chosen is exactly what you want to find out
+ * when you audit an old document.
  *
  * @param ?string name
  * @param ?string public_id

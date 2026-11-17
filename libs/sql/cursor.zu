@@ -206,11 +206,11 @@ class Cursor {
   }
 
   /**
-   * Iteration reads one row at a time, so `for row in cursor` holds
-   * one row rather than the whole result.
+   * Iteration reads one row at a time, so `for row in cursor` only
+   * holds one row, not the whole result.
    *
-   * The row is fetched by `@key` and handed back by `@value`, which is
-   * why it is parked here in between rather than fetched twice.
+   * The row is fetched by `@key` and returned by `@value`, so it's kept
+   * here in between instead of being fetched twice.
    */
   @key(previous) {
     if (self._closed or self._exhausted) and !self._has_pending {

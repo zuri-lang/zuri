@@ -1,11 +1,11 @@
 /**
  * @module uint8
  *
- * `UInt8Array`: a packed array of unsigned 8-bit integers, 1 byte per
- * element.
+ * `UInt8Array`, a packed array of 8-bit unsigned integers, with 1 byte
+ * per element.
  *
- * `UINT8_MAX` and `UINT8_MIN` bound what an element
- * may be; a value outside them raises rather than wrapping.
+ * `UINT8_MAX` and `UINT8_MIN` are the limits for an element. A value
+ * outside them raises an error, instead of wrapping around.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
@@ -64,9 +64,9 @@ class UInt8Array < Array {
   }
 
   /**
-   * Returns a new UInt8Array over `[start, end)` of this array
-   * (both default to the whole array; negative bounds count from
-   * the end).
+   * Returns a new `UInt8Array` with the elements from `start` up to,
+   * but not including, `end`. Both default to the whole array, and
+   * negative values count from the end.
    *
    * @param ?number start
    * @param ?number end

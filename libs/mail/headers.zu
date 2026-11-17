@@ -1,14 +1,14 @@
 /**
  * @module headers
  *
- * The header block of a message: what is in it, in what order, and how
- * it is written back out.
+ * The header block of a message: what's in it, in what order, and how
+ * it's written out.
  *
- * Mail headers are not a dictionary. The same name can appear more
- * than once and the order matters, which is why `Received` traces a
- * route and why a signature covers the headers it covers. `Headers`
+ * Mail headers aren't a dictionary. The same name can appear more than
+ * once, and the order matters. That's how `Received` headers trace a
+ * route, and why a signature covers the headers it covers. `Headers`
  * keeps them as they were, matches names without regard to case, and
- * hands back one value or all of them as the caller asks.
+ * returns one value or all of them, as you ask.
  *
  * ```zuri
  * import mail.headers { Headers }
@@ -66,8 +66,8 @@ var ADDRESS_HEADERS = [
 /**
  * Puts a folded header value back together.
  *
- * A header may be split across lines by starting the next one with
- * whitespace. Unfolding removes the line break and leaves the
+ * A header can be split across lines by starting each continuation line
+ * with whitespace. Unfolding removes the line break and keeps the
  * whitespace, which is what it stood for.
  *
  * @param string text
@@ -178,13 +178,12 @@ class Headers {
   /**
    * Reads a header block.
    *
-   * Lines that continue the one before them are joined back together.
-   * A line that is not a header and does not continue one is skipped,
-   * which is what lets a message with an mbox separator in front of it
-   * still be read.
+   * Continuation lines are joined to the line before them. A line that
+   * isn't a header and doesn't continue one is skipped, so a message
+   * with an mbox separator in front of it can still be read.
    *
-   * @param string|bytes text: The block, without the blank line that
-   *    ends it.
+   * @param string|bytes text: the block, without the blank line that
+   *    ends it
    * @returns Headers
    */
   static parse(text) {

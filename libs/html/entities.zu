@@ -1,22 +1,21 @@
 /**
  * @module html.entities
  *
- * Character reference handling for HTML: turning text into something
- * safe to drop into a document (`encode()`), and turning a document's
- * `&amp;`-style references back into the characters they stand for
- * (`decode()`).
+ * Character references in HTML: making text safe to put into a document
+ * (`encode()`), and turning references such as `&amp;` back into the
+ * characters they stand for (`decode()`).
  *
- * Both directions follow the WHATWG HTML Living Standard. Decoding
- * understands all 2231 named references, decimal references
- * (`&#169;`), hexadecimal references (`&#xA9;`), the Windows-1252
- * substitutions the standard mandates for code points in the C1
- * range, and the awkward legacy rule that lets a handful of names
- * work without their trailing semicolon.
+ * Both follow the WHATWG HTML Living Standard. Decoding understands all
+ * 2231 named references, decimal references (`&#169;`), hexadecimal
+ * references (`&#xA9;`), the Windows-1252 substitutions that the
+ * standard requires for code points in the C1 range, and the awkward
+ * legacy rule that lets a few names work without their trailing
+ * semicolon.
  *
  * ```zuri-repl
  * %> import html
- * %> html.decode('caf&eacute; &#8212; &#x2603;')
- * 'café: ☃'
+ * %> html.decode('caf&eacute; &#169; &#x2603;')
+ * 'café © ☃'
  * %> html.encode('<a href="x">Tom & Jerry</a>')
  * '&lt;a href=&quot;x&quot;&gt;Tom &amp; Jerry&lt;/a&gt;'
  * ```
@@ -213,13 +212,13 @@ def _is_control(code: number) {
 }
 
 /**
- * Applies the standard's "numeric character reference end state" rules
- * to a raw code point and returns the string it should decode to.
+ * Applies the standard's rules for the "numeric character reference end
+ * state" to a code point, and returns the string it decodes to.
  *
  * Null, out-of-range and surrogate code points become U+FFFD. Code
- * points in the C1 range are remapped through Windows-1252.
- * Noncharacters and control characters are parse errors but decode to
- * themselves, which is what browsers do and what round-tripping
+ * points in the C1 range are mapped through Windows-1252. Noncharacters
+ * and control characters are parse errors, but they decode to
+ * themselves, which is what browsers do, and what round-tripping
  * malformed documents depends on.
  *
  * @param number code
@@ -287,27 +286,27 @@ def _longest_match(chars: list, start: number) {
 }
 
 /**
- * Consumes a character reference from _chars_ beginning at the
- * ampersand at index _start_.
+ * Reads a character reference from _chars_, starting at the ampersand
+ * at index _start_.
  *
- * This is the standard's "character reference state" as a single call,
- * shared by `decode()` and by the tokenizer so both agree on every
- * edge case. It always succeeds: when the text at _start_ is not a
- * valid reference the ampersand is returned as an ordinary character
- * and _next_ points just past it.
+ * This is the standard's "character reference state" in a single call,
+ * shared by `decode()` and by the tokenizer, so that both handle every
+ * edge case the same way. It always succeeds. If the text at _start_
+ * isn't a valid reference, the ampersand is returned as an ordinary
+ * character, and _next_ points just after it.
  *
- * _in_attribute_ selects the attribute-value flavour of the algorithm.
- * Inside an attribute a semicolon-less legacy reference followed by
- * `=` or by an alphanumeric is left alone, so that a query string like
- * `?x=1&notit=2` keeps its literal `&not` rather than turning into
- * `¬it`.
+ * _in_attribute_ selects the version of the algorithm used for
+ * attribute values. Inside an attribute, a legacy reference without a
+ * semicolon that's followed by `=` or by a letter or digit is left
+ * alone, so that a query string like `?x=1&notit=2` keeps its literal
+ * `&not` instead of turning into `¬it`.
  *
- * The returned dictionary has:
+ * The returned dictionary has these keys:
  *
- * - `text`: the decoded text (never `nil`, never empty)
- * - `next`: index of the first character not consumed
- * - `error`: `nil`, or a short description of the parse error the
- *   standard raises for this input; the text is still produced
+ * - `text`: the decoded text, which is never `nil` or empty
+ * - `next`: the index of the first character that wasn't read
+ * - `error`: `nil`, or a short description of the parse error that the
+ *   standard raises for this input. The text is still produced.
  *
  * @param list chars
  * @param number start
@@ -435,10 +434,10 @@ def _consume_numeric_reference(chars: list, start: number) {
 }
 
 /**
- * The parse error a numeric reference for _code_ raises, or `nil` when
- * the code point is unremarkable.
+ * The parse error that a numeric reference to _code_ raises, or `nil`
+ * if there's nothing wrong with the code point.
  *
- * Only the error name differs between these cases; what the reference
+ * Only the error name differs between these cases. What the reference
  * decodes to is decided by `code_point_to_string()`.
  *
  * @param number code
@@ -702,13 +701,13 @@ def escape_text(text: string) {
 }
 
 /**
- * Escapes _value_ the way the HTML fragment serialization algorithm
- * requires for a double-quoted attribute value.
+ * Escapes _value_ as the HTML fragment serialization algorithm requires
+ * for an attribute value in double quotes.
  *
- * Three characters change: `&` becomes `&amp;`, U+00A0 becomes
- * `&nbsp;` and `"` becomes `&quot;`. `<` and `>` are deliberately left
- * alone; they are ordinary characters inside a quoted attribute and
- * escaping them would needlessly change the value's serialized form.
+ * Three characters change: `&` becomes `&amp;`, U+00A0 becomes `&nbsp;`
+ * and `"` becomes `&quot;`. `<` and `>` are intentionally left alone.
+ * They're ordinary characters inside a quoted attribute, and escaping
+ * them would change the serialized form of the value for no reason.
  *
  * @param string value
  * @returns string

@@ -1,7 +1,8 @@
 /**
  * @module jwt.signer
  *
- * `Signer`, a reusable configured wrapper around `core.sign()`.
+ * `Signer`, a reusable wrapper around `core.sign()` that keeps its
+ * settings.
  */
 
 import .core { sign }

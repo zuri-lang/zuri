@@ -1,8 +1,7 @@
 /**
  * @module zip
  *
- * The `zip` module contains classes and functions to make
- * working with zip archives easy.
+ * Creates, reads and extracts ZIP archives.
  *
  * @copyright 2022, Richard Ore and The Zuri Contributors
  */
@@ -185,13 +184,20 @@ class ZipItem {
   var data
 
   /**
-   * Creates a new ZipItem from a dictionary. The dictionary
-   * should contain the following keys: - `name`: string - `dir`:
-   * string &mdash; optional - `compress_method`: number - `crc`:
-   * number - `filemtime`: number - `size_compressed`: number -
-   * `size_uncompressed`: number - `encrypted`: boolean -
-   * `error`: string &mdash; optional - `data`: bytes -
-   * `permission`: number
+   * Creates a `ZipItem` from a dictionary, which should have these
+   * keys:
+   *
+   * - `name`: string
+   * - `dir`: string, optional
+   * - `compress_method`: number
+   * - `crc`: number
+   * - `filemtime`: number
+   * - `size_compressed`: number
+   * - `size_uncompressed`: number
+   * - `encrypted`: boolean
+   * - `error`: string, optional
+   * - `data`: bytes
+   * - `permission`: number
    *
    * @param {dict} dict
    * @returns ZipItem
@@ -854,17 +860,17 @@ class ZipArchive {
   }
 
   /**
-   * Adds the specified `directory` recursively to the archive
-   * and set's it path in the archive to `dir`.
+   * Adds `directory` and everything in it to the archive, under the
+   * path `dir` in the archive.
    *
-   * - If `file_blacklist` is not empty, this function will
-   * ignore every file with a matching path. - If `ext_blacklist`
-   * is not empty, this function will ignore every file with a
-   * matching.
+   * - If `file_blacklist` isn't empty, every file whose path matches an
+   *   entry in it is skipped.
+   * - If `ext_blacklist` isn't empty, every file whose extension
+   *   matches an entry in it is skipped.
    *
    * @param string directory
-   * @param ?list file_blacklist: Default value is `[]`
-   * @param ?list ext_blacklist: Default value is `[]`
+   * @param ?list file_blacklist: defaults to `[]`.
+   * @param ?list ext_blacklist: defaults to `[]`.
    * @returns bool
    */
   add_directory(

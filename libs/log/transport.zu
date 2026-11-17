@@ -1,18 +1,19 @@
 /**
  * @module log.transport
  *
- * The `Transport` base class every log sink (console, file, or a
- * custom subclass) is built on, plus the registry of active
- * transports and the shared dispatch loop every level function
- * writes through. These live in the same file as `Transport` itself
- * (rather than off in `dispatch.zu` alongside `default_transport()`)
- * specifically so `Transport.close()` can remove itself from the
- * registry without a cross-file call back into a file that in turn
- * depends on this one: `console.zu`/`file.zu` need `Transport` from
- * here, and `dispatch.zu` needs `ConsoleTransport` from `console.zu`,
- * so a `Transport` depending on `dispatch.zu` for `remove_transport()`
- * would be a genuine import cycle. Keeping the registry here instead
- * keeps every dependency pointing one direction.
+ * The `Transport` base class, which every log destination is built on,
+ * whether it's the console, a file or a custom subclass. This module
+ * also holds the registry of active transports, and the dispatch loop
+ * that every level function writes through.
+ *
+ * They're in the same file as `Transport`, instead of in `dispatch.zu`
+ * with `default_transport()`, so that `Transport.close()` can remove
+ * itself from the registry without importing a file that depends on
+ * this one. `console.zu` and `file.zu` need `Transport` from here, and
+ * `dispatch.zu` needs `ConsoleTransport` from `console.zu`, so if
+ * `Transport` depended on `dispatch.zu` for `remove_transport()`, the
+ * imports would form a cycle. Keeping the registry here means every
+ * dependency points in one direction.
  */
 
 import .level { * }
@@ -295,40 +296,40 @@ class Transport {
   }
 
   /**
-   * Formats the log records for the current level for writing to
-   * the transport's stream. The default implementation of this
-   * method is exactly as seen when using the
-   * [[log.default_transport]] which logs to the console. The
-   * method should be overridden by subclasses to get a custom
-   * formatting.
+   * Formats the log records for the current level, ready to be written
+   * to the transport's stream. The default implementation produces the
+   * output you see from the [[log.default_transport]], which logs to
+   * the console. Subclasses override this to format messages
+   * differently.
    *
-   * When the last element of `records` is a dict, it's treated as
-   * structured fields rather than a plain message argument and
-   * rendered as trailing `key=value` pairs: `log.info('processing',
-   * { user_id: 5 })` renders as `... processing user_id=5`. Fields
-   * bound via a [[log.Logger]] (through `context`) are merged in the
-   * same way.
+   * If the last element of `records` is a dictionary, it's treated as
+   * structured fields, not as part of the message, and written as
+   * `key=value` pairs at the end. For example,
+   * `log.info('processing', { user_id: 5 })` is written as
+   * `... processing user_id=5`. Fields bound with a [[log.Logger]],
+   * which arrive in `context`, are added in the same way.
    *
-   * > __IMPORTANT!__
+   * > **Important**
    * >
-   * > The result of this function will be passed into the
-   * > [[log.Transport.write()]] function so transport
-   * > implementations *MUST* ensure to expect the same type as
-   * > is returned from this function in the
-   * > [[log.Transport.write()]] function message parameter.
+   * > The result of this method is passed to
+   * > [[log.Transport.write()]], so a transport's `write()` method
+   * > must accept whatever its `format()` method returns, as its
+   * > message parameter.
    *
-   * Transport implementations should be aware of the following
-   * available private fields in the transport class:
+   * Transport implementations can use these private fields of the
+   * transport class:
    *
-   * - _[[log.LogLevel]]_ `self._level` - _string_
-   * `self._log_name` - _bool_ `self._show_name` - _bool_
-   * `self._show_time` - _bool_ `self._show_level`
+   * - [[log.LogLevel]] `self._level`
+   * - string `self._log_name`
+   * - bool `self._show_name`
+   * - bool `self._show_time`
+   * - bool `self._show_level`
    *
    * @params {list[any]} records
    * @param {log.LogLevel} level
    * @param {?dict} context Optional `{name: ?string, fields: dict}`,
-   *    supplied by a [[log.Logger]] call; absent for the flat
-   *    module-level `log.info()`-style calls.
+   *    passed by a [[log.Logger]] call. It isn't passed by the
+   *    module-level functions, such as `log.info()`.
    * @returns any
    */
   format(records, level, context) {

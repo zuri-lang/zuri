@@ -1,63 +1,49 @@
 /**
  * @module tar
  *
- * This module adds support for creating and extracting TAR
- * archives.
+ * Creates and extracts TAR archives.
  *
- * ## Important
+ * The module has two functions, `compress()` and `extract()`, for
+ * creating and extracting archives quickly.
  *
- * The library exports two helper function `compress()` and
- * `extract()` by that allows you to create and/or extract TAR
- * archives.
+ * It supports the common extensions, `.tar.gz`, `.tar`, `.gz`, `.tgz`,
+ * `.tar.bz2`, `.bz2` and `.tbz`, which cover the three kinds of
+ * archive: uncompressed, compressed with gzip, and compressed with
+ * bzip2.
  *
- * This library supports the most popular extensions such as
- * `.tar.gz`, `.tar`, `.gz`, `.tgz`, `.tar.bz2`, `.bz2`, and
- * `.tbz`: the three archive shapes: uncompressed, gzip-compressed,
- * and bzip2-compressed.
+ * ## Extracting an archive
  *
- *
- * ## Extracting TAR archives
- * ---
- *
- * Use the helper function `extract()` for a quick way to extract
- * TAR archives.
+ * The quickest way to extract an archive is with `extract()`:
  *
  * ```zuri
- * import tar
- * 
+ * import compress.tar
+ *
  * tar.extract('/path/to/archive.tar.gz', '/destination')
  * ```
  *
- * The destination can be omitted in which case the archive will
- * be extracted into the same directory as the source with same
- * name without the last extension. e.g. for
- * `/path/to/file.tar.gz` will extract to `/path/to/file.tar`
- * directory is the destination is not given.
+ * If you leave out the destination, the archive is extracted next to
+ * the source, into a directory with the same name minus the last
+ * extension. For example, `/path/to/file.tar.gz` is extracted to the
+ * directory `/path/to/file.tar`.
  *
- * _See below for learn more about the `extract()` method_
+ * See `extract()` below for more details.
  *
+ * ## Creating an archive
  *
- * ## Creating a new TAR ball
- * ---
- *
- * To quickly create a new tarball, you can use the `compress()`
- * helper function in the library like this,
+ * The quickest way to create an archive is with `compress()`:
  *
  * ```zuri
- * import tar
- * 
+ * import compress.tar
+ *
  * tar.compress('/path/to/file/or/directory', '/destination.tar.gz')
  * ```
  *
- * The compress function can be used to compress a single file or
- * an entire directory. Like the `extract()` function, you can
- * choose to omit the destination parameter in which case
- * compress will save the file to the current working directory
- * with the same name as the file/directory with the extension
- * `.tar.gz`.
+ * `compress()` can archive a single file or a whole directory. As with
+ * `extract()`, you can leave out the destination, in which case the
+ * archive is saved in the current working directory, with the name of
+ * the file or directory and the extension `.tar.gz`.
  *
- * _See below for learn more about the `compress()` method_
- *
+ * See `compress()` below for more details.
  *
  * @copyright 2024, Richard Ore and The Zuri Contributors
  */
@@ -178,11 +164,12 @@ class Tar {
   var _on_adds = []
 
   /**
-   * Set the compression level and type.
+   * Sets the compression level and type.
    *
-   * @param {int} level Compression level (0 to 9) - Default = 9
-   * @param {int} type Type of compression to use (use COMPRESS_*
-   *    constants) - Default = COMPRESS_AUTO
+   * @param {int} level The compression level, from 0 to 9. Defaults to
+   *    9.
+   * @param {int} type The type of compression, one of the `COMPRESS_*`
+   *    constants. Defaults to `COMPRESS_AUTO`.
    * @throws {TarIllegalCompressionError}
    */
   set_compression(level: ?int, type: ?int) {

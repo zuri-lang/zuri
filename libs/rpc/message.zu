@@ -1,18 +1,18 @@
 /**
  * @module message
  *
- * The messages JSON-RPC 2.0 exchanges, a {Request}, a {Notification}
- * and a {Response}, and turning them to and from JSON.
+ * The messages that JSON-RPC 2.0 exchanges, which are {Request},
+ * {Notification} and {Response}, and their conversion to and from JSON.
  *
  * Every message is a JSON object whose `jsonrpc` member is the string
- * `'2.0'`. A request names a `method`, may carry `params`, and has an
- * `id` its response is matched to. A notification is a request
- * without an `id`, and nothing answers it. A response carries the
- * `id` of the request it answers and either a `result` or an
- * `error`, never both. A message may also be a batch: a JSON array
- * of messages sent and answered together.
+ * `'2.0'`. A request names a `method`, can have `params`, and has an
+ * `id` that its response is matched by. A notification is a request
+ * without an `id`, and nothing answers it. A response has the `id` of
+ * the request it answers, and either a `result` or an `error`, never
+ * both. A message can also be a batch, which is a JSON array of
+ * messages sent and answered together.
  *
- * Re-exported by `rpc`.
+ * The `rpc` module re-exports these.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -47,12 +47,11 @@ class Request {
   /**
    * Returns a new {Request}.
    *
-   * @param string method: The method to call.
-   * @param list|dict|nil params: Its parameters, by position as a
-   *    list or by name as a dictionary; `nil` sends none.
-   * @param string|number id: What the answer will be matched by.
-   * @throws ValueError when `params` is not a list, a dictionary or
-   *    `nil`.
+   * @param string method: the method to call.
+   * @param list|dict|nil params: its parameters, by position as a list
+   *    or by name as a dictionary. `nil` sends no parameters.
+   * @param string|number id: the value the answer is matched by.
+   * @throws ValueError if `params` isn't a list, a dictionary or `nil`.
    */
   @new(method: string, params, id) {
     _check_params(params)
@@ -103,11 +102,10 @@ class Notification {
   /**
    * Returns a new {Notification}.
    *
-   * @param string method: The method to call.
-   * @param list|dict|nil params: Its parameters, by position as a
-   *    list or by name as a dictionary; `nil` sends none.
-   * @throws ValueError when `params` is not a list, a dictionary or
-   *    `nil`.
+   * @param string method: the method to call.
+   * @param list|dict|nil params: its parameters, by position as a list
+   *    or by name as a dictionary. `nil` sends no parameters.
+   * @throws ValueError if `params` isn't a list, a dictionary or `nil`.
    */
   @new(method: string, params) {
     _check_params(params)
@@ -157,14 +155,15 @@ class Notification {
 class Response {
 
   /**
-   * Returns a new {Response}. `success()` and `failure()` say which
-   * kind more plainly.
+   * Returns a new {Response}. `success()` and `failure()` make it
+   * clearer which kind you're creating.
    *
-   * @param string|number|nil id: The `id` of the request answered.
-   * @param any result: What the method returned; ignored when
+   * @param string|number|nil id: the `id` of the request being
+   *    answered.
+   * @param any result: what the method returned. It's ignored if
    *    `error` is given.
-   * @param ?RpcError error: What the method failed with, or `nil`
-   *    for a success.
+   * @param ?RpcError error: what the method failed with, or `nil` for a
+   *    success.
    */
   @new(id, result, error) {
     self.id = id
@@ -195,7 +194,7 @@ class Response {
   }
 
   /**
-   * True when the response carries an error rather than a result.
+   * True if the response contains an error, as opposed to a result.
    *
    * @returns bool
    */

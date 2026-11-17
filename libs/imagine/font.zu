@@ -1,12 +1,12 @@
 /**
  * @module font
  *
- * `Font`: a loaded TrueType or OpenType face, ready to measure and draw
- * text with.
+ * `Font`, a loaded TrueType or OpenType font, ready for measuring and
+ * drawing text.
  *
- * Glyph rasterisation and metrics come from the font file itself, so
- * kerning and line height are whatever the designer specified rather
- * than an approximation.
+ * Glyph shapes and metrics come from the font file itself, so the
+ * kerning and line height are exactly what the designer specified, not
+ * an approximation.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -21,10 +21,10 @@ import .errors { FontError }
 import .strokefont { StrokeFont }
 
 /**
- * Where `Font.system()` looks, in order, per platform.
+ * Where `Font.system()` looks on each platform, in order.
  *
- * Only the standard locations; a font installed somewhere unusual is
- * loaded by path with `Font.load()` instead.
+ * Only the standard locations are searched. To use a font installed
+ * somewhere else, load it by its path with `Font.load()`.
  */
 var _SEARCH_PATHS = {
   linux: [
@@ -102,10 +102,10 @@ class Font {
   var _source
 
   /**
-   * Wraps an already-parsed face.
+   * Wraps a font that has already been parsed.
    *
-   * Not the way to get a `Font`; use `load()`, `from_bytes()`,
-   * `system()` or `default()`, all of which end up here.
+   * This isn't the way to get a `Font`. Use `load()`, `from_bytes()`,
+   * `system()` or `default()`, which all end up here.
    *
    * @param ptr handle
    * @param number size
@@ -120,11 +120,11 @@ class Font {
   /**
    * Loads a TrueType or OpenType font from a file.
    *
-   * The parsed face is cached by absolute path, so loading the same
-   * file twice in one process parses it once.
+   * The parsed font is cached by its absolute path, so loading the same
+   * file twice in one process only parses it once.
    *
-   * @param string path: A path to a `.ttf`, `.otf` or `.ttc` file.
-   * @param ?number size: The size in pixels - Default: 16.
+   * @param string path: the path to a `.ttf`, `.otf` or `.ttc` file
+   * @param ?number size: the size in pixels. Defaults to 16.
    * @returns Font
    */
   static load(path: string, size) {
@@ -155,14 +155,14 @@ class Font {
   }
 
   /**
-   * Parses a font already held in memory.
+   * Parses a font that's already in memory.
    *
-   * Useful for a font embedded in the program, downloaded, or read out
-   * of an archive. Nothing is cached, since there is no path to key a
-   * cache on; call this once and keep the result.
+   * This is useful for a font embedded in the program, downloaded, or
+   * read from an archive. Nothing is cached, because there's no path to
+   * use as the cache key, so call this once and keep the result.
    *
    * @param bytes data
-   * @param ?number size: The size in pixels - Default: 16.
+   * @param ?number size: the size in pixels. Defaults to 16.
    * @returns Font
    */
   static from_bytes(data: bytes, size) {
@@ -178,19 +178,18 @@ class Font {
   }
 
   /**
-   * Finds a font installed on this machine by family name.
+   * Finds a font installed on this machine by its family name.
    *
    * The standard font directories for the platform are searched, and
    * the match ignores case, spaces and hyphens, so `'DejaVu Sans'`,
-   * `'dejavusans'` and `'DejaVuSans'` all find the same file. A
-   * family with several weights matches whichever file the search
-   * reaches first, which is why `load()` is the right call when a
-   * specific weight matters.
+   * `'dejavusans'` and `'DejaVuSans'` all find the same file. If a
+   * family has several weights, this returns whichever file the search
+   * finds first, so use `load()` when you need a particular weight.
    *
-   * Raises `FontError` when nothing matches.
+   * Raises a `FontError` if nothing matches.
    *
    * @param string family
-   * @param ?number size: The size in pixels - Default: 16.
+   * @param ?number size: the size in pixels. Defaults to 16.
    * @returns Font
    */
   static system(family, size) {
@@ -206,19 +205,18 @@ class Font {
   }
 
   /**
-   * Finds a reasonable sans-serif font installed on this machine.
+   * Finds a suitable sans-serif font installed on this machine.
    *
-   * A short list of the families most likely to be installed is tried
-   * in turn. This is a convenience for scripts and tests, not
-   * something to rely on for output that has to look the same
-   * everywhere: which font it lands on depends entirely on the
-   * machine, and a container image with no fonts installed has none to
-   * find.
+   * It tries a short list of the families that are most likely to be
+   * installed, in order. This is a convenience for scripts and tests,
+   * not something to rely on for output that has to look the same
+   * everywhere. The font it finds depends entirely on the machine, and
+   * a container image without fonts has none to find.
    *
-   * Raises `FontError` when the machine has no usable font, with a
-   * message saying so rather than a parse failure.
+   * Raises a `FontError` if the machine has no usable font, with a
+   * message that says so, not a parsing error.
    *
-   * @param ?number size: The size in pixels - Default: 16.
+   * @param ?number size: the size in pixels. Defaults to 16.
    * @returns Font
    */
   static sans(size) {
@@ -250,15 +248,15 @@ class Font {
   /**
    * The built-in font, which is always available.
    *
-   * `imagine` ships no font file, so `system()` and `sans()` both
-   * depend on what happens to be installed and can fail. This one
-   * cannot: it is drawn from stroke geometry rather than loaded, and
-   * scales to any size.
+   * `imagine` doesn't include any font files, so `system()` and
+   * `sans()` both depend on what's installed, and can fail. This one
+   * can't fail, because it's drawn from strokes instead of being loaded
+   * from a file, and it scales to any size.
    *
    * The result is a [[imagine.StrokeFont]], not a `Font`. The two have
-   * the same interface, so anywhere a font is accepted either works.
-   * Read that class's own documentation for what the built-in font is
-   * and is not suitable for.
+   * the same interface, so either one works anywhere a font is
+   * accepted. See the `StrokeFont` documentation for what the built-in
+   * font is and isn't suitable for.
    *
    * ```zuri
    * var font = Font.builtin(20)
@@ -266,7 +264,7 @@ class Font {
    * chart.text(12, 8, 'requests / second', font, '#334155')
    * ```
    *
-   * @param ?number size: The size in pixels - Default: 16.
+   * @param ?number size: the size in pixels. Defaults to 16.
    * @returns StrokeFont
    */
   static builtin(size) {
@@ -363,13 +361,14 @@ class Font {
   /**
    * Breaks a string into lines that fit within a width.
    *
-   * Returns the same text with newlines inserted, ready to hand to
-   * `Image.text()`. Newlines already in the text are kept as
-   * paragraph breaks, and runs of spaces are collapsed to one.
+   * Returns the same text with line breaks added, ready to pass to
+   * `Image.text()`. Line breaks already in the text are kept as
+   * paragraph breaks, and runs of spaces become a single space.
    *
-   * Words are kept whole where they can be. A single word too long for
-   * the width is broken between characters rather than allowed to
-   * overflow, since overflowing text in an image cannot be scrolled to.
+   * Words are kept whole where possible. A single word that's too long
+   * for the width is broken between characters, instead of being
+   * allowed to overflow, because text that overflows an image can't be
+   * scrolled into view.
    *
    * ```zuri
    * var body = Font.load('Inter.ttf', 16)
@@ -379,8 +378,8 @@ class Font {
    * ```
    *
    * @param string text
-   * @param number width: The maximum line width in pixels.
-   * @param ?dict options: `tracking`, as `measure()` takes.
+   * @param number width: the maximum width of a line in pixels
+   * @param ?dict options: `tracking`, as for `measure()`
    * @returns string
    */
   wrap(text, width: number, options) {
@@ -449,14 +448,14 @@ class Font {
   /**
    * Rasterizes a string into an 8-bit coverage mask.
    *
-   * Returns a dictionary holding `coverage` (the mask, one byte per
-   * pixel), `width`, `height` and `baseline`. Drawing the mask through
-   * `Canvas.draw_mask()` is what `Image.text()` does; this is here for
+   * Returns a dictionary with `coverage`, the mask, with one byte per
+   * pixel, along with `width`, `height` and `baseline`. `Image.text()`
+   * draws the mask with `Canvas.draw_mask()`, and this method is for
    * code that wants the mask itself, to use as a stencil or an alpha
    * channel.
    *
    * @param string text
-   * @param ?dict options: `tracking`, `line_height`, `align`.
+   * @param ?dict options: `tracking`, `line_height` and `align`
    * @returns dict
    */
   render(text, options) {

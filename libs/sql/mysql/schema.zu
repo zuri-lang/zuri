@@ -5,19 +5,20 @@
  *
  * ### A schema is a database
  *
- * MySQL has no layer between the server and a database: what the SQL
- * standard calls a schema is what MySQL calls a database, and
+ * MySQL has nothing between the server and a database. What the SQL
+ * standard calls a schema, MySQL calls a database, and
  * `information_schema.table_schema` holds the database name. So the
- * `schema` argument every method here takes names a database, and
- * leaving it out means the one the connection is using.
+ * `schema` argument that every method here takes names a database, and
+ * leaving it out means the database the connection is using.
  *
- * ### Why nothing is grouped by the server
+ * ### Why rows aren't grouped by the server
  *
- * An index over several columns arrives as one row per column, and the
- * obvious `group_concat` would gather them server side. It also
- * truncates silently at `group_concat_max_len`, which is a kilobyte by
- * default, so a wide index would come back missing columns with
- * nothing to say it had. The rows are grouped here instead.
+ * An index on several columns is returned as one row per column, and
+ * the obvious way to combine them on the server is `group_concat`. But
+ * `group_concat` silently truncates its result at
+ * `group_concat_max_len`, which is a kilobyte by default, so a wide
+ * index would come back with columns missing and nothing to show it.
+ * The rows are grouped here instead.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -61,9 +62,9 @@ class MySqlSchema < SchemaAdapter {
   /**
    * The columns of `table`, in order.
    *
-   * The type is the one the table was declared with, `varchar(64)`
-   * rather than `varchar`, since on MySQL the width is frequently the
-   * part worth knowing.
+   * The type is the one the table was declared with, such as
+   * `varchar(64)`, not just `varchar`, because on MySQL the width is
+   * often the part worth knowing.
    *
    * @param string table
    * @param string|nil schema

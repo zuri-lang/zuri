@@ -1,7 +1,7 @@
 /**
  * @module pop3
  *
- * POP3: the client end of collecting mail.
+ * POP3, the client side of collecting mail.
  *
  * ```zuri,ignore
  * import mail.pop3 { Pop3Client }

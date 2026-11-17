@@ -3,11 +3,11 @@
  *
  * A PostgreSQL statement compiled once and run many times.
  *
- * Every statement this adapter runs is compiled on the server, so a
- * prepared statement is not doing anything a plain query does not. The
- * difference is ownership: this one has a name of its own and is
- * released when the program says so, rather than living in the
- * connection's cache and being evicted when the cache fills.
+ * This adapter compiles every statement on the server, so a prepared
+ * statement doesn't do anything that a plain query doesn't. The
+ * difference is ownership. A prepared statement has its own name and is
+ * only released when the program says so, instead of living in the
+ * connection's cache and being removed when the cache fills up.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

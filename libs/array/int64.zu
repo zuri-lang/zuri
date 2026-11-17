@@ -1,11 +1,11 @@
 /**
  * @module int64
  *
- * `Int64Array`: a packed array of twos-complement 64-bit signed integers, 8 bytes per
- * element.
+ * `Int64Array`, a packed array of 64-bit signed integers in two's
+ * complement, with 8 bytes per element.
  *
- * `INT64_MAX` and `INT64_MIN` bound what an element
- * may be; a value outside them raises rather than wrapping.
+ * `INT64_MAX` and `INT64_MIN` are the limits for an element. A value
+ * outside them raises an error, instead of wrapping around.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
@@ -98,9 +98,9 @@ class Int64Array < Array {
   }
 
   /**
-   * Returns a new Int64Array over `[start, end)` of this array
-   * (both default to the whole array; negative bounds count from
-   * the end).
+   * Returns a new `Int64Array` with the elements from `start` up to,
+   * but not including, `end`. Both default to the whole array, and
+   * negative values count from the end.
    *
    * @param ?number start
    * @param ?number end

@@ -4,32 +4,33 @@
  * Schema changes for SQLite.
  *
  * Creating a table, adding an index and renaming a column are plain
- * statements. Most other changes to a table that exists are not:
- * SQLite's `ALTER TABLE` cannot change a column, add or drop a key, or
- * drop a column that a key or an index uses. For those the table is
- * built again, the way SQLite's own documentation lays out: a new table
- * with the changed definition, the rows copied across, the old table
- * dropped and the new one renamed into its place, then its indexes and
- * triggers put back and the sequence behind an `id()` carried over, so
- * no id is ever handed out twice.
+ * statements. Most other changes to an existing table aren't. SQLite's
+ * `ALTER TABLE` can't change a column, add or drop a key, or drop a
+ * column that a key or an index uses. For those changes, the table is
+ * rebuilt, following the steps in SQLite's own documentation. A new
+ * table is created with the changed definition, the rows are copied
+ * across, the old table is dropped and the new one is renamed to take
+ * its place. Then its indexes and triggers are created again, and the
+ * sequence behind an `id()` is carried over, so that no ID is ever
+ * reused.
  *
  * The new definition is the old one with only the changed parts
- * rewritten, read from the table's own `create table` text, so
- * whatever else the table declared, checks and collations included,
- * comes through as it was.
+ * rewritten, based on the table's own `create table` statement, so
+ * everything else the table declared, including checks and collations,
+ * is kept as it was.
  *
  * ### Foreign keys
  *
- * Dropping a table that other tables refer to deletes from it first,
- * and with foreign keys enforced that delete runs their `on delete`
- * actions: building a table again would take every row referring to it
- * along with it. So a rebuild only ever runs with enforcement switched
- * off, which SQLite allows only outside a transaction. `schema_change()`
- * does exactly that around every change it runs, `sql.migrate` runs
- * each migration through it, and the foreign keys are checked before
- * the change commits. A rebuild asked for inside a transaction while
- * foreign keys are enforced raises `NotSupportedError` rather than
- * risk the rows.
+ * Dropping a table that other tables refer to deletes its rows first,
+ * and if foreign keys are enforced, that runs their `on delete`
+ * actions, so rebuilding a table would also delete every row that
+ * refers to it. A rebuild therefore only runs with foreign key
+ * enforcement turned off, which SQLite only allows outside a
+ * transaction. `schema_change()` does exactly that around every change
+ * it runs, `sql.migrate` runs each migration through it, and the
+ * foreign keys are checked before the change is committed. A rebuild
+ * requested inside a transaction while foreign keys are enforced raises
+ * a `NotSupportedError` instead of putting the rows at risk.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -286,19 +287,22 @@ class SqliteDdl < DdlAdapter {
   }
 
   /**
-   * Runs `body` with foreign key enforcement switched off, inside a
-   * transaction that takes the write lock at once when `transactional`
-   * is true, and checks every foreign key before it commits.
+   * Runs `body` with foreign key enforcement turned off, inside a
+   * transaction that takes the write lock immediately if
+   * `transactional` is true, and checks every foreign key before
+   * committing.
    *
-   * Enforcement is put back as it was however `body` ends. When it was
-   * off to begin with, nothing is switched and nothing is checked.
+   * Enforcement is restored to its previous setting however `body`
+   * ends. If enforcement was already off, nothing is changed and
+   * nothing is checked.
    *
-   * @param Connection connection Not already in a transaction.
+   * @param Connection connection A connection that isn't already in a
+   *    transaction.
    * @param function body
    * @param bool transactional
-   * @returns any What `body` returned.
-   * @throws ForeignKeyViolation if the change left a row referring to
-   *    one that is not there; the change is rolled back.
+   * @returns any Whatever `body` returned.
+   * @throws ForeignKeyViolation if the change left a row referring to a
+   *    row that doesn't exist. The change is rolled back.
    */
   schema_change(connection, body: function, transactional: bool) {
     var enforced = connection.fetch_value('pragma foreign_keys', nil, 0) == 1
@@ -514,12 +518,12 @@ class SqliteDdl < DdlAdapter {
 }
 
 /**
- * A table's `create table` text, taken apart into its columns and
- * constraints so a rebuild can rewrite just what changes.
+ * A table's `create table` statement, split into its columns and
+ * constraints so that a rebuild can rewrite only what changes.
  *
- * Each item keeps the text it was written with. Only an item a change
- * touches is replaced, which is what carries everything the blueprint
- * knows nothing about through a rebuild unchanged.
+ * Each item keeps the text it was written with, and only the items that
+ * a change affects are replaced. That way, everything that the
+ * blueprint doesn't know about comes through a rebuild unchanged.
  */
 class TableDefinition {
   /**

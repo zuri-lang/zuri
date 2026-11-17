@@ -1,21 +1,20 @@
 /**
  * @module types
  *
- * Encoding and decoding PostgreSQL's binary value formats.
+ * Encodes and decodes PostgreSQL's binary value formats.
  *
- * PostgreSQL will send a value either as text or as the server's own
- * binary representation, chosen per column. Binary is what this
- * adapter asks for wherever it has a decoder, because it is exact:
- * a `float8` arrives as the same eight bytes the server holds rather
- * than as a decimal rendering that has to be parsed back, and a
- * `numeric` arrives as its actual digits rather than as text that a
- * double would round.
+ * PostgreSQL sends a value either as text or in the server's own binary
+ * format, chosen for each column. This adapter asks for binary wherever
+ * it has a decoder, because binary is exact. A `float8` arrives as the
+ * same eight bytes the server holds, not as a decimal string that has
+ * to be parsed back, and a `numeric` arrives as its actual digits, not
+ * as text that a double would round.
  *
- * Where there is no decoder, text is asked for instead and the value
- * arrives as a string. That is the important half of the design: a
- * type this adapter has never heard of, including one an extension
- * added, still comes back as something readable rather than as bytes
- * nobody can interpret.
+ * Where there's no decoder, the adapter asks for text, and the value
+ * arrives as a string. That's the important half of the design: a type
+ * the adapter has never heard of, including one added by an extension,
+ * still arrives as something readable instead of as bytes nobody can
+ * interpret.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -128,8 +127,8 @@ var ARRAY_ELEMENTS = {
 }
 
 /**
- * Seconds between the Unix epoch and PostgreSQL's, which is
- * 2000-01-01 rather than 1970-01-01.
+ * The number of seconds between the Unix epoch and PostgreSQL's epoch,
+ * which is 2000-01-01, not 1970-01-01.
  */
 var EPOCH_OFFSET = 946684800
 
@@ -188,11 +187,11 @@ def read_uint32(buffer, at: number) {
 }
 
 /**
- * Reads a signed 64 bit big-endian integer.
+ * Reads a signed 64-bit big-endian integer.
  *
- * Built from the two halves rather than shifted in one go, because the
- * top bits of a 64 bit value do not survive a bitwise shift on a
- * double.
+ * It's built from the two halves instead of being shifted in one step,
+ * because the top bits of a 64-bit value don't survive a bitwise shift
+ * on a double.
  *
  * @param bytes buffer
  * @param number at
@@ -307,13 +306,14 @@ var _POSITIVE_INFINITY = 0xD000
 var _NEGATIVE_INFINITY = 0xF000
 
 /**
- * Decodes PostgreSQL's `numeric` into an exact `Decimal`.
+ * Decodes PostgreSQL's `numeric` type into an exact `Decimal`.
  *
- * The wire form is a count of base 10000 digits, the position of the
+ * The wire format is a count of base-10000 digits, the position of the
  * first of them relative to the decimal point, a sign, the number of
- * places to display, and then the digits. Reassembling it as text and
- * handing that to `Decimal` keeps every digit; going through a double
- * anywhere in here would defeat the point of the type.
+ * decimal places to display, and then the digits. Putting them back
+ * together as text and passing that to `Decimal` keeps every digit.
+ * Converting to a double anywhere along the way would defeat the
+ * purpose of the type.
  *
  * @param bytes buffer
  * @returns Decimal|number
@@ -635,10 +635,10 @@ def decode_date(buffer, _oid) {
 }
 
 /**
- * `time` is microseconds since midnight, with no date part. It comes
- * back as a dictionary rather than a `date.Date`, because a time of
- * day is not a point in time and giving it an arbitrary date would be
- * inventing information.
+ * `time` is microseconds since midnight, without a date. It's returned
+ * as a dictionary, not as a `date.Date`, because a time of day isn't a
+ * point in time, and giving it an arbitrary date would be inventing
+ * information.
  */
 def decode_time(buffer, _oid) {
   var micros = read_int64(buffer, 0)
@@ -663,24 +663,24 @@ def decode_timetz(buffer, _oid) {
 }
 
 /**
- * Both `timestamp` and `timestamptz` are microseconds from the
+ * Both `timestamp` and `timestamptz` are microseconds since the
  * PostgreSQL epoch.
  *
- * The server holds a `timestamptz` in UTC and converts on the way in
- * and out, so what arrives is already UTC and is handed back as such.
- * A `timestamp` has no zone at all; it is read as UTC because a
- * `date.Date` has to say something, and UTC is the only answer that
- * does not invent a zone the value never had.
+ * The server stores a `timestamptz` in UTC and converts it when it's
+ * written and read, so what arrives is already in UTC and is returned
+ * as UTC. A `timestamp` has no time zone at all. It's read as UTC
+ * because a `date.Date` has to have a time zone, and UTC is the only
+ * choice that doesn't invent a zone the value never had.
  */
 def decode_timestamp(buffer, _oid) {
   return date_from_micros(read_int64(buffer, 0))
 }
 
 /**
- * `interval` is a span rather than a point, so it comes back as its
- * parts. Months and days are kept separate from the time because
- * neither has a fixed length: a month is 28 to 31 days, and a day
- * across a daylight saving change is not 24 hours.
+ * `interval` is a length of time, not a point in time, so it's returned
+ * as its parts. Months and days are kept separate from the time,
+ * because neither has a fixed length. A month is 28 to 31 days, and a
+ * day that crosses a daylight saving change isn't 24 hours.
  */
 def decode_interval(buffer, _oid) {
   return {
@@ -864,7 +864,8 @@ def encode_timestamp(value) {
 
 /**
  * What an encoder returned, as `bytes`. The built-in encoders return
- * `bytes`; one a program registers may return a list of byte values.
+ * `bytes`, but an encoder that a program registers can return a list of
+ * byte values.
  *
  * @param bytes|list encoded
  * @returns bytes
@@ -1071,20 +1072,20 @@ def _timestamp_at(buffer, at, _size, _oid) {
 }
 
 /**
- * Which decoder and encoder each OID uses.
+ * The decoder and encoder that each OID uses.
  *
- * A registry can be extended, which is how a program teaches the
- * adapter about a type its database defines that PostgreSQL does not
- * ship:
+ * A registry can be extended, which is how a program tells the adapter
+ * about a type that its database defines and that doesn't come with
+ * PostgreSQL:
  *
  * ```zuri,ignore
  * registry.register(oid, decoder, encoder)
  * ```
  *
- * The important question a registry answers is `knows()`: the adapter
- * asks for a column in binary only when the answer is yes, and asks
- * for text otherwise, so an unregistered type arrives as a readable
- * string rather than as bytes.
+ * The most important method of a registry is `knows()`. The adapter
+ * only asks for a column in binary if `knows()` returns true, and asks
+ * for text otherwise, so a type that isn't registered arrives as a
+ * readable string, not as bytes.
  */
 class TypeRegistry {
   var _decoders = {}

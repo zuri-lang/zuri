@@ -1,11 +1,12 @@
 /**
  * @module parser
  *
- * The scanner that turns the text of an environment file into names
- * and values, and the writer that turns them back into text.
+ * The scanner that turns the text of an environment file into names and
+ * values, and the writer that turns them back into text.
  *
- * The grammar is small enough to state in full. A source is a sequence
- * of lines. A line is blank, a comment, or an assignment:
+ * The syntax is small enough to describe in full. A source is a
+ * sequence of lines, and each line is blank, a comment or an
+ * assignment:
  *
  * ```text
  * assignment := 'export'? NAME '=' value?
@@ -13,8 +14,8 @@
  * value      := bare | '...' | "..." | `...`
  * ```
  *
- * Everything interesting is in what each kind of value means, and that
- * is documented on `parse()` where people will look for it.
+ * The details are in what each kind of value means, and they're
+ * documented on `parse()`, where people will look for them.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -505,9 +506,8 @@ def _unescape(entry) {
  * Reads the text of an environment file and returns its names and
  * values.
  *
- * This is the syntax layer on its own: no `$` reference is resolved
- * and nothing is written to the process environment. `load()` is what
- * does both.
+ * This is only the syntax layer. No `$` references are resolved, and
+ * nothing is written to the process environment. `load()` does both.
  *
  * ```zuri
  * import env
@@ -525,49 +525,49 @@ def _unescape(entry) {
  *
  * ### The rules
  *
- * A name is a letter or underscore followed by letters, digits and
- * underscores. Anything else is a `ParseError` rather than a line
- * quietly dropped, because a name a shell could never export is a
- * typo every time.
+ * A name is a letter or an underscore, followed by letters, digits and
+ * underscores. Anything else is a `ParseError`, instead of a line
+ * that's silently ignored, because a name that a shell could never
+ * export is always a typo.
  *
  * Blank lines are skipped, and so is everything from a `#` to the end
- * of the line. Inside an unquoted value a `#` only opens a comment
- * when it starts the value or follows a space, so `KEY=db#1` keeps its
- * `#`.
+ * of the line. Inside an unquoted value, a `#` only starts a comment if
+ * it's at the start of the value or follows a space, so `KEY=db#1`
+ * keeps its `#`.
  *
  * A leading `export` is allowed and ignored, so the same file can be
- * fed to `source` in a shell.
+ * passed to `source` in a shell.
  *
- * Values come in four forms:
+ * Values can be written in four ways:
  *
  * | Written | Means |
  * | - | - |
  * | `KEY=value` | the text up to a comment or the end of the line, trimmed at both ends |
- * | `KEY='value'` | every character exactly as written, newlines included |
- * | `` KEY=`value` `` | the same as single quotes, for values that contain both kinds |
- * | `KEY="value"` | backslash escapes resolved, `$` references left for expansion |
+ * | `KEY='value'` | every character exactly as written, including line breaks |
+ * | `` KEY=`value` `` | the same as single quotes, for values that contain both kinds of quote |
+ * | `KEY="value"` | backslash escapes resolved, and `$` references left for expansion |
  *
- * `KEY=` is an empty value, and an empty value counts as unconfigured
+ * `KEY=` is an empty value, and an empty value counts as unset
  * everywhere else in this module.
  *
  * Inside double quotes, `\n`, `\r`, `\t`, `\f`, `\v`, `\b`, `\a`, `\e`
- * and `\0` mean what they do in Zuri, `\xHH`, `\uHHHH` and `\u{H...}`
- * name a codepoint, a backslash before a newline joins the two lines,
- * and `\$` is a literal `$` that expansion will not touch. A backslash
- * before anything else keeps both characters, so `"C:\Users"` survives
- * intact.
+ * and `\0` mean the same as in Zuri. `\xHH`, `\uHHHH` and `\u{H...}`
+ * give a code point, a backslash before a line break joins the two
+ * lines, and `\$` is a literal `$` that expansion won't touch. A
+ * backslash before any other character keeps both characters, so
+ * `"C:\Users"` stays as it is.
  *
- * Line endings are normalised to `\n`, and a byte-order mark at the
- * head of the file is discarded.
+ * Line endings are converted to `\n`, and a byte order mark at the
+ * start of the file is removed.
  *
  * ### Duplicates
  *
- * The last assignment to a name in a source wins, which is what makes
- * commenting out the line above the one you want work.
+ * The last assignment to a name in a source wins, so a later line can
+ * override an earlier one.
  *
  * @param string|bytes source
  * @returns dict
- * @throws ParseError when the source is not a valid environment file.
+ * @throws ParseError if the source isn't a valid environment file.
  */
 def parse(source: string|bytes) {
   var values = {}
@@ -632,10 +632,10 @@ def _render(name, value) {
  * Turns a dictionary of names and values into the text of an
  * environment file.
  *
- * The output round-trips: feeding it back to `parse()` returns the
- * same names and the same values. Values are written bare where that
- * is unambiguous and double-quoted where it is not, and a `$` inside a
- * value is escaped so that loading the file back does not expand it.
+ * The output round-trips: passing it back to `parse()` gives the same
+ * names and values. Values are written without quotes where that's
+ * unambiguous, and in double quotes where it isn't, and a `$` inside a
+ * value is escaped so that loading the file again doesn't expand it.
  *
  * ```zuri
  * import env
@@ -653,16 +653,15 @@ def _render(name, value) {
  * DEBUG=false
  * ```
  *
- * Names are written in the order the dictionary holds them. A number,
- * a bigint, a boolean or a bytes value is converted to its text; any
- * other type is a `TypeError`, because guessing what a list should
- * look like in an environment file is how configuration goes wrong
- * silently.
+ * Names are written in the order the dictionary holds them. A number, a
+ * bigint, a boolean or a bytes value is converted to text. Any other
+ * type raises a `TypeError`, because guessing how a list should look in
+ * an environment file is how configuration silently goes wrong.
  *
  * @param dict values
  * @returns string
- * @throws ValueError when a key is not a legal variable name.
- * @throws TypeError when a value is of a type that has no spelling here.
+ * @throws ValueError if a key isn't a valid variable name.
+ * @throws TypeError if a value has a type that can't be written here.
  */
 def stringify(values: dict) {
   var lines = []

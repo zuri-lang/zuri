@@ -1,11 +1,11 @@
 /**
  * @module server
  *
- * The serving end of IMAP.
+ * The server side of IMAP.
  *
- * `ImapServer` accepts connections, runs the session state machine,
- * and answers every command out of a `MailStore`. What mail there is
- * and where it lives is the store's business; this knows only the
+ * `ImapServer` accepts connections, runs the session state machine, and
+ * answers every command from a `MailStore`. What mail there is and
+ * where it's kept is up to the store. The server only knows the
  * protocol.
  *
  * ```zuri,ignore
@@ -133,14 +133,14 @@ class ImapServer {
   /**
    * | option | default | what it does |
    * | - | - | - |
-   * | `host` | `127.0.0.1` | the address to bind |
-   * | `port` | `143` | the port to bind |
-   * | `greeting` | `Zuri IMAP ready` | what to say on connecting |
-   * | `timeout` | `1800000` | milliseconds a client may go quiet |
+   * | `host` | `127.0.0.1` | the address to bind to |
+   * | `port` | `143` | the port to bind to |
+   * | `greeting` | `Zuri IMAP ready` | what to say when a client connects |
+   * | `timeout` | `1800000` | the number of milliseconds a client can stay silent |
    * | `require_tls` | `false` | refuse to authenticate without TLS |
    *
    * @param ?dict options
-   * @param MailStore store: Where the mail is.
+   * @param MailStore store: where the mail is
    */
   @new(options: ?dict, store) {
     var given = options == nil ? {} : options
@@ -199,8 +199,7 @@ class ImapServer {
   }
 
   /**
-   * Gives the server a certificate, which is what lets it offer
-   * `STARTTLS`.
+   * Gives the server a certificate, which lets it offer `STARTTLS`.
    *
    * @param string cert_chain
    * @param string private_key

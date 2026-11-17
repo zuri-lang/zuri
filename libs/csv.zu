@@ -1,40 +1,44 @@
 /**
  * @module CSV
  *
- * A complete, RFC 4180-compliant library for reading and writing
- * Comma-Separated Values (CSV) data.
+ * Reads and writes CSV (comma-separated values) data, following RFC
+ * 4180.
  *
- * This module implements the format defined in RFC 4180:
- * "Common Format and MIME Type for Comma-Separated Values (CSV)
- * Files": and extends it with the practical accommodations
- * required by real-world CSV data, including configurable
- * delimiters, optional quoting strategies, BOM detection, and
- * lenient parsing of files that deviate from the strict spec.
+ * This module implements the format defined in RFC 4180, "Common Format
+ * and MIME Type for Comma-Separated Values (CSV) Files", and extends it
+ * to handle real-world CSV data, with configurable delimiters, a choice
+ * of quoting styles, byte order mark detection, and a lenient mode for
+ * files that don't follow the standard strictly.
  *
- * ## Key CSV rules
+ * ## The rules of the format
  *
- * - Records are separated by CRLF (`\r\n`). The last record may
- * omit the trailing line break. - Fields containing the
- * delimiter, a double-quote, CR, or LF **must** be enclosed in
- * double-quotes. - A double-quote inside a quoted field is
- * escaped by doubling it (`""`). - An optional header record may
- * appear as the first line. - All records must contain the same
- * number of fields.
+ * - Records are separated by CRLF (`\r\n`). The last record doesn't
+ *   need a line break after it.
+ * - Fields that contain the delimiter, a double quote, a carriage
+ *   return or a line feed **must** be enclosed in double quotes.
+ * - A double quote inside a quoted field is escaped by doubling it
+ *   (`""`).
+ * - The first line can be a header record.
+ * - All records must have the same number of fields.
  *
- * ## Extensions beyond RFC 4180
+ * ## Extensions to RFC 4180
  *
- * - **Configurable delimiter**: any single character (tab for
- * TSV, pipe, etc.) - **Configurable quote character**: defaults
- * to `"`. - **LF-only and CR-only line endings**: accepted on
- * input; CRLF on output. - **BOM stripping**: UTF-8 BOM
- * (`\xEF\xBB\xBF`) is silently removed. - **Empty last line**:
- * a trailing newline after the last record is ignored. -
- * **Quoting strategies**: `QUOTE_MINIMAL` (default),
- * `QUOTE_ALL`, `QUOTE_NONNUMERIC`, `QUOTE_NONE`. - **Lenient
- * mode**: tolerate unquoted fields containing the delimiter and
- * other minor deviations common in real-world CSV files.
+ * - **Any delimiter**: any single character, such as a tab for TSV or a
+ *   pipe.
+ * - **Any quote character**: the default is `"`.
+ * - **Other line endings**: LF-only and CR-only line endings are
+ *   accepted when reading. CRLF is always written.
+ * - **Byte order marks**: a UTF-8 byte order mark (`\xEF\xBB\xBF`) is
+ *   removed.
+ * - **A final empty line**: a line break after the last record is
+ *   ignored.
+ * - **Quoting styles**: `QUOTE_MINIMAL` (the default), `QUOTE_ALL`,
+ *   `QUOTE_NONNUMERIC` and `QUOTE_NONE`.
+ * - **Lenient mode**: accepts unquoted fields that contain the
+ *   delimiter, and other small deviations that are common in real CSV
+ *   files.
  *
- * ## Quick start
+ * ## A first example
  *
  * ### Reading
  *
@@ -46,7 +50,7 @@
  * echo table[0]   # { name: 'Alice', age: '30' }
  * echo table[1]   # { name: 'Bob',   age: '25' }
  *
- * # Stream a file row by row.
+ * # Read a file one row at a time.
  * var reader = csv.Reader(file('data.csv'))
  * for row in reader {
  *   echo row
@@ -59,7 +63,7 @@
  * ```zuri
  * import csv
  *
- * # Encode a list of dicts to a CSV string.
+ * # Encode a list of dictionaries as a CSV string.
  * var data = [
  *   { name: 'Alice', age: 30 },
  *   { name: 'Bob',   age: 25 },
@@ -67,7 +71,7 @@
  * echo csv.stringify(data)
  * # name,age\r\nAlice,30\r\nBob,25\r\n
  *
- * # Stream rows to a file.
+ * # Write rows to a file one at a time.
  * var writer = csv.Writer(file('out.csv', 'w'))
  * writer.write_header(['name', 'age'])
  * writer.write_row(['Alice', 30])
@@ -92,9 +96,9 @@ import io
 var QUOTE_MINIMAL = 0
 
 /**
- * Quote every field unconditionally, regardless of content.
- * Produces the most portable output; useful when the consumer is
- * known to require quoted fields.
+ * Quote every field, whatever it contains. This produces the most
+ * portable output, and is useful when the program reading it is known
+ * to require quoted fields.
  */
 var QUOTE_ALL = 1
 
@@ -118,15 +122,15 @@ var QUOTE_NONE = 3
 # ---------------------------------------------------------------------------
 
 /**
- * Error raised when a CSV parsing or encoding error is
- * encountered.
+ * The error raised when parsing or encoding CSV fails.
  *
- * @property string message Human-readable description of the
- *    error.
- * @property number line 1-based line number where the error
- *    occurred (parsing errors only; -1 for encoding errors).
- * @property number column 1-based column (character) position
- *    within the line where the error occurred (-1 if unknown).
+ * @property string message A description of the error, for people to
+ *    read.
+ * @property number line The line where the error occurred, counting
+ *    from 1, for parsing errors, or -1 for encoding errors.
+ * @property number column The column (character position) within the
+ *    line where the error occurred, counting from 1, or -1 if it isn't
+ *    known.
  */
 class CsvError < Error {
   var line = -1
@@ -322,23 +326,21 @@ def _consistency_score(counts) {
 }
 
 /**
- * Attempts to detect the field delimiter used in `sample` and
- * returns a `Dialect` configured with it.
+ * Tries to detect the field delimiter used in `sample`, and returns a
+ * `Dialect` that uses it.
  *
- * Each candidate delimiter is scored by how consistently it occurs
- * across the sample's lines: a real delimiter tends to appear the
- * same number of times on every line, while one that just happens
- * to show up in the data (a comma inside a sentence, say) doesn't.
- * The best-scoring candidate wins; if none of them appear
- * consistently anywhere in `sample`, the first candidate (`,` by
- * default) is used.
+ * Each candidate delimiter is scored by how consistently it appears
+ * across the lines of the sample. A real delimiter usually appears the
+ * same number of times on every line, while a character that just
+ * happens to be in the data, such as a comma in a sentence, doesn't.
+ * The candidate with the best score wins. If none of them appears
+ * consistently, the first candidate, which is `,` by default, is used.
  *
- * This only detects the delimiter: not the quote character,
- * whether a header row is present, or any other `Dialect` field.
- * Set those on the returned `Dialect` yourself if they differ from
- * the defaults.
+ * This only detects the delimiter, not the quote character, whether
+ * there's a header row, or any other `Dialect` field. Set those on the
+ * returned `Dialect` yourself if they differ from the defaults.
  *
- * Example,
+ * For example:
  *
  * ```zuri-repl
  * %> var dialect = csv.sniff_dialect("a;b;c\n1;2;3\n4;5;6")
@@ -346,10 +348,10 @@ def _consistency_score(counts) {
  * ';'
  * ```
  *
- * @param string sample: Doesn't need to be the whole file: a few
- *    representative lines are enough.
- * @param ?list candidate_delimiters: Default `[',', '\t', ';',
- *    '|']`.
+ * @param string sample: it doesn't need to be the whole file. A few
+ *    typical lines are enough.
+ * @param ?list candidate_delimiters: defaults to
+ *    `[',', '\t', ';', '|']`.
  * @returns Dialect
  */
 def sniff_dialect(sample, candidate_delimiters) {
@@ -730,12 +732,11 @@ def _has_bom(text) {
 # ---------------------------------------------------------------------------
 
 /**
- * An incremental, row-by-row CSV reader that wraps a Zuri
- * `file` object (or any object implementing `.read()` and
- * `.close()`).
+ * A CSV reader that reads one row at a time, wrapping a Zuri `file`
+ * object, or any object with `.read()` and `.close()` methods.
  *
- * `Reader` implements the iterator protocol so it can be used
- * directly in a `for` loop.
+ * `Reader` implements the iterator protocol, so you can use it directly
+ * in a `for` loop.
  *
  * ### Example: reading a file with a header row
  *
@@ -753,7 +754,7 @@ def _has_bom(text) {
  * reader.close()
  * ```
  *
- * ### Example: tab-separated file, no header
+ * ### Example: a tab-separated file without a header
  *
  * ```zuri
  * import csv
@@ -771,16 +772,16 @@ def _has_bom(text) {
  *
  * ### Notes
  *
- * - The file is read all at once into memory. For very large
- * files (> a few hundred MB), consider streaming line by line
- * using `read_record()`. - When `dialect.has_header` is `true`,
- * the first record is consumed as the header and is accessible
- * via the `headers` property. - When `dialect.has_header` is
- * `true` and a data row has fewer fields than the header, the
- * missing fields are set to `nil`. - When `dialect.has_header`
- * is `true` and a row has *more* fields than the header, the
- * extra fields are silently discarded (lenient mode) or raise
- * `CsvError` (strict mode).
+ * - The whole file is read into memory at once. For very large files,
+ *   of more than a few hundred MB, consider reading one record at a
+ *   time with `read_record()`.
+ * - When `dialect.has_header` is `true`, the first record is read as
+ *   the header, and is available in the `headers` property.
+ * - When `dialect.has_header` is `true` and a row has fewer fields than
+ *   the header, the missing fields are set to `nil`.
+ * - When `dialect.has_header` is `true` and a row has *more* fields
+ *   than the header, the extra fields are silently dropped in lenient
+ *   mode, or raise a `CsvError` in strict mode.
  */
 class Reader {
   /**
@@ -1003,11 +1004,10 @@ class Reader {
 # ---------------------------------------------------------------------------
 
 /**
- * An incremental, row-by-row CSV writer that wraps a Zuri
- * `file` object (or any object implementing `.write()` and
- * `.close()`).
+ * A CSV writer that writes one row at a time, wrapping a Zuri `file`
+ * object, or any object with `.write()` and `.close()` methods.
  *
- * ### Example: writing dicts (with header)
+ * ### Example: writing rows with a header
  *
  * ```zuri
  * import csv
@@ -1020,7 +1020,7 @@ class Reader {
  * writer.close()
  * ```
  *
- * ### Example: QUOTE_ALL with tab delimiter
+ * ### Example: QUOTE_ALL with a tab delimiter
  *
  * ```zuri
  * import csv
@@ -1037,12 +1037,12 @@ class Reader {
  *
  * ### Notes
  *
- * - `write_row()` accepts a list of any values; each is
- * converted to a string with `.to_string()` before encoding. -
- * `write_dict()` accepts a dict and a `keys` list that controls
- * the field order and which keys are written. - The writer does
- * **not** buffer: every call to `write_row()` immediately writes
- * to the underlying file.
+ * - `write_row()` accepts a list of any values. Each one is converted
+ *   to a string with `.to_string()` before it's encoded.
+ * - `write_dict()` accepts a dictionary and a `keys` list, which
+ *   decides the order of the fields and which keys are written.
+ * - The writer doesn't buffer anything. Every call to `write_row()`
+ *   writes to the file straight away.
  */
 class Writer {
   /**
@@ -1168,13 +1168,11 @@ class Writer {
   }
 
   /**
-   * Writes a list of records from a list of dicts, preceded by a
-   * header row whose columns are derived from the keys of the
-   * first record.
+   * Writes a list of dictionaries as records, after a header row whose
+   * columns come from the keys of the first record.
    *
-   * If `keys` is provided it controls column order; otherwise
-   * the keys of the first row are used in their natural
-   * iteration order.
+   * If `keys` is given, it decides the order of the columns. Otherwise,
+   * the keys of the first row are used, in their natural order.
    *
    * ```zuri
    * writer.write_dicts([
@@ -1183,11 +1181,10 @@ class Writer {
    * ])
    * ```
    *
-   * @param list rows List of dicts, each representing one
-   *    record.
-   * @param ?list keys Optional ordered key list. Inferred from
-   *    the first row when omitted.
-   * @throws CsvError On encoding error.
+   * @param list rows A list of dictionaries, one for each record.
+   * @param ?list keys An optional list of keys, in order. If it's left
+   *    out, it's taken from the first row.
+   * @throws CsvError If encoding fails.
    */
   write_dicts(rows, keys) {
     if !is_list(rows) {
@@ -1343,44 +1340,43 @@ def parse(text, dialect) {
 }
 
 /**
- * Encodes a list of records into a CSV string and returns it.
+ * Encodes a list of records as a CSV string, and returns it.
  *
- * Each element of `rows` may be either a list (field values in
- * order) or a dict. When `rows` contains dicts, `keys` controls
- * the column order; if omitted, the keys of the first dict
- * determine the order. A header row is written automatically
- * when `rows` contains dicts.
+ * Each element of `rows` can be either a list of field values, in
+ * order, or a dictionary. When `rows` contains dictionaries, `keys`
+ * decides the order of the columns. If it's left out, the keys of the
+ * first dictionary are used. A header row is written automatically when
+ * `rows` contains dictionaries.
  *
  * ### Examples
  *
  * ```zuri
  * import csv
  *
- * # From lists: no header.
+ * # From lists, without a header.
  * echo csv.stringify([['Alice', 30], ['Bob', 25]])
  * # Alice,30\r\nBob,25\r\n
  *
- * # From dicts: header inferred.
+ * # From dictionaries, with the header taken from the keys.
  * echo csv.stringify([
  *   { name: 'Alice', age: 30 },
  *   { name: 'Bob',   age: 25 },
  * ])
  * # name,age\r\nAlice,30\r\nBob,25\r\n
  *
- * # Custom dialect.
+ * # With a custom dialect.
  * var d = csv.Dialect()
  * d.quoting = csv.QUOTE_ALL
  * echo csv.stringify([['hello, world', 42]], d)
  * # "hello, world","42"\r\n
  * ```
  *
- * @param list rows List of lists or dicts to encode.
- * @param ?Dialect dialect Optional dialect (defaults to
- *    `Dialect()`).
- * @param ?list keys Optional column key order when `rows` are
- *    dicts.
+ * @param list rows A list of lists or dictionaries to encode.
+ * @param ?Dialect dialect An optional dialect. Defaults to `Dialect()`.
+ * @param ?list keys An optional order for the columns, when `rows`
+ *    contains dictionaries.
  * @return string The encoded CSV text.
- * @throws CsvError On encoding error.
+ * @throws CsvError If encoding fails.
  */
 def stringify(rows, dialect, keys) {
   if !is_list(rows) {

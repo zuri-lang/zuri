@@ -1,25 +1,25 @@
 /**
  * @module test.format
  *
- * Turning any Zuri value into text a person can read in a failure
+ * Turns any Zuri value into text that a person can read in a failure
  * message.
  *
- * Two shapes are produced. `inline()` gives one line, abbreviated to
- * fit in a sentence: this is what `Expected 3 but received 4` is
- * built from. `block()` gives a list of lines, indented, with nothing
- * abbreviated away: this is what a diff and a snapshot are built
- * from.
+ * There are two forms. `inline()` gives a single line, shortened to fit
+ * in a sentence, which is what a message like
+ * `Expected 3 but received 4` is built from. `block()` gives a list of
+ * indented lines, with nothing left out, which is what diffs and
+ * snapshots are built from.
  *
- * Both are safe on values that contain themselves. A list or a
- * dictionary already being rendered further up the same call is
- * printed as `[Circular]` rather than followed round again.
+ * Both handle values that contain themselves. A list or dictionary
+ * that's already being rendered further up the same call is shown as
+ * `[Circular]`, instead of being followed round again.
  *
  * ### Limits
  *
- * `inline()` shows at most 8 entries of a list or dictionary, nests
- * at most 3 levels deep, and shortens a string past 60 characters.
- * Anything cut off is marked, never silently dropped. Pass an options
- * dictionary to change any of them:
+ * `inline()` shows at most 8 entries of a list or dictionary, at most 3
+ * levels deep, and shortens strings longer than 60 characters. Anything
+ * that's cut off is marked, never silently dropped. Pass a dictionary
+ * of options to change any of these limits:
  *
  * ```zuri
  * import test.format
@@ -27,8 +27,8 @@
  * echo format.inline(big_list, { max_items: 40, max_depth: 6 })
  * ```
  *
- * `block()` has no item or depth limit at all, because the reader
- * asked for the whole thing.
+ * `block()` has no limit on items or depth, because the reader asked
+ * for the whole value.
  */
 
 import zuri { reflect }
@@ -466,11 +466,11 @@ def inline(value, options: ?dict) {
 }
 
 /**
- * `inline()` with colour suppressed, whatever the terminal supports.
+ * `inline()` without color, whatever the terminal supports.
  *
- * This is what a machine-readable reporter and a snapshot key are
- * built from, since an escape sequence in either would be a
- * correctness bug rather than a cosmetic one.
+ * Machine-readable reporters and snapshot keys are built from this,
+ * because an escape sequence in either would be a real bug, not just a
+ * cosmetic problem.
  *
  * @param any value
  * @param ?dict options

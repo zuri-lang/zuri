@@ -1,15 +1,15 @@
 /**
  * @module errors
  *
- * Turning PostgreSQL's SQLSTATE codes into the shared error classes.
+ * Maps PostgreSQL's SQLSTATE codes to the shared error classes.
  *
- * Every error PostgreSQL reports carries a five character SQLSTATE.
- * The first two characters are its class and the rest narrow it down,
- * so `23505` is class 23, integrity constraint violation, specifically
- * a unique violation. Mapping works on the specific code where one is
- * worth telling apart and falls back to the class otherwise, which
- * means a code this table has never seen still lands somewhere
- * sensible.
+ * Every error that PostgreSQL reports has a five-character SQLSTATE.
+ * The first two characters are its class, and the rest narrow it down,
+ * so `23505` is class 23, integrity constraint violation, and
+ * specifically a unique violation. The mapping uses the specific code
+ * where it's useful to distinguish a case, and falls back to the class
+ * otherwise, so a code that isn't in the table still maps to a sensible
+ * class.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

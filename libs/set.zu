@@ -1,72 +1,63 @@
 /**
  * @module set
  *
- * This module provides functionalities for working with
- * mathematical sets.
+ * Sets, in the mathematical sense.
  *
- * Sets are collections of unique values. You can iterate through
- * sets in the same order in which they were initialized or set
- * by {set.Set.add()}. Two Sets containing exactly the same
- * elements, irrespective of order, are equal, whether compared with
- * `==` or with {set.Set.equals()}.
+ * A set is a collection of unique values. A set is iterated in the
+ * order its values were added, either when it was created or with
+ * {set.Set.add()}. Two sets that contain exactly the same values are
+ * equal, whatever their order, whether you compare them with `==` or
+ * with {set.Set.equals()}.
  *
- * The example below shows a brief introduction to working with
- * sets.
+ * This example shows the basics of working with sets:
  *
  * ```zuri
  * import set
- * 
+ *
  * var my_set = set()
- * 
+ *
  * my_set.add(11) # <Set(1) {11}>
  * my_set.add(56) # <Set(2) {11, 56}>
  * my_set.add(97) # <Set(3) {11, 56, 97}>
  * my_set.add('some text') # <Set(4) {11, 56, 97, some text}>
  * var o = { a: 1, b: 2 }
  * my_set.add(o)
- * 
- * # o is referencing a different object, but contains the same value
- * # so it will not be added
+ *
+ * # This is a different object, but it has the same value,
+ * # so it isn't added.
  * my_set.add({ a: 1, b: 2 })
- * 
+ *
  * my_set.contains(11) # true
- * my_set.contains(32) # false, since 32 has not been added to the set
+ * my_set.contains(32) # false, because 32 hasn't been added
  * my_set.contains(97) # true
  * my_set.contains(121 ** 0.5) # true
  * my_set.contains('Some Text'.lower()) # true
  * my_set.contains(o) # true
  * ```
  *
- * Sets objects can also be created with initial values (or their
- * actual values) by passing a list or a dictionary to the
- * constructor. If a list is passed, all unique elements in the
- * list will be added to the Set object.
- *
- * For example,
+ * You can also create a set with initial values, by passing a list or a
+ * dictionary to the constructor. With a list, each unique value in the
+ * list is added:
  *
  * ```zuri
  * import set
- * 
+ *
  * var set_a = set([1, 2, 3, 4, 5])
  * var set_b = set([4, 5, 6, 7, 8])
- * 
+ *
  * echo set_a.intersect(set_b) # <Set(2) {4, 5}>
  * ```
  *
- * When a dictionary is passed to the Set constructor, the
- * dictionary keys which are unique themselves will be added to
- * the Set object.
- *
- * For example:
+ * With a dictionary, its keys, which are already unique, are added:
  *
  * ```zuri
  * import set
- * 
+ *
  * var set_a = set({
  *   a: 10,
  *   b: 21,
  * })
- * 
+ *
  * echo set_a # <Set(2) {a, b}>
  * ```
  *

@@ -1,28 +1,24 @@
 /**
  * @module date
  *
- * This modules provides Zuri's implementation of date and time
- * manipulation methods. This module implements civil dates as
- * well as julian dates.
+ * Dates and times, including calendar dates and Julian dates.
  *
  * ### Definitions
  *
- * - The calendar date (`class Date`) is a particular day of a
- * calendar year, identified by its ordinal number within a
- * calendar month within that year.
+ * - A calendar date (`class Date`) is a particular day of a year,
+ *   identified by its month and its day within that month.
  *
- * - The Julian date number (`jd`) is in elapsed days and time
- * since noon (Greenwich Mean Time) on January 1, 4713 BCE (in
- * the Julian calendar).
+ * - The Julian date (`jd`) is the number of days, including the time of
+ *   day, since noon Greenwich Mean Time on January 1, 4713 BCE, in the
+ *   Julian calendar.
  *
- * `Date` instances support ordering (`<`, `<=`, `>`, `>=`) and
- * `equals()` by comparing the underlying instant in time: see
- * [[date.Date.equals]] for how that interacts with `gmt_offset`.
- * Arithmetic is done through named methods rather than `+`/`-`
- * (`add_seconds`, `add_days`, `add_months`, ...; see
- * [[date.Date.add_seconds]] and [[date.Date.add_months]]) since a
- * plain number added to a date is otherwise ambiguous about its
- * unit.
+ * `Date` objects can be compared with `<`, `<=`, `>` and `>=`, and with
+ * `equals()`, by comparing the moments in time they represent. See
+ * [[date.Date.equals]] for how that works with `gmt_offset`. Arithmetic
+ * is done with named methods, such as `add_seconds()`, `add_days()` and
+ * `add_months()`, instead of with `+` and `-`, because a plain number
+ * added to a date wouldn't say which unit it's in. See
+ * [[date.Date.add_seconds]] and [[date.Date.add_months]].
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
@@ -260,15 +256,15 @@ def _copy_zone(target, source) {
 }
 
 /**
- * Returns a dictionary representing the current time without
- * timezone adjustment.
+ * Returns a dictionary describing the current time in UTC.
  *
- * @note `year_day` here is the platform's own `tm_yday`, counting
- *    Jan 1st as day 0. `Date.year_day` counts it as day 1; the two
- *    differ by one on purpose, since this dictionary is the raw
- *    reading and `Date` is the module's own representation.
+ * @note `year_day` here is the platform's own `tm_yday`, which counts
+ *    January 1 as day 0. `Date.year_day` counts it as day 1. The two
+ *    intentionally differ by one, because this dictionary is the raw
+ *    value from the platform, and `Date` is this module's own
+ *    representation.
  *
- * Example,
+ * For example:
  *
  * ```zuri-repl
  * %> echo date.gmtime()
@@ -355,11 +351,11 @@ def is_valid_timezone(name) {
 }
 
 /**
- * Returns every IANA timezone identifier this build's timezone
- * database recognizes, e.g. `'Africa/Lagos'`, `'America/New_York'`,
- * `'UTC'`. There are several hundred of these; this is mainly useful
- * for populating a picker or validating against the full set at once
- * rather than one name at a time.
+ * Returns every IANA time zone identifier that this build's time zone
+ * database knows, such as `'Africa/Lagos'`, `'America/New_York'` and
+ * `'UTC'`. There are several hundred of them. This is mainly useful for
+ * filling in a list to choose from, or for validating against the whole
+ * set at once instead of one name at a time.
  *
  * @returns list[string]
  */
@@ -396,17 +392,17 @@ def list_timezones() {
 class Date {
 
   /**
-   * @note All arguments are optional
-   * @note When no argument is given, the date will be set to the
-   *    current system date.
-   * @note when the date fields are given, the timezone is always
-   *    in UTC irrespective of the system timezone or if a
-   *    gmt_offset is given or not.
-   * @note `year_day` on the resulting instance counts Jan 1st as day
-   *    1, which is what `to_ordinal()` and `format('z')` expect. The
-   *    raw dictionaries from `localtime()` and `gmtime()` are the one
-   *    place that differs: those carry the platform's own `tm_yday`,
-   *    which counts Jan 1st as day 0.
+   * @note All the arguments are optional.
+   * @note Without any arguments, the date is set to the current system
+   *    date.
+   * @note When the date fields are given, the time zone is always UTC,
+   *    whatever the system time zone is, and whether or not a
+   *    `gmt_offset` is given.
+   * @note `year_day` on the result counts January 1 as day 1, which is
+   *    what `to_ordinal()` and `format('z')` expect. The raw
+   *    dictionaries from `localtime()` and `gmtime()` are the only
+   *    place where it's different: those have the platform's own
+   *    `tm_yday`, which counts January 1 as day 0.
    * @param ?number year
    * @param ?number month
    * @param ?number day
@@ -688,65 +684,61 @@ class Date {
   }
 
   /**
-   * Formats the current date based on the specified string
+   * Formats the date according to `format`.
    *
-   * Zuri's Date formatting table
+   * These characters are replaced in the format string:
    *
-   * Character | Description                                               | Example
-   * ----------|-----------------------------------------------------------|-----------------------------------
-   * A         | uppercase Ante meridian and Post meridian                 | AM or PM
-   * a         | lowercase Ante meridian and Post meridian                 | am or pm
-   * d         | day of the month with leading zero                        | 01 to 31
-   * D         | textual representation of a day, three letters            | Mon - Sun
-   * j         | day of the month without leading zero                     | 1 to 31
-   * l         | full textual representation of the day of the week        | Monday - Sunday
-   * N         | ISO-8601 numeric representation of the day of the week    | 1 - 7
-   * S         | English ordinal suffix for the day of the month           | st, nd, rd or th
-   * w         | numeric representation of the day of the week             | 0 - 6
-   * z         | the day of the year (starting from 0)                     | 0 - 365
-   * W         | ISO-8601 week number of year, weeks starting on Monday    | E.g. 33 (the 33rd week of the year)
-   * F         | full textual representation of a month                    | January - December
-   * m         | numeric representation of a month, with leading zeros     | 01 - 12
-   * n         | numeric representation of a month, without leading zeros  | 1 - 12
-   * M         | short textual representation of a month, three letters    | Jan - Dec
-   * t         | number of days in the given month                         | 28 - 31
-   * L         | whether it's a leap year                                  | 1 if true, 0 otherwise
-   * y         | two digit representation of a year                        | e.g. 09 or 99
-   * Y         | full numeric representation of a year using 4 digits      | e.g. 2009 or 1999
-   * h         | 12 hour format of an hour with leading zeros              | 01 - 12
-   * H         | 24 hour format of an hour with leading zeros              | 01 - 24
-   * g         | 12 hour format of an hour without leading zeros           | 1 - 12
-   * G         | 24 hour format of an hour without leading zeros           | 1 - 24
-   * i         | minutes with leading zero                                 | 00 - 59
-   * s         | seconds with leading zero                                 | 00 - 59
-   * u         | microseconds, always six digits                           | 000005 - 999999
-   * v         | milliseconds, always three digits                         | 000 - 999
-   * e         | timezone identifier                                       | e.g. GMT, UTC, WAT
-   * I         | whether or not the date is in daylight saving time        | 1 for true, 0 otherwise
-   * O         | difference to GMT without colon between hours and minutes | e.g. +0100
-   * P         | difference to GMT with colon between hours and minutes    | e.g. +01:00
-   * Z         | timezone offset in seconds                                | -43200 - 50400
-   * c         | ISO 8601 date                                             | e.g. 2020-03-04T15:19:21+00:00
-   * r         | RFC 2822 formatted date                                   | e.g. Thu, 21 Dec 2000 16:01:07 +0200
+   * | Character | Description | Example |
+   * | --------- | ----------- | ------- |
+   * | A | AM or PM, in uppercase | AM or PM |
+   * | a | am or pm, in lowercase | am or pm |
+   * | d | day of the month, with a leading zero | 01 to 31 |
+   * | D | three-letter abbreviation of the day of the week | Mon to Sun |
+   * | j | day of the month, without a leading zero | 1 to 31 |
+   * | l | full name of the day of the week | Monday to Sunday |
+   * | N | ISO 8601 number of the day of the week | 1 to 7 |
+   * | S | English ordinal suffix for the day of the month | st, nd, rd or th |
+   * | w | number of the day of the week | 0 to 6 |
+   * | z | day of the year, starting from 1 | 1 to 366 |
+   * | W | ISO 8601 week number of the year, with weeks starting on Monday | 33, for the 33rd week of the year |
+   * | F | full name of the month | January to December |
+   * | m | number of the month, with a leading zero | 01 to 12 |
+   * | n | number of the month, without a leading zero | 1 to 12 |
+   * | M | three-letter abbreviation of the month | Jan to Dec |
+   * | t | number of days in the month | 28 to 31 |
+   * | L | whether it's a leap year | 1 if it is, 0 otherwise |
+   * | y | two-digit year | 09 or 99 |
+   * | Y | four-digit year | 2009 or 1999 |
+   * | h | hour in 12-hour format, with a leading zero | 01 to 12 |
+   * | H | hour in 24-hour format, with a leading zero | 00 to 23 |
+   * | g | hour in 12-hour format, without a leading zero | 1 to 12 |
+   * | G | hour in 24-hour format, without a leading zero | 0 to 23 |
+   * | i | minutes, with a leading zero | 00 to 59 |
+   * | s | seconds, with a leading zero | 00 to 59 |
+   * | u | microseconds, always six digits | 000005 to 999999 |
+   * | v | milliseconds, always three digits | 000 to 999 |
+   * | e | time zone identifier | GMT, UTC or WAT |
+   * | I | whether the date is in daylight saving time | 1 if it is, 0 otherwise |
+   * | O | difference from GMT, without a colon | +0100 |
+   * | P | difference from GMT, with a colon | +01:00 |
+   * | Z | time zone offset in seconds | -43200 to 50400 |
+   * | c | ISO 8601 date | 2020-03-04T15:19:21+00:00 |
+   * | r | RFC 2822 date | Thu, 21 Dec 2000 16:01:07 +0200 |
    *
-   *
-   * Example,
+   * For example:
    *
    * ```zuri-repl
    * %> date().format('F d, Y g:i A')
    * 'March 05, 2022 6:24 PM'
    * ```
    *
-   * You can prevent a format character in the format string from
-   * being expanded by escaping it with a preceding backslash. If
-   * the character with a backslash is already a special
-   * sequence, you may need to also escape the backslash.
-   *
-   * For example:
+   * To stop a character in the format string from being replaced, put a
+   * backslash in front of it. Because a backslash also starts an escape
+   * sequence in a Zuri string, you need to write two backslashes:
    *
    * ```zuri-repl
-   * %> date().format('l jS \o\\f F Y h:i:s A')
-   * 'Wednesday 17th of May 2021 01:39:08 PM'
+   * %> date(2024, 1, 1, 13, 5, 9).format('l jS \\o\\f F Y h:i:s A')
+   * 'Monday 1st of January 2024 01:05:09 PM'
    * ```
    *
    * @param string format
@@ -956,11 +948,10 @@ class Date {
   }
 
   /**
-   * Returns unix `mktime` equivalent of the current date.
+   * Returns the Unix `mktime` equivalent of the date.
    *
    * @returns number
-   * @deprecated - Use `to_time()` instead as it offers more
-   *    precision.
+   * @deprecated Use `to_time()` instead, which is more precise.
    */
   unix_time() {
     return _date.mktime(
@@ -1046,9 +1037,9 @@ class Date {
   }
 
   /**
-   * Returns the signed difference, in seconds, between this date
-   * and `other` (`self.to_time() - other.to_time()`). Positive when
-   * this date is later than `other`, negative when earlier.
+   * Returns the signed difference in seconds between this date and
+   * `other`, which is `self.to_time() - other.to_time()`. It's positive
+   * if this date is later than `other`, and negative if it's earlier.
    *
    * @param Date other
    * @returns number
@@ -1177,16 +1168,16 @@ class Date {
   }
 
   /**
-   * Returns a new `Date` representing the exact same instant as
-   * this one, re-expressed under a different `gmt_offset`. This is
-   * the way to convert a date from one timezone's wall-clock
-   * reading to another's: unlike `add_seconds()` and friends,
-   * which shift the underlying instant, this keeps the instant
-   * fixed and only changes how it's displayed.
+   * Returns a new `Date` for exactly the same instant as this one,
+   * expressed with a different `gmt_offset`. This is how you convert a
+   * date from the local time of one time zone to the local time of
+   * another. Unlike `add_seconds()` and the related methods, which move
+   * the instant, this keeps the instant the same and only changes how
+   * it's displayed.
    *
-   * @param number gmt_offset Seconds east of UTC.
-   * @param ?string zone Optional label for the new offset (e.g.
-   *    `'EST'`); when omitted, this date's own `zone` is kept as-is.
+   * @param number gmt_offset The number of seconds east of UTC.
+   * @param ?string zone An optional name for the new offset, such as
+   *    `'EST'`. If it's left out, this date's own `zone` is kept.
    * @returns Date
    */
   to_offset(gmt_offset, zone) {
@@ -1501,19 +1492,20 @@ def from_time(time) {
 }
 
 /**
- * Returns a `Date` from wall-clock fields understood as a local time
- * IN the real IANA timezone `name`, rather than in UTC (the plain
- * `Date(...)` constructor) or the process's own system zone
- * (`mktime()`). The offset, zone abbreviation, and DST state are all
- * worked out from `name`'s real rules at that wall-clock moment.
+ * Returns a `Date` from date and time fields read as local time in the
+ * real IANA time zone `name`, instead of in UTC, as the `Date(...)`
+ * constructor does, or in the process's own time zone, as `mktime()`
+ * does. The offset, the zone abbreviation and whether daylight saving
+ * time applies are all worked out from the real rules for `name` at
+ * that local time.
  *
- * A wall-clock reading can be ambiguous once a year: the hour a
- * clock falls back repeats, e.g. 1:30am happens twice on the day
- * `America/New_York` leaves daylight saving: `is_dst` picks which
- * occurrence is meant, the same way it does for `mktime()`. A reading
- * a clock skips entirely (the hour a clock springs forward) has no
- * valid answer at all and raises, rather than silently returning a
- * nearby instant.
+ * Once a year, a local time can be ambiguous. When clocks go back, an
+ * hour is repeated, so for example 1:30 AM happens twice on the day
+ * that `America/New_York` leaves daylight saving time. `is_dst` chooses
+ * which one you mean, as it does for `mktime()`. A local time that's
+ * skipped entirely, in the hour when clocks go forward, has no valid
+ * answer, and raises an error, instead of silently returning a nearby
+ * instant.
  *
  * ```zuri
  * var d = date.from_timezone('America/New_York', 2024, 7, 1, 0, 0, 0)
@@ -1522,21 +1514,22 @@ def from_time(time) {
  * echo d.gmt_offset  # -14400
  * ```
  *
- * @param string name An IANA timezone identifier.
+ * @param string name An IANA time zone identifier.
  * @param number year
  * @param number month
  * @param number day
  * @param number hour
  * @param number minute
  * @param number seconds
- * @param ?bool is_dst Disambiguates a wall-clock reading that occurs
- *    twice; ignored otherwise. Defaults to the earlier occurrence
- *    when omitted.
+ * @param ?bool is_dst Chooses between the two occurrences of a local
+ *    time that happens twice, and is ignored otherwise. If it's left
+ *    out, the earlier occurrence is used.
  * @returns Date
- * @throws TypeError When `name` is not a string, or a date/time field
- *    is not a number.
- * @throws Error When `name` is not a recognized timezone, the fields
- *    are out of range, or the wall-clock reading falls in a DST gap.
+ * @throws TypeError When `name` isn't a string, or a date or time field
+ *    isn't a number.
+ * @throws Error When `name` isn't a recognized time zone, a field is
+ *    out of range, or the local time falls in a daylight saving time
+ *    gap.
  */
 def from_timezone(name, year, month, day, hour, minute, seconds, is_dst) {
   if !is_string(name) {

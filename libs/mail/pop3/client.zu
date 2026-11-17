@@ -1,12 +1,13 @@
 /**
  * @module client
  *
- * POP3: collecting mail and taking it away.
+ * POP3, for collecting mail and removing it from the server.
  *
- * Where IMAP leaves mail on the server and lets a client work with it
- * in place, POP3 hands it over and, usually, forgets it. That makes it
- * the wrong protocol for reading mail on more than one device and the
- * right one for a program whose job is to drain a mailbox.
+ * IMAP leaves mail on the server and lets a client work with it there.
+ * POP3 hands mail over, and the server usually deletes it afterwards.
+ * That makes POP3 the wrong protocol for reading mail on more than one
+ * device, but the right one for a program whose job is to empty a
+ * mailbox.
  *
  * ```zuri,ignore
  * import mail.pop3 { Pop3Client }
@@ -26,13 +27,13 @@
  * mailbox.quit()
  * ```
  *
- * Nothing is actually removed until `quit()`: `delete()` only marks,
- * and `reset()` undoes every mark. A connection that drops without
- * `quit()` leaves the mailbox as it was, which is the protocol
- * protecting against a client that fails halfway.
+ * Nothing is actually deleted until `quit()`. `delete()` only marks a
+ * message, and `reset()` removes every mark. If the connection is lost
+ * before `quit()`, the mailbox is left as it was, which protects
+ * against a client that fails halfway through.
  *
- * There is no POP3 server here. A POP3 server is an IMAP server with
- * almost everything taken away, and `mail.imap` is the one to run.
+ * There's no POP3 server here. A POP3 server is an IMAP server with
+ * almost everything taken out, so run `mail.imap` instead.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -117,23 +118,24 @@ class Pop3Client {
   /**
    * Opens a connection and authenticates.
    *
-   * When the greeting, TLS or authentication fails, the connection is
-   * closed before the error is raised, since no client is returned to
-   * close it with.
+   * If the greeting, TLS or authentication fails, the connection is
+   * closed before the error is raised, because no client is returned
+   * that could close it.
    *
    * | option | default | what it does |
    * | - | - | - |
-   * | `username`, `password` | none | authenticate when both are given |
-   * | `tls` | `require` | `require`, `prefer` or `disable`, when not already encrypted |
+   * | `username`, `password` | none | authenticate if both are given |
+   * | `tls` | `require` | `require`, `prefer` or `disable`, if the connection isn't already encrypted |
    * | `tls_config` | a default one | the trust settings for TLS |
-   * | `mechanisms` | all of them | restricts which are acceptable |
-   * | `timeout` | `60000` | milliseconds to wait on the socket |
+   * | `mechanisms` | all of them | limits which mechanisms are acceptable |
+   * | `timeout` | `60000` | the number of milliseconds to wait on the socket |
    *
-   * @param string url: `pop3s://host`, `pop3://host`, or a bare host.
+   * @param string url: `pop3s://host`, `pop3://host`, or just a host
+   *    name
    * @param ?dict options
    * @returns Pop3Client
    * @throws Pop3Error if the server refuses.
-   * @throws AuthenticationError if it refuses the credentials.
+   * @throws AuthenticationError if the server rejects the credentials.
    */
   static connect(url: string, options: ?dict) {
     var given = options == nil ? {} : options
@@ -285,16 +287,18 @@ class Pop3Client {
   }
 
   /**
-   * Authenticates, choosing the strongest mechanism both ends know.
+   * Authenticates, using the strongest mechanism that both sides
+   * support.
    *
-   * `APOP` is preferred over sending the password where the server's
-   * greeting offered it, and `USER`/`PASS` is the last resort and only
-   * over TLS.
+   * If the server's greeting offered `APOP`, it's used in preference to
+   * sending the password. `USER` and `PASS` are the last resort, and
+   * are only used over TLS.
    *
-   * @param ?string mechanism: Forces one rather than choosing.
+   * @param ?string mechanism: forces a particular mechanism, instead of
+   *    choosing one
    * @returns Pop3Client itself.
-   * @throws AuthenticationError if the credentials are refused or
-   *    nothing usable is on offer.
+   * @throws AuthenticationError if the credentials are rejected, or no
+   *    usable mechanism is offered.
    */
   login(mechanism: ?string) {
     var username = self._options.get('username', nil)

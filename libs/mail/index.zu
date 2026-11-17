@@ -1,12 +1,12 @@
 /**
  * @module mail
  *
- * Mail, from the message to the socket.
+ * Email, from building messages to sending and receiving them.
  *
- * `mail` builds and reads messages, and speaks the three protocols
- * that move them: SMTP to send, IMAP and POP3 to read. It also runs
- * the other end, with an SMTP server that accepts mail and an IMAP
- * server that serves it. All of it is written in Zuri.
+ * `mail` builds and reads messages, and implements the three protocols
+ * that move them: SMTP to send mail, and IMAP and POP3 to read it. It
+ * also includes the server side, with an SMTP server that accepts mail
+ * and an IMAP server that serves it. It's all written in Zuri.
  *
  * ```zuri,ignore
  * import mail
@@ -23,23 +23,23 @@
  * })
  * ```
  *
- * ### What is here
+ * ### Contents
  *
  * | | |
  * | - | - |
  * | `message()` | starts a message, built up one call at a time |
- * | `parse()` | reads one back |
- * | `send()` | sends one, opening and closing the connection |
- * | `Message` | a message, or one part of one |
- * | `Address` | one address and the name written with it |
+ * | `parse()` | reads a message |
+ * | `send()` | sends a message, opening and closing the connection |
+ * | `Message` | a message, or one part of a message |
+ * | `Address` | an address and the name written with it |
  * | `Headers` | the header block, in order and case-insensitive |
  * | `SmtpClient` | a connection to a server that sends mail |
- * | `ImapClient` | a connection to a server that stores it |
- * | `Pop3Client` | the older way of collecting it |
- * | `SmtpServer` | the receiving end of SMTP |
- * | `ImapServer` | the serving end of IMAP |
+ * | `ImapClient` | a connection to a server that stores mail |
+ * | `Pop3Client` | the older way of collecting mail |
+ * | `SmtpServer` | the receiving side of SMTP |
+ * | `ImapServer` | the server side of IMAP |
  * | `MailStore` | where an `ImapServer` keeps mail |
- * | `MailError` | the root of every error raised here |
+ * | `MailError` | the base class of every error raised here |
  *
  * ### Reading mail
  *
@@ -62,17 +62,18 @@
  *
  * ### Running a server
  *
- * The servers are the same shape as `http.HttpServer`: bind, listen,
- * and hand each connection to a worker. An `SmtpServer` decides what
- * to accept through handlers, and an `ImapServer` answers from a
- * `MailStore`, of which two ship: one on disk in Maildir format and
- * one in memory.
+ * The servers work like `http.HttpServer`: they bind, listen, and pass
+ * each connection to a worker. An `SmtpServer` decides what to accept
+ * through handlers, and an `ImapServer` answers from a `MailStore`. Two
+ * stores are included, one that keeps mail on disk in Maildir format
+ * and one that keeps it in memory.
  *
  * ### Security
  *
- * Every client can start in TLS or negotiate it with `STARTTLS`, and
- * refuses to send credentials over a connection that is neither.
- * `mail.dkim` signs outgoing mail and verifies incoming mail.
+ * Every client can connect over TLS from the start or switch to it with
+ * `STARTTLS`, and refuses to send credentials over a connection that
+ * does neither. `mail.dkim` signs outgoing mail and verifies incoming
+ * mail.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -151,11 +152,11 @@ def format_addresses(people: list) {
 }
 
 /**
- * Sends one message, opening the connection and closing it again.
+ * Sends one message, opening the connection and then closing it again.
  *
- * This is the whole of sending mail for a program that sends one at a
- * time. A program sending many wants an `SmtpClient` of its own, kept
- * open across all of them.
+ * This is all that a program that sends one message at a time needs. A
+ * program that sends many should keep its own `SmtpClient` open while
+ * it sends them all.
  *
  * ```zuri,ignore
  * import mail
@@ -168,11 +169,11 @@ def format_addresses(people: list) {
  *   { username: 'reports', password: secret })
  * ```
  *
- * @param string url: `smtp://host` or `smtps://host`.
+ * @param string url: `smtp://host` or `smtps://host`
  * @param Message note
- * @param ?dict options: Everything `SmtpClient.connect()` takes, and
- *    `from` and `to` to override the envelope.
- * @returns Reply the server's verdict on the message.
+ * @param ?dict options: any of the options that `SmtpClient.connect()`
+ *    takes, and `from` and `to` to override the envelope
+ * @returns Reply the server's response to the message.
  * @throws SmtpError if the server refuses any part of it.
  */
 def send(url: string, note, options: ?dict) {

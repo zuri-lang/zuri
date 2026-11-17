@@ -1,17 +1,18 @@
 /**
  * @module schema
  *
- * Introspection for SQLite, which answers through pragmas rather than
- * through catalogue tables.
+ * Introspection for SQLite, which answers through pragmas instead of
+ * catalog tables.
  *
- * `PRAGMA table_info`, `index_list`, `index_info` and `foreign_key_list`
- * are functions that return result sets, so each of these is an
- * ordinary query. The one catalogue table SQLite does have,
- * `sqlite_master`, is where the list of tables comes from.
+ * `PRAGMA table_info`, `index_list`, `index_info` and
+ * `foreign_key_list` are functions that return result sets, so each of
+ * these is an ordinary query. The list of tables comes from
+ * `sqlite_master`, the one catalog table that SQLite has.
  *
- * SQLite has no schemas. It has attached databases, which the `schema`
- * argument here names: `nil` and `'main'` both mean the database the
- * connection opened, and `'temp'` holds temporary tables.
+ * SQLite doesn't have schemas. It has attached databases, and the
+ * `schema` argument here names one of them. `nil` and `'main'` both
+ * mean the database the connection opened, and `'temp'` holds temporary
+ * tables.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -93,8 +94,8 @@ class SqliteSchema < SchemaAdapter {
    * The primary key columns, in key order.
    *
    * `table_info` reports each key column's position within the key, so
-   * a composite key comes back in the order it was declared rather
-   * than in column order.
+   * a composite key is returned in the order it was declared, not in
+   * column order.
    *
    * @param string table
    * @param string|nil schema

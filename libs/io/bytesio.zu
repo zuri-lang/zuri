@@ -1,11 +1,11 @@
 /**
  * @module bytesio
  *
- * `BytesIO`: an in-memory buffer that behaves like a file.
+ * `BytesIO`, an in-memory buffer that behaves like a file.
  *
- * Anything that reads or writes through a file handle can be pointed at
- * one of these instead, which is what makes a function that writes to
- * disk testable without touching the disk.
+ * Anything that reads or writes through a file handle can use one of
+ * these instead, which lets you test a function that writes to disk
+ * without touching the disk.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -31,10 +31,10 @@ class BytesIO {
   var _position = 0
 
   /**
-   * Returns a new instance of BytesIO
+   * Creates a `BytesIO`.
    *
    * @param bytes source
-   * @param string mode: The I/O open mode - Default is `r`
+   * @param string mode: the mode to open it in. Defaults to `r`.
    */
   @new(source, mode) {
     if !mode {

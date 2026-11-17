@@ -1,38 +1,36 @@
 /**
  * @module _tree
  *
- * Internal only: the recursive walk `zuri.ast`'s `walk_nodes()`
- * and `zuri.compile`'s `walk_instrs()` are both built on. `Node`
- * and `Instr` are separate classes on purpose (their callers
- * care which one they're holding), but the actual tree shape
- * underneath is identical either way: one wrapped value tagged
- * by a string (`kind`/`op`), carrying a `fields` dict whose own
- * values are more wrapped values, plain lists, plain dicts, or
- * scalars. Written once here instead of twice, since duplicating
- * a recursive-descent walk across two files is exactly the kind
- * of drift risk that "same bug, fixed in only one of two copies"
- * comes from.
+ * For internal use only: the recursive walk that both `walk_nodes()` in
+ * `zuri.ast` and `walk_instrs()` in `zuri.compile` are built on. `Node`
+ * and `Instr` are intentionally separate classes, because their callers
+ * care which one they have, but the tree underneath has the same shape
+ * either way: a wrapped value tagged with a string (`kind` or `op`),
+ * with a `fields` dictionary whose values are more wrapped values,
+ * plain lists, plain dictionaries or scalars. The walk is written once
+ * here, instead of twice, because two copies of a recursive walk in two
+ * files would sooner or later drift apart, with a bug fixed in only one
+ * of them.
  *
- * Not part of `zuri`'s own public surface: `ast.zu`/`compile.zu`
- * import this file WITHOUT `@`, so nothing here becomes one of
- * their own exports, and `index.zu` never imports it at all.
+ * It isn't part of the public interface of `zuri`. `ast.zu` and
+ * `compile.zu` import this file without `@`, so nothing here becomes
+ * one of their exports, and `index.zu` never imports it at all.
  */
 
 /**
- * Recursively visits `value`. `describe(value)` decides what
- * counts as a "node" here: it returns the node's own
- * dispatch-key string (`kind` for a `Node`, `op` for an `Instr`)
- * when `value` is one, or `nil` when it's just a plain
- * list/dict/scalar to recurse through without visiting. See
- * `walk_nodes()`/`walk_instrs()` for what `describe` actually
+ * Visits `value` and everything inside it. `describe(value)` decides
+ * what counts as a node: it returns the node's dispatch key, `kind` for
+ * a `Node` or `op` for an `Instr`, if `value` is a node, or `nil` if
+ * it's just a plain list, dictionary or scalar to look inside without
+ * visiting. See `walk_nodes()` and `walk_instrs()` for what `describe`
  * looks like.
  *
- * `visitor` is either a plain function, called for every node
- * (`visitor(node)`), or a dict from dispatch-key to function,
- * where only a matching node gets called
- * (`visitor[describe(node)](node)`); `is_dict_visitor` says
- * which. Always visits the whole tree; a visitor has no way to
- * skip descending into a node's children.
+ * `visitor` is either a plain function, called for every node as
+ * `visitor(node)`, or a dictionary that maps dispatch keys to
+ * functions, so that only matching nodes are visited, as
+ * `visitor[describe(node)](node)`. `is_dict_visitor` says which. The
+ * whole tree is always visited, because a visitor can't choose to skip
+ * a node's children.
  */
 def walk(value, describe, visitor, is_dict_visitor) {
   var key = describe(value)

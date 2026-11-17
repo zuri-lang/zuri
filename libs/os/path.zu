@@ -1,12 +1,11 @@
 /**
  * @module os.path
  *
- * Path string manipulation: joining, resolving, and comparing
- * paths. Nothing in this file touches the filesystem except where
- * explicitly documented (`real_path()`, and `abs_path()`'s optional
- * `strict` mode): everything else here is pure string handling, so
- * it works the same whether or not the path in question actually
- * exists.
+ * Manipulates path strings: joining, resolving and comparing paths.
+ * Nothing in this file touches the filesystem, except where the
+ * documentation says so, which is `real_path()` and the optional
+ * `strict` mode of `abs_path()`. Everything else works only on strings,
+ * so it behaves the same way whether or not the path exists.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
@@ -95,23 +94,23 @@ def real_path(path: string) {
 }
 
 /**
- * Returns the absolute form of `path`: relative paths are resolved
- * against the current working directory, and "." / ".." segments
- * are collapsed: purely as string manipulation, with no filesystem
- * access at all by default. Unlike `real_path()`, this works even
- * when `path` (or any part of it) doesn't exist on disk, and it
- * never resolves symbolic links; use `real_path()` when you need the
- * true canonical path of something that already exists.
+ * Returns the absolute form of `path`. A relative path is resolved
+ * against the current working directory, and `.` and `..` segments are
+ * removed, by string manipulation alone, without accessing the
+ * filesystem by default. Unlike `real_path()`, this works even if
+ * `path`, or any part of it, doesn't exist, and it never resolves
+ * symbolic links. Use `real_path()` when you need the true canonical
+ * path of something that exists.
  *
- * On Windows, a path that starts at a root without naming a drive,
- * such as `\\srv\\app` or `/srv/app`, is on the working directory's
- * drive, and a UNC path such as `\\\\server\\share\\app` keeps
- * `\\\\server\\share` as its root, which `..` never climbs out of.
+ * On Windows, a path that starts at a root without naming a drive, such
+ * as `\\srv\\app` or `/srv/app`, is on the drive of the working
+ * directory, and a UNC path such as `\\\\server\\share\\app` keeps
+ * `\\\\server\\share` as its root, which `..` never goes above.
  *
  * @param string path
- * @param ?bool strict: Default `false`. When `true`, the resolved
- *    path is checked against the filesystem and an `Error` is raised
- *    if nothing exists there.
+ * @param ?bool strict: defaults to `false`. When it's `true`, the
+ *    resolved path is checked against the filesystem, and an `Error` is
+ *    raised if nothing exists there.
  * @returns string
  */
 def abs_path(path: string, strict: ?bool) {
@@ -321,15 +320,15 @@ def relative_path(base: string, target: string) {
 }
 
 /**
- * Expands a leading `~` in `path` into the current user's home
- * directory, the same way a shell would before running a command.
- * A bare `~` and a `~/...`-prefixed path are both expanded; a path
- * that doesn't start with `~` is returned unchanged.
+ * Expands a leading `~` in `path` to the current user's home directory,
+ * as a shell does before it runs a command. Both a bare `~` and a path
+ * that starts with `~/` are expanded. A path that doesn't start with
+ * `~` is returned unchanged.
  *
- * @note expanding another user's home directory (`~other_user/...`)
- *    isn't supported; a path in that form is returned unchanged,
- *    the same fallback Python's `os.path.expanduser` uses when it
- *    can't resolve one either.
+ * @note Expanding another user's home directory (`~other_user/...`)
+ *    isn't supported, and a path in that form is returned unchanged,
+ *    just as Python's `os.path.expanduser` does when it can't resolve
+ *    one.
  * @param string path
  * @returns string
  */

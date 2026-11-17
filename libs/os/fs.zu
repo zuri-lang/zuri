@@ -1,13 +1,13 @@
 /**
  * @module os.fs
  *
- * Directory and filesystem-entry operations: creating, listing, and
- * removing directories, permissions and ownership, symbolic links,
- * searching `PATH` for an executable, and glob-style pattern
- * matching. Per-file operations (reading, writing, deleting, or
- * copying a single file, or getting its size/mtime/etc.) live on
- * the `file` class instead: see `file.stats()`, `file.delete()`,
- * `file.copy()`, and friends.
+ * Operations on directories and other filesystem entries: creating,
+ * listing and removing directories, permissions and ownership, symbolic
+ * links, searching `PATH` for an executable, and glob pattern matching.
+ * Operations on a single file, such as reading, writing, deleting or
+ * copying it, or getting its size or modification time, are methods of
+ * the `file` class instead. See `file.stats()`, `file.delete()`,
+ * `file.copy()` and the related methods.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
@@ -105,37 +105,36 @@ def create_dir(path: string, permission: ?int, recursive: ?bool) {
 }
 
 /**
- * Scans the given directory and returns a list of the names it
- * contains, sorted by name, led by `.` and `..`.
+ * Lists the directory, and returns the names it contains, sorted by
+ * name, starting with `.` and `..`.
  *
- * Example,
+ * For example:
  *
  * ```zuri-repl
  * %> os.read_dir('./tests')
  * [., .., buggy.zu, myprogram.zu, single_thread.zu, test.zu]
  * ```
  *
- * When the recursive argument is set to `true`, sub-directories
- * are descended into as well, and their contents come back as
- * paths relative to `path` rather than as bare names. A
- * directory's contents follow immediately after the directory
- * itself, and entries are sorted by name within every level:
+ * When `recursive` is `true`, subdirectories are listed too, and their
+ * contents are returned as paths relative to `path`, not just names. A
+ * directory's contents come straight after the directory itself, and
+ * entries are sorted by name at every level:
  *
  * ```zuri-repl
  * %> os.read_dir('./tests', true)
  * [., .., buggy.zu, data, data/input.csv, test.zu]
  * ```
  *
- * A symbolic link to a directory is listed but not descended
- * into, whether or not it points somewhere inside `path`.
+ * A symbolic link to a directory is listed, but not followed, whether
+ * or not it points somewhere inside `path`.
  *
- * @note `.` indicates current directory and can be used as
- *    argument to _os.read_dir_ as well.
- * @note `..` indicates parent directory and can be used as
- *    argument to _os.read_dir_ as well.
+ * @note `.` means the current directory, and can be passed to
+ *    `os.read_dir()`.
+ * @note `..` means the parent directory, and can be passed to
+ *    `os.read_dir()`.
  *
  * @param string path
- * @param ?bool recursive: Default is `false`.
+ * @param ?bool recursive: defaults to `false`.
  * @returns list[string]
  */
 def read_dir(path: string, recursive: ?bool) {
@@ -198,19 +197,16 @@ def dir_exists(path: string) {
 }
 
 /**
- * Renames the file or directory specified by `old_name` to the
- * name given by `new_name`.
+ * Renames the file or directory `old_name` to `new_name`.
  *
- * If `old_name` and `new_name` are existing hard links referring
- * to the same file, then it does nothing, and returns a success
- * status.
+ * If `old_name` and `new_name` are existing hard links to the same
+ * file, this does nothing, and reports success.
  *
- * If `old_name` specifies a directory, `new_name` must either
- * not exist, or it must specify an empty directory.
+ * If `old_name` is a directory, `new_name` must either not exist or be
+ * an empty directory.
  *
- * If `old_name` refers to a symbolic link, the link is renamed;
- * if `new_name` refers to a symbolic link, the link will be
- * overwritten.
+ * If `old_name` is a symbolic link, the link itself is renamed. If
+ * `new_name` is a symbolic link, the link is overwritten.
  *
  * @param string old_name
  * @param string new_name
@@ -222,10 +218,10 @@ def rename(old_name: string, new_name: string) {
 }
 
 /**
- * Changes the owning user and group of `path` to `uid` and `gid`.
+ * Changes the user and group that own `path` to `uid` and `gid`.
  *
- * @note this is a Unix-only operation; ownership isn't a concept
- *    Windows has a direct equivalent for, so this raises there.
+ * @note This only works on Unix. Windows has no direct equivalent of
+ *    this kind of ownership, so it raises an error there.
  * @param string path
  * @param int uid
  * @param int gid
@@ -237,16 +233,16 @@ def chown(path: string, uid: int, gid: int) {
 }
 
 /**
- * Gets or sets the process's file-creation mask: the set of
- * permission bits stripped from every file/directory this process
- * creates from now on.
+ * Gets or sets the process's file creation mask, which is the set of
+ * permission bits removed from every file and directory that this
+ * process creates from now on.
  *
- * Called with no argument (or `nil`), returns the current mask
- * without changing it. Called with a mask, sets it and returns
- * whatever the previous mask was.
+ * Without an argument, or with `nil`, it returns the current mask
+ * without changing it. With a mask, it sets the mask and returns the
+ * previous one.
  *
- * @note this is a Unix-only operation; Windows has no umask
- *    concept, and this raises there.
+ * @note This only works on Unix. Windows has no umask, so it raises an
+ *    error there.
  * @param ?int mask
  * @returns int
  * @raises Error

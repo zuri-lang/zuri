@@ -1,10 +1,9 @@
 /**
  * @module hash
  *
- * This module provides a framework for cryptographic and
- * non-cryptographic encryption.
+ * Cryptographic and non-cryptographic hash functions, and HMAC.
  *
- * Examples,
+ * For example:
  *
  * ```zuri-repl
  * %> import hash
@@ -43,28 +42,26 @@ def id(value) {
 }
 
 /**
- * Returns the hash digest for the given data using the given
- * algorithm.
+ * Returns the hash of `data`, using the given algorithm.
  *
- * Supported algorithms includes:
+ * The supported algorithms are:
  *
- * - **FNV1 family**: `fnv1`, `fnv1a`, `fnv164`, `fnv1a64`. -
- * **MD family**: `md2`, `md4`, `md5`. - **SHA family**: `sha`,
- * `sha1`, `sha224`, `sha256`, `sha384`, `sha512`, `sha512-224`,
- * `sha512-256`, `md5-sha1`. - **SHA3 family**: `sha3-224`,
- * `sha3-256`, `sha3-384`, `sha3-512`. - **SHAKE family (XOF)**:
- * `shake128`, `shake256`. - **RIPEMD family**: `ripemd160`. -
- * **WHIRLPOOL family**: `whirlpool`. - **Blake family**:
- * `blake2s256`, `blake2b512`. - **SM family**: `sm3`.
+ * - **FNV-1 family**: `fnv1`, `fnv1a`, `fnv164` and `fnv1a64`
+ * - **MD family**: `md2`, `md4` and `md5`
+ * - **SHA family**: `sha`, `sha1`, `sha224`, `sha256`, `sha384`,
+ *   `sha512`, `sha512-224`, `sha512-256` and `md5-sha1`
+ * - **SHA-3 family**: `sha3-224`, `sha3-256`, `sha3-384` and `sha3-512`
+ * - **SHAKE family (XOF)**: `shake128` and `shake256`
+ * - **RIPEMD family**: `ripemd160`
+ * - **Whirlpool**: `whirlpool`
+ * - **BLAKE family**: `blake2s256` and `blake2b512`
+ * - **SM family**: `sm3`
  *
- * By default, this function returns the hexadecimal string
- * representing the hash (since this is the most common
- * application level usage). The function accepts a third boolean
- * argument `as_bytes` which allows callers to specify if the
- * result should be returned in the raw digest byte stream or
- * not.
+ * By default, this returns the hash as a hexadecimal string, which is
+ * what most programs want. Pass `true` as the third argument,
+ * `as_bytes`, to get the raw digest as bytes instead.
  *
- * @note Algorithm names are not case-sensitive.
+ * @note Algorithm names aren't case-sensitive.
  * @param string algorithm
  * @param {string|bytes} data
  * @param ?bool as_bytes
@@ -695,87 +692,87 @@ def hmac_gost(key, str, as_bytes) {
 #################################################################################
 
 /**
- * Derives a cryptographic key from a password using the PBKDF2
- * key derivation function defined in RFC 2898 §5.2 (PKCS #5
- * v2.0), as updated by RFC 8018.
+ * Derives a key from a password, using the PBKDF2 key derivation
+ * function defined in RFC 2898 §5.2 (PKCS #5 v2.0), as updated by RFC
+ * 8018.
  *
  * ## Examples
  *
- * ### Password storage  (derive then verify)
+ * ### Storing a password (derive, then verify)
  *
  * ```zuri
  * import hash
  *
  * var salt = 'f3a8c2b104d7e569'   # 16 random bytes in production
  * var dk   = hash.pbkdf2('sha256', 'correct horse battery staple', salt, 600000)
- * # → 64 lowercase hex characters (32 bytes)
+ * # 64 lowercase hexadecimal characters (32 bytes)
  *
- * # Verification: re-derive and compare.
+ * # To verify, derive the key again and compare.
  * if hash.pbkdf2('sha256', candidate, salt, 600000) == dk {
  *   echo 'Password correct'
  * }
  * ```
  *
- * ### Raw-bytes key for symmetric encryption
+ * ### A key as raw bytes, for symmetric encryption
  *
  * ```zuri
  * import hash
  *
- * # 32-byte key for AES-256, returned as a bytes object.
+ * # A 32-byte key for AES-256, returned as bytes.
  * var key = hash.pbkdf2('sha256', passphrase, salt, 600000, 32, true)
  * ```
  *
- * ### Longer key with SHA-512
+ * ### A longer key with SHA-512
  *
  * ```zuri
  * import hash
  *
- * # 64 bytes; dk_len == hLen so only one T block is needed.
+ * # 64 bytes. dk_len == hLen, so only one T block is needed.
  * var dk = hash.pbkdf2('sha512', password, salt, 210000, 64)
- * echo dk.length()   # 128 hex characters = 64 bytes
+ * echo dk.length()   # 128 hexadecimal characters = 64 bytes
  * ```
  *
- * ### Key that spans multiple PRF blocks
+ * ### A key that spans several PRF blocks
  *
  * ```zuri
  * import hash
  *
- * # 40 bytes with SHA-1 (hLen = 20) requires two T blocks.
+ * # 40 bytes with SHA-1 (hLen = 20) needs two T blocks.
  * var dk = hash.pbkdf2('sha1', 'secret', 'nacl', 4096, 40)
- * echo dk.length()   # 80 hex characters = 40 bytes
+ * echo dk.length()   # 80 hexadecimal characters = 40 bytes
  * ```
  *
  * > ## Security notes
  * >
- * > - Always use a **unique, randomly generated salt** for every
- * > password. Never derive the salt from the username, email, or
- * > any other predictable input. - Tune `iterations` so that
- * > derivation takes ~100 ms on your target hardware.
- * > Re-benchmark as server capacity increases over time. - For
- * > pure password storage where output size is not a concern,
- * > consider `bcrypt` (built into Zuri's `hash` module). PBKDF2
- * > is most appropriate when you need an arbitrarily long output
- * >: symmetric keys, key wrapping, or protocol key schedules. -
- * > When comparing derived keys, use a constant-time equality
- * > function to prevent timing side-channel attacks.
+ * > - Always use a **unique, randomly generated salt** for each
+ * > password. Never derive the salt from the username, email
+ * > address or anything else predictable.
+ * > - Choose `iterations` so that deriving a key takes about
+ * > 100 ms on your hardware, and check again as servers get
+ * > faster.
+ * > - For storing passwords, when the size of the output doesn't
+ * > matter, consider the `bcrypt` module. PBKDF2 is most useful
+ * > when you need output of any length, such as symmetric keys,
+ * > key wrapping or protocol key schedules.
+ * > - When comparing derived keys, use a constant-time comparison
+ * > to prevent timing attacks.
  *
- * @param {string} algorithm HMAC variant used as the PRF. One
- *    of: `'sha1'`, `'sha224'`, `'sha256'`, `'sha384'`,
- *    `'sha512'`, `'md5'`. Prefer `'sha256'` or `'sha512'` for
- *    new designs.
- * @param {string|bytes} password The password (HMAC key). Any
- *    string or bytes value is accepted.
- * @param {string|bytes} salt The cryptographic salt. Use at
- *    least 16 bytes of random data per password. Never reuse a
- *    salt across different passwords.
- * @param {number} iterations Iteration count `c` (must be >= 1).
- *    OWASP 2023 minimums: 'sha1' → 1 300 000 'sha256' → 600 000
- *    'sha512' → 210 000
- * @param {number} dk_len Derived key length in bytes. Defaults
- *    to the PRF output length (hLen) when nil or omitted.
- *    Maximum: (2^32 - 1) * hLen.
- * @param {bool} as_bytes true → return a bytes object. false →
- *    return a lowercase hex string (default).
+ * @param {string} algorithm The HMAC variant used as the PRF. One of
+ *    `'sha1'`, `'sha224'`, `'sha256'`, `'sha384'`, `'sha512'` or
+ *    `'md5'`. Use `'sha256'` or `'sha512'` for new designs.
+ * @param {string|bytes} password The password, used as the HMAC key.
+ *    Any string or bytes value is accepted.
+ * @param {string|bytes} salt The salt. Use at least 16 bytes of random
+ *    data for each password, and never use the same salt for different
+ *    passwords.
+ * @param {number} iterations The iteration count, `c`, which must be at
+ *    least 1. The OWASP 2023 minimums are 1,300,000 for `'sha1'`,
+ *    600,000 for `'sha256'` and 210,000 for `'sha512'`.
+ * @param {number} dk_len The length of the derived key in bytes. If
+ *    it's `nil` or left out, it defaults to the length of the PRF
+ *    output (hLen). The maximum is (2^32 - 1) * hLen.
+ * @param {bool} as_bytes `true` to return bytes, or `false` to return a
+ *    lowercase hexadecimal string, which is the default.
  *
  * @return string | bytes The derived key.
  *

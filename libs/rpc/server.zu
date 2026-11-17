@@ -1,20 +1,20 @@
 /**
  * @module server
  *
- * Serving JSON-RPC to many connections at once, over TCP, TLS or a
- * Unix domain socket.
+ * Serves JSON-RPC to many connections at once, over TCP, TLS or a Unix
+ * domain socket.
  *
  * `serve()` binds a listening socket and spreads the connections it
  * accepts across a pool of worker isolates. Every connection gets an
  * {Endpoint} of its own, and `setup` gives it its handlers, so each
- * connection is a full JSON-RPC peer: it answers what its client
- * asks, and it can call its client and notify it in return.
+ * connection is a full JSON-RPC peer: it answers what its client asks,
+ * and it can call and notify its client in return.
  *
- * Each worker polls the connections it holds rather than blocking on
- * one, so a quiet client occupies a descriptor and not a thread, and
- * one worker serves many long-lived connections side by side.
+ * Each worker polls the connections it holds, instead of waiting on one
+ * of them, so a quiet client only uses a file descriptor, not a thread,
+ * and one worker can serve many long-lived connections at once.
  *
- * Re-exported by `rpc`.
+ * The `rpc` module re-exports it.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -212,16 +212,16 @@ def _close_waiting(connections) {
 }
 
 /**
- * The loop each worker isolate runs: serve the connections the
- * acceptor hands it until the server stops.
+ * The loop that each worker isolate runs, serving the connections that
+ * the acceptor gives it until the server stops.
  *
  * @internal
- * @param isolate.Channel connections: Accepted sockets arrive here,
- *    and it closes once nothing more will be accepted.
- * @param isolate.Channel halt: Closed when the server is stopped, at
+ * @param isolate.Channel connections: accepted sockets arrive here, and
+ *    it's closed once no more connections will be accepted.
+ * @param isolate.Channel halt: closed when the server is stopped, at
  *    which point every connection is closed.
- * @param function(2) setup: Called with each connection's endpoint.
- * @param dict settings: The server's settings, every one filled in.
+ * @param function(2) setup: called with each connection's endpoint.
+ * @param dict settings: the server's settings, all filled in.
  */
 def worker_main(connections, halt, setup, settings: dict) {
   import net
@@ -317,14 +317,14 @@ def _settings(options: ?dict) {
 
 /**
  * Serves JSON-RPC on a listening socket, across a pool of worker
- * isolates, until it is stopped.
+ * isolates, until it's stopped.
  *
- * `setup` is called inside a worker for every connection accepted,
- * with the connection's own {Endpoint} and the client's address, and
- * gives the endpoint its handlers. A worker shares nothing with the
- * others or with this isolate, so `setup` builds whatever state a
- * connection needs, and is a function of a module, or a function that
- * uses nothing but its own imports.
+ * `setup` is called inside a worker for every connection accepted, with
+ * the connection's own {Endpoint} and the client's address, and gives
+ * the endpoint its handlers. A worker shares nothing with the other
+ * workers or with this isolate, so `setup` has to create whatever state
+ * a connection needs, and it must be a function in a module, or a
+ * function that only uses its own imports.
  *
  * ```zuri,ignore
  * import rpc
@@ -341,48 +341,51 @@ def _settings(options: ?dict) {
  * | Option | Meaning | Default |
  * | --- | --- | --- |
  * | `host` | the address to listen on | `'127.0.0.1'` |
- * | `port` | the port to listen on; `0` picks a free one | `8000` |
- * | `path` | a Unix domain socket to listen on, in place of `host` and `port` | `nil` |
+ * | `port` | the port to listen on. `0` chooses a free port. | `8000` |
+ * | `path` | a Unix domain socket to listen on, instead of `host` and `port` | `nil` |
  * | `workers` | how many worker isolates serve connections | the number of CPUs |
- * | `backlog` | how many accepted connections may wait for a worker | `workers * 4` |
- * | `framing` | `'header'` for `Content-Length` headers, `'line'` for lines | `'header'` |
+ * | `backlog` | how many accepted connections can wait for a worker | `workers * 4` |
+ * | `framing` | `'header'` for `Content-Length` headers, or `'line'` for one message per line | `'header'` |
  * | `max_message_size` | the largest message accepted, in bytes | 64 MiB |
  * | `max_connections_per_worker` | the most connections one worker holds | `256` |
- * | `idle_timeout` | seconds a connection may stay silent before it is closed | `nil`, never |
- * | `read_timeout` | seconds a read may wait once a message has begun | `30` |
- * | `write_timeout` | seconds a write may wait | `30` |
+ * | `idle_timeout` | the number of seconds a connection can stay silent before it's closed | `nil`, which means never |
+ * | `read_timeout` | the number of seconds a read can wait once a message has started | `30` |
+ * | `write_timeout` | the number of seconds a write can wait | `30` |
  * | `cert_chain`, `private_key` | PEM strings that put every connection behind TLS | `nil` |
- * | `on_ready` | called here once bound, with the address and a `stop` function | `nil` |
- * | `max_connections` | stop after accepting this many connections | `nil`, never |
+ * | `on_ready` | called on this isolate once the socket is bound, with the address and a `stop` function | `nil` |
+ * | `max_connections` | stop after accepting this many connections | `nil`, which means never |
  *
- * `on_ready` is called on this isolate once the socket is bound,
- * with the address it is bound to, as a `SocketAddr` or the socket's
- * path, and a function that stops the server. Stopping it stops
- * accepting connections; every worker then finishes the message it
- * is handling, closes its connections and ends, and `serve()`
- * returns. Reaching `max_connections` stops accepting too, but serves
- * the connections already accepted until each of them closes, and
- * `serve()` returns after the last.
+ * `on_ready` is called on this isolate once the socket is bound, with
+ * the address it's bound to, as a `SocketAddr` or the socket's path,
+ * and a function that stops the server. Stopping the server stops it
+ * accepting connections. Every worker then finishes the message it's
+ * handling, closes its connections and ends, and `serve()` returns.
+ * Reaching `max_connections` also stops the server accepting
+ * connections, but it carries on serving the connections it has already
+ * accepted until each of them closes, and `serve()` returns after the
+ * last one.
  *
- * A connection whose TLS handshake fails, or whose `setup` raises,
- * is closed and nothing else is affected. A connection that cannot be
- * read is reported to its endpoint's `on_error()` handler and closed.
+ * A connection whose TLS handshake fails, or whose `setup` raises an
+ * error, is closed, and nothing else is affected. A connection that
+ * can't be read is reported to its endpoint's `on_error()` handler and
+ * closed.
  *
- * A handler that calls its client with `request()` holds its worker
+ * A handler that calls its client with `request()` holds up its worker
  * until the answer arrives, and every other connection on that worker
- * waits with it.
+ * waits too.
  *
  * The socket file of a Unix domain socket is removed when the server
- * stops. A file already at `path` makes binding fail.
+ * stops. If a file already exists at `path`, binding fails.
  *
- * A failure accepting connections stops the server as `stop` would,
- * and raises from `serve()` once it has.
+ * A failure while accepting connections stops the server in the same
+ * way as `stop`, and then `serve()` raises the error.
  *
- * @param function(2) setup: Called with each connection's {Endpoint}
+ * @param function(2) setup: called with each connection's {Endpoint}
  *    and the client's address.
- * @param ?dict options: Default `nil`, every option at its default.
- * @throws ValueError when an option holds a value it cannot take.
- * @throws Error when the socket cannot be bound.
+ * @param ?dict options: defaults to `nil`, which gives every option its
+ *    default.
+ * @throws ValueError if an option has a value it can't take.
+ * @throws Error if the socket can't be bound.
  */
 def serve(setup, options: ?dict) {
   if !is_function(setup) and !is_callable(setup) {

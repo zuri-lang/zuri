@@ -1,14 +1,14 @@
 /**
  * @module test.source
  *
- * Working out where a failure came from, and showing the code that
- * was there.
+ * Works out where a failure came from, and shows the code at that
+ * point.
  *
- * Every Zuri error carries a `stacktrace`: a list of strings shaped
- * like `/path/to/file.zu:12 -> divide()`. That is enough to point a
- * reader at the exact line, provided the frames belonging to the test
- * module itself are dropped first. Nobody needs to be told that the
- * failure passed through `_check()` on its way out.
+ * Every Zuri error has a `stacktrace`, which is a list of strings like
+ * `/path/to/file.zu:12 -> divide()`. That's enough to point a reader to
+ * the exact line, once the frames that belong to the test module itself
+ * are removed. Nobody needs to be told that the failure passed through
+ * `_check()` on its way out.
  */
 
 import os
@@ -62,12 +62,12 @@ class Frame {
 }
 
 /**
- * Splits one stack trace line into a `Frame`.
+ * Splits one line of a stack trace into a `Frame`.
  *
  * @param string line
- * @returns Frame: `nil` when the line is not shaped like a frame,
- *    which is what a trace from a future runtime might well look
- *    like.
+ * @returns Frame: `nil` if the line doesn't look like a frame, which
+ *    might happen with a stack trace from a future version of the
+ *    runtime.
  */
 def parse_frame(line: string) {
   var at = line.last_index_of(' -> ')
@@ -122,12 +122,12 @@ def user_frames(stacktrace: list) {
 }
 
 /**
- * The innermost frame of `stacktrace` outside the test module: where
- * the failing line actually is.
+ * The innermost frame in `stacktrace` that's outside the test module,
+ * which is where the failing line actually is.
  *
  * @param list stacktrace
- * @returns Frame: `nil` when every frame belongs to the framework,
- *    which happens when a matcher is misused rather than failing.
+ * @returns Frame: `nil` if every frame belongs to the framework, which
+ *    happens when a matcher is used incorrectly, not when it fails.
  */
 def origin(stacktrace: list) {
   var frames = user_frames(stacktrace)

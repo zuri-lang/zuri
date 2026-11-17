@@ -1,35 +1,33 @@
 /**
  * @module jwt
  *
- * The jwt module provides a complete implementation of JSON Web
- * Tokens (JWT) as defined in RFC 7519, with support for signing,
- * verification, and inspection of tokens using HMAC, RSA-PSS, ECDSA,
- * and Ed25519 algorithm families.
+ * JSON Web Tokens (JWT), as defined in RFC 7519. The module signs,
+ * verifies and inspects tokens, using the HMAC, RSA-PSS, ECDSA and
+ * Ed25519 families of algorithms.
  *
  * Supported algorithms:
  *
- * - HS256/HS384/HS512: HMAC with SHA-256/384/512
- * - PS256/PS384/PS512: RSASSA-PSS with SHA-256/384/512. This module
- *   deliberately supports PS-family, not RS-family (RSASSA-PKCS1-v1_5)
- *   algorithms, because they're older, deterministic standard that 
- *   lacks a formal security proof and because they're mostly 
- *   deterministic while the RSASSA-PSS are probabilistic. 
- *   
- *   Also, while PKCS#1 v1.5 is simpler to set up, but its structural 
- *   rigidity has led to historical implementation flaws in encryption 
- *   (like Bleichenbacher attacks), making PSS cleaner and safer against 
- *   misuse.
- * - ES256: ECDSA P-256 with SHA-256
- * - ES384: ECDSA P-384 with SHA-384
+ * - HS256, HS384 and HS512: HMAC with SHA-256, SHA-384 and SHA-512
+ * - PS256, PS384 and PS512: RSASSA-PSS with SHA-256, SHA-384 and
+ *   SHA-512
+ * - ES256: ECDSA with P-256 and SHA-256
+ * - ES384: ECDSA with P-384 and SHA-384
  * - EdDSA: Ed25519 (RFC 8037)
- * - none: Unsecured token (no signature, explicit opt-in required)
+ * - none: an unsecured token, with no signature, which has to be
+ *   enabled explicitly
  *
- * Signature verification uses a constant-time comparison for the
- * HMAC algorithms (to prevent timing attacks against the shared
- * secret) and the underlying public-key verification routine for
- * every asymmetric algorithm.
+ * The module supports the PS algorithms, not the RS algorithms
+ * (RSASSA-PKCS1-v1_5), on purpose. PKCS#1 v1.5 is an older,
+ * deterministic scheme without a formal security proof, and its rigid
+ * structure has led to implementation flaws in the past, such as
+ * Bleichenbacher's attack on PKCS#1 v1.5 encryption. RSASSA-PSS is
+ * probabilistic, has a security proof, and is harder to misuse.
  *
- * ### Quick start
+ * HMAC signatures are compared in constant time, to prevent timing
+ * attacks on the shared secret, and every asymmetric algorithm uses the
+ * verification routine of the underlying public-key implementation.
+ *
+ * ### A first example
  *
  * ```zuri
  * import jwt
@@ -42,13 +40,13 @@
  * echo payload.user_id   # 42
  * ```
  *
- * For applications verifying many tokens with the same
- * configuration, prefer a `Verifier` (see [[jwt.Verifier]]) over
- * repeating options on every `verify()` call. Likewise, prefer a
- * `Signer` (see [[jwt.Signer]]) for repeated signing.
+ * If an application verifies many tokens with the same settings, use a
+ * [[jwt.Verifier]] instead of passing the same options to every
+ * `verify()` call. In the same way, use a [[jwt.Signer]] to sign tokens
+ * repeatedly.
  *
- * When keys are resolved by `kid` from a JSON Web Key Set rather
- * than fixed ahead of time, see [[jwt.Jwks]] and
+ * When keys are looked up by `kid` in a JSON Web Key Set, instead of
+ * being fixed in advance, see [[jwt.Jwks]] and
  * [[jwt.verify_with_jwks]].
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors

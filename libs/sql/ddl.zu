@@ -148,8 +148,8 @@ class DdlAdapter {
   }
 
   /**
-   * Whether indexes are declared inside `create table`, rather than by
-   * `create index` statements after it.
+   * Whether indexes are declared inside `create table`, instead of with
+   * `create index` statements afterwards.
    *
    * @returns bool
    */
@@ -600,12 +600,11 @@ class DdlAdapter {
   }
 
   /**
-   * Adds `column` to `table`, with the key it carries.
+   * Adds `column` to `table`, along with its key.
    *
-   * A required column with no default can only be added to a table
-   * with no rows, since there is nothing to fill the rows with; the
-   * default raises `NotNullViolation` from the engine when there are
-   * some.
+   * A required column with no default can only be added to a table with
+   * no rows, because there's nothing to fill the existing rows with. If
+   * the table has rows, the engine raises a `NotNullViolation`.
    *
    * @param Connection connection
    * @param string table
@@ -701,13 +700,15 @@ class DdlAdapter {
   /**
    * Drops `table`.
    *
-   * A table another one refers to through a foreign key is refused, on
-   * every engine, rather than taking the referring rows with it.
+   * A table that another table refers to through a foreign key can't be
+   * dropped, on any engine, because dropping it would also remove the
+   * rows that refer to it.
    *
    * @param Connection connection
    * @param string table
-   * @param dict options `{ if_exists }`, false by default: when true, a
-   *    table that is not there is left alone rather than an error.
+   * @param dict options `{ if_exists }`, false by default. When it's
+   *    true, a table that doesn't exist is ignored instead of causing
+   *    an error.
    */
   drop_table(connection, table: string, options: dict) {
     var guard = options.get('if_exists', false) == true ? 'if exists ' : ''
@@ -716,8 +717,8 @@ class DdlAdapter {
   }
 
   /**
-   * Renames table `from` to `to`. Foreign keys referring to it follow
-   * it; its indexes keep the names they had.
+   * Renames table `from` to `to`. Foreign keys that refer to the table
+   * follow it, and its indexes keep their names.
    *
    * @param Connection connection
    * @param string from
@@ -735,15 +736,16 @@ class DdlAdapter {
   /**
    * Runs `body` as one schema change.
    *
-   * On an engine that can roll a schema change back, and when
+   * On an engine that can roll back a schema change, and when
    * `transactional` is true, `body` runs inside a transaction and is
-   * passed the `Transaction`; otherwise it is passed the connection
-   * and runs as it is.
+   * passed the `Transaction`. Otherwise, it's passed the connection and
+   * runs directly on it.
    *
-   * @param Connection connection Not already in a transaction.
+   * @param Connection connection A connection that isn't already in a
+   *    transaction.
    * @param function body
    * @param bool transactional
-   * @returns any What `body` returned.
+   * @returns any Whatever `body` returned.
    */
   schema_change(connection, body: function, transactional: bool) {
     if transactional and self.driver.supports('transactional_ddl') {

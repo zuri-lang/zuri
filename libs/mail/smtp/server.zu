@@ -1,12 +1,12 @@
 /**
  * @module server
  *
- * The receiving end of SMTP.
+ * The receiving side of SMTP.
  *
- * `SmtpServer` accepts connections, runs the ESMTP conversation, and
- * asks handlers of your own what to do at each stage: whether to take
- * this sender, this recipient, this message. It knows the protocol;
- * everything about policy is yours.
+ * `SmtpServer` accepts connections, runs the ESMTP exchange, and asks
+ * your handlers what to do at each stage: whether to accept a sender, a
+ * recipient or a message. The server knows the protocol, and all the
+ * policy decisions are yours.
  *
  * ```zuri,ignore
  * import mail.smtp { SmtpServer }
@@ -26,9 +26,10 @@
  * server.listen()
  * ```
  *
- * A handler that returns nothing accepts. One that returns a code and
- * a message refuses, with those. One that raises is a failure on the
- * server's side, and the sender is told to try again later.
+ * A handler that returns nothing accepts. A handler that returns a code
+ * and a message refuses, with that code and message. A handler that
+ * raises an error counts as a failure on the server's side, and the
+ * sender is told to try again later.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -164,15 +165,15 @@ class SmtpServer {
   /**
    * | option | default | what it does |
    * | - | - | - |
-   * | `host` | `127.0.0.1` | the address to bind |
-   * | `port` | `25` | the port to bind |
+   * | `host` | `127.0.0.1` | the address to bind to |
+   * | `port` | `25` | the port to bind to |
    * | `hostname` | the machine's own | the name to greet clients with |
-   * | `max_size` | 35 MB | the largest message to take |
-   * | `max_recipients` | `100` | recipients one message may have |
-   * | `timeout` | `300000` | milliseconds a client may go quiet |
+   * | `max_size` | 35 MB | the largest message to accept |
+   * | `max_recipients` | `100` | the most recipients a message can have |
+   * | `timeout` | `300000` | the number of milliseconds a client can stay silent |
    * | `require_tls` | `false` | refuse mail on an unencrypted connection |
-   * | `require_auth` | `false` | refuse mail from a client that has not authenticated |
-   * | `banner` | none | extra text on the greeting line |
+   * | `require_auth` | `false` | refuse mail from a client that hasn't authenticated |
+   * | `banner` | none | extra text for the greeting line |
    *
    * @param ?dict options
    */
@@ -254,7 +255,7 @@ class SmtpServer {
 
   /**
    * Called with the session and the message, as bytes, once the whole
-   * of it has arrived. This is where a message is delivered.
+   * message has arrived. This is where you deliver the message.
    *
    * @param function(2) handler
    * @returns SmtpServer itself.
@@ -327,11 +328,10 @@ class SmtpServer {
   }
 
   /**
-   * Gives the server a certificate, which is what lets it offer
-   * `STARTTLS`.
+   * Gives the server a certificate, which lets it offer `STARTTLS`.
    *
-   * @param string cert_chain: The certificate chain, PEM encoded.
-   * @param string private_key: The key, PEM encoded.
+   * @param string cert_chain: the certificate chain, PEM-encoded
+   * @param string private_key: the key, PEM-encoded
    * @returns SmtpServer itself.
    */
   use_tls(cert_chain: string, private_key: string) {

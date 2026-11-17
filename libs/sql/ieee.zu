@@ -27,8 +27,8 @@
  * The double whose bit pattern is `high` followed by `low`.
  *
  * The significand is at most 53 bits, which a double holds exactly, and
- * scaling it by a power of two is exact as well, so assembling a value
- * from its fields gives the number itself rather than an approximation.
+ * scaling it by a power of two is also exact, so building a value from
+ * its fields gives exactly the number, not an approximation.
  *
  * @param number high The upper 32 bits, from 0 to 4294967295: the sign,
  *    the exponent and the top 20 bits of the fraction.

@@ -1,19 +1,19 @@
 /**
  * @module cursor
  *
- * Reading a MySQL result a batch at a time.
+ * Reads a MySQL result a batch at a time.
  *
- * The server keeps the result and sends as many rows as each fetch
- * asks for, so nothing but the current batch is ever held on this
- * side. Only a prepared statement can be read this way, which is why a
- * cursor over a statement written as text still prepares it first.
+ * The server keeps the result and sends as many rows as each fetch asks
+ * for, so only the current batch is ever held on the client. Only a
+ * prepared statement can be read this way, which is why a cursor over a
+ * statement written as text prepares it first.
  *
  * ### One at a time
  *
- * A cursor holds the connection: the server is part way through
- * answering, and no other command may be sent until it has finished.
+ * A cursor holds the connection. The server is partway through
+ * answering, and no other command can be sent until it has finished.
  * Running a statement on the same connection while a cursor is open
- * raises rather than corrupting the exchange.
+ * raises an error instead of corrupting the exchange.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

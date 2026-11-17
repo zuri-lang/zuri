@@ -1,17 +1,16 @@
 /**
  * @module reflect
  *
- * Runtime introspection: metadata about a live function, class,
- * or module, and property/method access on an instance or module
- * by name, without needing to already know that name at compile
- * time. It also runs the garbage collector on demand.
+ * Introspection at run time: information about a live function, class
+ * or module, and access to an instance's or module's properties and
+ * methods by name, without knowing the name when the code is compiled.
+ * It can also run the garbage collector on demand.
  *
- * This is deliberately a RUNTIME-only view. It does not know a
- * function/class's declaration line or its doc block; those live
- * in source, not in the running object, and are a
- * `zuri.parse()`/`zuri` AST concern instead (walk the parsed
- * source and read a `Function`/`Class` node's own `line`/`col`,
- * and any `DocBlock` node sitting right before it).
+ * It only shows what's available at run time. It doesn't know the line
+ * a function or class was declared on, or its doc block, because those
+ * are in the source, not in the running object. To get them, parse the
+ * source with `zuri.parse()`, and read a `Function` or `Class` node's
+ * `line` and `col`, and any `DocBlock` node just before it.
  *
  * ```zuri
  * import zuri
@@ -46,12 +45,11 @@ def kind(value) {
 }
 
 /**
- * The registered resource tag a pointer value was allocated with
- * (e.g. a native socket handle's own internal type name), or
- * `nil` if `value` isn't a pointer at all. Pointers wrap an
- * opaque native resource that Zuri code can't otherwise inspect;
- * this names what kind of resource one is without exposing its
- * contents.
+ * The resource tag that a pointer value was registered with, such as
+ * the internal type name of a native socket handle, or `nil` if `value`
+ * isn't a pointer. Pointers wrap a native resource that Zuri code can't
+ * inspect, and this tells you what kind of resource it is without
+ * revealing its contents.
  *
  * @param any value
  * @returns ?string
@@ -80,15 +78,16 @@ def function_info(f) {
 }
 
 /**
- * Metadata for a class: `{ name, superclass_name, methods,
- * fields, statics }`. `superclass_name` is `nil` for a class
- * with no superclass. `methods` is a dict from method name to
- * that method's own `function_info`-shaped entry, own and
- * inherited pre-merged (an override shadows the inherited entry
- * of the same name, matching how method dispatch itself works).
- * `fields` and `statics` are plain lists of names, ordered by
- * declaration; `fields` includes inherited fields, `statics` is
- * own-only (statics are never inherited in this runtime).
+ * Information about a class:
+ * `{ name, superclass_name, methods, fields, statics }`.
+ * `superclass_name` is `nil` for a class without a superclass.
+ * `methods` is a dictionary that maps each method name to an entry
+ * shaped like `function_info()`'s, including inherited methods, with an
+ * override replacing the inherited entry of the same name, just as
+ * method dispatch does. `fields` and `statics` are lists of names, in
+ * declaration order. `fields` includes inherited fields, and `statics`
+ * only includes the class's own, because static members aren't
+ * inherited in Zuri.
  *
  * @param class c
  * @returns dict
@@ -99,14 +98,14 @@ def class_info(c) {
 }
 
 /**
- * The class `value` is an instance of, or `nil` when `value` is not
+ * The class that `value` is an instance of, or `nil` if `value` isn't
  * an instance.
  *
- * This is the class itself, not its name. `typeof()` names the
- * class, and two classes declared with the same name in different
- * modules give the same name; only the class tells them apart, and
- * only the class can be called, compared with `==`, used as a
- * dictionary key or handed to `class_info()`.
+ * This is the class itself, not its name. `typeof()` gives the class
+ * name, and two classes declared with the same name in different
+ * modules have the same name. Only the class itself tells them apart,
+ * and only the class can be called, compared with `==`, used as a
+ * dictionary key or passed to `class_info()`.
  *
  * ```zuri
  * import zuri
@@ -119,8 +118,8 @@ def class_info(c) {
  * echo zuri.reflect.class_of(42)          # nil
  * ```
  *
- * An instance of a subclass reports the subclass, the class it was
- * built from, never one of its parents.
+ * An instance of a subclass reports the subclass, which is the class it
+ * was created from, never one of its parents.
  *
  * @param any value
  * @returns class|nil
@@ -130,12 +129,12 @@ def class_of(value) {
 }
 
 /**
- * Metadata for a module: `{ name, path, loaded, members }`.
- * `members` is a dict from every top-level name the module
- * declares to that binding's own `kind` (see `kind` above), e.g.
- * `{ add: 'function', VERSION: 'string' }`. Accepts either a raw
- * module value or a promoted `import PATH` binding; both
- * describe the same underlying module.
+ * Information about a module: `{ name, path, loaded, members }`.
+ * `members` is a dictionary that maps every top-level name the module
+ * declares to that binding's `kind` (see `kind()` above), such as
+ * `{ add: 'function', VERSION: 'string' }`. It accepts either a module
+ * value or a binding created by `import PATH`, because both refer to
+ * the same module.
  *
  * @param module m
  * @returns dict
@@ -146,14 +145,13 @@ def module_info(m) {
 }
 
 /**
- * Dispatches to `function_info`/`class_info`/`module_info` based
+ * Calls `function_info()`, `class_info()` or `module_info()`, depending
  * on `kind(value)`.
  *
  * @param any value
  * @returns dict
- * @throws Error if `value` has no reflectable shape (a number, a
- *    list, an instance, ...); reflect describes callables,
- *    classes, and modules only
+ * @throws Error if `value` can't be reflected on, such as a number, a
+ *    list or an instance. Only callables, classes and modules can be.
  */
 def info(value) {
   return _zuri_reflect.info(value)
@@ -191,15 +189,14 @@ def get_prop(object, name) {
 }
 
 /**
- * Every property/member name `object` (an instance or a module)
- * has, as a list of strings, or an empty list if it has none.
- * Instance fields are ordered by declaration; module members
- * have no such inherent order.
+ * Every property or member name that `object`, an instance or a module,
+ * has, as a list of strings, or an empty list if it has none. Instance
+ * fields are in declaration order, and module members aren't in any
+ * particular order.
  *
  * @param instance|module object
  * @returns list[string]
- * @throws TypeError if `object` is neither an instance nor a
- *    module
+ * @throws TypeError if `object` is neither an instance nor a module
  */
 def get_props(object) {
   if !is_instance(object) and typeof(object) != 'module' {
@@ -210,19 +207,18 @@ def get_props(object) {
 }
 
 /**
- * Overwrites `object`'s existing property `name` with `value`.
+ * Sets `object`'s existing property `name` to `value`.
  *
- * @note instances in this runtime have a fixed set of fields,
- *    sized once when their class is declared. Unlike a dict, a
- *    property can never be added to or removed from an instance
- *    at runtime. This only ever updates a field the instance's
- *    class already declares; it can't create a new one.
+ * @note Instances have a fixed set of fields, set when their class is
+ *    declared. Unlike a dictionary, an instance can never gain or lose
+ *    a property at run time. This only updates a field that the
+ *    instance's class already declares, and can't create a new one.
  *
  * @param instance object
  * @param string name
- * @returns bool: `true` if the property was updated, `false` if
- *    `name` isn't a field `object`'s class declares (nothing is
- *    changed in that case; this never creates a new field)
+ * @returns bool: `true` if the property was updated, or `false` if
+ *    `name` isn't a field that `object`'s class declares. In that case,
+ *    nothing is changed, and no field is created.
  * @throws TypeError if `object` isn't an instance
  */
 def set_prop(object, name, value) {
@@ -234,15 +230,15 @@ def set_prop(object, name, value) {
 }
 
 /**
- * Resets `object`'s existing property `name` back to `nil`.
+ * Sets `object`'s existing property `name` back to `nil`.
  *
- * @note as with `set_prop`, this can't remove the field itself,
- *    only clear its value; see `set_prop`'s own note.
+ * @note As with `set_prop()`, this can't remove the field itself, only
+ *    clear its value. See the note on `set_prop()`.
  *
  * @param instance object
  * @param string name
- * @returns bool: `true` if the property was reset, `false` if
- *    `name` isn't a field `object`'s class declares
+ * @returns bool: `true` if the property was reset, or `false` if `name`
+ *    isn't a field that `object`'s class declares
  * @throws TypeError if `object` isn't an instance
  */
 def del_prop(object, name) {
@@ -266,14 +262,13 @@ def has_method(object, name) {
 }
 
 /**
- * Does the class behind `object` implement the decorator named
- * `name`? A decorator is just a method whose own name starts
- * with `@` (`@to_string`, `@new`, `@value`, ...); `name` here
- * excludes that leading `@`.
+ * Whether the class of `object` implements the decorator named `name`.
+ * A decorator is a method whose name starts with `@`, such as
+ * `@to_string`, `@new` or `@value`, and `name` here doesn't include the
+ * `@`.
  *
  * @param instance|class object
- * @param string name: The decorator's name, without the leading
- *    `@`
+ * @param string name: the decorator's name, without the leading `@`
  * @returns bool
  */
 def has_decorator(object, name) {
@@ -281,10 +276,10 @@ def has_decorator(object, name) {
 }
 
 /**
- * The raw (unbound) closure for method `name` on the class
- * behind `object`, or `nil` if it declares no such method.
- * Calling the result directly does NOT supply a receiver; see
- * `bind_method` for a version that does.
+ * The unbound function for the method `name` on the class of `object`,
+ * or `nil` if the class doesn't declare that method. Calling the result
+ * directly does NOT provide a receiver. See `bind_method()` for a
+ * version that does.
  *
  * @param instance|class object
  * @param string name
@@ -295,9 +290,9 @@ def get_method(object, name) {
 }
 
 /**
- * Method `name` on `object`'s class, bound to `object` itself as
- * the receiver; the result can be called directly with no
- * receiver argument, unlike `get_method`'s raw closure.
+ * The method `name` on `object`'s class, bound to `object` as the
+ * receiver. Unlike the unbound function that `get_method()` returns,
+ * the result can be called directly, without passing a receiver.
  *
  * @param instance object
  * @param string name
@@ -330,19 +325,19 @@ def get_decorator(object, name) {
 }
 
 /**
- * Runs a full garbage collection now, instead of waiting for the
- * heap to cross its threshold.
+ * Runs a full garbage collection now, instead of waiting for the heap
+ * to reach its threshold.
  *
- * Every object nothing reaches is freed before this returns, and
- * anything that releases a resource when collected releases it:
- * an owned `ffi` pointer's destructor runs, for one. The memory
- * freed goes back to the system before this returns too.
+ * Every object that nothing refers to is freed before this returns, and
+ * anything that releases a resource when it's collected releases it,
+ * such as an owned `ffi` pointer, whose destructor runs. The freed
+ * memory is also returned to the system before this returns.
  *
- * A program never needs this to stay correct; the collector runs
- * on its own as the program allocates. It is for the moments the
- * timing matters: releasing native resources at a known point, or
- * a test that checks what collection does. A full collection
- * visits every live object, so calling it in a loop is slow.
+ * A program never needs to call this to work correctly, because the
+ * collector runs by itself as the program allocates memory. It's for
+ * when the timing matters, such as releasing native resources at a
+ * known point, or a test that checks what collection does. A full
+ * collection visits every live object, so calling it in a loop is slow.
  *
  * ```zuri
  * import zuri

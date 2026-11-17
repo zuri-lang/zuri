@@ -232,12 +232,12 @@ class Connection {
   }
 
   /**
-   * Runs a query and returns a cursor over its result rather than
-   * reading all of it.
+   * Runs a query and returns a cursor over its result, instead of
+   * reading the whole result.
    *
    * @param string sql
    * @param list|dict|nil params
-   * @param dict|nil options `{ batch }` on engines that fetch in
+   * @param dict|nil options `{ batch }`, on engines that fetch rows in
    *    batches.
    * @returns Cursor
    */
@@ -302,25 +302,25 @@ class Connection {
   }
 
   /**
-   * Inserts a row and returns its id.
+   * Inserts a row and returns its ID.
    *
-   * How the id comes back depends on the engine, which is the point of
-   * having this rather than writing the insert by hand. An engine with
-   * a last insert id reports one; an engine without gets a `RETURNING`
-   * clause added. An engine that can do neither raises rather than
-   * returning something that is not an id.
+   * How the ID is obtained depends on the engine, and that's the reason
+   * to use this instead of writing the insert yourself. An engine with
+   * a last insert ID reports it, and on an engine without one, a
+   * `RETURNING` clause is added. An engine that can do neither raises
+   * an error instead of returning something that isn't an ID.
    *
    * ```zuri,ignore
    * var id = db.insert('posts', { title: 'Hello', body: 'World' })
    * ```
    *
    * @param string table
-   * @param dict values Column to value.
+   * @param dict values Column names mapped to values.
    * @param dict|nil options `{ returning }` names the column to read
-   *    the id from, which matters on an engine using `RETURNING` when
-   *    the key is not called `id`.
-   * @returns any The new row's id, or nil where the engine reports
-   *    none and no returning column was named.
+   *    the ID from. This matters on an engine that uses `RETURNING`
+   *    when the key isn't called `id`.
+   * @returns any The new row's ID, or nil if the engine doesn't report
+   *    one and no returning column was named.
    */
   insert(table: string, values: dict, options) {
     self._open()
@@ -394,16 +394,17 @@ class Connection {
   }
 
   /**
-   * Updates the rows matching `where`.
+   * Updates the rows that match `where`.
    *
-   * Passing `nil` for `where` updates every row, which has to be asked
-   * for rather than happening because a dictionary came out empty.
+   * Passing `nil` for `where` updates every row. That has to be asked
+   * for explicitly, so that it can't happen just because a dictionary
+   * of conditions turned out to be empty.
    *
    * @param string table
-   * @param dict values Column to new value.
-   * @param dict|nil where Column to value; a list matches any of them
-   *    and nil matches null.
-   * @returns number How many rows changed.
+   * @param dict values Column names mapped to new values.
+   * @param dict|nil where Column names mapped to values. A list matches
+   *    any of its values, and nil matches null.
+   * @returns number The number of rows changed.
    */
   update(table: string, values: dict, where) {
     self._open()

@@ -1,24 +1,24 @@
 /**
  * @module packets
  *
- * The MySQL packet layer: framing, sequence numbering, compression and
- * the integer and string encodings every message above is built from.
+ * The MySQL packet layer: framing, sequence numbers, compression, and
+ * the integer and string encodings that every message is built from.
  *
- * A MySQL connection is a stream of packets, each a three byte
- * little-endian length, a one byte sequence number, and that many
- * bytes of payload. The sequence number restarts at zero with every
- * command a client sends and increments for each packet either side
- * writes until that command is answered, which is how both ends notice
- * a packet that went missing or arrived twice.
+ * A MySQL connection is a stream of packets. Each one has a three-byte
+ * little-endian length, a one-byte sequence number and then that many
+ * bytes of payload. The sequence number starts again at zero with each
+ * command the client sends, and goes up by one for each packet either
+ * side writes until the command has been answered. That's how both ends
+ * notice a packet that went missing or arrived twice.
  *
- * ### Why a packet is not always a message
+ * ### Why a packet isn't always a message
  *
- * The length field is three bytes, so a payload of 16777215 bytes is
- * the largest that can be described. A message that long is split, and
- * the split is signalled by a packet of exactly that size: the reader
- * has to keep reading until it sees a shorter one. A message whose
- * length is an exact multiple of the maximum therefore ends with an
- * empty packet, which exists only to say the message is over.
+ * The length field is three bytes, so the largest payload it can
+ * describe is 16777215 bytes. A longer message is split, and the split
+ * is signaled by a packet of exactly that size, so the reader has to
+ * keep reading until it gets a shorter packet. A message whose length
+ * is an exact multiple of the maximum therefore ends with an empty
+ * packet, which only exists to mark the end of the message.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -36,9 +36,10 @@ import ..ieee { double_of, single_of }
 var MAX_PAYLOAD = 0xffffff
 
 /**
- * Below this, a compressed packet is sent uncompressed instead. Small
- * payloads grow rather than shrink under zlib, and the protocol allows
- * either, so the choice is the sender's.
+ * Packets smaller than this are sent uncompressed, even when
+ * compression is on. Small payloads get bigger instead of smaller with
+ * zlib, and the protocol allows either, so the choice is up to the
+ * sender.
  */
 var COMPRESS_THRESHOLD = 50
 
@@ -54,8 +55,9 @@ var READ_SIZE = 65536
 var LENENC_NULL = 0xfb
 
 /**
- * Largest integer a Zuri number holds exactly. A wider value read off
- * the wire becomes a bigint rather than quietly losing its low bits.
+ * The largest integer that a Zuri number can hold exactly. A larger
+ * value read from the network becomes a bigint, instead of silently
+ * losing its low bits.
  */
 var EXACT_INTEGER_LIMIT = 9007199254740992
 
@@ -102,11 +104,11 @@ class Writer {
   }
 
   /**
-   * Appends a little-endian 32 bit integer.
+   * Appends a little-endian 32-bit integer.
    *
    * Values are written unsigned. A negative number is written as its
    * two's complement, which is what the protocol expects wherever a
-   * signed field appears.
+   * field is signed.
    *
    * @param number value
    * @returns Writer
@@ -243,10 +245,11 @@ class Writer {
 }
 
 /**
- * Reads values out of one packet payload, keeping its own position.
+ * Reads values from one packet payload, keeping track of its own
+ * position.
  *
- * Every read advances past what it read, so a message is decoded by
- * naming its fields in order rather than by tracking offsets.
+ * Every read moves past what it read, so a message is decoded by
+ * reading its fields in order, without tracking offsets.
  */
 class Cursor {
   var _data
@@ -558,11 +561,12 @@ class Cursor {
 /**
  * Packets over a connected stream, in both directions.
  *
- * Owns the sequence number and the compression setting, because both
- * are properties of the conversation rather than of any one message.
+ * This class owns the sequence number and the compression setting,
+ * because both belong to the conversation as a whole, not to any one
+ * message.
  *
- * @internal Used by `Protocol`, which is the class with the MySQL
- *    semantics.
+ * @internal Used by `Protocol`, the class that implements MySQL's
+ *    behavior.
  */
 class PacketStream {
   var _stream
@@ -607,11 +611,11 @@ class PacketStream {
   }
 
   /**
-   * Turns compression on for everything sent and received after this
-   * point, which is where the server switches too.
+   * Turns on compression for everything sent and received from now on,
+   * which is the point where the server switches too.
    *
    * @param string algorithm `'zlib'` or `'zstd'`.
-   * @param number level The zstd level; ignored for zlib.
+   * @param number level The zstd level. It's ignored for zlib.
    */
   compress_with(algorithm: string, level: number) {
     self._compression = algorithm
@@ -629,7 +633,7 @@ class PacketStream {
   }
 
   /**
-   * Starts a new command, which is what resets the sequence.
+   * Starts a new command, which resets the sequence number.
    */
   reset_sequence() {
     self._sequence = 0
@@ -646,9 +650,9 @@ class PacketStream {
   }
 
   /**
-   * Sets the sequence number explicitly, for the handshake, where the
-   * client's first packet has to continue the server's numbering
-   * rather than start its own.
+   * Sets the sequence number explicitly. This is for the handshake,
+   * where the client's first packet has to continue the server's
+   * numbering instead of starting its own.
    *
    * @param number value
    */

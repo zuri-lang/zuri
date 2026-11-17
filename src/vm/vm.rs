@@ -7431,7 +7431,7 @@ impl VM {
       return Ok(self.set_reg(base, dst, result));
     }
     let msg = format!(
-      "operator '{}' not defined for call signature ({}, float)",
+      "operator '{}' not defined for call signature ({}, number)",
       op_name,
       va.argument_type_name(),
     );

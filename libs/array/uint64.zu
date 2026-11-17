@@ -1,11 +1,11 @@
 /**
  * @module uint64
  *
- * `UInt64Array`: a packed array of unsigned 64-bit integers, 8 bytes per
- * element.
+ * `UInt64Array`, a packed array of 64-bit unsigned integers, with 8
+ * bytes per element.
  *
- * `UINT64_MAX` and `UINT64_MIN` bound what an element
- * may be; a value outside them raises rather than wrapping.
+ * `UINT64_MAX` and `UINT64_MIN` are the limits for an element. A value
+ * outside them raises an error, instead of wrapping around.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
@@ -81,9 +81,9 @@ class UInt64Array < Array {
   }
 
   /**
-   * Returns a new UInt64Array over `[start, end)` of this array
-   * (both default to the whole array; negative bounds count from
-   * the end).
+   * Returns a new `UInt64Array` with the elements from `start` up to,
+   * but not including, `end`. Both default to the whole array, and
+   * negative values count from the end.
    *
    * @param ?number start
    * @param ?number end

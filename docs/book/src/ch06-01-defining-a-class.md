@@ -148,7 +148,7 @@ Ctor()
 ```
 
 ```console
-Unhandled TypeError: operator '*' not defined for call signature (nil, float)
+Unhandled TypeError: operator '*' not defined for call signature (nil, number)
 ```
 
 If you annotate the parameter, the error is raised at the call instead, and

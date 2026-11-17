@@ -115,17 +115,19 @@ class Association {
   var model
 
   /**
-   * The column holding the other side's key. For `BELONGS_TO`, a
-   * column of this model; for `HAS_ONE` and `HAS_MANY`, of the other;
-   * for `BELONGS_TO_MANY`, the join table's column for this model.
+   * The column that holds the other side's key. For `BELONGS_TO`, it's
+   * a column of this model. For `HAS_ONE` and `HAS_MANY`, it's a column
+   * of the other model. For `BELONGS_TO_MANY`, it's the join table's
+   * column for this model.
    * @type string
    */
   var foreign_key
 
   /**
-   * The column the foreign key holds the value of. For `BELONGS_TO`,
-   * the other model's; for the rest, this model's. Nil until the
-   * definition is finished, for the primary key.
+   * The column whose value the foreign key holds. For `BELONGS_TO`,
+   * it's a column of the other model, and for the others, it's a column
+   * of this model. It's nil until the definition is finished, which
+   * means the primary key.
    * @type string|nil
    */
   var key
@@ -154,7 +156,8 @@ class Association {
   }
 
   /**
-   * Whether the association holds a list of records rather than one.
+   * Whether the association holds a list of records, as opposed to a
+   * single one.
    *
    * @returns bool
    */
@@ -420,17 +423,18 @@ class Definition {
   }
 
   /**
-   * Checks before a record is saved that no other row holds the same
-   * values in `columns`. A record with nil in any of them is not
-   * checked, as a unique index lets any number of nulls through.
+   * Checks, before a record is saved, that no other row has the same
+   * values in `columns`. A record with nil in any of them isn't
+   * checked, because a unique index allows any number of nulls.
    *
-   * This reports a taken value as a validation failure, with the rest.
-   * Only a unique index in the database makes two records saved at the
-   * same moment unable to take the same value; keep one there too.
+   * A value that's already taken is reported as a validation failure,
+   * along with any others. Only a unique index in the database can stop
+   * two records saved at the same moment from taking the same value, so
+   * keep one there as well.
    *
    * @param string|list[string] columns
-   * @param string|nil message What a person reads, `The <column> field
-   *    has already been taken.` when nil.
+   * @param string|nil message The message for people to read. If it's
+   *    nil, the message is `The <column> field has already been taken.`
    * @returns Definition
    */
   unique(columns, message) {
@@ -497,19 +501,20 @@ class Definition {
   }
 
   /**
-   * This model holds the key of another, which it belongs to: a post
-   * belongs to its author.
+   * This model holds the key of another model that it belongs to. For
+   * example, a post belongs to its author.
    *
    * ```zuri,ignore
    * model.belongs_to('author', Author)
    * ```
    *
-   * @param string name The association, and the field it loads into.
+   * @param string name The name of the association, and of the field
+   *    it's loaded into.
    * @param class model
-   * @param dict|nil options `foreign_key`, this model's column holding
-   *    the key, `<name>_id` when not given; and `owner_key`, the column
-   *    of the other model it holds, that model's primary key when not
-   *    given.
+   * @param dict|nil options `foreign_key`, the column of this model
+   *    that holds the key, which defaults to `<name>_id`, and
+   *    `owner_key`, the column of the other model whose value it holds,
+   *    which defaults to that model's primary key.
    * @returns Definition
    */
   belongs_to(name: string, model, options) {
@@ -523,15 +528,16 @@ class Definition {
   }
 
   /**
-   * Another model holds this one's key, and there is at most one of
-   * it: a user has one profile.
+   * Another model holds this model's key, and there's at most one of
+   * it. For example, a user has one profile.
    *
    * @param string name
    * @param class model
-   * @param dict|nil options `foreign_key`, the other model's column
-   *    holding this one's key, this class's name in snake case and
-   *    `_id` when not given; and `local_key`, this model's column it
-   *    holds, the primary key when not given.
+   * @param dict|nil options `foreign_key`, the column of the other
+   *    model that holds this model's key, which defaults to this
+   *    class's name in snake case followed by `_id`, and `local_key`,
+   *    the column of this model whose value it holds, which defaults to
+   *    the primary key.
    * @returns Definition
    */
   has_one(name: string, model, options) {
@@ -552,18 +558,18 @@ class Definition {
   }
 
   /**
-   * Records of this model and another are joined through a table
-   * holding both keys: a post belongs to many tags, and a tag to many
-   * posts.
+   * Records of this model and another model are joined through a table
+   * that holds both keys. For example, a post belongs to many tags, and
+   * a tag belongs to many posts.
    *
    * @param string name
    * @param class model
-   * @param dict|nil options `through`, the join table, the two class
-   *    names in snake case, in alphabetical order, joined by an
-   *    underscore when not given, as `post_tag`; `foreign_key`, its
-   *    column holding this model's key, and `other_key`, its column
-   *    holding the other's, each the class name in snake case and
-   *    `_id` when not given.
+   * @param dict|nil options `through`, the join table, which defaults
+   *    to the two class names in snake case, in alphabetical order,
+   *    joined by an underscore, as in `post_tag`. `foreign_key`, the
+   *    join table's column for this model's key, and `other_key`, its
+   *    column for the other model's key, each default to the class name
+   *    in snake case followed by `_id`.
    * @returns Definition
    */
   belongs_to_many(name: string, model, options) {

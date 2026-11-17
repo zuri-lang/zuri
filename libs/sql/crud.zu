@@ -25,17 +25,18 @@ import .errors { QueryError }
 import .params { placeholder }
 
 /**
- * Marks a fragment of SQL to be used as written rather than bound.
+ * Marks a fragment of SQL to be used exactly as written, instead of
+ * being bound as a value.
  *
- * The escape hatch for the cases where a value is not a value:
+ * Use it for the cases where a value isn't really a value:
  *
  * ```zuri,ignore
  * db.update('posts', { views: sql.raw('views + 1') }, { id: 7 })
  * ```
  *
- * It is exactly as dangerous as it sounds. A `Raw` built from anything
- * a user supplied is a SQL injection, so build them from literals and
- * keep values in the parameters where they belong.
+ * It's exactly as dangerous as it sounds. A `Raw` built from anything a
+ * user supplied is a SQL injection, so only build one from literals,
+ * and keep values in the parameters where they belong.
  *
  * @printable
  */
@@ -98,15 +99,15 @@ def quote_table(driver, table: string) {
 /**
  * Builds the `WHERE` clause for a dictionary of conditions.
  *
- * A value of `nil` becomes `IS NULL` rather than `= NULL`, which no
- * row ever satisfies. A list becomes `IN (...)`, and an empty list
- * becomes a condition no row satisfies, which is what "in nothing"
- * means. A `Raw` is used as written.
+ * A value of `nil` becomes `IS NULL`, not `= NULL`, which no row ever
+ * matches. A list becomes `IN (...)`, and an empty list becomes a
+ * condition that no row matches, because nothing is in an empty list. A
+ * `Raw` is used as written.
  *
  * @param Driver driver
  * @param dict|nil filter
- * @param number start The binding position the first parameter takes.
- * @returns dict `{ clause, values }`, the clause empty when there are
+ * @param number start The binding position of the first parameter.
+ * @returns dict `{ clause, values }`, with an empty clause if there are
  *    no conditions.
  */
 def where(driver, filter, start: number) {
@@ -168,8 +169,8 @@ def where(driver, filter, start: number) {
  * @param string table
  * @param dict values
  * @param string|nil returning A column to return, for engines that
- *    report an inserted id that way rather than through a last insert
- *    id. Ignored where the driver does not support `RETURNING`.
+ *    report an inserted ID that way instead of through a last insert
+ *    ID. It's ignored if the driver doesn't support `RETURNING`.
  * @returns dict `{ sql, values }`
  * @throws QueryError if `values` is empty.
  */
@@ -208,18 +209,19 @@ def insert(driver, table: string, values: dict, returning) {
 }
 
 /**
- * Builds an `INSERT` carrying several rows in one statement.
+ * Builds an `INSERT` that inserts several rows in one statement.
  *
- * Every row has to name the same columns, in any order; a row that
- * names a different set raises rather than being padded with nulls,
- * because a missing column and a null column mean different things.
+ * Every row has to have the same columns, in any order. A row with a
+ * different set of columns raises an error instead of being padded with
+ * nulls, because a missing column and a null column mean different
+ * things.
  *
  * @param Driver driver
  * @param string table
- * @param list rows Dictionaries of column to value.
+ * @param list rows Dictionaries that map column names to values.
  * @returns dict `{ sql, values }`
- * @throws QueryError if `rows` is empty, a row has no columns, or the
- *    rows disagree about which columns they have.
+ * @throws QueryError if `rows` is empty, if a row has no columns, or if
+ *    the rows don't all have the same columns.
  */
 def insert_many(driver, table: string, rows: list) {
   if rows.is_empty() {
@@ -281,10 +283,10 @@ def insert_many(driver, table: string, rows: list) {
 /**
  * Builds an `UPDATE`.
  *
- * An update with no where changes every row, which is
- * occasionally what someone means and usually not, so it has to be
- * asked for by passing `nil` rather than happening by default when a
- * condition dictionary turns out empty.
+ * An update without conditions changes every row. That's occasionally
+ * what someone wants, but usually not, so it has to be requested by
+ * passing `nil`. It never happens by default because a dictionary of
+ * conditions turned out to be empty.
  *
  * @param Driver driver
  * @param string table

@@ -1,15 +1,15 @@
 /**
  * @module errors
  *
- * Every error the `ffi` module raises, under one root.
+ * Every error that the `ffi` module raises, with one base class.
  *
- * `FfiError` is that root, and each subclass names the stage that
+ * `FfiError` is the base class, and each subclass names the stage that
  * failed: finding a library, finding a symbol in it, reading a
- * declaration, touching memory, running a callback, or linking a static
- * library. A value that cannot be converted to the C type it is headed
- * for is a `TypeError` or `RangeError` from the prelude instead, the
- * same errors any other function raises for a bad argument, and the
- * message names the parameter and the type.
+ * declaration, accessing memory, running a callback, or linking a
+ * static library. A value that can't be converted to the C type it's
+ * being passed as raises a `TypeError` or `RangeError` from the prelude
+ * instead, the same errors that any other function raises for a bad
+ * argument, and the message names the parameter and the type.
  *
  * ```zuri,ignore
  * catch {

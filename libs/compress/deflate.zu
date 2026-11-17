@@ -1,7 +1,8 @@
 /**
  * @module deflate
  *
- * This is the Deflate submodule for the compress module.
+ * Deflate compression and decompression, without a zlib or gzip
+ * wrapper.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
@@ -47,10 +48,10 @@ import .gzip { GzipDecoder, GzipEncoder }
 class DeflateEncoder < GzipEncoder {
 
   /**
-   * Creates a new streaming Deflate encoder at the given level
-   * (0..=9).
+   * Creates a streaming Deflate encoder at the given level, from 0 to
+   * 9.
    *
-   * @param ?number level - Default 1
+   * @param ?number level: defaults to 1.
    */
   @new(level) {
     self._ptr = _compress.gzip_new_encoder(false, level)

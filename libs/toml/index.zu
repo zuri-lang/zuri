@@ -1,15 +1,14 @@
 /**
  * @module toml
  *
- * TOML, read for its values or edited in place without disturbing the
- * file around them.
+ * Reads TOML for its values, or edits it in place without disturbing
+ * the rest of the file.
  *
- * TOML is the format configuration files settle on when they have to
- * be edited by people and by programs both. This module answers both
- * halves. `parse()` and `dump()` treat a document as data, the way
- * `json` and `yaml` do. `edit()` treats it as a file somebody wrote,
- * and keeps every comment, blank line and quoting choice through a
- * change.
+ * TOML is the format that configuration files tend to use when both
+ * people and programs have to edit them. This module handles both
+ * cases. `parse()` and `dump()` treat a document as data, as `json` and
+ * `yaml` do. `edit()` treats it as a file that someone wrote, and keeps
+ * every comment, blank line and choice of quotes through a change.
  *
  * The implementation follows TOML v1.0.0 in full.
  *
@@ -25,12 +24,12 @@
  * 8080
  * ```
  *
- * ### What a value decodes to
+ * ### How values are decoded
  *
  * | TOML | Zuri |
  * | --- | --- |
  * | string | `string` |
- * | integer | `number`, or `bigint` past 2^53 |
+ * | integer | `number`, or `bigint` beyond 2^53 |
  * | float | `number` |
  * | boolean | `bool` |
  * | offset date-time | `DateTime` |
@@ -40,18 +39,18 @@
  * | array | `list` |
  * | table | `dict` |
  *
- * Zuri's `number` is an IEEE-754 double, exact only to 2^53. TOML
- * requires the full signed 64-bit range, so an integer past what a
- * double can carry decodes to a `bigint` instead of rounding
- * silently. An integer outside the 64-bit range is a parse error,
- * which is what TOML asks for.
+ * Zuri's `number` is an IEEE 754 double, which is only exact up to
+ * 2^53. TOML requires the full signed 64-bit range, so an integer too
+ * large for a double is decoded as a `bigint`, instead of being
+ * silently rounded. An integer outside the 64-bit range is a parse
+ * error, as TOML requires.
  *
- * ### Integers, floats, and the one thing that does not round-trip
+ * ### Integers and floats
  *
- * The same double is behind `1` and `1.0`, and nothing afterwards
- * tells them apart. Encoding has to guess, and it guesses integer
- * whenever a number has no fractional part. Wrap a number in `Float`
- * to settle it:
+ * `1` and `1.0` are the same double, and nothing can tell them apart
+ * afterwards. So when encoding, the module has to guess, and it writes
+ * an integer whenever a number has no fractional part. Wrap a number in
+ * `Float` to make it a float:
  *
  * ```zuri
  * import toml
@@ -65,15 +64,15 @@
  *
  * ```
  *
- * This is the only place a value changes type across a `parse()` and
- * `dump()` pair. `edit()` is not affected: it never re-spells a value
- * it was not asked to change.
+ * This is the only case where a value changes type between `parse()`
+ * and `dump()`. `edit()` isn't affected, because it never rewrites a
+ * value that you didn't ask it to change.
  *
  * ### Editing a file in place
  *
  * `edit()` returns a `Document`, which knows the text it came from.
- * Rendering one nobody touched reproduces the input byte for byte, and
- * an edit disturbs only the line it lands on:
+ * Rendering a document that nobody has changed reproduces the input
+ * exactly, and an edit only changes the line it applies to:
  *
  * ```zuri
  * import toml
@@ -97,8 +96,8 @@
  *
  * ```
  *
- * The comment stayed, the header stayed, and the trailing comment on
- * the line that changed stayed with it.
+ * The comment, the header and the comment at the end of the changed
+ * line all stayed where they were.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
@@ -171,8 +170,8 @@ def load_file(path: string) {
 /**
  * Returns `value` as TOML text.
  *
- * The result always ends in a line break. Keys keep the order the
- * dictionary holds them in unless `sort_keys` says otherwise.
+ * The result always ends with a line break. Keys are written in the
+ * order the dictionary holds them, unless `sort_keys` is set.
  *
  * ```zuri
  * import toml
@@ -194,20 +193,21 @@ def load_file(path: string) {
  *
  * ```
  *
- * @param dict value The value to write. A TOML document is a table,
- *    so this has to be a dictionary.
+ * @param dict value The value to write. A TOML document is a table, so
+ *    this must be a dictionary.
  * @param ?dict options `sort_keys` (default `false`) writes keys in
- *    sorted order instead of insertion order. `inline_threshold`
- *    (default `0`, off) writes a flat table inline when its inline
- *    form is no longer than this many characters.
- *    `multiline_strings` (default `true`) writes a string holding a
- *    newline in triple quotes rather than escaping it. `array_width`
- *    (default `80`) is the length past which an array breaks onto one
- *    line per item.
+ *    sorted order, instead of the order they were added.
+ *    `inline_threshold` (default `0`, which turns it off) writes a
+ *    table with no nested tables inline, if its inline form is no
+ *    longer than this many characters. `multiline_strings` (default
+ *    `true`) writes a string containing a line break in triple quotes,
+ *    instead of escaping the line break. `array_width` (default `80`)
+ *    is the length beyond which an array is split, with one item per
+ *    line.
  * @returns string
- * @throws EncodeError If `value` is not a dictionary, holds a `nil` or
- *    a value with no TOML spelling, has a non-string key, or contains
- *    itself.
+ * @throws EncodeError If `value` isn't a dictionary, contains a `nil`
+ *    or a value that can't be written as TOML, has a key that isn't a
+ *    string, or contains itself.
  */
 def dump(value, options: ?dict) {
   return encoder.encode(value, options).to_string()

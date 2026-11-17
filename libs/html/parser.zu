@@ -1,19 +1,20 @@
 /**
  * @module html.parser
  *
- * The HTML tree construction stage: the half of the parser that takes
- * the tokenizer's stream and decides what the document actually means.
+ * The tree construction stage of the HTML parser, which takes the
+ * tokenizer's stream of tokens and works out what the document actually
+ * means.
  *
- * This is where HTML's famous forgiveness lives. `<b>a<p>b</b>c`,
- * `<table><td>x`, an unclosed `<li>`, a `</div>` with nothing to
- * close: none of them are errors you have to handle, because the
- * standard defines exactly what tree each one produces, and this
- * module implements those rules rather than inventing its own.
+ * This is where HTML's famous tolerance for errors comes from.
+ * `<b>a<p>b</b>c`, `<table><td>x`, an unclosed `<li>`, a `</div>` with
+ * nothing to close: none of these are errors you have to handle,
+ * because the standard defines exactly which tree each one produces,
+ * and this module implements those rules instead of inventing its own.
  *
- * Most programs want `html.parse()` and never come here. `TreeBuilder`
- * is public for the cases that need the machinery itself: reading
- * `errors` to lint a document, or driving a parse whose tokenizer you
- * control.
+ * Most programs use `html.parse()` and never need this module.
+ * `TreeBuilder` is public for the cases that need the machinery itself,
+ * such as reading `errors` to lint a document, or running a parse with
+ * a tokenizer that you control.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
@@ -179,11 +180,11 @@ class FormattingEntry {
   }
 
   /**
-   * True when this entry is a marker rather than an element.
+   * True if this entry is a marker, not an element.
    *
-   * Markers are pushed when a `<table>`, `<template>`, `<caption>`,
-   * `<td>` or an applet-like element opens, and they stop formatting
-   * elements from leaking across that boundary.
+   * Markers are added when a `<table>`, `<template>`, `<caption>` or
+   * `<td>` element, or an element like `<applet>`, is opened, and they
+   * stop formatting elements from leaking across that boundary.
    *
    * @returns bool
    */
@@ -256,8 +257,8 @@ class TreeBuilder {
   var head_element = nil
 
   /**
-   * The innermost open `<form>`, which is what makes a stray
-   * `</form>` close the right thing.
+   * The innermost open `<form>` element, which lets a stray `</form>`
+   * close the right element.
    */
   var form_element = nil
 
@@ -268,8 +269,8 @@ class TreeBuilder {
   var frameset_ok = true
 
   /**
-   * Whether to parse as though scripting were enabled. Off by
-   * default, which is what makes `<noscript>` content real markup.
+   * Whether to parse as if scripting were enabled. It's off by default,
+   * which makes the content of `<noscript>` real markup.
    */
   var scripting = false
 
@@ -437,9 +438,9 @@ class TreeBuilder {
   }
 
   /**
-   * The exceptions that keep a token in the HTML rules even though
-   * the insertion point is in foreign content: the integration
-   * points, where SVG and MathML deliberately hand back to HTML.
+   * The exceptions that keep a token under the HTML rules even though
+   * the insertion point is in foreign content. These are the
+   * integration points, where SVG and MathML hand control back to HTML.
    *
    * @param Element current
    * @param Token token
@@ -549,9 +550,9 @@ class TreeBuilder {
   }
 
   /**
-   * The current node, except that in a fragment parse with only the
-   * root on the stack it is the context element instead. Every
-   * namespace decision uses this rather than the current node.
+   * The current node, except in a fragment parse where only the root is
+   * on the stack, in which case it's the context element. Every
+   * decision about namespaces uses this instead of the current node.
    *
    * @returns ?Element
    */
@@ -655,12 +656,12 @@ class TreeBuilder {
   }
 
   /**
-   * The standard's "has an element in scope" check, generalised: true
-   * when one of _targets_ is found walking down from the current node
-   * before any element that acts as a barrier.
+   * The standard's "has an element in scope" check, in a general form.
+   * It's true if one of _targets_ is found, walking down from the
+   * current node, before an element that acts as a boundary.
    *
-   * _extra_ names widen the HTML half of the barrier, which is what
-   * separates list item scope and button scope from the default.
+   * _extra_ adds names to the HTML part of the boundary, which is how
+   * list item scope and button scope differ from the default.
    *
    * @param list targets
    * @param ?list extra
@@ -1146,11 +1147,11 @@ class TreeBuilder {
   }
 
   /**
-   * Inserts _data_ as character data at the current insertion point,
-   * merging it into the text node already there when there is one.
+   * Inserts _data_ as text at the current insertion point, adding it to
+   * the text node that's already there, if there is one.
    *
-   * Characters that would land directly inside the document node are
-   * dropped, as the standard requires; a document can hold only a
+   * Text that would end up directly inside the document node is
+   * dropped, as the standard requires. A document can only contain a
    * doctype, comments and one root element.
    *
    * @param string data
@@ -1198,10 +1199,10 @@ class TreeBuilder {
   }
 
   /**
-   * Notes that a start tag's trailing slash has been taken into
-   * account. Only void and foreign elements may carry one; anywhere
-   * else it is a parse error, and calling this is how a rule says
-   * "here it was legitimate".
+   * Records that a start tag's trailing slash has been taken into
+   * account. Only void and foreign elements can have one. Anywhere
+   * else, it's a parse error, and calling this is how a rule says that
+   * the slash was valid here.
    *
    * @param Token token
    */
@@ -1210,12 +1211,12 @@ class TreeBuilder {
   }
 
   /**
-   * Raises the parse error a stray `/>` deserves on an element that is
-   * neither void nor foreign, and so had no business carrying one.
+   * Raises the parse error for an unnecessary `/>` on an element that's
+   * neither void nor foreign.
    *
-   * Called once per start tag from `run()` rather than at each rule,
-   * so a rule only has to say when a slash *was* meaningful and
-   * anything it does not acknowledge is caught here.
+   * `run()` calls this once for each start tag, instead of each rule
+   * calling it, so a rule only has to say when a slash *was*
+   * meaningful, and anything it doesn't acknowledge is caught here.
    *
    * @param Token token
    */
@@ -1345,9 +1346,9 @@ class TreeBuilder {
   }
 
   /**
-   * Reopens any formatting elements that are on the list but no
-   * longer on the stack, so that `<b>a<p>b` puts a fresh `<b>` inside
-   * the paragraph rather than losing the bold.
+   * Reopens any formatting elements that are on the list but no longer
+   * on the stack, so that `<b>a<p>b` puts a new `<b>` inside the
+   * paragraph, instead of losing the bold text.
    */
   _reconstruct_formatting() {
     if self.formatting.is_empty() {
@@ -2674,8 +2675,8 @@ class TreeBuilder {
   }
 
   /**
-   * `</form>`, which closes the form the form pointer names rather
-   * than whatever happens to be open.
+   * Handles `</form>`, which closes the form that the form pointer
+   * refers to, not whatever element happens to be open.
    *
    * @param Token token
    */
@@ -3039,8 +3040,9 @@ class TreeBuilder {
   }
 
   /**
-   * The "in table" recovery path: anything that cannot live in a
-   * table is foster parented out in front of it rather than dropped.
+   * The recovery path for the "in table" insertion mode: anything that
+   * can't be inside a table is foster-parented in front of it, instead
+   * of being dropped.
    *
    * @param Token token
    */
@@ -3671,9 +3673,9 @@ class TreeBuilder {
   }
 
   /**
-   * "In select in table": a `<select>` inside a table, where the
-   * table's own structure tags close the select rather than being
-   * swallowed by it.
+   * The "in select in table" insertion mode, for a `<select>` inside a
+   * table, where the table's own structural tags close the select
+   * instead of being swallowed by it.
    *
    * @param Token token
    */
@@ -4083,14 +4085,14 @@ class TreeBuilder {
   # ==========================================================
 
   /**
-   * Puts this builder into the state the fragment parsing algorithm
-   * starts from, with _context_ as the element the markup is being
-   * parsed inside, and returns the synthetic `<html>` root the parsed
-   * nodes will hang off.
+   * Sets this builder up in the state that the fragment parsing
+   * algorithm starts from, with _context_ as the element that the
+   * markup is being parsed inside, and returns the synthetic `<html>`
+   * root that the parsed nodes are attached to.
    *
-   * `parse_fragment()` is the friendly form of this and is what you
-   * normally want; this is public so a caller driving the tokenizer
-   * by hand can set the same state up.
+   * `parse_fragment()` is the simpler form of this, and is what you
+   * normally want. This method is public so that code driving the
+   * tokenizer itself can set up the same state.
    *
    * @param Element context
    * @returns Element
@@ -4130,9 +4132,9 @@ class TreeBuilder {
   # ==========================================================
 
   /**
-   * The rules for content inside `<svg>` and `<math>`, where tag
-   * names keep their case, attributes can carry namespaces, and a
-   * misplaced HTML tag breaks out of the subtree rather than nesting
+   * The rules for content inside `<svg>` and `<math>`, where tag names
+   * keep their case, attributes can have namespaces, and an HTML tag in
+   * the wrong place breaks out of the subtree instead of being nested
    * inside it.
    *
    * @param Token token
@@ -4348,10 +4350,10 @@ def _is_whitespace(c: string) {
 /**
  * Splits _text_ into its leading whitespace and the rest.
  *
- * Several insertion modes treat leading whitespace as harmless and
- * everything after it as a reason to change mode, and the tokenizer
- * hands over whole runs rather than single characters, so the split
- * has to happen here.
+ * Several insertion modes treat leading whitespace as harmless, and
+ * everything after it as a reason to change mode. The tokenizer passes
+ * on whole runs of text, not single characters, so the split has to
+ * happen here.
  *
  * @param string text
  * @returns dict
@@ -4454,27 +4456,27 @@ def _same_formatting_shape(a, b) {
  * Parses _source_ as a complete HTML document.
  *
  * The result is always a usable `Document`, however broken the input
- * was: HTML defines a tree for every possible string, and this
- * follows those rules rather than raising. Anything the standard
- * calls a parse error is collected in `document.errors`, so a
- * non-empty list there is how you find out the source was not
- * conformant.
+ * was. HTML defines a tree for every possible string, and this follows
+ * those rules instead of raising an error. Anything the standard calls
+ * a parse error is collected in `document.errors`, so a non-empty list
+ * there tells you the source wasn't valid.
  *
  * The document always has an `<html>` root with a `<head>` and a
- * `<body>`, even when the source contains none of those tags, because
- * the tree construction algorithm creates them.
+ * `<body>`, even if the source doesn't contain any of those tags,
+ * because the tree construction algorithm creates them.
  *
- * _options_ takes:
+ * _options_ can contain:
  *
- * - `scripting` (bool, default `false`): parse as though scripting
- *   were enabled. With the default, `<noscript>` content is parsed as
- *   real markup, which is what you want when reading a page rather
- *   than rendering it. Nothing is ever executed either way.
+ * - `scripting`, a bool that defaults to `false`: whether to parse as
+ *   if scripting were enabled. With the default, the content of
+ *   `<noscript>` is parsed as real markup, which is what you want when
+ *   reading a page instead of rendering it. Nothing is ever run, either
+ *   way.
  *
  * The source is treated as UTF-8 text that has already been decoded.
- * No charset sniffing, byte order mark handling or `<meta charset>`
- * processing happens; a Zuri string is already Unicode by the time it
- * reaches here.
+ * There's no character set detection, byte order mark handling or
+ * `<meta charset>` processing, because a Zuri string is already Unicode
+ * by the time it gets here.
  *
  * ```zuri-repl
  * %> import html
@@ -4507,9 +4509,9 @@ def parse(source: string, options: ?dict) {
 /**
  * Reads the file at _path_ and parses it as HTML.
  *
- * The file is read as UTF-8. Bytes that are not valid UTF-8 are
- * replaced with U+FFFD rather than raising, so a mislabelled file
- * still parses into something you can inspect.
+ * The file is read as UTF-8. Bytes that aren't valid UTF-8 are replaced
+ * with U+FFFD, instead of causing an error, so a file with the wrong
+ * encoding still produces something you can inspect.
  *
  * ```zuri
  * import html
@@ -4519,9 +4521,9 @@ def parse(source: string, options: ?dict) {
  * ```
  *
  * @param string path
- * @param ?dict options The same options `parse()` takes.
+ * @param ?dict options The same options as for `parse()`.
  * @returns Document
- * @throws Error when the file cannot be read.
+ * @throws Error if the file can't be read.
  */
 def parse_file(path: string, options: ?dict) {
   var handle = file(path)

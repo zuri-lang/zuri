@@ -1,33 +1,33 @@
 /**
  * @module test.reporter
  *
- * How a run is shown.
+ * How a test run is displayed.
  *
- * The runner knows nothing about output. It walks the tree and calls
- * the methods below as things happen, and a reporter decides what, if
- * anything, that looks like. Swapping one for another changes the
- * report and nothing else.
+ * The runner doesn't know anything about output. It walks the tree and
+ * calls the methods below as things happen, and a reporter decides how,
+ * or whether, to show them. Replacing one reporter with another changes
+ * the report and nothing else.
  *
  * ### The built-in reporters
  *
- * | Name | What it is for |
+ * | Name | What it's for |
  * | --- | --- |
- * | `spec` | the default: an indented tree, with failures spelled out |
+ * | `spec` | the default: an indented tree, with failures described in full |
  * | `dot` | one character per test, for a run too long to read |
- * | `tap` | TAP version 14, for anything that already speaks TAP |
- * | `junit` | JUnit XML, which is what most CI systems ingest |
+ * | `tap` | TAP version 14, for tools that already understand TAP |
+ * | `junit` | JUnit XML, which most CI systems can read |
  * | `json` | one JSON document at the end, for a tool of your own |
- * | `ndjson` | one JSON object per event, as it happens |
+ * | `ndjson` | one JSON object for each event, as it happens |
  * | `silent` | nothing at all |
  *
- * `test.run({ reporter: 'dot' })` picks one by name, and
+ * `test.run({ reporter: 'dot' })` chooses one by name, and
  * `test.run({ reporter: MyReporter() })` uses your own.
  *
- * ### Writing one
+ * ### Writing a reporter
  *
- * Subclass `Reporter` and override what you care about. Every method
- * has a do-nothing default, so a reporter that only reacts to
- * failures is six lines:
+ * Subclass `Reporter` and override the methods you need. Every method
+ * has a default that does nothing, so a reporter that only reacts to
+ * failures takes six lines:
  *
  * ```zuri
  * import test.reporter { Reporter }
@@ -51,10 +51,10 @@ import .source
 import .style
 
 /**
- * The interface the runner talks to, with every method doing nothing.
+ * The interface that the runner calls, with every method doing nothing.
  *
- * Subclass it and override what you want; there is no need to call
- * `parent()` from an override, since nothing here does anything.
+ * Subclass it and override the methods you want. An override doesn't
+ * need to call `parent()`, because nothing here does anything.
  */
 class Reporter {
 
@@ -583,12 +583,12 @@ def _yaml(text) {
 # =========================================================================
 
 /**
- * JUnit XML, which is the format nearly every CI system knows how to
- * turn into a test report page.
+ * JUnit XML, which almost every CI system can turn into a test report
+ * page.
  *
- * Each `describe` becomes a `<testsuite>` and each test a
- * `<testcase>`. Written to standard output; redirect it to the file
- * your CI is configured to collect.
+ * Each `describe` becomes a `<testsuite>`, and each test a
+ * `<testcase>`. It's written to standard output, so redirect it to the
+ * file your CI system is configured to collect.
  */
 class Junit < Reporter {
 
@@ -724,10 +724,10 @@ def _case_dict(test) {
 }
 
 /**
- * One JSON document at the end, holding the summary and every test.
+ * One JSON document at the end, with the summary and every test.
  *
- * For a tool of your own that wants the whole run rather than a
- * stream of it.
+ * It's for a tool of your own that wants the whole run at once, instead
+ * of as a stream.
  */
 class Json < Reporter {
 
@@ -747,13 +747,13 @@ class Json < Reporter {
 }
 
 /**
- * One JSON object per line, emitted as each thing happens.
+ * One JSON object per line, written as each thing happens.
  *
- * This is what a test file writes when it is being run by the
- * conductor in a process of its own: the parent reads the stream as
- * it arrives rather than waiting for the child to finish.
+ * This is what a test file writes when the conductor runs it in a
+ * separate process. The parent process reads the stream as it arrives,
+ * instead of waiting for the child to finish.
  *
- * Every line carries the prefix below, so anything else the file
+ * Every line starts with the prefix below, so anything else the file
  * prints can be told apart from the protocol and passed through.
  */
 class Ndjson < Reporter {
@@ -781,8 +781,8 @@ class Ndjson < Reporter {
 }
 
 /**
- * What marks a line of `ndjson` output as protocol rather than as
- * something the test file happened to print.
+ * The prefix that marks a line of `ndjson` output as part of the
+ * protocol, not something the test file happened to print.
  */
 var PREFIX = '@@zuri-test@@'
 

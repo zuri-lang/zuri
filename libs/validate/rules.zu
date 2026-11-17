@@ -1,10 +1,9 @@
 /**
  * @module rules
  *
- * All built-in validation rule implementations.  Rules are plain classes
- * that extend `Rule`.  They are not intended to be constructed directly;
- * the `Validator` fluent builder and `Schema` handle construction and
- * injection automatically.
+ * The built-in validation rules. Each one is a plain class that extends
+ * `Rule`. You don't create them yourself: `Validator` and `Schema`
+ * create them and pass in what they need.
  */
 
 import .rule { Rule, instantiate_rule }

@@ -1,7 +1,7 @@
 /**
  * @module checksum
  *
- * This is the checksum submodule for the compress module.
+ * The CRC-32 and Adler-32 checksums.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */

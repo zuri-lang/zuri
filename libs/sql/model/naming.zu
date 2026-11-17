@@ -53,9 +53,10 @@ def snake(name: string) {
 }
 
 /**
- * A word made plural by the regular rules: `s`, `x`, `z`, `ch` and
- * `sh` take `es`; a `y` after a consonant becomes `ies`; everything
- * else takes `s`. Only the last word of a snake case name changes.
+ * A word made plural by the regular rules. Words ending in `s`, `x`,
+ * `z`, `ch` and `sh` add `es`, a `y` after a consonant becomes `ies`,
+ * and everything else adds `s`. Only the last word of a snake case name
+ * changes.
  *
  * @param string word
  * @returns string

@@ -1,15 +1,15 @@
 /**
  * @module html.namespaces
  *
- * The five namespace URIs the HTML parser deals in.
+ * The five namespace URIs that the HTML parser uses.
  *
- * They live in a module of their own, importing nothing, because
- * almost every other module in `html` needs them at load time and a
- * shared leaf is the only arrangement that has no load order to get
- * wrong.
+ * They're in a module of their own, with no imports, because almost
+ * every other module in `html` needs them when it's loaded, and a
+ * shared module with no dependencies is the only arrangement where the
+ * load order can't go wrong.
  *
- * `html.node` re-exports all of these, so `node.HTML_NAMESPACE` and
- * `html.HTML_NAMESPACE` both work and you rarely need to name this
+ * `html.node` re-exports all of them, so `node.HTML_NAMESPACE` and
+ * `html.HTML_NAMESPACE` both work, and you rarely need to refer to this
  * module directly.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors

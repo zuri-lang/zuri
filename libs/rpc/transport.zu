@@ -2,30 +2,30 @@
  * @module transport
  *
  * Where an endpoint's bytes come from and go to. A transport is any
- * object with three methods:
+ * object with these three methods:
  *
  * - `read(max)` returns the next bytes that arrive, at most `max` of
- *   them, waiting until at least one does. It returns empty bytes
- *   once the stream has ended.
- * - `write(data)` sends all of `data`, a `bytes`.
+ *   them, waiting until at least one byte arrives. It returns empty
+ *   bytes once the stream has ended.
+ * - `write(data)` sends all of `data`, which is `bytes`.
  * - `close()` ends the stream in the direction it writes.
  *
- * A transport may also have `can_listen()`, true when another isolate
- * can read it while the one that made it writes to it, which
- * `Endpoint.listen()` relies on. Without the method, it is false. And
- * a transport that keeps messages apart itself has `framing()`,
- * returning the framing an endpoint over it uses unless told
- * otherwise.
+ * A transport can also have `can_listen()`, which returns true if
+ * another isolate can read the transport while the isolate that created
+ * it writes to it. `Endpoint.listen()` relies on it. Without the
+ * method, it's treated as false. A transport that keeps messages apart
+ * itself also has `framing()`, which returns the framing that an
+ * endpoint over it uses by default.
  *
- * {StdioTransport} talks over the program's own standard input and
- * output, {SocketTransport} over a connected socket,
+ * {StdioTransport} communicates over the program's own standard input
+ * and output, {SocketTransport} over a connected socket,
  * {ProcessTransport} over the standard input and output of a child
  * process, {WebSocketTransport} over a WebSocket, and
- * {ChannelTransport} over isolate channels, two of which `pipe()`
- * joins into a connection between isolates. Any other object with the
- * three methods works the same.
+ * {ChannelTransport} over isolate channels, two of which `pipe()` joins
+ * into a connection between isolates. Any other object with the three
+ * methods works in the same way.
  *
- * Re-exported by `rpc`.
+ * The `rpc` module re-exports these.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -108,12 +108,12 @@ class StdioTransport {
 }
 
 /**
- * Talks over a connected stream from `net`: a `TcpStream`, a
- * `UnixStream` or a `TlsStream`, or anything else with `read()`,
- * `write_all()` and `close()`.
+ * Communicates over a connected stream from `net`, which can be a
+ * `TcpStream`, a `UnixStream` or a `TlsStream`, or anything else with
+ * `read()`, `write_all()` and `close()`.
  *
- * A socket is held by one isolate at a time, so an endpoint serving
- * one reads it with `serve()` rather than `listen()`.
+ * A socket is held by one isolate at a time, so an endpoint using one
+ * reads it with `serve()`, not `listen()`.
  *
  * @printable
  */
@@ -184,9 +184,10 @@ class SocketTransport {
 }
 
 /**
- * Talks to a child process over its standard input and output, from
- * `os.spawn()` with `stdin` and `stdout` both `'pipe'`: what the
- * child prints is read, and what is written goes to its stdin.
+ * Communicates with a child process over its standard input and output.
+ * The process comes from `os.spawn()`, with both `stdin` and `stdout`
+ * set to `'pipe'`. What the child prints is read, and what's written
+ * goes to its standard input.
  *
  * ```zuri,ignore
  * import os
@@ -201,9 +202,9 @@ class SocketTransport {
  * echo calculator.request('add', [2, 3])
  * ```
  *
- * The child's streams are held by the isolate that spawned it, so an
- * endpoint talking to it reads with `serve()` and `request()` rather
- * than `listen()`.
+ * The child's streams are held by the isolate that started it, so an
+ * endpoint that talks to it reads with `serve()` and `request()`, not
+ * `listen()`.
  *
  * @printable
  */
@@ -273,10 +274,11 @@ class ProcessTransport {
 }
 
 /**
- * Talks over a WebSocket from `http.websocket`, on either end of it:
- * one `websocket.accept()` returned in a route handler, or one
- * `websocket.connect()` opened. Each message is one WebSocket message,
- * sent as text, so an endpoint over it uses a {MessageFraming}.
+ * Communicates over a WebSocket from `http.websocket`, on either end:
+ * one returned by `websocket.accept()` in a route handler, or one
+ * opened with `websocket.connect()`. Each JSON-RPC message is one
+ * WebSocket message, sent as text, so an endpoint over it uses a
+ * {MessageFraming}.
  *
  * ```zuri,ignore
  * import http.websocket
@@ -287,8 +289,8 @@ class ProcessTransport {
  * echo node.request('eth_blockNumber', [])
  * ```
  *
- * A WebSocket is held by one isolate at a time, so an endpoint over
- * one reads with `serve()` and `request()` rather than `listen()`.
+ * A WebSocket is held by one isolate at a time, so an endpoint over one
+ * reads with `serve()` and `request()`, not `listen()`.
  *
  * @printable
  */
@@ -304,11 +306,11 @@ class WebSocketTransport {
   }
 
   /**
-   * The next message that arrives, as its bytes, or empty bytes once
-   * the connection has closed. An empty message is skipped, since it
-   * holds no JSON-RPC message.
+   * The next message that arrives, as bytes, or empty bytes once the
+   * connection has closed. An empty message is skipped, because it
+   * can't contain a JSON-RPC message.
    *
-   * @param int max: Ignored; each read returns one message whole.
+   * @param int max: ignored. Each read returns one whole message.
    * @returns bytes
    */
   read(max: int) {
@@ -374,10 +376,11 @@ class WebSocketTransport {
 }
 
 /**
- * Talks over two isolate channels: what it reads arrives on `inbox`
- * and what it writes goes to `outbox`. Channels cross isolates, so a
- * {ChannelTransport} can be handed to another isolate and talk to it
- * from there; `pipe()` makes the two ends of such a connection.
+ * Communicates over two isolate channels: what it reads arrives on
+ * `inbox`, and what it writes goes to `outbox`. Channels can be passed
+ * between isolates, so a {ChannelTransport} can be given to another
+ * isolate and used to communicate from there. `pipe()` creates the two
+ * ends of such a connection.
  *
  * @printable
  */
@@ -395,11 +398,11 @@ class ChannelTransport {
   }
 
   /**
-   * The next bytes sent to this end, whatever their length, or empty
+   * The next bytes sent to this end, however many there are, or empty
    * bytes once the other end has closed.
    *
-   * @param int max: Ignored; each read returns one write from the
-   *    other end whole.
+   * @param int max: ignored. Each read returns one whole write from the
+   *    other end.
    * @returns bytes
    */
   read(max: int) {

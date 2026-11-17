@@ -1,22 +1,21 @@
 /**
  * @module parser
  *
- * Reading TOML text into the document tree, losing nothing.
+ * Reads TOML text into the document tree, without losing anything.
  *
- * The parser is a single pass over the characters. It builds the
- * nodes in `document.zu`, and every byte it consumes ends up in one of
- * them: a value's text in its `raw`, the spaces around an `=` in the
- * pair that holds it, a comment in the prefix of whatever it sits
- * above. Nothing is normalised on the way in, so nothing has to be
- * reconstructed on the way out.
+ * The parser makes a single pass over the characters. It builds the
+ * nodes defined in `document.zu`, and every byte it reads ends up in
+ * one of them: a value's text in its `raw` field, the spaces around an
+ * `=` in the entry that holds it, and a comment in the prefix of
+ * whatever comes after it. Nothing is normalized when it's read, so
+ * nothing has to be reconstructed when it's written.
  *
- * Alongside the tree it keeps a second, smaller structure recording
- * what has been *declared*. TOML's rules about redefinition are not
- * about text at all: a table may be created implicitly by a header
- * below it, created by a dotted key, or written out in full, and which
- * of those happened decides whether the next header naming it is legal.
- * Keeping that separate from the format tree is what keeps both
- * readable.
+ * Along with the tree, it keeps a second, smaller structure that
+ * records what has been *declared*. TOML's rules about redefinition
+ * aren't about text at all. A table can be created implicitly by a
+ * header below it, created by a dotted key, or written out in full, and
+ * which of those happened decides whether the next header that names it
+ * is valid. Keeping that separate from the tree keeps both readable.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */

@@ -1,9 +1,8 @@
 /**
  * @module driver
  *
- * Opening MySQL and MariaDB connections: reading a connection string,
- * establishing the socket, upgrading it to TLS when asked, and
- * authenticating.
+ * Opens MySQL and MariaDB connections: reads a connection string, opens
+ * the socket, upgrades it to TLS if requested, and authenticates.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -39,28 +38,28 @@ var DEFAULT_PORT = 3306
 var DEFAULT_TIMEOUT = 30000
 
 /**
- * Most parameters one statement can bind. The protocol counts them in
- * a 16 bit field, so this is a hard limit rather than a configured
- * one.
+ * The largest number of parameters one statement can bind. The protocol
+ * counts them in a 16-bit field, so this is a hard limit, not a
+ * setting.
  */
 var MAX_PARAMETERS = 65535
 
 /**
- * What `sslmode` can be.
+ * The values that `sslmode` can have.
  *
  * | Mode | Meaning |
  * | - | - |
  * | `disable` | Never use TLS. |
- * | `prefer` | Where the server offers it, unverified; in the clear where it does not. |
- * | `require` | Insist on TLS, without checking who the server is. |
- * | `verify` | Insist on TLS and check the server's certificate and host name. |
+ * | `prefer` | Use TLS without verification if the server offers it, and plain text if it doesn't. |
+ * | `require` | Require TLS, without checking who the server is. |
+ * | `verify` | Require TLS, and check the server's certificate and host name. |
  *
- * MySQL's own spellings are accepted too. `DISABLED`, `PREFERRED` and
- * `REQUIRED` mean what they say; `VERIFY_CA` and `VERIFY_IDENTITY`
- * both become `verify`. That makes `VERIFY_CA` stricter here than on
- * the command line, where it checks the certificate but not the name:
- * the difference can only cause a connection to be refused, never to
- * be wrongly trusted.
+ * MySQL's own names are accepted too. `DISABLED`, `PREFERRED` and
+ * `REQUIRED` mean what they say, and `VERIFY_CA` and `VERIFY_IDENTITY`
+ * both become `verify`. That makes `VERIFY_CA` stricter here than in
+ * the MySQL command-line client, where it checks the certificate but
+ * not the host name. The difference can only cause a connection to be
+ * refused, never to be wrongly trusted.
  */
 var SSL_MODES = ['disable', 'prefer', 'require', 'verify']
 
@@ -118,13 +117,13 @@ class MySqlDriver < Driver {
   }
 
   /**
-   * What MySQL can do.
+   * What MySQL supports.
    *
-   * `last_insert_id` is true and `returning` is false, which together
-   * are the most visible difference from PostgreSQL: an insert that
-   * wants its id back reads it from what the server reported rather
-   * than from a `RETURNING` clause, and `Connection.insert()` picks
-   * between the two on its own.
+   * `last_insert_id` is true and `returning` is false. Together, these
+   * are the most visible difference from PostgreSQL. An insert that
+   * needs its ID back reads the ID the server reported, instead of
+   * using a `RETURNING` clause, and `Connection.insert()` chooses
+   * between the two automatically.
    *
    * @returns dict
    */

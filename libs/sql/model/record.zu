@@ -25,7 +25,7 @@ import .errors { Errors, ModelError, RecordInvalid, RecordNotFound }
 import .query { Query }
 
 /**
- * The class a model extends.
+ * The class that a model extends.
  *
  * ```zuri,ignore
  * class Post < Model {
@@ -46,39 +46,41 @@ import .query { Query }
  * }
  * ```
  *
- * Calling the class builds a new record, from a dictionary of
- * attributes when one is given, which are assigned as `fill()` assigns
- * them. Records loaded from the database are built the same way, with
- * no arguments, so a model's own `@new` takes no required arguments,
- * and calls `parent(attributes)` when it takes attributes.
+ * Calling the class creates a new record. If a dictionary of attributes
+ * is passed, they're assigned in the same way as `fill()` assigns them.
+ * Records loaded from the database are created in the same way, without
+ * arguments, so a model's own `@new` mustn't have required parameters,
+ * and it should call `parent(attributes)` if it takes attributes.
  *
  * ### Hooks
  *
- * A model overrides any of these to run code at that point of a
- * record's life. Each is handed the connection or transaction the
- * record is going through, and when a model has any of them, saving and
- * deleting run in a transaction, a savepoint inside an open one, so
- * what a hook writes is undone with the rest when anything fails. A
- * hook raises to stop the save or the delete.
+ * A model can override any of these methods to run code at that point
+ * in a record's life. Each one is passed the connection or transaction
+ * the record is using. If a model has any hooks, saving and deleting
+ * run in a transaction, or in a savepoint inside one that's already
+ * open, so anything a hook writes is undone along with everything else
+ * if something fails. A hook can raise an error to stop the save or the
+ * delete.
  *
  * | Hook | Runs |
  * | - | - |
- * | `before_validate(db)` | before the record is checked |
- * | `validate(errors)` | as it is checked, to add failures of the model's own |
- * | `after_validate(db)` | after it is checked, whatever was found |
- * | `before_save(db)` | before it is written, new or not |
+ * | `before_validate(db)` | before the record is validated |
+ * | `validate(errors)` | while it's validated, to add the model's own failures |
+ * | `after_validate(db)` | after it's validated, whatever the result |
+ * | `before_save(db)` | before it's written, whether it's new or not |
  * | `before_create(db)` | before a new record is inserted |
- * | `after_create(db)` | after it is inserted, with its key |
+ * | `after_create(db)` | after it's inserted, when it has its key |
  * | `before_update(db)` | before a saved record's changes are written |
- * | `after_update(db)` | after they are written |
- * | `after_save(db)` | after it is written, new or not |
- * | `before_delete(db)` | before it is deleted |
- * | `after_delete(db)` | after it is deleted |
- * | `after_load()` | as a record is built from a row |
+ * | `after_update(db)` | after the changes are written |
+ * | `after_save(db)` | after it's written, whether it's new or not |
+ * | `before_delete(db)` | before it's deleted |
+ * | `after_delete(db)` | after it's deleted |
+ * | `after_load()` | when a record is created from a row |
  *
- * A model's methods share a namespace with these and with the methods
- * below, so a model does not declare a method of the same name as one
- * of them for anything else. A field may share a name with any of them.
+ * A model's methods share a namespace with these hooks and with the
+ * methods below, so a model mustn't declare a method with the same name
+ * as one of them for any other purpose. A field can have the same name
+ * as any of them.
  *
  * @printable
  */
@@ -493,8 +495,8 @@ class Model {
   }
 
   /**
-   * A query over the records an association reaches, to narrow further
-   * rather than load whole.
+   * A query over the records that an association reaches, for narrowing
+   * them further instead of loading them all.
    *
    * ```zuri,ignore
    * var drafts = author.related(db, 'posts').where({ published: false }).count()
@@ -569,14 +571,14 @@ class Model {
   }
 
   /**
-   * Separates records from this one in a `belongs_to_many`
-   * association's table.
+   * Unlinks records from this one in a `belongs_to_many` association's
+   * join table.
    *
    * @param Connection|Transaction db
    * @param string name
    * @param Model|any|list|nil targets Records, keys, or a list of
-   *    either; every joined record when nil.
-   * @returns number How many were separated.
+   *    either. If it's nil, every linked record is unlinked.
+   * @returns number The number of records unlinked.
    */
   detach(db, name: string, targets) {
     var link = self._link(name)

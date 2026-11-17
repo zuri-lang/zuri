@@ -360,8 +360,8 @@ class Column {
   var foreign
 
   /**
-   * Whether this redefines a column the table already has, rather than
-   * adding one.
+   * Whether this redefines a column that the table already has, instead
+   * of adding one.
    * @default false
    */
   var is_change = false
@@ -386,13 +386,14 @@ class Column {
   }
 
   /**
-   * Gives the column a default, used when an insert leaves it out.
+   * Gives the column a default, which is used when an insert leaves the
+   * column out.
    *
    * The value is written into the table definition as a literal of the
    * column's type: a string, a number, a bool, nil, a `sql.Decimal`, or
-   * for a `json()` column a list or dictionary. A `sql.Raw` is written
-   * as given, for a default that is an expression rather than a value;
-   * it is SQL, and the engine reads it as such.
+   * a list or dictionary for a `json()` column. A `sql.Raw` is written
+   * exactly as given, for a default that's an expression instead of a
+   * value. It's SQL, and the engine reads it as SQL.
    *
    * ```zuri,ignore
    * table.integer('views').default_value(0)
@@ -597,7 +598,7 @@ class Blueprint {
   var table
 
   /**
-   * Whether this creates the table rather than altering it.
+   * Whether this creates the table, as opposed to altering it.
    * @type bool
    */
   var creating
@@ -691,12 +692,12 @@ class Blueprint {
   }
 
   /**
-   * An exact decimal of `precision` digits, `scale` of them after the
-   * point. Reads back as a `sql.Decimal`.
+   * An exact decimal with `precision` digits, `scale` of them after the
+   * decimal point. It's read back as a `sql.Decimal`.
    *
    * @param string name
-   * @param number precision From 1 to 65; at most 15 on SQLite.
-   * @param number|nil scale From 0 to `precision`, 0 when nil.
+   * @param number precision From 1 to 65, and at most 15 on SQLite.
+   * @param number|nil scale From 0 to `precision`. Nil means 0.
    * @returns Column
    * @throws QueryError if either is out of range.
    */
@@ -940,10 +941,11 @@ class Blueprint {
   }
 
   /**
-   * Drops an index, by its name or by the columns it was made on.
+   * Drops an index, either by its name or by the columns it was created
+   * on.
    *
-   * @param string|list[string] name The name; a list is the columns,
-   *    and names the index `index_name()` gives them.
+   * @param string|list[string] name The name, or a list of the columns,
+   *    which gives the index the name that `index_name()` gives them.
    */
   drop_index(name) {
     self._drop('drop_index', name, 'index')

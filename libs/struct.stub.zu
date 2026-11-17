@@ -1,89 +1,84 @@
 /**
  * @module struct
  *
- * This module provides functions for converting between Zuri
- * values and C/C++/Rust structs and vice-versa in the binary
- * format.
+ * Converts between Zuri values and the binary layout of C, C++ and Rust
+ * structs.
  *
- * The `pack` and `unpack` functions behave similarly as the pack
- * and unpack functions from Perl and PHP (more similar to the
- * PHP version) with few major extensions to their format
- * language.
+ * `pack()` and `unpack()` work much like the functions of the same
+ * names in Perl and PHP, closest to the PHP versions, with a few
+ * important additions to their format language.
  *
  * ## Format language
  *
- * A format string is a sequence of `/`-separated segments. Each
- * segment is one or more `CODE[COUNT]` groups, optionally
- * followed by `:NAME` to label the field(s) that group produces
- * when unpacking:
+ * A format string is a sequence of segments separated by `/`. Each
+ * segment is one or more `CODE[COUNT]` groups, optionally followed by
+ * `:NAME`, which names the fields that the group produces when
+ * unpacking:
  *
  * ```text
  *   "Nsize:len/A16:name/C4"
  * ```
  *
- * - `CODE` is one of the format characters in the table below. -
- * `COUNT` is a decimal integer, or `*` to mean "the rest" (the
- * whole remaining argument for a string-like code, or every
- * remaining argument/byte for a numeric code). Omitted means
- * `1`.
- * - `:NAME` names the field(s) produced by that ONE group
- * when unpacking. A count > 1 numbers the keys `NAME1`, `NAME2`,
- * ... A segment carrying a `:NAME` may only contain a single
- * group. - A group with no `:NAME` gets a purely numeric key
- * that runs once, globally, for the whole format string; it
- * never resets and so never silently overwrites an earlier
- * unnamed field.
+ * - `CODE` is one of the format characters in the table below.
+ * - `COUNT` is a decimal integer, or `*` for "the rest", which is the
+ *   whole remaining argument for a string code, or every remaining
+ *   argument or byte for a numeric code. If it's left out, it's `1`.
+ * - `:NAME` names the fields produced by that one group when unpacking.
+ *   With a count greater than 1, the keys are numbered `NAME1`, `NAME2`
+ *   and so on. A segment with a `:NAME` can only contain a single
+ *   group.
+ * - A group without a `:NAME` gets a numeric key, numbered across the
+ *   whole format string. The numbering never restarts, so an unnamed
+ *   field never overwrites an earlier one.
  *
  * ## Format codes
  *
- * Code | Bytes | Meaning
- * -----|-------|--------
- * `a`  | count | NUL-padded string
- * `A`  | count | SPACE-padded string (trailing NUL/space trimmed on unpack)
- * `Z`  | count | NUL-padded, NUL-terminated string (C-string semantics)
- * `h`  | ceil(count/2) | Hex string, low nibble first
- * `H`  | ceil(count/2) | Hex string, high nibble first
- * `c`  | 1 | signed 8-bit integer
- * `C`  | 1 | unsigned 8-bit integer
- * `?`  | 1 | boolean
- * `s`  | 2 | signed 16-bit integer, native byte order
- * `S`  | 2 | unsigned 16-bit integer, native byte order
- * `n`  | 2 | unsigned 16-bit integer, big-endian
- * `v`  | 2 | unsigned 16-bit integer, little-endian
- * `i`  | 4 | signed 32-bit integer, native byte order
- * `I`  | 4 | unsigned 32-bit integer, native byte order
- * `l`  | 4 | signed 32-bit integer, native byte order
- * `L`  | 4 | unsigned 32-bit integer, native byte order
- * `N`  | 4 | unsigned 32-bit integer, big-endian
- * `V`  | 4 | unsigned 32-bit integer, little-endian
- * `q`  | 8 | signed 64-bit integer, native byte order
- * `Q`  | 8 | unsigned 64-bit integer, native byte order
- * `J`  | 8 | unsigned 64-bit integer, big-endian
- * `P`  | 8 | unsigned 64-bit integer, little-endian
- * `u`  | 16 | signed 128-bit integer, little-endian
- * `U`  | 16 | unsigned 128-bit integer, little-endian
- * `f`  | 4 | float, native byte order
- * `g`  | 4 | float, little-endian
- * `G`  | 4 | float, big-endian
- * `d`  | 8 | double, native byte order
- * `e`  | 8 | double, little-endian
- * `E`  | 8 | double, big-endian
- * `w`  | 2 | IEEE-754 half-precision float, little-endian
- * `W`  | 2 | IEEE-754 half-precision float, big-endian
- * `x`  | count | NUL byte(s); consumes no argument
- * `X`  | count | back up `count` byte(s)
- * `Z`  |; | (see above)
- * `@`  |; | seek/pad to absolute position `count`
+ * | Code | Bytes | Meaning |
+ * | ---- | ----- | ------- |
+ * | `a`  | count | NUL-padded string |
+ * | `A`  | count | space-padded string, with trailing NULs and spaces removed when unpacking |
+ * | `Z`  | count | NUL-padded, NUL-terminated string, like a C string |
+ * | `h`  | ceil(count/2) | hexadecimal string, low nibble first |
+ * | `H`  | ceil(count/2) | hexadecimal string, high nibble first |
+ * | `c`  | 1 | signed 8-bit integer |
+ * | `C`  | 1 | unsigned 8-bit integer |
+ * | `?`  | 1 | boolean |
+ * | `s`  | 2 | signed 16-bit integer, native byte order |
+ * | `S`  | 2 | unsigned 16-bit integer, native byte order |
+ * | `n`  | 2 | unsigned 16-bit integer, big-endian |
+ * | `v`  | 2 | unsigned 16-bit integer, little-endian |
+ * | `i`  | 4 | signed 32-bit integer, native byte order |
+ * | `I`  | 4 | unsigned 32-bit integer, native byte order |
+ * | `l`  | 4 | signed 32-bit integer, native byte order |
+ * | `L`  | 4 | unsigned 32-bit integer, native byte order |
+ * | `N`  | 4 | unsigned 32-bit integer, big-endian |
+ * | `V`  | 4 | unsigned 32-bit integer, little-endian |
+ * | `q`  | 8 | signed 64-bit integer, native byte order |
+ * | `Q`  | 8 | unsigned 64-bit integer, native byte order |
+ * | `J`  | 8 | unsigned 64-bit integer, big-endian |
+ * | `P`  | 8 | unsigned 64-bit integer, little-endian |
+ * | `u`  | 16 | signed 128-bit integer, little-endian |
+ * | `U`  | 16 | unsigned 128-bit integer, little-endian |
+ * | `f`  | 4 | float, native byte order |
+ * | `g`  | 4 | float, little-endian |
+ * | `G`  | 4 | float, big-endian |
+ * | `d`  | 8 | double, native byte order |
+ * | `e`  | 8 | double, little-endian |
+ * | `E`  | 8 | double, big-endian |
+ * | `w`  | 2 | IEEE 754 half-precision float, little-endian |
+ * | `W`  | 2 | IEEE 754 half-precision float, big-endian |
+ * | `x`  | count | NUL bytes. Doesn't use an argument. |
+ * | `X`  | count | moves back `count` bytes |
+ * | `@`  | varies | moves or pads to the absolute position `count` |
  *
  * ## Integer precision
  *
- * Zuri numbers are IEEE-754 doubles, which can only represent
- * integers exactly up to 2^53. Every integer-producing code here
- * (`q`/`Q`/`J`/`P`, and the new `u`/`U`) automatically promotes
- * its result to a `bigint` Value instead of a `number` whenever
- * the unpacked value falls outside that safe range, rather than
- * silently losing precision. Packing accepts either a `number`
- * or a `bigint` for every integer code.
+ * Zuri numbers are IEEE 754 doubles, which can only represent integers
+ * exactly up to 2^53. Every code that produces an integer, including
+ * `q`, `Q`, `J`, `P`, `u` and `U`, returns a `bigint` instead of a
+ * `number` whenever the unpacked value is outside that range, instead
+ * of silently losing precision. When packing, every integer code
+ * accepts either a `number` or a `bigint`.
  *
  * @copyright 2022, Richard Ore and The Zuri Contributors
  */

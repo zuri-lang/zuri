@@ -3,10 +3,11 @@
  *
  * A statement compiled once on the server and run many times.
  *
- * Preparing sends the statement, and the server answers with the types
- * it will bind and the columns it will return. Every execution after
- * that sends only the values, in the binary encoding, which is both
- * smaller than the text one and free of any question of quoting.
+ * Preparing a statement sends it to the server, which answers with the
+ * types of the values it expects and the columns it will return. After
+ * that, each execution only sends the values, in the binary encoding,
+ * which is smaller than the text encoding and avoids any question of
+ * quoting.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -64,7 +65,8 @@ class MySqlStatement < DriverStatement {
 
   /**
    * The columns as the server described them, with everything it said
-   * about each rather than the two fields the contract asks for.
+   * about each one, not only the two fields that the interface
+   * requires.
    *
    * @returns list[dict]
    */

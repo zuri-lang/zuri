@@ -1,13 +1,13 @@
 /**
  * @module dkim
  *
- * DomainKeys Identified Mail: signing outgoing messages so a receiver
- * can tell they came from the domain they claim to, and checking the
- * signatures on incoming ones.
+ * DomainKeys Identified Mail: signs outgoing messages so that a
+ * receiver can tell they came from the domain they claim to come from,
+ * and checks the signatures on incoming messages.
  *
  * A signature covers the body and a chosen set of headers. The public
- * key lives in the domain's own DNS, under the selector the signature
- * names, which is what ties the message to the domain.
+ * key is published in the domain's own DNS, under the selector that the
+ * signature names, and that's what ties the message to the domain.
  *
  * ```zuri,ignore
  * import mail
@@ -20,8 +20,8 @@
  * mail.send('smtp://mail.example.com', note)
  * ```
  *
- * Verification looks the key up through `net.resolver` unless handed
- * something else to look it up with:
+ * Verification looks up the key through `net.resolver`, unless you give
+ * it something else to look it up with:
  *
  * ```zuri,ignore
  * import mail.dkim
@@ -31,16 +31,16 @@
  * }
  * ```
  *
- * ### What is covered
+ * ### Support
  *
- * Both canonicalisations, `simple` and `relaxed`, on headers and on
- * bodies, and both signing algorithms in use: `rsa-sha256` and the
- * `ed25519-sha256` of RFC 8463.
+ * Both canonicalization methods, `simple` and `relaxed`, are supported
+ * for headers and bodies, along with both signing algorithms in use:
+ * `rsa-sha256`, and `ed25519-sha256` from RFC 8463.
  *
- * A signature says nothing about who wrote the message, only that the
- * domain that signed it takes responsibility for it. Deciding what a
- * valid signature from a given domain is worth is a policy question,
- * and the answer is usually DMARC.
+ * A signature doesn't say who wrote the message. It only says that the
+ * domain that signed it takes responsibility for it. What a valid
+ * signature from a particular domain is worth is a policy decision, and
+ * the answer is usually DMARC.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -93,11 +93,12 @@ var ALGORITHMS = ['rsa-sha256', 'ed25519-sha256']
 var CANONICALISATIONS = ['simple', 'relaxed']
 
 /**
- * The headers signed when the signer is not told which to sign.
+ * The headers that are signed when the signer isn't told which ones to
+ * sign.
  *
- * A header that is not in the message is skipped rather than signed as
- * empty, and one that is listed twice is signed twice, which is how a
- * signature says "there was exactly one of these".
+ * A header that isn't in the message is skipped, instead of being
+ * signed as empty, and a header listed twice is signed twice. That's
+ * how a signature says that there was exactly one of that header.
  *
  * @type list
  */
@@ -680,17 +681,19 @@ class Signer {
    * | option | default | what it does |
    * | - | - | - |
    * | `algorithm` | `rsa-sha256` | or `ed25519-sha256` |
-   * | `canonicalisation` | `relaxed/relaxed` | headers then body |
+   * | `canonicalisation` | `relaxed/relaxed` | headers, then body |
    * | `headers` | `DEFAULT_HEADERS` | which headers to cover |
    * | `identity` | none | the `i=` tag, an address within the domain |
-   * | `expires_in` | none | seconds until the signature stops counting |
-   * | `timestamp` | `true` | whether to record when it was signed |
+   * | `expires_in` | none | the number of seconds until the signature expires |
+   * | `timestamp` | `true` | whether to record when the message was signed |
    *
-   * @param string domain: The domain taking responsibility.
-   * @param string selector: Which of the domain's keys this is.
-   * @param string private_key: The key, PEM encoded.
+   * @param string domain: the domain that takes responsibility for the
+   *    message
+   * @param string selector: which of the domain's keys this is
+   * @param string private_key: the key, PEM-encoded
    * @param ?dict options
-   * @throws DkimError if an option names something not implemented.
+   * @throws DkimError if an option names something that isn't
+   *    implemented.
    */
   @new(domain: string, selector: string, private_key: string, options: ?dict) {
     var given = options == nil ? {} : options

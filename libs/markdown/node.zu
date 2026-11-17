@@ -243,8 +243,8 @@ class Node {
   var kind
 
   /**
-   * Whether a `math` node was written with `$$` and is shown on its
-   * own line rather than in the text.
+   * Whether a `math` node was written with `$$`, and is shown on a line
+   * of its own instead of within the text.
    *
    * @type ?bool
    */
@@ -292,8 +292,8 @@ class Node {
   }
 
   /**
-   * Whether the node is a block, such as a paragraph or a list, rather
-   * than something inside one.
+   * Whether the node is a block, such as a paragraph or a list, as
+   * opposed to something inside one.
    *
    * @returns bool
    */

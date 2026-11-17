@@ -3,7 +3,7 @@
  *
  * The MySQL and MariaDB adapter.
  *
- * Reach it through `sql`, which is what keeps a program portable:
+ * Use it through `sql`, so that your program stays portable:
  *
  * ```zuri,ignore
  * import sql
@@ -11,33 +11,35 @@
  * var db = sql.open('mysql://alice:secret@localhost/app')
  * ```
  *
- * The module underneath is here for the parts of MySQL that have no
- * equivalent elsewhere: the server's own settings, the connection's
- * id, and which of the two servers answered.
+ * The module itself is for the parts of MySQL that have no equivalent
+ * in other engines: the server's own settings, the connection ID, and
+ * which of the two servers answered.
  *
- * ### What this adapter speaks
+ * ### Protocol support
  *
- * The client/server protocol over TCP, optionally under TLS and
- * optionally compressed with zlib or zstd, or over a unix domain
- * socket. A `socket` option names one, and so does a `host` beginning
- * with a slash. TLS is neither offered nor wanted there, since nothing
- * sits in between, and the connection counts as private, which is what
- * decides whether a plugin may send the password itself.
+ * The adapter uses the client/server protocol over TCP, optionally with
+ * TLS and optionally compressed with zlib or zstd, or over a Unix
+ * domain socket. To use a socket, give its path in the `socket` option,
+ * or give a `host` that starts with a slash. TLS isn't offered or
+ * needed on a socket, because there's nothing in between, and the
+ * connection counts as private, which decides whether an authentication
+ * plugin can send the password itself.
  *
- * A statement with no values is sent as text, which is one round trip.
- * A statement with values is prepared, so that the values travel in
- * the server's binary encoding rather than being written into the SQL.
- * Prepared statements are kept and reused, so a query run in a loop is
- * compiled once.
+ * A statement without values is sent as text, which takes one round
+ * trip. A statement with values is prepared, so that the values are
+ * sent in the server's binary encoding instead of being written into
+ * the SQL. Prepared statements are kept and reused, so a query run in a
+ * loop is only compiled once.
  *
  * ### Authentication
  *
- * `mysql_native_password`, `caching_sha2_password` (both the cached
- * exchange and the slower one behind it), `sha256_password`,
- * `mysql_clear_password` and MariaDB's `client_ed25519`. On a
- * connection that is not private, the two plugins that need the
- * password itself encrypt it to the server's public key rather than
- * sending it, and `mysql_clear_password` is refused outright.
+ * The supported plugins are `mysql_native_password`,
+ * `caching_sha2_password` (both the fast cached exchange and the slower
+ * one behind it), `sha256_password`, `mysql_clear_password` and
+ * MariaDB's `client_ed25519`. On a connection that isn't private, the
+ * two plugins that need the password itself encrypt it with the
+ * server's public key instead of sending it as it is, and
+ * `mysql_clear_password` is refused.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

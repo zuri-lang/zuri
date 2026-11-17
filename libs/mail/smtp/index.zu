@@ -1,12 +1,12 @@
 /**
  * @module smtp
  *
- * SMTP: the protocol that moves mail from where it was written to
- * where it is kept.
+ * SMTP, the protocol that moves mail from where it was written to where
+ * it's stored.
  *
- * Both ends are here. `SmtpClient` hands messages to a server;
- * `SmtpServer` is the server, and decides what to accept through
- * handlers of your own.
+ * Both sides are here. `SmtpClient` hands messages to a server, and
+ * `SmtpServer` is a server, which decides what to accept through
+ * handlers that you write.
  *
  * ```zuri,ignore
  * import mail.smtp { SmtpClient }

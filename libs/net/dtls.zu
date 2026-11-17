@@ -1,18 +1,18 @@
 /**
  * @module dtls
  *
- * Datagram Transport Layer Security over a `UdpSocket` - the
- * same certificate-based encryption and authentication `tls`
- * provides, for protocols built on UDP instead of TCP.
+ * Datagram Transport Layer Security over UDP. It provides the same
+ * certificate-based encryption and authentication as `tls`, for
+ * protocols built on UDP instead of TCP.
  *
- * Unlike `tls`, `DtlsSocket` owns its own socket rather than
- * wrapping one you've already opened: a UDP port has no OS-level
- * concept of a per-peer connection, so a single bound
- * `DtlsSocket` multiplexes every accepted peer itself, by remote
- * address.
+ * Unlike `tls`, which wraps a socket you've already opened,
+ * `DtlsSocket` owns its own socket. A UDP port has no operating system
+ * concept of a connection to each peer, so a single bound `DtlsSocket`
+ * handles every accepted peer itself, keeping them apart by their
+ * remote addresses.
  *
- * @note DTLS doesn't negotiate ALPN protocols the way TLS does -
- *    there's no `set_alpn()`/`alpn_protocol()` here.
+ * @note DTLS doesn't negotiate ALPN protocols as TLS does, so there's
+ *    no `set_alpn()` or `alpn_protocol()` here.
  *
  * A client:
  *
@@ -65,9 +65,9 @@ def _addr_string(address) {
 }
 
 /**
- * The trust roots and optional certificate a DTLS handshake
- * needs - the same idea as `tls.TlsConfig`, minus the
- * TLS-specific ALPN/version options DTLS doesn't have.
+ * The trust roots, and optional certificate, that a DTLS handshake
+ * needs. It's the same idea as `tls.TlsConfig`, without the ALPN and
+ * version options that DTLS doesn't have.
  */
 class DtlsConfig {
 
@@ -81,9 +81,9 @@ class DtlsConfig {
   }
 
   /**
-   * Hands out this config's underlying native handle -
-   * `DtlsSocket` needs it and, like any `_`-prefixed field,
-   * `_ptr` isn't otherwise reachable from outside this class.
+   * Returns this configuration's native handle. `DtlsSocket` needs it,
+   * and like any field whose name starts with `_`, `_ptr` can't be
+   * reached from outside this class otherwise.
    *
    * @returns Ptr
    */
@@ -184,22 +184,19 @@ class DtlsSocket {
   }
 
   /**
-   * Opens a DTLS association with `address`, performing the full
-   * handshake before returning. `server_name` is used to verify
-   * the peer's certificate, the same way
-   * `tls.TlsStream.connect()` uses it; omit it to fall back to
-   * verifying against the resolved IP address instead of a
-   * hostname.
+   * Opens a DTLS association with `address`, completing the whole
+   * handshake before returning. `server_name` is used to verify the
+   * peer's certificate, in the same way as in
+   * `tls.TlsStream.connect()`. If it's left out, the certificate is
+   * verified against the resolved IP address instead of a host name.
    *
-   * @param DtlsConfig config: The trust roots and options to
-   *    handshake with
-   * @param {string|SocketAddr} address: The host:port to connect
-   *    to
-   * @param ?string server_name: The hostname to verify the
-   *    peer's certificate against
-   * @throws Error if resolution or the handshake fails, or the
-   *    peer's certificate isn't trusted or doesn't match
-   *    `server_name`
+   * @param DtlsConfig config: the trust roots and options for the
+   *    handshake
+   * @param {string|SocketAddr} address: the host and port to connect to
+   * @param ?string server_name: the host name to verify the peer's
+   *    certificate against
+   * @throws Error if resolution or the handshake fails, or the peer's
+   *    certificate isn't trusted or doesn't match `server_name`
    */
   connect(config, address, server_name) {
     _net_dtls.dtls_connect(
@@ -211,19 +208,18 @@ class DtlsSocket {
   }
 
   /**
-   * Waits for the next peer to complete a handshake and returns
-   * a new `DtlsSocket` representing that specific peer's
-   * association. Only valid on a bound socket. Blocks (subject
-   * to `set_read_timeout()`) until a new peer finishes
-   * handshaking; existing peers' traffic keeps flowing to their
-   * own `DtlsSocket` instances in the meantime.
+   * Waits for the next peer to complete a handshake, and returns a new
+   * `DtlsSocket` for that peer's association. This only works on a
+   * bound socket. It waits, subject to `set_read_timeout()`, until a
+   * new peer finishes its handshake, and in the meantime, existing
+   * peers' traffic keeps going to their own `DtlsSocket` objects.
    *
-   * @param DtlsConfig config: Must have a certificate chain set
-   *    via `DtlsConfig.set_cert_chain()`
+   * @param DtlsConfig config: must have a certificate chain, set with
+   *    `DtlsConfig.set_cert_chain()`
    * @returns DtlsSocket a socket for the newly accepted peer
    * @throws Error if this socket isn't bound, `config` has no
-   *    certificate chain, or (with `require_client_cert()`) a
-   *    peer's handshake didn't present a trusted certificate
+   *    certificate chain, or, with `require_client_cert()`, a peer's
+   *    handshake didn't present a trusted certificate
    */
   accept(config) {
     return DtlsSocket(_net_dtls.dtls_accept(self._ptr, config.native_ptr()))
@@ -292,11 +288,10 @@ class DtlsSocket {
   }
 
   /**
-   * Releases this socket. Safe to call more than once. Only
-   * closes this particular peer association's bookkeeping - if
-   * this is a listening socket, other already-accepted
-   * `DtlsSocket` instances sharing its underlying bound port are
-   * unaffected.
+   * Releases this socket. It's safe to call this more than once. It
+   * only closes this peer association, so if this is a listening
+   * socket, other accepted `DtlsSocket` objects that share its bound
+   * port aren't affected.
    */
   close() {
     _net_dtls.dtls_close(self._ptr)

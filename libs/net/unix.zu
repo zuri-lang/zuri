@@ -2,15 +2,16 @@
  * @module unix
  *
  * Unix domain sockets: the same stream interface as `tcp`, over a path
- * on the filesystem rather than an address on the network.
+ * on the filesystem instead of an address on the network.
  *
- * A unix socket is how two programs on one machine usually talk when
- * one of them is a server. It skips the network stack, so there is no
- * port to collide with and nothing to reach it from another host. And
- * because the socket is a file, the filesystem decides who may connect:
- * a socket in a directory only one user can enter is reachable by only
- * that user, which is a stronger answer than binding to loopback and
- * trusting everyone on the machine.
+ * A Unix socket is the usual way for two programs on the same machine
+ * to communicate when one of them is a server. It doesn't go through
+ * the network stack, so there's no port to clash with, and nothing can
+ * reach it from another host. And because the socket is a file, the
+ * filesystem decides who can connect. A socket in a directory that only
+ * one user can enter is only reachable by that user, which is much
+ * stronger than binding to the loopback address and trusting everyone
+ * on the machine.
  *
  * ```zuri,ignore
  * import net
@@ -23,7 +24,7 @@
  * client.close()
  * ```
  *
- * A server binds a path and accepts on it:
+ * A server binds a path and accepts connections on it:
  *
  * ```zuri,ignore
  * import net
@@ -41,19 +42,20 @@
  *
  * ### Binding leaves a file behind
  *
- * `bind()` creates the path and refuses if something is already there,
- * including a socket left by a process that has since died. Closing the
- * socket frees the descriptor but does not remove the file, because by
- * then another process may have bound the same path and removing it
- * would break them. A server that expects to be restarted deletes a
- * stale path itself before binding.
+ * `bind()` creates the path, and fails if something is already there,
+ * including a socket left behind by a process that has since stopped.
+ * Closing the socket frees the file descriptor but doesn't remove the
+ * file, because by then another process might have bound the same path,
+ * and removing it would break that process. A server that expects to be
+ * restarted should delete a stale path itself before binding.
  *
  * ### Windows
  *
- * Windows has unix sockets, but they are not reachable from Zuri. Every
- * call here raises there rather than the module being absent, so a
- * program fails where it tries to connect, saying why, instead of
- * failing at import. `is_supported()` answers the question in advance.
+ * Windows has Unix sockets, but Zuri can't use them. On Windows, every
+ * call here raises an error, instead of the module being missing, so a
+ * program fails where it tries to connect, with a message that says
+ * why, instead of failing when it imports the module. `is_supported()`
+ * tells you in advance.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -61,10 +63,10 @@
 import _net_unix
 
 /**
- * Whether unix domain sockets work on this machine.
+ * Whether Unix domain sockets work on this machine.
  *
- * False on Windows and true everywhere else. A program that can fall
- * back to TCP tests this rather than catching the error.
+ * It's false on Windows and true everywhere else. A program that can
+ * fall back to TCP should check this, instead of catching the error.
  *
  * @returns bool
  */
@@ -90,11 +92,11 @@ def pair() {
 }
 
 /**
- * A unix domain socket, connected or listening.
+ * A Unix domain socket, either connected or listening.
  *
- * One class covers both, as `TcpStream` does: `connect()` makes it a
- * stream and `bind()` makes it a listener, and the methods that do not
- * apply raise rather than doing something surprising.
+ * One class handles both, as `TcpStream` does. `connect()` makes it a
+ * stream, and `bind()` makes it a listening socket. Methods that don't
+ * apply raise an error, instead of doing something surprising.
  *
  * @printable
  */
@@ -149,20 +151,19 @@ class UnixStream {
   }
 
   /**
-   * Waits for a connection and returns it.
+   * Waits for a connection, and returns it.
    *
-   * Blocks until someone connects. In non-blocking mode (see
-   * `set_non_blocking()`) it never blocks: it returns `nil` when
-   * nobody is waiting, which is an answer rather than a failure.
+   * It waits until someone connects. In non-blocking mode, set with
+   * `set_non_blocking()`, it never waits, and returns `nil` when nobody
+   * is waiting, which is an answer, not a failure.
    *
-   * The accepted stream can carry its own blocking mode, which
-   * is a platform's default rather than this listener's. Set it
-   * explicitly with `set_non_blocking()` on the returned stream
-   * if it matters.
+   * The accepted stream can have its own blocking mode, which is the
+   * platform's default, not necessarily the listener's. If it matters,
+   * set it explicitly with `set_non_blocking()` on the returned stream.
    *
-   * @returns ?UnixStream The connected end of the new conversation,
-   *    or `nil` in non-blocking mode with nobody waiting.
-   * @throws Error if this socket is not listening.
+   * @returns ?UnixStream the connected end of the new connection, or
+   *    `nil` in non-blocking mode when nobody is waiting
+   * @throws Error if this socket isn't listening.
    */
   accept() {
     var client = _net_unix.unix_accept(self._ptr)
@@ -175,10 +176,10 @@ class UnixStream {
   }
 
   /**
-   * The path the other end is bound to.
+   * The path that the other end is bound to.
    *
-   * `nil` for a socket that has no path, which is what both ends of a
-   * `pair()` are and what a client that never bound one is.
+   * It's `nil` for a socket without a path, which includes both ends of
+   * a `pair()`, and a client that never bound a path.
    *
    * @returns string|nil
    */
@@ -197,9 +198,9 @@ class UnixStream {
 
   /**
    * Closes both directions without releasing the handle, so a read at
-   * the other end returns nothing rather than blocking.
+   * the other end returns nothing instead of waiting.
    *
-   * @throws Error if this socket is not connected.
+   * @throws Error if this socket isn't connected.
    */
   shutdown() {
     _net_unix.unix_shutdown(self._ptr)
@@ -242,10 +243,10 @@ class UnixStream {
   }
 
   /**
-   * Whether reads and writes return at once rather than waiting.
+   * Whether reads and writes return immediately instead of waiting.
    *
-   * A non-blocking socket raises where it would have blocked, which is
-   * what `net.poll` is for: wait there, then read here.
+   * A non-blocking socket raises an error where it would have waited.
+   * That's what `net.poll` is for: wait there, and then read here.
    *
    * @param bool nonblocking
    */
@@ -254,10 +255,10 @@ class UnixStream {
   }
 
   /**
-   * Reads up to `length` bytes, returning what arrived.
+   * Reads up to `length` bytes, and returns what arrived.
    *
-   * A shorter result than asked for is normal and does not mean the
-   * conversation is over; an empty one does.
+   * A shorter result than you asked for is normal, and doesn't mean
+   * that the connection is finished. An empty result does.
    *
    * @param number length
    * @returns bytes

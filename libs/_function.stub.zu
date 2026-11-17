@@ -1,9 +1,9 @@
 /**
  * # Functions
  *
- * A function is a value like any other, and carries methods of its
- * own. They apply alike to a named `def`, an anonymous function, a
- * bound method, and a built-in native function.
+ * A function is a value like any other, and it has methods of its own.
+ * They work the same way for a named function declared with `def`, an
+ * anonymous function, a bound method and a built-in native function.
  *
  * ```zuri-repl
  * %> def add(a, b) { return a + b }
@@ -18,9 +18,8 @@ class function {
 
   /**
    * The function's declared name. An anonymous function is named
-   * `@anon` followed by a number, counted in the order the compiler
-   * met it; a bound method reports the method's own name, not its
-   * class's.
+   * `@anon` followed by a number, in the order the compiler found it. A
+   * bound method reports the method's own name, not its class's name.
    *
    * ```zuri-repl
    * %> def named(a, b, ...c) {}
@@ -67,10 +66,9 @@ class function {
   is_variadic() {}
 
   /**
-   * Calls the function with the given arguments and returns its
-   * result. The same as calling it directly; useful when the
-   * function is held in a variable and the call site reads better
-   * spelled out.
+   * Calls the function with the given arguments, and returns its
+   * result. This is the same as calling it directly. It can make the
+   * code clearer when the function is stored in a variable.
    *
    * ```zuri-repl
    * %> def add(a, b) { return a + b }
@@ -78,16 +76,16 @@ class function {
    * 5
    * ```
    *
-   * @param ...any args: The arguments to call with.
+   * @param ...any args: the arguments to call it with
    * @returns {any} Whatever the function returns.
    * @throws anything the called function raises.
    */
   call(...args) {}
 
   /**
-   * Calls the function with the arguments in a list, and returns
-   * its result. `call()` takes them written out; this one takes
-   * them in a list.
+   * Calls the function with the arguments in a list, and returns its
+   * result. `call()` takes the arguments separately, and this method
+   * takes them in a list.
    *
    * ```zuri-repl
    * %> def add(a, b) { return a + b }
@@ -98,15 +96,15 @@ class function {
    * [1, [2, 3]]
    * ```
    *
-   * A list shorter than the function's arity leaves the remaining
-   * parameters `nil`, exactly as calling it directly with too few
-   * arguments does; a longer one overflows into a variadic
-   * parameter, or is discarded when there is none.
+   * If the list is shorter than the number of parameters, the remaining
+   * parameters are `nil`, just as when you call the function directly
+   * with too few arguments. If it's longer, the extra arguments go into
+   * a variadic parameter, or are discarded if there isn't one.
    *
-   * @param list args: The arguments to call with, in order.
+   * @param list args: the arguments to call it with, in order
    * @returns {any} Whatever the function returns.
-   * @throws TypeError when `args` is not a list, and anything the
-   *    called function raises.
+   * @throws TypeError if `args` isn't a list, and anything the called
+   *    function raises.
    */
   apply(args: list) {}
 

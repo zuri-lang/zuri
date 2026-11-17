@@ -1,19 +1,18 @@
 /**
  * @module addr
  *
- * Socket addresses: an IP address and a port. `SocketAddrV4` and
- * `SocketAddrV6` each represent an address of their respective
- * family, while `SocketAddr` is a small wrapper around either
- * one for code that needs to accept and work with both
- * interchangeably just like the same relationship `Ip` has to
- * `Ipv4`/`Ipv6`.
+ * Socket addresses, made of an IP address and a port. `SocketAddrV4`
+ * and `SocketAddrV6` each represent an address of one family, and
+ * `SocketAddr` is a small wrapper around either one, for code that
+ * needs to work with both. It's the same relationship that `Ip` has
+ * with `Ipv4` and `Ipv6`.
  *
- * An IPv6 address may also carry a zone/scope identifier (RFC
- * 4007), used to disambiguate a link-local address between
- * network interfaces, e.g. `fe80::1%3`.
+ * An IPv6 address can also have a zone (or scope) identifier, as
+ * defined in RFC 4007, which tells apart the same link-local address on
+ * different network interfaces, as in `fe80::1%3`.
  *
- * `TcpStream`, `UdpSocket`, and `DtlsSocket` return these from
- * `local_address()`/`peer_address()`.
+ * `TcpStream`, `UdpSocket` and `DtlsSocket` return these from
+ * `local_address()` and `peer_address()`.
  *
  * ```zuri
  * import net

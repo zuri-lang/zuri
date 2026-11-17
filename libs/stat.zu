@@ -1,8 +1,8 @@
 /**
  * @module stat
  *
- * The module provides constants and functions for interpreting
- * results of file.stat().
+ * Constants and functions for interpreting the results of
+ * `file.stats()`.
  *
  * @copyright 2022, Richard Ore and The Zuri Contributors
  */

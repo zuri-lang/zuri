@@ -1,16 +1,17 @@
 /**
  * @module errors
  *
- * Every error the `env` module raises, under one root.
+ * Every error that the `env` module raises, with one base class.
  *
- * `EnvError` is that root. The three subclasses separate the cases
- * worth handling differently: a file that will not parse, a file that
- * was demanded and is not there, and a variable a program cannot run
- * without.
+ * `EnvError` is the base class. Its three subclasses separate the cases
+ * that are worth handling differently: a file that can't be parsed, a
+ * required file that doesn't exist, and a variable that the program
+ * can't run without.
  *
- * Each one carries the detail a message alone cannot. `ParseError`
- * knows the line and column it stopped at, `MissingFile` knows the
- * path it looked for, and `MissingVariable` knows the name it wanted.
+ * Each one carries details that a message alone can't. A `ParseError`
+ * has the line and column where parsing stopped, a `MissingFile` has
+ * the path it looked for, and a `MissingVariable` has the name of the
+ * variable.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

@@ -1,12 +1,13 @@
 /**
  * @module auth
  *
- * The authentication plugins a MySQL or MariaDB server can ask for.
+ * The authentication plugins that a MySQL or MariaDB server can ask
+ * for.
  *
- * Every one of them works from the same starting point: the server
- * sends a random scramble in its greeting, and the client answers with
- * something that proves it knows the password without containing it.
- * What differs is the proof.
+ * They all start in the same way. The server sends a random scramble in
+ * its greeting, and the client answers with something that proves it
+ * knows the password without containing the password. What differs
+ * between them is the proof.
  *
  * | Plugin | Proof |
  * | - | - |
@@ -18,13 +19,13 @@
  *
  * ### The two that send the password
  *
- * `sha256_password` and the slow half of `caching_sha2_password` send
- * the password rather than a proof, because the server needs it to
- * compute the hash it will cache. That is safe over TLS and over a
- * unix socket, and over neither otherwise, so on a plain TCP
- * connection the password is encrypted to a public key the server
- * hands over first. `mysql_clear_password` has no such fallback and is
- * refused on a connection that is not already private.
+ * `sha256_password`, and the slow path of `caching_sha2_password`, send
+ * the password itself instead of a proof, because the server needs it
+ * to compute the hash that it caches. That's safe over TLS and over a
+ * Unix socket, but not otherwise, so on a plain TCP connection, the
+ * password is encrypted with a public key that the server sends first.
+ * `mysql_clear_password` has no such fallback, and it's refused on a
+ * connection that isn't already private.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -71,18 +72,18 @@ def supports(plugin: string) {
 /**
  * The `mysql_native_password` response.
  *
- * The server stores SHA-1 of SHA-1 of the password. Hashing the
- * scramble together with what the server stores produces a mask that
- * both sides can compute, and the client returns its own first stage
- * hash under that mask. The server unmasks it, hashes it once more,
- * and compares. The password never crosses the wire and neither does
- * anything that would work a second time.
+ * The server stores the SHA-1 hash of the SHA-1 hash of the password.
+ * Hashing the scramble together with that stored value produces a mask
+ * that both sides can compute, and the client sends its own first-stage
+ * hash with that mask applied. The server removes the mask, hashes the
+ * result once more, and compares. Neither the password nor anything
+ * that could be reused ever crosses the network.
  *
  * @param string password
  * @param bytes scramble The 20 bytes from the greeting.
- * @returns bytes The 20 byte response, or nothing for an empty
- *    password, which is what the server expects for an account with
- *    none.
+ * @returns bytes The 20-byte response, or nothing for an empty
+ *    password, which is what the server expects for an account without
+ *    a password.
  */
 def native_password(password: string, scramble) {
   if password.is_empty() {
@@ -98,14 +99,14 @@ def native_password(password: string, scramble) {
 /**
  * The fast `caching_sha2_password` response.
  *
- * The same construction in SHA-256, with the scramble on the other
- * side of the hash. It only succeeds where the server already holds
- * this account's hash in memory; a server that does not answers with a
- * request for the password itself.
+ * This uses the same construction with SHA-256, with the scramble on
+ * the other side of the hash. It only succeeds if the server already
+ * has this account's hash in memory. A server that doesn't answers by
+ * asking for the password itself.
  *
  * @param string password
  * @param bytes scramble
- * @returns bytes The 32 byte response, or nothing for an empty
+ * @returns bytes The 32-byte response, or nothing for an empty
  *    password.
  */
 def caching_sha2_password(password: string, scramble) {
@@ -171,18 +172,17 @@ def obfuscate(password: string, scramble) {
 }
 
 /**
- * The password encrypted to the server's public key, for the plugins
- * that need the password itself over a connection that is not private.
+ * The password encrypted with the server's public key, for the plugins
+ * that need the password itself on a connection that isn't private.
  *
- * MySQL decrypts this with OAEP under SHA-1, which is what its own
- * server links against. The choice is the server's, not this
- * adapter's.
+ * MySQL decrypts this with OAEP using SHA-1, because that's what its
+ * own server uses. The choice is the server's, not this adapter's.
  *
  * @param string password
  * @param bytes scramble
- * @param string public_pem The key the server sent.
+ * @param string public_pem The key that the server sent.
  * @returns bytes
- * @throws AuthenticationError if the key will not parse.
+ * @throws AuthenticationError if the key can't be parsed.
  */
 def encrypt_password(password: string, scramble, public_pem: string) {
   catch {

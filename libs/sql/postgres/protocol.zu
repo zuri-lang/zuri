@@ -1,23 +1,24 @@
 /**
  * @module protocol
  *
- * The PostgreSQL frontend/backend protocol, version 3.
+ * Version 3 of the PostgreSQL frontend/backend protocol.
  *
- * A connection is a sequence of messages in both directions. The
- * client sends a request and then a Sync, and the server answers with
- * some number of messages ending in ReadyForQuery. Everything between
- * those two points belongs to the request, and nothing else may be
- * sent until it arrives, which is what makes this a state machine
- * rather than a set of independent calls.
+ * A connection is a sequence of messages in both directions. The client
+ * sends a request followed by a Sync message, and the server answers
+ * with some number of messages, ending with ReadyForQuery. Everything
+ * between those two points belongs to the request, and nothing else can
+ * be sent until ReadyForQuery arrives, which makes the protocol a state
+ * machine, not a set of independent calls.
  *
- * ### Why statements are described before they are bound
+ * ### Why statements are described before they're bound
  *
  * A value can be sent and received either as text or in the server's
- * own binary form, chosen per parameter and per column, and the choice
- * is made in the Bind message. To choose well, the types have to be
- * known first, which is what Describe reports. So a statement is
- * parsed and described once, and every execution after that reuses
- * what was learned. A statement run in a loop pays for this once.
+ * own binary format, chosen separately for each parameter and each
+ * column, and the choice is made in the Bind message. To choose well,
+ * the types have to be known first, and Describe is what reports them.
+ * So a statement is parsed and described once, and every later
+ * execution reuses what was learned. A statement run in a loop only
+ * pays for this once.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -77,12 +78,11 @@ class Protocol {
   var parameters = {}
 
   /**
-   * Notifications received but not yet collected, each
-   * `{ channel, payload, pid }`.
+   * Notifications that have been received but not yet collected, each
+   * one `{ channel, payload, pid }`.
    *
-   * The server can send one at any point between messages, so they
-   * are gathered wherever they arrive rather than only when asked
-   * for.
+   * The server can send a notification at any point between messages,
+   * so they're collected wherever they arrive, not only when asked for.
    *
    * @type list
    */
@@ -119,7 +119,7 @@ class Protocol {
   }
 
   /**
-   * The process id the server gave this connection, which is what a
+   * The process ID the server gave this connection, which a
    * cancellation request has to name.
    *
    * @returns number|nil

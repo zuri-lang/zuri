@@ -1,9 +1,8 @@
 /**
  * @module driver
  *
- * Opening PostgreSQL connections: reading a connection string,
- * establishing the socket, upgrading it to TLS when asked, and
- * authenticating.
+ * Opens PostgreSQL connections: reads a connection string, opens the
+ * socket, upgrades it to TLS if requested, and authenticates.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -40,9 +39,9 @@ var DEFAULT_PORT = 5432
 var DEFAULT_TIMEOUT = 30000
 
 /**
- * Most parameters one statement can bind. The protocol counts them in
- * a signed 16 bit field, so this is a hard limit rather than a
- * configured one.
+ * The largest number of parameters one statement can bind. The protocol
+ * counts them in a signed 16-bit field, so this is a hard limit, not a
+ * setting.
  */
 var MAX_PARAMETERS = 65535
 

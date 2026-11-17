@@ -1,19 +1,19 @@
 /**
  * @module poll
  *
- * Readiness polling: given a set of sockets, which of them can be read
- * or written right now, without blocking.
+ * Readiness polling: given a set of sockets, find out which of them can
+ * be read or written right now without blocking.
  *
  * Every other call in `net` blocks. `TcpStream.read()` waits until its
- * own socket has something to say and the thread does nothing else in
- * the meantime, which is right for a client and wrong for a server: a
- * thread that commits to one connection cannot serve another until
- * that connection lets it go. A server built only from blocking calls
- * can hold exactly as many concurrent connections as it has threads.
+ * socket has data, and the thread does nothing else in the meantime.
+ * That's fine for a client, but not for a server, because a thread
+ * that's waiting on one connection can't serve another until that
+ * connection lets it go. A server built only from blocking calls can
+ * only handle as many connections at once as it has threads.
  *
- * A `Poller` is the way out. It watches many sockets at once and tells
- * you which ones are ready, so a single thread can own hundreds of
- * connections and spend its time only on the ones with work:
+ * A `Poller` solves this. It watches many sockets at once and tells you
+ * which ones are ready, so a single thread can handle hundreds of
+ * connections, and only spend time on the ones that have work:
  *
  * ```zuri
  * import net
@@ -25,8 +25,8 @@
  * var clients = {}
  * var next_token = 1
  *
- * # Token 0 watches the listener itself; an incoming connection makes
- * # it readable exactly the way data does on a connected socket.
+ * # Token 0 watches the listening socket itself. An incoming connection
+ * # makes it readable, just as data does on a connected socket.
  * poller.add(server, 0, net.READABLE)
  *
  * while true {
@@ -43,8 +43,8 @@
  *
  *     var client = clients[token]
  *
- *     # A peer that has gone away is reported rather than left to be
- *     # discovered by a read that returns nothing, forever.
+ *     # A peer that has disconnected is reported, instead of being left
+ *     # for a read that returns nothing, forever.
  *     if event[1] & (net.ERROR | net.HANGUP) != 0 {
  *       poller.remove(token)
  *       clients.remove(token)
@@ -59,37 +59,37 @@
  *
  * ### Isolates
  *
- * A `Poller` watches the sockets of the isolate that owns it, and
- * nothing about it crosses an isolate boundary. Several worker
- * isolates each keeping their own poller over their own connections is
- * the intended shape, and is exactly the shared-nothing model.
+ * A `Poller` watches the sockets of the isolate that owns it, and it
+ * can't be passed to another isolate. The intended design is for each
+ * worker isolate to keep its own poller over its own connections, which
+ * fits the shared-nothing model.
  *
- * A socket that is closed, upgraded into a `TlsStream`, or moved to
- * another isolate stops being able to supply a descriptor. Rather than
- * this being a rule you have to remember, `wait()` reports such a
- * socket as `ERROR` against its own token, because the descriptor is
- * resolved fresh on every call and never remembered between them. It
- * is not possible for a poller to end up watching a descriptor that
- * the operating system has since handed to something else.
+ * A socket that has been closed, upgraded to a `TlsStream`, or moved to
+ * another isolate can no longer provide a file descriptor. You don't
+ * have to remember that rule, because `wait()` reports such a socket as
+ * `ERROR` under its own token. The descriptor is looked up again on
+ * every call and never kept between calls, so a poller can never end up
+ * watching a descriptor that the operating system has since given to
+ * something else.
  *
  * ### TLS streams
  *
- * A `TlsStream` is `READABLE` whenever its next read returns data
- * without waiting. Its socket having bytes is one way. The other is
- * data the stream already holds, decrypted: what a client sends
- * straight after its last handshake message is read off the socket
- * along with that message, and a read that asks for less than the
- * stream holds leaves the rest. That data is no longer in the socket,
- * and `wait()` reports the stream readable for it all the same, at
- * once rather than after its timeout.
+ * A `TlsStream` is `READABLE` whenever its next read would return data
+ * without waiting. One way that happens is when its socket has data.
+ * The other is when the stream already holds decrypted data. Data that
+ * a client sends straight after its last handshake message is read from
+ * the socket together with that message, and a read that asks for less
+ * than the stream holds leaves the rest in the stream. That data is no
+ * longer in the socket, but `wait()` still reports the stream as
+ * readable, immediately instead of after its timeout.
  *
- * ### What polling does not do
+ * ### What polling doesn't do
  *
- * Readiness is not a guarantee. A socket reported `READABLE` has data
- * *now*, but a read can still come up short, and a large write can
- * still be partial on a socket reported `WRITABLE`. Poll to decide
- * what to work on; keep handling short reads and writes the way you
- * would anyway.
+ * Readiness isn't a guarantee. A socket reported as `READABLE` has data
+ * *now*, but a read can still return less than you asked for, and a
+ * large write can still be partial on a socket reported as `WRITABLE`.
+ * Use polling to decide what to work on, and keep handling short reads
+ * and writes as you would anyway.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -130,12 +130,12 @@ var ERROR = 4
 var HANGUP = 8
 
 /**
- * A set of sockets to watch, each under a token of your choosing.
+ * A set of sockets to watch, each under a token that you choose.
  *
- * The token is whatever number is convenient for finding the socket
- * again - an index into your own table, a connection id. `wait()`
- * hands back the tokens that are ready, never the sockets, so the
- * mapping stays yours.
+ * The token is any number that helps you find the socket again, such as
+ * an index into your own table or a connection ID. `wait()` returns the
+ * tokens that are ready, never the sockets, so the mapping stays under
+ * your control.
  *
  * @printable
  */
@@ -161,18 +161,19 @@ class Poller {
   /**
    * Starts watching `socket` under `token`.
    *
-   * Registering a token that is already present replaces it, so a
-   * caller that loses track cannot end up with one token naming two
+   * Registering a token that's already registered replaces the old
+   * socket, so a caller can never end up with one token for two
    * sockets.
    *
-   * @param {TcpStream|TlsStream} socket: connected or bound; a bound
-   *    listener becomes readable when a connection is waiting
+   * @param {TcpStream|TlsStream} socket: a connected or bound socket. A
+   *    bound listening socket becomes readable when a connection is
+   *    waiting.
    * @param number token: your own identifier for this socket
-   * @param ?number interest: `READABLE`, `WRITABLE`, or both;
-   *    defaults to `READABLE`
+   * @param ?number interest: `READABLE`, `WRITABLE` or both. Defaults
+   *    to `READABLE`.
    * @returns Poller: this same instance, for chaining
-   * @throws ValueError if `interest` names neither readability nor
-   *    writability
+   * @throws ValueError if `interest` doesn't include either readability
+   *    or writability
    */
   add(socket, token: number, interest: ?number) {
     var wanted = interest == nil ? READABLE : interest
@@ -237,9 +238,9 @@ class Poller {
   }
 
   /**
-   * Stops watching `token`, and releases this poller's reference to
-   * its socket. Removing a token that is not registered does nothing
-   * rather than failing.
+   * Stops watching `token`, and releases this poller's reference to its
+   * socket. Removing a token that isn't registered does nothing,
+   * instead of failing.
    *
    * @param number token
    * @returns bool: whether the token was registered
@@ -323,21 +324,22 @@ class Poller {
    * Waits until at least one registered socket is ready, and returns
    * what happened.
    *
-   * Each entry is `[token, flags]`, where `flags` is any combination
-   * of `READABLE`, `WRITABLE`, `ERROR` and `HANGUP`. An empty list
-   * means the timeout elapsed with nothing ready - and also that
-   * nothing is registered, since waiting on an empty set could only
-   * ever sleep for the full timeout to no purpose.
+   * Each entry is `[token, flags]`, where `flags` is any combination of
+   * `READABLE`, `WRITABLE`, `ERROR` and `HANGUP`. An empty list means
+   * that the timeout passed with nothing ready. It's also returned when
+   * nothing is registered, because waiting on an empty set could only
+   * ever sleep for the whole timeout for no reason.
    *
-   * @note Test flags with `&`, never `==`: a socket can be readable
-   *    and hung up at the same time, which is what a peer that sent a
-   *    final response and closed looks like.
+   * @note Test the flags with `&`, never with `==`. A socket can be
+   *    readable and hung up at the same time, which is what you see
+   *    when a peer sends a final response and then closes the
+   *    connection.
    *
-   * @param ?number timeout: milliseconds to wait; `0` polls without
-   *    waiting, a negative number waits indefinitely. Defaults to
-   *    waiting indefinitely.
-   * @returns list: `[token, flags]` pairs, one per ready socket
-   * @throws Error on an underlying platform failure
+   * @param ?number timeout: the number of milliseconds to wait. `0`
+   *    polls without waiting, and a negative number waits indefinitely.
+   *    Defaults to waiting indefinitely.
+   * @returns list: `[token, flags]` pairs, one for each ready socket
+   * @throws Error if the platform reports a failure
    */
   wait(timeout: ?number) {
     var milliseconds = timeout == nil ? -1 : timeout
@@ -438,20 +440,20 @@ class Acceptor {
   /**
    * Takes over `listener`, which must already be bound.
    *
-   * The listener is put into non-blocking mode and left that way, so
-   * a caller that also accepts from it directly gets `nil` when
-   * nothing is waiting rather than a blocking wait.
+   * The listener is put into non-blocking mode and left that way, so if
+   * the caller also accepts connections from it directly, it gets `nil`
+   * when nothing is waiting, instead of waiting.
    *
-   * @param {TcpStream|UnixStream} listener: bound and listening
-   * @param ?number interval: Milliseconds `next()` waits before
-   *    giving up on a round. Defaults to `100`. A connection that
-   *    arrives wakes the wait at once, so this is the idle interval
-   *    rather than added latency: it decides how soon a stopped
-   *    server and a trapped signal are noticed.
+   * @param {TcpStream|UnixStream} listener: a bound, listening socket
+   * @param ?number interval: the number of milliseconds that `next()`
+   *    waits before giving up on a round. Defaults to `100`. An
+   *    arriving connection ends the wait immediately, so this doesn't
+   *    add latency. It decides how soon a stopped server and a caught
+   *    signal are noticed.
    * @throws ValueError if `interval` is negative, which would wait
-   *    forever and defeat the point.
-   * @throws Error if the listener is not bound, or cannot be put
-   *    into non-blocking mode.
+   *    forever and defeat the purpose.
+   * @throws Error if the listener isn't bound, or can't be put into
+   *    non-blocking mode.
    */
   @new(listener, interval: ?number) {
     if interval != nil {

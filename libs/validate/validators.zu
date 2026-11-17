@@ -1,13 +1,12 @@
 /**
  * @module validators
  *
- * Top-level convenience functions that create a fresh `Validator` instance
- * with one rule pre-applied.  Every rule exposed by the `Validator` class
- * has a corresponding function here so callers never need to import
- * `Validator` directly for common cases.
+ * Module-level functions that each create a new `Validator` with one
+ * rule already added. Every rule on `Validator` has a matching function
+ * here, so in most cases you don't need to import `Validator` itself.
  *
- * Every function returns a `Validator`, so additional rules can be chained
- * immediately:
+ * Every function returns a `Validator`, so you can keep chaining rules
+ * straight away:
  *
  * ```zuri
  * import validate

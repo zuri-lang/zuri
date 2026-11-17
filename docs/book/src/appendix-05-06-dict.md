@@ -1,8 +1,7 @@
 # Dictionary Methods
 
-Every method on the built-in `dict` type, with its signature, what it
-returns, and the cases where it does something other than the obvious
-thing.
+Every method of the built-in `dict` type, with its signature, what it
+returns, and any behavior you might not expect.
 
 | Method | Returns | Summary |
 | --- | --- | --- |
@@ -12,8 +11,8 @@ thing.
 | [`clear()`](#clear) |  | Clears the content of the dictionary. |
 | [`clone()`](#clone) | `dict` | Returns a new dictionary which is a deep copy of the original dictionary. |
 | [`compact()`](#compact) | `dict` | Returns a new dictionary that contains every key-value pair in the original dictionary except for keys whose associated value is `nil`. |
-| [`contains(key: string)`](#contains) | `boolean` | Returns `true` if any of the keys in the dictionary is equal to _x_, `false` otherwise. |
-| [`extend(dict: dict)`](#extend) |  | Adds all key-value pairs in dictionary _x_ to the original dictionary. |
+| [`contains(key: string)`](#contains) | `boolean` | Returns `true` if the dictionary has the key _key_, and `false` otherwise. |
+| [`extend(dict: dict)`](#extend) |  | Adds every entry of _dict_ to this dictionary. |
 | [`get(key: string, default_value)`](#get) | `any\|nil` | Returns the value of the given _key_ in the dictionary. |
 | [`keys()`](#keys) | `list` | Returns a list containing the keys in the dictionary. |
 | [`values()`](#values) | `list` | Returns a list containing the value of all keys in the dictionary. |
@@ -21,11 +20,11 @@ thing.
 | [`is_empty()`](#is_empty) | `boolean` | Returns `true` if the dictionary is empty, otherwise returns `false`. |
 | [`find_key(value)`](#find_key) | `string\|nil` | Returns the key whose value is equal to _x_ in the dictionary or `nil` if no key has the value _x_. |
 | [`to_list()`](#to_list) | `list` | Returns a list that contains a list of key and a list of values from the dictionary. |
-| [`each(callback: function)`](#each) | `void` | Iterates over each key-value pair in the dictionary, calling the provided callback function with the value and key as arguments. |
-| [`filter(callback: function)`](#filter) | `dict` | Creates a new dictionary containing only the key-value pairs for which the provided callback function returns true. |
-| [`some(callback: function)`](#some) | `boolean` | Tests whether at least one key-value pair in the dictionary passes the test implemented by the provided callback function. |
-| [`every(callback: function)`](#every) | `boolean` | Tests whether all key-value pairs in the dictionary pass the test implemented by the provided callback function. |
-| [`reduce(callback: function, initial)`](#reduce) | `any` | Reduces the dictionary to a single value by iteratively combining each key-value pair using the provided callback function. |
+| [`each(callback: function)`](#each) | `void` | Calls `callback` for each entry in the dictionary, with the value and the key as arguments. |
+| [`filter(callback: function)`](#filter) | `dict` | Creates a new dictionary that contains only the entries for which `callback` returns true. |
+| [`some(callback: function)`](#some) | `boolean` | Returns true if `callback` returns true for at least one entry in the dictionary, and false otherwise. |
+| [`every(callback: function)`](#every) | `boolean` | Returns true if `callback` returns true for every entry in the dictionary, and false otherwise. |
+| [`reduce(callback: function, initial)`](#reduce) | `any` | Reduces the dictionary to a single value, by combining the entries one at a time with `callback`. |
 | [`to_string()`](#to_string) | `string` | Returns the string representation of the dictionary. |
 
 ## `length()`
@@ -168,15 +167,16 @@ For example:
 contains(key: string) -> boolean
 ```
 
-Returns `true` if any of the keys in the dictionary is equal to _x_,
-`false` otherwise.<br>
+Returns `true` if the dictionary has the key _key_, and `false`
+otherwise.
 
 For example:
 
 ```zuri-repl
-%> dict2.contains('name')
+%> var dict = {name: 'Zuri'}
+%> dict.contains('name')
 true
-%> dict2.contains('street')
+%> dict.contains('street')
 false
 ```
 
@@ -192,8 +192,7 @@ false
 extend(dict: dict)
 ```
 
-Adds all key-value pairs in dictionary _x_ to the original
-dictionary.<br>
+Adds every entry of _dict_ to this dictionary.
 
 For example:
 
@@ -364,14 +363,14 @@ For example:
 each(callback: function) -> void
 ```
 
-Iterates over each key-value pair in the dictionary, calling the
-provided callback function with the value and key as arguments.
+Calls `callback` for each entry in the dictionary, with the value and
+the key as arguments.
 
 Example:
 
 ```zuri,ignore
-var myDict = {a: 1, b: 2, c: 3}
-myDict.each(@(value, key) {
+var scores = { a: 1, b: 2, c: 3 }
+scores.each(@(value, key) {
   echo '${key}: ${value}'
 })
 
@@ -383,12 +382,11 @@ myDict.each(@(value, key) {
 
 **Parameters**
 
-- `callback` (`function`) — The function to call for each key-value
-  pair.
+- `callback` (`function`): the function to call for each entry
 
 **Returns** `void`
 
-**Raises** `Error` If the callback is not a function.
+**Raises** `Error` If the callback isn't a function.
 
 ## `filter()`
 
@@ -396,30 +394,30 @@ myDict.each(@(value, key) {
 filter(callback: function) -> dict
 ```
 
-Creates a new dictionary containing only the key-value pairs for which
-the provided callback function returns true. The callback function is
-called with the value and key as arguments.
+Creates a new dictionary that contains only the entries for which
+`callback` returns true. The callback is called with the value and the
+key as arguments.
 
 Example:
 
 ```zuri,ignore
-var myDict = {a: 1, b: 2, c: 3}
-var filteredDict = myDict.filter(@(value, key) {
+var scores = { a: 1, b: 2, c: 3 }
+var high = scores.filter(@(value, key) {
   return value > 1
 })
-echo filteredDict
+echo high
 
-# Output: {'b': 2, 'c': 3}
+# Output: {b: 2, c: 3}
 ```
 
 **Parameters**
 
-- `callback` (`function`) — The function to test each key-value pair. It
-  should return true to keep the pair, or false to exclude it.
+- `callback` (`function`): the function that tests each entry. It
+  returns true to keep the entry, or false to leave it out.
 
 **Returns** `dict`
 
-**Raises** `Error` If the callback is not a function.
+**Raises** `Error` If the callback isn't a function.
 
 ## `some()`
 
@@ -427,33 +425,29 @@ echo filteredDict
 some(callback: function) -> boolean
 ```
 
-Tests whether at least one key-value pair in the dictionary passes the
-test implemented by the provided callback function. The callback
-function is called with the value and key as arguments. The method
-returns true if the callback returns true for any key-value pair,
-otherwise it returns false.
+Returns true if `callback` returns true for at least one entry in the
+dictionary, and false otherwise. The callback is called with the value
+and the key as arguments.
 
 Example:
 
 ```zuri,ignore
-var myDict = {a: 1, b: 2, c: 3}
-var hasGreaterThanTwo = myDict.some(@(value, key) {
+var scores = { a: 1, b: 2, c: 3 }
+var any_above_two = scores.some(@(value, key) {
   return value > 2
 })
-echo hasGreaterThanTwo
+echo any_above_two
 
 # Output: true
 ```
 
 **Parameters**
 
-- `callback` (`function`) — The function to test each key-value pair. It
-  should return true to indicate a passing pair, or false to indicate a
-  failing pair.
+- `callback` (`function`): the function that tests each entry
 
 **Returns** `boolean`
 
-**Raises** `Error` If the callback is not a function.
+**Raises** `Error` If the callback isn't a function.
 
 ## `every()`
 
@@ -461,33 +455,29 @@ echo hasGreaterThanTwo
 every(callback: function) -> boolean
 ```
 
-Tests whether all key-value pairs in the dictionary pass the test
-implemented by the provided callback function. The callback function is
-called with the value and key as arguments. The method returns true if
-the callback returns true for every key-value pair, otherwise it returns
-false.
+Returns true if `callback` returns true for every entry in the
+dictionary, and false otherwise. The callback is called with the value
+and the key as arguments.
 
 Example:
 
 ```zuri,ignore
-var myDict = {a: 1, b: 2, c: 3}
-var allGreaterThanZero = myDict.every(@(value, key) {
+var scores = { a: 1, b: 2, c: 3 }
+var all_positive = scores.every(@(value, key) {
   return value > 0
 })
-echo allGreaterThanZero
+echo all_positive
 
 # Output: true
 ```
 
 **Parameters**
 
-- `callback` (`function`) — The function to test each key-value pair. It
-  should return true to indicate a passing pair, or false to indicate a
-  failing pair.
+- `callback` (`function`): the function that tests each entry
 
 **Returns** `boolean`
 
-**Raises** `Error` If the callback is not a function.
+**Raises** `Error` If the callback isn't a function.
 
 ## `reduce()`
 
@@ -495,18 +485,17 @@ echo allGreaterThanZero
 reduce(callback: function, initial) -> any
 ```
 
-Reduces the dictionary to a single value by iteratively combining each
-key-value pair using the provided callback function. The callback
-function is called with the accumulator, value, key, and the dictionary
-itself as arguments. The method returns the final accumulated value
-after processing all key-value pairs in the dictionary.
+Reduces the dictionary to a single value, by combining the entries one
+at a time with `callback`. The callback is called with the accumulated
+value, the value, the key and the dictionary itself, and returns the new
+accumulated value. The method returns the final accumulated value.
 
 Example:
 
 ```zuri,ignore
-var myDict = {a: 1, b: 2, c: 3}
-var sum = myDict.reduce(@(accumulator, value, key) {
-  return accumulator + value
+var scores = { a: 1, b: 2, c: 3 }
+var sum = scores.reduce(@(total, value, key) {
+  return total + value
 }, 0)
 echo sum
 
@@ -515,15 +504,14 @@ echo sum
 
 **Parameters**
 
-- `callback` (`function`) — The function to execute on each key-value
-  pair in the dictionary. It should return the updated accumulator value
-  after processing the pair.
-- `initial` (`any`) — The initial value to use as the first argument to
-  the first call of the callback function.
+- `callback` (`function`): the function to call for each entry. It
+  returns the updated accumulated value.
+- `initial` (`any`): the value passed as the accumulated value to the
+  first call of `callback`
 
 **Returns** `any`
 
-**Raises** `Error` If the callback is not a function.
+**Raises** `Error` If the callback isn't a function.
 
 ## `to_string()`
 

@@ -1,17 +1,17 @@
 /**
  * @module service
  *
- * {Service}: what a program answers. A service holds the handler for
- * each method the program serves, and answers every message it is
- * given with them, whatever carried the message there.
+ * {Service}, which answers a program's JSON-RPC methods. A service
+ * holds the handler for each method the program serves, and uses them
+ * to answer every message it's given, however the message arrived.
  *
- * A service on its own answers messages that each arrive in an
- * exchange of their own, such as the body of an HTTP request, and
- * whose answer goes back in that same exchange. An {Endpoint} is a
- * service on a connection: it answers what arrives on the connection,
- * and calls the other side of it as well.
+ * A service by itself answers messages that each arrive in a separate
+ * exchange, such as the body of an HTTP request, and whose answer goes
+ * back in that same exchange. An {Endpoint} is a service on a
+ * connection. It answers what arrives on the connection, and can also
+ * call the other side.
  *
- * Re-exported by `rpc`.
+ * The `rpc` module re-exports it.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -108,21 +108,21 @@ def _check_method(method: string) {
 class Context {
 
   /**
-   * Returns a new {Context}. A service makes one for each message it
-   * hands to a handler.
+   * Returns a new {Context}. A service creates one for each message it
+   * passes to a handler.
    *
-   * @param Service endpoint: The {Service} or {Endpoint} handling the
+   * @param Service endpoint: the {Service} or {Endpoint} handling the
    *    message.
-   * @param string|number|nil id: The request's `id`; `nil` for a
+   * @param string|number|nil id: the request's `id`, or `nil` for a
    *    notification.
-   * @param string method: The method called.
-   * @param bool is_request: Whether the message is a request, which
-   *    is answered, rather than a notification, which is not.
-   * @param any request: What the message arrived in, such as the
-   *    `http` request whose body it was; `nil` for a message from a
+   * @param string method: the method called.
+   * @param bool is_request: whether the message is a request, which is
+   *    answered, as opposed to a notification, which isn't.
+   * @param any request: what the message arrived in, such as the `http`
+   *    request whose body it was, or `nil` for a message from a
    *    connection.
-   * @param bool can_defer: Whether the request can be answered after
-   *    its handler returns, which needs a connection to answer on.
+   * @param bool can_defer: whether the request can be answered after
+   *    its handler returns, which requires a connection to answer on.
    */
   @new(
     endpoint,
@@ -256,19 +256,19 @@ class Context {
 }
 
 /**
- * The methods a program serves, and the answering of every message
- * sent to them.
+ * The methods that a program serves, and the code that answers every
+ * message sent to them.
  *
- * Handlers say what it answers. A request handler is called with the
- * request's `params` and a {Context}, and what it returns is the
- * result sent back; an {RpcError} it raises is sent back as that
- * error, and any other error as an `INTERNAL_ERROR` carrying its
- * message. A notification handler is called the same way and nothing
- * is sent back. A message for a method with no handler goes to the
- * `on_unhandled()` fallback when one is set; without one, a request
- * is answered with `METHOD_NOT_FOUND` and a notification is dropped.
- * A message that is not valid UTF-8, or not valid JSON, is answered
- * with `PARSE_ERROR`.
+ * Handlers decide what a service answers. A request handler is called
+ * with the request's `params` and a {Context}, and what it returns is
+ * the result that's sent back. An {RpcError} it raises is sent back as
+ * that error, and any other error is sent back as an `INTERNAL_ERROR`
+ * with the error's message. A notification handler is called in the
+ * same way, and nothing is sent back. A message for a method without a
+ * handler goes to the `on_unhandled()` fallback, if one is set. Without
+ * one, a request is answered with `METHOD_NOT_FOUND`, and a
+ * notification is dropped. A message that isn't valid UTF-8, or isn't
+ * valid JSON, is answered with `PARSE_ERROR`.
  *
  * ```zuri
  * import rpc
@@ -280,9 +280,9 @@ class Context {
  * # {"jsonrpc":"2.0","id":1,"result":5}
  * ```
  *
- * `answer()` is the whole of a service's work: one message or batch
- * in, its answer out. `rpc.http_handler()` puts a service behind an
- * `http` route, and an {Endpoint} puts one on a connection.
+ * `answer()` is all of a service's work: one message or batch in, and
+ * its answer out. `rpc.http_handler()` puts a service behind an `http`
+ * route, and an {Endpoint} puts one on a connection.
  *
  * @printable
  */
@@ -302,13 +302,13 @@ class Service {
   }
 
   /**
-   * Answers requests for `method` with `handler`, in place of any
-   * handler set for it before.
+   * Answers requests for `method` with `handler`, replacing any handler
+   * set for it before.
    *
-   * @param string method: The method's name. Names starting with
-   *    `rpc.` are reserved by JSON-RPC.
-   * @param function(2) handler: Called with the request's `params`
-   *    and a {Context}; what it returns is the result sent back.
+   * @param string method: the method's name. Names starting with `rpc.`
+   *    are reserved by JSON-RPC.
+   * @param function(2) handler: called with the request's `params` and
+   *    a {Context}. What it returns is the result that's sent back.
    * @returns Service itself.
    * @throws ValueError for a name starting with `rpc.`.
    */
@@ -320,13 +320,13 @@ class Service {
   }
 
   /**
-   * Handles notifications for `method` with `handler`, in place of
-   * any handler set for it before.
+   * Handles notifications for `method` with `handler`, replacing any
+   * handler set for it before.
    *
-   * @param string method: The method's name. Names starting with
-   *    `rpc.` are reserved by JSON-RPC.
-   * @param function(2) handler: Called with the notification's
-   *    `params` and a {Context}; what it returns is ignored.
+   * @param string method: the method's name. Names starting with `rpc.`
+   *    are reserved by JSON-RPC.
+   * @param function(2) handler: called with the notification's `params`
+   *    and a {Context}. What it returns is ignored.
    * @returns Service itself.
    * @throws ValueError for a name starting with `rpc.`.
    */

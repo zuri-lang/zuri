@@ -1,12 +1,12 @@
 /**
  * @module os.tempfile
  *
- * Locating the platform's temporary-file directory and creating
- * uniquely named scratch files/directories inside it without a
- * check-then-create race: `create_temp_file()`/`create_temp_dir()`
- * reserve the path atomically (the same guarantee the Unix
- * `mkstemp()` family gives), so two concurrent callers can never
- * be handed the same path.
+ * Finds the platform's directory for temporary files, and creates
+ * uniquely named temporary files and directories in it, without a race
+ * between checking for a name and creating it. `create_temp_file()` and
+ * `create_temp_dir()` reserve the path atomically, with the same
+ * guarantee as the Unix `mkstemp()` family, so two callers running at
+ * the same time can never get the same path.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
@@ -24,18 +24,17 @@ def temp_dir() {
 }
 
 /**
- * Atomically creates a new, empty, uniquely named file inside
- * `temp_dir()` and returns its path. The file is created (and left
- * open-then-closed) purely to reserve the name without a race
- * between checking whether it exists and creating it: this
- * function only hands back the path; open it yourself with
- * `file()` to actually read or write it.
+ * Atomically creates a new, empty file with a unique name in
+ * `temp_dir()`, and returns its path. The file is created, and then
+ * closed, only to reserve the name, without a race between checking
+ * whether the name is taken and creating the file. This function only
+ * returns the path, so open it with `file()` to read or write it.
  *
- * @note the caller is responsible for deleting the file (via
- *    `file(path).delete()`) once it's no longer needed; nothing
- *    cleans temp files up automatically.
- * @param ?string prefix: Default `''`.
- * @param ?string suffix: Default `''`.
+ * @note You're responsible for deleting the file, with
+ *    `file(path).delete()`, once you don't need it. Temporary files
+ *    aren't cleaned up automatically.
+ * @param ?string prefix: defaults to `''`.
+ * @param ?string suffix: defaults to `''`.
  * @returns string
  * @raises Error if a unique name couldn't be found, or the file
  *    couldn't be created.
@@ -51,16 +50,16 @@ def create_temp_file(prefix: ?string, suffix: ?string) {
 }
 
 /**
- * Atomically creates a new, empty, uniquely named directory inside
- * `temp_dir()` and returns its path.
+ * Atomically creates a new, empty directory with a unique name in
+ * `temp_dir()`, and returns its path.
  *
- * @note the caller is responsible for removing the directory (via
- *    `os.remove_dir(path, true)`) once it's no longer needed;
- *    nothing cleans temp directories up automatically.
- * @param ?string prefix: Default `''`.
+ * @note You're responsible for removing the directory, with
+ *    `os.remove_dir(path, true)`, once you don't need it. Temporary
+ *    directories aren't cleaned up automatically.
+ * @param ?string prefix: defaults to `''`.
  * @returns string
- * @raises Error if a unique name couldn't be found, or the
- *    directory couldn't be created.
+ * @raises Error if a unique name couldn't be found, or the directory
+ *    couldn't be created.
  */
 def create_temp_dir(prefix: ?string) {
   if prefix == nil {

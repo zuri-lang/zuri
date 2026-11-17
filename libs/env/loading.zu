@@ -1,14 +1,14 @@
 /**
  * @module loading
  *
- * The loader: which sources to read, in what order, and what to do
- * with the names that come out of them.
+ * The loader, which decides which sources to read, in what order, and
+ * what to do with the names they contain.
  *
- * A load is three steps that stay separate. The sources are scanned
- * into names and values, the `$` references among them are resolved,
- * and then the result is written into the process environment. Calling
- * `read()` instead of `load()` stops after the second, which is what
- * makes a `.env` file inspectable without anything being set.
+ * A load has three separate steps. The sources are read into names and
+ * values, the `$` references between them are resolved, and the result
+ * is written to the process environment. `read()`, unlike `load()`,
+ * stops after the second step, so you can inspect a `.env` file without
+ * setting anything.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -224,17 +224,18 @@ class Loader {
   }
 
   /**
-   * Sets whether a name already present in the process environment is
-   * replaced by the one the sources define.
+   * Sets whether a name that's already in the process environment is
+   * replaced by the value from the sources.
    *
-   * Off by default, which is what makes a `.env` file a set of
+   * It's off by default, which is what makes a `.env` file a set of
    * defaults: whatever the shell, the orchestrator or the CI runner
-   * already set survives, and the file fills in the rest. Turn it on
-   * and the file wins instead.
+   * already set is kept, and the file fills in the rest. Turn it on to
+   * make the file take priority.
    *
-   * A variable set to the empty string counts as unset either way.
+   * A variable set to an empty string counts as unset either way.
    *
-   * @param ?bool enabled Defaults to `true` when the argument is left out.
+   * @param ?bool enabled Defaults to `true` if the argument is left
+   *    out.
    * @returns Loader
    */
   override(enabled: ?bool) {
@@ -246,10 +247,11 @@ class Loader {
   /**
    * Sets whether `$` references inside values are resolved.
    *
-   * On by default. Turn it off and every value is used exactly as it
-   * was written, which is what a file of opaque secrets wants.
+   * It's on by default. Turn it off to use every value exactly as
+   * written, which is what you want for a file of opaque secrets.
    *
-   * @param ?bool enabled Defaults to `true` when the argument is left out.
+   * @param ?bool enabled Defaults to `true` if the argument is left
+   *    out.
    * @returns Loader
    */
   expand(enabled: ?bool) {
@@ -259,17 +261,19 @@ class Loader {
   }
 
   /**
-   * Sets whether a file that is not there is an error.
+   * Sets whether a missing file is an error.
    *
-   * Off by default, because the same program usually runs both on a
-   * laptop with a `.env` file and on a server where the orchestrator
-   * supplies the environment directly. Turn it on where the file is
-   * genuinely part of the deployment and its absence should stop the
-   * program rather than surface later as a missing setting.
+   * It's off by default, because the same program usually runs both on
+   * a laptop with a `.env` file and on a server where the orchestrator
+   * supplies the environment directly. Turn it on when the file really
+   * is part of the deployment, and a missing file should stop the
+   * program, instead of showing up later as a missing setting.
    *
-   * @param ?bool enabled Defaults to `true` when the argument is left out.
+   * @param ?bool enabled Defaults to `true` if the argument is left
+   *    out.
    * @returns Loader
-   * @throws MissingFile from `load()` and `read()` when a file is absent.
+   * @throws MissingFile from `load()` and `read()` if a file doesn't
+   *    exist.
    */
   required(enabled: ?bool) {
     self._required = enabled == nil ? true : enabled

@@ -2,42 +2,42 @@
  * @module types
  *
  * How Zuri values and database values correspond, for the parts that
- * are the same whichever engine is underneath.
+ * are the same whatever the engine.
  *
- * Databases agree on very little. They all store numbers and text;
- * past that, one has a native JSON type and another stores JSON in a
- * text column, one has a date type with a time zone and another has no
- * date type at all. The adapters differ where the engines differ, and
- * share the conversions that do not have to.
+ * Databases agree on very little. They all store numbers and text, but
+ * beyond that, one has a native JSON type while another stores JSON in
+ * a text column, and one has a date type with a time zone while another
+ * has no date type at all. The adapters differ where the engines
+ * differ, and share the conversions that don't have to differ.
  *
- * ### The correspondence
+ * ### Mapping
  *
  * | Zuri | Database |
  * | - | - |
  * | `nil` | NULL |
  * | `bool` | a boolean where the engine has one, otherwise 0 and 1 |
  * | `number` | an integer where the value is whole, otherwise a float |
- * | `bigint` | a 64 bit integer, or an error if it will not fit in one |
+ * | `bigint` | a 64-bit integer, or an error if it doesn't fit in one |
  * | `string` | text |
  * | `bytes` | a blob |
  * | `date.Date` | a timestamp, or ISO 8601 text on an engine with no date type |
  * | `Time` | a time interval on an engine that has one, otherwise text |
- * | `list`, `dict` | JSON, native where the engine has it and text where it does not |
+ * | `list`, `dict` | JSON, native where the engine has it and text where it doesn't |
  *
- * A value of any other type is refused rather than guessed at. An
- * instance of a class in particular has no obvious storage form, and
- * inventing one would make the round trip lossy in a way that only
- * showed up on the way back out.
+ * A value of any other type is refused instead of being guessed at. An
+ * instance of a class, in particular, has no obvious way to be stored,
+ * and inventing one would lose information in a way that only showed up
+ * when the value was read back.
  *
  * ### Time
  *
- * Timestamps written as text use ISO 8601 with microseconds, and are
- * always written in UTC with a `+00:00` offset. Every engine here
- * parses that, and text written that way sorts and compares in time
- * order, so `order by` and `<` on such a column agree with the clock.
- * A `date.Date` written with any other offset is converted to UTC
- * first, which keeps the moment and drops the offset it was written
- * in: it reads back as the same instant, in UTC.
+ * Timestamps stored as text use ISO 8601 with microseconds, and are
+ * always written in UTC with a `+00:00` offset. Every engine here can
+ * parse that format, and text written that way sorts and compares in
+ * time order, so `order by` and `<` on such a column agree with the
+ * clock. A `date.Date` with any other offset is converted to UTC first.
+ * That keeps the moment in time but not the offset it was written with,
+ * so it reads back as the same instant, in UTC.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -106,11 +106,12 @@ def to_iso(value) {
 /**
  * Reads ISO 8601 text back into a `date.Date`.
  *
- * Accepts what the engines actually write, which is more than one
- * shape: with or without a `T`, with or without fractional seconds,
- * and with or without an offset. Text that is not a timestamp at all
- * comes back as `nil` rather than raising, so a column whose declared
- * type promises a date but whose contents do not can still be read.
+ * This accepts the formats that the engines actually write, which vary:
+ * with or without a `T`, with or without fractional seconds, and with
+ * or without an offset. Text that isn't a timestamp at all returns
+ * `nil` instead of raising an error, so a column whose declared type
+ * promises a date, but whose contents don't contain one, can still be
+ * read.
  *
  * @param string text
  * @returns date.Date|nil
@@ -202,20 +203,20 @@ def flatten(value) {
 }
 
 /**
- * A signed span of time, as a SQL `TIME` column holds one.
+ * A signed length of time, like the value of a SQL `TIME` column.
  *
- * A `TIME` is not a point in the day. MySQL's range runs from
- * `-838:59:59.999999` to `838:59:59.999999`, so a value can be
- * negative and can exceed twenty four hours, and reading one into a
- * `date.Date` would quietly lose both of those. It is a duration: the
- * length of a shift, the lateness of a delivery, the gap between two
- * events.
+ * A `TIME` isn't a time of day. MySQL's range is from
+ * `-838:59:59.999999` to `838:59:59.999999`, so a value can be negative
+ * and can be longer than twenty-four hours, and reading one into a
+ * `date.Date` would silently lose both of those. It's a duration, such
+ * as the length of a shift, how late a delivery was, or the gap between
+ * two events.
  *
- * The parts are kept as they were written rather than normalised, so a
- * value built as 90 minutes stays 90 minutes and does not silently
- * become an hour and a half. `total_seconds()` is there for arithmetic
- * and comparison, and `compare()` uses it, so two values that mean the
- * same length compare equal whichever way each was built.
+ * The parts are kept as they were given, not normalized, so a value
+ * created as 90 minutes stays 90 minutes, and doesn't silently become
+ * an hour and a half. Use `total_seconds()` for arithmetic and
+ * comparisons. `compare()` uses it too, so two values that represent
+ * the same length compare as equal, however each one was created.
  */
 class Time {
   /**
@@ -415,9 +416,9 @@ def time_from_seconds(total: number) {
 /**
  * Reads a SQL `TIME` literal.
  *
- * Accepts `HH:MM:SS`, `HH:MM`, and either with fractional seconds, in
- * each case optionally signed. Text that is not a time comes back as
- * `nil` rather than raising, matching `from_iso()`.
+ * This accepts `HH:MM:SS` and `HH:MM`, each with or without fractional
+ * seconds and an optional sign. Text that isn't a time returns `nil`
+ * instead of raising an error, like `from_iso()`.
  *
  * @param string text
  * @returns Time|nil

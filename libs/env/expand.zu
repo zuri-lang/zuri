@@ -1,17 +1,17 @@
 /**
  * @module expand
  *
- * Resolving the `$` references inside a value.
+ * Resolves the `$` references inside a value.
  *
- * The syntax is the shell's, because that is what a `.env` file looks
- * like to everyone who has ever written one, and the modifiers are the
- * four from POSIX parameter expansion that earn their place in a
- * configuration file: a fallback, an override, and a demand.
+ * The syntax is the shell's, because that's what everyone who has
+ * written a `.env` file expects. The modifiers are the three from POSIX
+ * parameter expansion that are useful in a configuration file: a
+ * fallback, an alternative value and a required value.
  *
- * Nothing here reads the environment itself. Every lookup goes through
- * the `resolve` function the caller supplies, which is what lets the
- * loader answer with the value a name is about to have rather than the
- * one it has now.
+ * Nothing here reads the environment directly. Every lookup goes
+ * through the `resolve` function that the caller supplies, which lets
+ * the loader answer with the value a name is about to have, instead of
+ * the value it has now.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -207,35 +207,37 @@ def _modified(body, resolve) {
 }
 
 /**
- * Replaces every `$` reference in `value` with what `resolve` answers,
- * and returns the result.
+ * Replaces every `$` reference in `value` with what `resolve` returns
+ * for it, and returns the result.
  *
- * `resolve` is called with one variable name and returns its value, or
- * `nil` when the name has none. Everything the caller wants to decide
- * about precedence, recursion and cycles is decided inside it.
+ * `resolve` is called with a variable name, and returns its value, or
+ * `nil` if the name has no value. All the caller's decisions about
+ * precedence, recursion and cycles are made inside it.
  *
- * The forms understood are `$NAME`, `${NAME}`, and `${NAME}` carrying
+ * These forms are understood: `$NAME`, `${NAME}`, and `${NAME}` with
  * one of three modifiers:
  *
  * | Written | Means |
  * | - | - |
- * | `${NAME:-fallback}` | the value, or `fallback` when it is unset or empty |
- * | `${NAME-fallback}` | the value, or `fallback` when it is unset |
- * | `${NAME:+instead}` | `instead` when the value is set and not empty, otherwise nothing |
- * | `${NAME+instead}` | `instead` when the value is set, otherwise nothing |
- * | `${NAME:?reason}` | the value, or a `MissingVariable` carrying `reason` |
- * | `${NAME?reason}` | the same, counting an empty value as set |
+ * | `${NAME:-fallback}` | the value, or `fallback` if it's unset or empty |
+ * | `${NAME-fallback}` | the value, or `fallback` if it's unset |
+ * | `${NAME:+instead}` | `instead` if the value is set and not empty, and nothing otherwise |
+ * | `${NAME+instead}` | `instead` if the value is set, and nothing otherwise |
+ * | `${NAME:?reason}` | the value, or a `MissingVariable` error with `reason` |
+ * | `${NAME?reason}` | the same, but an empty value counts as set |
  *
- * The text after a modifier is itself expanded, so `${HOST:-${FALLBACK_HOST}}`
- * does what it looks like. A `$` that names nothing stands for itself,
- * and `\$` is always a literal dollar sign.
+ * The text after a modifier is expanded too, so
+ * `${HOST:-${FALLBACK_HOST}}` does what it looks like it does. A `$`
+ * that isn't followed by a name stands for itself, and `\$` is always a
+ * literal dollar sign.
  *
  * @param string value
  * @param function resolve
  * @returns string
- * @throws EnvError when a reference is not closed or carries a modifier
- *    that does not exist.
- * @throws MissingVariable when a `${NAME:?reason}` reference finds nothing.
+ * @throws EnvError if a reference isn't closed, or has a modifier that
+ *    doesn't exist.
+ * @throws MissingVariable if a `${NAME:?reason}` reference finds no
+ *    value.
  */
 def expand(value: string, resolve: function) {
   # Values without a dollar in them are the overwhelming majority.

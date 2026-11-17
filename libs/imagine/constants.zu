@@ -1,12 +1,12 @@
 /**
  * @module constants
  *
- * Every named constant the module takes as an argument: resampling
- * filters, blend modes, line caps, edge handling, file formats, anchor
- * points, text alignment and flip axes.
+ * Every named constant that the module accepts as an argument:
+ * resampling filters, blend modes, line caps, edge handling, file
+ * formats, anchor points, text alignment and flip axes.
  *
- * They are gathered here so that a call reads as `imagine.BILINEAR`
- * rather than a bare number whose meaning has to be looked up.
+ * They're collected here so that a call can say `imagine.BILINEAR`
+ * instead of using a bare number whose meaning you'd have to look up.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -40,10 +40,10 @@ var NEAREST = 'nearest'
 /**
  * Bilinear. Averages the four surrounding pixels.
  *
- * A good default when speed matters more than sharpness. Enlarging
- * with it looks soft; shrinking by more than about half loses detail,
- * because it samples too few source pixels to represent what it
- * discards.
+ * A good default when speed matters more than sharpness. Enlarging with
+ * it looks soft, and shrinking by more than about half loses detail,
+ * because it samples too few source pixels to represent what it throws
+ * away.
  *
  * @type string
  */
@@ -61,11 +61,11 @@ var BILINEAR = 'bilinear'
 var BICUBIC = 'bicubic'
 
 /**
- * Gaussian. Weights the neighbourhood by a bell curve.
+ * Gaussian. Weights the surrounding pixels with a bell curve.
  *
- * Softer than bicubic on purpose. Useful when the result will be
- * sharpened afterwards, or when resampling noisy input where a sharper
- * filter would emphasise the noise.
+ * It's intentionally softer than bicubic. It's useful when the result
+ * will be sharpened afterwards, or when resampling noisy input, where a
+ * sharper filter would make the noise stand out.
  *
  * @type string
  */
@@ -138,8 +138,8 @@ var BLEND_DARKEN = 'darken'
 var BLEND_LIGHTEN = 'lighten'
 
 /**
- * Brightens the backdrop toward the source. Strong effect; saturates
- * quickly.
+ * Brightens the backdrop toward the source. The effect is strong and
+ * saturates quickly.
  *
  * @type string
  */
@@ -325,12 +325,12 @@ var TGA = 'tga'
 var WEBP = 'webp'
 
 /**
- * AVIF. The smallest files of anything here at a given quality.
+ * AVIF. The smallest files of any format here, for a given quality.
  *
- * Write only. Opening an AVIF raises `DecodeError`, and
- * [[imagine.capabilities]] lists AVIF under `encode` but not
- * `decode`, so a program can check rather than discover it at run
- * time.
+ * AVIF can only be written. Opening an AVIF file raises a
+ * `DecodeError`, and [[imagine.capabilities]] lists AVIF under `encode`
+ * but not under `decode`, so a program can check in advance instead of
+ * finding out at run time.
  *
  * @type string
  */
@@ -346,7 +346,7 @@ var AVIF = 'avif'
 var QOI = 'qoi'
 
 /**
- * Windows ICO. An icon container; a single image is written as one
+ * Windows ICO, an icon container. A single image is written as one
  * entry.
  *
  * @type string

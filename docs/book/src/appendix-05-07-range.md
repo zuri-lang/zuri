@@ -1,18 +1,17 @@
 # Range Methods
 
-Every method on the built-in `range` type, with its signature, what it
-returns, and the cases where it does something other than the obvious
-thing.
+Every method of the built-in `range` type, with its signature, what it
+returns, and any behavior you might not expect.
 
 | Method | Returns | Summary |
 | --- | --- | --- |
 | [`lower()`](#lower) | `number` | Returns the lower limit of the range. |
 | [`upper()`](#upper) | `number` | Returns the upper limit of the range. |
-| [`range()`](#range) | `number` | Returns a number equal to the numbers between the range. |
-| [`within(value: number)`](#within) | `boolean` | Returns true if the given number falls somewhere within the or false otherwise. |
+| [`range()`](#range) | `number` | Returns the distance between the two limits of the range. |
+| [`within(value: number)`](#within) | `boolean` | Returns `true` if _value_ is between the two limits of the range, including the limits themselves, and `false` otherwise. |
 | [`step(size: int)`](#step) | `range` | Sets the step size of the range. |
 | [`get_step()`](#get_step) | `number` | Returns the step size of the range. |
-| [`loop(callback: function)`](#loop) | `void` | Iterates over each number in the range, calling the provided callback function with the number, its index. |
+| [`loop(callback: function)`](#loop) | `void` | Calls `callback` for each number in the range, with the number and its index. |
 | [`to_list()`](#to_list) | `list` | Returns the range as a list of its individual numbers, stepping from the lower limit to the upper limit (exclusive), or in reverse when the range descends. |
 | [`to_string()`](#to_string) | `string` | Returns the string representation of the range. |
 
@@ -56,7 +55,7 @@ For example:
 range() -> number
 ```
 
-Returns a number equal to the numbers between the range.
+Returns the distance between the two limits of the range.
 
 For example:
 
@@ -65,12 +64,11 @@ For example:
 72
 ```
 
-The result of stays the same irrespective of the direction of the range.
-For example, swapping the upper and lower limit of our previous still
-returns the same result.
+The result is the same whichever direction the range goes in, so
+swapping the limits gives the same result:
 
 ```zuri-repl
-%> (21..93).range()
+%> (93..21).range()
 72
 ```
 
@@ -82,8 +80,8 @@ returns the same result.
 within(value: number) -> boolean
 ```
 
-Returns true if the given number falls somewhere within the or false
-otherwise.
+Returns `true` if _value_ is between the two limits of the range,
+including the limits themselves, and `false` otherwise.
 
 For example:
 
@@ -126,7 +124,7 @@ For example:
 
 **Parameters**
 
-- `size` (`int`) — The step size of the range.
+- `size` (`int`): the step size of the range
 
 **Returns** `range`
 
@@ -146,8 +144,8 @@ Returns the step size of the range.
 loop(callback: function) -> void
 ```
 
-Iterates over each number in the range, calling the provided callback
-function with the number, its index.
+Calls `callback` for each number in the range, with the number and its
+index.
 
 Example:
 
@@ -167,12 +165,12 @@ r.loop(@(num, index) {
 
 **Parameters**
 
-- `callback` (`function`) — A function that takes two arguments: the
-  number, its index.
+- `callback` (`function`): A function that takes two arguments, the
+  number and its index.
 
 **Returns** `void`
 
-**Raises** `Error` if the callback is not a function.
+**Raises** `Error` if the callback isn't a function.
 
 ## `to_list()`
 

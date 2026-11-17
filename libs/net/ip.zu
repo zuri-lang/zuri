@@ -1,17 +1,15 @@
 /**
  * @module ip
  *
- * This module provides types for parsing, formatting, comparing
- * and classifying IP addresses in both their IPv4 and IPv6
- * forms.
+ * Parses, formats, compares and classifies IP addresses, in both their
+ * IPv4 and IPv6 forms.
  *
- * `Ipv4` and `Ipv6` each represent an address of their
- * respective family, while `Ip` is a small wrapper around either
- * one for code that needs to accept and work with both
- * interchangeably.
+ * `Ipv4` and `Ipv6` each represent an address of one family, and `Ip`
+ * is a small wrapper around either one, for code that needs to work
+ * with both.
  *
- * The example below parses an address of unknown family and
- * reports a few things about it.
+ * This example parses an address without knowing its family, and checks
+ * whether it's private:
  *
  * ```zuri
  * import net
@@ -23,8 +21,8 @@
  * }
  * ```
  *
- * `Ipv4` and `Ipv6` can also be worked with directly when the
- * family is already known, as shown below.
+ * When you already know the family, you can use `Ipv4` or `Ipv6`
+ * directly:
  *
  * ```zuri
  * import net
@@ -181,20 +179,18 @@ class Ipv4 {
   }
 
   /**
-   * Parses an address given in standard dotted-decimal notation,
-   * e.g. `'192.168.1.10'`.
+   * Parses an address in standard dotted-decimal notation, such as
+   * `'192.168.1.10'`.
    *
-   * @note Each octet must be written without a leading zero
-   *    (other than the literal digit `0` itself) -
-   *    `'192.168.001.10'` is rejected rather than guessed at,
-   *    since a leading zero is read as an octal prefix by some
-   *    other tools and silently accepting it here could make an
-   *    address mean two different things depending on what reads
-   *    it.
+   * @note Each octet must be written without a leading zero, except for
+   *    the digit `0` itself. `'192.168.001.10'` is rejected instead of
+   *    being guessed at, because some other tools read a leading zero
+   *    as an octal prefix, and silently accepting it here could make an
+   *    address mean different things depending on what reads it.
    *
-   * @param string address: The address to parse
+   * @param string address: the address to parse
    * @returns Ipv4
-   * @throws Error if `address` is not four dot-separated octets,
+   * @throws Error if `address` isn't four octets separated by dots,
    *    each a decimal number from `0` to `255`
    */
   static parse(address) {
@@ -803,8 +799,7 @@ class Ipv6 {
 
   /**
    * If this address is an IPv4-mapped address (`::ffff:0:0/96`),
-   * returns the IPv4 address it maps to; otherwise returns
-   * `nil`.
+   * returns the IPv4 address it maps to. Otherwise, returns `nil`.
    *
    * @returns ?Ipv4
    */
@@ -859,10 +854,10 @@ class Ipv6 {
   }
 
   /**
-   * This address in its canonical, most-compressed colon-hex
-   * notation - the longest run of consecutive zero segments (if
-   * any run is at least two segments long) is collapsed to `::`;
-   * if more than one such run exists, the leftmost is preferred.
+   * This address in its canonical, most compressed hexadecimal form.
+   * The longest run of consecutive zero segments, if it's at least two
+   * segments long, is shortened to `::`. If there's more than one such
+   * run, the leftmost one is shortened.
    *
    * @returns string
    */
@@ -1094,13 +1089,12 @@ class Ip {
   }
 
   /**
-   * Whether `other` refers to the same address as this one. Two
-   * addresses of different families are never equal, even if one
-   * is the IPv4-mapped form of the other - compare their
-   * canonical forms explicitly if that's the comparison you
-   * want.
+   * Whether `other` is the same address as this one. Two addresses of
+   * different families are never equal, even if one is the IPv4-mapped
+   * form of the other. To compare them that way, compare their
+   * canonical forms explicitly.
    *
-   * @param Ip other: The address to compare against
+   * @param Ip other: the address to compare with
    * @returns bool
    */
   equals(other) {

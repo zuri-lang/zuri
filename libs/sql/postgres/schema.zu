@@ -2,17 +2,17 @@
  * @module schema
  *
  * Introspection for PostgreSQL, through the standard
- * `information_schema` views and the catalogue behind them.
+ * `information_schema` views and the system catalog behind them.
  *
- * `information_schema` covers tables, views and columns and is the SQL
- * standard, so those queries would work on other engines too.
- * Constraints and indexes are read from `pg_catalog` instead, because
- * the standard views describe them in a form that loses which columns
- * an index actually covers and in what order.
+ * `information_schema` covers tables, views and columns, and it's part
+ * of the SQL standard, so those queries would also work on other
+ * engines. Constraints and indexes are read from `pg_catalog` instead,
+ * because the standard views describe them in a way that loses which
+ * columns an index covers and in what order.
  *
- * Where a caller names no schema, the server's own `search_path`
- * decides, which is what makes an unqualified table name mean the same
- * here as it does in a query.
+ * When the caller doesn't name a schema, the server's own `search_path`
+ * decides, so an unqualified table name means the same thing here as in
+ * a query.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */

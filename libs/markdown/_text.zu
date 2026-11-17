@@ -122,9 +122,10 @@ def escape_html(text: string) {
 }
 
 /**
- * The index just past the entity or numeric character reference that
- * starts at _start_ in _text_, or `-1` when none does. Only the shape is
- * checked; `decode_entity()` says whether a name is real.
+ * The index just after the entity or numeric character reference that
+ * starts at _start_ in _text_, or `-1` if there isn't one. Only the
+ * form is checked. `decode_entity()` says whether a name actually
+ * exists.
  */
 def scan_entity(text: string, start: number) {
   var length = text.length()
@@ -469,11 +470,11 @@ def _skip_tag_space(text: string, i: number) {
 }
 
 /**
- * The index just past the raw HTML that starts at the `<` at _start_
- * in _text_, or `-1` when it is not raw HTML: an open tag, a closing
- * tag, a comment, a processing instruction, a declaration or a CDATA
- * section. _tags_only_ accepts open and closing tags alone, which is
- * what an HTML block of kind 7 starts with.
+ * The index just after the raw HTML that starts at the `<` at _start_
+ * in _text_, or `-1` if it isn't raw HTML. Raw HTML is an opening tag,
+ * a closing tag, a comment, a processing instruction, a declaration or
+ * a CDATA section. _tags_only_ only accepts opening and closing tags,
+ * which is what an HTML block of kind 7 starts with.
  */
 def scan_html_tag(text: string, start: number, tags_only: ?bool) {
   var length = text.length()
@@ -800,9 +801,9 @@ def merge_attributes(attributes: dict, extra: dict) {
 }
 
 /**
- * Splits a table row into its cells. A pipe with a backslash before it
- * belongs to the cell and loses the backslash; one leading and one
- * trailing pipe are dropped, and each cell is trimmed.
+ * Splits a table row into cells. A pipe with a backslash in front of it
+ * belongs to the cell, and loses the backslash. One leading pipe and
+ * one trailing pipe are removed, and each cell is trimmed.
  */
 def split_table_row(line: string) {
   var text = line.trim(' \t')

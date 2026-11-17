@@ -1,22 +1,13 @@
 /**
  * # Lists
  *
- * Lists in Zuri are sequence types that is used to hold zero or
- * more values in a single storage. Each item in a list is
- * assigned a number (index) starting from zero (`0`) for the
- * first item. Zuri Lists are comma (`,`) separated list of
- * different values of different or same type. For example, a
- * list can contain only number, another can contain a mixture of
- * numbers and strings and yet another can contain lists as well.
+ * A list holds zero or more values in order. Each value has an index,
+ * starting from `0` for the first one. A list can hold values of any
+ * type, and of different types at the same time.
  *
  * ## Creating a list
  *
- * Creating a list is very simple. Simply type a left square
- * bracket (`[`), followed by the values in the list if any, all
- * separated by commas and close it all with a right square
- * bracket (`]`).
- *
- * For example:
+ * Write the values between square brackets, separated by commas:
  *
  * ```zuri-repl
  * %> [1, 2, 3]
@@ -27,30 +18,17 @@
  * [[Lois, 36], [Clark, 27]]
  * ```
  *
- * A list can contain any mixture of data types.
+ * ## Joining, indexing and slicing
  *
- * ## List Operations
- *
- * Like Strings, Lists support lots of operations too, but Lists
- * generally support fewer _operators_. List supports additions,
- * slicing, iteration and methods too.
- *
- * Working with Lists is a breeze. For example, adding two lists
- * together looks like this:
+ * `+` joins two lists into a new one:
  *
  * ```zuri-repl
  * %> [1, 2] + [3, 4]
  * [1, 2, 3, 4]
- * %> ['Hello'] + ['World']
- * [Hello, World]
  * ```
  *
- * Lists follow the same indexing and slicing rules as
- * [Strings](./strings) so for brevity, we'll not go into the
- * whole academic stuffs anymore.
- *
- * Just for a quick run-through, accessing indexes in _Lists_
- * will look like this:
+ * Lists are indexed and sliced in the same way as strings. A negative
+ * index counts from the end:
  *
  * ```zuri-repl
  * %> var names = ['John', 'Wick', 'III']
@@ -60,75 +38,44 @@
  * 'III'
  * ```
  *
- * And slicing _Lists_ just like
- * [Strings](./strings#string-operations) will look like this:
+ * A slice, `[start, end]`, includes `start` and stops before `end`.
+ * Either one can be left out:
  *
  * ```zuri-repl
  * %> var numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9]
- * %> numbers[,]
- * [1, 2, 3, 4, 5, 6, 7, 8, 9]
- * %> numbers[-1,]
- * []
  * %> numbers[,3]
  * [1, 2, 3]
  * %> numbers[2,6]
  * [3, 4, 5, 6]
- * %> numbers[4,]
- * [5, 6, 7, 8, 9]
  * %> numbers[4,-2]
  * [5, 6, 7]
+ * %> numbers[-1,]
+ * [9]
  * ```
  *
- * ## Looping through Lists
+ * ## Looping over a list
  *
- * Lists can be iterated using any of the looping techniques
- * available in Zuri. However, the `iter` and the `for` loop are
- * the recommended as they will require fewer moving parts, and
- * Lists are optimized for those looping techniques.
+ * A `for` loop is the simplest way:
  *
- * For example, you can use the `iter` loop like this:
+ * ```zuri-repl
+ * %> for user in ['James', 'Lucy', 'Estonia'] {
+ * ..   echo user
+ * .. }
+ * James
+ * Lucy
+ * Estonia
+ * ```
+ *
+ * An `iter` loop gives you the index as well:
  *
  * ```zuri-repl
  * %> var users = ['Gabriel', 'Anna', 'Cinderella']
  * %> iter var i = 0; i < users.length(); i++ {
- * ..   echo users[i]
+ * ..   echo '${i}: ${users[i]}'
  * .. }
- * 'Gabriel'
- * 'Anna'
- * 'Cinderella'
- * ```
- *
- * The above example uses the `iter` loop to iterate through the
- * list. Notice how the condition uses the `length()` method of
- * the list and how we accessed the current list item using the
- * iteration variable.
- *
- * We can do the same with the `for` loop using even fewer code
- * schematics. For example,
- *
- * ```zuri-repl
- * %> users = ['James', 'Lucy', 'Estonia']
- * %> for user in users {
- * ..   echo user
- * .. }
- * 'James'
- * 'Lucy'
- * 'Estonia'
- * ```
- *
- * We can also use the `while` loop to iterate through a list.
- * For example,
- *
- * ```zuri-repl
- * %> users = ['Odin', 'Parker', 'Kent']
- * %> var i = 0
- * %> while i < users.length() {
- * ..   echo users[i]
- * ..   i++
- * .. }
- * 'Odin'
- * 'Parker'
- * 'Kent'
+ * 0: Gabriel
+ * 1: Anna
+ * 2: Cinderella
  * ```
  */
 
@@ -149,7 +96,7 @@ class list {
   length() {}
 
   /**
-   * Adds the given value _x_ to the end of the list.
+   * Adds _value_ to the end of the list.
    *
    * For example:
    *
@@ -161,7 +108,6 @@ class list {
    * ```
    *
    * @param {any} value
-   * @return {list}
    */
   append(value: any) {}
 
@@ -203,7 +149,7 @@ class list {
   clone() {}
 
   /**
-   * Returns the number of times item _x_ occurs in the list.
+   * Returns the number of times _value_ occurs in the list.
    *
    * For example:
    *
@@ -218,9 +164,9 @@ class list {
   count(value) {}
 
   /**
-   * Updates the content of the _list_ by appending all the
-   * contents of list _x_ to the end of the original list in
-   * exact order. This is equivalent to `list + x`.
+   * Adds every item of _list_ to the end of this list, in order. Unlike
+   * `+`, which creates a new list, this changes the list it's called
+   * on.
    *
    * For example:
    *
@@ -235,14 +181,13 @@ class list {
    * ```
    *
    * @param {list} list
-   * @return {list}
    */
   extend(list: list) {}
 
   /**
-   * Returns the zero-based index of the first occurrence of the
-   * value _x_ in the list starting from the given _start_index_
-   * or `-1` if the list does not contain the value _x_.
+   * Returns the index of the first occurrence of _value_ in the list,
+   * starting the search at _start_index_ if it's given, or `-1` if the
+   * list doesn't contain _value_.
    *
    * For example:
    *
@@ -264,19 +209,19 @@ class list {
   index_of(value: any, start_index: ?int) {}
 
   /**
-   * Returns the zero-based index of the last occurrence of the
-   * value _x_ in the list, searching from the end, or `-1` if the
-   * list does not contain the value _x_.
+   * Returns the index of the last occurrence of _value_ in the list,
+   * searching from the end, or `-1` if the list doesn't contain
+   * _value_.
    *
    * If _end_index_ is given, only a match at or before that index
-   * counts. That is the same position `index_of()`'s own second
-   * parameter bounds, so for any index `n`, `index_of(x, n)` and
-   * `last_index_of(x, n)` are the first and last matches of the
-   * two halves `n` splits the list into.
+   * counts. That's the same position that the second parameter of
+   * `index_of()` uses, so for any index `n`, `index_of(value, n)` and
+   * `last_index_of(value, n)` give the first and last matches in the
+   * two halves that `n` splits the list into.
    *
-   * Values are compared the way `index_of()` compares them, by
-   * value rather than by identity, so two separate dictionaries
-   * holding the same entries match each other.
+   * Values are compared in the same way as in `index_of()`, by value,
+   * not by identity, so two separate dictionaries with the same entries
+   * match each other.
    *
    * For example:
    *
@@ -298,12 +243,11 @@ class list {
   last_index_of(value: any, end_index: ?int) {}
 
   /**
-   * Inserts the item _x_ into the list at the specified _index_.
-   * By specifying an index of zero (`list.insert(x, 0)`), one
-   * can prepend the list and `list.insert(x, list.length())` is
-   * equivalent to `list.append(x)`. If the _index_ specified is
-   * greater than `list.length()`, the list will be padded with
-   * `nil` up till the index preceding the specified index.
+   * Inserts _value_ into the list at _index_. An index of zero, as in
+   * `list.insert(value, 0)`, adds the value at the start, and
+   * `list.insert(value, list.length())` is the same as
+   * `list.append(value)`. If _index_ is greater than `length()`, the
+   * gap is filled with `nil`.
    *
    * For example:
    *
@@ -325,7 +269,6 @@ class list {
    *
    * @param {any} value
    * @param {int} index
-   * @return {list}
    */
   insert(value: any, index: int) {}
 
@@ -348,19 +291,12 @@ class list {
   pop() {}
 
   /**
-   * Removed the specified count of items from the beginning of
-   * the list and returns it. If _count_ is not specified,
-   * _count_ defaults to 1. If one item is shifted, the method
-   * returns that item. If more than one item is shifted, the
-   * method returns a list containing the shifted items.
+   * Removes _count_ items from the start of the list and returns them.
+   * _count_ defaults to 1. If one item is removed, the method returns
+   * that item. If more than one is removed, it returns a list of them.
    *
-   * > The square brackets (`[]`) around the _`count: number`_ in
-   * > the method definition indicates that the parameter is
-   * > optional and does not mean you have to type the square
-   * > brackets.
-   *
-   * If the number of items required to be shifted exceeds the
-   * size of the list, the list is cleared and `nil` is returned.
+   * If _count_ is greater than the length of the list, the list is
+   * cleared and `nil` is returned.
    *
    * For example:
    *
@@ -385,9 +321,9 @@ class list {
   shift(count: ?int) {}
 
   /**
-   * Removes the item at the specified index in the list and
-   * returns it. If the index is less than `0` or greater than
-   * `list.length() - 1`, an Error is raised.
+   * Removes the item at the given index from the list, and returns it.
+   * If the index is less than `0` or greater than `length() - 1`, an
+   * error is raised.
    *
    * For example:
    *
@@ -399,12 +335,8 @@ class list {
    * [1, 2, 3, 5]
    * %> a.remove_at(6)
    * Unhandled Error: list index 6 out of range at remove_at()
-   *   StackTrace:
-   *     <repl>:1 -> @.script()
    * %> a.remove_at(-1)
    * Unhandled Error: list index -1 out of range at remove_at()
-   *   StackTrace:
-   *     <repl>:1 -> @.script()
    * ```
    *
    * @param {int} index
@@ -413,7 +345,7 @@ class list {
   remove_at(index: int) {}
 
   /**
-   * Removes the first occurrence of item _x_ from the list.
+   * Removes the first occurrence of _value_ from the list.
    *
    * For example:
    *
@@ -424,7 +356,7 @@ class list {
    * [Tasha, Emily, Kirk]
    * ```
    *
-   * Notice that only the first occurrence of `Kirk` was removed.
+   * Only the first `Kirk` is removed.
    *
    * @param {any} value
    * @return {any}
@@ -448,18 +380,14 @@ class list {
   reverse() {}
 
   /**
-   * Sorts the items in the list in-place and returns the sorted
-   * list. Sorting in Lists follows are strict set of precedence
-   * based on the object type. The order for sorting is as
-   * follows in ascending orders:<br>
+   * Sorts the items in the list in place, and returns the sorted list.
+   * Items of different types are sorted by type, in this order:
    *
-   * `nil`, boolean, numbers, strings, ranges, lists,
-   * dictionaries, file, bytes, functions, classes and modules.
+   * `nil`, booleans, numbers, strings, ranges, lists, dictionaries,
+   * files, bytes, functions, classes and modules.
    *
-   * When the corresponding items in the list are of the same
-   * type, they are sorted based on their respective values
-   * according to the type. For example, the number `5` is less
-   * than `8` and as such will appear first in the sort.
+   * Items of the same type are sorted by value, so the number `5` comes
+   * before `8`.
    *
    * For example:
    *
@@ -470,51 +398,48 @@ class list {
    * [nil, false, 5, A, [13, 21, 46]]
    * ```
    *
-   * > Notice how the boolean value precedes the number and how
-   * > the number in turn precedes the string and the strings in
-   * > turn, precedes the list in the result. Also, note that the
-   * > items of the inner list is sorted.
+   * > The boolean comes before the number, the number comes
+   * > before the string, and the string comes before the list.
+   * > Lists inside the list are sorted too.
    *
    * ## Sorting by something else
    *
-   * Pass a comparator to decide the order yourself. It is given
-   * two items and returns a negative number to put the first
-   * one first, a positive number to put the second one first,
-   * and zero to leave them as they are:
+   * Pass a comparator to choose the order yourself. It's called with
+   * two items, and returns a negative number to put the first item
+   * first, a positive number to put the second item first, or zero to
+   * leave them as they are:
    *
    * ```zuri-repl
    * %> [3, 1, 2].sort(@(a, b) => b - a)
    * [3, 2, 1]
    * %> ['pear', 'fig', 'banana'].sort(@(a, b) => a.length() - b.length())
-   * ['fig', 'pear', 'banana']
+   * [fig, pear, banana]
    * ```
    *
-   * The sort is stable, so items the comparator calls equal keep
-   * the order they were already in. That is what lets a list be
-   * sorted by one thing and then another to order by both:
+   * The sort is stable, so items that the comparator treats as equal
+   * keep the order they were in. That means you can sort a list by one
+   * thing and then by another to order it by both:
    *
    * ```zuri
    * people.sort(@(a, b) => a.name.compare(b.name))
    * people.sort(@(a, b) => a.age - b.age)
    * ```
    *
-   * leaves people of the same age in name order.
+   * This leaves people of the same age in order of name.
    *
-   * @note A comparator sorts only the list it is given. The
-   *    inner lists that `sort()` sorts on its own are left
-   *    alone, since only the comparator knows what the order
-   *    is meant to be.
-   * @note A comparator that contradicts itself produces some
-   *    order rather than an error; there is no arrangement that
-   *    satisfies it.
+   * @note A comparator only sorts the list it's given. Lists inside the
+   *    list, which `sort()` sorts without a comparator, are left as
+   *    they are, because only the comparator knows what the order
+   *    should be.
+   * @note A comparator that contradicts itself produces some order, not
+   *    an error, because no order could satisfy it.
    * @param {function} comparator
    * @return {list}
    */
   sort(comparator: ?function) {}
 
   /**
-   * Returns `true` if the list contains the item _x_ or `false`
-   * otherwise.
+   * Returns `true` if the list contains _value_, and `false` otherwise.
    *
    * For example:
    *
@@ -603,10 +528,10 @@ class list {
   is_empty() {}
 
   /**
-   * Returns a new list containing the first _n_ items in the
-   * list or a new copy of the list if _n_ greater than or equals
-   * to the `list.length()`. If `n < 0`, returns
-   * `list.take(list.length() - n)`.
+   * Returns a new list containing the first _n_ items, or a copy of the
+   * whole list if _n_ is greater than or equal to `length()`. If _n_ is
+   * negative, this returns all but the last `-n` items, which is the
+   * same as `take(length() + n)`.
    *
    * For example:
    *
@@ -614,9 +539,9 @@ class list {
    * %> var a = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
    * %> a.take(4)
    * [10, 11, 12, 13]
-   * %> a.take(11) # taking more than the size of the list
+   * %> a.take(11) # more than there are
    * [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
-   * %> a.take(-5)   # taking n < 0
+   * %> a.take(-5) # all but the last five
    * [10, 11, 12, 13, 14, 15]
    * ```
    *
@@ -626,10 +551,9 @@ class list {
   take(n: int) {}
 
   /**
-   * Returns the value at the specified index in the list. If
-   * _index_ is outside the boundary of the list indexes
-   * (`0..(list.length() - 1)`), an Error is thrown. This method
-   * is equivalent to `list[index]`.
+   * Returns the value at the given index. If _index_ is outside the
+   * list, from `0` to `length() - 1`, an error is raised. This is the
+   * same as `list[index]`.
    *
    * For example:
    *
@@ -638,8 +562,6 @@ class list {
    * 14
    * %> [13, 14, 15, 16].get(6)
    * Unhandled Error: list index 6 out of range at get()
-   *   StackTrace:
-   *     <repl>:1 -> @.script()
    * ```
    *
    * @param {int} index
@@ -742,12 +664,11 @@ class list {
   to_dict() {}
 
   /**
-   * Iterates over each element in the list, calling the provided
-   * callback function with the current element as an argument.
+   * Calls `callback` for each element in the list, with the element as
+   * the argument.
    *
-   * @param {function} callback The function to execute for each
-   *    element in the list.
-   * @throws {Error} if the callback is not a function.
+   * @param {function} callback The function to call for each element.
+   * @throws {Error} if the callback isn't a function.
    *
    * Example:
    *
@@ -759,10 +680,9 @@ class list {
    * # Output: A B C
    * ```
    *
-   * > The `each` method does not return a new list; it simply
-   * > executes the callback for each element. If you want to
-   * > create a new list based on the original, consider using
-   * > the `map` method instead.
+   * > `each()` doesn't return a new list. It only calls the
+   * > callback for each element. To create a new list from the
+   * > original one, use `map()` instead.
    */
   each(callback: function) {}
 
@@ -1016,15 +936,13 @@ class list {
   find_all(callback: function) {}
 
   /**
-   * Returns an list containing two lists: the first with
-   * elements that satisfy the provided testing function, and the
-   * second with elements that do not satisfy the testing
-   * function.
+   * Splits the list into two lists, and returns them in a list: the
+   * first holds the elements for which `callback` returns true, and the
+   * second holds the rest.
    *
-   * @param {function} callback The function to test each element
-   *    of the list. It receives the current element and its
-   *    index as arguments.
-   * @throws {Error} if the callback is not a function.
+   * @param {function} callback The function that tests each element.
+   *    It's called with the element and its index.
+   * @throws {Error} if the callback isn't a function.
    * @returns {list}
    *
    * Example:

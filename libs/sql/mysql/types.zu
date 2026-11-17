@@ -1,34 +1,34 @@
 /**
  * @module types
  *
- * What MySQL's column types mean in Zuri, in both directions and in
- * both of the protocol's two encodings.
+ * How MySQL's column types map to Zuri values, in both directions and
+ * in both of the protocol's encodings.
  *
  * ### Two encodings for the same values
  *
- * A statement sent as text answers with every value as text, however
- * it is declared: an `INT` arrives as `'42'`. A prepared statement
- * answers in the binary encoding instead, where an `INT` is four
- * bytes. Both reach the same Zuri values, and the two paths are
- * checked against each other rather than written to agree by hand:
- * dates and times decode by way of the same text form whichever
- * encoding carried them.
+ * A statement sent as text gets every value back as text, whatever its
+ * declared type, so an `INT` arrives as `'42'`. A prepared statement
+ * gets its values back in the binary encoding, where an `INT` is four
+ * bytes. Both produce the same Zuri values. The two paths are tested
+ * against each other instead of being kept in step by hand, and dates
+ * and times are decoded through the same text form whichever encoding
+ * carried them.
  *
- * ### Where a type has no Zuri counterpart
+ * ### Types with no Zuri equivalent
  *
- * `BIT` and `GEOMETRY` arrive as bytes, since neither has a shape Zuri
- * could represent without inventing one. `SET` arrives as the comma
- * separated text the server stores rather than as a list, because a
- * list going back in would be written as JSON and the column would
- * quietly stop matching.
+ * `BIT` and `GEOMETRY` values arrive as bytes, because neither has a
+ * form that Zuri could represent without inventing one. A `SET` arrives
+ * as the comma-separated text that the server stores, not as a list,
+ * because a list written back would be stored as JSON, and the column
+ * would silently stop matching.
  *
  * ### Time zones
  *
- * A `DATETIME` has no zone and a `TIMESTAMP` is converted to the
- * session's. The adapter puts the session in UTC when it connects, so
- * both arrive as UTC and a `date.Date` written back converts from
- * whatever offset it carries. Turning that off is what the
- * `time_zone` connection option is for.
+ * A `DATETIME` has no time zone, and a `TIMESTAMP` is converted to the
+ * session's time zone. The adapter sets the session to UTC when it
+ * connects, so both arrive as UTC, and a `date.Date` written back is
+ * converted from whatever offset it has. To turn this off, use the
+ * `time_zone` connection option.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -103,9 +103,9 @@ var FLAGS = {
 }
 
 /**
- * The collation id that means a column holds bytes rather than text.
- * It is the only thing separating `BLOB` from `TEXT` on the wire, and
- * `BINARY` from `CHAR`.
+ * The collation ID that means a column holds bytes instead of text.
+ * It's the only thing that distinguishes `BLOB` from `TEXT` on the
+ * wire, and `BINARY` from `CHAR`.
  */
 var BINARY_CHARSET = 63
 
@@ -171,7 +171,7 @@ var _TEXT_NAMES = {
 }
 
 /**
- * Whether a column holds bytes rather than text.
+ * Whether a column holds bytes instead of text.
  *
  * @param dict column
  * @returns bool
@@ -251,10 +251,10 @@ def decode_text(raw, column: dict) {
 }
 
 /**
- * Reads one value out of a binary protocol row.
+ * Reads one value from a row in the binary protocol.
  *
- * The NULL bitmap is the caller's business; this is only reached for a
- * value that is present.
+ * The caller handles the NULL bitmap. This is only called for a value
+ * that's present.
  *
  * @param Cursor cursor Positioned at the value.
  * @param dict column

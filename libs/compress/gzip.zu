@@ -1,7 +1,7 @@
 /**
  * @module gzip
  *
- * The is the GZip submodule for the compress module.
+ * Gzip compression and decompression.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
@@ -46,10 +46,9 @@ class GzipEncoder {
   var _ptr
 
   /**
-   * Creates a new streaming GZip encoder at the given level
-   * (0..=9).
+   * Creates a streaming gzip encoder at the given level, from 0 to 9.
    *
-   * @param ?number level - Default 1
+   * @param ?number level: defaults to 1.
    */
   @new(level) {
     self._ptr = _compress.gzip_new_encoder(true, level, 31)

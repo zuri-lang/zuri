@@ -1,11 +1,8 @@
 /**
  * # Ranges
  *
- * Ranges are simple numeric iterables. i.e. They are structures
- * that can be iterated/looped through. Ranges are in the format
- * `start..end`. They include a starting number (inclusive) and
- * an ending number (non-inclusive) separated by a operator
- * (`..`).
+ * A range is a sequence of numbers that you can loop over. It's written
+ * `start..end`, and includes `start` but stops before `end`.
  *
  * For example:
  *
@@ -16,11 +13,8 @@
  * <range 10..5, step=1>
  * ```
  *
- * Ranges are valid in any direction. That is, they can either
- * ascend (end greater than start) or descend (start greater than
- * end). They are also evaluated in order. They can also be
- * constructed from variables or a mixture of constant number and
- * variables as desired.
+ * A range can count up or down: when `start` is greater than `end`, it
+ * counts down. The ends can be variables or any other expressions:
  *
  * ```zuri-repl
  * %> var a = 20
@@ -28,16 +22,11 @@
  * <range 5..20, step=1>
  * %> a..10
  * <range 20..10, step=1>
- * %> var b = 16
- * %> a..zu
- * <range 20..16, step=1>
  * ```
  *
- * > **NOTE:**
- * >
- * > Somtimes, parenthesis (`()`) should be used around a to make
- * > sure that the upper limit of the is not interpreted as a
- * > number since the was not assigned to a variable.
+ * > To call a method on a range, put the range in parentheses,
+ * > as in `(0..10).step(2)`. Without them, the method call is
+ * > applied to the end value, not to the range.
  */
 
 class range {
@@ -71,7 +60,7 @@ class range {
   upper() {}
 
   /**
-   * Returns a number equal to the numbers between the range.
+   * Returns the distance between the two limits of the range.
    *
    * For example:
    *
@@ -80,12 +69,11 @@ class range {
    * 72
    * ```
    *
-   * The result of stays the same irrespective of the direction
-   * of the range. For example, swapping the upper and lower
-   * limit of our previous still returns the same result.
+   * The result is the same whichever direction the range goes in, so
+   * swapping the limits gives the same result:
    *
    * ```zuri-repl
-   * %> (21..93).range()
+   * %> (93..21).range()
    * 72
    * ```
    *
@@ -94,8 +82,8 @@ class range {
   range() {}
 
   /**
-   * Returns true if the given number falls somewhere within the
-   * or false otherwise.
+   * Returns `true` if _value_ is between the two limits of the range,
+   * including the limits themselves, and `false` otherwise.
    *
    * For example:
    *
@@ -130,7 +118,7 @@ class range {
    * 90
    * ```
    *
-   * @param {int} size - The step size of the range.
+   * @param {int} size - the step size of the range
    * @returns {range}
    */
   step(size: int) {}
@@ -143,12 +131,12 @@ class range {
   get_step() {}
 
   /**
-   * Iterates over each number in the range, calling the provided
-   * callback function with the number, its index.
+   * Calls `callback` for each number in the range, with the number and
+   * its index.
    *
-   * @param {function} callback A function that takes two
-   *    arguments: the number, its index.
-   * @throws {Error} if the callback is not a function.
+   * @param {function} callback A function that takes two arguments, the
+   *    number and its index.
+   * @throws {Error} if the callback isn't a function.
    * @return void
    *
    * Example:
@@ -158,7 +146,7 @@ class range {
    * r.loop(@(num, index) {
    *   echo 'Number at index ${index}: ${num}'
    * })
-   * 
+   *
    * # Output:
    * # Number at index 0: 0
    * # Number at index 1: 1

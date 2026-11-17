@@ -1,13 +1,13 @@
 /**
  * @module filters
  *
- * The maths behind the filters: colour matrices, lookup tables and
+ * The math behind the filters: color matrices, lookup tables and
  * convolution kernels.
  *
- * `Image` exposes these as named methods, and this is where the numbers
- * those methods pass come from. Building a matrix, a LUT or a kernel
- * here and applying it yourself is how to get a filter the module does
- * not already name.
+ * `Image` provides these as named methods, and this is where the
+ * numbers those methods use come from. To get a filter that the module
+ * doesn't already have, build a matrix, a lookup table or a kernel here
+ * and apply it yourself.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -20,14 +20,14 @@ import .color { Color }
 import .errors { ImageError }
 
 /**
- * Rec. 601 luma weights.
+ * The Rec. 601 luma weights.
  *
- * These are what "grayscale" means to an image editor, and what
- * [[imagine.Color.to_grayscale]] uses, so a grey produced by
- * `Image.grayscale()` and one produced by `Color.to_grayscale()`
- * agree. They are deliberately not the WCAG linear-light weights that
- * [[colors.relative_luminance]] uses; those answer a different
- * question, about contrast rather than appearance.
+ * These are what "grayscale" means in an image editor, and what
+ * [[imagine.Color.to_grayscale]] uses, so a gray produced by
+ * `Image.grayscale()` and one produced by `Color.to_grayscale()` are
+ * the same. They're intentionally not the WCAG linear-light weights
+ * that [[colors.relative_luminance]] uses. Those answer a different
+ * question, about contrast instead of appearance.
  *
  * @type list
  */
@@ -86,12 +86,13 @@ def sepia_matrix() {
 }
 
 /**
- * A colour matrix that scales saturation.
+ * A color matrix that scales saturation.
  *
- * An amount of 0 removes all colour, 1 leaves the image alone, and
- * values above 1 push saturation past its original level. Amounts
- * below 0 pass through the grey point and out the other side, which
- * inverts hues; that is well defined but rarely what anyone wants.
+ * An amount of 0 removes all color, 1 leaves the image unchanged, and
+ * values above 1 increase the saturation beyond its original level.
+ * Amounts below 0 pass through gray and out the other side, which
+ * inverts the hues. That's well defined, but it's rarely what anyone
+ * wants.
  *
  * @param number amount
  * @returns list
@@ -420,16 +421,19 @@ def scale_lut(factor: number) {
 }
 
 /**
- * A lookup table implementing a levels adjustment.
+ * A lookup table for a levels adjustment.
  *
  * Everything at or below _black_ becomes 0, everything at or above
- * _white_ becomes 255, and the range between is stretched to fill the
- * whole scale with _gamma_ applied along the way. This is the single
- * most useful correction for a flat or washed-out photograph.
+ * _white_ becomes 255, and the range in between is stretched to fill
+ * the whole scale, with _gamma_ applied. This is the most useful single
+ * correction for a flat or washed-out photograph.
  *
- * @param number black: The input value that becomes black, 0-255.
- * @param number white: The input value that becomes white, 0-255.
- * @param ?number gamma: The midtone curve - Default: 1 (linear).
+ * @param number black: the input value that becomes black, from 0 to
+ *    255
+ * @param number white: the input value that becomes white, from 0 to
+ *    255
+ * @param ?number gamma: the midtone curve. Defaults to 1, which is
+ *    linear.
  * @returns bytes
  */
 def levels_lut(black: number, white: number, gamma: ?number) {
@@ -460,11 +464,11 @@ def levels_lut(black: number, white: number, gamma: ?number) {
 /**
  * A 3x3 sharpening kernel.
  *
- * The strength is how much the centre pixel is emphasised over its
- * neighbours; 1 is a moderate sharpen and values much above 3 start
- * producing halos around edges.
+ * The strength is how much the center pixel is emphasized over its
+ * neighbors. 1 is a moderate sharpen, and values much above 3 start to
+ * produce halos around edges.
  *
- * @param ?number strength: - Default: 1.
+ * @param ?number strength: defaults to 1.
  * @returns list
  */
 def sharpen_kernel(strength) {
@@ -474,11 +478,11 @@ def sharpen_kernel(strength) {
 }
 
 /**
- * A 3x3 box blur kernel; every neighbour counts equally.
+ * A 3x3 box blur kernel, in which every neighbor counts equally.
  *
- * Cheaper than a Gaussian and visibly boxier. `Image.blur()` uses a
- * real Gaussian instead; this is here for the cases that want the
- * harder look, or a single very cheap pass.
+ * It's cheaper than a Gaussian blur, and looks noticeably blockier.
+ * `Image.blur()` uses a real Gaussian blur, and this kernel is for when
+ * you want the harder look, or a single very cheap pass.
  *
  * @returns list
  */
@@ -487,10 +491,10 @@ def box_blur_kernel() {
 }
 
 /**
- * A 3x3 kernel that lifts edges into a grey relief.
+ * A 3x3 kernel that raises edges into a gray relief.
  *
- * Used with an offset of 128, so flat areas come out mid-grey rather
- * than black; `Image.emboss()` supplies that offset.
+ * It's used with an offset of 128, so that flat areas come out mid-gray
+ * instead of black. `Image.emboss()` supplies that offset.
  *
  * @returns list
  */
@@ -501,8 +505,8 @@ def emboss_kernel() {
 /**
  * A 3x3 Laplacian kernel that leaves only the edges.
  *
- * Its weights sum to zero, so it needs an explicit divisor of 1
- * rather than the usual "divide by the sum".
+ * Its weights add up to zero, so it needs an explicit divisor of 1,
+ * instead of the usual divisor, which is the sum of the weights.
  *
  * @returns list
  */
@@ -520,11 +524,11 @@ def mean_removal_kernel() {
 }
 
 /**
- * A 3x3 smoothing kernel weighted toward the centre pixel.
+ * A 3x3 smoothing kernel weighted toward the center pixel.
  *
  * A larger weight keeps more of the original and smooths less.
  *
- * @param ?number weight: The centre weight - Default: 8.
+ * @param ?number weight: the center weight. Defaults to 8.
  * @returns list
  */
 def smooth_kernel(weight) {
@@ -536,11 +540,12 @@ def smooth_kernel(weight) {
 /**
  * A square Gaussian kernel with the given standard deviation.
  *
- * `Image.blur()` uses a separable Gaussian instead, which is far
- * faster for anything but the smallest radius; this exists for code
- * that wants the kernel itself, to combine with another.
+ * `Image.blur()` uses a separable Gaussian blur instead, which is far
+ * faster for anything but the smallest radius. This is for code that
+ * wants the kernel itself, for example to combine it with another
+ * kernel.
  *
- * @param number sigma: Greater than zero.
+ * @param number sigma: greater than zero
  * @returns list
  */
 def gaussian_kernel(sigma: number) {

@@ -1,14 +1,14 @@
 /**
  * @module parser
  *
- * The IMAP grammar: turning what a server says into something a
+ * The IMAP grammar, which turns what a server sends into something a
  * program can read.
  *
- * IMAP does not speak in lines alone. A response may carry a literal,
- * which is a byte count followed by exactly that many bytes of
+ * IMAP responses aren't made of lines alone. A response can contain a
+ * literal, which is a byte count followed by exactly that many bytes of
  * anything at all, including line breaks, so reading one response can
- * mean reading several lines and a block of raw data. That is why this
- * reads from the connection rather than from a string.
+ * mean reading several lines and a block of raw data. That's why this
+ * reads from the connection, not from a string.
  *
  * ```zuri
  * import mail.imap.parser
@@ -361,15 +361,15 @@ def _read_list(state, closer: string) {
 }
 
 /**
- * Reads a run of IMAP values out of text.
+ * Reads a sequence of IMAP values from text.
  *
  * `source` is only needed when the text can contain a literal, which
- * is to say whenever it came from a server rather than from a test.
+ * means whenever the text came from a server, not from a test.
  *
  * @param string text
- * @param ?LineStream source: Where to read a literal's bytes from.
+ * @param ?LineStream source: where to read a literal's bytes from
  * @returns list
- * @throws ProtocolError if the text is not well formed.
+ * @throws ProtocolError if the text isn't well formed.
  */
 def tokenize(text: string, source) {
   var state = _cursor(text, source)

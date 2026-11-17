@@ -2,7 +2,7 @@
  * @module test.mock
  *
  * Test doubles: functions that record how they were called, and
- * stand-ins that replace a real one for the length of a test.
+ * stand-ins that replace a real function for the duration of a test.
  *
  * ### A recording function
  *
@@ -21,14 +21,14 @@
  * })
  * ```
  *
- * `mock()` hands back a `Mock`, and `mock.fn` is the plain function
- * to pass wherever a callback is wanted. Matchers accept either, so
+ * `mock()` returns a `Mock`, and `mock.fn` is the plain function to
+ * pass wherever a callback is expected. Matchers accept either, so
  * `expect(operation)` and `expect(operation.fn)` mean the same thing.
  *
- * ### Replacing something that already exists
+ * ### Replacing an existing function
  *
- * `spy_on()` swaps a function out in place and gives back a `Mock`
- * that both records and stands in for it:
+ * `spy_on()` replaces a function in place, and returns a `Mock` that
+ * both records calls and stands in for the function:
  *
  * ```zuri
  * var clock = { now: @{ return real_time() } }
@@ -36,18 +36,19 @@
  * now.returns(1000)
  * ```
  *
- * It works on a dictionary entry and on an instance property that
- * holds a function. It does not work on a class method or a module
- * function: Zuri classes are immutable once declared, and a module's
- * members cannot be assigned from outside it. Code that wants to be
- * substitutable takes its collaborators as arguments or holds them in
- * properties, which is the shape worth designing for anyway.
+ * It works on a dictionary entry, and on an instance property that
+ * holds a function. It doesn't work on a class method or a module
+ * function, because Zuri classes can't be changed once they're
+ * declared, and a module's members can't be assigned from outside the
+ * module. Code that should be replaceable in tests should take its
+ * collaborators as arguments or hold them in properties, which is a
+ * good design anyway.
  *
  * ### Lifetime
  *
  * The runner calls `restore_all()` after every test, so a spy never
- * outlives the test that installed it, even one that failed partway
- * through. Nothing needs to be undone by hand.
+ * outlives the test that installed it, even if the test failed partway
+ * through. You don't need to undo anything yourself.
  */
 
 import zuri { reflect }
@@ -68,7 +69,7 @@ class Call {
   /** The error it raised, or `nil` when it returned. */
   var error = nil
 
-  /** Whether the call raised rather than returned. */
+  /** Whether the call raised an error, instead of returning. */
   var threw = false
 
   @new(args) {
@@ -83,10 +84,10 @@ class Call {
 var _mocks = []
 
 /**
- * A recording stand-in for a function.
+ * A stand-in for a function, which records how it's called.
  *
- * Built by `mock()` and by `spy_on()`; there is no reason to
- * construct one directly.
+ * `mock()` and `spy_on()` create it, and there's no reason to create
+ * one directly.
  */
 class Mock {
 
@@ -192,9 +193,9 @@ class Mock {
   }
 
   /**
-   * Makes the next call return `value`, once. Queue several to script
-   * a sequence; once the queue runs dry the standing behaviour takes
-   * over again.
+   * Makes the next call return `value`, once. Queue several to script a
+   * sequence of results. When the queue is empty, the default behavior
+   * takes over again.
    *
    * @param any value
    * @returns Mock
@@ -382,9 +383,9 @@ def _has(target, key) {
  * expect(send).to_have_been_called_with('hello')
  * ```
  *
- * @param ?function implementation: what it does when called. Without
- *    one it records the call and returns `nil`.
- * @param ?string name: used in failure messages; `'mock'` by default.
+ * @param ?function implementation: what it does when it's called.
+ *    Without one, it records the call and returns `nil`.
+ * @param ?string name: used in failure messages. Defaults to `'mock'`.
  * @returns Mock
  */
 def mock(implementation: ?function, name: ?string) {
@@ -392,12 +393,12 @@ def mock(implementation: ?function, name: ?string) {
 }
 
 /**
- * Replaces `target[key]` with a recording stand-in that calls through
- * to the original, and returns the `Mock` that now sits there.
+ * Replaces `target[key]` with a recording stand-in that calls the
+ * original, and returns the `Mock` that's now there.
  *
- * Calling through is the default on purpose: a spy that changes
- * behaviour as well as observing it is a different tool, and saying
- * so is one `.returns()` away.
+ * Calling the original is intentionally the default. A spy that changes
+ * behavior as well as watching it is a different tool, and if that's
+ * what you want, it's one `.returns()` call away.
  *
  * ```zuri
  * var gateway = { charge: @(amount) { return real_charge(amount) } }
@@ -409,13 +410,13 @@ def mock(implementation: ?function, name: ?string) {
  * ```
  *
  * @param {dict|instance} target: a dictionary, or an instance with a
- *    property holding a function.
+ *    property that holds a function.
  * @param string key
  * @returns Mock
- * @raises TestSetupError when `target` is not a dictionary or an
- *    instance, when it has no such entry, or when that entry does not
- *    hold something callable. A class method cannot be spied on:
- *    classes are immutable once declared.
+ * @raises TestSetupError if `target` isn't a dictionary or an instance,
+ *    doesn't have that entry, or the entry doesn't hold something
+ *    callable. A class method can't be spied on, because classes can't
+ *    be changed once they're declared.
  */
 def spy_on(target, key: string) {
   if !is_dict(target) and !is_instance(target) {

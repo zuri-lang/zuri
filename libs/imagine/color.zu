@@ -1,12 +1,12 @@
 /**
  * @module color
  *
- * `Color`: one RGBA colour, and the conversions between the ways of
- * naming one.
+ * `Color`, a single RGBA color, and conversions between the different
+ * ways of writing one.
  *
- * It reads and writes hex, RGB, HSL and HSV, blends against another
- * colour, and reports its own luminance. The named constants are the
- * handful worth not spelling out every time.
+ * It reads and writes hex, RGB, HSL and HSV, blends with another color,
+ * and reports its own luminance. There are also named constants for a
+ * few common colors.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -35,12 +35,13 @@ def _channel(value: number) {
 }
 
 /**
- * An 8-bit RGBA colour.
+ * An 8-bit RGBA color.
  *
- * Alpha runs 0 (fully transparent) to 255 (fully opaque), the same
- * convention as CSS, PNG and every modern image format. Colours are
- * immutable: every method that would change one returns a new `Color`,
- * so a colour held in a variable is safe to pass around and reuse.
+ * Alpha goes from 0, fully transparent, to 255, fully opaque, which is
+ * the same convention as CSS, PNG and every modern image format. Colors
+ * are immutable. Every method that would change a color returns a new
+ * `Color` instead, so a color held in a variable is safe to pass around
+ * and reuse.
  *
  * ```zuri
  * import imagine { Color }
@@ -50,26 +51,25 @@ def _channel(value: number) {
  * var brand = Color.hex('#4f46e5')
  * ```
  *
- * ## Relationship to the `colors` module
+ * ## The `colors` module
  *
- * The colour space conversions here are the standard library's, from
- * [[colors]]; `Color` is the value type that carries a result around
- * and puts it into a pixel buffer. Anything `colors` can do to a
- * hexadecimal string can be done to a `Color` by way of `to_hex()`
- * and `Color.hex()`.
+ * The color space conversions here are the standard library's, from
+ * [[colors]]. `Color` is the value type that holds a result and puts it
+ * into a pixel buffer. Anything that `colors` can do to a hexadecimal
+ * string can be done to a `Color` through `to_hex()` and `Color.hex()`.
  *
- * Three conventions follow from that and are worth knowing:
+ * That has three consequences worth knowing:
  *
- * - Hue is in degrees and saturation, lightness and value are in
- *   percentage points (0-100), exactly as in `colors` and in CSS.
- *   They are not 0-1 ratios.
- * - `to_hex()` returns a leading `#`, because that is the form you
- *   paste into a stylesheet. `colors` returns the bare form. Both are
- *   accepted everywhere either is.
- * - A malformed hexadecimal colour or an unknown colour name raises
- *   `ValueError`, which is what `colors` reports for them, rather than
- *   this module's own `ImageError`. An argument of the wrong type
- *   raises `TypeError` from the declaration it failed.
+ * - Hue is in degrees, and saturation, lightness and value are
+ *   percentages from 0 to 100, exactly as in `colors` and in CSS. They
+ *   aren't ratios from 0 to 1.
+ * - `to_hex()` returns a string that starts with `#`, because that's
+ *   the form you paste into a stylesheet. `colors` returns it without
+ *   the `#`. Both forms are accepted everywhere.
+ * - A malformed hexadecimal color or an unknown color name raises a
+ *   `ValueError`, as `colors` does, not this module's own `ImageError`.
+ *   An argument of the wrong type raises a `TypeError` from the
+ *   declaration it didn't match.
  *
  * @printable
  * @serializable
@@ -105,15 +105,16 @@ class Color {
   var a
 
   /**
-   * Creates a colour from its channels.
+   * Creates a color from its channels.
    *
-   * Values outside 0-255 are clamped rather than rejected, and
+   * Values outside 0 to 255 are clamped instead of rejected, and
    * fractional values are rounded.
    *
-   * @param number r: The red channel.
-   * @param number g: The green channel.
-   * @param number b: The blue channel.
-   * @param ?number a: The alpha channel - Default: 255 (opaque).
+   * @param number r: the red channel
+   * @param number g: the green channel
+   * @param number b: the blue channel
+   * @param ?number a: the alpha channel. Defaults to 255, which is
+   *    opaque.
    */
   @new(r, g, b, a) {
     self.r = _channel(r)
@@ -123,11 +124,11 @@ class Color {
   }
 
   /**
-   * Creates an opaque colour from red, green and blue channels.
+   * Creates an opaque color from red, green and blue channels.
    *
-   * The same as calling the constructor with three arguments; it
-   * exists so a call site that also uses `Color.hsl()` or
-   * `Color.lab()` can name the space it is working in.
+   * This is the same as calling the constructor with three arguments.
+   * It exists so that code that also uses `Color.hsl()` or
+   * `Color.lab()` can name the color space it's working in.
    *
    * @param number r
    * @param number g
@@ -152,10 +153,10 @@ class Color {
   }
 
   /**
-   * Creates a shade of grey.
+   * Creates a shade of gray.
    *
-   * @param number value: The brightness, 0 (black) to 255 (white).
-   * @param ?number a: The alpha channel - Default: 255.
+   * @param number value: the brightness, from 0, black, to 255, white
+   * @param ?number a: the alpha channel. Defaults to 255.
    * @returns Color
    */
   static gray(value, a) {
@@ -223,12 +224,15 @@ class Color {
   }
 
   /**
-   * Creates a colour from hue, saturation and lightness.
+   * Creates a color from hue, saturation and lightness.
    *
-   * @param number h: The hue in degrees. Wraps, so 400 is the same as 40.
-   * @param number s: The saturation in percentage points, 0-100.
-   * @param number l: The lightness in percentage points, 0 (black) to 100 (white).
-   * @param ?number a: The alpha channel, 0-255 - Default: 255.
+   * @param number h: the hue in degrees. It wraps around, so 400 is the
+   *    same as 40.
+   * @param number s: the saturation as a percentage, from 0 to 100
+   * @param number l: the lightness as a percentage, from 0, black, to
+   *    100, white
+   * @param ?number a: the alpha channel, from 0 to 255. Defaults to
+   *    255.
    * @returns Color
    */
   static hsl(h, s, l, a) {
@@ -238,12 +242,13 @@ class Color {
   }
 
   /**
-   * Creates a colour from hue, saturation and value (also called HSB).
+   * Creates a color from hue, saturation and value, also called HSB.
    *
-   * @param number h: The hue in degrees.
-   * @param number s: The saturation in percentage points, 0-100.
-   * @param number v: The value in percentage points, 0-100.
-   * @param ?number a: The alpha channel, 0-255 - Default: 255.
+   * @param number h: the hue in degrees
+   * @param number s: the saturation as a percentage, from 0 to 100
+   * @param number v: the value as a percentage, from 0 to 100
+   * @param ?number a: the alpha channel, from 0 to 255. Defaults to
+   *    255.
    * @returns Color
    */
   static hsv(h, s, v, a) {
@@ -253,12 +258,13 @@ class Color {
   }
 
   /**
-   * Creates a colour from hue, whiteness and blackness.
+   * Creates a color from hue, whiteness and blackness.
    *
-   * @param number h: The hue in degrees.
-   * @param number w: The whiteness in percentage points, 0-100.
-   * @param number b: The blackness in percentage points, 0-100.
-   * @param ?number a: The alpha channel, 0-255 - Default: 255.
+   * @param number h: the hue in degrees
+   * @param number w: the whiteness as a percentage, from 0 to 100
+   * @param number b: the blackness as a percentage, from 0 to 100
+   * @param ?number a: the alpha channel, from 0 to 255. Defaults to
+   *    255.
    * @returns Color
    */
   static hwb(h, w, b, a) {
@@ -268,17 +274,18 @@ class Color {
   }
 
   /**
-   * Creates a colour from cyan, magenta, yellow and key components.
+   * Creates a color from cyan, magenta, yellow and key (black) values.
    *
-   * This is the naive conversion, not a colour-managed one: it takes
-   * no account of an output profile, so it is right for generating
-   * colours and wrong for predicting what a printing press will do.
+   * This is the simple conversion, not a color-managed one. It doesn't
+   * take an output profile into account, so it's fine for generating
+   * colors, but not for predicting what a printing press will produce.
    *
-   * @param number c: 0-100.
-   * @param number m: 0-100.
-   * @param number y: 0-100.
-   * @param number k: 0-100.
-   * @param ?number a: The alpha channel, 0-255 - Default: 255.
+   * @param number c: from 0 to 100
+   * @param number m: from 0 to 100
+   * @param number y: from 0 to 100
+   * @param number k: from 0 to 100
+   * @param ?number a: the alpha channel, from 0 to 255. Defaults to
+   *    255.
    * @returns Color
    */
   static cmyk(c, m, y, k, a) {
@@ -288,13 +295,14 @@ class Color {
   }
 
   /**
-   * Creates a colour from CIE XYZ tristimulus values, against the D65
-   * white point.
+   * Creates a color from CIE XYZ tristimulus values, relative to the
+   * D65 white point.
    *
    * @param number x
    * @param number y
    * @param number z
-   * @param ?number a: The alpha channel, 0-255 - Default: 255.
+   * @param ?number a: the alpha channel, from 0 to 255. Defaults to
+   *    255.
    * @returns Color
    */
   static xyz(x, y, z, a) {
@@ -304,16 +312,18 @@ class Color {
   }
 
   /**
-   * Creates a colour from CIE L*a*b*, against the D65 white point.
+   * Creates a color from CIE L*a*b* values, relative to the D65 white
+   * point.
    *
    * Lab is perceptually uniform, which makes it the right space for
-   * interpolating between two colours when the intermediate steps
-   * need to look evenly spaced.
+   * interpolating between two colors when the steps in between need to
+   * look evenly spaced.
    *
-   * @param number l: Lightness, 0-100.
-   * @param number a_star: The green-red axis.
-   * @param number b_star: The blue-yellow axis.
-   * @param ?number a: The alpha channel, 0-255 - Default: 255.
+   * @param number l: the lightness, from 0 to 100
+   * @param number a_star: the green to red axis
+   * @param number b_star: the blue to yellow axis
+   * @param ?number a: the alpha channel, from 0 to 255. Defaults to
+   *    255.
    * @returns Color
    */
   static lab(l, a_star, b_star, a) {
@@ -417,11 +427,11 @@ class Color {
   }
 
   /**
-   * Returns the colour as a hexadecimal string with a leading `#`.
+   * Returns the color as a hexadecimal string that starts with `#`.
    *
-   * The alpha digits are included only when the colour is not fully
-   * opaque, unless `always_alpha` asks for them, so the common case
-   * reads as the familiar six digits.
+   * The alpha digits are only included if the color isn't fully opaque,
+   * unless `always_alpha` is set, so the usual case is the familiar six
+   * digits.
    *
    * ```zuri-repl
    * %> Color(255, 0, 0).to_hex()
@@ -430,7 +440,8 @@ class Color {
    * '#ff000080'
    * ```
    *
-   * @param ?bool always_alpha: Always emit the alpha digits - Default: false.
+   * @param ?bool always_alpha: whether to always include the alpha
+   *    digits. Defaults to false.
    * @returns string
    */
   to_hex(always_alpha) {
@@ -528,11 +539,11 @@ class Color {
   }
 
   /**
-   * Returns the colour in CIE L*a*b*, as a dictionary holding `l`,
-   * `a_star`, `b_star` and `a` (0-255).
+   * Returns the color in CIE L*a*b*, as a dictionary with `l`,
+   * `a_star`, `b_star` and `a`, from 0 to 255.
    *
-   * The axes are named `a_star` and `b_star` rather than `a` and `b`
-   * so neither collides with the alpha channel.
+   * The axes are called `a_star` and `b_star`, not `a` and `b`, so that
+   * neither one clashes with the alpha channel.
    *
    * @returns dict
    */
@@ -558,13 +569,13 @@ class Color {
   }
 
   /**
-   * Returns a copy of the colour with its alpha scaled by a factor.
+   * Returns a copy of the color with its alpha multiplied by a factor.
    *
-   * A factor of 0.5 halves whatever opacity the colour already had,
-   * rather than setting it to half opaque, so fading an already
-   * translucent colour behaves the way stacking two layers would.
+   * A factor of 0.5 halves whatever opacity the color already had,
+   * instead of making it half opaque, so fading a color that's already
+   * translucent behaves like stacking two layers.
    *
-   * @param number factor: 0 (transparent) to 1 (unchanged).
+   * @param number factor: from 0, transparent, to 1, unchanged
    * @returns Color
    */
   fade(factor) {
@@ -730,10 +741,13 @@ class Color {
   }
 
   /**
-   * Returns whichever of two colours reads better on top of this one.
+   * Returns whichever of two colors is easier to read on top of this
+   * one.
    *
-   * @param ?Color|string light: The colour to use on a dark background - Default: white.
-   * @param ?Color|string dark: The colour to use on a light background - Default: black.
+   * @param ?Color|string light: the color to use on a dark background.
+   *    Defaults to white.
+   * @param ?Color|string dark: the color to use on a light background.
+   *    Defaults to black.
    * @returns Color
    */
   best_contrast(light, dark) {
@@ -745,13 +759,14 @@ class Color {
   }
 
   /**
-   * Returns the grey with the same perceived brightness as this
-   * colour, keeping its alpha.
+   * Returns the gray with the same perceived brightness as this color,
+   * keeping its alpha.
    *
    * This uses the Rec. 601 luma weights, which is what image editors
-   * mean by "greyscale" and what `Image.grayscale()` applies. It is
-   * deliberately not [[colors.grayscale]], which sets HSL saturation
-   * to zero and so keeps a bright yellow as bright as a dark blue.
+   * mean by "grayscale", and what `Image.grayscale()` uses. It's
+   * intentionally different from [[colors.grayscale]], which sets the
+   * HSL saturation to zero, and so keeps a bright yellow as bright as a
+   * dark blue.
    *
    * @returns Color
    */
@@ -762,11 +777,10 @@ class Color {
   }
 
   /**
-   * Returns the colour with its red, green and blue channels
-   * inverted.
+   * Returns the color with its red, green and blue channels inverted.
    *
-   * Alpha is left alone, since inverting it would turn a visible
-   * colour invisible rather than changing how it looks.
+   * Alpha is left unchanged, because inverting it would make a visible
+   * color invisible, instead of changing how it looks.
    *
    * @returns Color
    */
@@ -855,8 +869,8 @@ class Color {
 /**
  * Fully transparent.
  *
- * Filling with this clears an area rather than painting it, since
- * every channel including alpha is zero.
+ * Filling with this clears an area instead of painting it, because
+ * every channel, including alpha, is zero.
  *
  * @type Color
  */

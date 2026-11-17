@@ -1,7 +1,8 @@
 /**
  * @module jwt.verifier
  *
- * `Verifier`, a reusable configured wrapper around `core.verify()`.
+ * `Verifier`, a reusable wrapper around `core.verify()` that keeps its
+ * settings.
  */
 
 import .core { verify, decode }

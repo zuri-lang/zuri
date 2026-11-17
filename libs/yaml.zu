@@ -1,68 +1,79 @@
 /**
  * @module yaml
  *
- * A complete, YAML 1.2.2-compliant library for parsing and
- * emitting YAML (YAML Ain't Markup Language) documents.
+ * Parses and writes YAML documents, following YAML 1.2.2.
  *
- * This module implements the YAML 1.2.2 specification published
- * at https://yaml.org/spec/1.2.2/ using the **Core Schema** for
- * implicit type resolution, which is the schema used by most
- * modern YAML implementations.
+ * This module implements the YAML 1.2.2 specification, published at
+ * https://yaml.org/spec/1.2.2/, and uses the **Core Schema** to resolve
+ * the types of plain values, as most modern YAML implementations do.
  *
  * ## Supported features
  *
  * ### Scalars
- * - Plain (unquoted) scalars with Core Schema type resolution -
- * Single-quoted scalars (no escape processing; `''` → `'`) -
- * Double-quoted scalars with full escape sequence processing
- * (`\n \t \r \\ \" \/ \b \f \a \v \e \0 \xNN \uNNNN \UNNNNNNNN
- * \N \_ \L \P`) - Literal block scalars (`|`) with `clip`,
- * `strip`, and `keep` chomping - Folded block scalars (`>`) with
- * `clip`, `strip`, and `keep` chomping
+ *
+ * - Plain (unquoted) scalars, with Core Schema type resolution
+ * - Single-quoted scalars, with no escape processing except that `''`
+ *   means `'`
+ * - Double-quoted scalars, with every escape sequence
+ *   (`\n \t \r \\ \" \/ \b \f \a \v \e \0 \xNN \uNNNN \UNNNNNNNN \N \_ \L \P`)
+ * - Literal block scalars (`|`), with `clip`, `strip` and `keep`
+ *   chomping
+ * - Folded block scalars (`>`), with `clip`, `strip` and `keep`
+ *   chomping
  *
  * ### Collections
- * - Block mappings (key: value pairs, indented) - Block
- * sequences (dash-prefixed lists, indented) - Flow mappings (`{
- * key: value, ... }`) - Flow sequences (`[ item, item, ... ]`) -
- * Nested collections of any depth - Complex (non-scalar) mapping
- * keys with `? ` indicator
+ *
+ * - Block mappings (indented `key: value` pairs)
+ * - Block sequences (indented lists with dashes)
+ * - Flow mappings (`{ key: value, ... }`)
+ * - Flow sequences (`[ item, item, ... ]`)
+ * - Collections nested to any depth
+ * - Complex (non-scalar) mapping keys, with the `? ` indicator
  *
  * ### Document structure
- * - Multi-document streams separated by `---` - Document end
- * markers `...` - `%YAML` directives (parsed; the major version
- * must be `1`, and the version string must be well-formed, or
- * parsing raises: the minor version isn't otherwise checked) -
- * `%TAG` directives (parsed and consumed; custom tag handles
- * registered this way are not yet substituted into
- * `!handle!suffix` tags) - UTF-8
- * input only, with BOM detection/stripping for that encoding.
- * UTF-16/UTF-32 input is not supported.
+ *
+ * - Several documents in one stream, separated by `---`
+ * - Document end markers (`...`)
+ * - `%YAML` directives. They're parsed, the major version must be `1`,
+ *   and the version string must be well formed, or parsing raises an
+ *   error. The minor version isn't checked.
+ * - `%TAG` directives. They're parsed and accepted, but custom tag
+ *   handles registered this way aren't yet substituted into
+ *   `!handle!suffix` tags.
+ * - UTF-8 input only, with byte order mark detection and removal.
+ *   UTF-16 and UTF-32 input isn't supported.
  *
  * ### Node properties
- * - Anchors (`&name`) and aliases (`*name`) with full reference
- * resolution - Merge keys (`<<: *anchor`) for dict merging -
- * Explicit tags (`!!str`, `!!int`, `!!float`, `!!bool`,
- * `!!null`, `!!seq`, `!!map`, `!!binary`,
- * `!<tag:yaml.org,2002:type>`)
  *
- * ### Core Schema type resolution (implicit)
- * - `null` / `Null` / `NULL` / `~` / empty → `nil` - `true` /
- * `True` / `TRUE` / `false` / `False` / `FALSE` → bool - Decimal
- * integers (with optional `+`/`-` sign) → number - Octal
- * integers `0o[0-7]+` → number - Hexadecimal integers
- * `0x[0-9A-Fa-f]+` → number - Decimal floats (with exponent) →
- * number - `.inf` / `.Inf` / `.INF` / `±.inf` → `math.Infinity`
- * / `-math.Infinity` - `.nan` / `.NaN` / `.NAN` → `0/0` (NaN) -
- * Everything else → string
+ * - Anchors (`&name`) and aliases (`*name`), with full reference
+ *   resolution
+ * - Merge keys (`<<: *anchor`) for merging dictionaries
+ * - Explicit tags (`!!str`, `!!int`, `!!float`, `!!bool`, `!!null`,
+ *   `!!seq`, `!!map`, `!!binary` and `!<tag:yaml.org,2002:type>`)
  *
- * ## Emitter features
- * - Round-trips scalars correctly (chooses minimal quoting) -
- * Emits block or flow style per value type - Anchors and aliases
- * for repeated object references - Configurable indentation
- * (default: 2) - Configurable line width for scalar wrapping
- * (default: 80)
+ * ### Core Schema type resolution
  *
- * ## Quick start
+ * - `null`, `Null`, `NULL`, `~` or an empty value: `nil`
+ * - `true`, `True`, `TRUE`, `false`, `False` or `FALSE`: a bool
+ * - Decimal integers, with an optional `+` or `-` sign: a number
+ * - Octal integers (`0o[0-7]+`): a number
+ * - Hexadecimal integers (`0x[0-9A-Fa-f]+`): a number
+ * - Decimal floats, including exponents: a number
+ * - `.inf`, `.Inf`, `.INF`, `+.inf` or `-.inf`: `math.Infinity` or
+ *   `-math.Infinity`
+ * - `.nan`, `.NaN` or `.NAN`: `0/0` (NaN)
+ * - Anything else: a string
+ *
+ * ## Writing YAML
+ *
+ * - Scalars round-trip correctly, with as little quoting as possible
+ * - Block or flow style is chosen for each value according to its type
+ * - Objects referenced more than once are written with anchors and
+ *   aliases
+ * - The indentation can be set, and defaults to 2
+ * - The line width for wrapping scalars can be set, and defaults to 80
+ *
+ * ## A first example
  *
  * ```zuri
  * import yaml
@@ -73,11 +84,11 @@
  * echo data['age']       # 30
  * echo data['scores'][0] # 98
  *
- * # Parse multiple documents.
+ * # Parse several documents.
  * var docs = yaml.parse_all('---\na: 1\n---\nb: 2\n')
  * echo docs.length()  # 2
  *
- * # Emit a Zuri value as YAML.
+ * # Write a Zuri value as YAML.
  * echo yaml.dump({ name: 'Bob', active: true, tags: ['x', 'y'] })
  * # name: Bob
  * # active: true
@@ -86,7 +97,7 @@
  * # Parse a YAML file.
  * var config = yaml.load_file('config.yaml')
  *
- * # Emit to a file.
+ * # Write to a file.
  * yaml.dump_file('out.yaml', data)
  * ```
  *
@@ -2397,12 +2408,11 @@ def load_file(path: string) {
 }
 
 /**
- * Serialises a Zuri value to a YAML string.
+ * Converts a Zuri value to a YAML string.
  *
- * The output is a valid YAML 1.2 document terminated by a
- * newline. Collections use block style by default; small flat
- * sequences may be emitted in flow style when they fit within
- * the line width.
+ * The output is a valid YAML 1.2 document that ends with a line break.
+ * Collections use block style by default, and small flat sequences can
+ * be written in flow style when they fit within the line width.
  *
  * ### Examples
  *
@@ -2413,7 +2423,7 @@ def load_file(path: string) {
  * yaml.dump(true)            # 'true\n'
  * yaml.dump(42)              # '42\n'
  * yaml.dump('hello world')  # 'hello world\n'
- * yaml.dump('null')         # "'null'\n"  (quoted to avoid misparse)
+ * yaml.dump('null')         # "'null'\n"  (quoted so that it isn't read as null)
  *
  * yaml.dump({ name: 'Alice', age: 30 })
  * # name: Alice
@@ -2435,14 +2445,14 @@ def load_file(path: string) {
  * #     port: 443
  * ```
  *
- * @param any value The Zuri value to serialise.
- * @param ?int indent Spaces per indentation level (default:
- *    `2`).
- * @param ?int width Target line width for flow-style decisions
- *    (default: `80`).
- * @return string The YAML text (always ends with `\n`).
- * @throws YamlError On emission error (e.g. unserializable
- *    value).
+ * @param any value The Zuri value to convert.
+ * @param ?int indent The number of spaces for each level of
+ *    indentation. Defaults to `2`.
+ * @param ?int width The line width used to decide when to use flow
+ *    style. Defaults to `80`.
+ * @return string The YAML text, which always ends with `\n`.
+ * @throws YamlError If the value can't be written, for example because
+ *    it can't be serialized.
  */
 def dump(value: any, indent: ?int, width: ?int) {
   var e = _Emitter(indent, width)

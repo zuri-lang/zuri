@@ -1,14 +1,13 @@
 /**
  * @module compile
  *
- * The {Instr} type `zuri.compile()` returns: a generic
- * representation of one VM instruction, tagged by `op`
- * (`'LoadConst'`, `'Add'`, `'Jmp'`, ...) with a `fields` dict
- * holding that opcode's own operands. As with {zuri.ast.Node},
- * there's one `Instr` class rather than one class per opcode.
- * The instruction set has around sixty opcodes, and a dedicated
- * class per opcode would be sixty near-identical classes to keep
- * in sync with the compiler forever after.
+ * The {Instr} type that `zuri.compile()` returns, which is a generic
+ * representation of one VM instruction. It's tagged with `op`, such as
+ * `'LoadConst'`, `'Add'` or `'Jmp'`, and has a `fields` dictionary with
+ * that opcode's operands. As with {zuri.ast.Node}, there's a single
+ * `Instr` class, not one class per opcode. The instruction set has
+ * around sixty opcodes, and a class for each one would mean sixty
+ * almost identical classes to keep in step with the compiler.
  *
  * ```zuri
  * import zuri
@@ -20,34 +19,31 @@
  *
  * ## Resolved operands
  *
- * `compile()` returns a flat instruction list, matching the VM's
- * own `Instr` type, but several opcodes (`LoadConst`,
- * `GetGlobal`, `GetField`, `Invoke`, ...) only carry a raw index
- * into the compiler's own constant pool, which isn't otherwise
- * exposed. Rather than force every caller to also separately
- * fetch and correlate a constants table, each such field gets
- * its already-resolved value embedded right on the instruction
- * too, alongside the raw index: e.g. a `LoadConst` node's
- * `fields` has both `const_idx` (the raw index) and `value`
- * (what it actually points at). A resolved field is never
- * literally named after the raw index's own subject when that
- * word is a reserved keyword (`const`, `class`, ...), since a
- * dict key can't be read back with plain dot-access syntax then;
- * `class` becomes `class_reg` (it's a register index anyway, not
- * a resolved class value), and similarly for a handful of
- * others.
+ * `compile()` returns a flat list of instructions, matching the VM's
+ * own `Instr` type. But several opcodes, such as `LoadConst`,
+ * `GetGlobal`, `GetField` and `Invoke`, only have an index into the
+ * compiler's constant pool, which isn't otherwise available. So that
+ * callers don't have to fetch a separate constants table and match it
+ * up, each of those fields also has the value it refers to added to the
+ * instruction, next to the index. For example, a `LoadConst`
+ * instruction's `fields` has both `const_idx`, the index, and `value`,
+ * what the index refers to. A resolved field is never named after a
+ * reserved word, such as `const` or `class`, because then it couldn't
+ * be read with dot syntax. `class` becomes `class_reg`, because it's a
+ * register index anyway, not a class, and a few others are renamed in
+ * the same way.
  *
- * A `Closure` instruction's resolved value is a nested function
- * prototype (`{ name, arity, variadic, instructions }`), whose
- * own `instructions` is recursively wrapped the exact same way,
- * so a script with functions or methods in it exposes their
- * bodies too, not just the code immediately around them.
+ * The resolved value of a `Closure` instruction is a nested function
+ * prototype, `{ name, arity, variadic, instructions }`, whose
+ * `instructions` are wrapped in exactly the same way, so the bodies of
+ * functions and methods in a script are available too, not just the
+ * code around them.
  *
- * Every instruction node carries the source `line` it was
- * compiled from, but never a column. The compiler's own line
- * tracking is line-only (statement granularity), unlike a
- * {zuri.token.Token}'s or {zuri.ast.Node}'s position, which both
- * have real column info from the lexer/parser.
+ * Every instruction has the source `line` it was compiled from, but
+ * never a column. The compiler only tracks lines, at the level of
+ * statements, unlike the positions of a {zuri.token.Token} or a
+ * {zuri.ast.Node}, which have real column information from the lexer
+ * and parser.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -64,17 +60,15 @@ import .diagnostic { Diagnostic }
 class Instr {
 
   /**
-   * Returns a new instance of an {Instr} directly, from already-
-   * wrapped field values. Ordinary Zuri code should use
-   * `zuri.compile()` instead; this constructor does no wrapping
-   * of its own.
+   * Creates an {Instr} directly from field values that are already
+   * wrapped. Ordinary Zuri code should use `zuri.compile()` instead,
+   * because this constructor doesn't wrap anything itself.
    *
-   * @param string op: The opcode name, e.g. `'LoadConst'`,
+   * @param string op: the name of the opcode, such as `'LoadConst'` or
    *    `'Add'`
-   * @param ?number line: The source line this instruction was
-   *    compiled from, or `nil` if the compiler never stamped one
-   * @param dict fields: This opcode's own operands, already
-   *    wrapped
+   * @param ?number line: the source line this instruction was compiled
+   *    from, or `nil` if the compiler didn't record one
+   * @param dict fields: this opcode's own operands, already wrapped
    */
   @new(op, line, fields) {
     self.op = op
@@ -83,9 +77,9 @@ class Instr {
   }
 
   /**
-   * This instruction as `op@line`, e.g. `'LoadConst@3'`, or just
-   * `op` when it carries no line. A one-line summary; use
-   * `dump()` to actually see what's inside an instruction.
+   * This instruction as `op@line`, such as `'LoadConst@3'`, or just
+   * `op` if it has no line. It's only a one-line summary. Use `dump()`
+   * to see what's inside an instruction.
    * @returns string
    */
   to_string() {
@@ -200,28 +194,28 @@ def _describe(value) {
 }
 
 /**
- * Recursively visits every instruction reachable from `instrs`
- * (typically `zuri.compile()`'s own result, or any single
- * {Instr} plucked out of it), including inside a `Closure`
- * instruction's own nested function body, in the order they
- * appear, calling `visitor` for each one.
+ * Visits every instruction that can be reached from `instrs`, which is
+ * usually the result of `zuri.compile()` or a single {Instr} taken from
+ * it, including those inside the nested function body of a `Closure`
+ * instruction, in the order they appear, and calls `visitor` for each
+ * one.
  *
- * `visitor` is either a plain function, called with every
- * instruction (`visitor(instr)`), or a dict from opcode name to
- * function, where only a matching instruction gets called
- * (`visitor[instr.op](instr)`). Reach for the dict form when you
- * only care about one or two opcodes.
+ * `visitor` is either a plain function, called with every instruction
+ * as `visitor(instr)`, or a dictionary that maps opcode names to
+ * functions, so that only matching instructions are visited, as
+ * `visitor[instr.op](instr)`. Use the dictionary form when you only
+ * care about one or two opcodes.
  *
- * Always visits the whole tree; there's no way for `visitor` to
- * skip descending into a nested function body.
+ * The whole tree is always visited, because `visitor` can't choose to
+ * skip a nested function body.
  *
  * ```zuri
  * import zuri
  *
  * var instrs = zuri.compile(source)
  *
- * # every global name this script writes to, anywhere, including
- * # inside nested function bodies
+ * # Every global name this script writes to, anywhere, including inside
+ * # nested function bodies.
  * var written = []
  * zuri.walk_instrs(instrs, {
  *   SetGlobal: @(instr) { written.append(instr.fields.name) },
@@ -259,14 +253,14 @@ def find_instrs(instrs, op) {
 }
 
 /**
- * Compiles `source` as a standalone script and returns its
- * instructions as a flat list of {Instr}. See this module's own
- * doc comment for exactly what each instruction carries.
+ * Compiles `source` as a standalone script, and returns its
+ * instructions as a flat list of {Instr} objects. See this module's
+ * documentation for exactly what each instruction contains.
  *
- * Raises (rather than returning partial bytecode) on a lexer,
- * parser, or compiler error.
+ * If there's a lexer, parser or compiler error, this raises an error,
+ * instead of returning partial bytecode.
  *
- * @param string source: The Zuri source to compile
+ * @param string source: the Zuri source to compile
  * @returns list[Instr]
  * @throws Error if `source` doesn't compile
  */
@@ -275,28 +269,26 @@ def compile(source) {
 }
 
 /**
- * Reads the file at `path` and compiles its contents; exactly
- * `compile(file(path).read())`, for the common case of compiling
- * a real file rather than a source string you've already got in
- * hand.
+ * Reads the file at `path`, and compiles its contents. This is the same
+ * as `compile(file(path).read())`, for the common case of compiling a
+ * file instead of a string of source.
  *
- * @param string path: Path to the Zuri source file to compile
+ * @param string path: the path of the Zuri source file to compile
  * @returns list[Instr]
- * @throws Error if `path` can't be opened or read, or doesn't
- *    compile
+ * @throws Error if `path` can't be opened or read, or doesn't compile
  */
 def compile_file(path) {
   return compile(file(path).read())
 }
 
 /**
- * Imports the module at `path` and returns it, the way an `import`
- * statement naming that file would.
+ * Imports the module at `path` and returns it, as an `import` statement
+ * naming that file would.
  *
- * `import` takes its path as written in the source, so it cannot
- * reach a file whose name is only known once the program runs. This
- * can: a plugin directory, a set of migrations, a file named on the
- * command line.
+ * `import` takes its path as written in the source, so it can't import
+ * a file whose name is only known when the program runs. This function
+ * can, so it's useful for a directory of plugins, a set of migrations
+ * or a file named on the command line.
  *
  * ```zuri,ignore
  * import zuri
@@ -306,26 +298,27 @@ def compile_file(path) {
  * echo plugin.greet('Ada')
  * ```
  *
- * A relative `path` is taken from the working directory, as every
- * file function takes one, not from the file making the call. The
- * file is found the way `import` finds one: `path` itself when it has
- * an extension, otherwise `path.zu`, and then `path/index.zu`.
+ * A relative `path` is taken from the working directory, as for every
+ * file function, not from the file that calls this. The file is found
+ * in the same way as `import` finds one: `path` itself if it has an
+ * extension, and otherwise `path.zu`, and then `path/index.zu`.
  *
- * The module is the one `import` would give, from the same cache. Its
- * top level runs the first time it is imported, by this or by an
- * `import`, and never again: importing the same file twice returns
- * the same module, and an `import` statement elsewhere naming the
- * same file sees it too. Under `zuri run --watch`, a file imported
- * this way is watched like any other module.
+ * The module is the same one `import` would give you, from the same
+ * cache. Its top-level code runs the first time it's imported, by this
+ * function or by an `import`, and never again. Importing the same file
+ * twice returns the same module, and an `import` statement elsewhere
+ * that names the same file sees it too. Under `zuri run --watch`, a
+ * file imported this way is watched like any other module.
  *
- * Read what the module exports through ordinary member access, or
- * `zuri.reflect.module_info()` to find out what is there first.
+ * Read what the module exports with ordinary member access, or use
+ * `zuri.reflect.module_info()` to find out what's there first.
  *
- * @param string path: The file to import
+ * @param string path: the file to import
  * @returns module
  * @throws ModuleNotFoundError if no file is found at `path`
- * @throws Error if the file does not parse or compile, or raises
- *    while its top level runs; what it raised is raised unchanged
+ * @throws Error if the file doesn't parse or compile, or raises an
+ *    error while its top-level code runs. That error is raised
+ *    unchanged.
  */
 def import_file(path: string) {
   return _zuri_compile.import_file(path)
@@ -364,10 +357,10 @@ def check(source: string) {
 }
 
 /**
- * Reads the file at `path` and checks it; exactly
+ * Reads the file at `path`, and checks it. This is the same as
  * `check(file(path).read())`.
  *
- * @param string path: Path to the Zuri source file to check
+ * @param string path: the path of the Zuri source file to check
  * @returns list[Diagnostic]
  * @throws Error if `path` can't be opened or read
  */

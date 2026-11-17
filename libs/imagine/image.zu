@@ -1,13 +1,14 @@
 /**
  * @module image
  *
- * `Image`: a raster image as an RGBA pixel buffer, and everything that
- * transforms one.
+ * `Image`, a raster image stored as a buffer of RGBA pixels, and the
+ * methods that transform it.
  *
- * Resizing, cropping, rotation, compositing, colour adjustment and the
- * named filters are all methods here. Every one produces a new image
- * rather than altering the receiver, except where a method says
- * otherwise.
+ * Resizing, cropping, rotating, compositing, color adjustments and the
+ * named filters are all methods here. Operations that change the size
+ * of the image, such as `resize()`, `crop()`, `rotate()`, `flip()` and
+ * `pad()`, return a new image. Everything else changes the image it's
+ * called on and returns it, so that calls can be chained.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -50,9 +51,9 @@ var _ORIENTATIONS = {
 }
 
 /**
- * A raster image: a rectangle of 8-bit RGBA pixels, everything that
- * draws onto one, and everything that reshapes, filters or writes one
- * out.
+ * A raster image, which is a rectangle of 8-bit RGBA pixels, with
+ * everything that draws on it, and everything that reshapes it, filters
+ * it or writes it out.
  *
  * ```zuri
  * import imagine { Image, Color, LANCZOS }
@@ -62,35 +63,35 @@ var _ORIENTATIONS = {
  *   .save('thumb.webp')
  * ```
  *
- * ## Which operations copy and which do not
+ * ## Which operations make a copy
  *
- * There is one rule, and it is worth learning because it is the only
- * thing here that is not obvious:
+ * There's one rule to learn here, because it's the only thing that
+ * isn't obvious:
  *
- * - **Anything that changes the image's size returns a new `Image`.**
- *   `resize()`, `crop()`, `rotate()`, `flip()`, `pad()` and the rest
- *   leave the original untouched.
- * - **Everything else changes the image in place and returns it.**
- *   Drawing, filters and compositing all work on the image you called
- *   them on, and return it so calls can be chained.
+ * - **Anything that changes the size of the image returns a new
+ *   `Image`.** `resize()`, `crop()`, `rotate()`, `flip()`, `pad()` and
+ *   the others leave the original unchanged.
+ * - **Everything else changes the image in place, and returns it.**
+ *   Drawing, filters and compositing all work on the image you call
+ *   them on, and return it so that calls can be chained.
  *
- * That means a chain mixing the two kinds still reads correctly, and
- * `clone()` is there for the times you want to keep the original
- * before a filter.
+ * So a chain that mixes the two kinds still does what it looks like it
+ * does, and you can use `clone()` when you want to keep the original
+ * before applying a filter.
  *
  * ```zuri
  * var original = Image.open('photo.jpg')
- * var small = original.thumbnail(200, 200)   # original untouched
+ * var small = original.thumbnail(200, 200)   # original unchanged
  *
- * small.grayscale()                          # small is now grey
+ * small.grayscale()                          # small is now gray
  * ```
  *
  * ## Memory
  *
- * An image costs four bytes per pixel, so a 6000x4000 photograph is
- * 96 MB in memory however small its file was. Reach for
- * [[imagine.formats.probe]] before opening anything whose size you do
- * not control.
+ * An image takes four bytes per pixel, so a 6000x4000 photograph takes
+ * 96 MB in memory, however small its file was. Use
+ * [[imagine.formats.probe]] before opening anything whose size you
+ * don't control.
  *
  * @printable
  */
@@ -104,12 +105,13 @@ class Image < Canvas {
   /**
    * Creates a new image.
    *
-   * The image starts fully transparent unless a fill colour is given.
+   * The image starts fully transparent, unless a fill color is given.
    *
-   * @param number width: At least 1.
-   * @param number height: At least 1.
-   * @param ?Color|string|number fill: A colour to fill with - Default: transparent.
-   * @throws BoundsError When either dimension is below 1.
+   * @param number width: at least 1
+   * @param number height: at least 1
+   * @param ?Color|string|number fill: a color to fill the image with.
+   *    Defaults to transparent.
+   * @throws BoundsError when either dimension is less than 1.
    */
   @new(width: number, height: number, fill) {
     var w = width.floor()
@@ -134,18 +136,19 @@ class Image < Canvas {
   /**
    * Opens an image file.
    *
-   * The format is detected from the file's contents, not its name, so
-   * a mislabelled file still opens correctly.
+   * The format is detected from the file's contents, not its name, so a
+   * file with the wrong extension still opens correctly.
    *
-   * JPEGs carrying an EXIF orientation tag are rotated upright, since
-   * that is what the photograph was meant to look like and almost
-   * never what the raw pixels are. Pass `{ orient: false }` to get the
-   * pixels exactly as stored.
+   * A JPEG with an EXIF orientation tag is rotated to be upright,
+   * because that's how the photograph was meant to look, and the raw
+   * pixels are almost never stored that way. Pass `{ orient: false }`
+   * to get the pixels exactly as they're stored.
    *
-   * @param string|file source: A path, or an already-open file.
-   * @param ?dict options: `orient` (bool, default true), `format` (string).
+   * @param string|file source: a path, or a file that's already open
+   * @param ?dict options: `orient`, a bool that defaults to true, and
+   *    `format`, a string
    * @returns Image
-   * @throws DecodeError When the file is not a readable image.
+   * @throws DecodeError when the file isn't an image that can be read.
    */
   static open(source, options) {
     var handle = source
@@ -194,14 +197,15 @@ class Image < Canvas {
   /**
    * Decodes image data held in memory.
    *
-   * The format is detected from the data unless `format` says
-   * otherwise, in which case a file that is not really that format
-   * fails loudly rather than being decoded as whatever it actually is.
+   * The format is detected from the data, unless `format` gives it. In
+   * that case, data that isn't really in that format fails with an
+   * error, instead of being decoded as whatever it actually is.
    *
    * @param bytes data
-   * @param ?dict options: `orient` (bool, default true), `format` (string).
+   * @param ?dict options: `orient`, a bool that defaults to true, and
+   *    `format`, a string
    * @returns Image
-   * @throws DecodeError When the data is not a readable image.
+   * @throws DecodeError when the data isn't an image that can be read.
    */
   static decode(data: bytes, options) {
     if data.length() == 0 {
@@ -244,17 +248,18 @@ class Image < Canvas {
   }
 
   /**
-   * Wraps an existing RGBA pixel buffer as an image.
+   * Wraps an existing buffer of RGBA pixels as an image.
    *
-   * The buffer is adopted, not copied, so whatever produced it must
-   * not keep writing to it. Pixels run red, green, blue, alpha with
-   * straight (not premultiplied) alpha and no row padding.
+   * The buffer is used as it is, not copied, so whatever produced it
+   * mustn't keep writing to it. Each pixel is red, green, blue and
+   * alpha, with straight alpha, not premultiplied, and there's no
+   * padding at the end of a row.
    *
    * @param number width
    * @param number height
-   * @param bytes pixels: Exactly `width * height * 4` bytes.
-   * @param ?string format: The format these pixels were decoded from,
-   *    recorded as metadata - Default: nil.
+   * @param bytes pixels: exactly `width * height * 4` bytes
+   * @param ?string format: the format the pixels were decoded from,
+   *    kept as metadata. Defaults to nil.
    * @returns Image
    */
   static from_pixels(width, height, pixels, format) {
@@ -278,11 +283,11 @@ class Image < Canvas {
   }
 
   /**
-   * The format this image was decoded from, or `nil` for one created
+   * The format this image was decoded from, or `nil` if it was created
    * in memory.
    *
-   * This records where the image came from and never constrains where
-   * it can go; a PNG can always be saved as a JPEG.
+   * This records where the image came from, and never limits where it
+   * can go. A PNG can always be saved as a JPEG.
    *
    * @returns ?string
    */
@@ -291,15 +296,14 @@ class Image < Canvas {
   }
 
   /**
-   * Records which format this image should be considered to have come
-   * from.
+   * Sets the format that this image is treated as having come from.
    *
-   * The only thing this changes is what `encode()` and `save()` write
-   * when no format is given. It is set for you when an image is
-   * decoded; setting it by hand is for pixels that arrived some other
-   * way and whose origin you happen to know.
+   * The only thing this changes is the format that `encode()` and
+   * `save()` write when no format is given. It's set for you when an
+   * image is decoded. Set it yourself only for pixels that came from
+   * somewhere else, when you know their original format.
    *
-   * @param ?string format: A format name, or nil to clear it.
+   * @param ?string format: a format name, or nil to clear it
    * @returns self
    */
   set_format(format) {
@@ -361,13 +365,14 @@ class Image < Canvas {
   }
 
   /**
-   * A new image of the same size, fully transparent.
+   * A new, fully transparent image of the same size.
    *
-   * The usual way to build up a composite: draw onto the layer, then
-   * bring it back with `draw_image()` under whichever blend mode and
-   * opacity the effect calls for.
+   * This is the usual way to build up a composite: draw on the new
+   * layer, and then combine it with the original using `draw_image()`,
+   * with whatever blend mode and opacity the effect needs.
    *
-   * @param ?Color|string|number fill: A colour to fill with - Default: transparent.
+   * @param ?Color|string|number fill: a color to fill the image with.
+   *    Defaults to transparent.
    * @returns Image
    */
   layer(fill) {
@@ -403,15 +408,15 @@ class Image < Canvas {
   /**
    * Returns the image resampled to an exact size.
    *
-   * The aspect ratio is not preserved; the result is exactly the size
-   * asked for. Use `thumbnail()` or `cover()` when the proportions
+   * The aspect ratio isn't kept, and the result is exactly the size you
+   * ask for. Use `thumbnail()` or `cover()` when the proportions
    * matter.
    *
-   * @param number width: At least 1.
-   * @param number height: At least 1.
-   * @param ?string filter: A resampling filter - Default: `LANCZOS`.
+   * @param number width: at least 1
+   * @param number height: at least 1
+   * @param ?string filter: a resampling filter. Defaults to `LANCZOS`.
    * @returns Image
-   * @throws BoundsError When either dimension is below 1.
+   * @throws BoundsError when either dimension is less than 1.
    */
   resize(width, height, filter) {
     var w = self._dimension(width, 'width')
@@ -436,8 +441,9 @@ class Image < Canvas {
   /**
    * Returns the image resampled by a factor, keeping its proportions.
    *
-   * @param number factor: Greater than zero. 0.5 halves each side.
-   * @param ?string filter: A resampling filter - Default: `LANCZOS`.
+   * @param number factor: greater than zero. 0.5 halves the length of
+   *    each side.
+   * @param ?string filter: a resampling filter. Defaults to `LANCZOS`.
    * @returns Image
    */
   scale(factor: number, filter) {
@@ -456,15 +462,15 @@ class Image < Canvas {
    * Returns the image shrunk to fit inside a box, keeping its
    * proportions.
    *
-   * The result is no larger than the box in either direction, and
-   * usually smaller in one. An image that already fits is returned at
-   * its original size rather than enlarged, which is what makes this
-   * the right call for thumbnails: enlarging a small image to fill a
-   * thumbnail box only makes it blurry.
+   * The result is no larger than the box in either direction, and it's
+   * usually smaller in one of them. An image that already fits is
+   * returned at its original size, not enlarged, which is what you want
+   * for thumbnails: enlarging a small image to fill a thumbnail box
+   * only makes it blurry.
    *
    * @param number max_width
    * @param number max_height
-   * @param ?string filter: A resampling filter - Default: `LANCZOS`.
+   * @param ?string filter: a resampling filter. Defaults to `LANCZOS`.
    * @returns Image
    */
   thumbnail(max_width, max_height, filter) {
@@ -483,14 +489,14 @@ class Image < Canvas {
 
   /**
    * Returns the image scaled to fit inside a box, keeping its
-   * proportions, enlarging it if it is smaller than the box.
+   * proportions, and enlarging it if it's smaller than the box.
    *
-   * The difference from `thumbnail()` is exactly that: this one will
-   * scale up.
+   * That's the only difference from `thumbnail()`: this method scales
+   * up as well as down.
    *
    * @param number width
    * @param number height
-   * @param ?string filter: A resampling filter - Default: `LANCZOS`.
+   * @param ?string filter: a resampling filter. Defaults to `LANCZOS`.
    * @returns Image
    */
   fit(width, height, filter) {
@@ -570,20 +576,21 @@ class Image < Canvas {
   }
 
   /**
-   * Returns a rectangular region of the image.
+   * Returns a rectangular part of the image.
    *
-   * The rectangle must lie entirely inside the image. Clamping a crop
-   * that runs off the edge would hand back different dimensions than
-   * were asked for, which is a worse surprise than an error; use
-   * `pad()` first if the region really is meant to extend past the
-   * edge.
+   * The rectangle must be entirely inside the image. Clamping a crop
+   * that runs off the edge would return an image of a different size
+   * from the one you asked for, which is a worse surprise than an
+   * error. If the area really should extend past the edge, use `pad()`
+   * first.
    *
    * @param number x
    * @param number y
    * @param number width
    * @param number height
    * @returns Image
-   * @throws BoundsError When the rectangle does not fit inside the image.
+   * @throws BoundsError when the rectangle doesn't fit inside the
+   *    image.
    */
   crop(x, y, width, height) {
     var left = x.floor()
@@ -611,18 +618,19 @@ class Image < Canvas {
   }
 
   /**
-   * Returns the image with a uniform border trimmed away.
+   * Returns the image with a border of one color trimmed off.
    *
-   * The border colour is taken from the top-left pixel unless
-   * `background` names one. `tolerance` is how far a pixel may differ
+   * The border color is taken from the top-left pixel, unless
+   * `background` gives one. `tolerance` is how much a pixel can differ
    * from it and still count as border, measured as the largest
-   * difference across the four channels.
+   * difference in any of the four channels.
    *
-   * An image that is entirely border is returned as a 1x1 image
-   * rather than an empty one, since an image with no pixels is not a
-   * thing this module can represent.
+   * An image that's entirely border is returned as a 1x1 image, not an
+   * empty one, because this module can't represent an image with no
+   * pixels.
    *
-   * @param ?dict options: `background`, `tolerance` (default 0).
+   * @param ?dict options: `background`, and `tolerance`, which defaults
+   *    to 0
    * @returns Image
    */
   trim(options) {
@@ -652,13 +660,13 @@ class Image < Canvas {
   /**
    * Returns the image with a border added on each side.
    *
-   * Negative amounts are not accepted; use `crop()` to remove edges.
+   * Negative amounts aren't accepted. Use `crop()` to remove edges.
    *
    * @param number top
-   * @param ?number right: - Default: the same as _top_.
-   * @param ?number bottom: - Default: the same as _top_.
-   * @param ?number left: - Default: the same as _right_.
-   * @param ?Color|string|number background: - Default: transparent.
+   * @param ?number right: defaults to the same as _top_.
+   * @param ?number bottom: defaults to the same as _top_.
+   * @param ?number left: defaults to the same as _right_.
+   * @param ?Color|string|number background: defaults to transparent.
    * @returns Image
    */
   pad(top, right, bottom, left, background) {
@@ -680,15 +688,15 @@ class Image < Canvas {
   }
 
   /**
-   * Returns the image rotated by an angle in degrees, clockwise.
+   * Returns the image rotated clockwise by an angle in degrees.
    *
-   * Quarter turns are exact and lossless. Any other angle resamples
-   * the pixels and grows the canvas to hold the rotated corners,
-   * filling the gaps with `background`.
+   * Quarter turns are exact and lossless. Any other angle resamples the
+   * pixels and enlarges the canvas to hold the rotated corners, filling
+   * the gaps with `background`.
    *
    * @param number degrees
-   * @param ?Color|string|number background: The colour behind the
-   *    corners - Default: transparent.
+   * @param ?Color|string|number background: the color behind the
+   *    corners. Defaults to transparent.
    * @returns Image
    */
   rotate(degrees: number, background) {
@@ -733,10 +741,10 @@ class Image < Canvas {
   }
 
   /**
-   * Returns the image mirrored.
+   * Returns a mirrored copy of the image.
    *
    * @param ?number mode: `FLIP_HORIZONTAL`, `FLIP_VERTICAL` or
-   *    `FLIP_BOTH` - Default: `FLIP_HORIZONTAL`.
+   *    `FLIP_BOTH`. Defaults to `FLIP_HORIZONTAL`.
    * @returns Image
    */
   flip(mode) {
@@ -899,14 +907,17 @@ class Image < Canvas {
   /**
    * Stretches a range of input values across the full scale.
    *
-   * The single most useful correction for a flat or washed-out
-   * photograph: everything at or below `black` becomes black,
-   * everything at or above `white` becomes white, and the rest is
-   * spread between them.
+   * This is the most useful single correction for a flat or washed-out
+   * photograph. Everything at or below `black` becomes black,
+   * everything at or above `white` becomes white, and everything else
+   * is spread out in between.
    *
-   * @param number black: The input value that becomes black, 0-255.
-   * @param number white: The input value that becomes white, 0-255.
-   * @param ?number gamma: A midtone curve to apply along the way - Default: 1.
+   * @param number black: the input value that becomes black, from 0 to
+   *    255
+   * @param number white: the input value that becomes white, from 0 to
+   *    255
+   * @param ?number gamma: a midtone curve to apply as well. Defaults to
+   *    1.
    * @returns self
    */
   levels(black, white, gamma) {
@@ -916,10 +927,10 @@ class Image < Canvas {
   }
 
   /**
-   * Inverts the colour channels, producing a photographic negative.
+   * Inverts the color channels, producing a photographic negative.
    *
-   * Alpha is untouched, so a transparent image stays transparent
-   * rather than becoming opaque.
+   * Alpha isn't changed, so a transparent image stays transparent,
+   * instead of becoming opaque.
    *
    * @returns self
    */
@@ -930,13 +941,13 @@ class Image < Canvas {
   }
 
   /**
-   * Forces every pixel to black or white by comparing its brightness
-   * against a threshold.
+   * Makes every pixel black or white, by comparing its brightness with
+   * a threshold.
    *
-   * The image is converted to grey first, so the split is made on
-   * perceived brightness rather than on each channel separately.
+   * The image is converted to gray first, so the decision is based on
+   * perceived brightness, not on each channel separately.
    *
-   * @param ?number level: The cut, 0-255 - Default: 128.
+   * @param ?number level: the cutoff, from 0 to 255. Defaults to 128.
    * @returns self
    */
   threshold(level) {
@@ -950,11 +961,11 @@ class Image < Canvas {
   /**
    * Reduces each channel to a fixed number of evenly spaced steps.
    *
-   * This flattens gradients into visible bands. For a reduction that
-   * picks the colours to keep rather than spacing them evenly, use
+   * This turns gradients into visible bands. For a reduction that
+   * chooses which colors to keep, instead of spacing them evenly, use
    * `quantize()`.
    *
-   * @param number levels: 2 or more.
+   * @param number levels: 2 or more
    * @returns self
    */
   posterize(levels) {
@@ -978,11 +989,11 @@ class Image < Canvas {
   }
 
   /**
-   * Converts the image to shades of grey.
+   * Converts the image to shades of gray.
    *
-   * Channels are weighted for perceived brightness, so a bright yellow
-   * comes out light and a deep blue comes out dark, which is what the
-   * eye expects.
+   * The channels are weighted for perceived brightness, so a bright
+   * yellow comes out light and a deep blue comes out dark, as the eye
+   * expects.
    *
    * @returns self
    */
@@ -1036,14 +1047,14 @@ class Image < Canvas {
   }
 
   /**
-   * Blends a flat colour into the image.
+   * Blends a flat color into the image.
    *
-   * At an amount of 1 the image becomes that colour entirely; at 0.2
-   * it takes on a wash of it. Alpha is untouched, so transparent areas
-   * stay transparent.
+   * At an amount of 1, the image becomes that color entirely, and at
+   * 0.2, it takes on a slight tint of it. Alpha isn't changed, so
+   * transparent areas stay transparent.
    *
    * @param Color|string|number color
-   * @param ?number amount: 0 to 1 - Default: 0.5.
+   * @param ?number amount: from 0 to 1. Defaults to 0.5.
    * @returns self
    */
   tint(color, amount) {
@@ -1089,18 +1100,19 @@ class Image < Canvas {
   }
 
   /**
-   * Reduces the image to at most a given number of colours.
+   * Reduces the image to at most a given number of colors.
    *
-   * Unlike `posterize()`, the colours kept are chosen to suit the
-   * image rather than spaced evenly, so a photograph survives far
-   * fewer of them. Dithering trades visible banding for a fine
-   * stipple, which almost always looks better at low colour counts.
+   * Unlike `posterize()`, this chooses colors that suit the image,
+   * instead of spacing them evenly, so a photograph can be reduced to
+   * far fewer colors. Dithering replaces visible banding with a fine
+   * speckle, which almost always looks better when there are only a few
+   * colors.
    *
-   * This is also a preview of what GIF export will do, since GIF
-   * cannot hold more than 256 colours per frame.
+   * This also shows what GIF export will do, because a GIF can't have
+   * more than 256 colors in a frame.
    *
-   * @param ?number colors: 2 to 256 - Default: 256.
-   * @param ?bool dither: - Default: false.
+   * @param ?number colors: from 2 to 256. Defaults to 256.
+   * @param ?bool dither: defaults to false.
    * @returns self
    */
   quantize(colors, dither) {
@@ -1147,21 +1159,22 @@ class Image < Canvas {
   /**
    * Applies a convolution kernel to the image.
    *
-   * The kernel is a flat list of `size * size` numbers with an odd
-   * `size`. The default divisor of 0 means "divide by the kernel's
-   * own sum", which is what nearly every published kernel expects;
-   * pass an explicit divisor for the ones whose weights sum to zero.
+   * The kernel is a flat list of `size * size` numbers, where `size` is
+   * odd. The default divisor of 0 means "divide by the sum of the
+   * kernel", which is what almost every published kernel expects. Pass
+   * an explicit divisor for kernels whose weights add up to zero.
    *
-   * Alpha goes through the kernel along with the colour channels
-   * unless `keep_alpha` says otherwise, so blurring a shape softens
-   * its edge rather than leaving a hard cutout. Turn that off for any
-   * kernel whose weights do not sum to one: a Laplacian over a
-   * uniformly opaque image sums to zero, and would make the whole
-   * result invisible.
+   * Alpha goes through the kernel along with the color channels, unless
+   * `keep_alpha` is set, so blurring a shape softens its edge, instead
+   * of leaving a hard cutout. Set `keep_alpha` for any kernel whose
+   * weights don't add up to one. A Laplacian kernel over an image
+   * that's opaque everywhere gives an alpha of zero, which would make
+   * the whole result invisible.
    *
    * @param list kernel
-   * @param ?dict options: `divisor` (default 0), `offset` (default 0),
-   *    `edge` (default `EDGE_CLAMP`), `keep_alpha` (default false).
+   * @param ?dict options: `divisor`, which defaults to 0, `offset`,
+   *    which defaults to 0, `edge`, which defaults to `EDGE_CLAMP`, and
+   *    `keep_alpha`, which defaults to false
    * @returns self
    */
   convolve(kernel, options) {
@@ -1185,17 +1198,19 @@ class Image < Canvas {
   }
 
   /**
-   * Blurs the image with a true Gaussian.
+   * Blurs the image with a true Gaussian blur.
    *
-   * The radius is the blur's standard deviation in pixels: about two
-   * thirds of each pixel's contribution falls within that distance,
-   * and the visible spread is roughly three times it. Cost grows with
-   * the radius but only linearly, because the blur is separable.
+   * The radius is the standard deviation of the blur in pixels. About
+   * two thirds of each pixel's contribution falls within that distance,
+   * and the visible spread is about three times as far. The cost
+   * increases with the radius, but only linearly, because the blur is
+   * separable.
    *
-   * Alpha is premultiplied for the duration, so blurring a shape on a
-   * transparent background does not drag a dark halo into its edge.
+   * Alpha is premultiplied while the blur runs, so blurring a shape on
+   * a transparent background doesn't create a dark halo around its
+   * edge.
    *
-   * @param ?number radius: Greater than zero - Default: 2.
+   * @param ?number radius: greater than zero. Defaults to 2.
    * @returns self
    */
   blur(radius) {
@@ -1212,8 +1227,8 @@ class Image < Canvas {
   /**
    * Sharpens the image.
    *
-   * @param ?number strength: 1 is moderate; much above 3 starts
-   *    producing halos - Default: 1.
+   * @param ?number strength: 1 is a moderate amount, and values much
+   *    above 3 start to produce halos. Defaults to 1.
    * @returns self
    */
   sharpen(strength) {
@@ -1221,12 +1236,13 @@ class Image < Canvas {
   }
 
   /**
-   * Softens the image with a weighted 3x3 average.
+   * Softens the image with a weighted average of each 3x3 area.
    *
-   * Cheaper and harsher than `blur()`, and fixed at one pixel of
-   * reach.
+   * It's cheaper and harsher than `blur()`, and always reaches exactly
+   * one pixel away.
    *
-   * @param ?number weight: How much of the original to keep - Default: 8.
+   * @param ?number weight: how much of the original to keep. Defaults
+   *    to 8.
    * @returns self
    */
   smooth(weight) {
@@ -1271,10 +1287,11 @@ class Image < Canvas {
   }
 
   /**
-   * Replaces each block of pixels with its average, producing the
-   * familiar censoring mosaic.
+   * Replaces each block of pixels with its average color, producing the
+   * familiar mosaic used to hide parts of an image.
    *
-   * @param ?number size: The block's side in pixels - Default: 8.
+   * @param ?number size: the length of a block's side in pixels.
+   *    Defaults to 8.
    * @returns self
    */
   pixelate(size) {
@@ -1310,9 +1327,9 @@ class Image < Canvas {
   /**
    * Draws another image onto this one.
    *
-   * The source is clipped to this image's edges, and its position may
-   * be negative, so a sprite hanging off the top-left corner draws
-   * correctly.
+   * The source is clipped at this image's edges, and its position can
+   * be negative, so a sprite that hangs off the top-left corner is
+   * drawn correctly.
    *
    * ```zuri
    * var badge = Image.open('badge.png')
@@ -1321,10 +1338,10 @@ class Image < Canvas {
    * ```
    *
    * @param Image source
-   * @param ?number x: - Default: 0.
-   * @param ?number y: - Default: 0.
-   * @param ?dict options: `opacity` (0-1, default 1), `blend`
-   *    (default `BLEND_NORMAL`).
+   * @param ?number x: defaults to 0.
+   * @param ?number y: defaults to 0.
+   * @param ?dict options: `opacity`, from 0 to 1, which defaults to 1,
+   *    and `blend`, which defaults to `BLEND_NORMAL`
    * @returns self
    */
   draw_image(source: Image, x, y, options) {
@@ -1358,17 +1375,17 @@ class Image < Canvas {
   }
 
   /**
-   * Draws another image onto this one, positioned by anchor rather
-   * than by coordinates.
+   * Draws another image onto this one, positioned by an anchor instead
+   * of by coordinates.
    *
    * ```zuri
    * photo.place(watermark, BOTTOM_RIGHT, { margin: 16, opacity: 0.5 })
    * ```
    *
    * @param Image source
-   * @param ?string anchor: - Default: `CENTER`.
-   * @param ?dict options: `margin` (inset from the edges, default 0),
-   *    plus everything `draw_image()` takes.
+   * @param ?string anchor: defaults to `CENTER`.
+   * @param ?dict options: `margin`, the distance from the edges, which
+   *    defaults to 0, and any of the options that `draw_image()` takes
    * @returns self
    */
   place(source: Image, anchor, options) {
@@ -1419,14 +1436,13 @@ class Image < Canvas {
   }
 
   /**
-   * Composites the image over a solid colour, leaving it fully
-   * opaque.
+   * Composites the image over a solid color, making it fully opaque.
    *
-   * This is what happens on export to a format without an alpha
-   * channel; doing it explicitly first lets you choose the colour and
-   * see the result.
+   * This is what happens when an image is exported to a format without
+   * an alpha channel. Doing it yourself first lets you choose the color
+   * and see the result.
    *
-   * @param ?Color|string|number background: - Default: white.
+   * @param ?Color|string|number background: defaults to white.
    * @returns self
    */
   flatten(background) {
@@ -1471,18 +1487,18 @@ class Image < Canvas {
   /**
    * Stretches the image's tones to fill the full range.
    *
-   * The black and white points are found from the brightness
-   * histogram, ignoring a small fraction at each end so that a handful
-   * of stray pixels cannot decide the result. This is the automatic
-   * version of `levels()`, and it is the first thing to try on a flat
-   * or hazy photograph.
+   * The black and white points are found from the brightness histogram,
+   * ignoring a small fraction at each end, so that a few stray pixels
+   * can't decide the result. This is the automatic version of
+   * `levels()`, and it's the first thing to try on a flat or hazy
+   * photograph.
    *
-   * An image that already spans the full range, or one with no visible
-   * pixels at all, is left alone.
+   * An image that already covers the full range, or that has no visible
+   * pixels at all, is left unchanged.
    *
-   * @param ?dict options: `clip` (the fraction to ignore at each end,
-   *    0 to 0.2 - Default: 0.005), `gamma` (a midtone curve to apply
-   *    as well - Default: 1).
+   * @param ?dict options: `clip`, the fraction to ignore at each end,
+   *    from 0 to 0.2, which defaults to 0.005, and `gamma`, a midtone
+   *    curve to apply as well, which defaults to 1
    * @returns self
    */
   auto_levels(options) {
@@ -1514,12 +1530,12 @@ class Image < Canvas {
   }
 
   /**
-   * The average colour of the image.
+   * The average color of the image.
    *
    * Pixels are weighted by their alpha, so a mostly transparent image
-   * reports the colour of the part you can actually see rather than
-   * having it washed out by whatever is behind the transparency. The
-   * returned colour's own alpha is the mean alpha.
+   * reports the color of the part you can actually see, instead of
+   * having it washed out by the transparent pixels. The alpha of the
+   * returned color is the average alpha.
    *
    * An image with nothing visible in it returns transparent black.
    *
@@ -1541,23 +1557,25 @@ class Image < Canvas {
   }
 
   /**
-   * The colours that occupy the most of the image, most common first.
+   * The colors that cover the largest part of the image, most common
+   * first.
    *
    * The image is shrunk and reduced to a small palette first, so this
-   * costs about the same whatever the original size. Nearly
+   * takes about the same time whatever the original size is. Nearly
    * transparent pixels are ignored.
    *
-   * The usual use is picking a background or accent colour to show
-   * while a photograph is still loading.
+   * The usual use for this is choosing a background or accent color to
+   * show while a photograph is still loading.
    *
    * ```zuri
    * var accent = photo.dominant_colors(1)[0]
    * ```
    *
-   * @param ?number count: How many to return - Default: 5.
-   * @param ?dict options: `sample` (the size the image is reduced to
-   *    before counting - Default: 96), `palette` (how many colours to
-   *    quantize to - Default: 32).
+   * @param ?number count: the number of colors to return. Defaults to
+   *    5.
+   * @param ?dict options: `sample`, the size the image is reduced to
+   *    before counting, which defaults to 96, and `palette`, the number
+   *    of colors to quantize to, which defaults to 32
    * @returns list
    */
   dominant_colors(count, options) {
@@ -1640,13 +1658,12 @@ class Image < Canvas {
    * Draws a string.
    *
    * `x` and `y` are the top-left corner of the text's box, not its
-   * baseline, because that is what you know when placing text in a
-   * layout. Pass `{ baseline: true }` to treat `y` as the first
-   * line's baseline instead.
+   * baseline, because that's what you usually know when you place text
+   * in a layout. Pass `{ baseline: true }` to use `y` as the baseline
+   * of the first line instead.
    *
-   * A `\n` starts a new line. Multi-line text is aligned by the
-   * `align` option, which positions the lines against each other, not
-   * against the image.
+   * A `\n` starts a new line. The `align` option aligns the lines of
+   * multi-line text with each other, not with the image.
    *
    * ```zuri
    * var font = Font.load('Inter.ttf').size(28)
@@ -1662,10 +1679,10 @@ class Image < Canvas {
    * @param string text
    * @param Font font
    * @param Color|string|number color
-   * @param ?dict options: `align`, `line_height` (multiplier, default
-   *    1), `tracking` (extra pixels between characters, default 0),
-   *    `baseline` (bool, default false), `width` (wrap to this many
-   *    pixels).
+   * @param ?dict options: `align`, `line_height`, a multiplier that
+   *    defaults to 1, `tracking`, extra pixels between characters,
+   *    which defaults to 0, `baseline`, a bool that defaults to false,
+   *    and `width`, a width in pixels to wrap the text to
    * @returns self
    */
   text(x, y, text, font, color, options) {
@@ -1731,13 +1748,14 @@ class Image < Canvas {
   }
 
   /**
-   * Draws a string positioned by anchor rather than by coordinates.
+   * Draws a string positioned by an anchor instead of by coordinates.
    *
    * @param string text
    * @param Font font
    * @param Color|string|number color
-   * @param ?string anchor: - Default: `CENTER`.
-   * @param ?dict options: `margin`, plus everything `text()` takes.
+   * @param ?string anchor: defaults to `CENTER`.
+   * @param ?dict options: `margin`, and any of the options that
+   *    `text()` takes
    * @returns self
    */
   place_text(text, font, color, anchor, options) {
@@ -1769,25 +1787,25 @@ class Image < Canvas {
   /**
    * Encodes the image and returns the bytes.
    *
-   * Options understood, by format:
+   * The options each format understands:
    *
-   * - `quality` (1-100) for JPEG and AVIF. Defaults to 85 for JPEG and
-   *   80 for AVIF. It does not apply to WebP, which is written
-   *   losslessly.
-   * - `compression` for PNG: `'fast'`, `'default'` or `'best'`. All
-   *   three are lossless; they trade encoding time for file size.
-   * - `speed` for AVIF (1-10, lower is slower and smaller) and for
-   *   GIF (1-30, lower is slower and picks better colours; 15 by
-   *   default).
-   * - `background` for JPEG, the colour transparent pixels are
-   *   flattened against. Defaults to white.
-   * - `threshold` (0-255) for WBMP, the brightness cut.
+   * - `quality`, from 1 to 100, for JPEG and AVIF. It defaults to 85
+   *   for JPEG and 80 for AVIF. It doesn't apply to WebP, which is
+   *   written losslessly.
+   * - `compression`, for PNG: `'fast'`, `'default'` or `'best'`. All
+   *   three are lossless, and they trade encoding time for file size.
+   * - `speed`, for AVIF, from 1 to 10, where lower is slower and gives
+   *   smaller files, and for GIF, from 1 to 30, where lower is slower
+   *   and chooses better colors. It defaults to 15 for GIF.
+   * - `background`, for JPEG, the color that transparent pixels are
+   *   flattened against. It defaults to white.
+   * - `threshold`, from 0 to 255, for WBMP, the brightness cutoff.
    *
-   * @param ?string format: - Default: the format this image was
+   * @param ?string format: defaults to the format this image was
    *    decoded from, or `PNG`.
    * @param ?dict options
    * @returns bytes
-   * @throws EncodeError When the format cannot be written.
+   * @throws EncodeError when the format can't be written.
    */
   encode(format, options) {
     var target = formats.normalize(
@@ -1857,14 +1875,14 @@ class Image < Canvas {
   }
 
   /**
-   * Encodes the image as a `data:` URL, ready to drop into an `img`
-   * tag or a stylesheet.
+   * Encodes the image as a `data:` URL, ready to use in an `img` tag or
+   * a stylesheet.
    *
-   * Base64 costs a third more bytes than the raw image, so this suits
-   * icons and small graphics rather than photographs.
+   * Base64 makes the data a third larger than the raw image, so this
+   * suits icons and small graphics, not photographs.
    *
-   * @param ?string format: - Default: `PNG`.
-   * @param ?dict options: Everything `encode()` takes.
+   * @param ?string format: defaults to `PNG`.
+   * @param ?dict options: any of the options that `encode()` takes
    * @returns string
    */
   to_data_url(format, options) {
@@ -1885,10 +1903,11 @@ class Image < Canvas {
   }
 
   /**
-   * Encodes the image as a JPEG. Lossy, no alpha.
+   * Encodes the image as a JPEG, which is lossy and has no alpha
+   * channel.
    *
-   * @param ?number quality: 1-100 - Default: 85.
-   * @param ?dict options: `background`.
+   * @param ?number quality: from 1 to 100. Defaults to 85.
+   * @param ?dict options: `background`
    * @returns bytes
    */
   to_jpeg(quality, options) {
@@ -1914,11 +1933,11 @@ class Image < Canvas {
   /**
    * Encodes the image as an AVIF.
    *
-   * Small files, slow encoding. Lower `speed` values are slower and
-   * produce smaller files.
+   * AVIF gives small files, but encoding is slow. Lower `speed` values
+   * are slower and produce smaller files.
    *
-   * @param ?number quality: 1-100 - Default: 80.
-   * @param ?dict options: `speed` (1-10, default 6).
+   * @param ?number quality: from 1 to 100. Defaults to 80.
+   * @param ?dict options: `speed`, from 1 to 10, which defaults to 6
    * @returns bytes
    */
   to_avif(quality, options) {
@@ -1996,7 +2015,8 @@ class Image < Canvas {
   /**
    * Encodes the image as a one-bit Wireless Bitmap.
    *
-   * @param ?number threshold: The brightness cut, 0-255 - Default: 128.
+   * @param ?number threshold: the brightness cutoff, from 0 to 255.
+   *    Defaults to 128.
    * @returns bytes
    */
   to_wbmp(threshold) {
@@ -2020,11 +2040,11 @@ class Image < Canvas {
 }
 
 /**
- * Applies an EXIF orientation, returning the upright image.
+ * Applies an EXIF orientation, and returns the upright image.
  *
- * The image is handed back unchanged for orientation 1 (already
- * upright) and for 0, which is what the reader reports when there is
- * no tag at all.
+ * The image is returned unchanged for orientation 1, which means it's
+ * already upright, and for 0, which is what the reader reports when
+ * there's no tag at all.
  */
 def _apply_orientation(image, orientation) {
   var recipe = _ORIENTATIONS.get('${orientation}')

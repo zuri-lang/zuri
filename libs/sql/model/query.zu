@@ -121,11 +121,12 @@ class Query {
   }
 
   /**
-   * Narrows the query to rows not meeting conditions. A row whose
-   * column is null is not equal to any value, so it is among the rows a
-   * value excludes; `nil` excludes null itself.
+   * Narrows the query to the rows that don't meet the conditions. A row
+   * whose column is null isn't equal to any value, so a value excludes
+   * it too. `nil` excludes null itself.
    *
-   * @param dict filter Column to value, as `where()` reads one.
+   * @param dict filter Column names mapped to values, as `where()`
+   *    reads them.
    * @returns Query
    */
   where_not(filter: dict) {

@@ -1,15 +1,14 @@
 /**
  * # Numbers
  *
- * Every number in Zuri, whole or fractional, is a single
- * `number` type backed by an IEEE-754 double precision float.
- * There is no separate `int` or `float` type to keep track of:
- * `5` and `5.0` are the exact same value.
+ * Every number in Zuri, whole or fractional, has the same type,
+ * `number`, which is an IEEE 754 double-precision float. There are no
+ * separate `int` and `float` types, so `5` and `5.0` are exactly the
+ * same value.
  *
- * Like every other value in Zuri, numbers are objects with their
- * own methods. This is what lets you write `n.abs()` or
- * `2.factorial()` directly instead of reaching for a free
- * `abs(n)` function.
+ * Numbers are objects with methods, like every other value in Zuri, so
+ * you can write `n.abs()` or `2.factorial()` directly, instead of
+ * calling a separate `abs(n)` function.
  *
  * For example:
  *
@@ -22,21 +21,20 @@
  * 120
  * ```
  *
- * > `-5.abs()` is `-5`, not `5`. The minus is not part of the
- * > literal: it is applied to whatever follows it, so the method
- * > runs first and the sign is applied to its result. Write
- * > `(-5).abs()` when the method should see the negative value.
- * > This is ordinary unary minus precedence and applies to any
- * > expression, not just literals.
+ * > `-5.abs()` is `-5`, not `5`. The minus sign isn't part of
+ * > the literal. It applies to whatever follows it, so the
+ * > method runs first and the sign is applied to its result.
+ * > Write `(-5).abs()` when the method should see the negative
+ * > value. This is the normal precedence of unary minus, and it
+ * > applies to any expression, not only to literals.
  *
  * ## Precision
  *
- * Because every number is an IEEE-754 double, Zuri numbers can
- * represent integers exactly only up to 2^53. Arithmetic that
- * would overflow that range (very large integer literals, or an
- * operation whose result exceeds it) automatically promotes to
- * an arbitrary-precision `bigint` instead of silently losing
- * precision.
+ * Because every number is an IEEE 754 double, integers are only exact
+ * up to 2^53. Arithmetic beyond that rounds, as it does in every
+ * language with double-precision numbers. When you need exact integers
+ * of any size, use a `bigint`. An integer literal that's too large for
+ * a signed 64-bit integer becomes a `bigint` automatically.
  */
 
 class number {
@@ -74,7 +72,7 @@ class number {
   to_bool() {}
 
   /**
-   * Converts the number to a `bigint`, the counterpart to
+   * Converts the number to a `bigint`. This is the counterpart of
    * `bigint.to_number()`.
    *
    * ```zuri-repl
@@ -84,14 +82,14 @@ class number {
    * 1267650600228229401496703205376n
    * ```
    *
-   * @note Only an exact integer has a `bigint` form, so a
-   *    fractional number, `Infinity` and `NaN` all raise rather
-   *    than being rounded or clamped. Numbers above `2^53` are
-   *    already imprecise as doubles, so converting one yields the
-   *    exact integer the double holds, not the decimal literal it
-   *    was written as.
+   * @note Only an exact integer can be converted to a `bigint`, so a
+   *    fractional number, `Infinity` and `NaN` all raise an error,
+   *    instead of being rounded or clamped. A number above `2^53` is
+   *    already imprecise as a double, so converting it gives the exact
+   *    integer that the double holds, not the decimal literal it was
+   *    written as.
    * @returns {bigint}
-   * @raises {RangeError} if the number is not an exact integer.
+   * @raises {RangeError} if the number isn't an exact integer.
    */
   to_bigint() {}
 
@@ -123,55 +121,55 @@ class number {
   chr() {}
 
   /**
-   * Converts the number to its binary string representation. The
-   * number is truncated to an integer first.
+   * Converts the number to a string of binary digits. The number is
+   * truncated to an integer first.
    *
    * ```zuri-repl
    * %> 10.bin()
    * '1010'
    * ```
    *
-   * @note A negative number always returns `'0'`; there is no
-   *    signed or two's-complement form.
+   * @note A negative number always returns `'0'`. There's no signed or
+   *    two's complement form.
    * @returns {string}
    */
   bin() {}
 
   /**
-   * Converts the number to its hexadecimal string
-   * representation. The number is truncated to an integer first.
+   * Converts the number to a string of hexadecimal digits. The number
+   * is truncated to an integer first.
    *
    * ```zuri-repl
    * %> 255.hex()
    * 'ff'
    * ```
    *
-   * @note A negative number always returns `'0'`; there is no
-   *    signed or two's-complement form.
+   * @note A negative number always returns `'0'`. There's no signed or
+   *    two's complement form.
    * @returns {string}
    */
   hex() {}
 
   /**
-   * Converts the number to its octal string representation. The
-   * number is truncated to an integer first.
+   * Converts the number to a string of octal digits. The number is
+   * truncated to an integer first.
    *
    * ```zuri-repl
    * %> 8.oct()
    * '10'
    * ```
    *
-   * @note A negative number always returns `'0'`; there is no
-   *    signed or two's-complement form.
+   * @note A negative number always returns `'0'`. There's no signed or
+   *    two's complement form.
    * @returns {string}
    */
   oct() {}
 
   /**
-   * Truncates the number down to its integer part, discarding
-   * anything after the decimal point. Unlike `floor()`, this
-   * rounds towards zero rather than towards negative infinity,
-   * so the result for a negative number differs from `floor()`.
+   * Truncates the number to its integer part, discarding anything after
+   * the decimal point. Unlike `floor()`, this rounds toward zero, not
+   * toward negative infinity, so the result for a negative number is
+   * different from `floor()`.
    *
    * ```zuri-repl
    * %> 3.9.int()
@@ -231,10 +229,9 @@ class number {
   min(other: number) {}
 
   /**
-   * Returns the factorial of the number, i.e. the product of
-   * every positive integer less than or equal to it.
-   * `0.factorial()` is `1`, matching the standard mathematical
-   * definition.
+   * Returns the factorial of the number, which is the product of every
+   * positive integer up to and including it. `0.factorial()` is `1`, as
+   * in the standard mathematical definition.
    *
    * ```zuri-repl
    * %> 5.factorial()
@@ -243,8 +240,7 @@ class number {
    * 1
    * ```
    *
-   * @throws {Error} if the number is negative or not a whole
-   *    number.
+   * @throws {Error} if the number is negative or isn't a whole number.
    * @returns {number}
    */
   factorial() {}
@@ -292,23 +288,19 @@ class number {
   tanh() {}
 
   /**
-   * Returns the arcsine (inverse sine) of the number, in
-   * radians.
+   * Returns the arcsine (inverse sine) of the number, in radians.
    *
-   * @note Only defined for a receiver between `-1` and `1`
-   *    inclusive; outside that range, this returns `NaN` rather
-   *    than raising an error.
+   * @note It's only defined for a number from `-1` to `1`. Outside that
+   *    range, this returns `NaN` instead of raising an error.
    * @returns {number}
    */
   asin() {}
 
   /**
-   * Returns the arccosine (inverse cosine) of the number, in
-   * radians.
+   * Returns the arccosine (inverse cosine) of the number, in radians.
    *
-   * @note Only defined for a receiver between `-1` and `1`
-   *    inclusive; outside that range, this returns `NaN` rather
-   *    than raising an error.
+   * @note It's only defined for a number from `-1` to `1`. Outside that
+   *    range, this returns `NaN` instead of raising an error.
    * @returns {number}
    */
   acos() {}
@@ -347,9 +339,8 @@ class number {
   /**
    * Returns the inverse hyperbolic cosine of the number.
    *
-   * @note Only defined for a receiver greater than or equal to
-   *    `1`; below that, this returns `NaN` rather than raising
-   *    an error.
+   * @note It's only defined for a number greater than or equal to `1`.
+   *    Below that, this returns `NaN` instead of raising an error.
    * @returns {number}
    */
   acosh() {}
@@ -357,9 +348,9 @@ class number {
   /**
    * Returns the inverse hyperbolic tangent of the number.
    *
-   * @note Only defined for a receiver between `-1` and `1`
-   *    exclusive; outside that range, this returns `NaN` rather
-   *    than raising an error.
+   * @note It's only defined for a number greater than `-1` and less
+   *    than `1`. Outside that range, this returns `NaN` instead of
+   *    raising an error.
    * @returns {number}
    */
   atanh() {}
@@ -373,9 +364,9 @@ class number {
   exp() {}
 
   /**
-   * Returns _e_ raised to the power of the number, minus `1`.
-   * For a number close to zero, this is more numerically
-   * accurate than computing `n.exp() - 1` directly.
+   * Returns _e_ raised to the power of the number, minus `1`. For a
+   * number close to zero, this is more accurate than calculating
+   * `n.exp() - 1`.
    *
    * @returns {number}
    */
@@ -446,11 +437,10 @@ class number {
    * 4
    * ```
    *
-   * @note For a negative number this returns `NaN` rather than
-   *    raising an error; there is no `bigint`-style promotion
-   *    into complex numbers. Check `is_nan()` on the result, or
-   *    the sign of the receiver beforehand, if that distinction
-   *    matters to the caller.
+   * @note For a negative number, this returns `NaN` instead of raising
+   *    an error. There's no conversion to complex numbers. If the
+   *    difference matters, check `is_nan()` on the result, or check the
+   *    sign of the number first.
    * @returns {number}
    */
   sqrt() {}
@@ -516,8 +506,8 @@ class number {
   floor() {}
 
   /**
-   * Returns `true` if the number is NaN (not a number, e.g. the
-   * result of `0/0`), `false` otherwise.
+   * Returns `true` if the number is NaN (not a number), such as the
+   * result of `0/0`, and `false` otherwise.
    *
    * @returns {boolean}
    */
@@ -540,12 +530,11 @@ class number {
   is_finite() {}
 
   /**
-   * Truncates the number towards zero, discarding anything after
-   * the decimal point. For values that fit in a 64-bit integer
-   * this matches `int()`; unlike `int()`, `trunc()` stays a
-   * floating-point result rather than going through an integer
-   * cast, so it does not overflow for numbers larger than a
-   * 64-bit integer can hold.
+   * Truncates the number toward zero, discarding anything after the
+   * decimal point. For a value that fits in a 64-bit integer, this
+   * gives the same result as `int()`. Unlike `int()`, `trunc()` works
+   * entirely in floating point, without converting to an integer, so it
+   * doesn't overflow for a number too large for a 64-bit integer.
    *
    * ```zuri-repl
    * %> (-3.9).trunc()
@@ -557,10 +546,9 @@ class number {
   trunc() {}
 
   /**
-   * Returns the digits after the number's decimal point, read as
-   * a whole number rather than a fraction. Note that this is NOT
-   * the same as `(n - n.int())`: `1.92.fraction()` is `92`, not
-   * `0.92`.
+   * Returns the digits after the decimal point as a whole number, not
+   * as a fraction. This isn't the same as `(n - n.int())`:
+   * `1.92.fraction()` is `92`, not `0.92`.
    *
    * ```zuri-repl
    * %> 1.92.fraction()

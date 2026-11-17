@@ -1,17 +1,16 @@
 /**
  * @module ast
  *
- * The {Node} type `zuri.parse()` returns: a generic
- * representation of one AST node, tagged by `kind` (`'Binary'`,
- * `'If'`, `'Function'`, ...) with a `fields` dict holding
- * whatever that kind carries. There is one `Node` class rather
- * than one class per grammar rule, since the grammar has roughly
- * fifty expression/statement/declaration shapes, and a dedicated
- * class per shape would mean fifty near-identical classes to
- * maintain in lockstep with the parser forever after. A `fields`
- * entry that's itself node-shaped (or a list of node-shaped
- * entries) is already wrapped into a {Node} recursively, so you
- * never need to call `Node.from_dict()` yourself.
+ * The {Node} type that `zuri.parse()` returns, which is a generic
+ * representation of one node of the syntax tree. It's tagged with
+ * `kind`, such as `'Binary'`, `'If'` or `'Function'`, and has a
+ * `fields` dictionary with whatever that kind of node contains. There's
+ * a single `Node` class, not one class per grammar rule, because the
+ * grammar has around fifty kinds of expression, statement and
+ * declaration, and a class for each would mean fifty almost identical
+ * classes to keep in step with the parser. A `fields` entry that's
+ * itself a node, or a list of nodes, is already wrapped in a {Node}, so
+ * you never need to call `Node.from_dict()` yourself.
  *
  * ```zuri
  * import zuri
@@ -22,14 +21,14 @@
  * # Function
  * ```
  *
- * The tree is the program as it was written. A `for` loop is a
- * `For` node, `x += 1` is a `CompoundAssign`, and an interpolated
- * string is an `Interpolation`; none of them is rewritten into the
- * simpler forms the compiler turns them into.
+ * The tree is the program as it was written. A `for` loop is a `For`
+ * node, `x += 1` is a `CompoundAssign`, and an interpolated string is
+ * an `Interpolation`. None of them is rewritten into the simpler forms
+ * that the compiler turns them into.
  *
  * ## Positions
  *
- * Every node records the whole of the source it was read from:
+ * Every node records the part of the source it was read from:
  *
  * | Attribute | Meaning |
  * | --- | --- |
@@ -38,19 +37,19 @@
  * | `line`, `col` | Where it starts, both counted from 1 |
  * | `end_line`, `end_col` | Where it ends: the column just past its last character |
  *
- * Offsets count characters, not bytes, and index the source the
- * way slicing does, so `source[node.start, node.end]` is exactly
- * the node's own text. A node covers its delimiters: a string
- * literal's quotes, a block's braces, a call's parentheses.
+ * Offsets count characters, not bytes, and index the source the way
+ * slicing does, so `source[node.start, node.end]` is exactly the node's
+ * own text. A node covers its delimiters: a string literal's quotes, a
+ * block's braces, a call's parentheses.
  *
- * A statement or declaration starts at its keyword: `var total =
- * 1` starts at `var` and `def add(a, b)` at `def`. A class member
- * starts at its first word, `static` included. In a list of
- * declarations, `var a = 1, b`, each `Var` spans from its name to
- * the end of its value.
+ * A statement or declaration starts at its keyword: `var total = 1`
+ * starts at `var` and `def add(a, b)` at `def`. A class member starts
+ * at its first word, `static` included. In a list of declarations,
+ * `var a = 1, b`, each `Var` spans from its name to the end of its
+ * value.
  *
- * A node that names something through a name of its own also
- * says where that name is, in its `fields`:
+ * A node that names something through a name of its own also says where
+ * that name is, in its `fields`:
  *
  * | Kind | Field | Covers |
  * | --- | --- | --- |
@@ -60,33 +59,30 @@
  * | `For` | `key_span`, `value_span` | Each loop variable |
  * | `Import` | `segments` | Each part of the path |
  *
- * A span field is a plain dict with the same six keys a node has,
- * and a `For` without a key has a `key_span` of `nil`.
- * An import segment adds `text`, the part as written: `'.'`,
- * `'..'` or a name.
+ * A span field is a plain dict with the same six keys a node has, and a
+ * `For` without a key has a `key_span` of `nil`. An import segment adds
+ * `text`, the part as written: `'.'`, `'..'` or a name.
  *
- * A node the source leaves implicit has an empty span, `start ==
- * end`, where it would have been written: the `nil` of a `return`
- * with no value or of a `var` with no initializer sits just after
- * the keyword or name, and so does the `Any` type of an untyped
- * parameter and the `List` type of a `...` parameter.
+ * A node the source leaves implicit has an empty span, `start == end`,
+ * where it would have been written: the `nil` of a `return` with no
+ * value or of a `var` with no initializer sits just after the keyword
+ * or name, and so does the `Any` type of an untyped parameter and the
+ * `List` type of a `...` parameter.
  *
  * ## Comments and doc blocks
  *
- * Every `#`-comment and doc block comes back as its own
- * `'Comment'`/`'DocBlock'`-kind node, sitting exactly where it
- * appeared: as a sibling in the surrounding statement or
- * declaration list, at the top level, inside a `{ }` block, or
- * between two class members.
+ * Every `#` comment and doc block is returned as a node of its own, of
+ * kind `'Comment'` or `'DocBlock'`, exactly where it appeared: as a
+ * sibling in the surrounding list of statements or declarations, at the
+ * top level, inside a `{ }` block, or between two class members.
  *
- * A comment written in the middle of a statement, among a call's
- * arguments or between an `if` block's `}` and its `else`, has no
- * place among that statement's own nodes. It comes back as a
- * sibling placed immediately after the smallest statement,
- * declaration or class member that contains it, at that
- * statement's depth: a comment inside an `if` body three blocks
- * deep comes back three blocks deep, never hoisted to the top. Its
- * position still says where it was written.
+ * A comment written in the middle of a statement, such as among a
+ * call's arguments or between an `if` block's `}` and its `else`, has
+ * no place among that statement's own nodes. It's returned as a sibling
+ * placed just after the smallest statement, declaration or class member
+ * that contains it, at that statement's depth. A comment inside an `if`
+ * body three blocks deep is returned three blocks deep, never moved up
+ * to the top level. Its position still says where it was written.
  *
  * ```zuri
  * import zuri
@@ -99,7 +95,7 @@
  * echo body[2].kind        # Echo, the "echo 2" line, unaffected
  * ```
  *
- * A comment above a declaration comes back right before it:
+ * A comment above a declaration is returned just before it:
  *
  * ```zuri
  * import zuri
@@ -111,13 +107,13 @@
  * echo nodes[1].kind        # Function
  * ```
  *
- * A class body's fields and methods are two separate lists, a
- * `Class` node's `properties` and `methods`, so a comment between
- * a field and a method lands in `methods`, the list of the member
- * right after it, and a comment between two fields lands in
- * `properties`. A comment after the last member goes to the list
- * of the member before it. To rebuild a class body in its written
- * order, merge the two lists and sort them by `start`.
+ * A class body's fields and methods are two separate lists, a `Class`
+ * node's `properties` and `methods`, so a comment between a field and a
+ * method lands in `methods`, the list of the member right after it, and
+ * a comment between two fields lands in `properties`. A comment after
+ * the last member goes to the list of the member before it. To rebuild
+ * a class body in its written order, merge the two lists and sort them
+ * by `start`.
  *
  * ## Node kinds
  *
@@ -152,17 +148,16 @@
  * | `TypeHint` | `types`, `nullable` |
  * | `Argument` | `name`, `name_span`, `type_hint` |
  *
- * A `Literal`'s `value` leaves out the quotes, and an
- * `Interpolation`'s text parts come with their escapes already
- * applied. A `CompoundAssign`'s `op` and an `Update`'s name the
- * operator written, such as `'PlusEq'` or `'Increment'`.
+ * A `Literal`'s `value` leaves out the quotes, and an `Interpolation`'s
+ * text parts come with their escapes already applied. A
+ * `CompoundAssign`'s `op` and an `Update`'s name the operator written,
+ * such as `'PlusEq'` or `'Increment'`.
  *
- * Each entry of a `TypeHint`'s `types` is a node named after the
- * type: `Any`, `Bool`, `Int`, `Number`, `BigInt`, `String`,
- * `Bytes`, `List`, `Dict`, `Range`, `File`, `Function`, `Type`,
- * `Callable`, `Iterable`, or `Instance` for a class. Every one
- * carries `class_name`, the class an `Instance` names and `nil` on
- * the rest.
+ * Each entry of a `TypeHint`'s `types` is a node named after the type:
+ * `Any`, `Bool`, `Int`, `Number`, `BigInt`, `String`, `Bytes`, `List`,
+ * `Dict`, `Range`, `File`, `Function`, `Type`, `Callable`, `Iterable`,
+ * or `Instance` for a class. Every one carries `class_name`, the class
+ * an `Instance` names and `nil` on the rest.
  *
  * Statements:
  *
@@ -186,9 +181,9 @@
  * | `Decl` | `declaration`: a function declared inside a block |
  * | `Comment`, `DocBlock` | `text`: the comment without its `#`, `/*` and `*/` |
  *
- * A `For` written as `for value in iterable` has a `key` of `nil`.
- * An `Iter` clause left empty is `nil`, and with no steps `steps`
- * is an empty list.
+ * A `For` written as `for value in iterable` has a `key` of `nil`. An
+ * `Iter` clause left empty is `nil`, and with no steps `steps` is an
+ * empty list.
  *
  * Declarations:
  *
@@ -202,11 +197,21 @@
  *
  * An `Import`'s `name` is the `Identifier` it binds: the name after
  * `as` when `aliased` is true, otherwise the last part of its path,
- * placed on that part. `path` joins every part with the platform's
- * path separator. A decorated method's `name` keeps its `@`, as in
- * `'@new'`.
+ * placed on that part. `path` joins every part with the platform's path
+ * separator. A decorated method's `name` keeps its `@`, as in `'@new'`.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
+ * === libs/zuri/compile.zu
+ * @module compile
+ *
+ * The {Instr} type `zuri.compile()` returns: a generic representation
+ * of one VM instruction, tagged by `op` (`'LoadConst'`, `'Add'`,
+ * `'Jmp'`, ...) with a `fields` dict holding that opcode's own
+ * operands. As with {zuri.ast.Node}, there's one `Instr` class rather
+ * than one class per opcode. The instruction set has around sixty
+ * opcodes, and a dedicated class per opcode would be sixty
+ * near-identical classes to keep in sync with the compiler forever
+ * after.
  */
 
 import _zuri_parse
@@ -223,16 +228,16 @@ import .diagnostic { Diagnostic }
 class Node {
 
   /**
-   * Returns a new instance of a {Node} directly, from
-   * already-wrapped field values. Ordinary Zuri code should use
-   * `Node.from_dict()` or `zuri.parse()` instead, since this
-   * constructor does no wrapping of its own.
+   * Creates a {Node} directly from field values that are already
+   * wrapped. Ordinary Zuri code should use `Node.from_dict()` or
+   * `zuri.parse()` instead, because this constructor doesn't wrap
+   * anything itself.
    *
-   * @param string kind: The node's kind, e.g. `'Binary'`, `'If'`
-   * @param dict position: Where the node sits in its source, as
-   *    `{ start, end, line, col, end_line, end_col }`; see this
-   *    module's own docs for what each one counts
-   * @param dict fields: This kind's own fields, already wrapped
+   * @param string kind: the node's kind, such as `'Binary'` or `'If'`
+   * @param dict position: where the node is in its source, as
+   *    `{ start, end, line, col, end_line, end_col }`. See this
+   *    module's documentation for what each one counts.
+   * @param dict fields: this kind's own fields, already wrapped
    */
   @new(kind: string, position: dict, fields: dict) {
     self.kind = kind
@@ -278,9 +283,9 @@ class Node {
   }
 
   /**
-   * This node as `kind@line:col`, e.g. `'Binary@3:5'`, naming
-   * the line and column it starts at. A one-line summary; use
-   * `dump()` to actually see what's inside a node.
+   * This node as `kind@line:col`, such as `'Binary@3:5'`, giving the
+   * line and column where it starts. It's only a one-line summary. Use
+   * `dump()` to see what's inside a node.
    *
    * @returns string
    */
@@ -293,12 +298,11 @@ class Node {
   }
 
   /**
-   * A readable, indented, multi-line dump of this node and
-   * everything inside it, recursively. This is the actual way to
-   * find out what a `fields` entry is called for a kind you
-   * haven't looked up yet: `echo node.dump()` and read it,
-   * rather than guessing a key name and checking whether it
-   * happens to exist.
+   * A readable, indented dump of this node and everything inside it,
+   * over several lines. This is the way to find out what a `fields`
+   * entry is called for a kind you haven't looked up yet: run
+   * `echo node.dump()` and read it, instead of guessing a key and
+   * checking whether it exists.
    *
    * ```zuri
    * import zuri
@@ -306,7 +310,7 @@ class Node {
    * var nodes = zuri.parse('def add(a, b) { return a + b }')
    * echo nodes[0].dump()
    * ```
-   * 
+   *
    * prints
    *
    * ```
@@ -348,12 +352,12 @@ class Node {
    *   is_variadic: false
    * ```
    *
-   * Each node's header is its kind and the line and column it
-   * starts at. A span field such as `name_span` prints as the
-   * range it covers, `line:col-end_line:end_col`. The untyped
-   * parameters carry an implicit `Any` type sitting just after
-   * their names, and `class_name` is `nil` on `Any` because only an
-   * `Instance` type names a class.
+   * Each node's heading is its kind, and the line and column where it
+   * starts. A span field such as `name_span` is shown as the range it
+   * covers, `line:col-end_line:end_col`. The parameters without types
+   * have an implicit `Any` type just after their names, and
+   * `class_name` is `nil` for `Any`, because only an `Instance` type
+   * names a class.
    *
    * @returns string
    */
@@ -471,16 +475,16 @@ def _dump_lines(value, indent) {
 }
 
 /**
- * Parses `source` in full and returns its top-level declarations
- * as a list of {Node}. See this module's own doc comment for the
- * exact shape, and in particular for what is and isn't preserved
- * around comments.
+ * Parses all of `source`, and returns its top-level declarations as a
+ * list of {Node} objects. See this module's documentation for exactly
+ * what they look like, and in particular for what's kept around
+ * comments.
  *
- * Raises (rather than returning a partial result) on a syntax
- * error, since there is no meaningful AST to hand back for
- * source the parser itself couldn't make sense of.
+ * If there's a syntax error, this raises an error, instead of returning
+ * a partial result, because there's no meaningful syntax tree to return
+ * for source that the parser couldn't understand.
  *
- * @param string source: The Zuri source to parse
+ * @param string source: the Zuri source to parse
  * @returns list[Node]
  * @throws Error if `source` has a syntax error
  */
@@ -497,13 +501,13 @@ def parse(source) {
 class ParseResult {
 
   /**
-   * Returns a new {ParseResult}. Ordinary code receives these from
-   * `parse_partial()` rather than building them.
+   * Returns a new {ParseResult}. Ordinary code gets these from
+   * `parse_partial()`, instead of creating them.
    *
-   * @param list nodes: The top-level nodes read, as `parse()`
+   * @param list nodes: the top-level nodes that were read, as `parse()`
    *    returns them
-   * @param list errors: Every syntax error, as {zuri.Diagnostic}s,
-   *    in the order they occur in the source
+   * @param list errors: every syntax error, as {zuri.Diagnostic}
+   *    objects, in the order they occur in the source
    */
   @new(nodes: list, errors: list) {
     self.nodes = nodes
@@ -511,8 +515,8 @@ class ParseResult {
   }
 
   /**
-   * True when the source parsed without a single error, in which
-   * case `nodes` is exactly what `parse()` returns.
+   * True if the source parsed without any errors, in which case `nodes`
+   * is exactly what `parse()` returns.
    *
    * @returns bool
    */
@@ -567,10 +571,10 @@ def parse_partial(source: string) {
 }
 
 /**
- * Reads the file at `path` and parses as much of it as it can;
- * exactly `parse_partial(file(path).read())`.
+ * Reads the file at `path`, and parses as much of it as it can. This is
+ * the same as `parse_partial(file(path).read())`.
  *
- * @param string path: Path to the Zuri source file to parse
+ * @param string path: the path of the Zuri source file to parse
  * @returns ParseResult
  * @throws Error if `path` can't be opened or read
  */
@@ -579,15 +583,14 @@ def parse_partial_file(path: string) {
 }
 
 /**
- * Reads the file at `path` and parses its contents; exactly
- * `parse(file(path).read())`, for the common case of parsing a
- * real file rather than a source string you've already got in
- * hand.
+ * Reads the file at `path`, and parses its contents. This is the same
+ * as `parse(file(path).read())`, for the common case of parsing a file
+ * instead of a string of source.
  *
- * @param string path: Path to the Zuri source file to parse
+ * @param string path: the path of the Zuri source file to parse
  * @returns list[Node]
- * @throws Error if `path` can't be opened or read, or has a
- *    syntax error
+ * @throws Error if `path` can't be opened or read, or has a syntax
+ *    error
  */
 def parse_file(path) {
   return parse(file(path).read())
@@ -627,31 +630,30 @@ def _describe(value) {
 }
 
 /**
- * Recursively visits every node reachable from `nodes`
- * (typically `zuri.parse()`'s own result, or any single {Node}
- * plucked out of it), in the order they appear, calling
- * `visitor` for each one. This is the tool for "do something
- * with every `X`": most real uses of an AST are a walk, not
- * manual field-by-field navigation.
+ * Visits every node that can be reached from `nodes`, which is usually
+ * the result of `zuri.parse()` or a single {Node} taken from it, in the
+ * order they appear, and calls `visitor` for each one. This is the tool
+ * for doing something with every `X`. Most real uses of a syntax tree
+ * are walks, not navigation from field to field.
  *
- * `visitor` is either a plain function, called with every node
- * (`visitor(node)`), or a dict from kind name to function, where
- * only a node of that kind gets called
- * (`visitor[node.kind](node)`). Reach for the dict form when you
- * only care about one or two kinds; it reads as a small dispatch
- * table instead of a chain of `if node.kind == ...` checks
- * inside a single function.
+ * `visitor` is either a plain function, called with every node as
+ * `visitor(node)`, or a dictionary that maps kinds to functions, so
+ * that only nodes of those kinds are visited, as
+ * `visitor[node.kind](node)`. Use the dictionary form when you only
+ * care about one or two kinds, because it reads like a small dispatch
+ * table, instead of a chain of `if node.kind == ...` checks inside one
+ * function.
  *
- * Always visits the whole tree; there's no way for `visitor` to
- * skip descending into a particular node's children.
+ * The whole tree is always visited, because `visitor` can't choose to
+ * skip a node's children.
  *
  * ```zuri
  * import zuri
  *
  * var nodes = zuri.parse(source)
  *
- * # every function name declared anywhere in the file, including
- * # nested/inner functions
+ * # The name of every function declared in the file, including nested
+ * # functions.
  * var names = []
  * zuri.walk_nodes(nodes, {
  *   Function: @(node) { names.append(node.fields.name) },

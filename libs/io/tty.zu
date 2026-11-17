@@ -1,12 +1,12 @@
 /**
  * @module tty
  *
- * `TTY`: control over a terminal attached to a file handle.
+ * `TTY`, which controls a terminal attached to a file handle.
  *
- * Raw and cooked modes, echo, cursor visibility and terminal size all
- * live here. The underlying constants are read from the platform's own
- * `libc` at load time rather than hard-coded, because they differ
- * between operating systems.
+ * Raw and cooked modes, echo, cursor visibility and the terminal size
+ * are all handled here. The underlying constants are read from the
+ * platform's own `libc` when the module loads, instead of being
+ * hard-coded, because they differ between operating systems.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -208,9 +208,9 @@ class TTY {
   static var IXANY = _flag_table.IXANY
 
   /**
-   * Maintain state for UTF-8 VERASE. Only meaningful on Linux/Android/
-   * macOS; reads as `0` (a no-op bit) on platforms without it, such
-   * as the BSDs.
+   * Maintains state for UTF-8 erase (VERASE). It's only meaningful on
+   * Linux, Android and macOS, and reads as `0`, which has no effect, on
+   * platforms that don't have it, such as the BSDs.
    *
    * @type int
    * @static
@@ -551,42 +551,42 @@ class TTY {
   }
 
   /**
-   * sets the attributes of the current tty session
+   * Sets the attributes of the current TTY session.
    *
-   * > __NOTE__: - _option_ must be one ot the TCSA options above
-   * > (see their description above) - _attrs_ must be a
-   * > dictionary keyed by the TTY_ group constants above (TTY_IFLAG,
-   * > TTY_OFLAG, TTY_CFLAG, TTY_LFLAG, TTY_ISPEED, TTY_OSPEED hold a
-   * > single bit-flag number each; TTY_CC holds a list of control
-   * > character values, indexed by the VEOF/VERASE/etc constants
-   * > above) - one can safely omit any of the TTY_ groups listed
-   * > above and Zuri will fill in the default values as it exists.
-   * > - This flags will be merged and not overwritten
+   * - _option_ must be one of the `TCSA` options above.
+   * - _attrs_ must be a dictionary keyed by the `TTY_` group constants
+   *   above. `TTY_IFLAG`, `TTY_OFLAG`, `TTY_CFLAG`, `TTY_LFLAG`,
+   *   `TTY_ISPEED` and `TTY_OSPEED` each hold a single number of bit
+   *   flags, and `TTY_CC` holds a list of control character values,
+   *   indexed by the `VEOF`, `VERASE` and related constants above.
+   * - You can leave out any of the `TTY_` groups, and the current
+   *   values are used for them.
+   * - The flags are merged with the current ones, not replaced.
    *
-   * @note Unix only, for the same reason `get_attr()` is: there is no
-   *    console representation of a termios flag word to apply, and
-   *    accepting one would mean reporting success for a change that
-   *    never happened.
+   * @note This only works on Unix, for the same reason as `get_attr()`.
+   *    Windows consoles have no termios flags to apply, and accepting
+   *    them would mean reporting success for a change that never
+   *    happened.
    * @param number option
    * @param dict attr
    * @returns bool
-   * @raises Error on a platform without termios, or if the stream has
-   *    no terminal behind it.
+   * @raises Error on a platform without termios, or if the stream isn't
+   *    connected to a terminal.
    */
   set_attr(option: int, attrs: dict) {
     return _io.TTY.tcsetattr(self.std, option, attrs)
   }
 
   /**
-   * Sets the current tty to raw mode: input arrives a keystroke at a
-   * time, nothing is echoed back, and Ctrl+C reaches the program as a
-   * keystroke rather than being turned into a signal first.
+   * Puts the current TTY into raw mode. Input arrives one keystroke at
+   * a time, nothing is echoed, and Ctrl+C reaches the program as a
+   * keystroke, instead of being turned into a signal.
    *
-   * Works on Windows as well as Unix.
+   * This works on Windows as well as Unix.
    *
    * @returns bool
-   * @raises Error if the stream has no terminal behind it, which is
-   *    what a redirected or captured stream is.
+   * @raises Error if the stream isn't connected to a terminal, as with
+   *    a redirected or captured stream.
    */
   set_raw() {
     # A console's mode is set as one value rather than as the termios
@@ -635,18 +635,17 @@ class TTY {
   }
 
   /**
-   * Returns the size of the current TTY device as a dictionary
-   * of cols and rows.
+   * Returns the size of the current TTY as a dictionary with `cols` and
+   * `rows`.
    *
-   * - `cols`: the number of text columns that fit into the TTY
-   *   device.
-   * - `rows`: the number of text rows that fit into the TTY device.
+   * - `cols`: the number of columns of text that fit in the terminal.
+   * - `rows`: the number of rows of text that fit in the terminal.
    *
-   * Works on Windows as well as Unix.
+   * This works on Windows as well as Unix.
    *
    * @returns dict
-   * @raises Error if the stream has no terminal behind it, which is
-   *    what a redirected or captured stream is.
+   * @raises Error if the stream isn't connected to a terminal, as with
+   *    a redirected or captured stream.
    */
   get_size() {
     var size = _io.TTY.getsize(self.std)
@@ -655,16 +654,16 @@ class TTY {
   }
 
   /**
-   * Discards whatever is still queued on this TTY's stream, both
-   * input that has been typed but not yet read and output that has
-   * been written but not yet sent.
+   * Discards anything still waiting on this TTY's stream, both input
+   * that has been typed but not read yet, and output that has been
+   * written but not sent yet.
    *
-   * Note that this throws that data away rather than writing it out,
-   * which is the opposite of what `file.flush()` does.
+   * This throws the data away instead of writing it out, which is the
+   * opposite of what `file.flush()` does.
    *
-   * Never raises. The return value says whether anything was
-   * discarded: `false` for a stream with no terminal behind it, and
-   * `false` on Windows, which keeps no such queue.
+   * It never raises an error. The return value says whether anything
+   * was discarded. It's `false` for a stream that isn't connected to a
+   * terminal, and `false` on Windows, which doesn't keep such a queue.
    *
    * @returns bool
    */

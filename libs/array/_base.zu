@@ -1,16 +1,16 @@
 import struct
 
 /**
- * This is the base array class from which all other array types
- * inherit. It is not meant to be used directly.
+ * The base class that all the other array types inherit from. It isn't
+ * meant to be used directly.
  *
- * Every concrete subclass (`Int16Array`, `UInt64Array`, `FloatArray`,
- * ...) only needs to declare three things: `_item_size` (bytes per
- * element), `_data_type` (the `struct` format code for one element),
- * and `_validate_value()` (what values are acceptable, and their
- * range). Everything else: construction from a number/list/bytes,
- * indexing, growth, insertion, removal, iteration, and conversion:
- * lives here once.
+ * Each subclass, such as `Int16Array`, `UInt64Array` or `FloatArray`,
+ * only needs to declare three things: `_item_size`, the number of bytes
+ * per element, `_data_type`, the `struct` format code for one element,
+ * and `_validate_value()`, which decides which values are acceptable
+ * and in what range. Everything else is implemented once, here:
+ * creating an array from a number, a list or bytes, indexing, growing,
+ * inserting, removing, iterating and converting.
  */
 class Array {
 
@@ -69,11 +69,11 @@ class Array {
   }
 
   /**
-   * Validates a single element value before it is stored, raising
-   * when it isn't acceptable for this array's element type/range.
-   * The base implementation accepts anything `struct.pack` itself
-   * can encode; subclasses override this to enforce a real type and
-   * range check (e.g. "integer, and within int16 bounds").
+   * Checks a single value before it's stored, and raises an error if it
+   * isn't valid for this array's element type and range. The base
+   * implementation accepts anything that `struct.pack` can encode.
+   * Subclasses override this to check the type and range properly, for
+   * example that the value is an integer within the range of an int16.
    *
    * @should_override
    * @param any value
@@ -324,9 +324,9 @@ class Array {
   }
 
   /**
-   * Sets every element in `[start, end)` to _value_ (both default
-   * to the whole array; negative bounds count from the end, the
-   * same as `_normalize_index`). Returns `self`.
+   * Sets every element from `start` up to, but not including, `end` to
+   * _value_. Both default to the whole array, and negative values count
+   * from the end, as in `_normalize_index`. Returns `self`.
    *
    * @param number value
    * @param ?number start
@@ -448,9 +448,8 @@ class Array {
   }
 
   /**
-   * Returns a string representation of the array, showing its
-   * decoded elements (e.g. `[1, 2, 3]`) rather than the raw
-   * underlying bytes.
+   * Returns a string that shows the array's decoded elements, such as
+   * `[1, 2, 3]`, instead of its raw bytes.
    *
    * @returns string
    */

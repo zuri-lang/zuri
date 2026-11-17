@@ -1,15 +1,13 @@
 /**
  * @module validate
  *
- * Schema-based input validation for Zuri applications.
+ * Validates input against a schema of rules.
  *
- * The `validate` module provides a fluent, chainable API for defining
- * field-level validation rules, composing them into schemas, and checking
- * arbitrary data dictionaries against those schemas.
+ * You describe the rules for each field by chaining method calls,
+ * combine the fields into a schema, and then check dictionaries of data
+ * against it.
  *
- * ---
- *
- * ### Quick start
+ * ### A first example
  *
  * ```zuri
  * import validate
@@ -36,17 +34,15 @@
  * }
  * ```
  *
- * ---
+ * ### Chaining rules
  *
- * ### Rule chaining
- *
- * Every top-level function returns a `Validator` instance.  Rules are
- * evaluated in the order they are chained.  By default, evaluation stops
- * at the first failing rule for each field (bail mode).  Pass
- * `.bail(false)` to collect all errors for a field.
+ * Every top-level function returns a `Validator`. Rules run in the
+ * order they're chained, and by default, a field's rules stop at the
+ * first one that fails. Call `.bail(false)` to collect every error for
+ * the field instead.
  *
  * ```zuri
- * # Collects every error for "password" rather than stopping at the first.
+ * # Reports every problem with the password, not just the first one.
  * var rules = validate.schema({
  *   password: validate.required().string()
  *     .min_length(8)
@@ -56,23 +52,19 @@
  * })
  * ```
  *
- * ---
- *
  * ### Optional fields
  *
  * ```zuri
  * var rules = validate.schema({
- *   # bio is optional; when present it must be at most 500 chars.
+ *   # bio is optional, but if it's given, it must be at most 500 characters.
  *   bio: validate.string().max_length(500).sometimes(),
  *
- *   # nickname is optional and may be nil.
+ *   # nickname is optional and can be nil.
  *   nickname: validate.nullable().string().max_length(30).sometimes(),
  * })
  * ```
  *
- * ---
- *
- * ### Cross-field validation
+ * ### Rules that depend on other fields
  *
  * ```zuri
  * var schema = validate.schema({
@@ -83,13 +75,12 @@
  * })
  * ```
  *
- * `required_if()` (like the other conditional-requirement functions
- * below) must come before `.string()` in the chain: see "Sequential
- * Validation" further down for why the order here matters.
+ * Start the chain with `required_if()`, as above, and with the other
+ * conditional functions too. "Rule order" below explains why.
  *
- * ---
+ * ### Nested fields
  *
- * ### Nested fields (dot-notation)
+ * Use dots in a field name to reach into nested dictionaries:
  *
  * ```zuri
  * var schema = validate.schema({
@@ -99,9 +90,9 @@
  * })
  * ```
  *
- * ---
+ * ### List items
  *
- * ### List items (wildcard)
+ * A `*` in a field name applies the rules to every item in a list:
  *
  * ```zuri
  * var schema = validate.schema({
@@ -109,11 +100,9 @@
  * })
  * ```
  *
- * ---
- *
  * ### Custom rules
  *
- * Inline function:
+ * With a function:
  *
  * ```zuri
  * var schema = validate.schema({
@@ -123,7 +112,7 @@
  * })
  * ```
  *
- * Subclassing `Rule`:
+ * With a subclass of `Rule`:
  *
  * ```zuri
  * import validate { Rule, Validator }
@@ -141,9 +130,7 @@
  * })
  * ```
  *
- * ---
- *
- * ### Raising on failure
+ * ### Raising an error when validation fails
  *
  * ```zuri
  * import validate { ValidationError }
@@ -161,9 +148,7 @@
  * }
  * ```
  *
- * ---
- *
- * ### HTTP handler pattern
+ * ### In an HTTP handler
  *
  * ```zuri
  * import http
@@ -190,13 +175,18 @@
  * })
  * ```
  *
- * ### Sequential Validation
+ * ### Rule order
  *
- * The validation mode is sequential, meaning that each field is validated in turn.
- * This is the behavior you expect from a form submission. It is important to keep
- * this in mind when using this module.
+ * A field's rules run in the order they're chained, and the order can
+ * change the result. The top-level conditional functions,
+ * `required_if()`, `required_unless()`, `required_with()`,
+ * `required_with_all()`, `required_without()`,
+ * `required_without_all()`, `prohibited_if()` and
+ * `prohibited_unless()`, also make the field nullable. So when the
+ * field is empty and the condition doesn't make it required, the rest
+ * of its rules are skipped.
  *
- * Consider the example below:
+ * Take this schema:
  *
  * ```zuri
  * var schema = validate.schema({
@@ -205,11 +195,10 @@
  * })
  * ```
  *
- * If the `age` field is empty, the validation of `name` will not raise any error. This is
- * because the required_if rule is only applied if the `age` field is 30 or greater and the
- * entire chain exists before the next rule `string()`.
+ * If `age` isn't 30 and `name` is empty, `name` passes, because
+ * `required_if()` comes first and the rules after it are skipped.
  *
- * However, if the validation rules were modified like this:
+ * Now move the condition later in the chain:
  *
  * ```zuri
  * var schema = validate.schema({
@@ -218,12 +207,12 @@
  * })
  * ```
  *
- * Even when the `age` field is empty, the validation of `name` will raise an error if it is empty.
- * This is because the `string` rule comes before the `required_if` rule.
+ * Here `string()` runs first, so an empty `name` fails with "The name
+ * field must be a string.", whatever `age` is.
  *
- * With this behavior in mind, it is advised that optional rules such as `sometimes`, `nullable`,
- * `*_if`, `*_unless` rules are applied early in the chain unless you absolutely want them to fail
- * irrespective.
+ * So put `sometimes()`, `nullable()` and the conditional rules, such as
+ * the `*_if` and `*_unless` rules, at the start of the chain, unless
+ * you want the later rules to apply even when the field is empty.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */

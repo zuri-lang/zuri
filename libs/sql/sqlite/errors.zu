@@ -1,16 +1,16 @@
 /**
  * @module errors
  *
- * Turning SQLite's result codes into the shared error classes.
+ * Maps SQLite's result codes to the shared error classes.
  *
  * SQLite reports failures as small integers. The native layer puts the
- * extended code in front of every message it raises, in the form
- * `[2067] UNIQUE constraint failed: t.a`, and this module reads it back
- * out and picks the class that says the same thing in the vocabulary
- * every adapter shares.
+ * extended result code at the start of every error message it raises,
+ * in the form `[2067] UNIQUE constraint failed: t.a`, and this module
+ * reads it back and picks the class that means the same thing in the
+ * terms every adapter shares.
  *
- * Extended codes rather than primary ones, because the distinctions
- * worth acting on live there: every constraint failure is the primary
+ * It uses extended codes instead of primary ones, because that's where
+ * the useful distinctions are. Every constraint failure has the primary
  * code 19, and only the extended code says whether it was a unique
  * index, a foreign key or a NOT NULL column.
  *

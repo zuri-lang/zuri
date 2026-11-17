@@ -44,7 +44,7 @@ def render_member(member, receiver: string) {
     for tag in params {
       var type = code(tag.type)
       var head = type == '' ? '`${tag.name}`' : '`${tag.name}` (${type})'
-      var line = tag.text == '' ? '- ${head}' : '- ${head} — ${tag.text}'
+      var line = tag.text == '' ? '- ${head}' : '- ${head}: ${tag.text}'
 
       for wrapped in wrap_bullet(line, 2) {
         out.append(wrapped)
@@ -63,7 +63,7 @@ def render_member(member, receiver: string) {
     if returns.text == '' {
       out.append(head)
     } else {
-      for wrapped in wrap('${head} — ${returns.text}') {
+      for wrapped in wrap('${head}: ${returns.text}') {
         out.append(wrapped)
       }
     }
@@ -188,9 +188,9 @@ def render_type_page(spec, members: list) {
   out.append('')
 
   for line in wrap(
-    'Every method on the built-in `${spec.stub}` type, with its ' +
-        'signature, what it returns, and the cases where it does ' +
-        'something other than the obvious thing.',
+    'Every method of the built-in `${spec.stub}` type, with its ' +
+        'signature, what it returns, and any behavior you might not ' +
+        'expect.',
   ) {
     out.append(line)
   }
@@ -244,9 +244,9 @@ def render_builtins_page(functions: list, variables: list) {
   out.append('')
 
   for line in wrap(
-    'These functions are available in every file with no import. ' +
-        'They are the parts of the language that happen to be spelled ' +
-        'as calls rather than as syntax.',
+    'These functions are available in every file, without an import. ' +
+        'They are the parts of the language that are written as function ' +
+        'calls instead of as syntax.',
   ) {
     out.append(line)
   }
@@ -273,7 +273,7 @@ def render_builtins_page(functions: list, variables: list) {
 
     for line in wrap(
       'Every file also has these variables, which describe the file ' +
-          'itself rather than anything it declares.',
+          'itself, not anything it declares.',
     ) {
       out.append(line)
     }
@@ -302,10 +302,10 @@ def render_index_page(types: list, counts: dict) {
   out.append('')
 
   for line in wrap(
-    'Every method on every built-in type, with its signature, what it ' +
-        'returns, and its edge cases. This is the reference; the chapters ' +
-        'in [Text, Numbers and Collections](ch04-00-collections.md) are ' +
-        'the introduction.',
+    'Every method of every built-in type, with its signature, what it ' +
+        'returns, and its edge cases. This appendix is the reference. For ' +
+        'an introduction, see the chapters in ' +
+        '[Text, Numbers and Collections](ch04-00-collections.md).',
   ) {
     out.append(line)
   }

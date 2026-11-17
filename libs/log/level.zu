@@ -1,17 +1,22 @@
 /**
  * @module log.level
  *
- * The `LogLevel` enum, its module-level constant exports, and the
- * single shared "default level" that every registered transport is
- * filtered against unless it has its own level configured.
+ * The `LogLevel` enum, the module-level constants for its values, and
+ * the shared default level that every registered transport filters by,
+ * unless it has a level of its own.
  */
 
 import enum
 
 /**
- * The Log levels in order
+ * The log levels, in order:
  *
- * - None - Debug - Info - Warning - Error - Critical
+ * - None
+ * - Debug
+ * - Info
+ * - Warning
+ * - Error
+ * - Critical
  *
  * @type enum
  */

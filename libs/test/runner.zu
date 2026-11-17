@@ -1,40 +1,39 @@
 /**
  * @module test.runner
  *
- * Collecting the tests a file declares, deciding which of them to
- * run, and running them.
+ * Collects the tests that a file declares, decides which of them to
+ * run, and runs them.
  *
- * ### Two phases, not one
+ * ### Two separate phases
  *
- * `describe()` and `it()` do not run anything. They build a tree, and
+ * `describe()` and `it()` don't run anything. They build a tree, and
  * `run()` walks it afterwards. That separation is what makes `only`,
- * filtering, shuffling, bailing and an up-front test count possible
- * at all: none of them can be decided while the file is still being
- * read.
+ * filtering, shuffling, stopping early and counting tests in advance
+ * possible, because none of them can be decided while the file is still
+ * being read.
  *
  * Declaring the first test registers an `os.at_exit()` handler that
- * calls `run()` once the file is done, so a test file needs no
- * closing line. An explicit `run()` marks the tree as run and the
- * handler then does nothing.
+ * calls `run()` once the file has finished, so a test file doesn't need
+ * a final line to start the run. An explicit `run()` marks the tree as
+ * run, and the handler then does nothing.
  *
- * ### Hook ordering
+ * ### Hook order
  *
- * `before_all` runs once, immediately before the first test in its
- * suite that is actually going to run, and not at all for a suite
+ * `before_all` runs once, just before the first test in its suite
+ * that's actually going to run, and doesn't run at all for a suite
  * whose tests were all filtered out. `after_all` runs after the last
- * one, and only if `before_all` ran; it runs even when `before_all`
- * failed, so whatever the setup acquired before failing is still let
- * go. `before_each` runs outermost
- * first, `after_each` innermost first, and `after_each` runs even
- * when the test failed.
+ * test, but only if `before_all` ran. It runs even if `before_all`
+ * failed, so that whatever the setup acquired before it failed is still
+ * released. `before_each` runs outermost first, and `after_each`
+ * innermost first, and `after_each` runs even if the test failed.
  *
  * ### Timeouts
  *
  * Zuri runs synchronously, so a test runs to completion and is then
- * timed: the `timeout` option is measured after the body returns. It
- * catches a test that got too slow, not one that hangs. A hang needs a
- * process boundary, which is what the conductor puts around each file;
- * see {test.conduct}.
+ * timed, which means the `timeout` option is checked after the body
+ * returns. It catches a test that has become too slow, but not one that
+ * never finishes. Catching that needs a separate process, which is what
+ * the conductor runs each file in. See {test.conduct}.
  */
 
 import io

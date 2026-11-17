@@ -1,11 +1,11 @@
 /**
  * @module rule
  *
- * Defines the base `Rule` class that all built-in and custom validation
- * rules extend.  To create a custom rule, subclass `Rule` and implement
- * `validate(value)` and `error()`.
+ * Defines `Rule`, the base class of every validation rule, whether it's
+ * built in or custom. To write a custom rule, subclass `Rule` and
+ * implement `validate(value)` and `error()`.
  *
- * ### Custom rule example
+ * ### Example
  *
  * ```zuri
  * import validate { Rule, Validator }
@@ -22,7 +22,7 @@
  *   }
  * }
  *
- * # Use directly on a Validator:
+ * # Use it directly on a Validator:
  * var v = Validator().use(Palindrome)
  * ```
  */
@@ -123,22 +123,23 @@ class Rule {
 }
 
 /**
- * Builds one `Rule` instance from a `[rule_class, ...args]` entry: the
- * shape `Validator._rules` stores each chained rule as: with
- * `field_name` prepended as the rule's first constructor argument.
+ * Creates one `Rule` from a `[rule_class, ...args]` entry, which is the
+ * form that `Validator._rules` stores each chained rule in.
+ * `field_name` is passed as the rule's first constructor argument.
  *
- * Shared by `Schema` (running a field's whole chain) and `Each` (running
- * a nested chain once per list item), which is why this lives here
- * rather than as a private helper duplicated in both: `schema.zu` and
- * `rules.zu` both already depend on this file, and neither depends on
- * the other, so this is the one shared place both can reach without a
- * circular import. Not re-exported from `index.zu`: this is internal
- * machinery for the module itself, not part of its public API.
+ * `Schema` uses this to run a field's whole chain, and `Each` uses it
+ * to run a nested chain once for each item in a list. It's defined
+ * here, instead of as a private helper in both, because `schema.zu` and
+ * `rules.zu` both already depend on this file and neither depends on
+ * the other, so this is the one place both can reach without a circular
+ * import. `index.zu` doesn't re-export it, because it's internal to the
+ * module, not part of its public API.
  *
  * @param list entry `[rule_class, ...constructor_args]`.
  * @param string field_name
  * @returns Rule
- * @throws Error When `entry` has more than 3 extra constructor arguments.
+ * @throws Error When `entry` has more than 3 extra constructor
+ *    arguments.
  */
 def instantiate_rule(entry, field_name) {
   var rule_class = entry[0]

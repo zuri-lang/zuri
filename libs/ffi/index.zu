@@ -1,15 +1,16 @@
 /**
  * @module ffi
  *
- * Calling C and Rust libraries, and being called by them.
+ * Calls C and Rust libraries, and lets them call back into Zuri.
  *
- * `ffi` loads a shared library, describes the functions in it, and calls
- * them with ordinary Zuri values. Every conversion across the boundary
- * is checked against the C type, so a value that does not fit is an
- * error at the call rather than a corrupted argument inside the library.
- * The module reads C and Rust declarations as their headers and crates
- * write them, links static libraries into loadable ones, and turns Zuri
- * functions into C function pointers.
+ * `ffi` loads a shared library, describes the functions in it, and
+ * calls them with ordinary Zuri values. Every conversion between Zuri
+ * and C is checked against the C type, so a value that doesn't fit
+ * raises an error at the call, instead of becoming a corrupted argument
+ * inside the library. The module reads C and Rust declarations as
+ * they're written in headers and crates, links static libraries into
+ * libraries that can be loaded, and turns Zuri functions into C
+ * function pointers.
  *
  * ```zuri,ignore
  * import ffi
@@ -23,33 +24,34 @@
  * echo c.abs(-7)
  * ```
  *
- * ### Values at the boundary
+ * ### Converting values
  *
- * Numbers become any C integer or floating-point type, with integers
- * range-checked against their type. Integers too large for a number to
- * hold exactly, 64- and 128-bit ones, travel as bigints both ways. A
- * string passed to a `char *` becomes a NUL-terminated copy for the
- * duration of the call; bytes pass their own storage with nothing
- * copied; a list or dictionary passed to a pointer becomes a temporary
- * array or struct, written back afterwards unless the pointer is to
- * `const`. Structs and unions by value are dictionaries. `nil` is a null
- * pointer, and a null pointer coming back is `nil`.
+ * A number can be passed as any C integer or floating-point type, and
+ * integers are range-checked against their type. Integers too large for
+ * a number to hold exactly, which means 64-bit and 128-bit ones, are
+ * passed as bigints in both directions. A string passed to a `char *`
+ * becomes a NUL-terminated copy for the duration of the call. Bytes are
+ * passed as their own storage, without copying. A list or dictionary
+ * passed to a pointer becomes a temporary array or struct, which is
+ * written back afterwards unless the pointer is `const`. Structs and
+ * unions passed by value are dictionaries. `nil` is a null pointer, and
+ * a null pointer that comes back is `nil`.
  *
  * ### Memory
  *
- * `alloc()` and its siblings hand out memory that knows its own size,
- * and every access through a pointer into it is bounds-checked and
- * refused once the memory is freed. Memory C returns can be taken over
- * with `Pointer.own()`, which releases it with the right function when
- * the pointer is collected.
+ * `alloc()` and the related functions return memory that knows its own
+ * size. Every access through a pointer into that memory is
+ * bounds-checked, and refused once the memory has been freed. Memory
+ * returned by C can be taken over with `Pointer.own()`, which frees it
+ * with the right function when the pointer is garbage collected.
  *
  * ### Callbacks
  *
- * A Zuri function passed to a function-pointer parameter works as a
- * callback for that call. `callback()` makes one that lasts, for a
- * library that keeps the pointer. A callback can be called from any
- * thread: from another thread, the call waits until the isolate that
- * made the callback runs it.
+ * A Zuri function passed to a function pointer parameter works as a
+ * callback for the duration of that call. `callback()` creates one that
+ * lasts, for a library that keeps the pointer. A callback can be called
+ * from any thread. When it's called from another thread, the call waits
+ * until the isolate that created the callback runs it.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -87,7 +89,8 @@ var LIBM: string = _ffi.libm_name()
 var void: Type = _ffi.builtin_type('void')
 
 /**
- * `bool`: C's `_Bool` and Rust's `bool`, one byte; a Zuri bool.
+ * `bool`: C's `_Bool` and Rust's `bool`, one byte, converted to and
+ * from a Zuri bool.
  * @type Type
  */
 var bool: Type = _ffi.builtin_type('bool')
@@ -208,13 +211,13 @@ var int64: Type = _ffi.builtin_type('int64_t')
 var uint64: Type = _ffi.builtin_type('uint64_t')
 
 /**
- * `__int128`, a 128-bit integer; Rust's `i128`.
+ * `__int128`, a 128-bit integer, and Rust's `i128`.
  * @type Type
  */
 var int128: Type = _ffi.builtin_type('__int128')
 
 /**
- * `unsigned __int128`; Rust's `u128`.
+ * `unsigned __int128`, and Rust's `u128`.
  * @type Type
  */
 var uint128: Type = _ffi.builtin_type('unsigned __int128')
@@ -289,9 +292,9 @@ var double: Type = _ffi.builtin_type('double')
 var longdouble: Type = _ffi.builtin_type('long double')
 
 /**
- * `float _Complex`: a list of two numbers, `[real, imaginary]`. Passing
- * one by value is not available on Windows, whose C compiler has no
- * `_Complex`; in memory it works everywhere.
+ * `float _Complex`, as a list of two numbers, `[real, imaginary]`. It
+ * can't be passed by value on Windows, whose C compiler has no
+ * `_Complex` type, but it works in memory on every platform.
  * @type Type
  */
 var complex_float: Type = _ffi.builtin_type('float _Complex')
@@ -418,15 +421,15 @@ var rust_char: Type = _ffi.builtin_type('rust char')
 /**
  * Loads a shared library.
  *
- * `name` is a path, a file name, or a bare name the platform's naming
- * convention completes: `sqlite3` is tried as `libsqlite3.so` and then
- * as the versioned file the loader's cache lists on Linux,
- * `libsqlite3.dylib` and `sqlite3.framework` on macOS, and `sqlite3.dll`
- * on Windows. The directories in `paths` are searched first, then the
- * platform's own search order.
+ * `name` is a path, a file name, or a bare name that's completed using
+ * the platform's naming convention. `sqlite3` is tried as
+ * `libsqlite3.so` and then as the versioned file listed in the loader's
+ * cache on Linux, as `libsqlite3.dylib` and `sqlite3.framework` on
+ * macOS, and as `sqlite3.dll` on Windows. The directories in `paths`
+ * are searched first, followed by the platform's own search order.
  *
- * With no name, the result is the running process itself, whose symbols
- * include everything already loaded into it.
+ * Without a name, the result is the running process itself, whose
+ * symbols include everything already loaded into it.
  *
  * ```zuri,ignore
  * var libc = ffi.open(ffi.LIBC)
@@ -434,13 +437,14 @@ var rust_char: Type = _ffi.builtin_type('rust char')
  * ```
  *
  * @param string|nil name
- * @param dict|nil options `paths`, a list of directories searched first;
- *   `lazy`, resolve symbols as they are first used rather than at load
- *   (default `false`); `global`, make the library's symbols visible to
- *   libraries loaded after it (default `false`). `lazy` and `global`
- *   have no effect on Windows.
+ * @param dict|nil options `paths`, a list of directories to search
+ *    first, `lazy`, to resolve symbols when they're first used instead
+ *    of when the library is loaded (defaults to `false`), and `global`,
+ *    to make the library's symbols visible to libraries loaded after it
+ *    (defaults to `false`). `lazy` and `global` have no effect on
+ *    Windows.
  * @returns Library
- * @throws LoadError when the library cannot be found or loaded.
+ * @throws LoadError if the library can't be found or loaded.
  */
 def open(name, options) {
   options = options or {}
@@ -475,24 +479,24 @@ def declarations() {
 }
 
 /**
- * A set of declarations read from C source; the same as
+ * A set of declarations read from C source. This is the same as
  * `declarations().declare(source)`.
  *
  * @param string source
  * @returns Declarations
- * @throws DeclarationError when the source cannot be read.
+ * @throws DeclarationError if the source can't be read.
  */
 def declare(source: string) {
   return _ffi.declarations().declare(source)
 }
 
 /**
- * A set of declarations read from Rust source; the same as
+ * A set of declarations read from Rust source. This is the same as
  * `declarations().declare_rust(source)`.
  *
  * @param string source
  * @returns Declarations
- * @throws DeclarationError when the source cannot be read.
+ * @throws DeclarationError if the source can't be read.
  */
 def declare_rust(source: string) {
   return _ffi.declarations().declare_rust(source)
@@ -521,9 +525,9 @@ def union(name) {
 /**
  * A new enum type to add constants to.
  *
- * @param string|nil name The name it prints as.
- * @param Type|nil type The integer type values are stored as. Defaults
- *   to `int`, which is what C uses.
+ * @param string|nil name The name it's printed as.
+ * @param Type|nil type The integer type that values are stored as.
+ *    Defaults to `int`, as in C.
  * @returns EnumType
  */
 def enum(name, type) {
@@ -533,11 +537,12 @@ def enum(name, type) {
 /**
  * A pointer type.
  *
- * @param Type type What it points at; `void` for an untyped pointer.
- * @param dict|nil options `nonnull`, `true` to refuse `nil` where one is
- *   passed, as a Rust reference does (default `false`); `text`, an
- *   encoding (`'utf-8'`, `'utf-16'`, `'utf-32'` or `'wide'`) that makes
- *   the pointer convert to and from a string the way `ffi.string` does.
+ * @param Type type What it points to, or `void` for an untyped pointer.
+ * @param dict|nil options `nonnull`, `true` to refuse `nil` as an
+ *    argument, as a Rust reference does (defaults to `false`), and
+ *    `text`, an encoding (`'utf-8'`, `'utf-16'`, `'utf-32'` or
+ *    `'wide'`) that converts the pointer to and from a string in the
+ *    same way as `ffi.string`.
  * @returns Type
  */
 def pointer(type, options) {
@@ -580,13 +585,13 @@ def function_type(returns, params: list, options) {
 }
 
 /**
- * The `#[repr(C)]` struct of a pointer and a length that a Rust slice is
- * passed across the C ABI as: `{ ptr, len }`, with `len` a `usize`
- * counting elements.
+ * The `#[repr(C)]` struct, made of a pointer and a length, that a Rust
+ * slice is passed as across the C ABI: `{ ptr, len }`, where `len` is a
+ * `usize` that counts elements.
  *
  * @param Type type The element type.
- * @param bool|nil mutable Whether the pointer is `*mut`; defaults to a
- *   `*const` one.
+ * @param bool|nil mutable Whether the pointer is `*mut`. Defaults to
+ *    `*const`.
  * @returns StructType
  */
 def slice(type, mutable) {
@@ -735,7 +740,8 @@ def describe(function) {
 }
 
 /**
- * A lasting C function pointer that calls `function`.
+ * A C function pointer that calls `function`, and lasts until it's
+ * released.
  *
  * ```zuri,ignore
  * var on_event = ffi.callback(@(code) {
@@ -745,19 +751,20 @@ def describe(function) {
  * lib.set_handler(on_event)
  * ```
  *
- * The callback lives until `Callback.release()`. When the Zuri function
- * raises, C gets `error_value` (or zero), and the error is raised again
- * as soon as control returns to Zuri.
+ * The callback lasts until `Callback.release()` is called. If the Zuri
+ * function raises an error, C gets `error_value`, or zero, and the
+ * error is raised again as soon as control returns to Zuri.
  *
  * @param function function
  * @param Type type A function type, or a pointer to one.
  * @param dict|nil options `error_value`, returned to C when `function`
- *   raises. Defaults to zero, or nothing for a `void` callback.
+ *    raises an error. Defaults to zero, or nothing for a `void`
+ *    callback.
  * @returns Callback
- * @throws TypeError when `type` is not a function type or is variadic.
- * @throws CallbackError when 256 callbacks returning a 128-bit integer
- *   under the Microsoft x64 convention are alive already; each one
- *   released makes room for another.
+ * @throws TypeError if `type` isn't a function type, or is variadic.
+ * @throws CallbackError if 256 callbacks that return a 128-bit integer
+ *    under the Microsoft x64 calling convention already exist.
+ *    Releasing one makes room for another.
  */
 def callback(function, type, options) {
   options = options or {}
@@ -813,35 +820,36 @@ def last_error() {
 }
 
 /**
- * Links static libraries into a shared one with the platform's linker,
- * and loads it.
+ * Links static libraries into a shared library with the platform's
+ * linker, and loads it.
  *
  * ```zuri,ignore
  * var lib = ffi.link('target/release/libgeometry.a')
  * ```
  *
  * Every object in the archives is linked in. The result is cached under
- * a name derived from the archives' contents and the options, so the
- * linker runs once for a given input. An archive holding Rust code is
- * recognised and linked against the system libraries Rust's standard
- * library needs.
+ * a name based on the contents of the archives and the options, so the
+ * linker only runs once for the same input. An archive that contains
+ * Rust code is detected, and linked against the system libraries that
+ * Rust's standard library needs.
  *
  * The linker is the C compiler, `cc` or `$CC`, on Linux and macOS, and
- * MSVC's `link.exe` on Windows, found through the Visual Studio
- * installation. On Windows a static library's functions are not
- * exported by default, so every symbol the archives define with an
- * unmangled name is.
+ * MSVC's `link.exe` on Windows, which is found through the Visual
+ * Studio installation. On Windows, a static library's functions aren't
+ * exported by default, so every symbol with an unmangled name that the
+ * archives define is exported.
  *
- * @param string|list archives One path or a list of them.
- * @param dict|nil options `libraries`, names to link against (`['m']`);
- *   `search_paths`, directories to find them in; `exports`, on Windows
- *   the exact symbols to export; `linker`, the program to run; `flags`,
- *   further arguments for it; `cache`, the directory results are kept
- *   in (default `default_link_cache()`); `rust`, whether the archives
- *   hold Rust code (detected when left out).
+ * @param string|list archives One path, or a list of paths.
+ * @param dict|nil options `libraries`, the names of libraries to link
+ *    against, such as `['m']`, `search_paths`, the directories to find
+ *    them in, `exports`, the exact symbols to export on Windows,
+ *    `linker`, the program to run, `flags`, extra arguments for it,
+ *    `cache`, the directory where results are kept (defaults to
+ *    `default_link_cache()`), and `rust`, whether the archives contain
+ *    Rust code (detected if it's left out).
  * @returns Library
- * @throws LinkError with the linker's output when linking fails.
- * @throws LoadError when the linked library cannot be loaded.
+ * @throws LinkError with the linker's output if linking fails.
+ * @throws LoadError if the linked library can't be loaded.
  */
 def link(archives, options) {
   if is_string(archives) {
@@ -865,13 +873,14 @@ def default_link_cache() {
 }
 
 /**
- * The facts about this platform that decide how C types are laid out:
- * `{ os, arch, pointer_size, long_size, wchar_size, char_signed,
- * long_double, complex, layout }`.
+ * The facts about this platform that determine how C types are laid
+ * out:
+ * `{ os, arch, pointer_size, long_size, wchar_size, char_signed, long_double, complex, layout }`.
  *
- * `long_double` is `'x87'`, `'binary128'` or `'double'`; `complex` says
- * whether complex numbers can be passed by value; `layout` is `'msvc'`
- * on Windows and `'itanium'` elsewhere, the rules records follow.
+ * `long_double` is `'x87'`, `'binary128'` or `'double'`. `complex` says
+ * whether complex numbers can be passed by value. `layout` is the set
+ * of rules that records follow, which is `'msvc'` on Windows and
+ * `'itanium'` everywhere else.
  *
  * @returns dict
  */

@@ -4,8 +4,8 @@
  * A statement compiled once and run many times.
  *
  * Every engine here splits running a statement into compiling it and
- * executing it, and the compile is the expensive half. A statement run
- * in a loop should pay for it once:
+ * executing it, and compiling is the expensive part. A statement run in
+ * a loop should only pay for it once:
  *
  * ```zuri,ignore
  * var insert = db.prepare('insert into points (x, y) values (?, ?)')
@@ -17,8 +17,8 @@
  * insert.close()
  * ```
  *
- * The placeholders are translated once, when the statement is
- * prepared, so the loop does no string work at all.
+ * The placeholders are translated once, when the statement is prepared,
+ * so the loop does no string processing at all.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -130,12 +130,12 @@ class Statement {
   /**
    * Runs the statement and returns a cursor over its result.
    *
-   * The cursor holds this statement until it closes, so the statement
-   * cannot be run again in the meantime.
+   * The cursor holds this statement until it's closed, so the statement
+   * can't be run again in the meantime.
    *
    * @param list|dict|nil params
-   * @param dict|nil options `{ batch }` on engines that fetch in
-   *    batches; ignored where the engine streams already.
+   * @param dict|nil options `{ batch }`, on engines that fetch rows in
+   *    batches. It's ignored where the engine already streams results.
    * @returns Cursor
    */
   stream(params, options) {

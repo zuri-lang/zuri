@@ -283,13 +283,14 @@ class Migrator {
   var table
 
   /**
-   * @param Connection connection A connection of its own: a run holds
-   *    it, and on PostgreSQL and MySQL a session lock on it, from
-   *    start to finish. A connection taken from a pool is returned to
-   *    it afterwards by the caller, as any other.
+   * @param Connection connection A connection used only by the
+   *    migrator. A run holds it from start to finish, along with a
+   *    session lock on PostgreSQL and MySQL. A connection taken from a
+   *    pool is returned to the pool afterwards by the caller, like any
+   *    other.
    * @param dict|nil options `directory`, the directory of migrations,
-   *    `migrations` by default; and `table`, the table recording them,
-   *    `zuri_migrations` by default.
+   *    which defaults to `migrations`, and `table`, the table that
+   *    records them, which defaults to `zuri_migrations`.
    */
   @new(connection, options) {
     var settings = options or {}
@@ -404,16 +405,16 @@ class Migrator {
   }
 
   /**
-   * Every migration, in a file or in the record or both, with what is
-   * known about it. Each is `{ name, state, batch, applied_at }`, and
-   * `state` is one of:
+   * Every migration that's either in a file or in the record, with
+   * what's known about it. Each one is
+   * `{ name, state, batch, applied_at }`, and `state` is one of these:
    *
    * | State | Meaning |
    * | - | - |
-   * | `applied` | recorded, and the file is as it was when it ran |
+   * | `applied` | recorded, and the file is the same as when it ran |
    * | `changed` | recorded, and the file has changed since it ran |
-   * | `missing` | recorded, and there is no file for it any more |
-   * | `pending` | a file the database has not had |
+   * | `missing` | recorded, but its file no longer exists |
+   * | `pending` | a file that hasn't been applied to the database |
    *
    * `batch` and `applied_at` are nil for a pending migration.
    *
@@ -471,15 +472,16 @@ class Migrator {
    * migrator.up({ to: '20261012091500_add_slug_to_posts' })
    * ```
    *
-   * A migration that fails stops the run where it is. Those before it
-   * stay applied, and it and those after it stay pending.
+   * A migration that fails stops the run. The migrations before it stay
+   * applied, and it and the ones after it stay pending.
    *
-   * @param dict|nil options `steps`, how many to apply at most; or
-   *    `to`, the name of the last one to apply. Everything pending
-   *    when neither is given.
-   * @returns list[string] The names applied, in order.
-   * @throws MigrationError if `to` names no pending migration, or a
-   *    file cannot be run.
+   * @param dict|nil options `steps`, the most migrations to apply, or
+   *    `to`, the name of the last one to apply. If neither is given,
+   *    everything pending is applied.
+   * @returns list[string] The names of the migrations applied, in
+   *    order.
+   * @throws MigrationError if `to` doesn't name a pending migration, or
+   *    a file can't be run.
    */
   up(options) {
     var settings = options or {}
@@ -523,7 +525,7 @@ class Migrator {
   }
 
   /**
-   * Rolls applied migrations back, newest first.
+   * Rolls back applied migrations, newest first.
    *
    * ```zuri,ignore
    * migrator.down()                # the latest batch
@@ -531,17 +533,18 @@ class Migrator {
    * migrator.down({ to: '20261011143000_create_posts' })
    * ```
    *
-   * Every migration about to be rolled back is checked first: each has
-   * to have its file, with a `down()`, or nothing is rolled back at all.
+   * Every migration that's about to be rolled back is checked first.
+   * Each one must still have its file, with a `down()` function, or
+   * nothing is rolled back at all.
    *
-   * @param dict|nil options `steps`, how many to roll back; or `to`,
-   *    the name of a migration to leave as the latest applied, rolling
-   *    back everything after it. The latest batch when neither is
-   *    given.
-   * @returns list[string] The names rolled back, in the order they
-   *    were.
-   * @throws MigrationError if `to` names no applied migration, or one
-   *    to be rolled back has no file or no `down()`.
+   * @param dict|nil options `steps`, the number of migrations to roll
+   *    back, or `to`, the name of a migration to leave as the latest
+   *    applied one, rolling back everything after it. If neither is
+   *    given, the latest batch is rolled back.
+   * @returns list[string] The names of the migrations rolled back, in
+   *    the order they were rolled back.
+   * @throws MigrationError if `to` doesn't name an applied migration,
+   *    or a migration to be rolled back has no file or no `down()`.
    */
   down(options) {
     var settings = options or {}
@@ -575,9 +578,9 @@ class Migrator {
   /**
    * Rolls back every applied migration, newest first.
    *
-   * @returns list[string] The names rolled back.
-   * @throws MigrationError if one has no file or no `down()`; nothing
-   *    is rolled back then.
+   * @returns list[string] The names of the migrations rolled back.
+   * @throws MigrationError if a migration has no file or no `down()`.
+   *    In that case, nothing is rolled back.
    */
   reset() {
     return self._locked(@() {

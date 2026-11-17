@@ -183,11 +183,11 @@ class Library {
   }
 
   /**
-   * Binds everything `declarations` holds to this library; the same as
-   * `declarations.bind(library, options)`.
+   * Binds everything in `declarations` to this library. This is the
+   * same as `declarations.bind(library, options)`.
    *
    * @param Declarations declarations
-   * @param dict|nil options As for `Declarations.bind()`.
+   * @param dict|nil options The same as for `Declarations.bind()`.
    * @returns module
    */
   bind(declarations, options) {

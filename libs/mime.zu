@@ -1,15 +1,12 @@
 /**
  * @module mime
  *
- * This module provides functions that allow easy mime type
- * detection from files. It offers support for detecting file
- * type based on name or file headers and it is completely
- * extensible so that you can add declarations for your own
- * custom file types.
+ * Detects the MIME type of a file, either from its name or from the
+ * first bytes of its contents. You can add your own types as well.
  *
- * _See defined functions for example._
+ * See the functions below for examples.
  *
- * @copyright O2021, Richard Ore
+ * @copyright 2021, Richard Ore
  */
 
 /**
@@ -19,14 +16,14 @@ class MimeFormat {
 
   /**
    * @param string mimetype
-   * @param ?list header: A list of one or more candidate magic-byte
-   *    signatures, each itself a list of numbers (`0`-`255`) or
-   *    `nil` for a byte position to skip (a size field embedded in
-   *    the middle of a signature, say: see the `.webp` entry in
-   *    this module's own table for an example). `nil` when name-only
-   *    detection is all that's available for this format.
-   * @note only the first 16 bytes of a file's header will ever be
-   *    used; a signature longer than that can never match.
+   * @param ?list header: a list of one or more possible signatures,
+   *    each a list of byte values from `0` to `255`, with `nil` for a
+   *    byte position to skip, such as a size field in the middle of a
+   *    signature. See the `.webp` entry in this module's own table for
+   *    an example. Use `nil` when the format can only be detected by
+   *    its name.
+   * @note Only the first 16 bytes of a file are ever checked, so a
+   *    longer signature can never match.
    * @constructor
    */
   @new(mimetype: string, header: ?list) {
@@ -556,24 +553,23 @@ var _mimes = {
 }
 
 /**
- * Detects the mimetype of a file based on the extension defined
- * in it's path.
+ * Detects the MIME type of a file from the extension in its path.
  *
- * When `name` has more than one dot-separated suffix (`archive.
- * tar.gz`), the longest registered extension wins: `.tar.gz` if
- * it's registered, falling back to `.gz` otherwise: rather than
- * whichever single-suffix entry happens to match first.
+ * When `name` has more than one suffix, as in `archive.tar.gz`, the
+ * longest registered extension wins: `.tar.gz` if it's registered, and
+ * `.gz` otherwise, instead of whichever single suffix happens to match
+ * first.
  *
- * Example,
+ * For example:
  *
  * ```zuri
  * import mime
  * echo mime.detect_from_name('myimage.png')
  * ```
  *
- * @note Unrecognized extensions (including a name with no
- *    extension at all) return `'application/octet-stream'` rather
- *    than raising.
+ * @note An unrecognized extension, including a name with no extension
+ *    at all, returns `'application/octet-stream'`, instead of raising
+ *    an error.
  * @param string name
  * @returns string
  */
@@ -707,10 +703,10 @@ def detect(file: file) {
 }
 
 /**
- * Extends the mime module with support for files with the given
- * _extension_ as defined in the given _format_.
+ * Adds support for files with the given _extension_, using the given
+ * _format_.
  *
- * Example,
+ * For example:
  *
  * ```zuri-repl
  * %> import mime
@@ -722,14 +718,13 @@ def detect(file: file) {
  * 'file/ppk'
  * ```
  *
- * @note the extension MUST start with `.`
+ * @note The extension must start with `.`.
  * @param string extension
  * @param MimeFormat format
- * @param ?bool overwrite: Default `false`. When an entry for
- *    `extension` already exists (including one of this module's own
- *    built-in mappings) and `overwrite` is `false`, the existing
- *    entry is left untouched and this returns `false`; pass `true`
- *    to replace it.
+ * @param ?bool overwrite: defaults to `false`. If an entry for
+ *    `extension` already exists, including one of this module's
+ *    built-in entries, and `overwrite` is `false`, the existing entry
+ *    is kept and this returns `false`. Pass `true` to replace it.
  * @returns bool
  */
 def extend(extension: string, format: MimeFormat, overwrite: ?bool) {
@@ -752,11 +747,11 @@ def extend(extension: string, format: MimeFormat, overwrite: ?bool) {
 }
 
 /**
- * Looks up the typical file extension (including the leading `.`)
- * registered for a given mime type: the reverse of
+ * Returns the usual file extension, including the leading `.`,
+ * registered for a MIME type. This is the reverse of
  * `detect_from_name()`.
  *
- * Example,
+ * For example:
  *
  * ```zuri-repl
  * %> import mime
@@ -764,14 +759,13 @@ def extend(extension: string, format: MimeFormat, overwrite: ?bool) {
  * '.png'
  * ```
  *
- * @note Several extensions can share one mime type (`.jpg`/`.jpeg`,
- *    `.htm`/`.html`); whichever is registered first (in this
- *    module's own declaration order for a built-in type, or
- *    whichever `extend()` call added it for a custom one) is
- *    returned.
+ * @note Several extensions can have the same MIME type, such as `.jpg`
+ *    and `.jpeg`, or `.htm` and `.html`. The one registered first is
+ *    returned, which for a built-in type is the first in this module's
+ *    own list, and for a custom type is the first one added with
+ *    `extend()`.
  * @param string mimetype
- * @returns ?string: `nil` if no extension is registered for
- *    `mimetype`.
+ * @returns ?string: `nil` if no extension is registered for `mimetype`.
  */
 def mime_to_extension(mimetype: string) {
   for ext, mime in _mimes {

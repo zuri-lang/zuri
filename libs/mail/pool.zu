@@ -1,13 +1,13 @@
 /**
  * @module pool
  *
- * Running a mail server on more than one connection at a time.
+ * Runs a mail server that serves more than one connection at a time.
  *
- * Both servers here serve one connection to the end before taking the
- * next, which is the right shape for the protocols and the wrong shape
- * for more than one client. `serve()` puts a pool of isolates behind
- * one listening socket: the main isolate accepts, and each worker
- * takes a connection and sees it through.
+ * Both servers here handle one connection until it ends before taking
+ * the next. That suits the protocols, but not more than one client.
+ * `serve()` puts a pool of isolates behind a single listening socket.
+ * The main isolate accepts connections, and each worker takes a
+ * connection and handles it until it ends.
  *
  * ```zuri,ignore
  * import mail.pool
@@ -16,9 +16,9 @@
  * pool.serve(my_server.build, { host: '0.0.0.0', port: 143, workers: 8 })
  * ```
  *
- * `build` is a function in a module of its own, not a closure, because
- * an isolate resolves a module's function by name on its own side and
- * cannot be handed one that closes over anything here.
+ * `build` has to be a function in a module of its own, not a closure,
+ * because an isolate finds a module's function by name on its own side,
+ * and can't be given a function that captures anything from here.
  *
  * ```zuri,ignore
  * # my_server.zu
@@ -33,9 +33,9 @@
  * }
  * ```
  *
- * An IMAP connection can be open for hours, so the pool is a ceiling
- * on how many clients can be served at once, not on how fast they are
- * served. Size it accordingly.
+ * An IMAP connection can stay open for hours, so the number of workers
+ * limits how many clients can be served at once, not how quickly
+ * they're served. Choose the size with that in mind.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -155,10 +155,12 @@ class Cluster {
   }
 
   /**
-   * Stops accepting, tells the workers there is nothing more coming,
-   * and waits for them to finish what they hold.
+   * Stops accepting connections, tells the workers that nothing more is
+   * coming, and waits for them to finish the connections they're
+   * handling.
    *
-   * @param ?number timeout: Milliseconds to wait for each worker.
+   * @param ?number timeout: the number of milliseconds to wait for each
+   *    worker
    * @returns Cluster itself.
    */
   close(timeout: ?number) {

@@ -32,12 +32,12 @@ import .errors { QueryError }
 /**
  * An exact decimal number.
  *
- * Held as an integer and a scale: `unscaled` is the digits with the
- * point removed, `scale` is how many of them are after the point. So
- * `1.05` is `105` at scale 2, and `1.050` is `1050` at scale 3. The
- * two are equal in value and differ in how they print, which is what
- * lets a column declared `numeric(10, 3)` round trip without gaining
- * or losing a trailing zero.
+ * It's stored as an integer and a scale. `unscaled` is the digits
+ * without the decimal point, and `scale` is how many of them come after
+ * the point. So `1.05` is `105` with a scale of 2, and `1.050` is
+ * `1050` with a scale of 3. The two have the same value but are printed
+ * differently, so a column declared as `numeric(10, 3)` can be read and
+ * written back without gaining or losing a trailing zero.
  *
  * @printable
  */
@@ -55,9 +55,9 @@ class Decimal {
   var scale = 0
 
   /**
-   * Builds a decimal.
+   * Creates a decimal.
    *
-   * From text, which is the exact form and the one to prefer:
+   * From text, which is exact and is the form to prefer:
    *
    * ```zuri,ignore
    * Decimal('19.99')
@@ -71,17 +71,17 @@ class Decimal {
    * Decimal(19.99)
    * ```
    *
-   * Or from the parts, which is what the PostgreSQL adapter uses:
+   * Or from its parts, which is what the PostgreSQL adapter uses:
    *
    * ```zuri,ignore
    * Decimal(1999, 2)
    * ```
    *
-   * @param string|number|bigint value The value, or its unscaled
-   *    digits when `scale` is given.
-   * @param number|nil scale The number of decimal places, when
-   *    `value` is the unscaled integer.
-   * @throws QueryError if the text is not a number.
+   * @param string|number|bigint value The value, or its unscaled digits
+   *    if `scale` is given.
+   * @param number|nil scale The number of decimal places, when `value`
+   *    is the unscaled integer.
+   * @throws QueryError if the text isn't a number.
    */
   @new(value, scale) {
     if scale != nil {
@@ -219,11 +219,12 @@ class Decimal {
   }
 
   /**
-   * The quotient to `places` decimal places, rounded half away from
-   * zero.
+   * The result of dividing by `other`, to `places` decimal places,
+   * rounded half away from zero.
    *
-   * Division is the one operation with no exact answer in general, so
-   * the number of places is required rather than guessed.
+   * Division is the one operation that doesn't have an exact answer in
+   * general, so the number of decimal places is required instead of
+   * being guessed.
    *
    * @param Decimal other
    * @param number places

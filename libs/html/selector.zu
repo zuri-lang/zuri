@@ -1,8 +1,8 @@
 /**
  * @module html.selector
  *
- * A small, deliberately bounded CSS selector engine: enough to find
- * things in a parsed document, and no more.
+ * A small CSS selector engine, intentionally limited to what's needed
+ * to find things in a parsed document.
  *
  * ### Supported syntax
  *
@@ -23,31 +23,31 @@
  * | nth child            | `li:nth-child(2n+1)`       |
  * | selector list        | `h1, h2, h3`               |
  *
- * Compound selectors combine freely: `ul.menu > li[data-id]:first-child`
- * is valid, as is any comma-separated list of those.
+ * Compound selectors can be combined freely.
+ * `ul.menu > li[data-id]:first-child` is valid, and so is any
+ * comma-separated list of selectors like it.
  *
- * ### Deliberately not supported
+ * ### Unsupported syntax
  *
- * Everything else, and the parser says so rather than quietly
- * ignoring it. `:not()`, `:has()`, `:nth-of-type()`, `::before`,
- * namespace prefixes, and the substring attribute operators (`^=`,
- * `$=`, `*=`, `~=`, `|=`) all raise a `SelectorError`. A selector
- * that silently matches nothing is far worse to debug than one that
- * refuses to compile.
+ * Anything else raises a `SelectorError`, instead of being silently
+ * ignored. That includes `:not()`, `:has()`, `:nth-of-type()`,
+ * `::before`, namespace prefixes, and the substring attribute operators
+ * (`^=`, `$=`, `*=`, `~=` and `|=`). A selector that silently matches
+ * nothing is much harder to debug than one that refuses to compile.
  *
  * ### Case sensitivity
  *
- * Type selectors and attribute *names* fold ASCII case, matching how
- * HTML itself treats them. Ids, class names and attribute *values*
- * are compared exactly, which is what standards-mode HTML does.
+ * Type selectors and attribute *names* are compared without regard to
+ * ASCII case, as HTML itself treats them. IDs, class names and
+ * attribute *values* are compared exactly, as in standards-mode HTML.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
 
 /**
- * Raised when a selector cannot be parsed, or uses syntax this
- * module deliberately does not support. The message names the
- * offending part of the selector.
+ * Raised when a selector can't be parsed, or uses syntax that this
+ * module intentionally doesn't support. The message names the part of
+ * the selector that caused the problem.
  */
 class SelectorError < Error {
   /**
@@ -336,10 +336,10 @@ class ComplexSelector {
   var compounds = []
 
   /**
-   * How each compound relates to the one before it. Entry `i` is the
-   * combinator between compound `i - 1` and compound `i`; entry `0`
-   * is always `nil`. One of `'descendant'`, `'child'`, `'adjacent'`
-   * or `'sibling'`.
+   * How each compound selector relates to the one before it. Entry `i`
+   * is the combinator between compound `i - 1` and compound `i`, and
+   * entry `0` is always `nil`. Each entry is one of `'descendant'`,
+   * `'child'`, `'adjacent'` or `'sibling'`.
    */
   var combinators = []
 
@@ -352,12 +352,12 @@ class ComplexSelector {
   }
 
   /**
-   * True when _element_ matches this selector.
+   * True if _element_ matches this selector.
    *
-   * Matching runs right to left, which is what makes a selector like
-   * `body div span` cheap: the rightmost compound rejects almost
-   * every element outright, and only survivors pay for the walk up
-   * the tree.
+   * Matching runs from right to left, which makes a selector like
+   * `body div span` cheap: the rightmost compound rejects almost every
+   * element straight away, and only the elements that pass it need the
+   * walk up the tree.
    *
    * @param any element
    * @returns bool
@@ -496,13 +496,13 @@ class Selector {
 }
 
 /**
- * Compiles _source_ into a reusable `Selector`.
+ * Compiles _source_ into a `Selector` that can be reused.
  *
- * Compiled selectors are cached by source text, so calling this with
- * the same string repeatedly costs a dictionary lookup rather than a
- * parse. The cache holds at most 256 selectors and is dropped
- * wholesale when it fills, so a program that builds selector strings
- * dynamically cannot grow it without bound.
+ * Compiled selectors are cached by their source text, so calling this
+ * repeatedly with the same string only costs a dictionary lookup, not a
+ * parse. The cache holds at most 256 selectors, and it's emptied
+ * completely when it fills up, so a program that builds selector
+ * strings dynamically can't make it grow without limit.
  *
  * ```zuri-repl
  * %> import html
@@ -513,8 +513,8 @@ class Selector {
  *
  * @param string source
  * @returns Selector
- * @throws SelectorError when _source_ is empty, malformed, or uses
- *   syntax outside the supported subset.
+ * @throws SelectorError if _source_ is empty or malformed, or uses
+ *    syntax outside the supported subset.
  */
 def compile(source: string) {
   var hit = _cache.get(source, nil)

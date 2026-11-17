@@ -1,39 +1,38 @@
 # List Methods
 
-Every method on the built-in `list` type, with its signature, what it
-returns, and the cases where it does something other than the obvious
-thing.
+Every method of the built-in `list` type, with its signature, what it
+returns, and any behavior you might not expect.
 
 | Method | Returns | Summary |
 | --- | --- | --- |
 | [`length()`](#length) | `number` | Returns the number of items in the list. |
-| [`append(value)`](#append) | `list` | Adds the given value _x_ to the end of the list. |
+| [`append(value)`](#append) |  | Adds _value_ to the end of the list. |
 | [`clear()`](#clear) |  | Removes all items from the list. |
 | [`clone()`](#clone) | `list` | Returns a new list containing all items from the _list_. |
-| [`count(value)`](#count) | `number` | Returns the number of times item _x_ occurs in the list. |
-| [`extend(list: list)`](#extend) | `list` | Updates the content of the _list_ by appending all the contents of list _x_ to the end of the original list in exact order. |
-| [`index_of(value, start_index: ?int)`](#index_of) | `number` | Returns the zero-based index of the first occurrence of the value _x_ in the list starting from the given _start_index_ or `-1` if the list does not contain the value _x_. |
-| [`last_index_of(value, end_index: ?int)`](#last_index_of) | `number` | Returns the zero-based index of the last occurrence of the value _x_ in the list, searching from the end, or `-1` if the list does not contain the value _x_. |
-| [`insert(value, index: int)`](#insert) | `list` | Inserts the item _x_ into the list at the specified _index_. |
+| [`count(value)`](#count) | `number` | Returns the number of times _value_ occurs in the list. |
+| [`extend(list: list)`](#extend) |  | Adds every item of _list_ to the end of this list, in order. |
+| [`index_of(value, start_index: ?int)`](#index_of) | `number` | Returns the index of the first occurrence of _value_ in the list, starting the search at _start_index_ if it's given, or `-1` if the list doesn't contain _value_. |
+| [`last_index_of(value, end_index: ?int)`](#last_index_of) | `number` | Returns the index of the last occurrence of _value_ in the list, searching from the end, or `-1` if the list doesn't contain _value_. |
+| [`insert(value, index: int)`](#insert) |  | Inserts _value_ into the list at _index_. |
 | [`pop()`](#pop) | `any` | Removes the last item in a list and returns the value of that item. |
-| [`shift(count: ?int)`](#shift) | `any` | Removed the specified count of items from the beginning of the list and returns it. |
-| [`remove_at(index: int)`](#remove_at) | `any` | Removes the item at the specified index in the list and returns it. |
-| [`remove(value)`](#remove) | `any` | Removes the first occurrence of item _x_ from the list. |
+| [`shift(count: ?int)`](#shift) | `any` | Removes _count_ items from the start of the list and returns them. |
+| [`remove_at(index: int)`](#remove_at) | `any` | Removes the item at the given index from the list, and returns it. |
+| [`remove(value)`](#remove) | `any` | Removes the first occurrence of _value_ from the list. |
 | [`reverse()`](#reverse) | `list` | Returns a new list containing the items in the original list in reverse order. |
-| [`sort(comparator: ?function)`](#sort) | `list` | Sorts the items in the list in-place and returns the sorted list. |
-| [`contains(value)`](#contains) | `boolean` | Returns `true` if the list contains the item _x_ or `false` otherwise. |
+| [`sort(comparator: ?function)`](#sort) | `list` | Sorts the items in the list in place, and returns the sorted list. |
+| [`contains(value)`](#contains) | `boolean` | Returns `true` if the list contains _value_, and `false` otherwise. |
 | [`delete(start: int, end: int)`](#delete) | `number` | Deletes a range of items from the list starting from the start to the end limit and returns the number of items removed. |
 | [`first()`](#first) | `any` | Returns the first item in the list or `nil` if the list is empty. |
 | [`last()`](#last) | `any` | Returns the last item in the list or `nil` if the list is empty. |
 | [`is_empty()`](#is_empty) | `boolean` | Returns `true` if the list is empty or `false` otherwise. |
-| [`take(n: int)`](#take) | `list` | Returns a new list containing the first _n_ items in the list or a new copy of the list if _n_ greater than or equals to the `list.length()`. |
-| [`get(index: int)`](#get) | `any` | Returns the value at the specified index in the list. |
+| [`take(n: int)`](#take) | `list` | Returns a new list containing the first _n_ items, or a copy of the whole list if _n_ is greater than or equal to `length()`. |
+| [`get(index: int)`](#get) | `any` | Returns the value at the given index. |
 | [`compact()`](#compact) | `list` | Returns a new list containing the items in the original list but with all `nil` values removed. |
 | [`unique()`](#unique) | `list` | Returns a new list containing the unique values from the original list. |
 | [`zip(...lists: list)`](#zip) | `list` | Returns a list that contains the items in the original list merged with corresponding items from the individual arguments. |
 | [`zip_from(list: list)`](#zip_from) | `list` | The same as `list.zip()` except that instead of accepting an arbitrary list or arguments, it accepts a single list that should contain other lists. |
 | [`to_dict()`](#to_dict) | `dict` | Returns a number indexed dictionary representing the list. |
-| [`each(callback: function)`](#each) |  | Iterates over each element in the list, calling the provided callback function with the current element as an argument. |
+| [`each(callback: function)`](#each) |  | Calls `callback` for each element in the list, with the element as the argument. |
 | [`map(callback: function)`](#map) | `list` | Creates a new list populated with the results of calling a provided function on every element in the calling list. |
 | [`filter(callback: function)`](#filter) | `list` | Creates a new list with all elements that pass the test implemented by the provided function. |
 | [`reduce(callback: function, initial)`](#reduce) | `any` | Applies a function against an accumulator and each element in the list (from left to right) to reduce it to a single value and returns the accumulated result of the callback function. |
@@ -44,7 +43,7 @@ thing.
 | [`find_last(callback: function)`](#find_last) | `any` | Returns the value of the last element in the list that satisfies the provided testing function. |
 | [`find_last_index(callback: function)`](#find_last_index) | `number` | Returns the index of the last element in the list that satisfies the provided testing function. |
 | [`find_all(callback: function)`](#find_all) | `list` | Returns a new list containing all elements of the calling list that satisfy the provided testing function. |
-| [`partition(callback: function)`](#partition) | `list` | Returns an list containing two lists: the first with elements that satisfy the provided testing function, and the second with elements that do not satisfy the testing function. |
+| [`partition(callback: function)`](#partition) | `list` | Splits the list into two lists, and returns them in a list: the first holds the elements for which `callback` returns true, and the second holds the rest. |
 | [`to_string()`](#to_string) | `string` | Returns the string representation of the list. |
 
 ## `length()`
@@ -67,10 +66,10 @@ For example:
 ## `append()`
 
 ```zuri,ignore
-append(value) -> list
+append(value)
 ```
 
-Adds the given value _x_ to the end of the list.
+Adds _value_ to the end of the list.
 
 For example:
 
@@ -84,8 +83,6 @@ For example:
 **Parameters**
 
 - `value` (`any`)
-
-**Returns** `list`
 
 ## `clear()`
 
@@ -135,7 +132,7 @@ For example:
 count(value) -> number
 ```
 
-Returns the number of times item _x_ occurs in the list.
+Returns the number of times _value_ occurs in the list.
 
 For example:
 
@@ -153,12 +150,11 @@ For example:
 ## `extend()`
 
 ```zuri,ignore
-extend(list: list) -> list
+extend(list: list)
 ```
 
-Updates the content of the _list_ by appending all the contents of list
-_x_ to the end of the original list in exact order. This is equivalent
-to `list + x`.
+Adds every item of _list_ to the end of this list, in order. Unlike `+`,
+which creates a new list, this changes the list it's called on.
 
 For example:
 
@@ -176,17 +172,15 @@ For example:
 
 - `list` (`list`)
 
-**Returns** `list`
-
 ## `index_of()`
 
 ```zuri,ignore
 index_of(value, start_index: ?int) -> number
 ```
 
-Returns the zero-based index of the first occurrence of the value _x_ in
-the list starting from the given _start_index_ or `-1` if the list does
-not contain the value _x_.
+Returns the index of the first occurrence of _value_ in the list,
+starting the search at _start_index_ if it's given, or `-1` if the list
+doesn't contain _value_.
 
 For example:
 
@@ -214,18 +208,18 @@ For example:
 last_index_of(value, end_index: ?int) -> number
 ```
 
-Returns the zero-based index of the last occurrence of the value _x_ in
-the list, searching from the end, or `-1` if the list does not contain
-the value _x_.
+Returns the index of the last occurrence of _value_ in the list,
+searching from the end, or `-1` if the list doesn't contain _value_.
 
 If _end_index_ is given, only a match at or before that index counts.
-That is the same position `index_of()`'s own second parameter bounds, so
-for any index `n`, `index_of(x, n)` and `last_index_of(x, n)` are the
-first and last matches of the two halves `n` splits the list into.
+That's the same position that the second parameter of `index_of()` uses,
+so for any index `n`, `index_of(value, n)` and `last_index_of(value, n)`
+give the first and last matches in the two halves that `n` splits the
+list into.
 
-Values are compared the way `index_of()` compares them, by value rather
-than by identity, so two separate dictionaries holding the same entries
-match each other.
+Values are compared in the same way as in `index_of()`, by value, not by
+identity, so two separate dictionaries with the same entries match each
+other.
 
 For example:
 
@@ -250,15 +244,13 @@ For example:
 ## `insert()`
 
 ```zuri,ignore
-insert(value, index: int) -> list
+insert(value, index: int)
 ```
 
-Inserts the item _x_ into the list at the specified _index_. By
-specifying an index of zero (`list.insert(x, 0)`), one can prepend the
-list and `list.insert(x, list.length())` is equivalent to
-`list.append(x)`. If the _index_ specified is greater than
-`list.length()`, the list will be padded with `nil` up till the index
-preceding the specified index.
+Inserts _value_ into the list at _index_. An index of zero, as in
+`list.insert(value, 0)`, adds the value at the start, and
+`list.insert(value, list.length())` is the same as `list.append(value)`.
+If _index_ is greater than `length()`, the gap is filled with `nil`.
 
 For example:
 
@@ -282,8 +274,6 @@ For example:
 
 - `value` (`any`)
 - `index` (`int`)
-
-**Returns** `list`
 
 ## `pop()`
 
@@ -311,18 +301,12 @@ For example:
 shift(count: ?int) -> any
 ```
 
-Removed the specified count of items from the beginning of the list and
-returns it. If _count_ is not specified, _count_ defaults to 1. If one
-item is shifted, the method returns that item. If more than one item is
-shifted, the method returns a list containing the shifted items.
+Removes _count_ items from the start of the list and returns them.
+_count_ defaults to 1. If one item is removed, the method returns that
+item. If more than one is removed, it returns a list of them.
 
-> The square brackets (`[]`) around the _`count: number`_ in
-> the method definition indicates that the parameter is
-> optional and does not mean you have to type the square
-> brackets.
-
-If the number of items required to be shifted exceeds the size of the
-list, the list is cleared and `nil` is returned.
+If _count_ is greater than the length of the list, the list is cleared
+and `nil` is returned.
 
 For example:
 
@@ -353,9 +337,9 @@ For example:
 remove_at(index: int) -> any
 ```
 
-Removes the item at the specified index in the list and returns it. If
-the index is less than `0` or greater than `list.length() - 1`, an Error
-is raised.
+Removes the item at the given index from the list, and returns it. If
+the index is less than `0` or greater than `length() - 1`, an error is
+raised.
 
 For example:
 
@@ -367,12 +351,8 @@ For example:
 [1, 2, 3, 5]
 %> a.remove_at(6)
 Unhandled Error: list index 6 out of range at remove_at()
-  StackTrace:
-    <repl>:1 -> @.script()
 %> a.remove_at(-1)
 Unhandled Error: list index -1 out of range at remove_at()
-  StackTrace:
-    <repl>:1 -> @.script()
 ```
 
 **Parameters**
@@ -387,7 +367,7 @@ Unhandled Error: list index -1 out of range at remove_at()
 remove(value) -> any
 ```
 
-Removes the first occurrence of item _x_ from the list.
+Removes the first occurrence of _value_ from the list.
 
 For example:
 
@@ -398,7 +378,7 @@ For example:
 [Tasha, Emily, Kirk]
 ```
 
-Notice that only the first occurrence of `Kirk` was removed.
+Only the first `Kirk` is removed.
 
 **Parameters**
 
@@ -431,18 +411,14 @@ For example:
 sort(comparator: ?function) -> list
 ```
 
-Sorts the items in the list in-place and returns the sorted list.
-Sorting in Lists follows are strict set of precedence based on the
-object type. The order for sorting is as follows in ascending
-orders:<br>
+Sorts the items in the list in place, and returns the sorted list. Items
+of different types are sorted by type, in this order:
 
-`nil`, boolean, numbers, strings, ranges, lists, dictionaries, file,
+`nil`, booleans, numbers, strings, ranges, lists, dictionaries, files,
 bytes, functions, classes and modules.
 
-When the corresponding items in the list are of the same type, they are
-sorted based on their respective values according to the type. For
-example, the number `5` is less than `8` and as such will appear first
-in the sort.
+Items of the same type are sorted by value, so the number `5` comes
+before `8`.
 
 For example:
 
@@ -453,34 +429,34 @@ For example:
 [nil, false, 5, A, [13, 21, 46]]
 ```
 
-> Notice how the boolean value precedes the number and how
-> the number in turn precedes the string and the strings in
-> turn, precedes the list in the result. Also, note that the
-> items of the inner list is sorted.
+> The boolean comes before the number, the number comes
+> before the string, and the string comes before the list.
+> Lists inside the list are sorted too.
 
 ## Sorting by something else
 
-Pass a comparator to decide the order yourself. It is given two items
-and returns a negative number to put the first one first, a positive
-number to put the second one first, and zero to leave them as they are:
+Pass a comparator to choose the order yourself. It's called with two
+items, and returns a negative number to put the first item first, a
+positive number to put the second item first, or zero to leave them as
+they are:
 
 ```zuri-repl
 %> [3, 1, 2].sort(@(a, b) => b - a)
 [3, 2, 1]
 %> ['pear', 'fig', 'banana'].sort(@(a, b) => a.length() - b.length())
-['fig', 'pear', 'banana']
+[fig, pear, banana]
 ```
 
-The sort is stable, so items the comparator calls equal keep the order
-they were already in. That is what lets a list be sorted by one thing
-and then another to order by both:
+The sort is stable, so items that the comparator treats as equal keep
+the order they were in. That means you can sort a list by one thing and
+then by another to order it by both:
 
 ```zuri,ignore
 people.sort(@(a, b) => a.name.compare(b.name))
 people.sort(@(a, b) => a.age - b.age)
 ```
 
-leaves people of the same age in name order.
+This leaves people of the same age in order of name.
 
 **Parameters**
 
@@ -488,12 +464,12 @@ leaves people of the same age in name order.
 
 **Returns** `list`
 
-> **Note:** A comparator sorts only the list it is given. The inner lists
-> that `sort()` sorts on its own are left alone, since only the comparator
-> knows what the order is meant to be.
+> **Note:** A comparator only sorts the list it's given. Lists inside the
+> list, which `sort()` sorts without a comparator, are left as they are,
+> because only the comparator knows what the order should be.
 
-> **Note:** A comparator that contradicts itself produces some order
-> rather than an error; there is no arrangement that satisfies it.
+> **Note:** A comparator that contradicts itself produces some order, not
+> an error, because no order could satisfy it.
 
 ## `contains()`
 
@@ -501,7 +477,7 @@ leaves people of the same age in name order.
 contains(value) -> boolean
 ```
 
-Returns `true` if the list contains the item _x_ or `false` otherwise.
+Returns `true` if the list contains _value_, and `false` otherwise.
 
 For example:
 
@@ -608,9 +584,10 @@ true
 take(n: int) -> list
 ```
 
-Returns a new list containing the first _n_ items in the list or a new
-copy of the list if _n_ greater than or equals to the `list.length()`.
-If `n < 0`, returns `list.take(list.length() - n)`.
+Returns a new list containing the first _n_ items, or a copy of the
+whole list if _n_ is greater than or equal to `length()`. If _n_ is
+negative, this returns all but the last `-n` items, which is the same as
+`take(length() + n)`.
 
 For example:
 
@@ -618,9 +595,9 @@ For example:
 %> var a = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 %> a.take(4)
 [10, 11, 12, 13]
-%> a.take(11) # taking more than the size of the list
+%> a.take(11) # more than there are
 [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
-%> a.take(-5)   # taking n < 0
+%> a.take(-5) # all but the last five
 [10, 11, 12, 13, 14, 15]
 ```
 
@@ -636,9 +613,9 @@ For example:
 get(index: int) -> any
 ```
 
-Returns the value at the specified index in the list. If _index_ is
-outside the boundary of the list indexes (`0..(list.length() - 1)`), an
-Error is thrown. This method is equivalent to `list[index]`.
+Returns the value at the given index. If _index_ is outside the list,
+from `0` to `length() - 1`, an error is raised. This is the same as
+`list[index]`.
 
 For example:
 
@@ -647,8 +624,6 @@ For example:
 14
 %> [13, 14, 15, 16].get(6)
 Unhandled Error: list index 6 out of range at get()
-  StackTrace:
-    <repl>:1 -> @.script()
 ```
 
 **Parameters**
@@ -776,8 +751,8 @@ For example:
 each(callback: function)
 ```
 
-Iterates over each element in the list, calling the provided callback
-function with the current element as an argument.
+Calls `callback` for each element in the list, with the element as the
+argument.
 
 Example:
 
@@ -789,17 +764,15 @@ Example:
 # Output: A B C
 ```
 
-> The `each` method does not return a new list; it simply
-> executes the callback for each element. If you want to
-> create a new list based on the original, consider using
-> the `map` method instead.
+> `each()` doesn't return a new list. It only calls the
+> callback for each element. To create a new list from the
+> original one, use `map()` instead.
 
 **Parameters**
 
-- `callback` (`function`) — The function to execute for each element in
-  the list.
+- `callback` (`function`): The function to call for each element.
 
-**Raises** `Error` if the callback is not a function.
+**Raises** `Error` if the callback isn't a function.
 
 ## `map()`
 
@@ -822,7 +795,7 @@ echo [1, 2, 3].map(@(x) {
 
 **Parameters**
 
-- `callback` (`function`) — The function to execute on each element in
+- `callback` (`function`): The function to execute on each element in
   the list. It receives the current element and its index as arguments.
 
 **Returns** `list`
@@ -853,7 +826,7 @@ echo [1, 2, 3].filter(@(x) {
 
 **Parameters**
 
-- `callback` (`function`) — The function to test each element of the
+- `callback` (`function`): The function to test each element of the
   list. It receives the current element and its index as arguments.
 
 **Returns** `list`
@@ -882,9 +855,9 @@ echo [1, 2, 3].reduce(@(acc, x) {
 
 **Parameters**
 
-- `callback` (`function`) — The function to execute on each element in
+- `callback` (`function`): The function to execute on each element in
   the list. It receives the current element and its index as arguments.
-- `initial` — The initial value to use as the accumulator. If no initial
+- `initial`: The initial value to use as the accumulator. If no initial
   value is provided, the first element of the list will be used as the
   initial accumulator, and the iteration will start from the second
   element.
@@ -919,7 +892,7 @@ function returns a falsy value for all elements, `some` will return
 
 **Parameters**
 
-- `callback` (`function`) — The function to test each element of the
+- `callback` (`function`): The function to test each element of the
   list. It receives the current element and its index as arguments.
 
 **Returns** `boolean`
@@ -952,7 +925,7 @@ the list is empty, `every` will return `true` by default.
 
 **Parameters**
 
-- `callback` (`function`) — The function to test each element of the
+- `callback` (`function`): The function to test each element of the
   list. It receives the current element and its index as arguments.
 
 **Returns** `boolean`
@@ -981,10 +954,10 @@ echo [1, 2, 3].find(@(x) {
 
 **Parameters**
 
-- `callback` (`function`) — The function to test each element of the
+- `callback` (`function`): The function to test each element of the
   list. It receives the current element and its index as arguments.
 
-**Returns** `any` — The first element that satisfies it, or `nil`.
+**Returns** `any`: The first element that satisfies it, or `nil`.
 
 **Raises** `Error` if the callback is not a function.
 
@@ -1010,10 +983,10 @@ echo [1, 2, 3].find_index(@(x) {
 
 **Parameters**
 
-- `callback` (`function`) — The function to test each element of the
+- `callback` (`function`): The function to test each element of the
   list. It receives the current element and its index as arguments.
 
-**Returns** `number` — The index of the first element that satisfies it,
+**Returns** `number`: The index of the first element that satisfies it,
 or `-1`.
 
 **Raises** `Error` if the callback is not a function.
@@ -1040,10 +1013,10 @@ echo [1, 2, 3].find_last(@(x) {
 
 **Parameters**
 
-- `callback` (`function`) — The function to test each element of the
+- `callback` (`function`): The function to test each element of the
   list. It receives the current element and its index as arguments.
 
-**Returns** `any` — The last element that satisfies it, or `nil`.
+**Returns** `any`: The last element that satisfies it, or `nil`.
 
 **Raises** `Error` if the callback is not a function.
 
@@ -1069,10 +1042,10 @@ echo [1, 2, 3].find_last_index(@(x) {
 
 **Parameters**
 
-- `callback` (`function`) — The function to test each element of the
+- `callback` (`function`): The function to test each element of the
   list. It receives the current element and its index as arguments.
 
-**Returns** `number` — The index of the last element that satisfies it,
+**Returns** `number`: The index of the last element that satisfies it,
 or `-1`.
 
 **Raises** `Error` if the callback is not a function.
@@ -1098,7 +1071,7 @@ echo [1, 2, 3].find_all(@(x) {
 
 **Parameters**
 
-- `callback` (`function`) — The function to test each element of the
+- `callback` (`function`): The function to test each element of the
   list. It receives the current element and its index as arguments.
 
 **Returns** `list`
@@ -1111,9 +1084,9 @@ echo [1, 2, 3].find_all(@(x) {
 partition(callback: function) -> list
 ```
 
-Returns an list containing two lists: the first with elements that
-satisfy the provided testing function, and the second with elements that
-do not satisfy the testing function.
+Splits the list into two lists, and returns them in a list: the first
+holds the elements for which `callback` returns true, and the second
+holds the rest.
 
 Example:
 
@@ -1127,12 +1100,12 @@ echo [1, 2, 3].partition(@(x) {
 
 **Parameters**
 
-- `callback` (`function`) — The function to test each element of the
-  list. It receives the current element and its index as arguments.
+- `callback` (`function`): The function that tests each element. It's
+  called with the element and its index.
 
 **Returns** `list`
 
-**Raises** `Error` if the callback is not a function.
+**Raises** `Error` if the callback isn't a function.
 
 ## `to_string()`
 

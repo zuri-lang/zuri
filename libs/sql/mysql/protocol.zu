@@ -2,11 +2,12 @@
  * @module protocol
  *
  * The MySQL client/server protocol: the handshake that opens a
- * connection and the command exchange that runs everything after it.
+ * connection, and the exchange of commands that handles everything
+ * after that.
  *
- * A connection is strictly one command at a time. The client sends a
- * command packet, the server answers with one of three shapes, and
- * nothing else may be sent until that answer is complete:
+ * A connection handles strictly one command at a time. The client sends
+ * a command packet, the server answers in one of three forms, and
+ * nothing else can be sent until the answer is complete:
  *
  * | Answer | Shape |
  * | - | - |
@@ -16,13 +17,13 @@
  *
  * ### Why the end of a result set is awkward
  *
- * A row and the marker that ends the rows are told apart by their
- * first byte, and `0xfe` means both "the rows are over" and "a length
- * encoded integer of eight bytes follows". The length decides: a
- * genuine end marker is short, and a row that happens to start `0xfe`
- * is not. Servers that negotiate `CLIENT_DEPRECATE_EOF` send an OK
- * packet there instead, which is what this adapter asks for, but the
- * ambiguity has to be handled anyway for the ones that do not.
+ * A row and the marker that ends the rows are told apart by their first
+ * byte, and `0xfe` means both "the rows have ended" and "an eight-byte
+ * length-encoded integer follows". The length of the packet decides: a
+ * real end marker is short, and a row that happens to start with `0xfe`
+ * isn't. Servers that negotiate `CLIENT_DEPRECATE_EOF` send an OK
+ * packet there instead, and this adapter asks for that, but the
+ * ambiguity still has to be handled for servers that don't support it.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -90,7 +91,7 @@ var COMMANDS = {
   RESET_CONNECTION: 0x1f,
 }
 
-/** Asks the server to keep the result open rather than send it all. */
+/** Asks the server to keep the result open, instead of sending all of it. */
 var CURSOR_READ_ONLY = 0x01
 
 /** No cursor: the whole result comes back at once. */
@@ -151,8 +152,8 @@ class Protocol {
   }
 
   /**
-   * The id the server gave this connection, which is what `KILL`
-   * names.
+   * The ID that the server gave this connection, which is what `KILL`
+   * takes.
    *
    * @returns number
    */
@@ -218,8 +219,8 @@ class Protocol {
   }
 
   /**
-   * Whether the connection cannot be read by anyone in between, which
-   * is what decides whether a plugin may send the password.
+   * Whether the connection is safe from anyone in between, which
+   * decides whether an authentication plugin can send the password.
    *
    * @returns bool
    */
@@ -239,11 +240,11 @@ class Protocol {
 
   /**
    * Opens the connection: reads the greeting, negotiates, upgrades to
-   * TLS if asked, and authenticates.
+   * TLS if requested, and authenticates.
    *
    * @param dict options
    * @param function|nil upgrade Called with the chosen capabilities
-   *    when TLS is to be started; returns the encrypted stream.
+   *    when TLS is to be started. It returns the encrypted stream.
    * @throws AuthenticationError, ConnectionError, ProtocolError
    */
   handshake(options: dict, upgrade) {
@@ -633,8 +634,8 @@ class Protocol {
   }
 
   /**
-   * Returns the session to the state it had when it opened, which is
-   * what a pool wants before handing a connection to someone else.
+   * Resets the session to the state it was in when it was opened, which
+   * is what a pool needs before lending a connection to someone else.
    */
   reset_connection() {
     self.send_command(COMMANDS.RESET_CONNECTION, nil)

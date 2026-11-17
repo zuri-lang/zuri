@@ -1,11 +1,11 @@
 /**
  * @module double
  *
- * `DoubleArray`: a packed array of double-precision IEEE 754 floats, 8 bytes per
- * element.
+ * `DoubleArray`, a packed array of double-precision IEEE 754 floats,
+ * with 8 bytes per element.
  *
- * `DOUBLE_MAX` and `DOUBLE_MIN` are the largest and
- * smallest finite values the type can hold.
+ * `DOUBLE_MAX` and `DOUBLE_MIN` are the largest and smallest finite
+ * values that the type can hold.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
  */
@@ -71,9 +71,9 @@ class DoubleArray < Array {
   }
 
   /**
-   * Returns a new DoubleArray over `[start, end)` of this array
-   * (both default to the whole array; negative bounds count from
-   * the end).
+   * Returns a new `DoubleArray` with the elements from `start` up to,
+   * but not including, `end`. Both default to the whole array, and
+   * negative values count from the end.
    *
    * @param ?number start
    * @param ?number end

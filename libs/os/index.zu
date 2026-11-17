@@ -1,13 +1,12 @@
 /**
  * @module os
  *
- * The `os` module is Zuri's interface to the underlying operating
- * system: environment variables, the filesystem, other processes,
- * and the machine itself. Per-file operations: reading, writing,
- * deleting, or copying one particular file, or inspecting its
- * size/permissions/timestamps: live on the `file` class instead;
- * see `file.stats()`, `file.delete()`, and `file.copy()`. Everything
- * that isn't about one specific already-open file lives here.
+ * Zuri's interface to the operating system: environment variables, the
+ * filesystem, other processes and the machine itself. Operations on a
+ * single file, such as reading, writing, deleting or copying it, or
+ * inspecting its size, permissions or timestamps, are methods of the
+ * `file` class instead. See `file.stats()`, `file.delete()` and
+ * `file.copy()`. Everything else is here.
  *
  * ## Environment variables
  *
@@ -24,9 +23,9 @@
  *
  * ## Paths
  *
- * Paths are resolved and compared purely as strings, without
- * touching the filesystem, so they work the same whether or not
- * anything actually exists at the path yet.
+ * Paths are resolved and compared as strings, without touching the
+ * filesystem, so they work the same way whether or not anything exists
+ * at the path yet.
  *
  * ```zuri
  * var config = os.join_paths(os.home_dir(), '.config', 'zuri')
@@ -51,8 +50,8 @@
  *
  * ## Running other programs
  *
- * `exec()` is the simple case: run a command, block until it
- * finishes, get back its exit code and output.
+ * `exec()` is for the simple case: it runs a command, waits until it
+ * finishes, and returns its exit code and output.
  *
  * ```zuri
  * var result = os.exec('git', 'rev-parse', 'HEAD')
@@ -61,9 +60,10 @@
  * }
  * ```
  *
- * `spawn()` is for everything `exec()` doesn't cover: a long-running
- * command, one that needs input written to it, or one whose output
- * needs to be read as it arrives rather than all at once at the end.
+ * `spawn()` is for everything that `exec()` doesn't cover: a command
+ * that runs for a long time, one that needs input written to it, or one
+ * whose output has to be read as it arrives, instead of all at once at
+ * the end.
  *
  * ```zuri
  * var proc = os.spawn('grep', ['error'], { stdin: 'pipe' })
@@ -73,10 +73,11 @@
  * proc.wait()
  * ```
  *
- * `on_signal()` traps `SIGINT`/`SIGTERM`/etc. so a long-running
- * script can shut down cleanly instead of being torn down mid-work.
- * Falling off the end of the callback lets the signal do what it
- * would have done anyway, so this cleans up and then exits:
+ * `on_signal()` catches `SIGINT`, `SIGTERM` and other signals, so that
+ * a long-running script can shut down cleanly instead of being stopped
+ * in the middle of its work. When the callback returns nothing, the
+ * signal then does what it would have done anyway, so this example
+ * cleans up and then exits:
  *
  * ```zuri
  * os.on_signal('INT', @() {
@@ -85,17 +86,16 @@
  * })
  * ```
  *
- * Return a truthy value instead to swallow the signal and keep
- * running.
+ * Return a truthy value instead to ignore the signal and keep running.
  *
- * Windows has no signals. A callback registered there runs for console
- * events like Ctrl+C, and never for anything `kill()` sends.
+ * Windows has no signals. There, a callback runs for console events
+ * such as Ctrl+C, and never for anything `kill()` sends.
  *
  * ## Watching for changes
  *
  * A `Watcher` is told about changes to files and directories as the
- * operating system delivers them, and about the exit of child processes
- * it follows:
+ * operating system reports them, and about the exit of child processes
+ * that it follows:
  *
  * ```zuri
  * var watcher = os.Watcher().add('templates')
@@ -112,11 +112,11 @@
  * echo '${os.free_memory() / 1_000_000} MB free of ${os.total_memory() / 1_000_000} MB'
  * ```
  *
- * ## Scratch space
+ * ## Temporary files
  *
- * `create_temp_file()`/`create_temp_dir()` reserve a uniquely named
- * path under `temp_dir()` atomically, so two processes racing to
- * create scratch space can never collide on the same name:
+ * `create_temp_file()` and `create_temp_dir()` reserve a uniquely named
+ * path under `temp_dir()` atomically, so two processes creating
+ * temporary files at the same time can never get the same name:
  *
  * ```zuri
  * var path = os.create_temp_file('upload-', '.tmp')

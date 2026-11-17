@@ -1,8 +1,8 @@
 /**
  * @module test.expect
  *
- * `expect(value)` and everything that can be said about a value once
- * you have one.
+ * `expect(value)`, and everything you can check about a value once you
+ * have it.
  *
  * ```zuri
  * expect(total).to_be(42)
@@ -13,14 +13,14 @@
  *
  * ### Negation
  *
- * Every matcher negates through `.not`, and there is exactly one
- * implementation behind both directions, so a matcher and its
- * negation can never disagree about what they mean.
+ * Every matcher can be negated with `.not`, and a single implementation
+ * handles both directions, so a matcher and its negation can never
+ * disagree about what they mean.
  *
  * ### Chaining
  *
- * Matchers return the `Expect` they were called on, so several
- * statements about one value read as one:
+ * Matchers return the `Expect` they were called on, so you can make
+ * several checks on one value in one statement:
  *
  * ```zuri
  * expect(port).to_be_int().to_be_between(1024, 65535)
@@ -28,8 +28,9 @@
  *
  * ### Labels
  *
- * A second argument to `expect()` names the value, which is worth
- * doing when the number alone would not say which number it was:
+ * A second argument to `expect()` gives the value a name, which is
+ * useful when the number by itself wouldn't tell you which number it
+ * was:
  *
  * ```zuri
  * expect(response.status, 'status').to_be(200)
@@ -38,15 +39,14 @@
  * Expected status (404) to be 200
  * ```
  *
- * ### Choosing between to_be and to_equal
+ * ### `to_be` or `to_equal`
  *
- * `to_be` is Zuri's `==`. That already compares lists, dictionaries
- * and bytes by their contents, so it is the right matcher for most
- * things. It compares two instances by identity, though, so two
- * separately constructed objects are never `to_be` each other.
- * `to_equal` is the structural one: it walks instances field by
- * field, treats `NaN` as equal to itself, and survives a value that
- * contains itself.
+ * `to_be` is Zuri's `==`. That already compares lists, dictionaries and
+ * bytes by their contents, so it's the right matcher for most things.
+ * But it compares two instances by identity, so two objects created
+ * separately are never `to_be` each other. `to_equal` compares
+ * structure: it goes through instances field by field, treats `NaN` as
+ * equal to itself, and handles a value that contains itself.
  */
 
 import io
@@ -61,10 +61,10 @@ import .snapshot
 import .style
 
 /**
- * The subject of an assertion, and every matcher that can be applied
+ * The subject of an assertion, with every matcher that can be applied
  * to it.
  *
- * Built by `expect()`; there is no reason to construct one directly.
+ * `expect()` creates it, and there's no reason to create one directly.
  */
 class Expect {
 
@@ -80,12 +80,13 @@ class Expect {
   var not = nil
 
   /**
-   * @param any value: the value under test.
-   * @param ?string label: a name for it, used in failure messages.
+   * @param any value: the value being tested.
+   * @param ?string label: a name for the value, used in failure
+   *    messages.
    * @param ?bool negated
-   * @param ?Expect twin: the opposite-polarity object to point `not`
-   *    at. Left out, one is built; this is what stops the pair from
-   *    constructing each other forever.
+   * @param ?Expect twin: the object with the opposite polarity, for
+   *    `not` to point to. If it's left out, one is created. This is
+   *    what stops the pair from creating each other forever.
    */
   @new(value, label, negated, twin) {
     self._value = value
@@ -167,9 +168,9 @@ class Expect {
   /**
    * Asserts `==`.
    *
-   * Numbers, strings and booleans compare by value; lists,
-   * dictionaries and bytes compare by contents; instances and
-   * functions compare by identity.
+   * Numbers, strings and booleans are compared by value, lists,
+   * dictionaries and bytes by their contents, and instances and
+   * functions by identity.
    *
    * ```zuri
    * expect(2 + 2).to_be(4)
@@ -193,9 +194,9 @@ class Expect {
   }
 
   /**
-   * Asserts structural equality: instances are compared field by
-   * field rather than by identity, `NaN` equals `NaN`, and a value
-   * that contains itself is handled rather than hung on.
+   * Asserts structural equality. Instances are compared field by field,
+   * instead of by identity, `NaN` equals `NaN`, and a value that
+   * contains itself is handled, instead of causing an endless loop.
    *
    * ```zuri
    * expect(Point(1, 2)).to_equal(Point(1, 2))
@@ -349,12 +350,12 @@ class Expect {
   }
 
   /**
-   * Asserts the value is truthy.
+   * Asserts that the value is truthy.
    *
    * @note Zuri's falsy values are `false`, `nil`, zero, `NaN`, a zero
-   *    bigint, the empty string and an empty bytes buffer. Every
-   *    negative number is truthy, and so is an empty list or
-   *    dictionary; use `to_be_empty()` for those.
+   *    bigint, the empty string and empty bytes. Every negative number
+   *    is truthy, and so is an empty list or dictionary. Use
+   *    `to_be_empty()` for those.
    * @returns Expect
    */
   to_be_truthy() {
@@ -779,12 +780,12 @@ class Expect {
   # =========================================================================
 
   /**
-   * Asserts the subject contains `item`.
+   * Asserts that the subject contains `item`.
    *
-   * What "contains" means follows the subject: a substring of a
-   * string, an element of a list or a bytes buffer, a key of a
-   * dictionary. Comparison is `==`; `to_contain_equal()` is the
-   * structural version.
+   * What "contains" means depends on the subject: a substring of a
+   * string, an element of a list or of bytes, or a key of a dictionary.
+   * Values are compared with `==`. `to_contain_equal()` compares them
+   * structurally.
    *
    * @param any item
    * @returns Expect
@@ -805,8 +806,9 @@ class Expect {
   }
 
   /**
-   * Asserts the subject contains an element deeply equal to `item`,
-   * which is what finding an object in a list needs.
+   * Asserts that the subject contains an element that's structurally
+   * equal to `item`, which is what you need to find an object in a
+   * list.
    *
    * @param any item
    * @returns Expect
@@ -1254,10 +1256,10 @@ class Expect {
   # =========================================================================
 
   /**
-   * Asserts that calling the subject raises.
+   * Asserts that calling the subject raises an error.
    *
-   * The subject must be a function taking no arguments; wrap the call
-   * being tested in one.
+   * The subject must be a function without parameters, so wrap the call
+   * you're testing in one.
    *
    * ```zuri
    * expect(@{ parse('') }).to_raise()
@@ -1479,7 +1481,8 @@ class Expect {
   }
 
   /**
-   * Asserts at least one call returned rather than raised.
+   * Asserts that at least one call returned, instead of raising an
+   * error.
    *
    * @returns Expect
    */

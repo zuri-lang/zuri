@@ -3,16 +3,16 @@
  *
  * Schema changes for MySQL and MariaDB.
  *
- * Both commit at every statement that changes a table's definition,
+ * Both commit after every statement that changes a table's definition,
  * whatever transaction is open, so a schema change here is never rolled
- * back: each statement stands once it has run.
+ * back. Each statement is permanent once it has run.
  *
- * Tables are created with InnoDB, the engine that enforces foreign
- * keys, and `utf8mb4`, the character set that holds all of Unicode.
- * Indexes are declared inside `create table`, so `if_not_exists` covers
- * them with the table. A text, binary or JSON column can carry a
- * default only as an expression, so its default is written in
- * parentheses.
+ * Tables are created with InnoDB, the storage engine that enforces
+ * foreign keys, and with `utf8mb4`, the character set that can hold all
+ * of Unicode. Indexes are declared inside `create table`, so
+ * `if_not_exists` applies to them as well as to the table. A text,
+ * binary or JSON column can only have a default that's an expression,
+ * so its default is written in parentheses.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -160,15 +160,16 @@ class MySqlDdl < DdlAdapter {
   }
 
   /**
-   * Adds a column, refusing a required one with no default while the
-   * table has rows. MySQL would fill them with a value of its own
-   * choosing; the other engines refuse, and so does this.
+   * Adds a column, but refuses to add a required column with no default
+   * while the table has rows. MySQL would fill the existing rows with a
+   * value of its own choosing, but the other engines refuse, and so
+   * does this.
    *
    * @param Connection connection
    * @param string table
    * @param Column column
-   * @throws NotNullViolation for a required column with no default on
-   *    a table with rows.
+   * @throws NotNullViolation for a required column with no default on a
+   *    table with rows.
    */
   add_column(connection, table: string, column) {
     var filled = column.is_nullable or
@@ -224,9 +225,10 @@ class MySqlDdl < DdlAdapter {
   }
 
   /**
-   * Drops the foreign keys and indexes the column is part of before
-   * the column. MySQL would otherwise refuse while a key uses it, and
-   * take the column out of a composite index rather than drop it.
+   * Drops the foreign keys and indexes that the column is part of,
+   * before dropping the column. Otherwise, MySQL would refuse while a
+   * key uses the column, and would remove the column from a composite
+   * index instead of dropping the index.
    *
    * @param Connection connection
    * @param string table
@@ -358,15 +360,16 @@ class MySqlDdl < DdlAdapter {
   }
 
   /**
-   * Holds the named lock `GET_LOCK` takes while `body` runs, waiting
-   * for another session holding it to let go, however long it takes.
+   * Holds the named lock that `GET_LOCK` takes while `body` runs,
+   * waiting as long as necessary for another session holding it to
+   * release it.
    *
    * @param Connection connection
    * @param string name
    * @param function body
-   * @returns any What `body` returned.
-   * @throws QueryError when the server answers the request for the
-   *    lock with an error rather than the lock, and `body` never runs.
+   * @returns any Whatever `body` returned.
+   * @throws QueryError if the server answers the request for the lock
+   *    with an error, in which case `body` never runs.
    */
   migration_lock(connection, name: string, body: function) {
     var granted = 0

@@ -1,12 +1,12 @@
 /**
  * @module strokefont
  *
- * `StrokeFont`: the font built into the module, defined as stroke
- * geometry rather than glyph outlines.
+ * `StrokeFont`, the font built into the module, defined as strokes
+ * instead of glyph outlines.
  *
- * It exists so that text can be drawn with no font file present at all.
- * Because a glyph is a path rather than a filled shape, it scales to any
- * size and takes a weight without needing a separate face per weight.
+ * It means that text can be drawn without any font file. Each glyph is
+ * a path, not a filled shape, so it scales to any size, and it can be
+ * drawn at any weight without a separate font for each weight.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -731,15 +731,15 @@ var NOTDEF = {
 }
 
 /**
- * The built-in font: a sans-serif drawn from centre-line strokes
- * rather than loaded from a file.
+ * The built-in font, a sans-serif drawn from center-line strokes
+ * instead of being loaded from a file.
  *
- * `imagine` deliberately ships no font file, so
+ * `imagine` intentionally doesn't include any font files, so
  * [[imagine.Font.system]] and [[imagine.Font.sans]] both depend on
- * what happens to be installed. This one is always there. It is
- * defined as geometry in [[imagine.strokefont]], drawn through the
- * same anti-aliased rasterizer everything else uses, and therefore
- * scales cleanly to any size and takes a weight as a parameter.
+ * what's installed. This font is always available. It's defined as
+ * geometry in [[imagine.strokefont]] and drawn by the same anti-aliased
+ * rasterizer as everything else, so it scales cleanly to any size and
+ * takes its weight as a parameter.
  *
  * ```zuri
  * import imagine { Image, StrokeFont }
@@ -749,26 +749,27 @@ var NOTDEF = {
  *   .save('label.png')
  * ```
  *
- * It has the same interface as [[imagine.Font]], so anywhere a font is
- * accepted this can be used instead.
+ * It has the same interface as [[imagine.Font]], so you can use it
+ * anywhere a font is accepted.
  *
- * ## What it is for
+ * ## What it's for
  *
  * Labels, chart axes, watermarks, diagrams, placeholder text, and any
- * output that has to work on a machine with no fonts installed. The
- * look is geometric and single-weight, closer to a technical drawing
- * than to a typeface, because that is what centre-line strokes give
- * you honestly.
+ * output that has to work on a machine without fonts installed. It
+ * looks geometric, with a single weight, more like a technical drawing
+ * than a typeface, because that's what center-line strokes naturally
+ * produce.
  *
- * It is not a substitute for real typography. For body text, a
- * headline, or anything where the shapes matter, load an actual font
- * with [[imagine.Font.load]].
+ * It isn't a replacement for real typography. For body text, headlines,
+ * or anything where the letter shapes matter, load a real font with
+ * [[imagine.Font.load]].
  *
  * ## Coverage
  *
- * Printable ASCII, from space through `~`. Anything else draws the
- * empty box a font uses for a glyph it does not have, so text in
- * another script comes out visibly missing rather than silently blank.
+ * Printable ASCII, from space to `~`. Any other character is drawn as
+ * the empty box that a font uses for a missing glyph, so text in
+ * another script is visibly missing, instead of being silently left
+ * blank.
  *
  * @printable
  */
@@ -778,11 +779,11 @@ class StrokeFont {
   var _weight
 
   /**
-   * Creates the built-in font at a size.
+   * Creates the built-in font at a given size.
    *
-   * @param ?number size: The size in pixels - Default: 16.
-   * @param ?number weight: The stroke width, as a fraction of the size
-   *    - Default: 0.085, a regular weight. Around 0.13 reads as bold.
+   * @param ?number size: the size in pixels. Defaults to 16.
+   * @param ?number weight: the stroke width, as a fraction of the size.
+   *    Defaults to 0.085, a regular weight. Around 0.13 looks bold.
    */
   @new(size: ?number, weight: ?number) {
     var pixels = size == nil ? 16 : size
@@ -970,12 +971,12 @@ class StrokeFont {
   /**
    * Rasterizes a string into an 8-bit coverage mask.
    *
-   * Returns `coverage`, `width`, `height` and `baseline`, the same
-   * shape [[imagine.Font]] returns, which is what lets both be handed
-   * to `Image.text()` interchangeably.
+   * Returns `coverage`, `width`, `height` and `baseline`, the same as
+   * [[imagine.Font]] returns, so either one can be passed to
+   * `Image.text()`.
    *
    * @param string text
-   * @param ?dict options: `tracking`, `line_height`, `align`.
+   * @param ?dict options: `tracking`, `line_height` and `align`
    * @returns dict
    */
   render(text, options) {

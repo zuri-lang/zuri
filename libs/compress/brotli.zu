@@ -1,7 +1,7 @@
 /**
  * @module brotli
  *
- * The Brotli submodule for the compress module.
+ * Brotli compression and decompression.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -250,9 +250,9 @@ class BrotliDecoder {
   }
 
   /**
-   * Returns the number of compressed bytes currently waiting in
-   * the decoder's output buffer. Always `0`: this decoder
-   * decodes on demand rather than buffering ahead.
+   * Returns the number of compressed bytes waiting in the decoder's
+   * output buffer. It's always `0`, because this decoder decodes data
+   * when it's asked for, instead of buffering ahead.
    *
    * @returns number
    */

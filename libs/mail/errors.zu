@@ -1,17 +1,17 @@
 /**
  * @module errors
  *
- * Every error the mail stack raises, under one root.
+ * Every error that the mail modules raise, with one base class.
  *
- * `MailError` is that root. The subclasses separate the cases worth
- * handling differently: a message that will not parse, a server that
- * refused, credentials that were not accepted, a connection that went
- * away mid-conversation.
+ * `MailError` is the base class. Its subclasses separate the cases
+ * worth handling differently: a message that can't be parsed, a server
+ * that refused, credentials that weren't accepted, and a connection
+ * that was lost in the middle of an exchange.
  *
- * The protocols each add one of their own, carrying the reply the
- * server actually sent. SMTP splits its into two, because the
- * difference between "not now" and "not ever" is the difference
- * between queueing a message and bouncing it.
+ * Each protocol adds an error of its own, which carries the reply that
+ * the server actually sent. SMTP has two, because the difference
+ * between "not now" and "never" is the difference between queuing a
+ * message and bouncing it.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -186,9 +186,9 @@ class SmtpPermanentError < SmtpError {
 /**
  * The IMAP server answered a command with `NO` or `BAD`.
  *
- * `status` is which of the two it was. `NO` means the command was
- * understood and refused; `BAD` means it was not understood, which
- * points at the client rather than the request.
+ * `status` says which one it was. `NO` means that the command was
+ * understood and refused. `BAD` means that it wasn't understood, which
+ * points to a problem in the client, not in the request.
  *
  * @printable
  */

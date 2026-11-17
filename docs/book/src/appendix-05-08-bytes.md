@@ -1,27 +1,26 @@
 # Bytes Methods
 
-Every method on the built-in `bytes` type, with its signature, what it
-returns, and the cases where it does something other than the obvious
-thing.
+Every method of the built-in `bytes` type, with its signature, what it
+returns, and any behavior you might not expect.
 
 | Method | Returns | Summary |
 | --- | --- | --- |
 | [`length()`](#length) | `number` | Returns the number of bytes in the byte stream. |
 | [`is_empty()`](#is_empty) | `boolean` | Returns `true` if the byte stream holds no bytes at all, and `false` otherwise. |
-| [`append(n: int)`](#append) | `bytes` | Adds an item to the top of a byte stream. |
+| [`append(n: int)`](#append) |  | Adds a byte to the end. |
 | [`clone()`](#clone) | `bytes` | Returns a deep clone of the byte stream. |
 | [`extend(n: bytes\|string)`](#extend) | `bytes` | Extends the byte stream with the bytes from the given byte stream. |
 | [`index_of(byte: int, start_index: ?number)`](#index_of) | `number` | Returns the index of the first occurrence of the given byte in the byte stream. |
 | [`last_index_of(byte: int, end_index: ?number)`](#last_index_of) | `number` | Returns the index of the last occurrence of the given byte in the byte stream, searching from the end, or `-1` when the byte is not there. |
 | [`pop()`](#pop) | `number` | Removes the last item in a byte stream and returns it. |
-| [`remove(index: number)`](#remove) | `bytes` | Removes the item at the specified index in the byte stream and return the previous value at the specified index. |
+| [`remove(index: number)`](#remove) | `number` | Removes the byte at the given index, and returns it. |
 | [`reverse()`](#reverse) | `bytes` | Reverses the items in the byte stream. |
 | [`first()`](#first) | `number` | Returns the first item in the byte stream or `nil` if the byte stream is empty. |
 | [`last()`](#last) | `number` | Returns the last item in the byte stream or `nil` if the byte stream is empty. |
 | [`get(index: number)`](#get) | `number` | Returns the item at the specified index in the byte stream. |
-| [`take(n: int)`](#take) | `bytes` | Returns a new byte stream containing the first _n_ items in the bytes or a new copy of the bytes if _n_ greater than or equals to the `bytes.length()`. |
+| [`take(n: int)`](#take) | `bytes` | Returns new bytes containing the first _n_ bytes, or a copy of all of them if _n_ is greater than or equal to `length()`. |
 | [`split(delimiter: bytes)`](#split) | `list` | Splits the content of a byte stream based on the specified delimiter. |
-| [`dispose()`](#dispose) |  | Due to the nature of byte stream and their use-case (especially streaming data), it is easy for the system memory to get filled up with data in the byte stream. |
+| [`dispose()`](#dispose) |  | Empties the bytes, releasing the memory they hold. |
 | [`is_alpha()`](#is_alpha) | `boolean` | Returns `true` if the byte stream only contains alpha characters, `false` otherwise. |
 | [`is_alnum()`](#is_alnum) | `boolean` | Returns `true` if the byte stream only contains alpha characters and numbers, `false` otherwise. |
 | [`is_number()`](#is_number) | `boolean` | Returns `true` if the byte stream only contains numbers, `false` otherwise. |
@@ -72,12 +71,12 @@ false
 ## `append()`
 
 ```zuri,ignore
-append(n: int) -> bytes
+append(n: int)
 ```
 
-Adds an item to the top of a byte stream.
+Adds a byte to the end.
 
-For example,
+For example:
 
 ```zuri-repl
 %> var a = bytes([0x40, 0x75])
@@ -88,9 +87,7 @@ For example,
 
 **Parameters**
 
-- `n` (`int`) — The byte to add.
-
-**Returns** `bytes`
+- `n` (`int`): The byte to add.
 
 ## `clone()`
 
@@ -134,7 +131,7 @@ For example,
 
 **Parameters**
 
-- `n` (`bytes|string`) — The byte stream or string to extend with.
+- `n` (`bytes|string`): The byte stream or string to extend with.
 
 **Returns** `bytes`
 
@@ -159,8 +156,8 @@ stream.
 
 **Parameters**
 
-- `byte` (`int`) — The byte to search for.
-- `start_index` (`?number`) — The index to start the search from.
+- `byte` (`int`): The byte to search for.
+- `start_index` (`?number`): The index to start the search from.
   Defaults to 0.
 
 **Returns** `number`
@@ -188,8 +185,8 @@ first and last occurrences in the two halves `n` splits the stream into.
 
 **Parameters**
 
-- `byte` (`int`) — The byte to search for.
-- `end_index` (`?number`) — The highest index a match may sit at.
+- `byte` (`int`): The byte to search for.
+- `end_index` (`?number`): The highest index a match may sit at.
   Defaults to the last byte.
 
 **Returns** `number`
@@ -215,11 +212,10 @@ Removes the last item in a byte stream and returns it.
 ## `remove()`
 
 ```zuri,ignore
-remove(index: number) -> bytes
+remove(index: number) -> number
 ```
 
-Removes the item at the specified index in the byte stream and return
-the previous value at the specified index.
+Removes the byte at the given index, and returns it.
 
 ```zuri-repl
 %> var a = bytes([25, 57, 25])
@@ -231,9 +227,9 @@ the previous value at the specified index.
 
 **Parameters**
 
-- `index` (`number`) — The index to remove.
+- `index` (`number`): The index to remove.
 
-**Returns** `bytes`
+**Returns** `number`
 
 ## `reverse()`
 
@@ -292,7 +288,7 @@ Returns the item at the specified index in the byte stream.
 
 **Parameters**
 
-- `index` (`number`) — The index to get the item from.
+- `index` (`number`): The index to get the item from.
 
 **Returns** `number`
 
@@ -302,9 +298,10 @@ Returns the item at the specified index in the byte stream.
 take(n: int) -> bytes
 ```
 
-Returns a new byte stream containing the first _n_ items in the bytes or
-a new copy of the bytes if _n_ greater than or equals to the
-`bytes.length()`. If `n < 0`, returns `bytes.take(bytes.length() - n)`.
+Returns new bytes containing the first _n_ bytes, or a copy of all of
+them if _n_ is greater than or equal to `length()`. If _n_ is negative,
+this returns all but the last `-n` bytes, which is the same as
+`take(length() + n)`.
 
 For example:
 
@@ -312,9 +309,9 @@ For example:
 %> var a = bytes([10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
 %> a.take(4)
 (0a 0b 0c 0d)
-%> a.take(11) # taking more than the size of the bytes
+%> a.take(11) # more than there are
 (0a 0b 0c 0d 0e 0f 10 11 12 13 14)
-%> a.take(-5)   # taking n < 0
+%> a.take(-5) # all but the last five
 (0a 0b 0c 0d 0e 0f)
 ```
 
@@ -343,7 +340,7 @@ For example,
 
 **Parameters**
 
-- `delimiter` (`bytes`) — The delimiter to split on.
+- `delimiter` (`bytes`): The delimiter to split on.
 
 **Returns** `list`
 
@@ -353,15 +350,13 @@ For example,
 dispose()
 ```
 
-Due to the nature of byte stream and their use-case (especially
-streaming data), it is easy for the system memory to get filled up with
-data in the byte stream. The method allows users to reset a byte stream
-and empty it.
+Empties the bytes, releasing the memory they hold.
 
-> This method allows a fine-grained control on manual memory
-> management of byte stream.
+When bytes are used for streaming data, they can easily fill up memory.
+This method gives you direct control over that, by resetting the bytes
+so that they're empty.
 
-For example,
+For example:
 
 ```zuri-repl
 %> var a = bytes([13, 36])
@@ -537,8 +532,8 @@ data.each(def(byte, index) {
 
 **Parameters**
 
-- `callback` (`function`) — A function that takes two arguments: the
-  byte and its index.
+- `callback` (`function`): A function that takes two arguments: the byte
+  and its index.
 
 **Returns** `void`
 

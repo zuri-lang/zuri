@@ -1,18 +1,19 @@
 /**
  * @module encoder
  *
- * Turning a plain Zuri value into a document.
+ * Turns a plain Zuri value into a document.
  *
- * The parser's job is to lose nothing. This one's is the opposite:
- * there is no original text to preserve, so every choice has to be
- * made from scratch. Which dictionaries become `[table]` blocks and
- * which become inline tables, which lists become `[[array of table]]`
- * blocks, where a long array breaks across lines, whether a string
- * with a newline in it is escaped or written out in triple quotes.
+ * The parser's job is to lose nothing. This encoder's job is the
+ * opposite. There's no original text to preserve, so every decision has
+ * to be made from scratch: which dictionaries become `[table]` blocks
+ * and which become inline tables, which lists become
+ * `[[array of table]]` blocks, where a long array is split across
+ * lines, and whether a string containing a line break is escaped or
+ * written in triple quotes.
  *
- * Every one of those is an option with a stated default, and the
- * result is a `Document` like any other, so a freshly encoded value
- * and a parsed file are the same kind of thing afterwards.
+ * Each of those decisions is an option with a documented default. The
+ * result is a `Document` like any other, so a freshly encoded value and
+ * a parsed file are the same kind of thing afterwards.
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
  */
@@ -396,26 +397,28 @@ def _join(path) {
 }
 
 /**
- * Builds the document for a Zuri dictionary.
+ * Creates the document for a Zuri dictionary.
  *
- * A TOML file is a table, so the value has to be a dictionary.
- * Everything under it is placed by what it is: a dictionary becomes a
- * `[table]` block, a non-empty list of dictionaries becomes a
- * `[[array of tables]]`, and everything else becomes a pair on a line.
+ * A TOML file is a table, so the value must be a dictionary. Everything
+ * in it is placed according to what it is: a dictionary becomes a
+ * `[table]` block, a non-empty list of dictionaries becomes an
+ * `[[array of tables]]`, and everything else becomes a key and value on
+ * one line.
  *
  * @param dict value The value to write.
  * @param ?dict options `sort_keys` (default `false`) writes keys in
- *    sorted order instead of insertion order. `inline_threshold`
- *    (default `0`, off) writes a flat table inline when its inline
- *    form is no longer than this many characters.
- *    `multiline_strings` (default `true`) writes a string holding a
- *    newline in triple quotes rather than escaping it. `array_width`
- *    (default `80`) is the length past which an array breaks onto one
- *    line per item.
+ *    sorted order, instead of the order they were added.
+ *    `inline_threshold` (default `0`, which turns it off) writes a
+ *    table with no nested tables inline, if its inline form is no
+ *    longer than this many characters. `multiline_strings` (default
+ *    `true`) writes a string containing a line break in triple quotes,
+ *    instead of escaping the line break. `array_width` (default `80`)
+ *    is the length beyond which an array is split, with one item per
+ *    line.
  * @returns Document
- * @throws EncodeError If the value is not a dictionary, holds a `nil`
- *    or a value with no TOML spelling, has a non-string key, or
- *    contains itself.
+ * @throws EncodeError If the value isn't a dictionary, contains a `nil`
+ *    or a value that can't be written as TOML, has a key that isn't a
+ *    string, or contains itself.
  */
 def encode(value, options) {
   if !is_dict(value) {

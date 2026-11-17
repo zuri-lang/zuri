@@ -1,7 +1,7 @@
 /**
  * @module test.conduct
  *
- * Running a directory of test files, each in a process of its own.
+ * Runs a directory of test files, each in a process of its own.
  *
  * ```zuri
  * import test
@@ -9,29 +9,30 @@
  * test.conduct('tests')
  * ```
  *
- * `zuri test` is this call behind a command line, with every option
- * below as a flag, so a project gets a test runner without writing
- * one. Call `conduct()` directly when the run wants to be under the
- * project's own control.
+ * `zuri test` is this call with a command line in front of it, with
+ * every option below available as a flag, so a project gets a test
+ * runner without writing one. Call `conduct()` directly when the
+ * project needs to control the run itself.
  *
  * ### One process per file
  *
- * A test file is an ordinary Zuri script, and each one is run as one:
+ * A test file is an ordinary Zuri script, and each one runs as a
+ * separate process:
  *
- * - A file that loops forever is killed, and the rest still run.
- * - A file that segfaults, or calls `os.exit()` halfway through, is
- *   reported as a crashed file rather than taking the run with it.
- * - Global state, a module loaded with a side effect, a signal
- *   handler, a changed working directory: none of it leaks from one
- *   file into the next.
- * - `timeout` is enforced by `kill`, so it holds for a file that
+ * - A file that loops forever is killed, and the other files still run.
+ * - A file that crashes, or calls `os.exit()` partway through, is
+ *   reported as a crashed file, instead of stopping the whole run.
+ * - Nothing leaks from one file into the next: not global state, a
+ *   module loaded with a side effect, a signal handler or a changed
+ *   working directory.
+ * - `timeout` is enforced with `kill`, so it works even for a file that
  *   never returns.
  *
- * ### The index is not a test file
+ * ### The index file isn't a test file
  *
- * `index.zu` is left out of discovery. A directory handed to `zuri
- * run` runs its `index.zu`, so a suite that wants to start itself
- * puts one there:
+ * `index.zu` is left out when test files are found. `zuri run` runs a
+ * directory's `index.zu`, so a test suite that wants to be able to
+ * start itself can put one there:
  *
  * ```zuri,ignore
  * # tests/index.zu
@@ -45,25 +46,23 @@
  * $ zuri run tests
  * ```
  *
- * The script that is currently running is left out as well, whatever
- * it is called, so no arrangement of files makes a run start itself
- * again.
+ * The script that's currently running is left out too, whatever it's
+ * called, so no arrangement of files can make a run start itself again.
  *
  * ### What a test file has to do
  *
- * Nothing special. It declares its tests. The conductor sets
- * `ZURI_TEST_CONDUCTED` in the child, and the run switches to a
- * machine-readable reporter when it sees it, so the same file is
- * equally runnable on its own.
+ * Nothing special. It just declares its tests. The conductor sets
+ * `ZURI_TEST_CONDUCTED` in the child process, and the run switches to a
+ * machine-readable reporter when it sees it, so the same file can also
+ * be run by itself.
  *
  * A file that declares no tests at all, or exits before it can report,
- * is called out rather than silently counting as zero tests.
+ * is pointed out, instead of silently counting as zero tests.
  *
- * ### Ordering
+ * ### Order
  *
- * Files are reported in the order they were discovered, whatever
- * order they finish in, so a run is reproducible with `jobs` turned
- * up.
+ * Files are reported in the order they were found, whatever order they
+ * finish in, so a run gives the same report when `jobs` is increased.
  */
 
 import json
@@ -168,20 +167,20 @@ def _wanted(name, options) {
 }
 
 /**
- * Every test file under `directory`, in the order they will run.
+ * Every test file under `directory`, in the order they'll run.
  *
- * `index.zu` is never one of them. A directory handed to `zuri run`
- * runs its `index.zu`, so that file is the thing that starts a suite
- * rather than a part of one, and conducting a directory from inside
- * its own index is the shape this is written for. Pass an `ignore` list of
- * your own when a file of that name really is a test.
+ * `index.zu` is never included. `zuri run` runs a directory's
+ * `index.zu`, so that file is what starts a suite, not part of it, and
+ * this is designed for conducting a directory from inside its own index
+ * file. Pass your own `ignore` list if a file with that name really is
+ * a test.
  *
- * The script that is currently running is left out too, whatever it is
+ * The script that's currently running is left out too, whatever it's
  * called, so no arrangement of files can make a run start itself again.
  *
  * @param string directory
- * @param ?dict options: `match`, `ignore` and `recursive`, as
- *    `conduct()` takes them.
+ * @param ?dict options: `match`, `ignore` and `recursive`, as for
+ *    `conduct()`.
  * @returns list: paths, relative to `directory`.
  */
 def discover(directory: string, options: ?dict) {
@@ -464,8 +463,8 @@ def _echo_totals(totals, duration) {
 # =========================================================================
 
 /**
- * Runs every test file under `directory`, each in its own process,
- * and reports them together.
+ * Runs every test file under `directory`, each in its own process, and
+ * reports them together.
  *
  * ```zuri
  * import test
@@ -473,36 +472,37 @@ def _echo_totals(totals, duration) {
  * test.conduct('tests', { timeout: 30000, jobs: 4 })
  * ```
  *
- * The process ends with status `1` when anything failed, through
- * `os.set_exit_code()`, so nothing has to be added for CI. The
- * returned dictionary is there for a caller that wants to look at the
- * run rather than just be told about it.
+ * If anything failed, the process exits with status `1`, which is set
+ * with `os.set_exit_code()`, so nothing extra is needed for CI. The
+ * returned dictionary is for a caller that wants to examine the run,
+ * not just hear about it.
  *
- * @param ?string directory: `'tests'` by default.
+ * @param ?string directory: defaults to `'tests'`.
  * @param ?dict options:
  *
- *    - `match`: filename patterns to run, `['*.zu']` by default.
- *      `*` and `?` are the only wildcards.
- *    - `ignore`: patterns for files and directories to skip,
- *      `['_*', '.*', 'index.zu']` by default, which is what keeps
- *      helper files, `__snapshots__` and the index that starts the
- *      suite out of it.
- *    - `recursive`: whether to look in subdirectories. `true`.
- *    - `jobs`: how many files to run at once. `1`, because a test
- *      file that binds a port or writes a fixture was probably not
- *      written to share the machine. Reporting order is by
- *      discovery whatever this is set to.
- *    - `timeout`: milliseconds to give one file before killing it.
- *      `0`, meaning no limit.
- *    - `bail`: stop after this many failing files. `0` never stops.
- *    - `env`: extra environment variables for every child.
+ *    - `match`: patterns for the file names to run. Defaults to
+ *      `['*.zu']`. `*` and `?` are the only wildcards.
+ *    - `ignore`: patterns for files and directories to skip. Defaults
+ *      to `['_*', '.*', 'index.zu']`, which leaves out helper files,
+ *      `__snapshots__` and the index file that starts the suite.
+ *    - `recursive`: whether to look in subdirectories. Defaults to
+ *      `true`.
+ *    - `jobs`: how many files to run at the same time. Defaults to `1`,
+ *      because a test file that binds a port or writes a fixture
+ *      probably wasn't written to share the machine. Files are reported
+ *      in the order they were found, whatever this is set to.
+ *    - `timeout`: the number of milliseconds to give each file before
+ *      it's killed. Defaults to `0`, which means no limit.
+ *    - `bail`: stop after this many files fail. `0`, the default, never
+ *      stops.
+ *    - `env`: extra environment variables for every child process.
  *
  * @returns dict: `{ files, totals, duration, exit_code, ok }`, where
  *    `files` is a list of `FileResult`.
  * @note `index.zu` is never one of the files it runs, and neither is
- *    the script that called it, so a `tests/index.zu` conducting its
+ *    the script that called it, so a `tests/index.zu` that conducts its
  *    own directory works.
- * @raises TestSetupError when `directory` does not exist.
+ * @raises TestSetupError if `directory` doesn't exist.
  */
 def conduct(directory: ?string, options: ?dict) {
   if directory == nil {

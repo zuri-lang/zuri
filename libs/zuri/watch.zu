@@ -1,16 +1,15 @@
 /**
  * @module zuri.watch
  *
- * What a program tells `zuri run --watch` about the files it depends
- * on.
+ * How a program tells `zuri run --watch` about the files it depends on.
  *
  * Watch mode restarts a program when a file it depends on changes. The
- * runtime reports the Zuri source it reads by itself: the entry file
- * and every module imported from it, at the top of a file or inside a
- * function, in any isolate. What the runtime cannot see is a file a
- * library reads as data while the program's behaviour still comes from
- * it, the way `wire` reads templates. A library declares each such file
- * with `depends_on()`:
+ * runtime reports the Zuri source it reads by itself: the entry file,
+ * and every module imported from it, whether at the top of a file or
+ * inside a function, in any isolate. What the runtime can't see is a
+ * file that a library reads as data, when the program's behavior still
+ * depends on it, as `wire` reads templates. A library declares each
+ * such file with `depends_on()`:
  *
  * ```zuri
  * import json
@@ -23,13 +22,13 @@
  * }
  * ```
  *
- * Outside watch mode both functions return at once and do nothing, so
- * a library calls `depends_on()` unconditionally rather than asking
- * `active()` first.
+ * Outside watch mode, both functions return immediately without doing
+ * anything, so a library can call `depends_on()` every time, without
+ * checking `active()` first.
  *
- * The module is its own import, apart from the rest of the `zuri`
- * package, so a library reaching for it does not load the parser and
- * compiler along with it.
+ * This module is imported separately from the rest of the `zuri`
+ * package, so that a library using it doesn't load the parser and the
+ * compiler as well.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -38,22 +37,24 @@ import _zuri_watch
 
 /**
  * Tells watch mode that this program depends on the file at `path`, so
- * that a change to it restarts the program.
+ * that a change to the file restarts the program.
  *
- * Call it when the file is read. A file declared and then changed
- * before watch mode has started watching it is still noticed, because
- * the file's content is recorded along with its path. A path with
- * nothing at it yet is recorded too, and creating the file restarts
- * the program.
+ * Call it when you read the file. If the file is declared and then
+ * changed before watch mode has started watching it, the change is
+ * still noticed, because the file's contents are recorded along with
+ * its path. A path where there's no file yet is recorded too, and
+ * creating the file restarts the program.
  *
  * Only the first declaration of a file is recorded, and declaring it
- * again costs a lookup and nothing more, so a function may declare a
- * file every time it reads it. Files in the standard library are never
- * recorded, since they change only when Zuri itself is upgraded.
+ * again only costs a lookup, so a function can declare a file every
+ * time it reads it. Files in the standard library are never recorded,
+ * because they only change when Zuri itself is upgraded.
  *
- * @param string path: absolute, or relative to the working directory.
- * @returns bool: `true` when the program runs under `zuri run --watch`
- *    and the file was recorded, `false` otherwise.
+ * @param string path: an absolute path, or one relative to the working
+ *    directory.
+ * @returns bool: `true` if the program is running under
+ *    `zuri run --watch` and the file was recorded, and `false`
+ *    otherwise.
  */
 def depends_on(path: string) {
   return _zuri_watch.depends_on(path)

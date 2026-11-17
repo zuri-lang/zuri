@@ -1,12 +1,12 @@
 /**
  * @module client
  *
- * The reading end of IMAP.
+ * The client side of IMAP.
  *
- * `ImapClient` connects to a server, opens a mailbox, and reads what
- * is in it. Unlike POP3, nothing is downloaded that was not asked
- * for: a message's headers, one part of it, or the whole of it, as
- * needed.
+ * `ImapClient` connects to a server, opens a mailbox and reads what's
+ * in it. Unlike POP3, nothing is downloaded unless you ask for it,
+ * whether that's a message's headers, one part of it or the whole
+ * message.
  *
  * ```zuri,ignore
  * import mail.imap { ImapClient }
@@ -107,8 +107,8 @@ class MailboxInfo {
   }
 
   /**
-   * Whether the server says this name cannot be selected, which is
-   * what a folder that only holds other folders looks like.
+   * Whether the server says that this name can't be selected, as with a
+   * folder that only contains other folders.
    *
    * @returns bool
    */
@@ -406,27 +406,28 @@ class ImapClient {
   }
 
   /**
-   * Opens a connection and gets as far as being able to select a
+   * Opens a connection, and gets as far as being able to select a
    * mailbox.
    *
-   * When the greeting, TLS or authentication fails, the connection is
-   * closed before the error is raised, since no client is returned to
-   * close it with.
+   * If the greeting, TLS or authentication fails, the connection is
+   * closed before the error is raised, because no client is returned
+   * that could close it.
    *
    * | option | default | what it does |
    * | - | - | - |
-   * | `username`, `password` | none | authenticate when both are given |
+   * | `username`, `password` | none | authenticate if both are given |
    * | `token` | none | authenticate with a bearer token instead |
-   * | `tls` | `require` | `require`, `prefer` or `disable`, when not already encrypted |
+   * | `tls` | `require` | `require`, `prefer` or `disable`, if the connection isn't already encrypted |
    * | `tls_config` | a default one | the trust settings for TLS |
-   * | `mechanisms` | all of them | restricts which are acceptable |
-   * | `timeout` | `60000` | milliseconds to wait on the socket |
+   * | `mechanisms` | all of them | limits which mechanisms are acceptable |
+   * | `timeout` | `60000` | the number of milliseconds to wait on the socket |
    *
-   * @param string url: `imaps://host`, `imap://host`, or a bare host.
+   * @param string url: `imaps://host`, `imap://host`, or just a host
+   *    name
    * @param ?dict options
    * @returns ImapClient
    * @throws ImapError if the server refuses.
-   * @throws AuthenticationError if it refuses the credentials.
+   * @throws AuthenticationError if the server rejects the credentials.
    */
   static connect(url: string, options: ?dict) {
     var given = options == nil ? {} : options
@@ -600,17 +601,19 @@ class ImapClient {
   }
 
   /**
-   * Authenticates, choosing the strongest mechanism both ends know.
+   * Authenticates, using the strongest mechanism that both sides
+   * support.
    *
-   * A server may forbid a mechanism outright by advertising
-   * `LOGINDISABLED`, which is how it says the connection is not
-   * private enough; this refuses to try in that case rather than
+   * A server can forbid sending a plain login by advertising
+   * `LOGINDISABLED`, which is how it says that the connection isn't
+   * private enough. In that case, this refuses to try, instead of
    * sending the password anyway.
    *
-   * @param ?string mechanism: Forces one rather than choosing.
+   * @param ?string mechanism: forces a particular mechanism, instead of
+   *    choosing one
    * @returns ImapClient itself.
-   * @throws AuthenticationError if there is no mechanism in common or
-   *    the credentials are refused.
+   * @throws AuthenticationError if there's no mechanism in common, or
+   *    the credentials are rejected.
    */
   login(mechanism: ?string) {
     var offered = self._auth_mechanisms()
@@ -994,11 +997,11 @@ class ImapClient {
   }
 
   /**
-   * Closes the open mailbox without removing anything, which is what
-   * `CLOSE` cannot do.
+   * Closes the open mailbox without removing anything, which `CLOSE`
+   * can't do.
    *
    * @returns ImapClient itself.
-   * @throws StateError if the server does not offer `UNSELECT`.
+   * @throws StateError if the server doesn't support `UNSELECT`.
    */
   unselect() {
     if self.state != 'selected' {
@@ -1018,15 +1021,15 @@ class ImapClient {
   }
 
   /**
-   * The mailboxes matching a pattern.
+   * The mailboxes that match a pattern.
    *
-   * `*` matches anything including the hierarchy separator, and `%`
-   * matches anything except it, which is what lists one level.
+   * `*` matches anything, including the hierarchy separator, and `%`
+   * matches anything except the separator, which lists a single level.
    *
-   * A server that offers `SPECIAL-USE` is asked for the RFC 6154
-   * attributes outright, such as `\Sent` and `\Trash`, since not
-   * every one volunteers them in a plain listing. One that refuses the
-   * request is asked again plainly.
+   * If the server supports `SPECIAL-USE`, it's asked for the RFC 6154
+   * attributes directly, such as `\Sent` and `\Trash`, because not
+   * every server includes them in a plain listing. If the server
+   * refuses that request, it's asked again with a plain listing.
    *
    * ```zuri,ignore
    * for box in inbox.list('', '*') {
@@ -1034,9 +1037,9 @@ class ImapClient {
    * }
    * ```
    *
-   * @param ?string reference: The prefix to search under. Empty when
-   *    not given.
-   * @param ?string pattern: `*` when not given.
+   * @param ?string reference: the prefix to search under. Empty if it
+   *    isn't given.
+   * @param ?string pattern: `*` if it isn't given
    * @returns list of `MailboxInfo`
    */
   list(reference: ?string, pattern: ?string) {
@@ -1209,11 +1212,11 @@ class ImapClient {
   }
 
   /**
-   * The messages in the open mailbox matching a search.
+   * The messages in the open mailbox that match a search.
    *
-   * The criteria are IMAP's own, which read close to English:
-   * `'UNSEEN'`, `'FROM ann@example.com'`, `'SINCE 1-Jan-2026 SMALLER
-   * 10000'`.
+   * The criteria are IMAP's own, which read a lot like English:
+   * `'UNSEEN'`, `'FROM ann@example.com'` or
+   * `'SINCE 1-Jan-2026 SMALLER 10000'`.
    *
    * ```zuri,ignore
    * for uid in inbox.search('UNSEEN SINCE 1-Jan-2026', true) {
@@ -1222,9 +1225,9 @@ class ImapClient {
    * ```
    *
    * @param string criteria
-   * @param ?bool by_uid: Return unique identifiers rather than
-   *    positions, which is what anything that outlives the connection
-   *    wants.
+   * @param ?bool by_uid: whether to return unique identifiers instead
+   *    of positions. Use them for anything that needs to outlast the
+   *    connection.
    * @returns list of number
    * @throws StateError if no mailbox is open.
    */
@@ -1312,12 +1315,12 @@ class ImapClient {
   }
 
   /**
-   * Fetches one message whole.
+   * Fetches a whole message.
    *
-   * Reading a message this way does not mark it read, because a
-   * program that goes through a mailbox should not change what a
-   * person sees when they next open it. Pass `mark_seen` to say
-   * otherwise, which is what a mail client showing a message wants.
+   * Reading a message this way doesn't mark it as read, because a
+   * program that goes through a mailbox shouldn't change what a person
+   * sees the next time they open it. Pass `mark_seen` to mark it as
+   * read, which is what a mail client that's showing the message wants.
    *
    * ```zuri,ignore
    * echo inbox.fetch_message(uid, true, false).subject()
@@ -1325,9 +1328,9 @@ class ImapClient {
    *
    * @param number id
    * @param ?bool by_uid
-   * @param ?bool mark_seen: Whether to set `\Seen` on the way.
+   * @param ?bool mark_seen: whether to set the `\Seen` flag
    * @returns Message
-   * @throws ImapError if there is no such message.
+   * @throws ImapError if there's no such message.
    */
   fetch_message(id: number, by_uid: ?bool, mark_seen: ?bool) {
     var found = self.fetch(
@@ -1543,13 +1546,13 @@ class ImapClient {
   }
 
   /**
-   * Waits for the server to say something, which is how a program
-   * learns about new mail without asking over and over.
+   * Waits for the server to send something, which is how a program
+   * finds out about new mail without asking again and again.
    *
-   * Returns when the server reports anything, or when the wait runs
-   * out. A server may drop a connection that idles for too long, so
-   * even a program with nothing else to do should come back around
-   * every twenty minutes or so; RFC 2177 says as much.
+   * It returns when the server reports anything, or when the wait times
+   * out. A server may close a connection that's idle for too long, so
+   * even a program with nothing else to do should return and wait again
+   * about every twenty minutes, as RFC 2177 recommends.
    *
    * ```zuri,ignore
    * inbox.on_event(@(response) {
@@ -1561,10 +1564,10 @@ class ImapClient {
    * }
    * ```
    *
-   * @param ?number timeout: Milliseconds to wait. `1500000`, which is
-   *    twenty-five minutes, when not given.
+   * @param ?number timeout: the number of milliseconds to wait. If it
+   *    isn't given, it's `1500000`, which is twenty-five minutes.
    * @returns list of the untagged responses that arrived.
-   * @throws StateError if the server does not offer `IDLE`.
+   * @throws StateError if the server doesn't support `IDLE`.
    */
   idle(timeout: ?number) {
     self._need_mailbox('idle')
@@ -1711,11 +1714,11 @@ class ImapClient {
   }
 
   /**
-   * Tells the server what this client is, and reads back what the
-   * server is. Both sides may say nothing at all.
+   * Tells the server about this client, and reads what the server says
+   * about itself. Either side can choose not to say anything.
    *
-   * @param ?dict fields: `name`, `version` and whatever else is worth
-   *    saying. A name of `Zuri` when not given.
+   * @param ?dict fields: `name`, `version` and anything else worth
+   *    saying. The name is `Zuri` if it isn't given.
    * @returns dict of what the server said about itself.
    */
   id(fields: ?dict) {

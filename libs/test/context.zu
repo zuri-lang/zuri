@@ -1,16 +1,16 @@
 /**
  * @module test.context
  *
- * What is true right now, while one particular test is running.
+ * The state of the test that's running right now.
  *
- * The assertion side and the runner side both need this, and neither
- * should have to import the other, so it lives on its own. Nothing in
- * here is interesting to a test author; the API a test uses is
- * `test.assertions()` and `test.has_assertions()`, both of which are
- * thin wrappers over what is below.
+ * Both the assertions and the runner need this, and neither should have
+ * to import the other, so it's in a module of its own. Nothing here is
+ * of interest to someone writing tests. The functions a test uses are
+ * `test.assertions()` and `test.has_assertions()`, which are thin
+ * wrappers around what's here.
  *
- * The state is a single module-level value because a Zuri program has
- * one call stack and runs one test at a time. There is nothing to key
+ * The state is a single module-level value, because a Zuri program has
+ * one call stack and runs one test at a time, so there's nothing to key
  * it by.
  */
 

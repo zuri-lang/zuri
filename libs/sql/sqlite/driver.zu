@@ -1,8 +1,8 @@
 /**
  * @module driver
  *
- * Opening SQLite databases: reading a connection string, choosing the
- * open flags, and putting a new connection into a sane state.
+ * Opens SQLite databases: reads a connection string, chooses the open
+ * flags, and sets up a new connection with sensible settings.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -70,14 +70,15 @@ class SqliteDriver < Driver {
   }
 
   /**
-   * What SQLite can do.
+   * What SQLite supports.
    *
-   * Two of these are worth reading twice. `concurrent_writers` is
-   * false: a SQLite database takes one writer at a time whatever the
-   * journal mode, and a pool over it serialises writes rather than
-   * parallelising them. `json` is false because SQLite has JSON
+   * Two of these are worth noting. `concurrent_writers` is false,
+   * because a SQLite database allows one writer at a time, whatever the
+   * journal mode, and a pool over it serializes writes instead of
+   * running them in parallel. `json` is false, because SQLite has JSON
    * *functions* but no JSON *type*, so a list or dictionary is stored
-   * as text and comes back as text unless the column says otherwise.
+   * as text and comes back as text, unless the column's declared type
+   * says otherwise.
    *
    * @returns dict
    */
