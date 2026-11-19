@@ -1052,6 +1052,11 @@ if font != nil {
   assert rendered.coverage.length() == rendered.width * rendered.height,
       'a coverage mask must be one byte per pixel'
 
+  # A face without a glyph for a letter draws the same box for it as for
+  # a private-use character, which no ordinary font has.
+  assert rendered.coverage != font.render('', nil).coverage,
+      'Font.sans() must find a face that has Latin letters, not ${font.name()}'
+
   var written = Image(120, 40, 'white')
   written.text(4, 4, 'Hi', font, 'black')
 
