@@ -11,6 +11,7 @@
 import http
 import http.sse
 import http.websocket
+import os
 
 /**
  * Adds the routes to `server`.
@@ -243,4 +244,48 @@ def one_at_a_time(port_channel) {
 
     server.serve_connection(client)
   }
+}
+
+# Takes a while, as a setup that loads templates or opens a database
+# pool does.
+def _slow_setup(server) {
+  os.sleep(0.3)
+  setup(server)
+}
+
+def _broken_setup(server) {
+  raise Error('broken setup')
+}
+
+/**
+ * Runs `http.serve()` with a slow setup, reports how long it took
+ * `on_ready` to be called, and stops.
+ *
+ * @param Channel port_channel: told `[address, seconds]`
+ */
+def slow_serve(port_channel) {
+  var started = time()
+
+  http.serve(_slow_setup, {
+    port: 0,
+    workers: 2,
+    on_ready: @(address, stop) {
+      port_channel.send([address.to_string(), time() - started])
+      stop()
+    },
+  })
+}
+
+/**
+ * Runs `http.serve()` with a setup that raises, and reports what
+ * `serve()` raised.
+ *
+ * @param Channel port_channel: told the error's message
+ */
+def failing_serve(port_channel) {
+  catch {
+    http.serve(_broken_setup, { port: 0, workers: 2 })
+  } as error
+
+  port_channel.send(error == nil ? 'no error' : error.message)
 }

@@ -488,6 +488,22 @@ def run_all() {
   stop(pair)
   ok('a message published on one worker reaches every worker')
 
+  var slow = isolate.channel(1)
+  var slow_task = isolate.spawn(http_live_app.slow_serve, slow)
+  var slow_ready = slow.recv(10)
+  slow_task.join(10)
+  assert slow_ready[1] >= 0.3,
+      'on_ready waits for setup, took ${(slow_ready[1] * 1000) // 1}ms'
+  ok('serve() calls on_ready once every worker has run setup')
+
+  var broken = isolate.channel(1)
+  var broken_task = isolate.spawn(http_live_app.failing_serve, broken)
+  var raised = broken.recv(10)
+  broken_task.join(10)
+  assert raised.contains('broken setup'),
+      'serve() raises the error setup raised, got: ${raised}'
+  ok('serve() raises an error setup raises in a worker')
+
   # ===========================================================================
   # One connection at a time
   # ===========================================================================

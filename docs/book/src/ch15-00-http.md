@@ -2552,6 +2552,12 @@ can use anything it imports. A module it uses is loaded again inside the
 worker, not shared with it. Once `setup` registers more than a few routes,
 it's better to put it in its own module, as shown above.
 
+`serve()` binds the port first, so a port that's already in use fails at
+once. It starts accepting connections, and calls `on_ready`, once every
+worker has run `setup`. Connections that arrive before then wait in the
+operating system's listen backlog. If `setup` raises an error in a worker,
+`serve()` stops the others and raises it.
+
 Isolates don't share memory, so anything a worker needs, such as a cache, a
 connection pool or a counter, exists separately in each worker. That's the
 trade-off this model makes: no locks and no garbage collection pauses on a

@@ -22,6 +22,7 @@ import .server { HttpServer }
 
 import isolate
 import net
+import os
 
 # How long a worker waits for one of its own connections to become
 # ready before looking for newly accepted ones. Short enough that a
@@ -58,8 +59,9 @@ var _POOL_HEADROOM = 2
  * @param dict options
  * @param Channel relay: where this worker's `publish()` sends
  * @param Channel inbox: what the relay passes on to this worker
+ * @param Channel ready: told once `setup` has run
  */
-def worker_main(connections, halt, setup, options, relay, inbox) {
+def worker_main(connections, halt, setup, options, relay, inbox, ready) {
   var instance = HttpServer(
     options.get('port', 8000),
     options.get('host', '127.0.0.1'),
@@ -90,6 +92,8 @@ def worker_main(connections, halt, setup, options, relay, inbox) {
     instance,
     options.get('max_connections_per_worker', _MAX_PER_WORKER),
   )
+
+  ready.send(true)
 
   while !halt.is_closed() {
     var taken = _admit_waiting(loop, connections)
@@ -147,6 +151,32 @@ def _await_connection(server, connections, inbox) {
     } else {
       server.deliver(picked[1])
     }
+  }
+}
+
+# How often `serve()` checks on its workers while they start up, in
+# seconds.
+var _START_INTERVAL = 0.01
+
+# Waits until every worker in `pool` has run `setup`. A worker whose
+# `setup` raised an error has finished with it, and `try_join()` raises
+# it here, with the worker's own stack trace.
+def _await_workers(pool, ready) {
+  var started = 0
+
+  while started < pool.length() {
+    if ready.try_recv() != nil {
+      started++
+      continue
+    }
+
+    for task in pool {
+      if task.is_done() {
+        task.try_join()
+      }
+    }
+
+    os.sleep(_START_INTERVAL)
   }
 }
 
@@ -215,9 +245,16 @@ def _admit_waiting(loop, connections) {
  * than it could serve them and then answer all of them late, instead of
  * letting the kernel's own listen backlog apply backpressure.
  *
- * `on_ready` is called once on this isolate, with the bound address and
- * a function that stops the server. A signal handler can call that
- * function to shut down cleanly:
+ * The socket is bound first, so a port that's already in use fails at
+ * once. Connections aren't accepted until every worker has run `setup`,
+ * and any that arrive before then wait in the listen backlog. If
+ * `setup` raises an error in a worker, `serve()` stops the other
+ * workers and raises it.
+ *
+ * `on_ready` is called once on this isolate, after every worker has run
+ * `setup`, with the bound address and a function that stops the
+ * server. A signal handler can call that function to shut down
+ * cleanly:
  *
  * ```zuri
  * http.serve(app.setup, {
@@ -246,6 +283,8 @@ def _admit_waiting(loop, connections) {
  *    `cert_chain`, `private_key`, and any `HttpServer` field to apply
  *    to every worker
  * @throws HttpError if the socket can't be bound
+ * @throws IsolateError if `setup` raises an error in a worker, with the
+ *    worker's own stack trace
  */
 def serve(setup, options: ?dict) {
   if !is_function(setup) and !is_callable(setup) {
@@ -317,6 +356,7 @@ def serve(setup, options: ?dict) {
   var connections = isolate.channel(backlog)
   var halt = isolate.channel()
   var relay = isolate.channel()
+  var ready = isolate.channel()
   var inboxes = []
   var pool = []
 
@@ -334,6 +374,7 @@ def serve(setup, options: ?dict) {
         settings,
         relay,
         inboxes[i],
+        ready,
       ),
     )
   }
@@ -341,6 +382,36 @@ def serve(setup, options: ?dict) {
   # Started after the workers, so it never stands in their way while
   # they start up.
   var relaying = isolate.spawn(relay_main, relay, inboxes)
+
+  # Nothing is accepted, and `on_ready` isn't called, until every worker
+  # has run `setup`. Connections that arrive in the meantime wait in the
+  # listen backlog, and are then shared out among all the workers.
+  catch {
+    _await_workers(pool, ready)
+  } as failure
+
+  if failure {
+    halt.close()
+    connections.close()
+
+    for task in pool {
+      catch {
+        task.join()
+      }
+    }
+
+    relay.close()
+
+    catch {
+      relaying.join()
+    }
+
+    catch {
+      listener.close()
+    }
+
+    raise failure
+  }
 
   var running = [true]
   var acceptor = net.Acceptor(listener)
