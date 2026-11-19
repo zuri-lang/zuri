@@ -347,6 +347,17 @@ def write_response(connection, request, response, options: ?dict) {
     }
 
     response.headers.remove('Transfer-Encoding')
+  } else if source != nil and source[0] == 'live' {
+    # A body that stays open has no length to give. Without chunked
+    # encoding, closing the connection is what ends it.
+    response.headers.remove('Content-Length')
+
+    if version == '1.1' {
+      response.headers.set('Transfer-Encoding', 'chunked')
+      streaming = true
+    } else {
+      keep_alive = false
+    }
   } else if source != nil and source[0] == 'stream' {
     if response.headers.contains('content-length') {
       # An application that knows its own length gets to keep it, and
@@ -388,6 +399,12 @@ def write_response(connection, request, response, options: ?dict) {
   response.commit()
 
   if bodiless {
+    # A body that will never be sent has ended already, as far as
+    # whatever was going to write it is concerned.
+    if source != nil and source[0] == 'live' {
+      source[1].ended()
+    }
+
     connection.flush()
     return keep_alive
   }
@@ -403,6 +420,18 @@ def write_response(connection, request, response, options: ?dict) {
   if source[0] == 'file' {
     _write_file(connection, source[1], source[2], source[3])
     connection.flush()
+    return keep_alive
+  }
+
+  if source[0] == 'live' {
+    var live = LiveBody(connection, streaming, keep_alive, source[1])
+
+    # The server finds what drives the connection from here on in the
+    # request's context.
+    request.context['driver'] = live
+    source[1].attach(live)
+    connection.flush()
+
     return keep_alive
   }
 
@@ -562,6 +591,204 @@ class ChunkWriter {
   # thing to do when the handler failed partway through.
   abort() {
     self._finished = true
+  }
+}
+
+# The most a client can send while an open body is going out to it,
+# which can only be the start of its next request, before the
+# connection is dropped.
+var _LIVE_INPUT_LIMIT = 65536
+
+/**
+ * The body of a response that stays open after its head has gone out,
+ * such as a server-sent event stream, written whenever there's
+ * something to send.
+ *
+ * `write_response()` makes one for a body held with
+ * `HttpResponse.hold()`, and the connection loop drives it as it would
+ * a WebSocket. Once the body ends, the connection goes back to serving
+ * requests, unless the response said it would close.
+ */
+class LiveBody {
+
+  var _connection
+  var _chunked = false
+  var _keep_alive = false
+  var _owner
+  var _link
+  var _timers
+  var _finished = false
+  var _ended = false
+
+  /**
+   * @param Connection connection
+   * @param bool chunked: whether the body is sent in chunks, which only
+   *    HTTP/1.1 can do
+   * @param bool keep_alive: whether the connection stays open after
+   *    the body ends
+   * @param any owner: told through `ended()` when the client has gone
+   */
+  @new(connection, chunked, keep_alive, owner) {
+    self._connection = connection
+    self._chunked = chunked
+    self._keep_alive = keep_alive
+    self._owner = owner
+    self._timers = []
+  }
+
+  /**
+   * Queues part of the body, which goes out at the end of the loop's
+   * turn.
+   *
+   * @param {bytes|string} data
+   */
+  write(data) {
+    if self._finished {
+      return
+    }
+
+    var payload = is_string(data) ? data.to_bytes() : data
+
+    if payload.length() == 0 {
+      return
+    }
+
+    if self._chunked {
+      var framed = body.encode_chunk(payload)
+      self._connection.write(framed)
+      framed.dispose()
+    } else {
+      self._connection.write(payload)
+    }
+
+    if self._link != nil {
+      self._link.wake()
+    }
+  }
+
+  /**
+   * Ends the body.
+   */
+  finish() {
+    if self._finished {
+      return
+    }
+
+    self._finished = true
+
+    if self._chunked {
+      self._connection.write('0\r\n\r\n')
+    }
+
+    if self._link != nil {
+      self._let_go()
+    }
+  }
+
+  /**
+   * Runs `timer` while the body is open.
+   *
+   * @param Timer timer
+   */
+  schedule(timer) {
+    if self._link == nil {
+      self._timers.append(timer)
+    } else {
+      self._link.schedule(timer)
+    }
+  }
+
+  /**
+   * Hands `error` to the server's `on_error()` listeners.
+   *
+   * @param Error error
+   */
+  report(error) {
+    if self._link == nil {
+      raise error
+    }
+
+    self._link.report(error)
+  }
+
+  /**
+   * Whether there's anything for the loop to drive, which there always
+   * is.
+   *
+   * @internal Called by the connection loop.
+   * @returns bool
+   */
+  can_drive() {
+    return true
+  }
+
+  /**
+   * @internal Called by the connection loop.
+   * @param Link link
+   */
+  attach(link) {
+    self._link = link
+
+    for timer in self._timers {
+      link.schedule(timer)
+    }
+
+    self._timers = []
+
+    if self._finished {
+      self._let_go()
+    }
+  }
+
+  /**
+   * Notices a client that has gone, or one that's sending far more
+   * than the start of a request.
+   *
+   * @internal Called by the connection loop.
+   */
+  on_readable() {
+    if self._connection.peer_finished() {
+      self._link.close()
+    } else if self._connection.buffered() > _LIVE_INPUT_LIMIT {
+      self._link.abort()
+    }
+  }
+
+  /**
+   * @internal Called by the connection loop.
+   */
+  on_closed() {
+    if !self._ended {
+      self._ended = true
+      self._finished = true
+      self._owner.ended()
+    }
+  }
+
+  /**
+   * Ends the body cleanly, for a server that's shutting down.
+   *
+   * @internal Called by the connection loop.
+   */
+  going_away() {
+    self._keep_alive = false
+    self.finish()
+  }
+
+  /**
+   * @internal Called by the connection loop.
+   * @returns ?number
+   */
+  idle_timeout() {
+    return nil
+  }
+
+  _let_go() {
+    if self._keep_alive {
+      self._link.release()
+    } else {
+      self._link.close()
+    }
   }
 }
 

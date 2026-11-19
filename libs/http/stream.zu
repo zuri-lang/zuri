@@ -135,6 +135,16 @@ class FileFeed {
   }
 
   /**
+   * Whether `next()` has something to hand over now, which a file
+   * always does.
+   *
+   * @returns bool
+   */
+  is_ready() {
+    return true
+  }
+
+  /**
    * Releases the file.
    */
   close() {
@@ -186,6 +196,16 @@ class BytesFeed {
    */
   is_done() {
     return self._at >= self._data.length()
+  }
+
+  /**
+   * Whether `next()` has something to hand over now, which a body in
+   * memory always does.
+   *
+   * @returns bool
+   */
+  is_ready() {
+    return true
   }
 
   /**
@@ -437,6 +457,18 @@ class Connection {
     } as error {
       return bytes(0)
     }
+  }
+
+  /**
+   * Waits for more from the peer and buffers it, for a caller that
+   * parses what is buffered itself with `byte_at()` and `advance()`.
+   *
+   * @returns number: the number of bytes added, or `0` once the peer
+   *    has closed its write half
+   * @throws TimeoutError, ConnectionError
+   */
+  fill() {
+    return self._fill()
   }
 
   /**
@@ -835,6 +867,15 @@ class Connection {
   output_is_heavy() {
     return self._feed != nil or
         self._out.length() - self._out_at >= _WRITE_HIGH_WATER
+  }
+
+  /**
+   * How many bytes are queued and not yet sent.
+   *
+   * @returns number
+   */
+  queued() {
+    return self._out.length() - self._out_at
   }
 
   /**

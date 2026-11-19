@@ -5,15 +5,17 @@
  * accepting and serving connections from the same listening socket.
  *
  * Each worker runs a `ConnectionLoop` over the connections it holds, so
- * a slow client only takes up a file descriptor, not a thread.
- * `HttpServer` uses this when it's configured with more than one
- * worker.
+ * a slow client, an open WebSocket or an event stream doesn't hold up
+ * its other connections. What a worker publishes reaches the others
+ * through a relay isolate. `HttpServer` uses this when it's
+ * configured with more than one worker.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
 #!-- part of the http module
 
+import ._relay { relay_main }
 import .errors { HttpError }
 import .loop { ConnectionLoop }
 import .server { HttpServer }
@@ -54,8 +56,10 @@ var _POOL_HEADROOM = 2
  *    point every connection is closed
  * @param function(1) setup: called once with this worker's server
  * @param dict options
+ * @param Channel relay: where this worker's `publish()` sends
+ * @param Channel inbox: what the relay passes on to this worker
  */
-def worker_main(connections, halt, setup, options) {
+def worker_main(connections, halt, setup, options, relay, inbox) {
   var instance = HttpServer(
     options.get('port', 8000),
     options.get('host', '127.0.0.1'),
@@ -79,6 +83,7 @@ def worker_main(connections, halt, setup, options) {
   }
 
   instance.stop_with(halt)
+  instance.relay_through(relay, inbox)
   setup(instance)
 
   var loop = ConnectionLoop(
@@ -91,11 +96,12 @@ def worker_main(connections, halt, setup, options) {
 
     # Nothing being watched and nothing waiting: block until the
     # acceptor has something, so an idle server costs nothing at all
-    # rather than spinning on a timeout. A stopped server closes
-    # `connections`, which ends the wait.
+    # rather than spinning on a timeout. Published messages are still
+    # delivered meanwhile. A stopped server closes `connections`,
+    # which ends the wait.
     if loop.is_empty() {
       if taken == 0 {
-        var client = connections.recv()
+        var client = _await_connection(instance, connections, inbox)
 
         if client == nil {
           break
@@ -112,6 +118,36 @@ def worker_main(connections, halt, setup, options) {
 
   loop.finish()
   _close_waiting(connections)
+}
+
+# Waits for the next accepted socket, delivering whatever is published
+# in the meantime. Returns nil once no more sockets are coming.
+def _await_connection(server, connections, inbox) {
+  # A server with no subscribers has nothing to deliver, and `recv()`
+  # wakes a single worker for each socket, where `select()` wakes every
+  # idle one. What collects in its inbox meanwhile is cleared once it
+  # has connections again.
+  var listening = server.has_subscribers()
+
+  while true {
+    if !listening {
+      return connections.recv()
+    }
+
+    # The connections channel comes first, so it wins when both have
+    # something.
+    var picked = isolate.select([connections, inbox])
+
+    if picked[0] == connections {
+      return picked[1]
+    }
+
+    if picked[1] == nil {
+      listening = false
+    } else {
+      server.deliver(picked[1])
+    }
+  }
 }
 
 # Closes every socket still waiting in `connections`, which no worker
@@ -163,13 +199,15 @@ def _admit_waiting(loop, connections) {
  * routes by calling `setup`.
  *
  * @note Each worker uses a thread from the isolate pool for as long as
- *    the server runs. If `serve()` is the first thing in the process to
- *    use an isolate, it sizes the pool accordingly. Otherwise, the
- *    pool's size is already fixed, because something else has already
- *    spawned an isolate, so `serve()` raises an error instead of
- *    deadlocking behind workers that never finish. If the process needs
- *    isolates for anything other than serving, call
- *    `isolate.configure()` yourself, at the very start.
+ *    the server runs, and so does one more isolate, which passes what
+ *    `HttpServer.publish()` sends on to every worker. If `serve()` is
+ *    the first thing in the process to use an isolate, it sizes the
+ *    pool accordingly. Otherwise, the pool's size is already fixed,
+ *    because something else has already spawned an isolate, so
+ *    `serve()` raises an error instead of deadlocking behind workers
+ *    that never finish. If the process needs isolates for anything
+ *    other than serving, call `isolate.configure()` yourself, at the
+ *    very start.
  *
  * `backlog` is the number of accepted connections that can wait to be
  * claimed before the acceptor blocks. The limit is intentional. With an
@@ -249,6 +287,7 @@ def serve(setup, options: ?dict) {
 
   # Each worker occupies an isolate pool thread for the whole life of
   # the server: `worker_main` blocks on the channel and never returns.
+  # So does the relay that passes published messages between them.
   # The pool is a fixed number of threads, so a server sized to the
   # machine's cores claims every one of them, and anything else the
   # application later spawns is queued behind tasks that never finish.
@@ -258,27 +297,50 @@ def serve(setup, options: ?dict) {
   # effect when `serve()` is the first thing to touch it - the usual
   # case for a server process. When it is not, the check below turns
   # what would have been a hang into something that says so.
+  var threads = workers + 1
+
   catch {
-    isolate.configure(workers + _POOL_HEADROOM)
+    isolate.configure(threads + _POOL_HEADROOM)
   }
 
   var available = isolate.pool_size()
 
-  if available < workers {
+  if available < threads {
     raise HttpError(
-      'cannot run ${workers} workers: the isolate pool has only ${available} ' +
-          'thread(s). Call isolate.configure(${workers + _POOL_HEADROOM}) before ' +
-          'anything else uses an isolate, or ask for fewer workers.',
+      'cannot run ${workers} workers: with the relay between them they need ' +
+          '${threads} isolate pool threads, and the pool has only ${available}. ' +
+          'Call isolate.configure(${threads + _POOL_HEADROOM}) before anything ' +
+          'else uses an isolate, or ask for fewer workers.',
     )
   }
 
   var connections = isolate.channel(backlog)
   var halt = isolate.channel()
+  var relay = isolate.channel()
+  var inboxes = []
   var pool = []
 
   iter var i = 0; i < workers; i++ {
-    pool.append(isolate.spawn(worker_main, connections, halt, setup, settings))
+    inboxes.append(isolate.channel())
   }
+
+  iter var i = 0; i < workers; i++ {
+    pool.append(
+      isolate.spawn(
+        worker_main,
+        connections,
+        halt,
+        setup,
+        settings,
+        relay,
+        inboxes[i],
+      ),
+    )
+  }
+
+  # Started after the workers, so it never stands in their way while
+  # they start up.
+  var relaying = isolate.spawn(relay_main, relay, inboxes)
 
   var running = [true]
   var acceptor = net.Acceptor(listener)
@@ -325,6 +387,13 @@ def serve(setup, options: ?dict) {
   }
 
   _close_waiting(connections)
+
+  # Every worker has finished, so nothing more will be published.
+  relay.close()
+
+  catch {
+    relaying.join()
+  }
 
   catch {
     listener.close()

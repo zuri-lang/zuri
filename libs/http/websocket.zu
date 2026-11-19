@@ -20,6 +20,7 @@ import .request { HttpRequest }
 import .status
 import .stream
 import .util
+import .loop { Timer }
 
 import base64
 import crypto
@@ -52,6 +53,10 @@ var CLOSE_GOING_AWAY = 1001
 var CLOSE_PROTOCOL_ERROR = 1002
 /** A message of a kind this endpoint cannot accept. @type int */
 var CLOSE_UNSUPPORTED = 1003
+/** The close frame had no code. Reported by `on_close()`. @type int */
+var CLOSE_NO_STATUS = 1005
+/** The connection closed without a close frame. Reported by `on_close()`. @type int */
+var CLOSE_ABNORMAL = 1006
 /** A text message that was not valid UTF-8. @type int */
 var CLOSE_INVALID_PAYLOAD = 1007
 /** A message that violates a policy. @type int */
@@ -171,24 +176,31 @@ class Message {
  * Created by `accept()` on the server side or `connect()` on the
  * client side, never directly.
  *
+ * On a server run by `listen()` or `http.serve()`, the server's
+ * connection loop drives the socket once the handler that accepted it
+ * returns. Messages arrive through `on_message()`, and `send()` queues
+ * a message that the loop sends when the peer can take it. The server
+ * goes on answering other requests while the socket is open:
+ *
  * ```zuri
  * server.get('/ws', @(request, response) {
  *   var socket = websocket.accept(request, response)
  *
- *   while socket.is_open() {
- *     var message = socket.receive()
- *     if message == nil {
- *       break
- *     }
+ *   socket.on_message(@(message) {
  *     socket.send('you said: ' + message.text())
- *   }
+ *   })
  * })
  * ```
  *
+ * A handler can instead read the socket itself, by calling `receive()`
+ * before it returns. The socket then leaves the loop and reads and
+ * writes as it goes, as a client's socket does. That keeps the isolate
+ * busy until the handler returns, so nothing else on it is served in
+ * the meantime.
+ *
  * Ping frames are answered automatically, and a close frame from the
- * peer is answered and then reported to the caller, so the closing
- * handshake completes without the application having to know the
- * rules.
+ * peer is answered, so the closing handshake completes without the
+ * application having to know the rules.
  *
  * @printable
  */
@@ -214,9 +226,45 @@ class WebSocket {
    */
   var max_message_size = 8388608
 
+  /**
+   * How much output can wait for a peer that isn't reading, in bytes,
+   * before the server drops the connection. Only a socket that the
+   * server's loop drives has a queue.
+   * @type number
+   */
+  var max_queued = 4194304
+
+  /**
+   * How often the server pings an idle peer, in seconds, or `nil` for
+   * never. A peer that sends nothing at all, not even a pong, for twice
+   * this long is taken to be gone, and the connection is closed. Set by
+   * the `ping_interval` option of `accept()`.
+   * @type ?number
+   */
+  var ping_interval
+
   var _conn
   var _open = true
   var _close_sent = false
+
+  # 'direct' for a socket that reads and writes for itself, 'loop' for
+  # one a server's connection loop holds, and 'blocking' for one a
+  # handler took back from the loop by calling receive().
+  var _mode = 'direct'
+
+  var _link
+  var _on_message
+  var _on_close
+  var _timers
+  var _told_closed = false
+
+  # The code and reason the closing handshake carried, for on_close().
+  var _close_code
+  var _close_reason = ''
+
+  # A message still arriving in fragments.
+  var _opcode
+  var _parts
 
   @new(connection, is_client, protocol) {
     self._conn = connection
@@ -224,6 +272,8 @@ class WebSocket {
     self.protocol = protocol
     self._open = true
     self._close_sent = false
+    self._mode = connection.is_deferred() ? 'loop' : 'direct'
+    self._timers = []
   }
 
   /**
@@ -247,6 +297,11 @@ class WebSocket {
 
   /**
    * Sends a text message.
+   *
+   * On a socket the server's loop drives, a message sent after the
+   * socket has closed is dropped, as a browser drops one, because
+   * `on_close()` is how the application finds out. Anywhere else it
+   * raises a `ConnectionError`.
    *
    * @param string text
    */
@@ -285,7 +340,9 @@ class WebSocket {
   }
 
   /**
-   * Starts the closing handshake and closes the transport.
+   * Starts the closing handshake and closes the transport. On a socket
+   * the server's loop drives, the transport closes once the close frame
+   * has been sent.
    *
    * @param ?number code: a close code. Defaults to `CLOSE_NORMAL`.
    * @param ?string reason: at most 123 bytes once encoded
@@ -295,12 +352,13 @@ class WebSocket {
       return
     }
 
+    var value = code == nil ? CLOSE_NORMAL : code
+
     catch {
       if !self._close_sent {
         self._close_sent = true
 
         var payload = bytes(0)
-        var value = code == nil ? CLOSE_NORMAL : code
 
         payload.append((value // 256) % 256)
         payload.append(value % 256)
@@ -317,10 +375,83 @@ class WebSocket {
     }
 
     self._open = false
+    self._close_code = value
+    self._close_reason = reason == nil ? '' : reason
+
+    if self._mode == 'loop' {
+      if self._link != nil {
+        self._link.close()
+      }
+
+      return
+    }
 
     catch {
       self._conn.close()
     }
+  }
+
+  /**
+   * Calls `listener` with each message the peer sends, as a `Message`,
+   * once the server's loop drives this socket. Pings, pongs and the
+   * close frame are handled for you and never reach it.
+   *
+   * A listener that raises an error is reported to the server's
+   * `on_error()` listeners, and the socket is closed with
+   * `CLOSE_INTERNAL_ERROR`.
+   *
+   * @param function(1) listener
+   * @returns WebSocket: this same instance, for chaining
+   */
+  on_message(listener) {
+    self._on_message = listener
+    return self
+  }
+
+  /**
+   * Calls `listener` once, when the connection has closed, with the
+   * close code and the reason. The code is the one the closing
+   * handshake carried, whichever side started it, `CLOSE_NO_STATUS`
+   * when the peer's close frame had none, and `CLOSE_ABNORMAL` when the
+   * connection ended without one.
+   *
+   * @param function(2) listener
+   * @returns WebSocket: this same instance, for chaining
+   */
+  on_close(listener) {
+    self._on_close = listener
+    return self
+  }
+
+  /**
+   * Calls `action` every `seconds` seconds, on the thread that serves
+   * this socket, for as long as it's open.
+   *
+   * Only a socket that the server's loop drives runs its timers. An
+   * action that raises an error is handled the way a failed
+   * `on_message()` listener is.
+   *
+   * @param number seconds
+   * @param function(0) action
+   * @returns Timer: which `cancel()` stops
+   * @throws HttpError on a client's socket, which no loop drives
+   */
+  every(seconds: number, action) {
+    if self.is_client {
+      raise HttpError('every() needs a socket that a server accepted')
+    }
+
+    var timer = Timer(seconds, @() {
+      self._run(action, nil)
+    })
+
+    self._timers.append(timer)
+
+    if self._link != nil {
+      self._link.schedule(timer)
+    }
+
+    return timer
   }
 
   /**
@@ -331,16 +462,32 @@ class WebSocket {
    * A close frame is returned as a message, and answered first, so
    * the caller can see the code and reason the peer sent.
    *
+   * On a server, calling this from the handler that accepted the
+   * socket takes it out of the server's loop, and the isolate is busy
+   * until the handler returns.
+   *
    * @returns ?Message
    * @throws ProtocolError if the peer violates the framing rules
+   * @throws HttpError once the server's loop drives the socket, which
+   *    then delivers messages through `on_message()` instead
    */
   receive() {
+    if self._mode == 'loop' {
+      if self._link != nil {
+        raise HttpError(
+          'receive() cannot be used on a socket the server drives. ' +
+              'Use on_message() instead.',
+        )
+      }
+
+      self._take_back()
+    } else if self._mode == 'direct' {
+      self._mode = 'blocking'
+    }
+
     if !self._open {
       return nil
     }
-
-    var opcode = nil
-    var payload = bytes(0)
 
     while true {
       var frame
@@ -364,154 +511,320 @@ class WebSocket {
         return nil
       }
 
-      var frame_opcode = frame[0]
-      var final = frame[1]
-      var data = frame[2]
+      var message = self._absorb(frame)
 
-      # A control frame may arrive in the middle of a fragmented
-      # message and is handled on its own, without disturbing the
-      # message being assembled (RFC 6455 §5.4).
-      if frame_opcode >= 8 {
-        if !final {
-          raise ProtocolError('a control frame may not be fragmented')
-        }
-
-        if frame_opcode == OPCODE_PING {
-          self.pong(data)
-          continue
-        }
-
-        if frame_opcode == OPCODE_PONG {
-          continue
-        }
-
-        if frame_opcode == OPCODE_CLOSE {
-          var message = Message(OPCODE_CLOSE, data)
-
-          # The handshake is only complete once both sides have sent
-          # a close frame, so this endpoint answers before closing.
-          if !self._close_sent {
-            self._close_sent = true
-            catch {
-              self._write(OPCODE_CLOSE, data)
-            }
-          }
-
-          self._open = false
+      if message != nil {
+        if message.is_close() {
           catch {
             self._conn.close()
           }
-
-          return message
         }
 
-        raise ProtocolError('unknown control frame opcode ${frame_opcode}')
-      }
-
-      if opcode == nil {
-        if frame_opcode == OPCODE_CONTINUATION {
-          raise ProtocolError('a continuation frame with nothing to continue')
-        }
-        opcode = frame_opcode
-      } else if frame_opcode != OPCODE_CONTINUATION {
-        raise ProtocolError(
-          'a new message began before the previous one finished',
-        )
-      }
-
-      payload.extend(data)
-      data.dispose()
-
-      if payload.length() > self.max_message_size {
-        self.close(CLOSE_TOO_LARGE, 'message too large')
-        raise ProtocolError('message exceeds ${self.max_message_size} bytes')
-      }
-
-      if final {
-        return Message(opcode, payload)
+        return message
       }
     }
   }
 
-  # Reads one frame. Returns [opcode, final, payload], or nil at a
-  # clean end of stream.
+  /**
+   * Whether there's anything for the server's loop to drive, which
+   * there isn't once a handler has taken the socket for itself.
+   *
+   * @internal Called by the connection loop.
+   * @returns bool
+   */
+  can_drive() {
+    if self._mode == 'blocking' {
+      return false
+    }
+
+    return self._mode == 'loop' or self._open
+  }
+
+  /**
+   * Hands the socket to the server's loop.
+   *
+   * @internal Called by the connection loop.
+   * @param Link link
+   */
+  attach(link) {
+    self._mode = 'loop'
+    self._link = link
+
+    if !self._open {
+      link.close()
+      return
+    }
+
+    if self.ping_interval != nil {
+      self._timers.append(
+        Timer(self.ping_interval, @() {
+          self._run(@() {
+            self.ping(nil)
+          }, nil)
+        }),
+      )
+    }
+
+    for timer in self._timers {
+      link.schedule(timer)
+    }
+
+    # Frames that arrived with the handshake have no event of their own
+    # to announce them.
+    if self._conn.buffered() > 0 or self._conn.peer_finished() {
+      self.on_readable()
+    }
+  }
+
+  /**
+   * Acts on every whole frame that has arrived.
+   *
+   * @internal Called by the connection loop.
+   */
+  on_readable() {
+    while self._open {
+      var frame
+      var message
+
+      catch {
+        frame = _take_frame(self._conn, self.is_client, self.max_message_size)
+
+        if frame != nil {
+          message = self._absorb(frame)
+        }
+      } as error
+
+      if error {
+        self._fail(error, CLOSE_PROTOCOL_ERROR)
+        return
+      }
+
+      if frame == nil {
+        break
+      }
+
+      if message == nil {
+        continue
+      }
+
+      if message.is_close() {
+        self._link.close()
+        return
+      }
+
+      if self._on_message != nil {
+        self._run(self._on_message, message)
+      }
+    }
+
+    if self._open and self._conn.peer_finished() {
+      self._open = false
+      self._link.close()
+    }
+  }
+
+  /**
+   * Says goodbye to the peer, for a server that's shutting down.
+   *
+   * @internal Called by the connection loop.
+   */
+  going_away() {
+    self.close(CLOSE_GOING_AWAY, nil)
+  }
+
+  /**
+   * How long the connection can go without hearing from the peer.
+   *
+   * @internal Called by the connection loop.
+   * @returns ?number: seconds, or `nil` for no limit
+   */
+  idle_timeout() {
+    return self.ping_interval == nil ? nil : self.ping_interval * 2
+  }
+
+  /**
+   * Tells the `on_close()` listener that the connection has gone.
+   *
+   * @internal Called by the connection loop.
+   */
+  on_closed() {
+    self._open = false
+
+    for timer in self._timers {
+      timer.cancel()
+    }
+
+    if self._told_closed {
+      return
+    }
+
+    self._told_closed = true
+
+    if self._on_close != nil {
+      var code = self._close_code == nil ? CLOSE_ABNORMAL : self._close_code
+
+      catch {
+        self._on_close(code, self._close_reason)
+      } as error {
+        self._link.report(error)
+      }
+    }
+  }
+
+  # Runs an application callback, closing the socket if it fails.
+  _run(callback, argument) {
+    if !self._open {
+      return
+    }
+
+    catch {
+      if argument == nil {
+        callback()
+      } else {
+        callback(argument)
+      }
+    } as error {
+      self._fail(error, CLOSE_INTERNAL_ERROR)
+    }
+  }
+
+  _fail(error, code) {
+    self._link.report(error)
+
+    if self._open {
+      self.close(code, nil)
+    } else {
+      self._link.close()
+    }
+  }
+
+  # Takes the socket back from the loop, for a handler that reads it
+  # at its own pace.
+  _take_back() {
+    self._mode = 'blocking'
+    self._conn.block_output()
+
+    # A WebSocket connection is idle for long stretches by design, so
+    # the server's request read timeout would close it out from under
+    # the application.
+    self._conn.set_read_timeout(0)
+  }
+
+  # Reads one frame, waiting for as long as it takes. Returns
+  # [opcode, final, payload], or nil at a clean end of stream.
   _read_frame() {
-    var header = self._conn.read_exactly(2)
+    while true {
+      var frame = _take_frame(self._conn, self.is_client, self.max_message_size)
 
-    var first = header[0]
-    var second = header[1]
-    header.dispose()
+      if frame != nil {
+        return frame
+      }
 
-    var final = (first & 128) != 0
-    var reserved = first & 112
-    var opcode = first & 15
-    var masked = (second & 128) != 0
-    var length = second & 127
+      if self._conn.fill() == 0 {
+        if self._conn.buffered() == 0 {
+          return nil
+        }
 
-    # No extension was negotiated, so a reserved bit that is set means
-    # the peer is speaking something this endpoint did not agree to.
-    if reserved != 0 {
+        raise ProtocolError('the connection closed in the middle of a frame')
+      }
+    }
+  }
+
+  # Acts on one frame. Returns a message once one is whole, a close
+  # message when the peer starts the closing handshake, and nil
+  # otherwise.
+  _absorb(frame) {
+    var frame_opcode = frame[0]
+    var final = frame[1]
+    var data = frame[2]
+
+    # A control frame may arrive in the middle of a fragmented message
+    # and is handled on its own, without disturbing the message being
+    # assembled (RFC 6455 §5.4).
+    if frame_opcode >= 8 {
+      if !final {
+        raise ProtocolError('a control frame may not be fragmented')
+      }
+
+      if frame_opcode == OPCODE_PING {
+        if self._open {
+          self.pong(data)
+        }
+
+        return nil
+      }
+
+      if frame_opcode == OPCODE_PONG {
+        return nil
+      }
+
+      if frame_opcode == OPCODE_CLOSE {
+        var message = Message(OPCODE_CLOSE, data)
+        var code = message.close_code()
+
+        if self._close_code == nil {
+          self._close_code = code == nil ? CLOSE_NO_STATUS : code
+          self._close_reason = message.close_reason()
+        }
+
+        # The handshake is only complete once both sides have sent a
+        # close frame, so this endpoint answers before closing.
+        if !self._close_sent {
+          self._close_sent = true
+          catch {
+            self._write(OPCODE_CLOSE, data)
+          }
+        }
+
+        self._open = false
+
+        return message
+      }
+
+      raise ProtocolError('unknown control frame opcode ${frame_opcode}')
+    }
+
+    if self._opcode == nil {
+      if frame_opcode == OPCODE_CONTINUATION {
+        raise ProtocolError('a continuation frame with nothing to continue')
+      }
+
+      self._opcode = frame_opcode
+      self._parts = bytes(0)
+    } else if frame_opcode != OPCODE_CONTINUATION {
       raise ProtocolError(
-        'a reserved frame bit is set without a negotiated extension',
+        'a new message began before the previous one finished',
       )
     }
 
-    if opcode >= 8 and length > 125 {
-      raise ProtocolError('a control frame may not carry more than 125 bytes')
+    self._parts.extend(data)
+    data.dispose()
+
+    if self._parts.length() > self.max_message_size {
+      self.close(CLOSE_TOO_LARGE, 'message too large')
+      raise ProtocolError('message exceeds ${self.max_message_size} bytes')
     }
 
-    if length == 126 {
-      var extended = self._conn.read_exactly(2)
-      length = extended[0] * 256 + extended[1]
-      extended.dispose()
-    } else if length == 127 {
-      var extended = self._conn.read_exactly(8)
-
-      # The top bit must be zero (RFC 6455 §5.2); the remaining 63
-      # bits are the length, and anything past 2^53 is beyond what a
-      # number can represent exactly anyway.
-      if extended[0] & 128 != 0 {
-        raise ProtocolError('a frame length with its high bit set')
-      }
-
-      length = 0
-      iter var i = 0; i < 8; i++ {
-        length = length * 256 + extended[i]
-      }
-      extended.dispose()
+    if !final {
+      return nil
     }
 
-    if length > self.max_message_size {
-      raise ProtocolError('frame of ${length} bytes exceeds the message limit')
-    }
+    var message = Message(self._opcode, self._parts)
 
-    # A server must reject an unmasked frame from a client, and a
-    # client must reject a masked frame from a server.
-    if self.is_client == masked {
-      raise ProtocolError(
-        masked
-            ? 'a server may not mask a frame'
-            : 'a client must mask every frame',
-      )
-    }
+    self._opcode = nil
+    self._parts = nil
 
-    var key = nil
-    if masked {
-      key = self._conn.read_exactly(4)
-    }
-
-    var payload = length > 0 ? self._conn.read_exactly(length) : bytes(0)
-
-    if key != nil {
-      _unmask(payload, key)
-      key.dispose()
-    }
-
-    return [opcode, final, payload]
+    return message
   }
 
   _write(opcode, payload) {
     if !self._open and opcode != OPCODE_CLOSE {
+      # The loop tells the application through on_close(), so a message
+      # sent after that is dropped, as a browser drops one.
+      if self._mode == 'loop' {
+        return
+      }
+
       raise ConnectionError('the WebSocket is closed')
     }
 
@@ -565,9 +878,33 @@ class WebSocket {
       frame.extend(payload)
     }
 
-    self._conn.write(frame)
-    self._conn.flush()
+    if self._mode == 'loop' {
+      self._queue(frame)
+    } else {
+      self._conn.write(frame)
+      self._conn.flush()
+    }
+
     frame.dispose()
+  }
+
+  # Queues a frame for the loop to send.
+  _queue(frame) {
+    if self._link == nil {
+      self._conn.write(frame)
+      return
+    }
+
+    # A peer this far behind has stopped reading, and holding more for
+    # it only spends memory.
+    if self._conn.queued() + frame.length() > self.max_queued {
+      self._open = false
+      self._link.abort()
+      return
+    }
+
+    self._conn.write(frame)
+    self._link.wake()
   }
 
   to_string() {
@@ -577,6 +914,97 @@ class WebSocket {
   @to_string() {
     return self.to_string()
   }
+}
+
+# Takes one frame out of what `connection` has already buffered.
+# Returns [opcode, final, payload], or nil while the frame is still
+# arriving. The rules that only need the first two bytes are checked as
+# soon as those are in, so a frame that breaks them is refused before
+# its payload is waited for.
+def _take_frame(connection, is_client, limit) {
+  var available = connection.buffered()
+
+  if available < 2 {
+    return nil
+  }
+
+  var first = connection.byte_at(0)
+  var second = connection.byte_at(1)
+  var final = first & 128 != 0
+  var opcode = first & 15
+  var masked = second & 128 != 0
+  var length = second & 127
+  var header = 2
+
+  # No extension was negotiated, so a reserved bit that is set means
+  # the peer is speaking something this endpoint did not agree to.
+  if first & 112 != 0 {
+    raise ProtocolError(
+      'a reserved frame bit is set without a negotiated extension',
+    )
+  }
+
+  if opcode >= 8 and length > 125 {
+    raise ProtocolError('a control frame may not carry more than 125 bytes')
+  }
+
+  # A server must reject an unmasked frame from a client, and a client
+  # must reject a masked frame from a server.
+  if is_client == masked {
+    raise ProtocolError(
+      masked
+          ? 'a server may not mask a frame'
+          : 'a client must mask every frame',
+    )
+  }
+
+  if length == 126 {
+    if available < 4 {
+      return nil
+    }
+
+    length = connection.byte_at(2) * 256 + connection.byte_at(3)
+    header = 4
+  } else if length == 127 {
+    if available < 10 {
+      return nil
+    }
+
+    # The top bit must be zero (RFC 6455 §5.2). The other 63 bits are
+    # the length, and anything past 2^53 is beyond what a number can
+    # represent exactly anyway.
+    if connection.byte_at(2) & 128 != 0 {
+      raise ProtocolError('a frame length with its high bit set')
+    }
+
+    length = 0
+
+    iter var i = 2; i < 10; i++ {
+      length = length * 256 + connection.byte_at(i)
+    }
+
+    header = 10
+  }
+
+  if length > limit {
+    raise ProtocolError('frame of ${length} bytes exceeds the message limit')
+  }
+
+  if available < header + (masked ? 4 : 0) + length {
+    return nil
+  }
+
+  connection.advance(header)
+
+  var key = masked ? connection.read_exactly(4) : nil
+  var payload = length > 0 ? connection.read_exactly(length) : bytes(0)
+
+  if key != nil {
+    _unmask(payload, key)
+    key.dispose()
+  }
+
+  return [opcode, final, payload]
 }
 
 # Masking is its own inverse, so one routine covers both directions.
@@ -614,21 +1042,30 @@ def is_handshake(request) {
 /**
  * Completes a WebSocket handshake and takes over the connection.
  *
- * Call this from an ordinary route handler. It writes the `101`
- * response itself and returns a `WebSocket`, and the server doesn't
- * write anything else on that connection afterwards.
+ * Call this from an ordinary route handler. The `101` response is part
+ * of the handshake, so the server doesn't write a response of its own
+ * on that connection, or anything else apart from the socket's
+ * frames.
+ *
+ * On a server run by `listen()` or `http.serve()`, the server's loop
+ * drives the socket once the handler returns. See `WebSocket`.
  *
  * ```zuri
  * server.get('/ws', @(request, response) {
  *   var socket = websocket.accept(request, response)
- *   # ... talk to the socket from here
+ *
+ *   socket.on_message(@(message) {
+ *     socket.send(message.text())
+ *   })
  * })
  * ```
  *
  * @param HttpRequest request
  * @param HttpResponse response
  * @param ?dict options: `protocols` (the subprotocols this server
- *    supports, starting with the most preferred) and `max_message_size`
+ *    supports, starting with the most preferred), `max_message_size`,
+ *    `max_queued`, and `ping_interval` (seconds between pings to an
+ *    idle peer)
  * @returns WebSocket
  * @throws HttpError if the request isn't a WebSocket handshake, or
  *    arrived on a connection that can't be taken over
@@ -678,28 +1115,34 @@ def accept(request, response, options: ?dict) {
     head += 'Sec-WebSocket-Protocol: ${chosen}\r\n'
   }
 
-  # From here the socket is the application's, reading and writing as
-  # it goes, so a readiness loop can no longer send on its behalf.
-  connection.block_output()
-
+  # On a connection a readiness loop holds, this only queues the head,
+  # which the loop sends once the handler returns.
   connection.write(head + '\r\n')
-  connection.flush()
+
+  if !connection.is_deferred() {
+    connection.flush()
+
+    # A WebSocket connection is idle for long stretches by design, so
+    # the server's request read timeout would close it out from under
+    # the application.
+    connection.set_read_timeout(0)
+  }
 
   response.status = status.SWITCHING_PROTOCOLS
   response.commit()
-  request.context['upgraded'] = true
-
-  # A WebSocket connection is idle for long stretches by design, so
-  # the server's request read timeout would close it out from under
-  # the application.
-  connection.set_read_timeout(0)
 
   var socket = WebSocket(connection, false, chosen)
 
-  var limit = settings.get('max_message_size', nil)
-  if limit != nil {
-    socket.max_message_size = limit
-  }
+  socket.max_message_size = settings.get(
+    'max_message_size',
+    socket.max_message_size,
+  )
+  socket.max_queued = settings.get('max_queued', socket.max_queued)
+  socket.ping_interval = settings.get('ping_interval', nil)
+
+  # What the server finds here tells it the connection is no longer
+  # its to answer requests on.
+  request.context['driver'] = socket
 
   return socket
 }

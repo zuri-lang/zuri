@@ -1,0 +1,533 @@
+/**
+ * test_http_live.zu
+ *
+ * WebSockets and server-sent event streams held open by the server's
+ * connection loop, which answers other clients at once while they
+ * stay open. Covers `listen()`, `http.serve()` with messages published
+ * across its workers, HTTP/2, and a server that serves one connection
+ * at a time.
+ */
+
+import http
+import http.h2
+import http.sse
+import http.stream
+import http.websocket as ws
+import isolate
+import json
+import net
+import os
+import .http_live_app
+
+# Far under any timeout an open connection could be holding things up
+# for, and far over how long an answer takes.
+var PROMPT = 1500
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+/**
+ * One end of a raw connection, keeping what a read brought in past
+ * what was asked for.
+ */
+class Peer {
+
+  var socket
+  var held = bytes(0)
+
+  @new(socket) {
+    self.socket = socket
+    self.held = bytes(0)
+  }
+
+  static dial(address) {
+    var socket = net.TcpStream()
+    socket.connect(address)
+    socket.set_read_timeout(5000)
+    return Peer(socket)
+  }
+
+  send(text) {
+    self.socket.write_all(text)
+  }
+
+  # Brings in more. Returns false once the peer has closed.
+  more() {
+    var chunk = self.socket.read(65536)
+
+    if chunk.length() == 0 {
+      return false
+    }
+
+    self.held.extend(chunk)
+    return true
+  }
+
+  # Reads until `text` has arrived, and returns everything up to the
+  # end of it, keeping the rest.
+  until(text) {
+    while true {
+      var seen = self.held.to_string()
+      var at = seen.index_of(text)
+
+      if at > -1 {
+        var size = (seen[0, at] + text).to_bytes().length()
+        var taken = self.held[0, size]
+        self.held = self.held[size,]
+        return taken.to_string()
+      }
+
+      if !self.more() {
+        raise Error('the connection closed before "${text}" arrived')
+      }
+    }
+  }
+
+  # Reads one response with a Content-Length, as `[status, body]`.
+  response() {
+    var head = self.until('\r\n\r\n')
+    var length = 0
+
+    for line in head.split('\r\n') {
+      if line.lower().starts_with('content-length:') {
+        length = line.split(':')[1].trim().to_number()
+      }
+    }
+
+    while self.held.length() < length {
+      if !self.more() {
+        raise Error('the connection closed inside a body')
+      }
+    }
+
+    var body = self.held[0, length]
+    self.held = self.held[length,]
+
+    return [head[9, 12].to_number(), body]
+  }
+
+  # Waits for the peer to close, and returns how long that took in
+  # milliseconds, counted from `started`.
+  wait_for_close(started) {
+    while self.more() {}
+
+    return (time() - started) * 1000
+  }
+
+  close() {
+    catch {
+      self.socket.close()
+    }
+  }
+}
+
+def request_for(path) {
+  return 'GET ${path} HTTP/1.1\r\nHost: x\r\n\r\n'
+}
+
+def handshake(path) {
+  return 'GET ${path} HTTP/1.1\r\nHost: x\r\n' +
+      'Upgrade: websocket\r\nConnection: Upgrade\r\n' +
+      'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n' +
+      'Sec-WebSocket-Version: 13\r\n\r\n'
+}
+
+def say(address, text) {
+  var peer = Peer.dial(address)
+  peer.send(
+    'POST /say HTTP/1.1\r\nHost: x\r\n' +
+        'Content-Length: ${text.to_bytes().length()}\r\n\r\n${text}',
+  )
+  var reply = peer.response()
+  peer.close()
+  return reply[0]
+}
+
+def stats(address) {
+  var peer = Peer.dial(address)
+  peer.send(request_for('/stats'))
+  var reply = peer.response()
+  peer.close()
+  return json.decode(reply[1].to_string())
+}
+
+# Asks for the stats until `check` accepts them, for something the
+# server does in its own time.
+def await_stats(address, check, what) {
+  var limit = time() + 5
+
+  while time() < limit {
+    var seen = stats(address)
+
+    if check(seen) {
+      return seen
+    }
+
+    os.sleep(0.05)
+  }
+
+  raise Error('${what}: never happened')
+}
+
+def closed_with(seen, route, code) {
+  for entry in seen.closes {
+    if entry[0] == route and entry[1] == code {
+      return true
+    }
+  }
+
+  return false
+}
+
+def connect(address, path) {
+  return ws.connect('ws://${address}${path}', { read_timeout: 5000 })
+}
+
+# Runs `server_main` on an isolate of its own, passing `first` and
+# `second` on to it when the server takes them.
+def start(server_main, first, second) {
+  var channel = isolate.channel(1)
+  var task = isolate.spawn(server_main, channel, first, second)
+  return [task, channel.recv(10)]
+}
+
+def stop(server) {
+  var peer = Peer.dial(server[1])
+  peer.send(request_for('/quit'))
+  peer.response()
+  peer.close()
+  server[0].join(10)
+}
+
+# A request from a newcomer, which has to be answered at once.
+def assert_prompt(address, what) {
+  var peer = Peer.dial(address)
+  var started = time()
+
+  peer.send(request_for('/ping'))
+
+  var reply = peer.response()
+  var waited = (time() - started) * 1000
+
+  peer.close()
+
+  assert reply[0] == 200, '${what}: the newcomer is answered'
+  assert waited < PROMPT, '${what}: at once, not after ${waited // 1}ms'
+}
+
+def http2_client(port) {
+  var connection = stream.connect('127.0.0.1', port, { read_timeout: 5000 })
+  var session = h2.Http2Connection(connection, false)
+  session.start_client()
+  return session
+}
+
+def http2_get(session, target) {
+  var request = http.HttpRequest('GET', target, http.Headers())
+  request.authority = 'x'
+  return [session.send_request(request, nil), request]
+}
+
+def run_all() {
+  isolate.configure(8)
+
+  echo '═══════════════════════════════════════════════════════'
+  echo '  http live - connections the server holds open'
+  echo '═══════════════════════════════════════════════════════'
+
+  var server = start(http_live_app.listen)
+  var address = server[1]
+
+  # ===========================================================================
+  # WebSockets
+  # ===========================================================================
+
+  var echo_socket = connect(address, '/echo')
+  echo_socket.send('hello')
+  assert echo_socket.receive().text() == 'hello', 'a message comes back'
+  assert_prompt(address, 'an open WebSocket')
+  echo_socket.send('again')
+  assert echo_socket.receive().text() == 'again',
+      'and the socket still works afterwards'
+  echo_socket.send_binary(bytes([0, 1, 250, 255]))
+  var binary = echo_socket.receive()
+  assert binary.is_binary() and binary.data.to_list() == [0, 1, 250, 255],
+      'a binary message stays binary'
+  echo_socket.send('x' * 70000)
+  assert echo_socket.receive().text().length() == 70000,
+      'and a message long enough for a 64-bit length comes back whole'
+  ok('an open WebSocket holds up nobody')
+
+  var chatters = []
+
+  iter var i = 0; i < 10; i++ {
+    var chatter = connect(address, '/chat')
+    assert chatter.receive().text() == 'welcome',
+        'a socket hears what the handler sent before returning'
+    chatters.append(chatter)
+  }
+
+  chatters[0].send('hi all')
+
+  for chatter in chatters {
+    assert chatter.receive().text() == 'hi all', 'every socket hears it'
+  }
+
+  ok('a message one socket publishes reaches every socket')
+
+  assert say(address, 'from a request') == 200, 'a request publishes'
+
+  for chatter in chatters {
+    assert chatter.receive().text() == 'from a request',
+        'and every socket hears it'
+  }
+
+  ok('a request can send to the sockets that are open')
+
+  chatters[0].close(ws.CLOSE_NORMAL, 'leaving')
+  await_stats(address, @(seen) {
+    return seen.sockets == 9 and closed_with(seen, 'chat', ws.CLOSE_NORMAL)
+  }, 'the closing socket is forgotten')
+  ok('a socket the client closes is told the code it closed with')
+
+  echo_socket.send('bye')
+  var goodbye = echo_socket.receive()
+  assert goodbye.is_close(), 'the server closes the socket'
+  assert goodbye.close_code() == ws.CLOSE_NORMAL, 'with the code it chose'
+  assert goodbye.close_reason() == 'asked to', 'and the reason'
+  ok('the server can close a socket')
+
+  var failing = connect(address, '/echo')
+  failing.send('boom')
+  var failed = failing.receive()
+  assert failed.is_close() and failed.close_code() == ws.CLOSE_INTERNAL_ERROR,
+      'a listener that fails closes its socket with 1011'
+  await_stats(address, @(seen) {
+    return seen.errors.contains('deliberate failure')
+  }, 'the failure is reported')
+  ok('a failing listener is reported and its socket closed')
+
+  var ticking = connect(address, '/ticks')
+  assert ticking.receive().text() == 'tick 1', 'a timer runs'
+  assert ticking.receive().text() == 'tick 2', 'and runs again'
+  assert ticking.receive().text() == 'tick 3', 'and again'
+  assert ticking.receive().is_close(), 'until it closes the socket'
+  ok('a socket can have timers')
+
+  var idle = Peer.dial(address)
+  var idle_started = time()
+  idle.send(handshake('/idle'))
+  assert idle.until('\r\n\r\n').starts_with('HTTP/1.1 101'),
+      'the upgrade succeeds'
+  var idle_wait = idle.wait_for_close(idle_started)
+  idle.close()
+  assert idle_wait > 300 and idle_wait < 2000,
+      'a peer that never answers pings is dropped, took ${idle_wait // 1}ms'
+  await_stats(address, @(seen) {
+    return closed_with(seen, 'idle', ws.CLOSE_ABNORMAL)
+  }, 'the silent socket is told')
+  ok('a peer that never answers a ping is closed after two intervals')
+
+  var flood = Peer.dial(address)
+  flood.send(handshake('/flood'))
+  flood.until('\r\n\r\n')
+  assert_prompt(address, 'a socket whose peer stopped reading')
+  await_stats(address, @(seen) {
+    return closed_with(seen, 'flood', ws.CLOSE_ABNORMAL)
+  }, 'the stalled socket is dropped')
+  flood.close()
+  ok('a peer that stops reading is dropped once too much is queued')
+
+  # ===========================================================================
+  # Server-sent events
+  # ===========================================================================
+
+  var clock = Peer.dial(address)
+  clock.send(request_for('/clock'))
+  var clock_head = clock.until('\r\n\r\n').lower()
+  assert clock_head.contains('content-type: text/event-stream'),
+      'an event stream says what it is'
+  assert clock_head.contains('transfer-encoding: chunked'),
+      'and is sent in chunks'
+  assert_prompt(address, 'an open event stream')
+  var ticks = clock.until('0\r\n\r\n')
+  assert ticks.split('data: ').length() == 6, 'all five events arrive'
+  assert ticks.contains('id: 5'), 'with their IDs'
+  clock.send(request_for('/ping'))
+  assert clock.response()[1].to_string() == 'pong',
+      'and the connection serves another request once the stream ends'
+  clock.close()
+  ok('an open event stream holds up nobody, and ends cleanly')
+
+  var feed = Peer.dial(address)
+  feed.send(request_for('/feed'))
+  feed.until(': hello')
+  assert say(address, 'news') == 200, 'a request publishes'
+  assert feed.until('data: news').contains('event: chat'),
+      'and the stream sends it on'
+  feed.close()
+  await_stats(address, @(seen) {
+    return seen.ended == 1 and seen.streams == 0
+  }, 'the stream whose client left is told')
+  ok('a stream sends what others publish, and hears when its client leaves')
+
+  var head = Peer.dial(address)
+  head.send('HEAD /feed HTTP/1.1\r\nHost: x\r\n\r\n')
+  assert head.until('\r\n\r\n').starts_with('HTTP/1.1 200'),
+      'a HEAD is answered'
+  head.send(request_for('/ping'))
+  assert head.response()[1].to_string() == 'pong', 'and the connection goes on'
+  head.close()
+  await_stats(address, @(seen) {
+    return seen.ended == 2 and seen.streams == 0
+  }, 'the stream a HEAD never opened is ended')
+  ok('a HEAD request to an event stream ends it straight away')
+
+  var brief = Peer.dial(address)
+  brief.send(request_for('/brief'))
+  var brief_body = brief.until('0\r\n\r\n')
+  assert brief_body.contains('data: one') and brief_body.contains('data: two'),
+      'what the handler sent before closing arrives'
+  brief.send(request_for('/ping'))
+  assert brief.response()[1].to_string() == 'pong',
+      'and the connection serves another request'
+  brief.close()
+  ok('a stream closed by its handler is sent whole')
+
+  # ===========================================================================
+  # HTTP/2
+  # ===========================================================================
+
+  var port = address.split(':')[1].to_number()
+  var session = http2_client(port)
+  var long_clock = http2_get(session, '/clock?ticks=30')
+  var asked_at = time()
+  var beside = http2_get(session, '/say/beside')
+  assert session.await_response(beside[0], beside[1]).as_text() == 'beside',
+      'a request beside an open event stream is answered'
+  var beside_wait = (time() - asked_at) * 1000
+  assert beside_wait < PROMPT, 'at once, not after ${beside_wait // 1}ms'
+  assert_prompt(address, 'an event stream open over HTTP/2')
+  var h2_events = sse.parse(
+    session.await_response(long_clock[0], long_clock[1]).as_text(),
+  )
+  assert h2_events.length() == 30, 'and every event of the stream arrives'
+  assert h2_events[29].id == '30', 'in order'
+  session.close(nil)
+  ok('an event stream over HTTP/2 holds up neither its session nor others')
+
+  # ===========================================================================
+  # Shutting down
+  # ===========================================================================
+
+  var lingering = connect(address, '/echo')
+  lingering.send('still here')
+  lingering.receive()
+  var listening_feed = Peer.dial(address)
+  listening_feed.send(request_for('/feed'))
+  listening_feed.until(': hello')
+
+  for chatter in chatters[1,] {
+    chatter.close()
+  }
+
+  stop(server)
+
+  var farewell = lingering.receive()
+  assert farewell.is_close() and farewell.close_code() == ws.CLOSE_GOING_AWAY,
+      'an open socket is told the server is going away'
+  listening_feed.until('0\r\n\r\n')
+  listening_feed.close()
+  ok('stopping the server closes its sockets and streams cleanly')
+
+  # ===========================================================================
+  # http.serve()
+  # ===========================================================================
+
+  var single = start(http_live_app.serve, 1, 64)
+  var single_address = single[1]
+  var held_socket = connect(single_address, '/echo')
+  held_socket.send('one worker')
+  assert held_socket.receive().text() == 'one worker', 'a socket works'
+  var held_feed = Peer.dial(single_address)
+  held_feed.send(request_for('/feed'))
+  held_feed.until(': hello')
+  assert_prompt(single_address, 'a socket and a stream on the only worker')
+  held_socket.close()
+  held_feed.close()
+  stop(single)
+  ok('a socket and a stream on the only worker hold up nobody')
+
+  # Each worker holds at most two connections, so three sockets are
+  # spread over both workers, whichever takes which.
+  var pair = start(http_live_app.serve, 2, 2)
+  var pair_address = pair[1]
+  var spread = []
+
+  iter var i = 0; i < 3; i++ {
+    var chatter = connect(pair_address, '/chat')
+    chatter.receive()
+    spread.append(chatter)
+  }
+
+  spread[2].send('across workers')
+
+  for chatter in spread {
+    assert chatter.receive().text() == 'across workers',
+        'a message reaches the sockets on every worker'
+  }
+
+  for chatter in spread {
+    chatter.close()
+  }
+
+  stop(pair)
+  ok('a message published on one worker reaches every worker')
+
+  # ===========================================================================
+  # One connection at a time
+  # ===========================================================================
+
+  var serial = start(http_live_app.one_at_a_time)
+  var serial_address = serial[1]
+  var serial_socket = connect(serial_address, '/echo')
+  serial_socket.send('in turn')
+  assert serial_socket.receive().text() == 'in turn',
+      'a socket works without a loop of the server\'s own'
+  serial_socket.close()
+  var serial_brief = Peer.dial(serial_address)
+  serial_brief.send(request_for('/brief'))
+  assert serial_brief.until('0\r\n\r\n').contains('data: two'),
+      'so does an event stream'
+  serial_brief.send(request_for('/ping'))
+  assert serial_brief.response()[1].to_string() == 'pong',
+      'and the connection goes on afterwards'
+  serial_brief.close()
+  stop(serial)
+  ok('a server serving one connection at a time drives them too')
+
+  echo ''
+  echo '═══════════════════════════════════════════════════════'
+  echo '  All ${_passed} checks passed.'
+  echo '═══════════════════════════════════════════════════════'
+}
+
+catch {
+  run_all()
+} as error
+
+# A server left running on its own isolate would keep the process
+# alive after a failure, so this one ends it.
+if error {
+  echo '  [FAIL] ${error.message}'
+
+  for line in error.stacktrace {
+    echo '    ${line}'
+  }
+
+  os.exit(1)
+}

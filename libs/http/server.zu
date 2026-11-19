@@ -36,6 +36,9 @@ import net.tls
 # noticed.
 var _LISTEN_INTERVAL = 100
 
+# How many messages from other workers one turn delivers at most.
+var _DELIVER_LIMIT = 256
+
 # What the start of an HTTP/2 connection preface looks like. `PRI` is
 # not a method any HTTP/1.1 client sends, so this is unambiguous.
 var _PREFACE_START = 'PRI '.to_bytes()
@@ -273,6 +276,14 @@ class HttpServer {
   var _static_mounts = []
   var _halt
 
+  # Publishing. Under `http.serve()`, messages go out to the relay and
+  # come back through the inbox. Otherwise they wait in `_published`
+  # for the end of the turn.
+  var _subscriptions = {}
+  var _published = []
+  var _relay
+  var _inbox
+
   /**
    * @param ?number port: defaults to `8000`
    * @param ?string host: defaults to `'127.0.0.1'`
@@ -300,6 +311,8 @@ class HttpServer {
     self._error_listeners = []
     self._static_mounts = []
     self.trusted_proxies = []
+    self._subscriptions = {}
+    self._published = []
   }
 
   # ----------------------------------------------------------------
@@ -590,6 +603,147 @@ class HttpServer {
   }
 
   # ----------------------------------------------------------------
+  # Publishing
+  # ----------------------------------------------------------------
+
+  /**
+   * Adds a listener called with every value published under `topic`.
+   *
+   * Under `http.serve()`, a value published on any worker reaches the
+   * listeners on every worker, which is how a message one WebSocket
+   * sends reaches the sockets and event streams that other workers
+   * hold. Listeners run on the thread that serves the connections, after
+   * the handler or callback that published has returned.
+   *
+   * ```zuri
+   * var sockets = []
+   *
+   * server.subscribe('chat', @(text) {
+   *   for socket in sockets {
+   *     socket.send(text)
+   *   }
+   * })
+   * ```
+   *
+   * @param string topic
+   * @param function(1) listener: called with the value
+   * @returns HttpServer: this same instance, for chaining
+   */
+  subscribe(topic: string, listener) {
+    var listeners = self._subscriptions.get(topic, nil)
+
+    if listeners == nil {
+      self._subscriptions[topic] = [listener]
+    } else {
+      listeners.append(listener)
+    }
+
+    return self
+  }
+
+  /**
+   * Sends `value` to every listener subscribed to `topic`, on this
+   * server and, under `http.serve()`, on every other worker as well.
+   *
+   * Nothing runs inside this call. Under `http.serve()` the value is
+   * copied to each worker, the way any value is copied between
+   * isolates, so it has to be one that an isolate channel can carry.
+   *
+   * @param string topic
+   * @param any value
+   */
+  publish(topic: string, value) {
+    if self._relay == nil {
+      self._published.append([topic, value])
+    } else {
+      self._relay.send([topic, value])
+    }
+  }
+
+  /**
+   * Makes this server one of several that publish to each other.
+   * `publish()` sends to `relay`, which passes each message on to
+   * every server's `inbox`.
+   *
+   * @internal Called by `http.serve()`.
+   * @param isolate.Channel relay
+   * @param isolate.Channel inbox
+   */
+  relay_through(relay, inbox) {
+    self._relay = relay
+    self._inbox = inbox
+  }
+
+  /**
+   * Whether any listener has subscribed to anything.
+   *
+   * @returns bool
+   */
+  has_subscribers() {
+    return !self._subscriptions.is_empty()
+  }
+
+  /**
+   * Runs the listeners for everything published since the last call.
+   *
+   * @internal Called by the connection loop, once a turn when this
+   *    server has subscribers, and now and then when it has none.
+   */
+  deliver_published() {
+    if self._published.length() > 0 {
+      var batch = self._published
+
+      self._published = []
+
+      for message in batch {
+        self.deliver(message)
+      }
+    }
+
+    if self._inbox != nil {
+      var count = 0
+      var message = self._inbox.try_recv()
+
+      while message != nil {
+        self.deliver(message)
+        count++
+
+        # The rest wait for the next turn, so a flood of messages can't
+        # keep the connections from being served.
+        if count >= _DELIVER_LIMIT {
+          break
+        }
+
+        message = self._inbox.try_recv()
+      }
+    }
+  }
+
+  /**
+   * Runs the listeners for one published `[topic, value]` pair. A
+   * listener that raises an error is reported to `on_error()`
+   * listeners, and the rest still run.
+   *
+   * @internal Called while delivering published messages.
+   * @param list message
+   */
+  deliver(message) {
+    var listeners = self._subscriptions.get(message[0], nil)
+
+    if listeners == nil {
+      return
+    }
+
+    for listener in listeners {
+      catch {
+        listener(message[1])
+      } as error {
+        self._report(error, nil)
+      }
+    }
+  }
+
+  # ----------------------------------------------------------------
   # TLS
   # ----------------------------------------------------------------
 
@@ -699,10 +853,11 @@ class HttpServer {
    * called.
    *
    * Every connection is served on the calling thread, interleaved, so
-   * a client that goes quiet holds up nobody else. A handler still
-   * runs to completion before the next request is looked at. For a
-   * server that uses more than one core, see `http.serve()`, which
-   * runs this same request pipeline across a pool of isolates.
+   * a client that goes quiet holds up nobody else, and neither does an
+   * open WebSocket or event stream. A handler still runs to completion
+   * before the next request is looked at. For a server that uses more
+   * than one core, see `http.serve()`, which runs this same request
+   * pipeline across a pool of isolates.
    *
    * @throws HttpError if the socket cannot be bound
    */
@@ -833,19 +988,6 @@ class HttpServer {
     self._halt = halt
   }
 
-  /**
-   * Serves every request on a client socket that has already been
-   * accepted, and then closes it.
-   *
-   * This is the complete pipeline for a connection, including the TLS
-   * handshake, the keep-alive loop, parsing, dispatching and the
-   * response. It's public so that a caller running its own accept loop,
-   * or passing sockets to worker isolates, can reuse it. Its reads wait
-   * for the client, so that caller only serves one connection at a
-   * time. `listen()` doesn't work that way. See `http.loop`.
-   *
-   * @param TcpStream client
-   */
   _serve_connection_safe(connection) {
     catch {
       if self.http2 and self._is_http2(connection) {
@@ -859,6 +1001,24 @@ class HttpServer {
     }
   }
 
+  /**
+   * Serves every request on a client socket that has already been
+   * accepted, and then closes it.
+   *
+   * This is the complete pipeline for a connection, including the TLS
+   * handshake, the keep-alive loop, parsing, dispatching and the
+   * response. It's public so that a caller running its own accept loop,
+   * or passing sockets to worker isolates, can reuse it. Its reads wait
+   * for the client, so that caller only serves one connection at a
+   * time. `listen()` doesn't work that way. See `http.loop`.
+   *
+   * A WebSocket or an event stream that a handler leaves open is driven
+   * by a connection loop of its own, and this returns once it has
+   * closed, or carries on serving requests when an event stream ends
+   * and the connection can be kept.
+   *
+   * @param TcpStream client
+   */
   serve_connection(client) {
     var connection = self.accept_connection(client)
 
@@ -1238,9 +1398,14 @@ class HttpServer {
   _serve_requests(connection) {
     var served = 0
 
+    # With no loop to deliver what a handler published, each request
+    # does it once it has been answered.
     while self.serve_next(connection, served) {
       served++
+      self.deliver_published()
     }
+
+    self.deliver_published()
   }
 
   /**
@@ -1319,10 +1484,15 @@ class HttpServer {
       self.handle_request(request, response)
     }
 
-    # An upgraded connection is no longer carrying HTTP messages, so
-    # there is nothing more for this loop to write or read on it.
-    if request.context.get('upgraded', false) {
-      return false
+    # A connection upgraded to a WebSocket no longer carries requests
+    # and responses, and the socket drives it from here. The upgrade
+    # always answers 101, which spares every other request the lookup.
+    if response.status == status.SWITCHING_PROTOCOLS {
+      var upgraded = request.context.get('driver', nil)
+
+      if upgraded != nil {
+        return self._hand_over(connection, upgraded)
+      }
     }
 
     var opts = { server_name: self.server_name }
@@ -1352,7 +1522,45 @@ class HttpServer {
       }
     }
 
+    # A body held open, for an event stream, is written from here on by
+    # what `write_response()` left in the context. Only a response with
+    # a source of its own can have one.
+    if response.source() != nil {
+      var live = request.context.get('driver', nil)
+
+      if live != nil {
+        return self._hand_over(connection, live)
+      }
+    }
+
     return keep_alive
+  }
+
+  # Leaves `driver` to run a connection that has stopped carrying
+  # plain requests and responses. A connection loop takes the driver
+  # from the request's context. A connection served one at a time has
+  # no loop, so it gets one of its own for as long as the driver needs
+  # it. Returns whether more requests can be served on the connection.
+  _hand_over(connection, driver) {
+    if connection.is_deferred() or !driver.can_drive() {
+      return false
+    }
+
+    var loop = ConnectionLoop(self, 1)
+
+    loop.adopt(connection, driver)
+
+    while !loop.is_empty() {
+      loop.turn(_LISTEN_INTERVAL)
+    }
+
+    if !loop.was_handed_back() {
+      return false
+    }
+
+    connection.block_output()
+
+    return true
   }
 
   _send_continue_safe(connection) {

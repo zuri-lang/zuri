@@ -354,6 +354,27 @@ class HttpResponse {
   }
 
   /**
+   * Leaves the body open once the handler returns, for `writer` to
+   * fill whenever it has something to send. The server's connection
+   * loop holds the connection meanwhile and goes on serving other
+   * requests, which `stream()` can't do. `sse.open()` is built on this.
+   *
+   * When the head has gone out, the server calls `writer.attach(body)`
+   * with an object that has `write(data)`, `finish()`,
+   * `schedule(timer)` and `report(error)`. It calls `writer.ended()`
+   * once the client has gone or the body will never be sent, as for a
+   * `HEAD` request.
+   *
+   * @param any writer
+   * @returns HttpResponse: this same instance, for chaining
+   */
+  hold(writer) {
+    self._source = ['live', writer]
+
+    return self
+  }
+
+  /**
    * Renders a Wire template and appends the result to the body,
    * setting `Content-Type` to HTML if it is not already set.
    *

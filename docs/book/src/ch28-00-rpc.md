@@ -1110,7 +1110,9 @@ The route accepts the WebSocket and serves an endpoint on it for as long as
 the client stays connected. When asked for a total, the server asks the
 client for a price before it answers. A WebSocket can only be used by one
 isolate at a time, so an endpoint on a WebSocket reads with `serve()` and
-`request()`.
+`request()`. `serve()` reads the socket itself, so the server's isolate
+is busy for as long as the client stays connected, as [Reading the Socket
+Yourself](ch15-00-http.md#reading-the-socket-yourself) explains.
 
 ### Between Isolates
 
