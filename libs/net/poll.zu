@@ -67,10 +67,15 @@
  * A socket that has been closed, upgraded to a `TlsStream`, or moved to
  * another isolate can no longer provide a file descriptor. You don't
  * have to remember that rule, because `wait()` reports such a socket as
- * `ERROR` under its own token. The descriptor is looked up again on
- * every call and never kept between calls, so a poller can never end up
- * watching a descriptor that the operating system has since given to
- * something else.
+ * `ERROR` under its own token until it's removed. A new socket that's
+ * given the same file descriptor is reported under its own token.
+ *
+ * ### Platforms
+ *
+ * A poller uses epoll on Linux, kqueue on macOS and FreeBSD, `WSAPoll`
+ * on Windows and `poll` on other systems. With epoll and kqueue, the
+ * time `wait()` takes doesn't grow with the number of registered
+ * sockets. With `WSAPoll` and `poll`, each call checks all of them.
  *
  * ### TLS streams
  *
@@ -141,21 +146,25 @@ var HANGUP = 8
  */
 class Poller {
 
-  # Parallel lists rather than a dictionary: `wait()` passes the
-  # sockets and interests straight to the platform call with no
-  # rebuilding, and this is also what keeps every registered socket
-  # reachable by the collector for as long as it is being watched.
-  var _sockets = []
-  var _interests = []
-  var _tokens = []
+  # The operating system's event queue, which knows each token's
+  # descriptor and what it's waited on for.
+  var _queue
+
+  # Each token's native socket handle and interest. Holding the handle
+  # here is what keeps the socket alive, and reachable by the
+  # collector, for as long as it's watched, and the queue resolves
+  # descriptors from these again whenever a socket on this thread has
+  # changed.
+  var _sockets = {}
+  var _interests = {}
 
   /**
    * Returns a new, empty `Poller`.
    */
   @new() {
-    self._sockets = []
-    self._interests = []
-    self._tokens = []
+    self._queue = _net_poll.queue_open()
+    self._sockets = {}
+    self._interests = {}
   }
 
   /**
@@ -174,6 +183,7 @@ class Poller {
    * @returns Poller: this same instance, for chaining
    * @throws ValueError if `interest` doesn't include either readability
    *    or writability
+   * @throws Error if the socket is already watched under another token
    */
   add(socket, token: number, interest: ?number) {
     var wanted = interest == nil ? READABLE : interest
@@ -189,22 +199,30 @@ class Poller {
       )
     }
 
-    # The native handle rather than the wrapper: it is what actually
-    # owns the socket, so holding it here is what keeps the socket
-    # alive for as long as it is watched - and it is what `wait()`
-    # resolves a descriptor from, freshly, on every call.
+    # The native handle rather than the wrapper, since it's what
+    # actually owns the socket.
     var handle = socket.native_ptr()
-    var at = self._index_of(token)
+    var previous = self._sockets.get(token, nil)
+    var previous_interest = self._interests.get(token, nil)
 
-    if at > -1 {
-      self._sockets[at] = handle
-      self._interests[at] = wanted
-      return self
+    self._sockets[token] = handle
+    self._interests[token] = wanted
+
+    catch {
+      _net_poll.queue_watch(self._queue, self._sockets, token, wanted)
+    } as error
+
+    if error {
+      if previous == nil {
+        self._sockets.remove(token)
+        self._interests.remove(token)
+      } else {
+        self._sockets[token] = previous
+        self._interests[token] = previous_interest
+      }
+
+      raise error
     }
-
-    self._sockets.append(handle)
-    self._interests.append(wanted)
-    self._tokens.append(token)
 
     return self
   }
@@ -226,13 +244,12 @@ class Poller {
       raise ValueError('interest must be READABLE, WRITABLE, or both')
     }
 
-    var at = self._index_of(token)
-
-    if at == -1 {
+    if !self._sockets.contains(token) {
       return false
     }
 
-    self._interests[at] = interest
+    self._interests[token] = interest
+    _net_poll.queue_watch(self._queue, self._sockets, token, interest)
 
     return true
   }
@@ -246,15 +263,13 @@ class Poller {
    * @returns bool: whether the token was registered
    */
   remove(token: number) {
-    var at = self._index_of(token)
-
-    if at == -1 {
+    if !self._sockets.contains(token) {
       return false
     }
 
-    self._sockets.remove_at(at)
-    self._interests.remove_at(at)
-    self._tokens.remove_at(at)
+    _net_poll.queue_forget(self._queue, self._sockets, token)
+    self._sockets.remove(token)
+    self._interests.remove(token)
 
     return true
   }
@@ -266,7 +281,7 @@ class Poller {
    * @returns bool
    */
   contains(token: number) {
-    return self._index_of(token) > -1
+    return self._sockets.contains(token)
   }
 
   /**
@@ -276,8 +291,7 @@ class Poller {
    * @returns ?number
    */
   interest(token: number) {
-    var at = self._index_of(token)
-    return at == -1 ? nil : self._interests[at]
+    return self._interests.get(token, nil)
   }
 
   /**
@@ -286,7 +300,7 @@ class Poller {
    * @returns list
    */
   tokens() {
-    return self._tokens.clone()
+    return self._sockets.keys()
   }
 
   /**
@@ -295,7 +309,7 @@ class Poller {
    * @returns number
    */
   length() {
-    return self._tokens.length()
+    return self._sockets.length()
   }
 
   /**
@@ -304,7 +318,7 @@ class Poller {
    * @returns bool
    */
   is_empty() {
-    return self._tokens.is_empty()
+    return self._sockets.is_empty()
   }
 
   /**
@@ -313,9 +327,9 @@ class Poller {
    * @returns Poller: this same instance, for chaining
    */
   clear() {
+    _net_poll.queue_clear(self._queue)
     self._sockets.clear()
     self._interests.clear()
-    self._tokens.clear()
 
     return self
   }
@@ -330,6 +344,9 @@ class Poller {
    * nothing is registered, because waiting on an empty set could only
    * ever sleep for the whole timeout for no reason.
    *
+   * With epoll and kqueue, the time this takes doesn't grow with the
+   * number of registered sockets. See the module description.
+   *
    * @note Test the flags with `&`, never with `==`. A socket can be
    *    readable and hung up at the same time, for example when a peer
    *    sends a final response and then closes the connection.
@@ -341,34 +358,15 @@ class Poller {
    * @throws Error if the platform reports a failure
    */
   wait(timeout: ?number) {
-    var milliseconds = timeout == nil ? -1 : timeout
-
-    var ready = _net_poll.poll_wait(
+    return _net_poll.queue_wait(
+      self._queue,
       self._sockets,
-      self._interests,
-      milliseconds,
+      timeout == nil ? -1 : timeout,
     )
-    var events = []
-
-    for event in ready {
-      events.append([self._tokens[event[0]], event[1]])
-    }
-
-    return events
-  }
-
-  _index_of(token) {
-    iter var i = 0; i < self._tokens.length(); i++ {
-      if self._tokens[i] == token {
-        return i
-      }
-    }
-
-    return -1
   }
 
   to_string() {
-    return '<Poller watching ${self._tokens.length()} socket(s)>'
+    return '<Poller watching ${self._sockets.length()} socket(s)>'
   }
 
   @to_string() {

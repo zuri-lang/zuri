@@ -182,10 +182,12 @@ impl ZuriTcp {
 
   fn set_stream(&mut self, stream: TcpStream) {
     self.stream = Some(stream);
+    crate::modules::net_poll::note_handle_change();
   }
 
   fn set_listener(&mut self, listener: TcpListener) {
     self.listener = Some(listener);
+    crate::modules::net_poll::note_handle_change();
   }
 
   fn is_connected(&self) -> bool {
@@ -201,6 +203,8 @@ impl ZuriTcp {
   /// plaintext and only becomes encrypted partway through, on the same
   /// underlying socket, rather than by reconnecting.
   pub(crate) fn take_stream(&mut self) -> Result<TcpStream, String> {
+    crate::modules::net_poll::note_handle_change();
+
     self
       .stream
       .take()
@@ -906,6 +910,7 @@ fn tcp_close(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   tcp.stream = None;
   tcp.listener = None;
+  crate::modules::net_poll::note_handle_change();
 
   // Make pointer invalid so that the stream cannot be reused.
   ptr.type_name = "zuri::net::TcpStream::__closed__";

@@ -526,6 +526,9 @@ fn capture_value(
     let payload = borrowed.take();
     borrowed.type_name = "<moved>";
     drop(borrowed);
+    // A socket among the moved handles no longer supplies its descriptor
+    // on this side, which a poller watching it has to find out.
+    crate::modules::net_poll::note_handle_change();
     arena.push(TransferNode::Ptr(Arc::new(Mutex::new(Some((
       type_name, payload,
     ))))));
