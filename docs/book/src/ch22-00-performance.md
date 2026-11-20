@@ -94,18 +94,14 @@ deoptimized at a particular place only once, not every time it gets there.
 
 ### Functions That Stay in Kebbi
 
-Bayelsa leaves a function to Kebbi in two cases:
+Bayelsa leaves a function to Kebbi in two common cases:
 
 - The function contains a `catch`. Kebbi compiles it, including its
   handlers.
-- The function's hot operations are ones that Kebbi handles inline but
-  Bayelsa would pass to the runtime, such as arithmetic on values that
-  weren't always numbers, method calls on strings, and indexing lists and
-  strings whose type can't be determined. In those cases, Kebbi's code is
-  faster.
-
-A function that's left in Kebbi is recompiled without its profiling code, so
-it runs at Kebbi's full speed.
+- The function creates an instance that never leaves it. Kebbi can build
+  such an instance in the function's own frame without allocating any
+  memory. Bayelsa allocates the instances it creates on the heap, so
+  Kebbi's code is faster here.
 
 ## How Functions Become Hot
 
@@ -447,27 +443,37 @@ whenever it turns a function down. `ZURI_JIT_KEBBI=1` (or
 Kebbi. `ZURI_JIT_TIERED=1` turns on the multi-tier pipeline, where Kebbi
 profiles a function before Bayelsa compiles it.
 
-Keep the default for anything that runs long enough for its speed to matter,
-such as servers, batch jobs, numeric work, and anything whose hot loops run
-for more than a moment. That's where Bayelsa's code pays back the cost of
-compiling it many times over.
+Use the default for all programs, including short scripts and command-line
+tools. On the 37 programs in the `benchmarks` directory of Zuri's source
+repository, Kebbi alone took 1.38 times as long as the default (the
+geometric mean), and up to 2.7 times as long. None of them was measurably
+faster with Kebbi alone:
 
-Turn off Bayelsa (`ZURI_JIT_KEBBI=1`) when:
+| Program | Default | Kebbi alone |
+| --- | --- | --- |
+| `richards` | 6.8 ms | 11.1 ms |
+| `method-call` | 30 ms | 58 ms |
+| `list-methods` | 45 ms | 105 ms |
+| `fibonacci` | 80 ms | 140 ms |
+| `deltablue` | 630 ms | 793 ms |
+| `spectral-norm` | 0.78 s | 2.09 s |
+| `binary-tree` | 6.3 s | 7.8 s |
+| `fannkuch-redux` | 35.7 s | 44.7 s |
 
-- **The program is short.** A script that finishes in a fraction of a second
-  spends a significant part of its run time compiling, and the faster code
-  arrives too late to pay for itself.
-- **CPU cores are limited.** Bayelsa's compilations use more processor time
-  than Kebbi's. On a machine or container limited to one core, or when every
-  core is busy running isolates, that time comes out of the program's own.
-- **Startup time is what matters.** A command-line tool that's run over and
-  over again, for a few milliseconds each time, gains nothing from code
-  that's faster on its thousandth iteration.
-- **Timings need to be consistent from the first run.** Kebbi reaches its
-  full speed sooner and stays there.
+Each time is the program's own measurement of its work, the median of five
+runs of each mode, on a 10-core Apple M5. Programs that finish in a few
+milliseconds gained from Bayelsa as well, and the ones that finish in under
+a millisecond took the same time in both modes.
 
-Measure both. The setting is a single environment variable, and running your
-real workload both ways answers the question for that workload.
+With its compiler threads counted, the default used no more processor time
+in total than Kebbi alone on all but one program, whose timings varied by
+half from run to run in both modes. So the default is also the better
+choice when cores are limited.
+
+`ZURI_JIT_KEBBI=1` is useful when you're tracking down a problem in the JIT.
+If a program gives a different result by default than it does with
+`ZURI_JIT=0`, running it with `ZURI_JIT_KEBBI=1` shows whether the
+difference comes from Bayelsa.
 
 ## Environment Variables
 
