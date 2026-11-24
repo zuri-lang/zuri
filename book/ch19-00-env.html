@@ -1,0 +1,845 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Configuration and the Environment · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch19-00-env.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=5550658799">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="purple" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print every page" aria-label="Print every page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html" aria-current="page"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Chapter 19 · The Big Modules</p>
+        <div class="content"><h1 id="configuration-and-the-environment">Configuration and the Environment</h1>
+<p>Any program that works with other services needs to be told where they are:
+a database address, an API key, a port to listen on, or a flag that turns on
+verbose logging for an afternoon. None of that belongs in the source code.
+It changes between your laptop and the server, and some of it should never
+be committed to a repository at all.</p>
+<p>The industry's standard answer is the process environment. Orchestrators, CI
+runners and shells all set environment variables, and every language can
+read them. What none of them handle is the first machine in the chain, which
+is yours. There's no orchestrator on your laptop, and nobody wants to type
+eight variable assignments in front of every command.</p>
+<p>The <code>env</code> module fills that gap. It reads a <code>.env</code> file into the process
+environment when the program starts, and it reads values back out already
+converted to the number, boolean or list your program needs. The file is a
+convenience for development, while the environment is the real interface. A
+program written with <code>env</code> doesn't know or care where a value came from,
+which is what lets it run unchanged in both places.</p>
+<ul>
+<li><a href="#loading-the-file">Loading the File</a></li>
+<li><a href="#writing-a-env-file">Writing a <code>.env</code> File</a>
+<ul>
+<li><a href="#quoting">Quoting</a></li>
+<li><a href="#comments">Comments</a></li>
+<li><a href="#values-that-span-lines">Values That Span Lines</a></li>
+</ul>
+</li>
+<li><a href="#existing-variables-take-priority">Existing Variables Take Priority</a>
+<ul>
+<li><a href="#overriding">Overriding</a></li>
+<li><a href="#empty-means-unset">Empty Means Unset</a></li>
+</ul>
+</li>
+<li><a href="#references-between-values">References Between Values</a>
+<ul>
+<li><a href="#fallbacks-and-required-values">Fallbacks and Required Values</a></li>
+<li><a href="#literal-dollar-signs">Literal Dollar Signs</a></li>
+</ul>
+</li>
+<li><a href="#reading-values">Reading Values</a></li>
+<li><a href="#configuring-a-load">Configuring a Load</a>
+<ul>
+<li><a href="#layering-files">Layering Files</a></li>
+<li><a href="#loading-from-text">Loading From Text</a></li>
+<li><a href="#requiring-the-file">Requiring the File</a></li>
+<li><a href="#reading-without-loading">Reading Without Loading</a></li>
+</ul>
+</li>
+<li><a href="#writing-a-file">Writing a File</a></li>
+<li><a href="#errors">Errors</a></li>
+<li><a href="#keeping-secrets-out-of-git">Keeping Secrets Out of Git</a></li>
+<li><a href="#module-reference">Module Reference</a></li>
+</ul>
+<h2 id="loading-the-file"><a class="anchor" href="#loading-the-file" aria-hidden="true" tabindex="-1"></a>Loading the File</h2>
+<p>It takes one call, which should go as early in the program as possible:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> env
+
+<span class="bi">file</span>(<span class="str">'.env.demo'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'PORT=8080\nGREETING=hello\n'</span>)
+
+env.<span class="fn">load</span>(<span class="str">'.env.demo'</span>)
+
+<span class="kw">echo</span> env.<span class="fn">get</span>(<span class="str">'GREETING'</span>)
+<span class="kw">echo</span> env.<span class="fn">int</span>(<span class="str">'PORT'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">hello
+8080
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>env.load()</code> without an argument reads <code>.env</code> in the current working
+directory, which is what almost every program wants. The examples in this
+chapter write their file first and pass its name, so that you can run each
+one as it is.</p>
+<p>The file is optional. If it doesn't exist, <code>load()</code> leaves the environment
+exactly as it was, and the program continues with whatever the shell already
+provided. That's intentional, so the same program runs on a laptop with a
+<code>.env</code> file and on a server without one.</p>
+<h2 id="writing-a-env-file"><a class="anchor" href="#writing-a-env-file" aria-hidden="true" tabindex="-1"></a>Writing a <code>.env</code> File</h2>
+<p>Each line has a name, an <code>=</code> and a value:</p>
+<figure class="code"><pre><code class="language-dosini"><span class="key">HOST</span><span class="op">=</span><span class="num">127.0.0.1</span>
+<span class="key">PORT</span><span class="op">=</span><span class="num">8080</span>
+<span class="key">DATABASE_URL</span><span class="op">=</span><span class="str">postgres://app@localhost/app</span>
+</code></pre><span class="code-label">INI</span></figure>
+<p>A name is a letter or underscore followed by letters, digits and
+underscores, which is the same rule a shell uses. Anything else stops the
+load with a <code>ParseError</code> instead of being silently ignored, because a name
+that no shell could export is always a typo.</p>
+<p>A leading <code>export</code> is allowed and ignored, so you can also load the same
+file into your shell with <code>source</code> when you want the variables there too.</p>
+<h3 id="quoting"><a class="anchor" href="#quoting" aria-hidden="true" tabindex="-1"></a>Quoting</h3>
+<p>An unquoted value is everything up to the end of the line, with whitespace
+removed from both ends. If that's not what you want, put the value in
+quotes:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> env
+
+<span class="kw">var</span> values <span class="op">=</span> env.<span class="fn">parse</span>(
+  <span class="str">'BARE=  plain text  \n'</span> <span class="op">+</span>
+      <span class="str">'COMMENTED=value # not part of it\n'</span> <span class="op">+</span>
+      <span class="str">'PASSWORD=hunter#2\n'</span> <span class="op">+</span>
+      <span class="str">"RAW='no \\n escape, no expansion'\n"</span> <span class="op">+</span>
+      <span class="str">'COOKED="caf\\u00e9"\n'</span>,
+)
+
+<span class="kw">for</span> name, value <span class="kw">in</span> values {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>name<span class="subst">}</span><span class="str"> -&gt; [</span><span class="subst">${</span>value<span class="subst">}</span><span class="str">]'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">BARE -&gt; [plain text]
+COMMENTED -&gt; [value]
+PASSWORD -&gt; [hunter#2]
+RAW -&gt; [no \n escape, no expansion]
+COOKED -&gt; [café]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Each quoting style differs from the others in exactly one way:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Written</th>
+<th>Means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>KEY=value</code></td>
+<td>Trimmed, and ends at a comment or the end of the line</td>
+</tr>
+<tr>
+<td><code>KEY='value'</code></td>
+<td>Every character exactly as written, with nothing resolved</td>
+</tr>
+<tr>
+<td><code>KEY=`value`</code></td>
+<td>The same, for values that contain both kinds of quotes</td>
+</tr>
+<tr>
+<td><code>KEY=&quot;value&quot;</code></td>
+<td>Backslash escapes are resolved, and <code>$</code> references are expanded</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Inside double quotes, <code>\n</code>, <code>\r</code>, <code>\t</code>, <code>\f</code>, <code>\v</code>, <code>\b</code>, <code>\a</code>, <code>\e</code> and
+<code>\0</code> mean the same as they do in Zuri, and <code>\xHH</code>, <code>\uHHHH</code> and <code>\u{H...}</code>
+specify a code point. A backslash before any other character keeps both
+characters, so <code>&quot;C:\Users\me&quot;</code> gives you the path you meant, and you don't
+need to think about escaping.</p>
+<p>Use single quotes for any value that's a secret. A generated password that
+contains <code>$</code> or <code>\</code> is kept exactly as it is, and nothing in it can
+accidentally refer to another variable.</p>
+<h3 id="comments"><a class="anchor" href="#comments" aria-hidden="true" tabindex="-1"></a>Comments</h3>
+<p>A <code>#</code> starts a comment, either on a line of its own or after a value. Inside
+an unquoted value, it only starts a comment when it's at the start of the
+value or follows a space, which is why <code>PASSWORD=hunter#2</code> above kept its
+<code>#</code>. If you'd rather not rely on that rule, quote the value, and the
+question doesn't come up.</p>
+<h3 id="values-that-span-lines"><a class="anchor" href="#values-that-span-lines" aria-hidden="true" tabindex="-1"></a>Values That Span Lines</h3>
+<p>A quoted value continues until its closing quote, including any newlines.
+This is how you put a private key in the file:</p>
+<figure class="code"><pre><code class="language-dosini"><span class="key">SIGNING_KEY</span><span class="op">=</span><span class="str">"-----BEGIN PRIVATE KEY-----</span>
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7...
+-----END PRIVATE KEY-----"
+</code></pre><span class="code-label">INI</span></figure>
+<p>Single quotes work the same way and don't resolve anything, which usually
+makes them the better choice for keys.</p>
+<h2 id="existing-variables-take-priority"><a class="anchor" href="#existing-variables-take-priority" aria-hidden="true" tabindex="-1"></a>Existing Variables Take Priority</h2>
+<p>If a name is already set in the process environment, it's left as it is, and
+the file only fills in the rest:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> env
+<span class="kw">import</span> os
+
+os.<span class="fn">set_env</span>(<span class="str">'DATABASE_URL'</span>, <span class="str">'postgres://production/app'</span>, <span class="lit">true</span>)
+
+<span class="bi">file</span>(
+  <span class="str">'.env.demo'</span>,
+  <span class="str">'w'</span>,
+).<span class="fn">write</span>(<span class="str">'DATABASE_URL=postgres://localhost/app\n'</span> <span class="op">+</span> <span class="str">'CACHE_TTL=300\n'</span>)
+
+<span class="kw">var</span> result <span class="op">=</span> env.<span class="fn">load</span>(<span class="str">'.env.demo'</span>)
+
+<span class="kw">echo</span> os.<span class="fn">get_env</span>(<span class="str">'DATABASE_URL'</span>)
+<span class="kw">echo</span> result.<span class="prop">applied</span>
+<span class="kw">echo</span> result.<span class="prop">skipped</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">postgres://production/app
+[CACHE_TTL]
+[DATABASE_URL]
+</code></pre><span class="code-label">Output</span></figure>
+<p>This is the reason for the default. The file contains what a developer needs
+to run the program at all. In production, the real values are set through
+the shell, the orchestrator or the CI runner, and the file doesn't need to
+know anything about it.</p>
+<p><code>load()</code> returns a <code>Result</code> that accounts for every name and every file, so
+a program never has to guess whether its configuration was loaded. <code>applied</code>
+contains the variables the load set, <code>skipped</code> contains the ones that were
+already set, and <code>values</code> contains everything the file defined, either way.
+<code>files</code> lists the paths that were read, and <code>missing</code> lists the ones that
+didn't exist.</p>
+<h3 id="overriding"><a class="anchor" href="#overriding" aria-hidden="true" tabindex="-1"></a>Overriding</h3>
+<p>When the file really should take priority, say so:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> env
+<span class="kw">import</span> os
+
+os.<span class="fn">set_env</span>(<span class="str">'LOG_LEVEL'</span>, <span class="str">'warn'</span>, <span class="lit">true</span>)
+
+<span class="bi">file</span>(<span class="str">'.env.demo'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'LOG_LEVEL=debug\n'</span>)
+
+env.<span class="fn">loader</span>().<span class="fn">path</span>(<span class="str">'.env.demo'</span>).<span class="fn">override</span>().<span class="fn">load</span>()
+
+<span class="kw">echo</span> os.<span class="fn">get_env</span>(<span class="str">'LOG_LEVEL'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">debug
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="empty-means-unset"><a class="anchor" href="#empty-means-unset" aria-hidden="true" tabindex="-1"></a>Empty Means Unset</h3>
+<p>Throughout the module, a variable set to an empty string is treated as
+unset. <code>FLAG=</code> in a file, an empty shell variable and a variable that was
+never set all mean the same thing, because that's what people mean by all
+three. A load fills in an empty variable, <code>has()</code> returns false for it,
+<code>require()</code> raises an error for it, and every typed reader returns its
+default value.</p>
+<p>If you need to tell an empty value from a missing one, which is rare, use
+<code>os.get_env()</code>, which doesn't treat them the same.</p>
+<h2 id="references-between-values"><a class="anchor" href="#references-between-values" aria-hidden="true" tabindex="-1"></a>References Between Values</h2>
+<p>A value can refer to another value, or to the surrounding environment, using
+the same syntax as a shell:</p>
+<figure class="code"><pre><code class="language-dosini"><span class="key">HOST</span><span class="op">=</span><span class="str">localhost</span>
+<span class="key">PUBLIC_URL</span><span class="op">=</span><span class="str">http://${HOST}:${PORT:-8080}</span>
+</code></pre><span class="code-label">INI</span></figure>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> env
+
+<span class="bi">file</span>(<span class="str">'.env.demo'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(
+  <span class="str">'HOST=localhost\n'</span> <span class="op">+</span> <span class="str">'PUBLIC_URL=http://$'</span> <span class="op">+</span> <span class="str">'{HOST}:$'</span> <span class="op">+</span> <span class="str">'{PORT:-8080}\n'</span>,
+)
+
+<span class="kw">var</span> loaded <span class="op">=</span> env.<span class="fn">load</span>(<span class="str">'.env.demo'</span>)
+
+<span class="kw">echo</span> loaded.<span class="prop">values</span>.<span class="prop">PUBLIC_URL</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">http://localhost:8080
+</code></pre><span class="code-label">Output</span></figure>
+<p>The split string in that example is because of Zuri, not <code>.env</code> files. A
+<code>${</code> written inside a Zuri string literal is an interpolation, so when you
+build <code>.env</code> text in source code, you have to keep the <code>$</code> and the <code>{</code>
+apart. A file you write in an editor doesn't have this problem, as the
+<code>dosini</code> block above shows.</p>
+<p>A reference resolves to the value the variable will have <em>once the load has
+finished</em>. That rule is what makes <code>PORT=${PORT:-8080}</code> mean what it looks
+like: the value from the environment if there is one, or 8080 if there
+isn't. This is true whichever line of the file the reference is on, and it
+changes with <code>override()</code> in the same way that priority does.</p>
+<p>A definition can also refer to the value it's replacing, which is how you
+extend a path instead of overwriting it:</p>
+<figure class="code"><pre><code class="language-dosini"><span class="key">PATH</span><span class="op">=</span><span class="str">${PATH}:/opt/app/bin</span>
+</code></pre><span class="code-label">INI</span></figure>
+<h3 id="fallbacks-and-required-values"><a class="anchor" href="#fallbacks-and-required-values" aria-hidden="true" tabindex="-1"></a>Fallbacks and Required Values</h3>
+<p>The three modifiers are the ones POSIX defines. Adding a colon in front of
+each one changes the test from &quot;is it set&quot; to &quot;is it set to something&quot;:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Written</th>
+<th>Means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>${NAME:-fallback}</code></td>
+<td>The value, or <code>fallback</code> if it's unset or empty</td>
+</tr>
+<tr>
+<td><code>${NAME-fallback}</code></td>
+<td>The value, or <code>fallback</code> if it's unset</td>
+</tr>
+<tr>
+<td><code>${NAME:+instead}</code></td>
+<td><code>instead</code> if the value is set and not empty, and nothing otherwise</td>
+</tr>
+<tr>
+<td><code>${NAME+instead}</code></td>
+<td><code>instead</code> if the value is set, and nothing otherwise</td>
+</tr>
+<tr>
+<td><code>${NAME:?reason}</code></td>
+<td>The value, or a <code>MissingVariable</code> error with <code>reason</code> as its message</td>
+</tr>
+<tr>
+<td><code>${NAME?reason}</code></td>
+<td>The same, but an empty value counts as set</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The text after a modifier is also expanded, so a fallback can have its own
+fallback:</p>
+<figure class="code"><pre><code class="language-dosini"><span class="key">CACHE_DIR</span><span class="op">=</span><span class="str">${XDG_CACHE_HOME:-${HOME}/.cache}/app</span>
+</code></pre><span class="code-label">INI</span></figure>
+<p><code>:?</code> is particularly useful. It lets the file itself document what a
+deployment requires, and if something is missing, the program fails when it
+starts, with the reason included:</p>
+<figure class="code"><pre><code class="language-dosini"><span class="key">SESSION_SECRET</span><span class="op">=</span><span class="str">${SESSION_SECRET:?the deploy must supply a session secret}</span>
+</code></pre><span class="code-label">INI</span></figure>
+<h3 id="literal-dollar-signs"><a class="anchor" href="#literal-dollar-signs" aria-hidden="true" tabindex="-1"></a>Literal Dollar Signs</h3>
+<p><code>\$</code> is a dollar sign and nothing else. A <code>$</code> that isn't followed by a name,
+as in <code>PRICE=$5.00</code>, already stands for itself. Values in single quotes or
+backticks are never expanded, so you don't need to worry about a secret that
+contains <code>${</code>:</p>
+<figure class="code"><pre><code class="language-dosini"><span class="key">API_KEY</span><span class="op">=</span><span class="str">'sk_live_${not_a_reference}'</span>
+</code></pre><span class="code-label">INI</span></figure>
+<h2 id="reading-values"><a class="anchor" href="#reading-values" aria-hidden="true" tabindex="-1"></a>Reading Values</h2>
+<p>An environment variable is always text, but programs rarely want text. The
+typed readers convert the value, and reject anything that isn't what it
+claims to be:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> env
+
+<span class="bi">file</span>(<span class="str">'.env.demo'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(
+  <span class="str">'PORT=8080\n'</span> <span class="op">+</span>
+      <span class="str">'DEBUG=yes\n'</span> <span class="op">+</span>
+      <span class="str">'REQUEST_TIMEOUT=2.5\n'</span> <span class="op">+</span>
+      <span class="str">'CORS_ORIGINS= https://a.example , https://b.example \n'</span> <span class="op">+</span>
+      <span class="str">'SENTRY_DSN=\n'</span>,
+)
+
+env.<span class="fn">load</span>(<span class="str">'.env.demo'</span>)
+
+<span class="kw">echo</span> env.<span class="fn">int</span>(<span class="str">'PORT'</span>, <span class="num">3000</span>)
+<span class="kw">echo</span> env.<span class="fn">bool</span>(<span class="str">'DEBUG'</span>, <span class="lit">false</span>)
+<span class="kw">echo</span> env.<span class="fn">float</span>(<span class="str">'REQUEST_TIMEOUT'</span>, <span class="num">1</span>)
+<span class="kw">echo</span> env.<span class="fn">list</span>(<span class="str">'CORS_ORIGINS'</span>, <span class="str">','</span>, [])
+<span class="kw">echo</span> env.<span class="fn">get</span>(<span class="str">'SENTRY_DSN'</span>, <span class="str">'not configured'</span>)
+<span class="kw">echo</span> env.<span class="fn">has</span>(<span class="str">'SENTRY_DSN'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">8080
+true
+2.5
+[https://a.example, https://b.example]
+not configured
+false
+</code></pre><span class="code-label">Output</span></figure>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>get(name, default)</code></td>
+<td>The text, or the default</td>
+</tr>
+<tr>
+<td><code>require(name, reason)</code></td>
+<td>The text, or raises a <code>MissingVariable</code> error</td>
+</tr>
+<tr>
+<td><code>has(name)</code></td>
+<td>Whether the variable is set at all</td>
+</tr>
+<tr>
+<td><code>int(name, default)</code></td>
+<td>A decimal integer, which can have a sign</td>
+</tr>
+<tr>
+<td><code>float(name, default)</code></td>
+<td>A number, including one with an exponent</td>
+</tr>
+<tr>
+<td><code>bool(name, default)</code></td>
+<td>True for <code>1</code>, <code>true</code>, <code>yes</code>, <code>y</code> and <code>on</code>, and false for their opposites</td>
+</tr>
+<tr>
+<td><code>list(name, separator, default)</code></td>
+<td>The value split into a list, with each item trimmed and empty items removed</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>A value that's set but can't be converted raises a <code>ValueError</code> that names
+the variable, instead of silently falling back to the default. <code>PORT=eighty</code>
+is a configuration mistake, and the right time to find out about it is when
+the program starts, not on the first request that needs a port.</p>
+<p>These functions read the process environment, not the file. They give the
+same answer whether a value came from <code>.env</code> or from the shell, which is
+what lets one program run in both places without any special cases.</p>
+<p>Most programs should use <code>require()</code> for at least one setting. For a setting
+that the code can't make up a default for, the program should stop right at
+the start, with the setting's name in the error message:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> secret <span class="op">=</span> env.<span class="fn">require</span>(<span class="str">'SESSION_SECRET'</span>, <span class="str">'set SESSION_SECRET in .env'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<h2 id="configuring-a-load"><a class="anchor" href="#configuring-a-load" aria-hidden="true" tabindex="-1"></a>Configuring a Load</h2>
+<p>When the one-line form isn't enough, <code>env.loader()</code> returns a <code>Loader</code>.
+Every setting returns the loader, so you can write a whole configuration as
+a single expression. Running a loader doesn't change it, so you can keep one
+and use it again.</p>
+<h3 id="layering-files"><a class="anchor" href="#layering-files" aria-hidden="true" tabindex="-1"></a>Layering Files</h3>
+<p>Sources are read in the order they're added, and the last source to define a
+name is the one whose value is used:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> env
+
+<span class="bi">file</span>(<span class="str">'.env.demo'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'HOST=localhost\nPORT=8080\n'</span>)
+<span class="bi">file</span>(<span class="str">'.env.local.demo'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'HOST=127.0.0.1\n'</span>)
+
+<span class="kw">var</span> result <span class="op">=</span> env
+    .<span class="fn">loader</span>()
+    .<span class="fn">path</span>(<span class="str">'.env.demo'</span>)
+    .<span class="fn">path</span>(<span class="str">'.env.local.demo'</span>)
+    .<span class="fn">path</span>(<span class="str">'.env.missing.demo'</span>)
+    .<span class="fn">read</span>()
+
+<span class="kw">echo</span> result.<span class="prop">values</span>
+<span class="kw">echo</span> result.<span class="prop">files</span>
+<span class="kw">echo</span> result.<span class="prop">missing</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{HOST: 127.0.0.1, PORT: 8080}
+[.env.demo, .env.local.demo]
+[.env.missing.demo]
+</code></pre><span class="code-label">Output</span></figure>
+<p>This combination is the one you'll use most often. <code>.env</code> contains what the
+whole team shares, and is worth committing as <code>.env.example</code>, while
+<code>.env.local</code> contains what's different on one particular machine, and isn't
+committed. A path can start with <code>~</code>, which is expanded to the home
+directory.</p>
+<h3 id="loading-from-text"><a class="anchor" href="#loading-from-text" aria-hidden="true" tabindex="-1"></a>Loading From Text</h3>
+<p><code>source()</code> adds text instead of a path, so configuration that came from the
+network or a secret store goes through exactly the same parsing, expansion
+and priority rules as a file on disk:</p>
+<figure class="code"><pre><code class="language-zuri">env.<span class="fn">loader</span>().<span class="fn">path</span>(<span class="str">'.env'</span>).<span class="fn">source</span>(vault.<span class="fn">fetch</span>(<span class="str">'app/production'</span>)).<span class="fn">load</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<h3 id="requiring-the-file"><a class="anchor" href="#requiring-the-file" aria-hidden="true" tabindex="-1"></a>Requiring the File</h3>
+<p>By default, a missing file isn't an error, and its path is recorded in
+<code>Result.missing</code>. When the file really is part of the deployment, mark it as
+required, so the load fails with a clear error if it's missing:</p>
+<figure class="code"><pre><code class="language-zuri">env.<span class="fn">loader</span>().<span class="fn">path</span>(<span class="str">'/etc/app/env'</span>).<span class="fn">required</span>().<span class="fn">load</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<h3 id="reading-without-loading"><a class="anchor" href="#reading-without-loading" aria-hidden="true" tabindex="-1"></a>Reading Without Loading</h3>
+<p><code>read()</code> does everything <code>load()</code> does except the final step. Nothing is
+written to the process environment, but <code>$</code> references are still resolved as
+they would have been, so what you get back is exactly what <code>load()</code> would
+have set. It's how a tool can inspect a file, and how a test can check one
+without changing the environment of the process it's running in.</p>
+<p><code>expand(false)</code> turns off expansion completely, for a file of secrets where
+every value should be used exactly as written.</p>
+<h2 id="writing-a-file"><a class="anchor" href="#writing-a-file" aria-hidden="true" tabindex="-1"></a>Writing a File</h2>
+<p><code>stringify()</code> is the opposite of <code>parse()</code>, for a program that generates a
+<code>.env</code> file instead of reading one:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> env
+
+<span class="bi">print</span>(
+  env.<span class="fn">stringify</span>({
+    <span class="const">HOST</span><span class="op">:</span> <span class="str">'127.0.0.1'</span>,
+    <span class="const">PORT</span><span class="op">:</span> <span class="num">8080</span>,
+    <span class="const">GREETING</span><span class="op">:</span> <span class="str">'hello there'</span>,
+    <span class="const">DEBUG</span><span class="op">:</span> <span class="lit">false</span>,
+  }),
+)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">HOST=127.0.0.1
+PORT=8080
+GREETING="hello there"
+DEBUG=false
+</code></pre><span class="code-label">Output</span></figure>
+<p>Values are written without quotes where that's unambiguous, and in double
+quotes where it isn't, and a <code>$</code> inside a value is escaped so that loading
+the file again doesn't expand it. The output round-trips: passing it to
+<code>parse()</code> returns the same names and values.</p>
+<p>Numbers, bigints, booleans and bytes are converted to text. Anything else
+raises a <code>TypeError</code>, because guessing how a list should look in an
+environment file is how configuration silently goes wrong.</p>
+<h2 id="errors"><a class="anchor" href="#errors" aria-hidden="true" tabindex="-1"></a>Errors</h2>
+<p>Every error the module raises is an <code>EnvError</code>, and each subclass includes
+details that the message alone can't:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> env
+
+<span class="kw">catch</span> {
+  env.<span class="fn">parse</span>(<span class="str">'12FACTOR=yes'</span>)
+} <span class="kw">as</span> error {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>error.<span class="prop">type</span><span class="subst">}</span><span class="str">: </span><span class="subst">${</span>error.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+  <span class="kw">echo</span> <span class="str">'line </span><span class="subst">${</span>error.<span class="prop">line</span><span class="subst">}</span><span class="str">, column </span><span class="subst">${</span>error.<span class="prop">column</span><span class="subst">}</span><span class="str">'</span>
+}
+
+<span class="kw">catch</span> {
+  env.<span class="fn">loader</span>().<span class="fn">path</span>(<span class="str">'.env.nowhere'</span>).<span class="fn">required</span>().<span class="fn">load</span>()
+} <span class="kw">as</span> error {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>error.<span class="prop">type</span><span class="subst">}</span><span class="str">: </span><span class="subst">${</span>error.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+}
+
+<span class="kw">catch</span> {
+  env.<span class="fn">require</span>(<span class="str">'NOTHING_SET_THIS'</span>)
+} <span class="kw">as</span> error {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>error.<span class="prop">type</span><span class="subst">}</span><span class="str">: </span><span class="subst">${</span>error.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">ParseError: expected a variable name
+line 1, column 1
+MissingFile: no environment file at .env.nowhere
+MissingVariable: NOTHING_SET_THIS is not set
+</code></pre><span class="code-label">Output</span></figure>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>Raised when</th>
+<th>Includes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ParseError</code></td>
+<td>A source isn't a valid environment file</td>
+<td><code>line</code>, <code>column</code></td>
+</tr>
+<tr>
+<td><code>MissingFile</code></td>
+<td>A required file doesn't exist</td>
+<td><code>path</code></td>
+</tr>
+<tr>
+<td><code>MissingVariable</code></td>
+<td>A required variable isn't set</td>
+<td><code>name</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Catching <code>EnvError</code> catches all three. A <code>ValueError</code> from a typed reader is
+an ordinary <code>ValueError</code>, so you can handle it in the same place as the rest
+of your validation errors.</p>
+<h2 id="keeping-secrets-out-of-git"><a class="anchor" href="#keeping-secrets-out-of-git" aria-hidden="true" tabindex="-1"></a>Keeping Secrets Out of Git</h2>
+<p>A <code>.env</code> file holds the values that differ from one deployment to the next,
+which means it holds your secrets. Three lines in your <code>.gitignore</code> take
+care of that once and for all:</p>
+<figure class="code"><pre><code class="language-console"><span class="prompt">$ </span><span class="fn">echo</span> <span class="str">'.env'</span> <span class="op">&gt;&gt;</span> .gitignore
+<span class="prompt">$ </span><span class="fn">echo</span> <span class="str">'.env.local'</span> <span class="op">&gt;&gt;</span> .gitignore
+<span class="prompt">$ </span><span class="fn">cp</span> .env .env.example    <span class="com"># then replace every real value</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<p>Commit a <code>.env.example</code> that lists every variable but contains no real
+values. It's the only documentation of what the program needs that can't get
+out of date, because as soon as someone adds a setting without adding it
+there, a fresh checkout stops working.</p>
+<p>Avoid committing a <code>.env.production</code> alongside a <code>.env.staging</code>.
+Configuration varies by deployment, not by environment name, and as soon as
+there are two files, someone will edit the wrong one. Use one file per
+machine, and let <code>required()</code> and <code>:?</code> make it clear what that machine is
+still missing.</p>
+<h2 id="module-reference"><a class="anchor" href="#module-reference" aria-hidden="true" tabindex="-1"></a>Module Reference</h2>
+<p>Here's everything the module provides:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>load(path)</code></td>
+<td>Reads a file into the process environment</td>
+</tr>
+<tr>
+<td><code>loader()</code></td>
+<td>Returns a <code>Loader</code>, for loads that need more configuration</td>
+</tr>
+<tr>
+<td><code>parse(source)</code></td>
+<td>Converts text into names and values, without changing the environment</td>
+</tr>
+<tr>
+<td><code>stringify(values)</code></td>
+<td>Converts names and values back into text</td>
+</tr>
+<tr>
+<td><code>is_name(name)</code></td>
+<td>Checks whether a name is a valid variable name</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Reading values:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Functions</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>get</code>, <code>require</code>, <code>has</code></td>
+<td>Read the text, or check whether it's missing</td>
+</tr>
+<tr>
+<td><code>int</code>, <code>float</code>, <code>bool</code>, <code>list</code></td>
+<td>Read the text and convert it, or raise a <code>ValueError</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The classes:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>Members</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Loader</code></td>
+<td><code>path</code>, <code>paths</code>, <code>source</code>, <code>override</code>, <code>expand</code>, <code>required</code>, <code>read</code>, <code>load</code></td>
+</tr>
+<tr>
+<td><code>Result</code></td>
+<td><code>values</code>, <code>applied</code>, <code>skipped</code>, <code>files</code>, <code>missing</code></td>
+</tr>
+<tr>
+<td><code>EnvError</code></td>
+<td><code>ParseError</code>, <code>MissingFile</code>, <code>MissingVariable</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>And the lower-level module, for programs that need it directly:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>env.expand</code></td>
+<td><code>expand(value, resolve)</code>, the <code>$</code> reference syntax on its own</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch19-00-env.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch18-00-mail.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">18</span>Mail</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch20-00-args.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">20</span>Parsing the Command Line</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#loading-the-file">Loading the File</a>
+        </li><li class="level-2">
+          <a href="#writing-a-env-file">Writing a <code>.env</code> File</a>
+        </li><li class="level-3">
+          <a href="#quoting">Quoting</a>
+        </li><li class="level-3">
+          <a href="#comments">Comments</a>
+        </li><li class="level-3">
+          <a href="#values-that-span-lines">Values That Span Lines</a>
+        </li><li class="level-2">
+          <a href="#existing-variables-take-priority">Existing Variables Take Priority</a>
+        </li><li class="level-3">
+          <a href="#overriding">Overriding</a>
+        </li><li class="level-3">
+          <a href="#empty-means-unset">Empty Means Unset</a>
+        </li><li class="level-2">
+          <a href="#references-between-values">References Between Values</a>
+        </li><li class="level-3">
+          <a href="#fallbacks-and-required-values">Fallbacks and Required Values</a>
+        </li><li class="level-3">
+          <a href="#literal-dollar-signs">Literal Dollar Signs</a>
+        </li><li class="level-2">
+          <a href="#reading-values">Reading Values</a>
+        </li><li class="level-2">
+          <a href="#configuring-a-load">Configuring a Load</a>
+        </li><li class="level-3">
+          <a href="#layering-files">Layering Files</a>
+        </li><li class="level-3">
+          <a href="#loading-from-text">Loading From Text</a>
+        </li><li class="level-3">
+          <a href="#requiring-the-file">Requiring the File</a>
+        </li><li class="level-3">
+          <a href="#reading-without-loading">Reading Without Loading</a>
+        </li><li class="level-2">
+          <a href="#writing-a-file">Writing a File</a>
+        </li><li class="level-2">
+          <a href="#errors">Errors</a>
+        </li><li class="level-2">
+          <a href="#keeping-secrets-out-of-git">Keeping Secrets Out of Git</a>
+        </li><li class="level-2">
+          <a href="#module-reference">Module Reference</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=5550658799" defer=""></script>
+  
+  
+
+
+</body></html>

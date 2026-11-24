@@ -1,0 +1,777 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Error Handling · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch07-00-error-handling.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=5550658799">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="red" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print every page" aria-label="Print every page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html" aria-current="page"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Chapter 7 · Learning the Language</p>
+        <div class="content"><h1 id="error-handling">Error Handling</h1>
+<p>Things go wrong. A file is missing, a number arrives as text, or a server on
+the network stops responding. Zuri handles all of these with one mechanism:
+an <code>Error</code> object that you raise with <code>raise</code> and handle with <code>catch</code>.
+There's no <code>try</code>, no <code>finally</code> and no checked exceptions.</p>
+<p>This chapter covers raising errors, the three forms of <code>catch</code>, what an
+error contains, the built-in error classes, writing your own, and what to
+use instead of <code>finally</code>.</p>
+<h2 id="raising-errors"><a class="anchor" href="#raising-errors" aria-hidden="true" tabindex="-1"></a>Raising Errors</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">withdraw</span>(balance, amount) {
+  <span class="kw">if</span> amount <span class="op">&gt;</span> balance {
+    <span class="kw">raise</span> <span class="type">ValueError</span>(<span class="str">'cannot withdraw </span><span class="subst">${</span>amount<span class="subst">}</span><span class="str"> from </span><span class="subst">${</span>balance<span class="subst">}</span><span class="str">'</span>)
+  }
+  <span class="kw">return</span> balance <span class="op">-</span> amount
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>raise</code> only accepts an instance of <code>Error</code> or one of its subclasses.
+Raising a plain string or number is itself a <code>TypeError</code>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">catch</span> {
+  <span class="kw">raise</span> <span class="str">'something went wrong'</span>
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">message</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">can only raise an Error or subclass, got a string
+</code></pre><span class="code-label">Output</span></figure>
+<p>This is a small inconvenience, but it means that every error has a <code>type</code>, a
+<code>message</code> and a stack trace, because there's no way to raise anything else.</p>
+<p>If an error isn't caught, the program ends and prints a message, an excerpt
+of the source code and a stack trace:</p>
+<figure class="code"><pre><code class="language-console"><span class="err">Unhandled ValueError: cannot withdraw 100 from 50</span>
+<span class="com">  --&gt; /path/to/main.zu:3</span>
+
+<span class="com">   1 | def withdraw(balance, amount) {</span>
+<span class="com">   2 |   if amount &gt; balance {</span>
+<span class="prompt">&gt; </span> <span class="fn">3</span> <span class="op">|</span>     <span class="fn">raise</span> ValueError<span class="op">(</span><span class="str">'cannot withdraw ${amount} from ${balance}'</span><span class="op">)</span>
+<span class="com">   4 |   }</span>
+<span class="com">   5 |   return balance - amount</span>
+
+<span class="com">Stack trace (most recent call last):</span>
+<span class="com">  at withdraw() /path/to/main.zu:3</span>
+<span class="com">  at @.script() /path/to/main.zu:8</span>
+</code></pre><span class="code-label">Terminal</span></figure>
+<h2 id="catching-errors"><a class="anchor" href="#catching-errors" aria-hidden="true" tabindex="-1"></a>Catching Errors</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">catch</span> {
+  <span class="fn">risky</span>()
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>e.<span class="prop">type</span><span class="subst">}</span><span class="str">: </span><span class="subst">${</span>e.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The code in the <code>catch</code> block runs. If anything inside it raises an error,
+execution jumps to the handler, with the error assigned to <code>e</code>. If nothing
+raises an error, the handler doesn't run.</p>
+<p>There are three forms of <code>catch</code>, and each one behaves differently.</p>
+<p><strong><code>catch { ... }</code></strong>, with nothing after it, discards the error and
+continues:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">catch</span> {
+  <span class="kw">raise</span> <span class="type">Error</span>(<span class="str">'silent'</span>)
+}
+<span class="kw">echo</span> <span class="str">'swallowed'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">swallowed
+</code></pre><span class="code-label">Output</span></figure>
+<p>Only use this when the failure really doesn't matter.</p>
+<p><strong><code>catch { ... } as e</code></strong>, without a handler block, assigns the error to a
+variable that's still available after the statement. If nothing went wrong,
+<code>e</code> is <code>nil</code>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">catch</span> {
+  <span class="kw">raise</span> <span class="type">Error</span>(<span class="str">'boom'</span>)
+} <span class="kw">as</span> e
+
+<span class="kw">if</span> e {
+  <span class="kw">echo</span> e.<span class="prop">message</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">boom
+</code></pre><span class="code-label">Output</span></figure>
+<p>Use this form when the recovery code doesn't belong inside a handler, for
+example when you want to check several things one after another.</p>
+<p><strong><code>catch { ... } as e { ... }</code></strong> is the full form, and the one you'll use
+most often.</p>
+<h2 id="what-an-error-contains"><a class="anchor" href="#what-an-error-contains" aria-hidden="true" tabindex="-1"></a>What an Error Contains</h2>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">catch</span> {
+  <span class="kw">raise</span> <span class="type">ValueError</span>(<span class="str">'bad input'</span>)
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">type</span>
+  <span class="kw">echo</span> e.<span class="prop">message</span>
+  <span class="kw">echo</span> e.<span class="prop">stacktrace</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">ValueError
+bad input
+[/path/to/main.zu:2 -&gt; @.script()]
+</code></pre><span class="code-label">Output</span></figure>
+<ul>
+<li><code>message</code> is the error message.</li>
+<li><code>type</code> is the name of the error's class, as a string.</li>
+<li><code>stacktrace</code> is a list of stack frames, starting with the innermost one.
+Each frame names a file, a line and a function.</li>
+</ul>
+<p>The stack trace is recorded where the error was <strong>raised</strong>, not where it was
+caught, so it always points to where the error started, however many frames
+it passed through:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">inner</span>() {
+  <span class="kw">raise</span> <span class="type">ValueError</span>(<span class="str">'deep'</span>)
+}
+
+<span class="kw">def</span> <span class="def">middle</span>() {
+  <span class="fn">inner</span>()
+}
+
+<span class="kw">catch</span> {
+  <span class="fn">middle</span>()
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">stacktrace</span>.<span class="fn">length</span>()
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">3
+</code></pre><span class="code-label">Output</span></figure>
+<p>There are three frames: <code>inner</code>, <code>middle</code> and the top level of the script.
+Printing the stack trace is often the quickest way to find out how the
+program got to a certain point, especially in code you didn't write.</p>
+<h2 id="built-in-error-classes"><a class="anchor" href="#built-in-error-classes" aria-hidden="true" tabindex="-1"></a>Built-in Error Classes</h2>
+<p>Each of these is a class, and they all inherit from <code>Error</code>:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>Raised when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Error</code></td>
+<td>The base class, for general failures</td>
+</tr>
+<tr>
+<td><code>TypeError</code></td>
+<td>An operation received a value of the wrong type</td>
+</tr>
+<tr>
+<td><code>ValueError</code></td>
+<td>The type was right, but the value wasn't</td>
+</tr>
+<tr>
+<td><code>NumericError</code></td>
+<td>An arithmetic operation failed</td>
+</tr>
+<tr>
+<td><code>ArgumentError</code></td>
+<td>A function received the wrong number of arguments</td>
+</tr>
+<tr>
+<td><code>NotImplementedError</code></td>
+<td>A method that should have been overridden wasn't</td>
+</tr>
+<tr>
+<td><code>RangeError</code></td>
+<td>An index or bound was out of range</td>
+</tr>
+<tr>
+<td><code>AccessError</code></td>
+<td>A permission or access check failed</td>
+</tr>
+<tr>
+<td><code>AssertError</code></td>
+<td>An <code>assert</code> failed</td>
+</tr>
+<tr>
+<td><code>PropertyError</code></td>
+<td>Code read a member that doesn't exist</td>
+</tr>
+<tr>
+<td><code>UndefinedError</code></td>
+<td>Code read a name that isn't defined</td>
+</tr>
+<tr>
+<td><code>ModuleNotFoundError</code></td>
+<td>An <code>import</code> couldn't be resolved</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Since they all inherit from <code>Error</code>, catching <code>Error</code> catches all of them,
+and a parameter annotated as <code>Error</code> accepts any of them.</p>
+<h2 id="defining-your-own-errors"><a class="anchor" href="#defining-your-own-errors" aria-hidden="true" tabindex="-1"></a>Defining Your Own Errors</h2>
+<p>Create a subclass of <code>Error</code> and give it whatever information the caller
+needs:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">class</span> <span class="type">HttpError</span> <span class="op">&lt;</span> <span class="type">Error</span> {
+  <span class="meta">@new</span>(message, status) {
+    <span class="self">parent</span>(message)
+    <span class="self">self</span>.<span class="prop">type</span> <span class="op">=</span> <span class="str">'HttpError'</span>
+    <span class="self">self</span>.<span class="prop">status</span> <span class="op">=</span> status
+  }
+}
+
+<span class="kw">catch</span> {
+  <span class="kw">raise</span> <span class="type">HttpError</span>(<span class="str">'not found'</span>, <span class="num">404</span>)
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>e.<span class="prop">type</span><span class="subst">}</span><span class="str"> </span><span class="subst">${</span>e.<span class="prop">status</span><span class="subst">}</span><span class="str">: </span><span class="subst">${</span>e.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+  <span class="kw">echo</span> <span class="bi">instance_of</span>(e, <span class="type">Error</span>)
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">HttpError 404: not found
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p>There are two things to get right. Call <code>parent(message)</code> so that the base
+constructor sets <code>message</code> and records the stack trace. And set <code>self.type</code>,
+so that the class name appears in logs and in the message for an uncaught
+error.</p>
+<h2 id="catching-specific-errors"><a class="anchor" href="#catching-specific-errors" aria-hidden="true" tabindex="-1"></a>Catching Specific Errors</h2>
+<p><code>catch</code> catches every error raised inside its block. To handle one kind of
+error and let the others through, check the error and raise it again if it
+isn't the kind you want:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">catch</span> {
+  <span class="fn">load_config</span>()
+} <span class="kw">as</span> e {
+  <span class="kw">if</span> <span class="op">!</span><span class="bi">instance_of</span>(e, <span class="type">ModuleNotFoundError</span>) {
+    <span class="kw">raise</span> e
+  }
+  <span class="kw">echo</span> <span class="str">'no config, using defaults'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>instance_of()</code> checks the whole inheritance chain, so checking against
+<code>Error</code> matches every error, while checking against <code>HttpError</code> only matches
+that branch of the hierarchy.</p>
+<h2 id="replacing-finally"><a class="anchor" href="#replacing-finally" aria-hidden="true" tabindex="-1"></a>Replacing <code>finally</code></h2>
+<p>Code after the <code>catch</code> statement runs whether or not the block raised an
+error, because the handler either recovers from the error or raises it
+again:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">cleanup_demo</span>() {
+  <span class="kw">catch</span> {
+    <span class="kw">raise</span> <span class="type">Error</span>(<span class="str">'mid'</span>)
+  } <span class="kw">as</span> e {
+    <span class="kw">echo</span> <span class="str">'caught'</span>
+  }
+
+  <span class="kw">echo</span> <span class="str">'always runs'</span>
+}
+
+<span class="fn">cleanup_demo</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">caught
+always runs
+</code></pre><span class="code-label">Output</span></figure>
+<p>That covers the most common case. But if the handler raises the error again,
+or the block contains a <code>return</code>, the code after the statement is skipped.
+So if a resource has to be released either way, release it in the handler as
+well:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> handle <span class="op">=</span> <span class="bi">file</span>(path, <span class="str">'w'</span>)
+
+<span class="kw">catch</span> {
+  <span class="fn">write_everything</span>(handle)
+} <span class="kw">as</span> e {
+  handle.<span class="fn">close</span>()
+  <span class="kw">raise</span> e
+}
+
+handle.<span class="fn">close</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<h3 id="using-as-e-without-a-handler"><a class="anchor" href="#using-as-e-without-a-handler" aria-hidden="true" tabindex="-1"></a>Using <code>as e</code> Without a Handler</h3>
+<p>The version above calls <code>handle.close()</code> twice, once in the handler and once
+after the statement, because those are two different ways out. The third
+form of <code>catch</code>, <strong><code>as e</code> without a handler block</strong>, combines them into one:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">var</span> handle <span class="op">=</span> <span class="bi">file</span>(path, <span class="str">'w'</span>)
+
+<span class="kw">catch</span> {
+  <span class="fn">write_everything</span>(handle)
+} <span class="kw">as</span> e
+
+handle.<span class="fn">close</span>()
+
+<span class="kw">if</span> e {
+  <span class="kw">raise</span> e
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The only difference is the missing <code>{ ... }</code> after <code>as e</code>, but it changes
+the control flow, not just the layout. Without a handler, there's nothing to
+jump to, so an error raised inside the block is <strong>stored in <code>e</code>, and
+execution continues on the next line</strong>. Both paths, the one that raised an
+error and the one that didn't, now run the same code afterwards:</p>
+<figure class="code output"><pre><code class="language-console">  fallthrough: closing
+  fallthrough: re-raising
+  caught: disk full
+</code></pre><span class="code-label">Output</span></figure>
+<p>This way, <code>close()</code> is written once and always runs, and then you decide
+explicitly whether to raise the error again. It's the nearest thing Zuri has
+to <code>finally</code>, built from ordinary statements rather than a separate
+construct:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Line</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>catch { ... } as e</code></td>
+<td>Runs the block and records any error, without jumping</td>
+</tr>
+<tr>
+<td><code>handle.close()</code></td>
+<td>Cleans up, whichever path was taken</td>
+</tr>
+<tr>
+<td><code>if e { raise e }</code></td>
+<td>Passes the error on, unchanged</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>There are two things to keep in mind.</p>
+<p><strong><code>e</code> is <code>nil</code> when nothing went wrong</strong>, so <code>if e { raise e }</code> is all you
+need to decide what to do. When there's no error, the cleanup runs and the
+function continues as normal.</p>
+<p><strong>Raising <code>e</code> itself again keeps the original stack trace</strong>, which points to
+the line that actually failed rather than to your <code>raise</code> statement. Only
+wrap it in a new error when you have something to add, as shown in <a href="#nesting-and-re-raising">Nesting
+and Re-raising</a>.</p>
+<p>Use the form with a handler when you need to handle the error, and this form
+when you only need to clean up afterwards.</p>
+<h2 id="return-inside-catch"><a class="anchor" href="#return-inside-catch" aria-hidden="true" tabindex="-1"></a><code>return</code> Inside <code>catch</code></h2>
+<p>A <code>return</code> inside a <code>catch</code> block or its handler returns from the enclosing
+function, just as it would anywhere else:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">find</span>(items, needle) {
+  <span class="kw">catch</span> {
+    <span class="kw">var</span> i <span class="op">=</span> items.<span class="fn">index_of</span>(needle)
+
+    <span class="kw">if</span> i <span class="op">==</span> <span class="op">-</span><span class="num">1</span> {
+      <span class="kw">raise</span> <span class="type">ValueError</span>(<span class="str">'</span><span class="subst">${</span>needle<span class="subst">}</span><span class="str"> not in list'</span>)
+    }
+
+    <span class="kw">return</span> items[i]
+  } <span class="kw">as</span> e {
+    <span class="kw">echo</span> <span class="str">'handled: '</span> <span class="op">+</span> e.<span class="prop">message</span>
+    <span class="kw">return</span> <span class="lit">nil</span>
+  }
+}
+
+<span class="kw">echo</span> <span class="fn">find</span>([<span class="num">1</span>, <span class="num">2</span>], <span class="num">2</span>)
+<span class="kw">echo</span> <span class="fn">find</span>([<span class="num">1</span>, <span class="num">2</span>], <span class="num">9</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">2
+handled: 9 not in list
+nil
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="errors-raised-by-handlers"><a class="anchor" href="#errors-raised-by-handlers" aria-hidden="true" tabindex="-1"></a>Errors Raised by Handlers</h2>
+<p>A handler can raise an error, and an outer <code>catch</code> will see it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">catch</span> {
+  <span class="kw">catch</span> {
+    <span class="kw">raise</span> <span class="type">Error</span>(<span class="str">'inner'</span>)
+  } <span class="kw">as</span> inner {
+    <span class="kw">raise</span> <span class="type">Error</span>(<span class="str">'outer: '</span> <span class="op">+</span> inner.<span class="prop">message</span>)
+  }
+} <span class="kw">as</span> outer {
+  <span class="kw">echo</span> outer.<span class="prop">message</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">outer: inner
+</code></pre><span class="code-label">Output</span></figure>
+<h2 id="assert-or-raise"><a class="anchor" href="#assert-or-raise" aria-hidden="true" tabindex="-1"></a><code>assert</code> or <code>raise</code>?</h2>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">assert</span> items.<span class="fn">length</span>() <span class="op">&gt;</span> <span class="num">0</span>, <span class="str">'caller must pass a non-empty list'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<p><code>assert</code> raises an <code>AssertError</code> when its condition is falsy. The message is
+optional.</p>
+<p>Here's how to decide between them. <strong>Use <code>raise</code> for things that can
+happen</strong>, such as a missing file, a number that doesn't parse or a network
+timeout. The caller is expected to deal with these. <strong>Use <code>assert</code> for
+things that should never happen</strong>, such as an invariant that your own code
+is responsible for keeping. If an assertion fails, the program has a bug. It
+doesn't mean something outside the program went wrong.</p>
+<h2 id="good-practices"><a class="anchor" href="#good-practices" aria-hidden="true" tabindex="-1"></a>Good Practices</h2>
+<p>Keep the <code>catch</code> block small. It should contain only the operation that
+might fail, so that the handler doesn't accidentally catch a mistake
+somewhere else:</p>
+<p>This block is too wide. A failure inside <code>render()</code> would be reported as a
+parsing failure:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">show_wide</span>(text) {
+  <span class="kw">catch</span> {
+    <span class="kw">var</span> data <span class="op">=</span> json.<span class="fn">decode</span>(text)
+    <span class="fn">render</span>(data)
+  } <span class="kw">as</span> e {
+    <span class="kw">echo</span> <span class="str">'bad json'</span>
+  }
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>This is better. Only the call that might fail is inside the block:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">show_narrow</span>(text) {
+  <span class="kw">var</span> data
+
+  <span class="kw">catch</span> {
+    data <span class="op">=</span> json.<span class="fn">decode</span>(text)
+  } <span class="kw">as</span> e {
+    <span class="kw">echo</span> <span class="str">'bad json: '</span> <span class="op">+</span> e.<span class="prop">message</span>
+    <span class="kw">return</span>
+  }
+
+  <span class="fn">render</span>(data)
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Notice that <code>var data</code> is declared outside the block. A <code>catch</code> block is a
+scope like any other, so a variable declared inside it no longer exists once
+the statement ends.</p>
+<p>Write error messages that include the value that caused the problem:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">raise</span> <span class="type">ValueError</span>(<span class="str">'port must be between 1 and 65535, got </span><span class="subst">${</span>port<span class="subst">}</span><span class="str">'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>Whoever reads that message is trying to work out what went wrong from a
+single line in a log file. Give them the number.</p>
+<h2 id="catching-inside-a-loop"><a class="anchor" href="#catching-inside-a-loop" aria-hidden="true" tabindex="-1"></a>Catching Inside a Loop</h2>
+<p>A <code>catch</code> inside a loop body handles a single iteration and lets the rest of
+the loop continue. Use this when you're processing a batch of items and some
+of them are allowed to fail:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">parse_positive</span>(text) {
+  <span class="kw">if</span> <span class="op">!</span>text.<span class="fn">match</span>(<span class="str">'/^\d+$/'</span>) {
+    <span class="kw">raise</span> <span class="type">ValueError</span>(<span class="str">'not a number: </span><span class="subst">${</span>text<span class="subst">}</span><span class="str">'</span>)
+  }
+
+  <span class="kw">var</span> n <span class="op">=</span> text.<span class="fn">to_number</span>()
+
+  <span class="kw">if</span> n <span class="op">&lt;=</span> <span class="num">0</span> {
+    <span class="kw">raise</span> <span class="type">ValueError</span>(<span class="str">'must be positive: </span><span class="subst">${</span>text<span class="subst">}</span><span class="str">'</span>)
+  }
+
+  <span class="kw">return</span> n
+}
+
+<span class="kw">var</span> inputs <span class="op">=</span> [<span class="str">'12'</span>, <span class="str">'not a number'</span>, <span class="str">'30'</span>]
+<span class="kw">var</span> total <span class="op">=</span> <span class="num">0</span>
+<span class="kw">var</span> rejected <span class="op">=</span> []
+
+<span class="kw">for</span> raw <span class="kw">in</span> inputs {
+  <span class="kw">catch</span> {
+    total <span class="op">+=</span> <span class="fn">parse_positive</span>(raw)
+  } <span class="kw">as</span> e {
+    rejected.<span class="fn">append</span>(raw)
+  }
+}
+
+<span class="kw">echo</span> total
+<span class="kw">echo</span> rejected
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">42
+[not a number]
+</code></pre><span class="code-label">Output</span></figure>
+<p>If you put the <code>catch</code> <strong>outside</strong> the loop instead, the first failure ends
+the whole loop. That's the right choice when one bad item makes the rest
+pointless, and the wrong choice when it doesn't. Where you put the block is
+how you make that decision, since there's no flag for it.</p>
+<h2 id="nesting-and-re-raising"><a class="anchor" href="#nesting-and-re-raising" aria-hidden="true" tabindex="-1"></a>Nesting and Re-raising</h2>
+<p>A <code>catch</code> inside a handler works like any other <code>catch</code>. You can use this to
+turn a low-level failure into an error that makes sense to your caller:</p>
+<figure class="code"><pre><code class="language-zuri"><span class="kw">import</span> json
+
+<span class="kw">class</span> <span class="type">ConfigError</span> <span class="op">&lt;</span> <span class="type">Error</span> {
+
+  <span class="meta">@new</span>(message) {
+    <span class="self">parent</span>(message)
+    <span class="self">self</span>.<span class="prop">type</span> <span class="op">=</span> <span class="str">'ConfigError'</span>
+  }
+}
+
+<span class="kw">def</span> <span class="def">load</span>(text) {
+  <span class="kw">catch</span> {
+    <span class="kw">return</span> json.<span class="fn">decode</span>(text)
+  } <span class="kw">as</span> e {
+    <span class="kw">raise</span> <span class="type">ConfigError</span>(<span class="str">'config is not valid JSON: </span><span class="subst">${</span>e.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>)
+  }
+}
+
+<span class="kw">catch</span> {
+  <span class="fn">load</span>(<span class="str">'{ broken'</span>)
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>e.<span class="prop">type</span><span class="subst">}</span><span class="str">: </span><span class="subst">${</span>e.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<p>The caller now gets an error that's in terms it understands. Include the
+original message, as shown above, so the details aren't lost along the way.</p>
+<p>Raising the <strong>same</strong> error again, instead of a new one, keeps the original
+stack trace, which points to the line where the error first happened:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">def</span> <span class="def">only_handle_missing</span>(work) {
+  <span class="kw">catch</span> {
+    <span class="kw">return</span> <span class="fn">work</span>()
+  } <span class="kw">as</span> e {
+    <span class="kw">if</span> <span class="op">!</span><span class="bi">instance_of</span>(e, <span class="type">ModuleNotFoundError</span>) {
+      <span class="kw">raise</span> e
+    }
+
+    <span class="kw">return</span> <span class="str">'defaulted'</span>
+  }
+}
+
+<span class="kw">echo</span> <span class="fn">only_handle_missing</span>(<span class="meta">@</span>() <span class="op">=&gt;</span> <span class="str">'fine'</span>)
+
+<span class="kw">catch</span> {
+  <span class="fn">only_handle_missing</span>(<span class="meta">@</span>() {
+    <span class="kw">raise</span> <span class="type">ValueError</span>(<span class="str">'not mine'</span>)
+  })
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>e.<span class="prop">type</span><span class="subst">}</span><span class="str">: </span><span class="subst">${</span>e.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">fine
+ValueError: not mine
+</code></pre><span class="code-label">Output</span></figure>
+<p>This is the pattern for handling one kind of error and letting all the
+others through. Use it whenever a handler might otherwise hide a bug along
+with the failure it was meant to catch.</p>
+<h2 id="example-loading-a-file"><a class="anchor" href="#example-loading-a-file" aria-hidden="true" tabindex="-1"></a>Example: Loading a File</h2>
+<p>Here's everything in this chapter in a single function: a loader that
+validates its input, separates the failures a caller can do something about
+from the ones it can't, and closes the file it opened whatever happens.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> json
+
+<span class="kw">class</span> <span class="type">StoreError</span> <span class="op">&lt;</span> <span class="type">Error</span> {
+
+  <span class="meta">@new</span>(message) {
+    <span class="self">parent</span>(message)
+    <span class="self">self</span>.<span class="prop">type</span> <span class="op">=</span> <span class="str">'StoreError'</span>
+  }
+}
+
+<span class="kw">def</span> <span class="def">read_records</span>(path) {
+  <span class="kw">var</span> handle <span class="op">=</span> <span class="bi">file</span>(path)
+
+  <span class="kw">if</span> <span class="op">!</span>handle.<span class="fn">exists</span>() {
+    <span class="kw">raise</span> <span class="type">StoreError</span>(<span class="str">'no store at </span><span class="subst">${</span>path<span class="subst">}</span><span class="str">'</span>)
+  }
+
+  <span class="kw">var</span> records
+
+  <span class="kw">catch</span> {
+    records <span class="op">=</span> json.<span class="fn">decode</span>(handle.<span class="fn">read</span>())
+  } <span class="kw">as</span> e {
+    handle.<span class="fn">close</span>()
+    <span class="kw">raise</span> <span class="type">StoreError</span>(<span class="str">'</span><span class="subst">${</span>path<span class="subst">}</span><span class="str"> is corrupt: </span><span class="subst">${</span>e.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>)
+  }
+
+  handle.<span class="fn">close</span>()
+
+  <span class="kw">if</span> <span class="op">!</span><span class="bi">is_list</span>(records) {
+    <span class="kw">raise</span> <span class="type">StoreError</span>(<span class="str">'</span><span class="subst">${</span>path<span class="subst">}</span><span class="str"> should hold a list, found </span><span class="subst">${</span><span class="bi">typeof</span>(records)<span class="subst">}</span><span class="str">'</span>)
+  }
+
+  <span class="kw">return</span> records
+}
+
+<span class="bi">file</span>(<span class="str">'records.json'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'[{"id": 1}]'</span>)
+<span class="kw">echo</span> <span class="fn">read_records</span>(<span class="str">'records.json'</span>).<span class="fn">length</span>()
+
+<span class="bi">file</span>(<span class="str">'records.json'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'{ not json'</span>)
+
+<span class="kw">catch</span> {
+  <span class="fn">read_records</span>(<span class="str">'records.json'</span>)
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> e.<span class="prop">type</span>
+}
+
+<span class="bi">file</span>(<span class="str">'records.json'</span>).<span class="fn">delete</span>()
+
+<span class="kw">catch</span> {
+  <span class="fn">read_records</span>(<span class="str">'records.json'</span>)
+} <span class="kw">as</span> e {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>e.<span class="prop">type</span><span class="subst">}</span><span class="str">: </span><span class="subst">${</span>e.<span class="prop">message</span><span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1
+StoreError
+StoreError: no store at records.json
+</code></pre><span class="code-label">Output</span></figure>
+<p>There are four things worth pointing out.</p>
+<p>Every failure the caller might reasonably handle is reported as a single
+error type, <code>StoreError</code>, so the <code>catch</code> on the calling side needs one
+branch instead of three.</p>
+<p>The message always includes the path. A log line that says &quot;file is corrupt&quot;
+without saying which file can cost someone an hour.</p>
+<p><code>handle.close()</code> is called on both paths: once in the handler before the
+error is raised again, and once after the block. There's no <code>finally</code> to do
+this for you, and forgetting the call in the handler is the most common way
+Zuri code leaks resources.</p>
+<p>Finally, the check on the file's contents at the end uses <code>raise</code>, not
+<code>assert</code>. A file on disk with the wrong contents is a problem with the
+outside world, not a bug in this function.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch07-00-error-handling.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch06-06-class-extensions.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">6.6</span>Class Extensions</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch08-00-modules.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">8</span>The Module System</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#raising-errors">Raising Errors</a>
+        </li><li class="level-2">
+          <a href="#catching-errors">Catching Errors</a>
+        </li><li class="level-2">
+          <a href="#what-an-error-contains">What an Error Contains</a>
+        </li><li class="level-2">
+          <a href="#built-in-error-classes">Built-in Error Classes</a>
+        </li><li class="level-2">
+          <a href="#defining-your-own-errors">Defining Your Own Errors</a>
+        </li><li class="level-2">
+          <a href="#catching-specific-errors">Catching Specific Errors</a>
+        </li><li class="level-2">
+          <a href="#replacing-finally">Replacing <code>finally</code></a>
+        </li><li class="level-3">
+          <a href="#using-as-e-without-a-handler">Using <code>as e</code> Without a Handler</a>
+        </li><li class="level-2">
+          <a href="#return-inside-catch"><code>return</code> Inside <code>catch</code></a>
+        </li><li class="level-2">
+          <a href="#errors-raised-by-handlers">Errors Raised by Handlers</a>
+        </li><li class="level-2">
+          <a href="#assert-or-raise"><code>assert</code> or <code>raise</code>?</a>
+        </li><li class="level-2">
+          <a href="#good-practices">Good Practices</a>
+        </li><li class="level-2">
+          <a href="#catching-inside-a-loop">Catching Inside a Loop</a>
+        </li><li class="level-2">
+          <a href="#nesting-and-re-raising">Nesting and Re-raising</a>
+        </li><li class="level-2">
+          <a href="#example-loading-a-file">Example: Loading a File</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=5550658799" defer=""></script>
+  
+  
+
+
+</body></html>

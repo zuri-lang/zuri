@@ -1,0 +1,1276 @@
+<!DOCTYPE html><html lang="en" data-theme-default="system"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Metaprogramming and Reflection · The Zuri Programming Language</title>
+  <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+  <meta name="generator" content="zuri doc">
+  <meta name="color-scheme" content="light dark">
+  
+  <link rel="canonical" href="https://zuri-lang.github.io/zuri/book/ch21-00-metaprogramming.html">
+  <link rel="icon" href="assets/zuri-butterfly.svg">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var choice = null;
+      try { choice = localStorage.getItem('zuri-doc-theme'); } catch (e) {}
+      if (choice !== 'light' && choice !== 'dark' && choice !== 'system') {
+        choice = root.getAttribute('data-theme-default') || 'system';
+      }
+      var dark = choice === 'dark' ||
+        (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'dark' : 'light');
+      root.setAttribute('data-theme-choice', choice);
+      try {
+        if (localStorage.getItem('zuri-doc-sidebar') === 'hidden') {
+          root.setAttribute('data-sidebar', 'hidden');
+        }
+        var width = parseInt(localStorage.getItem('zuri-doc-sidebar-width'), 10);
+        if (width >= 220 && width <= 520) {
+          root.style.setProperty('--sidebar-width', width + 'px');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preload" href="assets/fonts/literata-normal-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="preload" href="assets/fonts/bricolage-latin.woff2" as="font" type="font/woff2" crossorigin="">
+  <link rel="stylesheet" href="assets/doc.css?v=5550658799">
+  
+</head>
+<body class="kind-chapter" data-root="" data-accent="gold" data-search="true">
+  <a class="skip" href="#content">Skip to the content</a>
+
+  <header class="bar">
+    <button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-label="Show or hide the contents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+    </button>
+
+    <a class="brand" href="index.html">
+      <img class="brand-logo" src="assets/zuri-butterfly.svg" alt="" width="26" height="26">
+      <span class="brand-title">The Zuri Programming Language</span>
+    </a>
+
+    <a class="home-link" href="../">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+      <span>Zuri</span>
+    </a>
+
+    <button class="search-open" type="button" aria-label="Search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+      <span class="search-open-text">Search</span>
+      <kbd>/</kbd>
+    </button>
+
+    <nav class="bar-links" aria-label="Elsewhere">
+      <a href="../reference/">Standard Library</a>
+    </nav>
+
+    <div class="bar-tools">
+      <div class="theme-menu">
+        <button class="icon-button theme-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="if-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+          <svg class="if-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+        </button>
+        <div class="theme-options" role="menu" hidden="">
+          <button type="button" role="menuitemradio" data-choice="system">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            System
+          </button>
+          <button type="button" role="menuitemradio" data-choice="light">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></svg>
+            Light
+          </button>
+          <button type="button" role="menuitemradio" data-choice="dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg>
+            Dark
+          </button>
+        </div>
+      </div>
+
+      <a class="icon-button" href="print.html?print" title="Print every page" aria-label="Print every page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3.5h10V9"></path><rect x="3" y="9" width="18" height="8" rx="2"></rect><path d="M7 14h10v6.5H7z"></path></svg>
+      </a>
+
+      <a class="icon-button" href="https://github.com/zuri-lang/zuri" title="The repository on GitHub" aria-label="The repository on GitHub">
+        <svg class="filled" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="sidebar" id="sidebar" aria-label="Contents">
+      <div class="sidebar-scroll"><nav class="toc"><div class="toc-group" data-accent="gold"><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="title-page.html"><span class="toc-title">The Zuri Programming Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch00-00-introduction.html"><span class="toc-title">Introduction</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Getting Started</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-00-getting-started.html"><span class="toc-number">1</span><span class="toc-title">Getting Started</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Getting Started"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-01-installation.html"><span class="toc-number">1.1</span><span class="toc-title">Installation</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-02-hello-world.html"><span class="toc-number">1.2</span><span class="toc-title">Hello, World!</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch01-03-the-repl.html"><span class="toc-number">1.3</span><span class="toc-title">The REPL</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch02-00-bookmark-keeper.html"><span class="toc-number">2</span><span class="toc-title">Programming a Bookmark Keeper</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Learning the Language</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-00-common-concepts.html"><span class="toc-number">3</span><span class="toc-title">Common Programming Concepts</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Common Programming Concepts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-01-variables.html"><span class="toc-number">3.1</span><span class="toc-title">Variables and Constants</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-02-data-types.html"><span class="toc-number">3.2</span><span class="toc-title">Data Types</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-03-operators.html"><span class="toc-number">3.3</span><span class="toc-title">Operators</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-04-comments.html"><span class="toc-number">3.4</span><span class="toc-title">Comments and Doc Blocks</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch03-05-control-flow.html"><span class="toc-number">3.5</span><span class="toc-title">Control Flow</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-00-collections.html"><span class="toc-number">4</span><span class="toc-title">Text, Numbers and Collections</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Text, Numbers and Collections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-01-strings.html"><span class="toc-number">4.1</span><span class="toc-title">Strings</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-02-numbers.html"><span class="toc-number">4.2</span><span class="toc-title">Numbers</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-03-lists.html"><span class="toc-number">4.3</span><span class="toc-title">Lists</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-04-dictionaries.html"><span class="toc-number">4.4</span><span class="toc-title">Dictionaries</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch04-05-ranges-and-iteration.html"><span class="toc-number">4.5</span><span class="toc-title">Ranges and Iteration</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-00-functions.html"><span class="toc-number">5</span><span class="toc-title">Functions</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Functions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-01-defining-functions.html"><span class="toc-number">5.1</span><span class="toc-title">Defining Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-02-closures.html"><span class="toc-number">5.2</span><span class="toc-title">Anonymous Functions and Closures</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch05-03-type-annotations.html"><span class="toc-number">5.3</span><span class="toc-title">Type Annotations</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-00-classes.html"><span class="toc-number">6</span><span class="toc-title">Classes and Objects</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Classes and Objects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-01-defining-a-class.html"><span class="toc-number">6.1</span><span class="toc-title">Defining a Class</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-02-inheritance.html"><span class="toc-number">6.2</span><span class="toc-title">Inheritance</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-03-decorated-methods.html"><span class="toc-number">6.3</span><span class="toc-title">Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-04-encapsulation.html"><span class="toc-number">6.4</span><span class="toc-title">Encapsulation and Class Immutability</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-05-iterable-classes.html"><span class="toc-number">6.5</span><span class="toc-title">Making a Class Iterable</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch06-06-class-extensions.html"><span class="toc-number">6.6</span><span class="toc-title">Class Extensions</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch07-00-error-handling.html"><span class="toc-number">7</span><span class="toc-title">Error Handling</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch08-00-modules.html"><span class="toc-number">8</span><span class="toc-title">The Module System</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Working with the World</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch09-00-files.html"><span class="toc-number">9</span><span class="toc-title">Files and the Filesystem</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch10-00-binary-data.html"><span class="toc-number">10</span><span class="toc-title">Binary Data and Streams</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch11-00-isolates.html"><span class="toc-number">11</span><span class="toc-title">Concurrency with Isolates</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch12-00-networking.html"><span class="toc-number">12</span><span class="toc-title">Networking</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch13-00-stdlib-tour.html"><span class="toc-number">13</span><span class="toc-title">A Tour of the Standard Library</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">The Big Modules</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch14-00-wire.html"><span class="toc-number">14</span><span class="toc-title">Wire: Templating</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch15-00-http.html"><span class="toc-number">15</span><span class="toc-title">HTTP</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch16-00-imagine.html"><span class="toc-number">16</span><span class="toc-title">Imagine: Images</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-00-sql.html"><span class="toc-number">17</span><span class="toc-title">Databases</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Databases"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-01-schema-changes.html"><span class="toc-number">17.1</span><span class="toc-title">Changing the Schema</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-02-migrations.html"><span class="toc-number">17.2</span><span class="toc-title">Migrations</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch17-03-models.html"><span class="toc-number">17.3</span><span class="toc-title">Models</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch18-00-mail.html"><span class="toc-number">18</span><span class="toc-title">Mail</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch19-00-env.html"><span class="toc-number">19</span><span class="toc-title">Configuration and the Environment</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch20-00-args.html"><span class="toc-number">20</span><span class="toc-title">Parsing the Command Line</span></a></div></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Going Deeper</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch21-00-metaprogramming.html" aria-current="page"><span class="toc-number">21</span><span class="toc-title">Metaprogramming and Reflection</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch22-00-performance.html"><span class="toc-number">22</span><span class="toc-title">Performance and the JIT</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch23-00-testing.html"><span class="toc-number">23</span><span class="toc-title">Testing</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch24-00-debugging.html"><span class="toc-number">24</span><span class="toc-title">Debugging</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">The Capstone</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-00-task-board.html"><span class="toc-number">25</span><span class="toc-title">A Full-Stack Task Board</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of A Full-Stack Task Board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-01-project-layout.html"><span class="toc-number">25.1</span><span class="toc-title">Laying Out the Project</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-02-storage.html"><span class="toc-number">25.2</span><span class="toc-title">The Storage Layer</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-03-domain.html"><span class="toc-number">25.3</span><span class="toc-title">Validation and the Domain Model</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-04-api.html"><span class="toc-number">25.4</span><span class="toc-title">The JSON API</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-05-pages.html"><span class="toc-number">25.5</span><span class="toc-title">Server-Rendered Pages with Wire</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-06-middleware.html"><span class="toc-number">25.6</span><span class="toc-title">Middleware, Logging and Errors</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-07-running-it.html"><span class="toc-number">25.7</span><span class="toc-title">Running It for Real</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch25-08-testing.html"><span class="toc-number">25.8</span><span class="toc-title">Testing the Board</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Interoperability</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch26-00-ffi.html"><span class="toc-number">26</span><span class="toc-title">Foreign Functions: C and Rust</span></a></div></li></ol></div><div class="toc-group" data-accent="purple"><p class="toc-part">Sharing and Shipping</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-00-packages.html"><span class="toc-number">27</span><span class="toc-title">Packages and Nyssa</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of Packages and Nyssa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-01-projects.html"><span class="toc-number">27.1</span><span class="toc-title">Projects and Versions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-02-installing.html"><span class="toc-number">27.2</span><span class="toc-title">Installing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-03-publishing.html"><span class="toc-number">27.3</span><span class="toc-title">Publishing Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-04-commands.html"><span class="toc-number">27.4</span><span class="toc-title">Commands From Packages</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-05-bundles.html"><span class="toc-number">27.5</span><span class="toc-title">Bundles and Upgrades</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch27-06-nyssa.html"><span class="toc-number">27.6</span><span class="toc-title">Running Nyssa</span></a></div></li></ol></li></ol></div><div class="toc-group" data-accent="gold"><p class="toc-part">Talking to Other Programs</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch28-00-rpc.html"><span class="toc-number">28</span><span class="toc-title">JSON-RPC</span></a></div></li></ol></div><div class="toc-group" data-accent="red"><p class="toc-part">Tooling</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch29-00-editors.html"><span class="toc-number">29</span><span class="toc-title">Editor Support</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="ch30-00-documentation.html"><span class="toc-number">30</span><span class="toc-title">Documenting a Project</span></a></div></li></ol></div><div class="toc-group" data-accent="teal"><p class="toc-part">Appendices</p><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-01-keywords.html"><span class="toc-title">A - Keywords</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-02-operators.html"><span class="toc-title">B - Operators and Precedence</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-03-decorators.html"><span class="toc-title">C - Decorated Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-04-builtins.html"><span class="toc-title">D - Built-in Functions</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-type-methods.html"><span class="toc-title">E - Built-in Type Methods</span></a><button class="toc-fold" type="button" aria-expanded="false" aria-label="Sections of E - Built-in Type Methods"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div><ol><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-01-string.html"><span class="toc-title">String Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-02-number.html"><span class="toc-title">Number Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-03-bigint.html"><span class="toc-title">Bigint Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-04-bool.html"><span class="toc-title">Boolean Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-05-list.html"><span class="toc-title">List Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-06-dict.html"><span class="toc-title">Dictionary Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-07-range.html"><span class="toc-title">Range Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-08-bytes.html"><span class="toc-title">Bytes Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-09-file.html"><span class="toc-title">File Methods</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-05-10-function.html"><span class="toc-title">Function Methods</span></a></div></li></ol></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-06-stdlib-index.html"><span class="toc-title">F - The Standard Library Index</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-07-errors.html"><span class="toc-title">G - The Error Hierarchy</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-08-coming-from.html"><span class="toc-title">H - Coming From Another Language</span></a></div></li><li class="toc-item"><div class="toc-row"><a class="toc-link" href="appendix-09-commands.html"><span class="toc-title">I - Custom Commands</span></a></div></li></ol></div></nav></div>
+      <div class="sidebar-grip" aria-hidden="true"></div>
+    </aside>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <main class="main" id="content" tabindex="-1">
+      <article class="page">
+        <p class="kicker"><span class="kicker-mark" aria-hidden="true"></span>Chapter 21 · Going Deeper</p>
+        <div class="content"><h1 id="metaprogramming-and-reflection">Metaprogramming and Reflection</h1>
+<p>Zuri programs have access to Zuri's own compiler. The <code>zuri</code> module provides
+the lexer, the parser and the bytecode compiler as ordinary functions, along
+with a reflection API for working with live functions, classes, modules and
+instances.</p>
+<p>That's an unusual amount of the language to expose, so it's worth being
+clear about what it's for. These are the tools behind documentation
+generators, linters, plugin loaders, serializers, debuggers and editor
+tooling, which are all programs that work with other programs. They aren't
+meant for everyday code, and the chapter ends with the one thing they
+intentionally can't do.</p>
+<h2 id="reflection-and-the-compiler-api"><a class="anchor" href="#reflection-and-the-compiler-api" aria-hidden="true" tabindex="-1"></a>Reflection and the Compiler API</h2>
+<p>The module is divided into two clear halves, and confusing them is the most
+common mistake:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Reflection</th>
+<th>The compiler API</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Works with</td>
+<td>Objects that exist <strong>right now</strong></td>
+<td><strong>Source code</strong></td>
+</tr>
+<tr>
+<td>Entry points</td>
+<td><code>zuri.reflect.*</code></td>
+<td><code>tokenize()</code>, <code>parse()</code>, <code>compile()</code></td>
+</tr>
+<tr>
+<td>Can tell you</td>
+<td>A function's arity, a class's fields, an instance's values</td>
+<td>A doc block, a comment, a line number, what the compiler produced</td>
+</tr>
+<tr>
+<td>Can't tell you</td>
+<td>Anything about the source code it came from</td>
+<td>Anything about a running value</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>A function's <strong>arity</strong> is a run-time fact. The function object stores it,
+and reflection reads it. The same function's <strong>doc block</strong> is a fact about
+the source code. It only exists in the file, and only the parser can find
+it. No function bridges the two, which is why a documentation generator
+parses files instead of importing them.</p>
+<h2 id="a-common-structure"><a class="anchor" href="#a-common-structure" aria-hidden="true" tabindex="-1"></a>A Common Structure</h2>
+<p><code>tokenize()</code>, <code>parse()</code> and <code>compile()</code> all return results with the same
+<em>structure</em>: a flat list of small records, each tagged in the same way.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Returns</th>
+<th>Tag</th>
+<th>Data</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tokenize(source)</code></td>
+<td>A list of <code>Token</code></td>
+<td><code>kind</code></td>
+<td><code>value</code>, <code>text</code></td>
+</tr>
+<tr>
+<td><code>parse(source)</code></td>
+<td>A list of <code>Node</code></td>
+<td><code>kind</code></td>
+<td><code>fields</code></td>
+</tr>
+<tr>
+<td><code>compile(source)</code></td>
+<td>A list of <code>Instr</code></td>
+<td><code>op</code></td>
+<td><code>fields</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>There's a single <code>Token</code> class, a single <code>Node</code> class and a single <code>Instr</code>
+class, rather than one class for each kind of token, grammar rule or opcode.
+The grammar has about fifty node types and the instruction set has about
+sixty opcodes, so a class for each would mean more than a hundred nearly
+identical classes that would have to be kept in sync with the compiler
+forever.</p>
+<p>The downside of this choice is real: nothing tells you which fields a
+particular <code>kind</code> has. Your editor can't autocomplete a <code>Binary</code> node's
+<code>left</code>, <code>op</code> and <code>right</code>. Instead, the module relies on a different habit,
+which is to <strong>run it and look</strong>:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">echo</span> zuri.<span class="fn">parse</span>(<span class="str">'var total = a + 1'</span>)[<span class="num">0</span>].<span class="fn">dump</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Stmt@1:1
+  statement:
+    Var@1:1
+      name: 'total'
+      name_span: 1:5-1:10
+      value:
+        Binary@1:13
+          left:
+            Identifier@1:13
+              name: 'a'
+          op: 'Plus'
+          right:
+            Integer@1:17
+              value: 1
+      type_hint: nil
+      is_constant: false
+</code></pre><span class="code-label">Output</span></figure>
+<p>Everything about that node is right there. It's a <code>Stmt</code> that wraps a <code>Var</code>,
+the initializer is a <code>Binary</code> node whose <code>op</code> is the string <code>'Plus'</code>, and
+the literal <code>1</code> is an <code>Integer</code> node rather than a generic literal. Each
+header shows where the node starts, and <code>name_span</code> shows exactly where the
+name <code>total</code> is. You didn't have to look anything up.</p>
+<p><code>dump()</code> is the quickest way to learn the structure of any node, and it's
+the first thing to try whenever you're unsure. <code>zuri.dump_file(path)</code> does
+the same for a whole file.</p>
+<h2 id="runtime-reflection"><a class="anchor" href="#runtime-reflection" aria-hidden="true" tabindex="-1"></a>Runtime Reflection</h2>
+<p>Reflection answers questions about a value you have. Every reflection
+function is in <code>zuri.reflect</code>.</p>
+<h3 id="what-kind-of-value-is-this"><a class="anchor" href="#what-kind-of-value-is-this" aria-hidden="true" tabindex="-1"></a>What Kind of Value Is This?</h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">def</span> <span class="def">add</span>(a, b) {
+  <span class="kw">return</span> a <span class="op">+</span> b
+}
+
+<span class="kw">class</span> <span class="type">Marker</span> {}
+
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">kind</span>(add)
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">kind</span>(<span class="type">Marker</span>)
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">kind</span>(<span class="type">Marker</span>())
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">kind</span>(<span class="num">42</span>)
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">kind</span>(<span class="bi">print</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">function
+class
+instance
+number
+function
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>kind()</code> is a more literal version of <code>typeof()</code>. Note the last line: a
+built-in native function reports <code>'function'</code>, as do closures and bound
+methods, because as far as the language is concerned, all three can be
+called in exactly the same way.</p>
+<h3 id="functions"><a class="anchor" href="#functions" aria-hidden="true" tabindex="-1"></a>Functions</h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">def</span> <span class="def">add</span>(a, b) {
+  <span class="kw">return</span> a <span class="op">+</span> b
+}
+
+<span class="kw">var</span> info <span class="op">=</span> zuri.<span class="prop">reflect</span>.<span class="fn">function_info</span>(add)
+
+<span class="kw">echo</span> info.<span class="prop">name</span>
+<span class="kw">echo</span> info.<span class="prop">arity</span>
+<span class="kw">echo</span> info.<span class="prop">variadic</span>
+<span class="kw">echo</span> info.<span class="prop">is_method</span>
+<span class="kw">echo</span> info.<span class="prop">owning_class_name</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">add
+2
+false
+false
+nil
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>function_info()</code> returns
+<code>{ name, arity, variadic, is_method, owning_class_name, source_path }</code>. The
+last field is the only one that refers back to the source code, and it's a
+<em>path</em>, not the content. To read the function's doc block, you still have to
+parse that file.</p>
+<h3 id="classes"><a class="anchor" href="#classes" aria-hidden="true" tabindex="-1"></a>Classes</h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">class</span> <span class="type">Shape</span> {
+  <span class="kw">static</span> <span class="kw">var</span> sides <span class="op">=</span> <span class="num">0</span>
+
+  <span class="meta">@new</span>(name) {
+    <span class="self">self</span>.<span class="prop">name</span> <span class="op">=</span> name
+  }
+
+  <span class="fn">area</span>() {
+    <span class="kw">return</span> <span class="num">0</span>
+  }
+
+  <span class="fn">_secret</span>() {
+    <span class="kw">return</span> <span class="str">'hidden'</span>
+  }
+
+  <span class="meta">@to_json</span>() {
+    <span class="kw">return</span> { name<span class="op">:</span> <span class="self">self</span>.<span class="prop">name</span> }
+  }
+}
+
+<span class="kw">var</span> info <span class="op">=</span> zuri.<span class="prop">reflect</span>.<span class="fn">class_info</span>(<span class="type">Shape</span>)
+
+<span class="kw">echo</span> info.<span class="prop">name</span>
+<span class="kw">echo</span> info.<span class="prop">superclass_name</span>
+<span class="kw">echo</span> info.<span class="prop">fields</span>
+<span class="kw">echo</span> info.<span class="prop">statics</span>
+<span class="kw">echo</span> info.<span class="prop">methods</span>.<span class="fn">keys</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Shape
+nil
+[name]
+[sides]
+[@new, area, @to_json, _secret]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Four things in that output are worth a closer look.</p>
+<p><strong><code>fields</code> includes <code>name</code></strong>, which was never declared with <code>var</code>. It was
+created by <code>self.name = name</code> inside <code>@new</code>. Reflection reports the class's
+actual structure, not just what the <code>var</code> lines said.</p>
+<p><strong><code>statics</code> is separate from <code>fields</code></strong>, because a static field belongs to
+the class, while a field belongs to each instance.</p>
+<p><strong>Decorated methods are listed under their <code>@</code> names.</strong> <code>@new</code> and
+<code>@to_json</code> appear in <code>methods</code> alongside the ordinary methods.</p>
+<p><strong><code>_secret</code> is listed.</strong> Reflection can see private members, as explained
+below.</p>
+<p>Each entry in <code>methods</code> is a complete <code>function_info</code>, so
+<code>info.methods.area.arity</code> works without another call.</p>
+<p><code>superclass_name</code> is a <strong>string or <code>nil</code></strong>, not a class:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">class</span> <span class="type">Base</span> {}
+<span class="kw">class</span> <span class="type">Derived</span> <span class="op">&lt;</span> <span class="type">Base</span> {}
+
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">class_info</span>(<span class="type">Derived</span>).<span class="prop">superclass_name</span>
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">class_info</span>(<span class="type">Base</span>).<span class="prop">superclass_name</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Base
+nil
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="instances"><a class="anchor" href="#instances" aria-hidden="true" tabindex="-1"></a>Instances</h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">class</span> <span class="type">Point</span> {
+
+  <span class="meta">@new</span>(x, y) {
+    <span class="self">self</span>.<span class="prop">x</span> <span class="op">=</span> x
+    <span class="self">self</span>.<span class="prop">y</span> <span class="op">=</span> y
+  }
+
+  <span class="fn">distance</span>() {
+    <span class="kw">return</span> (<span class="self">self</span>.<span class="prop">x</span> <span class="op">**</span> <span class="num">2</span> <span class="op">+</span> <span class="self">self</span>.<span class="prop">y</span> <span class="op">**</span> <span class="num">2</span>).<span class="fn">sqrt</span>()
+  }
+}
+
+<span class="kw">var</span> p <span class="op">=</span> <span class="type">Point</span>(<span class="num">3</span>, <span class="num">4</span>)
+
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">get_props</span>(p)
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">has_prop</span>(p, <span class="str">'x'</span>)
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">get_prop</span>(p, <span class="str">'x'</span>)
+
+zuri.<span class="prop">reflect</span>.<span class="fn">set_prop</span>(p, <span class="str">'x'</span>, <span class="num">10</span>)
+<span class="kw">echo</span> p.<span class="prop">x</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[x, y]
+true
+3
+10
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>get_props()</code> lists the names of the fields an instance actually has.
+<code>get_prop()</code>, <code>set_prop()</code>, <code>has_prop()</code> and <code>del_prop()</code> read and write
+fields by a computed name. They're the reflection equivalents of the
+<code>getprop</code> family of built-in functions from <a href="ch06-04-encapsulation.html">Chapter
+6</a>.</p>
+<p>They can't create a field. Classes are sealed, so <code>set_prop()</code> with a name
+that the class never declared returns <code>false</code> and doesn't change anything.</p>
+<p><code>class_of()</code> works in the other direction. Given an instance, it returns the
+class it was created from, as the class itself:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">class</span> <span class="type">Point</span> {}
+<span class="kw">class</span> <span class="type">Labelled</span> <span class="op">&lt;</span> <span class="type">Point</span> {}
+
+<span class="kw">var</span> p <span class="op">=</span> <span class="type">Labelled</span>()
+
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">class_of</span>(p) <span class="op">==</span> <span class="type">Labelled</span>
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">class_of</span>(p) <span class="op">==</span> <span class="type">Point</span>
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">class_info</span>(zuri.<span class="prop">reflect</span>.<span class="fn">class_of</span>(p)).<span class="prop">name</span>
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">class_of</span>(<span class="num">42</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+false
+Labelled
+nil
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>typeof()</code> returns the class's name, and two classes with the same name
+declared in different modules return the same name. Only the class itself
+can tell them apart, and only the class can be called, passed to
+<code>class_info()</code> or used as a dictionary key. That's how a library can store
+something for each class. For example, <code>sql.model</code> stores each model's
+definition this way.</p>
+<h3 id="looking-up-methods-by-name"><a class="anchor" href="#looking-up-methods-by-name" aria-hidden="true" tabindex="-1"></a>Looking Up Methods by Name</h3>
+<p>Three functions turn a method name into something you can call:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">class</span> <span class="type">Greeter</span> {
+
+  <span class="meta">@new</span>(name) {
+    <span class="self">self</span>.<span class="prop">name</span> <span class="op">=</span> name
+  }
+
+  <span class="fn">greet</span>() {
+    <span class="kw">return</span> <span class="str">'hello </span><span class="subst">${</span><span class="self">self</span>.<span class="prop">name</span><span class="subst">}</span><span class="str">'</span>
+  }
+
+  <span class="meta">@to_json</span>() {
+    <span class="kw">return</span> { name<span class="op">:</span> <span class="self">self</span>.<span class="prop">name</span> }
+  }
+}
+
+<span class="kw">var</span> g <span class="op">=</span> <span class="type">Greeter</span>(<span class="str">'ada'</span>)
+
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">has_method</span>(g, <span class="str">'greet'</span>)
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">has_decorator</span>(g, <span class="str">'to_json'</span>)
+<span class="kw">echo</span> <span class="bi">typeof</span>(zuri.<span class="prop">reflect</span>.<span class="fn">get_method</span>(g, <span class="str">'greet'</span>))
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">bind_method</span>(g, <span class="str">'greet'</span>)()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">true
+true
+function
+hello ada
+</code></pre><span class="code-label">Output</span></figure>
+<p>The difference between the last two is important. <strong><code>get_method()</code> returns
+the unbound function</strong>, so you have to pass the instance yourself when you
+call it. <strong><code>bind_method()</code> returns the method already attached to the
+instance</strong>, so it can be stored, passed around and called without anything
+extra. That's what makes a dispatch table of methods possible:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">class</span> <span class="type">Counter</span> {
+
+  <span class="meta">@new</span>() {
+    <span class="self">self</span>.<span class="prop">n</span> <span class="op">=</span> <span class="num">0</span>
+  }
+
+  <span class="fn">up</span>() {
+    <span class="self">self</span>.<span class="prop">n</span><span class="op">++</span>
+    <span class="kw">return</span> <span class="self">self</span>.<span class="prop">n</span>
+  }
+
+  <span class="fn">down</span>() {
+    <span class="self">self</span>.<span class="prop">n</span><span class="op">--</span>
+    <span class="kw">return</span> <span class="self">self</span>.<span class="prop">n</span>
+  }
+}
+
+<span class="kw">var</span> counter <span class="op">=</span> <span class="type">Counter</span>()
+
+<span class="kw">var</span> actions <span class="op">=</span> {
+  up<span class="op">:</span> zuri.<span class="prop">reflect</span>.<span class="fn">bind_method</span>(counter, <span class="str">'up'</span>),
+  down<span class="op">:</span> zuri.<span class="prop">reflect</span>.<span class="fn">bind_method</span>(counter, <span class="str">'down'</span>),
+}
+
+<span class="kw">echo</span> actions[<span class="str">'up'</span>]()
+<span class="kw">echo</span> actions[<span class="str">'up'</span>]()
+<span class="kw">echo</span> actions[<span class="str">'down'</span>]()
+<span class="kw">echo</span> counter.<span class="prop">n</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1
+2
+1
+1
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>has_decorator()</code> and <code>get_decorator()</code> do the same for methods whose names
+start with <code>@</code>. Pass the name <strong>without</strong> the <code>@</code>.</p>
+<h3 id="reflection-can-see-private-members"><a class="anchor" href="#reflection-can-see-private-members" aria-hidden="true" tabindex="-1"></a>Reflection Can See Private Members</h3>
+<p>All of the functions above ignore the leading underscore rule:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">class</span> <span class="type">Vault</span> {
+  <span class="kw">var</span> _combination <span class="op">=</span> <span class="str">'1234'</span>
+
+  <span class="meta">@new</span>() {}
+}
+
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">get_props</span>(<span class="type">Vault</span>())
+<span class="kw">echo</span> zuri.<span class="prop">reflect</span>.<span class="fn">get_prop</span>(<span class="type">Vault</span>(), <span class="str">'_combination'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[_combination]
+1234
+</code></pre><span class="code-label">Output</span></figure>
+<p>This is intentional, and it's the same choice <code>getprop()</code> makes. A
+serializer has to see every field, or it writes an incomplete record, and a
+debugger has to see every field, or it shows misleading information. Hiding
+private fields would defeat the only purpose these functions have.</p>
+<p>The lesson here is that <strong>reflection is for building tools, not for getting
+around encapsulation</strong>. If code uses <code>get_prop()</code> to read a private field it
+couldn't otherwise read, it hasn't found a clever loophole. It has written
+something the next person to read it won't expect.</p>
+<h3 id="modules"><a class="anchor" href="#modules" aria-hidden="true" tabindex="-1"></a>Modules</h3>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+<span class="kw">import</span> math
+
+<span class="kw">var</span> info <span class="op">=</span> zuri.<span class="prop">reflect</span>.<span class="fn">module_info</span>(math)
+
+<span class="kw">echo</span> info.<span class="prop">name</span>
+<span class="kw">echo</span> info.<span class="prop">members</span>.<span class="fn">contains</span>(<span class="str">'PI'</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">math
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>module_info()</code> returns a module's name, its path and the members it
+exports.</p>
+<p><code>import</code> takes its path exactly as written, so it can't import a file whose
+name the program only learns while it's running. <code>zuri.import_file()</code> can.
+It imports the module at a given path, just as an <code>import</code> naming that file
+would, and returns it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> os
+<span class="kw">import</span> zuri
+
+<span class="kw">var</span> plugins <span class="op">=</span> os.<span class="fn">create_temp_dir</span>(<span class="str">'plugins-'</span>)
+
+<span class="bi">file</span>(
+  os.<span class="fn">join_paths</span>(plugins, <span class="str">'greeter.zu'</span>),
+  <span class="str">'w'</span>,
+).<span class="fn">write</span>(<span class="str">"def greet(name) {\n  return 'hello ' + name\n}\n"</span>)
+
+<span class="kw">for</span> name <span class="kw">in</span> os.<span class="fn">read_dir</span>(plugins).<span class="fn">filter</span>(<span class="meta">@</span>(entry) <span class="op">=&gt;</span> entry.<span class="fn">ends_with</span>(<span class="str">'.zu'</span>)) {
+  <span class="kw">var</span> plugin <span class="op">=</span> zuri.<span class="fn">import_file</span>(os.<span class="fn">join_paths</span>(plugins, name))
+
+  <span class="kw">if</span> zuri.<span class="prop">reflect</span>.<span class="fn">module_info</span>(plugin).<span class="prop">members</span>.<span class="fn">get</span>(<span class="str">'greet'</span>, <span class="lit">nil</span>) <span class="op">==</span> <span class="str">'function'</span> {
+    <span class="kw">echo</span> plugin.<span class="fn">greet</span>(<span class="str">'Ada'</span>)
+  }
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">hello Ada
+</code></pre><span class="code-label">Output</span></figure>
+<p>That's how you build a plugin loader: import a directory of modules, check
+whether each one has a known function, and call the ones that do. A relative
+path is resolved from the working directory. The module comes from the same
+cache that <code>import</code> uses, so its top level only runs once, however many
+times and in whatever way it's imported, and two imports of the same file
+return the same module, which are equal (<code>==</code>) to each other. <code>sql.migrate</code>
+loads its migrations this way.</p>
+<h3 id="the-garbage-collector"><a class="anchor" href="#the-garbage-collector" aria-hidden="true" tabindex="-1"></a>The Garbage Collector</h3>
+<p>The garbage collector runs automatically as a program allocates memory.
+<code>gc()</code> runs a full collection immediately:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">var</span> scratch <span class="op">=</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+scratch <span class="op">=</span> <span class="lit">nil</span>
+
+zuri.<span class="prop">reflect</span>.<span class="fn">gc</span>()
+<span class="kw">echo</span> <span class="str">'collected'</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">collected
+</code></pre><span class="code-label">Output</span></figure>
+<p>Every unreachable object is freed before <code>gc()</code> returns, and anything that
+releases a resource when it's collected does so at that point. For example,
+an <code>ffi</code> pointer taken over with <code>own()</code> runs its destructor. The freed
+memory is also returned to the operating system before <code>gc()</code> returns. No
+program needs to call <code>gc()</code> to work correctly. It's for situations where
+timing matters, such as releasing native resources at a known point, or a
+test that checks what garbage collection does. A full collection visits
+every live object, so calling it in a loop is slow.</p>
+<h2 id="tokens"><a class="anchor" href="#tokens" aria-hidden="true" tabindex="-1"></a>Tokens</h2>
+<p><code>tokenize()</code> is the first stage. It takes source text and returns a flat
+list of tokens.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">for</span> token <span class="kw">in</span> zuri.<span class="fn">tokenize</span>(<span class="str">'var x = 1 # note'</span>) {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>token.<span class="prop">kind</span><span class="subst">}</span><span class="str"> at </span><span class="subst">${</span>token.<span class="prop">line</span><span class="subst">}</span><span class="str">:</span><span class="subst">${</span>token.<span class="prop">column</span><span class="subst">}</span><span class="str"> -&gt; </span><span class="subst">${</span>token.<span class="prop">text</span><span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Var at 1:1 -&gt; var
+Identifier at 1:5 -&gt; x
+Equal at 1:7 -&gt; =
+Integer at 1:9 -&gt; 1
+Comment at 1:11 -&gt; # note
+Eof at 1:17 -&gt; 
+</code></pre><span class="code-label">Output</span></figure>
+<p><strong>Nothing is filtered out.</strong> Comments, doc blocks and newlines are all
+returned as tokens, and the list always ends with a single <code>Eof</code> token. The
+parser skips comments and whitespace when it runs, but <code>tokenize()</code> reports
+everything the lexer saw, which is exactly what a formatter or a syntax
+highlighter needs.</p>
+<p>Each <code>Token</code> has these fields:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kind</code></td>
+<td>The lexer's own name for the token type, such as <code>'Identifier'</code>, <code>'Plus'</code> or <code>'Comment'</code></td>
+</tr>
+<tr>
+<td><code>line</code>, <code>column</code></td>
+<td>The position, starting from 1. <code>column</code> counts characters, not bytes.</td>
+</tr>
+<tr>
+<td><code>start</code>, <code>end</code></td>
+<td>The character offsets of the token's exact text</td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td>The exact source text, including any delimiters</td>
+</tr>
+<tr>
+<td><code>value</code></td>
+<td>The token's data, where it has any, such as a literal's value, an identifier's name or a comment's content</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><code>start</code> and <code>end</code> make it possible to edit source code. They let you recover
+or replace a token's original text without running the lexer again, which is
+how a rename tool or a code formatter works.</p>
+<p><code>is_trivia()</code> returns true for comments and doc blocks, so you can filter
+them out with a single call:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">var</span> tokens <span class="op">=</span> zuri.<span class="fn">tokenize</span>(<span class="str">'var x = 1 # note'</span>)
+
+<span class="kw">echo</span> tokens.<span class="fn">filter</span>(<span class="meta">@</span>(t) <span class="op">=&gt;</span> t.<span class="fn">is_trivia</span>()).<span class="fn">map</span>(<span class="meta">@</span>(t) <span class="op">=&gt;</span> t.<span class="prop">kind</span>)
+<span class="kw">echo</span> tokens.<span class="fn">filter</span>(<span class="meta">@</span>(t) <span class="op">=&gt;</span> <span class="op">!</span>t.<span class="fn">is_trivia</span>()).<span class="fn">length</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[Comment]
+5
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="the-lexer-never-raises-an-error"><a class="anchor" href="#the-lexer-never-raises-an-error" aria-hidden="true" tabindex="-1"></a>The Lexer Never Raises an Error</h3>
+<p>Invalid input doesn't raise an error. Instead, it produces a token of kind
+<code>'Error'</code> that describes what went wrong:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">var</span> tokens <span class="op">=</span> zuri.<span class="fn">tokenize</span>(<span class="str">"var s = 'unterminated"</span>)
+
+<span class="kw">echo</span> tokens.<span class="fn">map</span>(<span class="meta">@</span>(t) <span class="op">=&gt;</span> t.<span class="prop">kind</span>)
+<span class="kw">echo</span> tokens.<span class="fn">find</span>(<span class="meta">@</span>(t) <span class="op">=&gt;</span> t.<span class="prop">kind</span> <span class="op">==</span> <span class="str">'Error'</span>) <span class="op">!=</span> <span class="lit">nil</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[Var, Identifier, Equal, Error, Eof]
+true
+</code></pre><span class="code-label">Output</span></figure>
+<p>That means <code>tokenize()</code> <strong>accepts any input at all</strong>, which makes it safe to
+use on a file you didn't write, or on a half-written buffer in an editor.
+Neither <code>parse()</code> nor <code>compile()</code> works like that. Both raise an error for
+invalid input, because neither can produce a meaningful result from it.</p>
+<h2 id="the-syntax-tree"><a class="anchor" href="#the-syntax-tree" aria-hidden="true" tabindex="-1"></a>The Syntax Tree</h2>
+<p><code>parse()</code> is the second stage. It turns tokens into a tree.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">var</span> tree <span class="op">=</span> zuri.<span class="fn">parse</span>(<span class="str">'def double(n) { return n * 2 }'</span>)
+
+<span class="kw">echo</span> tree[<span class="num">0</span>].<span class="prop">kind</span>
+<span class="kw">echo</span> tree[<span class="num">0</span>].<span class="prop">fields</span>.<span class="fn">keys</span>()
+<span class="kw">echo</span> tree[<span class="num">0</span>].<span class="prop">fields</span>.<span class="prop">name</span>
+<span class="kw">echo</span> tree[<span class="num">0</span>].<span class="prop">line</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">Function
+[name, name_span, parameters, body, is_variadic]
+double
+1
+</code></pre><span class="code-label">Output</span></figure>
+<p>A <code>Node</code> has a <code>kind</code>, a position and a <code>fields</code> dictionary. The fields
+contain other nodes, plain lists, plain dictionaries or simple values and
+nothing else, so you can walk through the tree in the same way, whatever
+node you're looking at.</p>
+<h3 id="node-positions"><a class="anchor" href="#node-positions" aria-hidden="true" tabindex="-1"></a>Node Positions</h3>
+<p>A node's position covers all of the source it was parsed from. <code>start</code> and
+<code>end</code> are character offsets, of the first character and of the character
+just after the last one, so slicing the source with them gives you the
+node's own text. <code>line</code> and <code>col</code> give the start of the node, and <code>end_line</code>
+and <code>end_col</code> give its end, all counted from 1:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">var</span> source <span class="op">=</span> <span class="str">'def double(n) {\n  return n * 2\n}'</span>
+<span class="kw">var</span> function <span class="op">=</span> zuri.<span class="fn">parse</span>(source)[<span class="num">0</span>]
+<span class="kw">var</span> product <span class="op">=</span> function.<span class="prop">fields</span>.<span class="prop">body</span>.<span class="prop">fields</span>.<span class="prop">statements</span>[<span class="num">0</span>].<span class="prop">fields</span>.<span class="prop">value</span>
+
+<span class="kw">echo</span> source[product.<span class="prop">start</span>, product.<span class="prop">end</span>]
+<span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>function.<span class="prop">line</span><span class="subst">}</span><span class="str">:</span><span class="subst">${</span>function.<span class="prop">col</span><span class="subst">}</span><span class="str"> to </span><span class="subst">${</span>function.<span class="prop">end_line</span><span class="subst">}</span><span class="str">:</span><span class="subst">${</span>function.<span class="prop">end_col</span><span class="subst">}</span><span class="str">'</span>
+<span class="kw">echo</span> source[function.<span class="prop">fields</span>.<span class="prop">name_span</span>.<span class="prop">start</span>, function.<span class="prop">fields</span>.<span class="prop">name_span</span>.<span class="prop">end</span>]
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">n * 2
+1:1 to 3:2
+double
+</code></pre><span class="code-label">Output</span></figure>
+<p>A declaration starts at its keyword, so a function starts at <code>def</code>, and its
+name has its own <code>name_span</code>. That's everything a tool needs to underline a
+mistake, jump to a definition or select a whole statement.</p>
+<h3 id="walking-the-tree"><a class="anchor" href="#walking-the-tree" aria-hidden="true" tabindex="-1"></a>Walking the Tree</h3>
+<p><code>walk_nodes(tree, visitor)</code> visits every node, depth first:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">var</span> tree <span class="op">=</span> zuri.<span class="fn">parse</span>(<span class="str">'def double(n) { return n * 2 }'</span>)
+<span class="kw">var</span> kinds <span class="op">=</span> []
+
+zuri.<span class="fn">walk_nodes</span>(tree, <span class="meta">@</span>(node) {
+  kinds.<span class="fn">append</span>(node.<span class="prop">kind</span>)
+})
+
+<span class="kw">echo</span> kinds
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[Function, Argument, TypeHint, Any, Block, Return, Binary, Identifier, Integer]
+</code></pre><span class="code-label">Output</span></figure>
+<p>That output is worth a second look, because it shows how much the parser
+makes explicit. The single parameter <code>n</code>, which has no annotation, still
+produced an <code>Argument</code> that wraps a <code>TypeHint</code> that wraps an <code>Any</code>. The
+<em>absence</em> of an annotation is represented in the tree rather than left out,
+so a tool that walks the tree never has to handle &quot;no type was written&quot; as a
+special case.</p>
+<p>The visitor can also be a <strong>dictionary that maps node kinds to handlers</strong>,
+in which case only the matching nodes are passed to it:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">var</span> tree <span class="op">=</span> zuri.<span class="fn">parse</span>(
+  <span class="str">'def a() {}
+def b() {}
+var c = 1'</span>,
+)
+<span class="kw">var</span> names <span class="op">=</span> []
+
+zuri.<span class="fn">walk_nodes</span>(tree, {
+  <span class="type">Function</span><span class="op">:</span> <span class="meta">@</span>(node) {
+    names.<span class="fn">append</span>(node.<span class="prop">fields</span>.<span class="prop">name</span>)
+  },
+})
+
+<span class="kw">echo</span> names
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[a, b]
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>find_nodes(tree, kind)</code> is a shortcut for when you only want nodes of one
+kind:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">var</span> tree <span class="op">=</span> zuri.<span class="fn">parse</span>(<span class="str">'def double(n) { return n * 2 }'</span>)
+
+<span class="kw">echo</span> zuri.<span class="fn">find_nodes</span>(tree, <span class="str">'Return'</span>).<span class="fn">length</span>()
+<span class="kw">echo</span> zuri.<span class="fn">find_nodes</span>(tree, <span class="str">'Binary'</span>)[<span class="num">0</span>].<span class="prop">fields</span>.<span class="prop">op</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">1
+Multiply
+</code></pre><span class="code-label">Output</span></figure>
+<h3 id="comments-are-kept"><a class="anchor" href="#comments-are-kept" aria-hidden="true" tabindex="-1"></a>Comments Are Kept</h3>
+<p>This is what makes documentation tools possible. Comments and doc blocks are
+kept in the tree, in their original positions, as nodes of their own:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">var</span> source <span class="op">=</span> <span class="str">"# a note
+def add(a, b) {
+  return a + b
+}
+"</span>
+
+<span class="kw">echo</span> zuri.<span class="fn">parse</span>(source).<span class="fn">map</span>(<span class="meta">@</span>(n) <span class="op">=&gt;</span> n.<span class="prop">kind</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[Comment, Function]
+</code></pre><span class="code-label">Output</span></figure>
+<p>A doc block is a sibling placed immediately before whatever it documents, so
+pairing them up takes a single pass with one variable of state. That's
+exactly what the example below does.</p>
+<p>Most parsers throw comments away. Keeping them is what lets you build a
+formatter or a documentation generator on top of a parser, rather than only
+an interpreter.</p>
+<h2 id="bytecode"><a class="anchor" href="#bytecode" aria-hidden="true" tabindex="-1"></a>Bytecode</h2>
+<p><code>compile()</code> is the third stage. It turns the tree into VM instructions.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">for</span> instr <span class="kw">in</span> zuri.<span class="fn">compile</span>(<span class="str">'var a = 1 + 2'</span>) {
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>instr.<span class="prop">op</span><span class="subst">}</span><span class="str"> from line </span><span class="subst">${</span>instr.<span class="prop">line</span><span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">LoadConst from line 0
+AddImm from line 1
+SetGlobal from line 1
+LoadNil from line 1
+Return from line 1
+</code></pre><span class="code-label">Output</span></figure>
+<p>An <code>Instr</code> has an <code>op</code>, a <code>line</code> and a <code>fields</code> dictionary, which is the
+same structure a <code>Node</code> has, and <code>walk_instrs()</code> and <code>find_instrs()</code> work
+exactly like the tree walkers.</p>
+<p>Notice the <code>AddImm</code> instruction. The compiler included the constant <code>2</code> in
+the add instruction instead of loading it separately. Questions like this
+can only be answered by the bytecode, and reading it is the most direct way
+to find out what the compiler actually did with your code:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">echo</span> zuri.<span class="fn">compile</span>(<span class="str">'var a = 2 * 3 ** 2'</span>).<span class="fn">map</span>(<span class="meta">@</span>(i) <span class="op">=&gt;</span> i.<span class="prop">op</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[LoadConst, LoadConst, LoadConst, Pow, Mul, SetGlobal, LoadNil, Return]
+</code></pre><span class="code-label">Output</span></figure>
+<p>The power comes <strong>before</strong> the multiplication, because <code>**</code> binds more
+tightly than <code>*</code>. One line of bytecode settles a question that reading the
+expression might not.</p>
+<h3 id="resolved-operands"><a class="anchor" href="#resolved-operands" aria-hidden="true" tabindex="-1"></a>Resolved Operands</h3>
+<p>Several opcodes only contain an index into the compiler's constant pool,
+which doesn't tell you much by itself. Instead of making every caller fetch
+and match up a table of constants, each of these fields comes with the
+resolved value next to the index:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">var</span> load <span class="op">=</span> zuri.<span class="fn">find_instrs</span>(zuri.<span class="fn">compile</span>(<span class="str">'var a = 42'</span>), <span class="str">'LoadConst'</span>)[<span class="num">0</span>]
+
+<span class="kw">echo</span> load.<span class="prop">fields</span>.<span class="fn">keys</span>()
+<span class="kw">echo</span> load.<span class="prop">fields</span>.<span class="prop">value</span>
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">[dst, const_idx, value]
+42
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>const_idx</code> is the index, <code>value</code> is the constant it refers to, and <code>dst</code> is
+the register the result is stored in. The same pairing appears on
+<code>GetGlobal</code>, <code>GetField</code>, <code>Invoke</code> and the other opcodes like them.</p>
+<p>The resolved value of a <code>Closure</code> instruction is a nested function prototype
+(<code>{ name, arity, variadic, instructions }</code>), whose own <code>instructions</code> are
+wrapped in the same way, all the way down. So when you compile a file that
+contains functions, you can see their bodies too, not only the code around
+them.</p>
+<h3 id="line-numbers-only-not-columns"><a class="anchor" href="#line-numbers-only-not-columns" aria-hidden="true" tabindex="-1"></a>Line Numbers Only, Not Columns</h3>
+<p>Every instruction records the source line it came from, but <strong>never a
+column</strong>, because the compiler only tracks lines. Both <code>Token</code> and <code>Node</code>
+have accurate column information from the lexer, but <code>Instr</code> doesn't.</p>
+<h2 id="checking-source-without-running-it"><a class="anchor" href="#checking-source-without-running-it" aria-hidden="true" tabindex="-1"></a>Checking Source Without Running It</h2>
+<p><code>parse()</code> and <code>compile()</code> raise an error at the first sign of invalid
+source, which is the right behavior for a tool that needs the complete
+program. A tool that works on source while it's being written, half a
+statement at a time, needs the opposite: everything that can be read, and a
+precise description of what's wrong.</p>
+<p><code>parse_partial()</code> reads as much as it can. When a statement fails, the
+parser reports it, skips ahead to the start of the next statement and
+continues, so each mistake only affects one statement and is reported once:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">var</span> result <span class="op">=</span> zuri.<span class="fn">parse_partial</span>(
+  <span class="str">'var a = 1
+var = 2
+var c = 3'</span>,
+)
+
+<span class="kw">echo</span> result.<span class="fn">is_clean</span>()
+<span class="kw">echo</span> result.<span class="prop">errors</span>
+<span class="kw">echo</span> result.<span class="prop">nodes</span>.<span class="fn">map</span>(<span class="meta">@</span>(n) <span class="op">=&gt;</span> n.<span class="prop">fields</span>.<span class="prop">statement</span>.<span class="prop">fields</span>.<span class="prop">name</span>)
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">false
+[2:5: Variable name expected.]
+[a, , c]
+</code></pre><span class="code-label">Output</span></figure>
+<p>Each error is a <code>Diagnostic</code>, which has a <code>message</code> and the same six-part
+position that a node has, so you can underline it precisely. The statement
+that failed is still in the tree, with an empty string where its missing
+name should be.</p>
+<p><code>check()</code> goes one step further. Source that parses successfully is passed
+on to the compiler, which catches problems that the grammar can't see, such
+as a <code>break</code> outside a loop or a name declared twice in the same scope:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">var</span> source <span class="op">=</span> <span class="str">'def total(items) {
+  var sum = 0
+  for item in items {
+    sum += item
+  }
+  break
+}'</span>
+
+<span class="kw">for</span> problem <span class="kw">in</span> zuri.<span class="fn">check</span>(source) {
+  <span class="kw">echo</span> problem
+  <span class="kw">echo</span> source[problem.<span class="prop">start</span>, problem.<span class="prop">end</span>]
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">6:3: 'break' used outside of a loop
+break
+</code></pre><span class="code-label">Output</span></figure>
+<p>If <code>check()</code> returns an empty list, the source compiles. Neither function
+runs any code or raises an error for invalid source, so you can use both of
+them on whatever an editor's buffer contains at any moment.</p>
+<h2 id="reading-files"><a class="anchor" href="#reading-files" aria-hidden="true" tabindex="-1"></a>Reading Files</h2>
+<p>Each of these functions has a <code>_file</code> version that reads a file first:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Source string</th>
+<th>File</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tokenize(source)</code></td>
+<td><code>tokenize_file(path)</code></td>
+</tr>
+<tr>
+<td><code>parse(source)</code></td>
+<td><code>parse_file(path)</code></td>
+</tr>
+<tr>
+<td><code>compile(source)</code></td>
+<td><code>compile_file(path)</code></td>
+</tr>
+<tr>
+<td><code>parse_partial(source)</code></td>
+<td><code>parse_partial_file(path)</code></td>
+</tr>
+<tr>
+<td><code>check(source)</code></td>
+<td><code>check_file(path)</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>There's also one with no string version: <strong><code>dump_file(path)</code></strong> reads and
+parses a file, and returns the <code>dump()</code> of every top-level node. It's
+usually the quickest way to find out what's actually in a file.</p>
+<h2 id="example-extracting-documentation"><a class="anchor" href="#example-extracting-documentation" aria-hidden="true" tabindex="-1"></a>Example: Extracting Documentation</h2>
+<p>Here's the technique that this book's own reference appendices are built
+with. It takes source code and returns every documented function in it,
+pairing each declaration with the doc block above it.</p>
+<p>The key is that <code>zuri.parse()</code> keeps comments in the tree. A doc block is
+returned as a <code>DocBlock</code> node of its own, placed as a sibling immediately
+before whatever it documents. <code>zuri.doc.attach()</code> walks through a list of
+siblings and pairs each one with the doc block directly above it, and
+<code>zuri.doc</code> parses the contents of each block into its text and its <code>@</code> tags:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">def</span> <span class="def">documented_functions</span>(text) {
+  <span class="kw">var</span> found <span class="op">=</span> []
+
+  <span class="kw">for</span> attached <span class="kw">in</span> zuri.<span class="prop">doc</span>.<span class="fn">attach</span>(zuri.<span class="fn">parse</span>(text)) {
+    <span class="kw">var</span> node <span class="op">=</span> attached.<span class="prop">node</span>
+
+    <span class="kw">if</span> node.<span class="prop">kind</span> <span class="op">==</span> <span class="str">'Function'</span> <span class="kw">and</span> attached.<span class="prop">documented</span> {
+      <span class="kw">var</span> params <span class="op">=</span> node.<span class="prop">fields</span>.<span class="prop">parameters</span>.<span class="fn">map</span>(<span class="meta">@</span>(p) <span class="op">=&gt;</span> p.<span class="prop">fields</span>.<span class="prop">name</span>)
+
+      found.<span class="fn">append</span>({ name<span class="op">:</span> node.<span class="prop">fields</span>.<span class="prop">name</span>, params, doc<span class="op">:</span> attached.<span class="prop">block</span> })
+    }
+  }
+
+  <span class="kw">return</span> found
+}
+
+<span class="kw">var</span> source <span class="op">=</span> <span class="str">"/**\n * Adds two numbers.\n *\n * @param number a\n * @param number b\n */\n"</span> <span class="op">+</span>
+    <span class="str">"def add(a: number, b: number) {\n  return a + b\n}\n\n"</span> <span class="op">+</span>
+    <span class="str">"def undocumented(x) {\n  return x\n}\n"</span>
+
+<span class="kw">for</span> fn <span class="kw">in</span> <span class="fn">documented_functions</span>(source) {
+  <span class="kw">var</span> takes <span class="op">=</span> fn.<span class="prop">doc</span>.<span class="fn">all</span>(<span class="str">'param'</span>).<span class="fn">map</span>(<span class="meta">@</span>(tag) <span class="op">=&gt;</span> <span class="str">'</span><span class="subst">${</span>tag.<span class="prop">name</span><span class="subst">}</span><span class="str">: </span><span class="subst">${</span>tag.<span class="prop">type</span><span class="subst">}</span><span class="str">'</span>)
+
+  <span class="kw">echo</span> <span class="str">'</span><span class="subst">${</span>fn.<span class="prop">name</span><span class="subst">}</span><span class="str">(</span><span class="subst">${</span><span class="str">', '</span>.<span class="fn">join</span>(fn.<span class="prop">params</span>)<span class="subst">}</span><span class="str">)'</span>
+  <span class="kw">echo</span> <span class="str">'  '</span> <span class="op">+</span> fn.<span class="prop">doc</span>.<span class="fn">summary</span>()
+  <span class="kw">echo</span> <span class="str">'  takes '</span> <span class="op">+</span> <span class="str">', '</span>.<span class="fn">join</span>(takes)
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">add(a, b)
+  Adds two numbers.
+  takes a: number, b: number
+</code></pre><span class="code-label">Output</span></figure>
+<p><code>undocumented</code> doesn't appear in the output. <code>attach()</code> returns it with
+<code>documented</code> set to false, because there's no doc block above it.</p>
+<p>There are several reasons to prefer this approach over scanning the text
+yourself.</p>
+<p><strong>The parser knows what a declaration is.</strong> A function named <code>def_handler</code>,
+a <code>def</code> inside a string literal and a doc block inside a block comment would
+all confuse a text scan, but none of them confuse the parser.</p>
+<p><strong>Parameter names and types come from the actual nodes.</strong> A parameter's
+<code>type_hint</code> node contains its types and whether it accepts <code>nil</code>, so a
+generated signature matches what the runtime will actually enforce, rather
+than what the source code seemed to say.</p>
+<p><strong>It stays up to date.</strong> When the grammar gains a new feature, so does the
+parser, and a tool built this way keeps working.</p>
+<p><strong>The tags are parsed for you.</strong> <code>zuri.doc</code> joins a tag's wrapped lines,
+reads its type and the name it documents, and treats <code>@return</code> as
+<code>@returns</code>. It's the same parsing that this book's own reference is
+generated with, so a block is read the same way here as it is there.</p>
+<h2 id="example-a-linter"><a class="anchor" href="#example-a-linter" aria-hidden="true" tabindex="-1"></a>Example: A Linter</h2>
+<p>The other common use for this module is checking code rather than generating
+something from it. Here's the kind of rule a team builds up over time:
+report every function that has more than a certain number of parameters.</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+
+<span class="kw">def</span> <span class="def">long_signatures</span>(source, limit) {
+  <span class="kw">var</span> offenders <span class="op">=</span> []
+
+  zuri.<span class="fn">walk_nodes</span>(zuri.<span class="fn">parse</span>(source), {
+    <span class="type">Function</span><span class="op">:</span> <span class="meta">@</span>(node) {
+      <span class="kw">var</span> count <span class="op">=</span> node.<span class="prop">fields</span>.<span class="prop">parameters</span>.<span class="fn">length</span>()
+
+      <span class="kw">if</span> count <span class="op">&gt;</span> limit {
+        offenders.<span class="fn">append</span>({ name<span class="op">:</span> node.<span class="prop">fields</span>.<span class="prop">name</span>, line<span class="op">:</span> node.<span class="prop">line</span>, count })
+      }
+    },
+  })
+
+  <span class="kw">return</span> offenders
+}
+
+<span class="kw">var</span> source <span class="op">=</span> <span class="str">"def small(a, b) {}\n"</span> <span class="op">+</span>
+    <span class="str">"def large(a, b, c, d, e) {}\n"</span> <span class="op">+</span>
+    <span class="str">"def also_large(a, b, c, d) {}\n"</span>
+
+<span class="kw">for</span> problem <span class="kw">in</span> <span class="fn">long_signatures</span>(source, <span class="num">3</span>) {
+  <span class="kw">echo</span> <span class="str">'line </span><span class="subst">${</span>problem.<span class="prop">line</span><span class="subst">}</span><span class="str">: </span><span class="subst">${</span>problem.<span class="prop">name</span><span class="subst">}</span><span class="str">() takes </span><span class="subst">${</span>problem.<span class="prop">count</span><span class="subst">}</span><span class="str">'</span>
+}
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">line 2: large() takes 5
+line 3: also_large() takes 4
+</code></pre><span class="code-label">Output</span></figure>
+<p>There are three reasons to do this with the parser rather than with a
+regular expression over the text.</p>
+<p><strong>It can't be fooled by text that looks like code.</strong> A function named
+<code>def_handler</code>, the word <code>def</code> inside a string literal and a commented-out
+declaration aren't <code>Function</code> nodes, so none of them are counted.</p>
+<p><strong>It reports the correct line.</strong> <code>node.line</code> comes from the lexer, so the
+message points to the declaration, however the code around it is formatted.</p>
+<p><strong>It keeps working.</strong> When the grammar gains a new feature, so does the
+parser, and a rule written this way doesn't silently stop matching.</p>
+<p>The dictionary form of the visitor is important here. Only <code>Function</code> nodes
+are passed to the handler, so you don't need an <code>if node.kind == ...</code> check,
+and you can't accidentally match a kind you didn't mean to.</p>
+<h2 id="serializing-without-to_json"><a class="anchor" href="#serializing-without-to_json" aria-hidden="true" tabindex="-1"></a>Serializing Without <code>@to_json</code></h2>
+<p>Reflection is useful when you'd otherwise have to write the same method in
+every class:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri
+<span class="kw">import</span> json
+
+<span class="kw">class</span> <span class="type">User</span> {
+
+  <span class="meta">@new</span>(name, age) {
+    <span class="self">self</span>.<span class="prop">name</span> <span class="op">=</span> name
+    <span class="self">self</span>.<span class="prop">age</span> <span class="op">=</span> age
+  }
+}
+
+<span class="kw">class</span> <span class="type">Product</span> {
+
+  <span class="meta">@new</span>(title, price) {
+    <span class="self">self</span>.<span class="prop">title</span> <span class="op">=</span> title
+    <span class="self">self</span>.<span class="prop">price</span> <span class="op">=</span> price
+  }
+}
+
+<span class="kw">def</span> <span class="def">to_record</span>(instance) {
+  <span class="kw">var</span> record <span class="op">=</span> {}
+
+  <span class="kw">for</span> field <span class="kw">in</span> zuri.<span class="prop">reflect</span>.<span class="fn">get_props</span>(instance) {
+    record[field] <span class="op">=</span> zuri.<span class="prop">reflect</span>.<span class="fn">get_prop</span>(instance, field)
+  }
+
+  <span class="kw">return</span> record
+}
+
+<span class="kw">echo</span> json.<span class="fn">encode</span>(<span class="fn">to_record</span>(<span class="type">User</span>(<span class="str">'ada'</span>, <span class="num">36</span>)))
+<span class="kw">echo</span> json.<span class="fn">encode</span>(<span class="fn">to_record</span>(<span class="type">Product</span>(<span class="str">'desk'</span>, <span class="num">120</span>)))
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">{"name":"ada","age":36}
+{"title":"desk","price":120}
+</code></pre><span class="code-label">Output</span></figure>
+<p>A single function works for every class, and there's no method in each class
+to keep in sync with its fields. Note that this also reads private fields,
+which is right for a debugging dump but wrong for an API response. For an
+API response, either filter out names that start with an underscore, or
+write a real <code>@to_json</code> and let each class decide what to expose.</p>
+<h2 id="telling-watch-mode-which-files-a-program-reads"><a class="anchor" href="#telling-watch-mode-which-files-a-program-reads" aria-hidden="true" tabindex="-1"></a>Telling Watch Mode Which Files a Program Reads</h2>
+<p><code>zuri run --watch</code> restarts a program when a file it depends on changes. The
+runtime automatically reports every Zuri source file the program reads. A
+library that reads other files that affect the program's behavior declares
+each one with <code>zuri.watch.depends_on()</code>, which is how Wire gets its
+templates watched:</p>
+<figure class="code has-output"><pre><code class="language-zuri"><span class="kw">import</span> zuri.<span class="prop">watch</span>
+
+<span class="kw">def</span> <span class="def">load_rules</span>(path) {
+  watch.<span class="fn">depends_on</span>(path)
+  <span class="kw">return</span> <span class="bi">file</span>(path).<span class="fn">read</span>()
+}
+
+<span class="bi">file</span>(<span class="str">'rules.txt'</span>, <span class="str">'w'</span>).<span class="fn">write</span>(<span class="str">'no shouting'</span>)
+
+<span class="kw">echo</span> <span class="fn">load_rules</span>(<span class="str">'rules.txt'</span>)
+<span class="kw">echo</span> watch.<span class="fn">active</span>()
+
+<span class="bi">file</span>(<span class="str">'rules.txt'</span>).<span class="fn">delete</span>()
+</code></pre><span class="code-label">Zuri</span></figure>
+<figure class="code output follows-code"><pre><code class="language-console">no shouting
+false
+</code></pre><span class="code-label">Output</span></figure>
+<p>Outside watch mode, <code>depends_on()</code> does nothing and <code>active()</code> returns
+<code>false</code>, so a library can always call it. <code>zuri.watch</code> is a separate module
+from the rest of <code>zuri</code>, so importing it doesn't load the parser and the
+compiler.</p>
+<h2 id="other-uses"><a class="anchor" href="#other-uses" aria-hidden="true" tabindex="-1"></a>Other Uses</h2>
+<p><strong>Plugin systems.</strong> Load modules from a directory, check whether each one
+has the function your program expects, and call the ones that do.
+<code>module_info()</code> lets you check without having to import modules blindly and
+hope for the best.</p>
+<p><strong>Editor tooling.</strong> <code>tokenize()</code>, <code>parse_partial()</code> and <code>check()</code> never
+raise errors, so you can run them on a half-written buffer. Every token and
+node has <code>start</code> and <code>end</code> offsets, so a rename or reformat can rewrite
+exact ranges of text, and you can underline every problem <code>check()</code> finds
+exactly where it is.</p>
+<p><strong>Understanding the compiler.</strong> Calling <code>zuri.compile()</code> on a snippet is
+quicker than reading the compiler's source code, and it always matches the
+version of the compiler you're actually running.</p>
+<p><strong>Generating parts of this book.</strong> Appendices D and E are generated from
+<code>libs/</code> using exactly the techniques described above, and the audit that
+checks those stubs works the same way.</p>
+<h2 id="what-you-cant-do"><a class="anchor" href="#what-you-cant-do" aria-hidden="true" tabindex="-1"></a>What You Can't Do</h2>
+<p>There's no <code>eval()</code>. You can compile source code to bytecode and inspect it,
+but you can't run a string as code.</p>
+<p>Zuri leaves it out for security reasons. <code>eval()</code> blurs the line between
+data and code, and sooner or later, every program that uses it runs a string
+it didn't intend to, such as a form field, a query parameter, a
+configuration value or a webhook payload. As soon as one of those reaches
+<code>eval()</code>, whoever provided it can run code with your program's full
+permissions. That code can read your files, open network connections and
+send your secrets wherever it likes. This is the most damaging class of
+vulnerability in dynamic languages, and it keeps happening because the
+dangerous call looks harmless in a code review: a single function, a few
+characters of input, and nothing in the language warns you.</p>
+<p>So Zuri doesn't provide <code>eval()</code>, and every task people usually use it for
+has a better solution:</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Instead of</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Evaluating an expression entered by a user</td>
+<td>A dictionary of handlers keyed by the input</td>
+</tr>
+<tr>
+<td>Calling a method whose name you computed</td>
+<td><code>zuri.reflect.bind_method()</code></td>
+</tr>
+<tr>
+<td>Changing behavior at run time</td>
+<td>Pass in a function</td>
+</tr>
+<tr>
+<td>Turning text into data</td>
+<td><code>json.decode()</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Each of these does the job with a fixed set of possible outcomes that you
+can review. That's the difference between a program that handles its input
+and a program that does whatever its input tells it to.</p>
+<p>Classes are sealed, so reflection can't add a method to a class at run time
+either. Techniques from other languages that depend on monkey patching don't
+carry over to Zuri. Instead, express the variation as a subclass, or as a
+function that you pass in.</p>
+</div>
+      </article>
+
+      <footer class="page-end">
+        <a class="edit-link" href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/ch21-00-metaprogramming.md">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          Suggest an edit to this page
+        </a>
+        <nav class="turn" aria-label="Chapters">
+          <a class="turn-previous" rel="prev" href="ch20-00-args.html">
+            <span class="turn-label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+              Previous
+            </span>
+            <span class="turn-title"><span class="turn-number">20</span>Parsing the Command Line</span>
+          </a>
+          <a class="turn-next" rel="next" href="ch22-00-performance.html">
+            <span class="turn-label">
+              Next
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+            </span>
+            <span class="turn-title"><span class="turn-number">22</span>Performance and the JIT</span>
+          </a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="outline" aria-label="On this page">
+      <p class="outline-title">On this page</p>
+      <ol>
+        <li class="level-2">
+          <a href="#reflection-and-the-compiler-api">Reflection and the Compiler API</a>
+        </li><li class="level-2">
+          <a href="#a-common-structure">A Common Structure</a>
+        </li><li class="level-2">
+          <a href="#runtime-reflection">Runtime Reflection</a>
+        </li><li class="level-3">
+          <a href="#what-kind-of-value-is-this">What Kind of Value Is This?</a>
+        </li><li class="level-3">
+          <a href="#functions">Functions</a>
+        </li><li class="level-3">
+          <a href="#classes">Classes</a>
+        </li><li class="level-3">
+          <a href="#instances">Instances</a>
+        </li><li class="level-3">
+          <a href="#looking-up-methods-by-name">Looking Up Methods by Name</a>
+        </li><li class="level-3">
+          <a href="#reflection-can-see-private-members">Reflection Can See Private Members</a>
+        </li><li class="level-3">
+          <a href="#modules">Modules</a>
+        </li><li class="level-3">
+          <a href="#the-garbage-collector">The Garbage Collector</a>
+        </li><li class="level-2">
+          <a href="#tokens">Tokens</a>
+        </li><li class="level-3">
+          <a href="#the-lexer-never-raises-an-error">The Lexer Never Raises an Error</a>
+        </li><li class="level-2">
+          <a href="#the-syntax-tree">The Syntax Tree</a>
+        </li><li class="level-3">
+          <a href="#node-positions">Node Positions</a>
+        </li><li class="level-3">
+          <a href="#walking-the-tree">Walking the Tree</a>
+        </li><li class="level-3">
+          <a href="#comments-are-kept">Comments Are Kept</a>
+        </li><li class="level-2">
+          <a href="#bytecode">Bytecode</a>
+        </li><li class="level-3">
+          <a href="#resolved-operands">Resolved Operands</a>
+        </li><li class="level-3">
+          <a href="#line-numbers-only-not-columns">Line Numbers Only, Not Columns</a>
+        </li><li class="level-2">
+          <a href="#checking-source-without-running-it">Checking Source Without Running It</a>
+        </li><li class="level-2">
+          <a href="#reading-files">Reading Files</a>
+        </li><li class="level-2">
+          <a href="#example-extracting-documentation">Example: Extracting Documentation</a>
+        </li><li class="level-2">
+          <a href="#example-a-linter">Example: A Linter</a>
+        </li><li class="level-2">
+          <a href="#serializing-without-to_json">Serializing Without <code>@to_json</code></a>
+        </li><li class="level-2">
+          <a href="#telling-watch-mode-which-files-a-program-reads">Telling Watch Mode Which Files a Program Reads</a>
+        </li><li class="level-2">
+          <a href="#other-uses">Other Uses</a>
+        </li><li class="level-2">
+          <a href="#what-you-cant-do">What You Can't Do</a>
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+  <div class="search" role="dialog" aria-modal="true" aria-label="Search" hidden="">
+    <div class="search-panel">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg>
+        <input type="search" placeholder="Search The Zuri Programming Language" autocomplete="off" spellcheck="false" aria-label="Search terms" aria-controls="search-results">
+        <kbd>esc</kbd>
+      </div>
+      <ol class="search-results" id="search-results" role="listbox" aria-label="Results"></ol>
+      <p class="search-status" aria-live="polite"></p>
+      <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> to choose <kbd>↵</kbd> to open <kbd>esc</kbd> to close</p>
+    </div>
+  </div>
+
+  <script src="assets/doc.js?v=5550658799" defer=""></script>
+  
+  
+
+
+</body></html>
