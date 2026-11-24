@@ -1,0 +1,30 @@
+/**
+ * The isolate that passes what one worker of `http.serve()` publishes
+ * on to every worker. It's a module of its own, importing nothing, so
+ * starting it costs next to nothing beside the workers starting up.
+ */
+
+/**
+ * Passes every message that a worker publishes on to every worker,
+ * the one that published it included, until `relay` is closed.
+ *
+ * @param Channel relay
+ * @param list inboxes: a `Channel` for each worker
+ */
+def relay_main(relay, inboxes) {
+  while true {
+    var message = relay.recv()
+
+    if message == nil {
+      break
+    }
+
+    for inbox in inboxes {
+      inbox.send(message)
+    }
+  }
+
+  for inbox in inboxes {
+    inbox.close()
+  }
+}

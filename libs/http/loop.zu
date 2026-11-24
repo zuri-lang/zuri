@@ -22,10 +22,19 @@
  * because the socket's own timeouts only apply to a call that's
  * waiting.
  *
+ * A connection that stops carrying requests and responses, such as a
+ * WebSocket or a server-sent event stream, stays on the loop. A driver
+ * takes the place of the HTTP parser for it: the loop tells the driver
+ * when something has arrived, and the driver queues output and asks
+ * for it to be sent through a `Link`. Output a driver queues from
+ * outside its own connection's events, for a message that one socket
+ * passes on to others, say, is sent at the end of the loop's turn. A
+ * driver can also have `Timer`s, which run on this same thread.
+ *
  * Two things can still keep the thread busy, and both are under the
- * application's control: a handler runs until it finishes, and a
- * streamed body or an upgraded connection writes as it goes, limited by
- * `write_timeout`.
+ * application's control: a handler runs until it finishes, and a body
+ * given to `HttpResponse.stream()` is written as the handler produces
+ * it, limited by `write_timeout`.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -52,6 +61,170 @@ var _FINISH_INTERVAL = 10
 # How long to wait for the last connections to drain, in seconds, when
 # the server has no `write_timeout`.
 var _FINISH_LIMIT = 1
+
+# How many times one turn goes back over connections woken while it
+# was serving woken ones. A driver that wakes another, which wakes the
+# first, would otherwise keep a turn going for good. Anything still
+# woken waits for the next turn, which starts without waiting.
+var _WAKE_ROUNDS = 8
+
+# How many cancelled timers a connection can hold on to before they're
+# cleared out.
+var _TIMER_SLACK = 16
+
+/**
+ * An action that a connection loop runs every `interval` seconds, on
+ * the thread that serves the connection it belongs to.
+ *
+ * `WebSocket.every()` and `EventStream.every()` return one. It stops
+ * by itself when its connection closes, and `cancel()` stops it
+ * sooner.
+ */
+class Timer {
+
+  /**
+   * The number of seconds between runs.
+   * @type number
+   */
+  var interval
+
+  /**
+   * When it runs next, as a `time()` value. The loop sets this.
+   * @type number
+   */
+  var due = 0
+
+  var _action
+  var _cancelled = false
+
+  /**
+   * @param number interval: seconds, more than `0`
+   * @param function(0) action
+   * @throws ValueError if `interval` is not more than `0`
+   */
+  @new(interval: number, action) {
+    if interval <= 0 {
+      raise ValueError('a timer interval must be more than 0 seconds')
+    }
+
+    self.interval = interval
+    self._action = action
+    self._cancelled = false
+  }
+
+  /**
+   * Stops the timer. It's safe to call this more than once.
+   */
+  cancel() {
+    self._cancelled = true
+  }
+
+  /**
+   * Whether the timer has been stopped.
+   *
+   * @returns bool
+   */
+  is_cancelled() {
+    return self._cancelled
+  }
+
+  /**
+   * Runs the action once.
+   *
+   * @internal Called by the loop.
+   */
+  fire() {
+    self._action()
+  }
+}
+
+/**
+ * How a driver reaches the loop that holds its connection. The loop
+ * gives one to the driver's `attach()`.
+ *
+ * A driver is any object with these methods:
+ *
+ * - `can_drive()`: whether there's anything for the loop to drive.
+ * - `attach(link)`: the loop holds the connection from now on.
+ * - `on_readable()`: something has arrived, and is buffered on the
+ *   connection. It's also called once the peer has finished sending.
+ * - `on_closed()`: the connection has gone, for whatever reason.
+ * - `going_away()`: the server is shutting down.
+ * - `idle_timeout()`: how many seconds the connection can go without
+ *   receiving anything, or `nil` for no limit.
+ */
+class Link {
+
+  var _loop
+  var _held
+
+  @new(loop, held) {
+    self._loop = loop
+    self._held = held
+  }
+
+  /**
+   * The connection this link belongs to.
+   *
+   * @returns Connection
+   */
+  connection() {
+    return self._held.connection
+  }
+
+  /**
+   * Tells the loop there's output queued. It's sent at the end of the
+   * loop's turn.
+   */
+  wake() {
+    self._loop.wake(self._held)
+  }
+
+  /**
+   * Starts running `timer`. It runs until it's cancelled or the
+   * connection closes.
+   *
+   * @param Timer timer
+   */
+  schedule(timer) {
+    self._loop.schedule(self._held, timer)
+  }
+
+  /**
+   * Closes the connection once what's queued has been sent.
+   */
+  close() {
+    self._held.closing = true
+    self.wake()
+  }
+
+  /**
+   * Closes the connection without sending what's queued, for a peer
+   * that has stopped reading.
+   */
+  abort() {
+    self._held.aborting = true
+    self.wake()
+  }
+
+  /**
+   * Gives the connection back to the HTTP parser once what's queued
+   * has been sent, so that it can serve the next request.
+   */
+  release() {
+    self._held.releasing = true
+    self.wake()
+  }
+
+  /**
+   * Hands `error` to the server's `on_error()` listeners.
+   *
+   * @param Error error
+   */
+  report(error) {
+    self._loop.report(self._held, error)
+  }
+}
 
 # Everything the loop remembers about one connection.
 class _Held {
@@ -90,6 +263,31 @@ class _Held {
   # Whether to close once the output has gone.
   var closing = false
 
+  # What drives the connection in place of the HTTP parser, and how it
+  # reaches the loop.
+  var driver
+  var link
+
+  # The timers belonging to this connection, or nil until it has one.
+  var timers
+
+  # When the peer last sent anything, for a driver's idle timeout,
+  # which output of its own mustn't push out.
+  var heard = 0
+
+  # Whether it's waiting to be served at the end of the turn.
+  var woken = false
+
+  # Whether to close without sending what's queued.
+  var aborting = false
+
+  # Whether to go back to the HTTP parser once the output has gone.
+  var releasing = false
+
+  # Whether the connection belongs to a server that lent it to this
+  # loop, which only drives it and leaves closing it to that server.
+  var borrowed = false
+
   @new(connection, token) {
     self.connection = connection
     self.token = token
@@ -119,6 +317,18 @@ class ConnectionLoop {
   var _write_wait
   var _header_wait
 
+  # Every timer, as a binary heap ordered by when each one is due.
+  var _timers = []
+
+  # The connections to serve at the end of the turn.
+  var _woken = []
+
+  var _handed_back = false
+
+  # Whether to deliver what was published once a turn, which only a
+  # server with subscribers needs.
+  var _delivering = false
+
   /**
    * @param HttpServer server: what answers the requests
    * @param number limit: the most connections to hold at once
@@ -127,11 +337,14 @@ class ConnectionLoop {
     self._server = server
     self._poller = net.Poller()
     self._live = {}
+    self._timers = []
+    self._woken = []
     self._limit = limit
     self._read_wait = _seconds(server.read_timeout)
     self._idle_wait = _seconds(server.keep_alive_timeout)
     self._write_wait = _seconds(server.write_timeout)
     self._header_wait = server.header_timeout
+    self._delivering = server.has_subscribers()
   }
 
   /**
@@ -178,6 +391,48 @@ class ConnectionLoop {
   }
 
   /**
+   * Takes on a connection that a server serving one connection at a
+   * time has set up, and hands it straight to `driver`.
+   *
+   * The connection is only lent to this loop, which never closes it:
+   * once the driver has finished, the loop lets it go, and the server
+   * that lent it decides what happens next. `was_handed_back()` says
+   * whether the driver gave it back for more requests.
+   *
+   * @param Connection connection
+   * @param any driver: see `Link`
+   */
+  adopt(connection, driver) {
+    var held = _Held(connection, self._next_token)
+
+    self._next_token++
+    self._live[held.token] = held
+
+    held.sniffed = true
+    held.borrowed = true
+
+    connection.defer_output()
+
+    self._poller.add(connection.transport(), held.token, net.READABLE)
+
+    var now = time()
+
+    self._install(held, driver)
+    self._settle_safe(held, now)
+    self._set_deadline(held, now)
+  }
+
+  /**
+   * Whether the driver of a connection lent with `adopt()` gave it back
+   * for more requests. When it didn't, the connection is to be closed.
+   *
+   * @returns bool
+   */
+  was_handed_back() {
+    return self._handed_back
+  }
+
+  /**
    * How many connections are held.
    *
    * @returns number
@@ -210,13 +465,19 @@ class ConnectionLoop {
    * @param number timeout: milliseconds
    */
   turn(timeout) {
+    var wait = timeout
+
+    if self._woken.length() > 0 or self._timers.length() > 0 {
+      wait = self._wait_for(timeout)
+    }
+
     # A poller with nothing on it answers at once, which would turn a
     # listener paused after a failed accept into a spin.
     if self._poller.is_empty() {
-      os.sleep(timeout / 1000)
+      os.sleep(wait / 1000)
     }
 
-    var events = self._poller.wait(timeout)
+    var events = self._poller.wait(wait)
     var now = time()
     var live = self._live
 
@@ -234,10 +495,31 @@ class ConnectionLoop {
       }
     }
 
+    if self._timers.length() > 0 {
+      self._run_timers(now)
+    }
+
+    if self._delivering {
+      self._server.deliver_published()
+    }
+
+    if self._woken.length() > 0 {
+      self._serve_woken(now)
+    }
+
     if now >= self._next_reap {
       self._next_reap = now + _REAP_INTERVAL
       self._reap(now)
       self._resume_accepting(now)
+
+      # A listener can subscribe at any time. A server without one still
+      # has to clear out what other workers publish, and does it here,
+      # once per reap.
+      self._delivering = self._server.has_subscribers()
+
+      if !self._delivering {
+        self._server.deliver_published()
+      }
     }
   }
 
@@ -254,6 +536,14 @@ class ConnectionLoop {
         (self._write_wait == nil ? _FINISH_LIMIT : self._write_wait)
 
     for held in self._live.values() {
+      if held.driver != nil {
+        catch {
+          held.driver.going_away()
+        } as error {
+          self.report(held, error)
+        }
+      }
+
       held.closing = true
       self._settle_safe(held, now)
     }
@@ -266,6 +556,85 @@ class ConnectionLoop {
       held.connection.drop_output()
       self._close(held)
     }
+  }
+
+  /**
+   * Serves `held` at the end of this turn, sending what it has queued.
+   *
+   * @internal Called through `Link.wake()`.
+   * @param any held
+   */
+  wake(held) {
+    if !held.woken {
+      held.woken = true
+      self._woken.append(held)
+    }
+  }
+
+  /**
+   * Starts running `timer` for `held`'s connection.
+   *
+   * @internal Called through `Link.schedule()`.
+   * @param any held
+   * @param Timer timer
+   */
+  schedule(held, timer) {
+    if timer.is_cancelled() or self._live.get(held.token, nil) == nil {
+      return
+    }
+
+    if held.timers == nil {
+      held.timers = []
+    } else if held.timers.length() >= _TIMER_SLACK {
+      var running = []
+
+      for kept in held.timers {
+        if !kept.is_cancelled() {
+          running.append(kept)
+        }
+      }
+
+      held.timers = running
+    }
+
+    held.timers.append(timer)
+    timer.due = time() + timer.interval
+    self._push_timer(timer)
+  }
+
+  /**
+   * Hands `error` to the server's `on_error()` listeners, along with
+   * the connection it happened on.
+   *
+   * @internal Called through `Link.report()`.
+   * @param any held
+   * @param Error error
+   */
+  report(held, error) {
+    self._server.report_error(error, held.connection)
+  }
+
+  # How long this turn may wait for an event, in milliseconds: no
+  # longer than `timeout`, and no later than the next timer.
+  _wait_for(timeout) {
+    if self._woken.length() > 0 {
+      return 0
+    }
+
+    if self._timers.length() == 0 {
+      return timeout
+    }
+
+    var until = (self._timers[0].due - time()) * 1000
+
+    if until <= 0 {
+      return 0
+    }
+
+    # Rounded up, so a wait never ends just short of the timer.
+    var wait = until // 1 + 1
+
+    return wait < timeout ? wait : timeout
   }
 
   _accept_safe() {
@@ -364,8 +733,47 @@ class ConnectionLoop {
       self._advance(held, now)
     }
 
+    # Only a connection with a driver can be waiting to close, to drop
+    # its output or to go back to the HTTP parser.
+    if held.driver != nil {
+      self._carry_on(held, now)
+      return
+    }
+
     if !self._settle(held, now) {
       return
+    }
+
+    while held.paused {
+      self._advance(held, now)
+
+      if !self._settle(held, now) {
+        return
+      }
+    }
+
+    self._set_deadline(held, now)
+  }
+
+  # Sends what is queued, and keeps going for as long as that makes
+  # more work possible.
+  _carry_on(held, now) {
+    if held.aborting {
+      held.connection.drop_output()
+      self._close(held)
+      return
+    }
+
+    if !self._settle(held, now) {
+      return
+    }
+
+    if held.releasing {
+      self._release(held)
+
+      if held.borrowed {
+        return
+      }
     }
 
     while held.paused {
@@ -424,6 +832,12 @@ class ConnectionLoop {
   _advance(held, now) {
     held.paused = false
 
+    if held.driver != nil {
+      held.heard = now
+      held.driver.on_readable()
+      return
+    }
+
     if !held.sniffed {
       var http2 = self._server.sniff_http2(held.connection)
 
@@ -435,7 +849,7 @@ class ConnectionLoop {
 
       if http2 {
         held.session = self._server.open_http2(held.connection)
-        held.session.drive()
+        held.session.drive(self._link_for(held))
       }
     }
 
@@ -497,7 +911,16 @@ class ConnectionLoop {
       held.request = nil
 
       if !server.answer(connection, request, held.served) {
-        held.closing = true
+        # A handler that took the connection over, for a WebSocket or
+        # an event stream, left behind what drives it now.
+        var driver = request.context.get('driver', nil)
+
+        if driver == nil {
+          held.closing = true
+        } else {
+          self._install(held, driver)
+        }
+
         return
       }
 
@@ -539,11 +962,107 @@ class ConnectionLoop {
     held.paused = session.can_resume()
   }
 
+  _link_for(held) {
+    if held.link == nil {
+      held.link = Link(self, held)
+    }
+
+    return held.link
+  }
+
+  # Hands the connection to `driver`, or closes it when there is
+  # nothing left to drive.
+  _install(held, driver) {
+    held.request = nil
+    held.head_started = nil
+
+    if !driver.can_drive() {
+      held.closing = true
+      return
+    }
+
+    held.driver = driver
+    held.heard = time()
+
+    catch {
+      driver.attach(self._link_for(held))
+    } as error {
+      self.report(held, error)
+      held.closing = true
+    }
+  }
+
+  # Takes the connection back from a driver that has finished with it,
+  # so the next request on it can be answered.
+  _release(held) {
+    held.releasing = false
+    held.driver = nil
+    held.served++
+    self._stop_timers(held)
+
+    if held.borrowed {
+      self._handed_back = true
+      self._forget(held)
+      return
+    }
+
+    held.paused = held.connection.buffered() > 0
+  }
+
+  # Serves the connections woken during this turn.
+  _serve_woken(now) {
+    var rounds = 0
+
+    while self._woken.length() > 0 and rounds < _WAKE_ROUNDS {
+      var woken = self._woken
+
+      self._woken = []
+      rounds++
+
+      for held in woken {
+        held.woken = false
+
+        if self._live.get(held.token, nil) != nil {
+          self._resume_safe(held, now)
+        }
+      }
+    }
+  }
+
+  _resume_safe(held, now) {
+    catch {
+      self._resume(held, now)
+    } as error {
+      self._fail(held, error)
+    }
+  }
+
+  _resume(held, now) {
+    if held.session != nil {
+      held.session.resume()
+      held.paused = held.session.can_resume()
+    }
+
+    # A connection already waiting for room is left to the writable
+    # event. Sending again here would push its deadline out without
+    # anything having moved.
+    if held.writing and !held.aborting {
+      return
+    }
+
+    self._carry_on(held, now)
+  }
+
   # Sets how long this connection may now go without progress, from
   # what it is waiting for.
   _set_deadline(held, now) {
     if held.session != nil or held.request != nil {
       held.deadline = _after(now, self._read_wait)
+      return
+    }
+
+    if held.driver != nil {
+      held.deadline = _after(held.heard, held.driver.idle_timeout())
       return
     }
 
@@ -582,13 +1101,140 @@ class ConnectionLoop {
     }
   }
 
+  _run_timers(now) {
+    var heap = self._timers
+
+    while heap.length() > 0 and heap[0].due <= now {
+      var timer = self._pop_timer()
+
+      if timer.is_cancelled() {
+        continue
+      }
+
+      catch {
+        timer.fire()
+      } as error {
+        self._server.report_error(error, nil)
+      }
+
+      if !timer.is_cancelled() {
+        timer.due += timer.interval
+
+        # A turn that ran late skips the runs it missed.
+        if timer.due <= now {
+          timer.due = now + timer.interval
+        }
+
+        self._push_timer(timer)
+      }
+    }
+  }
+
+  _push_timer(timer) {
+    var heap = self._timers
+
+    heap.append(timer)
+
+    var at = heap.length() - 1
+
+    while at > 0 {
+      var above = (at - 1) // 2
+
+      if heap[above].due <= timer.due {
+        break
+      }
+
+      heap[at] = heap[above]
+      at = above
+    }
+
+    heap[at] = timer
+  }
+
+  _pop_timer() {
+    var heap = self._timers
+    var first = heap[0]
+    var last = heap.pop()
+    var size = heap.length()
+
+    if size == 0 {
+      return first
+    }
+
+    var at = 0
+
+    while true {
+      var child = at * 2 + 1
+
+      if child >= size {
+        break
+      }
+
+      if child + 1 < size and heap[child + 1].due < heap[child].due {
+        child++
+      }
+
+      if last.due <= heap[child].due {
+        break
+      }
+
+      heap[at] = heap[child]
+      at = child
+    }
+
+    heap[at] = last
+
+    return first
+  }
+
+  _stop_timers(held) {
+    if held.timers != nil {
+      for timer in held.timers {
+        timer.cancel()
+      }
+
+      held.timers = nil
+    }
+  }
+
+  # Takes a connection off the loop without closing it.
+  _forget(held) {
+    self._poller.remove(held.token)
+    self._live.remove(held.token)
+  }
+
   _close(held) {
     if self._live.get(held.token, nil) == nil {
       return
     }
 
-    self._poller.remove(held.token)
-    self._live.remove(held.token)
+    self._forget(held)
+    self._stop_timers(held)
+
+    var driver = held.driver
+
+    if driver != nil {
+      held.driver = nil
+
+      catch {
+        driver.on_closed()
+      } as error {
+        self.report(held, error)
+      }
+    }
+
+    if held.session != nil {
+      catch {
+        held.session.drop_feeds()
+      } as error {
+        self.report(held, error)
+      }
+    }
+
+    # The server that lent the connection closes it itself.
+    if held.borrowed {
+      return
+    }
 
     # A handshake that never finished was never announced, so there is
     # nobody to tell it has gone.

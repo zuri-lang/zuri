@@ -210,24 +210,7 @@ pub(crate) fn descriptor_of(value: Value) -> Option<crate::modules::net_tcp::Des
   }
 
   let cell = value.as_ptr_cell().borrow();
-  let stream = cell.downcast_ref::<ZuriTlsStream>()?;
-
-  #[cfg(unix)]
-  use std::os::unix::io::AsRawFd;
-  #[cfg(windows)]
-  use std::os::windows::io::AsRawSocket;
-
-  match stream {
-    #[cfg(unix)]
-    ZuriTlsStream::Client(s) => Some(s.sock.as_raw_fd()),
-    #[cfg(unix)]
-    ZuriTlsStream::Server(s) => Some(s.sock.as_raw_fd()),
-    #[cfg(windows)]
-    ZuriTlsStream::Client(s) => Some(s.sock.as_raw_socket()),
-    #[cfg(windows)]
-    ZuriTlsStream::Server(s) => Some(s.sock.as_raw_socket()),
-    ZuriTlsStream::Closed => None,
-  }
+  cell.downcast_ref::<ZuriTlsStream>()?.descriptor()
 }
 
 /// Whether the TLS stream in `value` holds data its next read returns
@@ -246,22 +229,9 @@ pub(crate) fn has_pending_plaintext(value: Value) -> bool {
   }
 
   let mut cell = value.as_ptr_cell().borrow_mut();
-  let Some(stream) = cell.downcast_mut::<ZuriTlsStream>() else {
-    return false;
-  };
-
-  // Processes what is already buffered, and nothing more: it never
-  // reads from the socket.
-  let state = match stream {
-    ZuriTlsStream::Client(s) => s.conn.process_new_packets(),
-    ZuriTlsStream::Server(s) => s.conn.process_new_packets(),
-    ZuriTlsStream::Closed => return false,
-  };
-
-  match state {
-    Ok(io) => io.plaintext_bytes_to_read() > 0 || io.peer_has_closed(),
-    Err(_) => true,
-  }
+  cell
+    .downcast_mut::<ZuriTlsStream>()
+    .is_some_and(ZuriTlsStream::holds_plaintext)
 }
 
 const TLS_STREAM_CLOSED: &str = "zuri::net::TlsStream::__closed__";
@@ -530,6 +500,64 @@ enum ZuriTlsStream {
 }
 
 impl ZuriTlsStream {
+  /// The descriptor of the socket underneath, or `None` once the stream
+  /// is closed.
+  fn descriptor(&self) -> Option<crate::modules::net_tcp::Descriptor> {
+    #[cfg(unix)]
+    use std::os::unix::io::AsRawFd;
+    #[cfg(windows)]
+    use std::os::windows::io::AsRawSocket;
+
+    match self {
+      #[cfg(unix)]
+      ZuriTlsStream::Client(s) => Some(s.sock.as_raw_fd()),
+      #[cfg(unix)]
+      ZuriTlsStream::Server(s) => Some(s.sock.as_raw_fd()),
+      #[cfg(windows)]
+      ZuriTlsStream::Client(s) => Some(s.sock.as_raw_socket()),
+      #[cfg(windows)]
+      ZuriTlsStream::Server(s) => Some(s.sock.as_raw_socket()),
+      ZuriTlsStream::Closed => None,
+    }
+  }
+
+  /// Whether the next read returns data without touching the socket.
+  /// See `has_pending_plaintext()`.
+  fn holds_plaintext(&mut self) -> bool {
+    // Processes what is already buffered, and nothing more: it never
+    // reads from the socket.
+    let state = match self {
+      ZuriTlsStream::Client(s) => s.conn.process_new_packets(),
+      ZuriTlsStream::Server(s) => s.conn.process_new_packets(),
+      ZuriTlsStream::Closed => return false,
+    };
+
+    match state {
+      Ok(io) => io.plaintext_bytes_to_read() > 0 || io.peer_has_closed(),
+      Err(_) => true,
+    }
+  }
+
+  /// Tells the poller whether this stream now holds decrypted data that
+  /// its socket no longer shows, since a poller watching only the
+  /// socket would never report it.
+  fn report_held(&mut self) {
+    if let Some(descriptor) = self.descriptor() {
+      let held = self.holds_plaintext();
+      crate::modules::net_poll::note_held_plaintext(descriptor, held);
+    }
+  }
+
+  /// Clears what `report_held()` said, and tells the poller this stream
+  /// is about to stop supplying a descriptor.
+  fn forget_held(&self) {
+    if let Some(descriptor) = self.descriptor() {
+      crate::modules::net_poll::note_held_plaintext(descriptor, false);
+    }
+
+    crate::modules::net_poll::note_handle_change();
+  }
+
   fn read(&mut self, buf: &mut [u8]) -> Result<usize, String> {
     match self {
       ZuriTlsStream::Client(s) => s.read(buf).map_err(socket_error),
@@ -1037,11 +1065,10 @@ fn tls_wrap_client(ctx: &mut ZuriContext) -> Result<Value, String> {
   // unrelated call happens to trigger it later.
   drive_handshake(&mut stream.conn, &mut stream.sock)?;
 
-  Ok(
-    ctx
-      .heap()
-      .alloc_ptr(TLS_STREAM, ZuriTlsStream::Client(stream)),
-  )
+  let mut stream = ZuriTlsStream::Client(stream);
+  stream.report_held();
+
+  Ok(ctx.heap().alloc_ptr(TLS_STREAM, stream))
 }
 
 fn tls_wrap_server(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -1056,11 +1083,10 @@ fn tls_wrap_server(ctx: &mut ZuriContext) -> Result<Value, String> {
   let mut stream = StreamOwned::new(conn, tcp_stream);
   drive_handshake(&mut stream.conn, &mut stream.sock)?;
 
-  Ok(
-    ctx
-      .heap()
-      .alloc_ptr(TLS_STREAM, ZuriTlsStream::Server(stream)),
-  )
+  let mut stream = ZuriTlsStream::Server(stream);
+  stream.report_held();
+
+  Ok(ctx.heap().alloc_ptr(TLS_STREAM, stream))
 }
 
 fn tls_begin_server(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -1110,7 +1136,13 @@ where
   let stream = ptr
     .downcast_mut::<ZuriTlsStream>()
     .ok_or_else(|| "tls: expected a TlsStream".to_string())?;
-  f(stream)
+  let result = f(stream);
+
+  // Whatever the operation was, it may have read more off the socket
+  // than it handed back.
+  stream.report_held();
+
+  result
 }
 
 fn tls_read(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -1253,6 +1285,7 @@ fn tls_close(ctx: &mut ZuriContext) -> Result<Value, String> {
     // Best-effort close_notify; a peer that's already gone shouldn't stop
     // us from tearing the connection down on our side.
     let _ = stream.shutdown();
+    stream.forget_held();
     *stream = ZuriTlsStream::Closed;
   }
   ptr.type_name = TLS_STREAM_CLOSED;
@@ -1269,6 +1302,7 @@ fn tls_close_now(ctx: &mut ZuriContext) -> Result<Value, String> {
     // A peer that has stopped reading must not hold up the caller, so
     // close_notify goes out only if the socket has room for it now.
     let _ = stream.shutdown_now();
+    stream.forget_held();
     *stream = ZuriTlsStream::Closed;
   }
   ptr.type_name = TLS_STREAM_CLOSED;

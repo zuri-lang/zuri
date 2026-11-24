@@ -16,7 +16,7 @@
 #!-- part of the http module
 
 import ..cookies
-import ..errors { ConnectionError, ProtocolError, TimeoutError }
+import ..errors { ConnectionError, HttpError, ProtocolError, TimeoutError }
 import ..headers { Headers }
 import ..request { HttpRequest }
 import ..response { HttpResponse }
@@ -168,7 +168,8 @@ class Http2Stream {
  * and returns, instead of waiting for more, so that one session doesn't
  * hold up the thread that other sessions are served on. A response that
  * has used up its flow control window is set aside and sent as the
- * window opens.
+ * window opens, and so is a body held open with `HttpResponse.hold()`,
+ * which is sent as the application fills it.
  */
 class Http2Connection {
 
@@ -202,6 +203,10 @@ class Http2Connection {
   var _ready = []
   var _driven = false
   var _feeding = []
+
+  # How a body held open reaches the readiness loop driving this
+  # session.
+  var _link
 
   /**
    * @param Connection connection: the transport, already connected
@@ -304,9 +309,28 @@ class Http2Connection {
   /**
    * Hands this session over to a readiness loop. See the class
    * description.
+   *
+   * @param ?Link link: how a body held open with
+   *    `HttpResponse.hold()` tells the loop it has something to send
    */
-  drive() {
+  drive(link) {
     self._driven = true
+    self._link = link
+  }
+
+  /**
+   * Lets go of every body still waiting to be sent, for a connection
+   * that has gone.
+   */
+  drop_feeds() {
+    for stream in self._feeding {
+      if stream.feed != nil {
+        stream.feed.close()
+        stream.feed = nil
+      }
+    }
+
+    self._feeding = []
   }
 
   /**
@@ -361,7 +385,7 @@ class Http2Connection {
    */
   can_resume() {
     for stream in self._feeding {
-      if self._writable(stream) > 0 {
+      if self._writable(stream) > 0 and stream.feed.is_ready() {
         return true
       }
     }
@@ -991,6 +1015,8 @@ class Http2Connection {
       self._send_body(stream, response.body)
     } else if source[0] == 'file' {
       self._send_file(stream, source[1], source[2], source[3])
+    } else if source[0] == 'live' {
+      self._hold_open(stream, source[1])
     } else {
       # A streamed body is written as the handler produces it, so it
       # cannot be left for a readiness loop to send later.
@@ -1032,6 +1058,23 @@ class Http2Connection {
     self._feeding.append(stream)
   }
 
+  # Parks the body of a response held open with `HttpResponse.hold()`,
+  # which the application fills as it goes.
+  _hold_open(stream, writer) {
+    if !self._driven or self._link == nil {
+      self._reset(stream.id, frames.INTERNAL_ERROR)
+      raise HttpError(
+        'a body held open over HTTP/2 needs a server run by listen() or ' +
+            'http.serve()',
+      )
+    }
+
+    var feed = _LiveFeed(self._link, writer)
+
+    self._park(stream, feed)
+    writer.attach(feed)
+  }
+
   # Sends what it can of a parked body. Returns whether all of it went.
   _push_feed(stream) {
     var feed = stream.feed
@@ -1058,6 +1101,13 @@ class Http2Connection {
       }
 
       var size = piece.length()
+
+      # A body held open that has nothing to send yet stays parked.
+      if size == 0 {
+        piece.dispose()
+        return false
+      }
+
       var last = feed.is_done()
 
       frames.write_frame(
@@ -1478,5 +1528,93 @@ class Http2Writer {
     self._finished = true
 
     self._connection.send_data(self._stream, bytes(0), true)
+  }
+}
+
+# The body of a response held open with `HttpResponse.hold()`, parked
+# like any other body and filled as the application sends. Waiting with
+# nothing to send is not the same as having finished, so `next()` hands
+# over empty bytes for the one and `nil` for the other.
+class _LiveFeed {
+
+  var _link
+  var _owner
+  var _data
+  var _finished = false
+  var _closed = false
+
+  @new(link, owner) {
+    self._link = link
+    self._owner = owner
+    self._data = bytes(0)
+  }
+
+  # Queues part of the body, sent as the windows allow.
+  write(data) {
+    if self._finished or self._closed {
+      return
+    }
+
+    self._data.extend(data)
+    self._link.wake()
+  }
+
+  finish() {
+    if !self._finished {
+      self._finished = true
+      self._link.wake()
+    }
+  }
+
+  schedule(timer) {
+    self._link.schedule(timer)
+  }
+
+  report(error) {
+    self._link.report(error)
+  }
+
+  next(limit) {
+    var size = self._data.length()
+
+    if size == 0 {
+      return self._finished ? nil : bytes(0)
+    }
+
+    if size <= limit {
+      var piece = self._data
+      self._data = bytes(0)
+      return piece
+    }
+
+    var piece = self._data[0, limit]
+    var rest = self._data[limit,]
+
+    self._data.dispose()
+    self._data = rest
+
+    return piece
+  }
+
+  is_done() {
+    return self._finished and self._data.length() == 0
+  }
+
+  is_ready() {
+    return self._finished or self._data.length() > 0
+  }
+
+  # The stream is over: finished, reset by the peer, or gone with its
+  # connection.
+  close() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+    self._finished = true
+    self._data.dispose()
+    self._data = bytes(0)
+    self._owner.ended()
   }
 }

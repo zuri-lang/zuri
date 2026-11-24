@@ -1,0 +1,291 @@
+/**
+ * Servers for `tests/libs/http_live.zu`, module-bound so an isolate
+ * can run them.
+ *
+ * `setup()` builds every route on one server. `listen()` runs it on a
+ * single isolate, `serve()` once in each worker of `http.serve()`, and
+ * `one_at_a_time()` behind an accept loop that serves each connection
+ * to its end before taking the next.
+ */
+
+import http
+import http.sse
+import http.websocket
+import os
+
+/**
+ * Adds the routes to `server`.
+ *
+ * @param HttpServer server
+ */
+def setup(server) {
+  var sockets = []
+  var streams = []
+  var closes = []
+  var ended = [0]
+  var errors = []
+
+  server.compression = false
+
+  server.on_error(@(error, connection) {
+    errors.append(error.message)
+  })
+
+  server.subscribe('chat', @(text) {
+    for socket in sockets {
+      if socket.is_open() {
+        socket.send(text)
+      }
+    }
+
+    for events in streams {
+      events.send(text, 'chat')
+    }
+  })
+
+  server.get('/ping', @(request, response) {
+    response.text('pong')
+  })
+
+  server.get('/say/:word', @(request, response) {
+    response.text(request.param('word'))
+  })
+
+  server.post('/say', @(request, response) {
+    server.publish('chat', request.body.to_string())
+    response.text('sent')
+  })
+
+  server.get('/stats', @(request, response) {
+    response.json({
+      closes,
+      ended: ended[0],
+      errors,
+      sockets: sockets.length(),
+      streams: streams.length(),
+    })
+  })
+
+  server.get('/quit', @(request, response) {
+    response.text('bye')
+    server.close()
+  })
+
+  server.get('/echo', @(request, response) {
+    var socket = websocket.accept(request, response)
+
+    socket.on_message(@(message) {
+      if message.is_binary() {
+        socket.send_binary(message.data)
+        return
+      }
+
+      var text = message.text()
+
+      if text == 'bye' {
+        socket.close(websocket.CLOSE_NORMAL, 'asked to')
+      } else if text == 'boom' {
+        raise Error('deliberate failure')
+      } else {
+        socket.send(text)
+      }
+    })
+
+    socket.on_close(@(code, reason) {
+      closes.append(['echo', code])
+    })
+  })
+
+  server.get('/chat', @(request, response) {
+    var socket = websocket.accept(request, response)
+
+    sockets.append(socket)
+
+    socket.on_message(@(message) {
+      server.publish('chat', message.text())
+    })
+
+    socket.on_close(@(code, reason) {
+      sockets.remove(socket)
+      closes.append(['chat', code])
+    })
+
+    socket.send('welcome')
+  })
+
+  server.get('/ticks', @(request, response) {
+    var socket = websocket.accept(request, response)
+    var count = [0]
+
+    socket.every(0.05, @() {
+      count[0] += 1
+      socket.send('tick ${count[0]}')
+
+      if count[0] == 3 {
+        socket.close()
+      }
+    })
+  })
+
+  server.get('/idle', @(request, response) {
+    var socket = websocket.accept(request, response, { ping_interval: 0.2 })
+
+    socket.on_close(@(code, reason) {
+      closes.append(['idle', code])
+    })
+  })
+
+  server.get('/flood', @(request, response) {
+    var socket = websocket.accept(request, response, { max_queued: 65536 })
+    var chunk = 'x' * 16384
+
+    socket.every(0.01, @() {
+      socket.send(chunk)
+    })
+
+    socket.on_close(@(code, reason) {
+      closes.append(['flood', code])
+    })
+  })
+
+  server.get('/clock', @(request, response) {
+    var events = sse.open(response)
+    var ticks = request.query_param('ticks', '5').to_number()
+    var count = [0]
+
+    events.every(0.05, @() {
+      count[0] += 1
+      events.send({ tick: count[0] }, 'tick', count[0].to_string())
+
+      if count[0] == ticks {
+        events.close()
+      }
+    })
+  })
+
+  server.get('/feed', @(request, response) {
+    var events = sse.open(response)
+
+    events.comment('hello')
+    streams.append(events)
+
+    events.on_close(@() {
+      streams.remove(events)
+      ended[0] += 1
+    })
+  })
+
+  server.get('/brief', @(request, response) {
+    var events = sse.open(response)
+
+    events.send('one')
+    events.send('two')
+    events.close()
+  })
+}
+
+/**
+ * Runs the server on `listen()` until a request to `/quit`.
+ *
+ * @param Channel port_channel: told the bound address
+ */
+def listen(port_channel) {
+  var server = http.HttpServer(0, '127.0.0.1')
+
+  setup(server)
+  server.bind()
+  port_channel.send(server.address().to_string())
+  server.listen()
+}
+
+/**
+ * Runs the server on `http.serve()` until a request to `/quit`.
+ *
+ * @param Channel port_channel: told the bound address
+ * @param number workers
+ * @param number per_worker: the most connections each worker holds
+ */
+def serve(port_channel, workers, per_worker) {
+  http.serve(setup, {
+    port: 0,
+    workers,
+    max_connections_per_worker: per_worker,
+    on_ready: @(address, stop) {
+      port_channel.send(address.to_string())
+    },
+  })
+}
+
+/**
+ * Serves each connection to its end before accepting the next, until a
+ * request to `/quit`.
+ *
+ * @param Channel port_channel: told the bound address
+ */
+def one_at_a_time(port_channel) {
+  var server = http.HttpServer(0, '127.0.0.1')
+
+  server.keep_alive_timeout = 1000
+
+  setup(server)
+  server.bind()
+  port_channel.send(server.address().to_string())
+
+  while server.is_listening() {
+    var client
+
+    catch {
+      client = server.accept()
+    } as error
+
+    if error or client == nil {
+      break
+    }
+
+    server.serve_connection(client)
+  }
+}
+
+# Takes a while, as a setup that loads templates or opens a database
+# pool does.
+def _slow_setup(server) {
+  os.sleep(0.3)
+  setup(server)
+}
+
+def _broken_setup(server) {
+  raise Error('broken setup')
+}
+
+/**
+ * Runs `http.serve()` with a slow setup, reports how long it took
+ * `on_ready` to be called, and stops.
+ *
+ * @param Channel port_channel: told `[address, seconds]`
+ */
+def slow_serve(port_channel) {
+  var started = time()
+
+  http.serve(_slow_setup, {
+    port: 0,
+    workers: 2,
+    on_ready: @(address, stop) {
+      port_channel.send([address.to_string(), time() - started])
+      stop()
+    },
+  })
+}
+
+/**
+ * Runs `http.serve()` with a setup that raises, and reports what
+ * `serve()` raised.
+ *
+ * @param Channel port_channel: told the error's message
+ */
+def failing_serve(port_channel) {
+  catch {
+    http.serve(_broken_setup, { port: 0, workers: 2 })
+  } as error
+
+  port_channel.send(error == nil ? 'no error' : error.message)
+}

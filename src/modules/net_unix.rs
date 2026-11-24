@@ -297,6 +297,7 @@ fn unix_connect(ctx: &mut ZuriContext) -> Result<Value, String> {
   }
 
   socket.stream = Some(UnixStream::connect(&path).map_err(|e| e.to_string())?);
+  crate::modules::net_poll::note_handle_change();
 
   Ok(Value::nil())
 }
@@ -316,6 +317,7 @@ fn unix_bind(ctx: &mut ZuriContext) -> Result<Value, String> {
   }
 
   socket.listener = Some(UnixListener::bind(&path).map_err(|e| e.to_string())?);
+  crate::modules::net_poll::note_handle_change();
 
   Ok(Value::nil())
 }
@@ -702,6 +704,7 @@ fn unix_close(ctx: &mut ZuriContext) -> Result<Value, String> {
   // was bound to stays on the filesystem: removing it is the caller's
   // business, since another process may have replaced it by now.
   socket.listener = None;
+  crate::modules::net_poll::note_handle_change();
 
   ptr.type_name = UNIX_STREAM_CLOSED;
 

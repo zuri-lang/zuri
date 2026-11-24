@@ -315,6 +315,15 @@ one. It's the right tool when you have thousands of connections that are
 mostly idle, and the wrong tool when you have just a few busy ones. In that
 case, using an isolate per connection is simpler and faster.
 
+`net.Poller` uses epoll on Linux, kqueue on macOS and FreeBSD, `WSAPoll` on
+Windows and `poll` on other systems. With epoll and kqueue, the time
+`wait()` takes doesn't grow with the number of registered sockets. With
+`WSAPoll` and `poll`, each call checks all of them.
+
+If a registered socket is closed or sent to another isolate, `wait()`
+reports `net.ERROR` for its token until you call `remove()`. A new socket
+that's given the same file descriptor is reported under its own token.
+
 ### Accepting Connections Without Blocking the Thread
 
 `accept()` on a blocking listener waits inside the runtime, and nothing else

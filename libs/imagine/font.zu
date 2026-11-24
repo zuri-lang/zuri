@@ -43,10 +43,15 @@ var _SEARCH_PATHS = {
  * The list runs from the most widely installed to the least, so the
  * first hit on any given machine is the one most likely to look like
  * what its user expects a plain sans-serif to look like.
+ *
+ * Each entry is the name of a regular face's file, and only a file with
+ * exactly that name is taken. A prefix would also match other faces in
+ * the family. `NotoSans` would match `NotoSansArmenian`, which has no
+ * Latin letters, and `DejaVuSans` would match `DejaVuSans-Bold`.
  */
 var _DEFAULT_FAMILIES = [
   'DejaVuSans',
-  'LiberationSans',
+  'LiberationSans-Regular',
   'NotoSans-Regular',
   'NotoSans',
   'Ubuntu-R',
@@ -221,7 +226,7 @@ class Font {
    */
   static sans(size) {
     for family in _DEFAULT_FAMILIES {
-      var found = _find_system_font(family)
+      var found = _find_system_font(family, true)
 
       if found != nil {
         return Font.load(found, size)
@@ -550,9 +555,9 @@ def _normalize_family(name) {
  * The path of an installed font whose file name matches `family`, or
  * `nil`. An exact stem match wins over a prefix match, so asking for
  * `'DejaVuSans'` does not land on `DejaVuSansMono` when the plain face
- * is present.
+ * is present. With `exact`, a prefix match isn't taken at all.
  */
-def _find_system_font(family: string) {
+def _find_system_font(family: string, exact: ?bool) {
   var wanted = _normalize_family(family)
   var prefix_match = nil
 
@@ -572,7 +577,7 @@ def _find_system_font(family: string) {
       return candidate
     }
 
-    if prefix_match == nil and normalized.starts_with(wanted) {
+    if !exact and prefix_match == nil and normalized.starts_with(wanted) {
       prefix_match = candidate
     }
   }

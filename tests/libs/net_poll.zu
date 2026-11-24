@@ -168,6 +168,55 @@ assert closed_flags & net.ERROR != 0,
 ok('a closed socket is reported, not polled')
 
 poller.remove(1)
+
+# ---------------------------------------------------------------------------
+# A descriptor given out again
+# ---------------------------------------------------------------------------
+
+# A socket closed while still registered gives its descriptor back, and
+# the operating system hands the lowest free number to the next socket
+# opened. That socket has to be reported under its own token, and
+# removing the stale token must leave it alone.
+var reuse = net.Poller()
+var first_client = net.TcpStream()
+first_client.connect(address)
+var first = listener.accept()
+reuse.add(first, 20, net.READABLE)
+first.close()
+first_client.close()
+
+var second_client = net.TcpStream()
+second_client.connect(address)
+var second = listener.accept()
+reuse.add(second, 21, net.READABLE)
+
+assert wait_for(reuse, 20, 1000) & net.ERROR != 0,
+    'the closed socket is still reported as an error'
+second_client.write_all('x')
+assert wait_for(reuse, 21, 1000) & net.READABLE != 0,
+    'the new socket is reported under its own token'
+reuse.remove(20)
+assert wait_for(reuse, 21, 1000) & net.READABLE != 0,
+    'and removing the stale token leaves it watched'
+
+for event in reuse.wait(0) {
+  assert event[0] != 20, 'the stale token is not reported once removed'
+}
+
+ok('a descriptor given out again is watched under its new token only')
+
+var twice = net.Poller()
+twice.add(second, 1, net.READABLE)
+assert raises(@() {
+  twice.add(second, 2, net.READABLE)
+}),
+    'one socket cannot be watched under two tokens'
+assert !twice.contains(2), 'the refused token is not registered'
+assert twice.contains(1), 'and the first one stays'
+ok('a socket is watched under one token at a time')
+
+second.close()
+second_client.close()
 assert !poller.contains(1), 'removal takes it out'
 assert poller.length() == 1, 'leaving the rest alone'
 assert !poller.remove(1), 'and removing it twice is not an error'

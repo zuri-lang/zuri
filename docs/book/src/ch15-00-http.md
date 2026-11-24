@@ -68,6 +68,8 @@ browsers. All of those features are built into this module.
 - [TLS](#tls)
 - [HTTP/2](#http2)
 - [WebSockets](#websockets)
+  - [Sending to Every Socket](#sending-to-every-socket)
+  - [Reading the Socket Yourself](#reading-the-socket-yourself)
 - [Server-Sent Events](#server-sent-events)
 - [Reverse Proxying](#reverse-proxying)
 - [Running in Production](#running-in-production)
@@ -1336,6 +1338,11 @@ Unless a `Content-Length` was set beforehand, the body is sent with chunked
 transfer encoding over HTTP/1.1, and as an ordinary DATA stream over HTTP/2.
 The handler doesn't need to know which one is being used.
 
+The producer runs on the isolate that serves the connection, and nothing
+else there is served until it returns. A body that stays open while it waits
+for something to send is better written as an event stream, as
+[Server-Sent Events](#server-sent-events) shows.
+
 ### Setting Cookies
 
 ```zuri,ignore
@@ -2269,23 +2276,55 @@ server.get('/ws', @(request, response) {
     protocols: ['chat'],
   })
 
-  while socket.is_open() {
-    var message = socket.receive()
-
-    if message == nil or message.is_close() {
-      break
-    }
-
+  socket.on_message(@(message) {
     socket.send('you said: ' + message.text())
-  }
+  })
+
+  socket.on_close(@(code, reason) {
+    echo 'closed with ${code}'
+  })
 })
 ```
 
 `accept()` completes the RFC 6455 handshake and takes over the connection,
-so the server doesn't write anything else on it. Fragmented messages are
-reassembled, ping frames are answered automatically, and when the other side
-sends a close frame, it's answered and then returned to you so that you can
-see the code and reason.
+so the server doesn't write a response of its own on it. Once the handler
+returns, the server's connection loop drives the socket. It calls the
+`on_message()` listener with each message, and `send()` queues a message
+that the loop sends when the client can take it. While the socket is open,
+the server keeps answering other requests, on `listen()` and on each worker
+of `http.serve()`.
+
+Fragmented messages are reassembled, and ping frames are answered
+automatically. When the other side sends a close frame, it's answered. The
+`on_close()` listener is called once, whichever side closed, with the code
+and reason of the closing handshake, or with `ws.CLOSE_ABNORMAL` when the
+connection ended without one. Messages sent after that are dropped. A
+listener that raises an error is reported to
+`on_error()` listeners, and the socket is closed with
+`ws.CLOSE_INTERNAL_ERROR`.
+
+Two options to `accept()` deal with clients that disappear without closing:
+
+- `ping_interval` is the number of seconds between pings to an idle client.
+  If the client sends nothing, including pongs, for twice that long, the
+  connection is closed. Without this option, an idle socket stays open until
+  the client closes it.
+- `max_queued` is how many bytes can wait for a client that isn't reading,
+  4 MiB by default. Past that, the connection is closed. `write_timeout` also
+  applies, so a client that reads nothing for that long is disconnected.
+
+`every()` runs an action on the same thread for as long as the socket is
+open, which is how a socket sends something on a schedule:
+
+```zuri
+server.get('/status', @(request, response) {
+  var socket = ws.accept(request, response)
+
+  socket.every(5, @() {
+    socket.send('still here')
+  })
+})
+```
 
 On the client side, use `ws.connect()`:
 
@@ -2301,6 +2340,70 @@ As the RFC requires, client frames are masked with a key from the platform's
 secure random number generator. The mask is what stops a malicious page from
 tricking a proxy into caching a forged response.
 
+### Sending to Every Socket
+
+A chat sends each message to every open socket. On a single isolate, a list
+of sockets would be enough. Under `http.serve()`, though, each worker holds
+its own sockets, so the message has to reach every worker.
+`server.publish()` and `server.subscribe()` do that:
+
+```zuri
+var sockets = []
+
+server.subscribe('chat', @(text) {
+  for socket in sockets {
+    socket.send(text)
+  }
+})
+
+server.get('/chat', @(request, response) {
+  var socket = ws.accept(request, response)
+
+  sockets.append(socket)
+
+  socket.on_message(@(message) {
+    server.publish('chat', message.text())
+  })
+
+  socket.on_close(@(code, reason) {
+    sockets.remove(socket)
+  })
+})
+```
+
+`publish()` sends a value to every listener subscribed to its topic. Under
+`http.serve()`, the value is copied to every worker, the one that published
+it included, and each worker sends it on to the sockets it holds. On
+`listen()`, it's delivered on the same isolate. In both cases the listeners
+run after the code that called `publish()` returns. Any handler can publish,
+including one for an ordinary `POST` request.
+
+### Reading the Socket Yourself
+
+A handler can read the socket itself instead, by calling `receive()`, which
+returns the next message, or `nil` once the connection has closed:
+
+```zuri
+server.get('/echo', @(request, response) {
+  var socket = ws.accept(request, response)
+
+  while socket.is_open() {
+    var message = socket.receive()
+
+    if message == nil or message.is_close() {
+      break
+    }
+
+    socket.send(message.text())
+  }
+})
+```
+
+The socket then reads and writes as it goes, and the isolate is busy until
+the handler returns, so nothing else on that isolate is served in the
+meantime. `rpc.websocket()` reads its socket this way. Anywhere else, prefer
+`on_message()`.
+
 ## Server-Sent Events
 
 A WebSocket gives you a two-way connection. Server-sent events give you a
@@ -2311,7 +2414,58 @@ connection upgrade.
 ```zuri
 import http.sse
 
-server.get('/events', @(request, response) {
+server.get('/clock', @(request, response) {
+  var events = sse.open(response)
+
+  events.every(1, @() {
+    events.send({ now: time() }, 'tick')
+  })
+})
+```
+
+`sse.open()` sets the headers an event stream needs, and returns the
+`EventStream` to send events on. The stream stays open after the handler
+returns, held by the server's loop the way a WebSocket is, and `send()`
+queues each event. It works over HTTP/1.1 and HTTP/2, and on an HTTP/2
+connection, the other streams carry on while it's open.
+
+Events can be sent from anywhere on the same thread: from a timer started
+with `every()`, from another request's handler, or from a listener given to
+`server.subscribe()`, which hears what every worker publishes:
+
+```zuri
+var streams = []
+
+server.subscribe('news', @(item) {
+  for events in streams {
+    events.send(item, 'news', item.id)
+  }
+})
+
+server.get('/news', @(request, response) {
+  var events = sse.open(response)
+
+  streams.append(events)
+
+  events.on_close(@() {
+    streams.remove(events)
+  })
+})
+```
+
+The `on_close()` listener is called once, when the client goes away or the
+stream is closed, and an event sent after that is dropped. `close()` ends the
+stream, and the connection goes back to serving requests.
+
+A browser's `EventSource` reconnects automatically and sends the last event
+ID it received. `sse.last_event_id(request)` reads it, so a stream can
+continue where it left off instead of starting over.
+
+`sse.stream()` runs a producer instead, and the response ends when the
+producer returns:
+
+```zuri
+server.get('/history', @(request, response) {
   sse.stream(response, @(events) {
     for update in updates {
       events.send(update, 'update', update.id)
@@ -2320,9 +2474,9 @@ server.get('/events', @(request, response) {
 })
 ```
 
-A browser's `EventSource` reconnects automatically and sends the last event
-ID it received. `sse.last_event_id(request)` reads it, so a stream can
-continue where it left off instead of starting over.
+The isolate is busy until the producer returns. Use `sse.stream()` for a
+stream with a known end, such as a replay of past events, and `sse.open()`
+for one that waits for new events.
 
 ## Reverse Proxying
 
@@ -2362,9 +2516,11 @@ var pool = http.LoadBalancer(
 `listen()` serves every connection on the isolate that called it. It watches
 all of the connections and only does the work for each one that can be done
 without waiting, so a client that goes quiet, sends half a request or stops
-reading doesn't hold up anyone else. A handler does run until it finishes,
-though, so a slow handler delays every other connection, and a streamed body
-or a WebSocket keeps the isolate busy until it's done.
+reading doesn't hold up anyone else. Neither does an open WebSocket or event
+stream. A handler does run until it finishes, though, so a slow handler
+delays every other connection. So does a body given to `response.stream()`
+while its producer runs, and a WebSocket that its handler reads with
+`receive()`.
 
 `http.serve()` runs the same pipeline across a pool of isolates. A single
 accept loop hands each connection to whichever worker takes it next.
@@ -2396,11 +2552,20 @@ can use anything it imports. A module it uses is loaded again inside the
 worker, not shared with it. Once `setup` registers more than a few routes,
 it's better to put it in its own module, as shown above.
 
+`serve()` binds the port first, so a port that's already in use fails at
+once. It starts accepting connections, and calls `on_ready`, once every
+worker has run `setup`. Connections that arrive before then wait in the
+operating system's listen backlog. If `setup` raises an error in a worker,
+`serve()` stops the others and raises it.
+
 Isolates don't share memory, so anything a worker needs, such as a cache, a
 connection pool or a counter, exists separately in each worker. That's the
 trade-off this model makes: no locks and no garbage collection pauses on a
 shared heap, in exchange for state that has to be kept either per worker or
-somewhere outside the process.
+somewhere outside the process. A message that every worker has to hear,
+such as one for the sockets each of them holds, goes through
+`server.publish()`, as [Sending to Every Socket](#sending-to-every-socket)
+shows.
 
 `backlog` limits how many accepted connections can wait for a free worker.
 The limit is intentional. With an unlimited queue, a server under load would

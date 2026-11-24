@@ -589,15 +589,16 @@ class ZipArchive {
    * Adds a file to the path specified with the contents given
    * data.
    *
-   * If the stat is given, it must be a valid dictionary derived
-   * from `file.stat()`.
+   * `stat` sets the modification time and permissions of the entry.
+   * It must have an `mtime`, in seconds since the Unix epoch, and a
+   * `mode`. The dictionary returned by `file.stats()` has both.
    *
    * @param string path
    * @param bytes|string data
-   * @param ?dict stat
+   * @param dict stat
    * @returns bool
    */
-  create_file(path: string, data: bytes|string, stat: ?dict) {
+  create_file(path: string, data: bytes|string, stat: dict) {
     # Only a string argument gets converted here, and only that
     # conversion's result gets disposed further down: a bytes
     # argument belongs to the caller, and this method must never

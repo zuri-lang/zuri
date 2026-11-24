@@ -178,9 +178,9 @@ you:
 session, and a middleware that rejects any request that isn't authenticated.
 There's already a place in the middleware chain for it.
 
-**Live updates.** Use `http.sse` to send an event to the browser whenever
-the board changes, so that two people looking at the board see each other's
-changes.
+**Live updates.** Use `sse.open()` to keep an event stream open to each
+browser, and send an event on each of them whenever the board changes, so
+that two people looking at the board see each other's changes.
 
 **A board for each user.** Store one `board.json` per user, cache `Board`
 objects by user ID, and make `path` a parameter instead of a default.

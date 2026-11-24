@@ -11,39 +11,71 @@
  * else, which is all a live feed of updates needs, and they work
  * through proxies that would refuse a connection upgrade.
  *
+ * `open()` starts a stream that stays open after the handler returns.
+ * The server's connection loop holds it, so the server goes on
+ * answering other requests while it's open. Events can be sent on it
+ * from another request's handler, from a listener given to
+ * `HttpServer.subscribe()`, or from a timer:
+ *
  * ```zuri
  * import http
  * import http.sse
  *
- * server.get('/events', @(request, response) {
- *   sse.stream(response, @(events) {
- *     iter var i = 0; i < 10; i++ {
- *       events.send({ tick: i }, 'tick')
- *       os.sleep(1)
- *     }
+ * server.get('/clock', @(request, response) {
+ *   var events = sse.open(response)
+ *
+ *   events.every(1, @() {
+ *     events.send({ now: time() }, 'tick')
  *   })
  * })
  * ```
  *
+ * `stream()` runs a producer instead, and the response ends when the
+ * producer returns. The isolate is busy until then. Use `stream()` for
+ * a stream with a known end, and `open()` for one that waits for new
+ * events.
+ *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
+
+import .loop { Timer }
 
 import json
 
 /**
- * The writer a server-sent event stream hands to its producer.
+ * The writer for one server-sent event stream.
  *
- * Every method flushes, because an event that sits in a buffer is an
- * event that has not been sent.
+ * `stream()` hands one to its producer, and every method writes
+ * straight away. `open()` returns one that the server's loop holds,
+ * where every method queues, and the loop sends what's queued at the
+ * end of its turn.
  */
 class EventStream {
 
+  # The writer a producer given to stream() writes to.
   var _writer
-  var _closed = false
 
+  # For a stream from open(): the body the server attached, and what
+  # was sent before it was attached.
+  var _body
+  var _pending = ''
+
+  var _open_ended = false
+  var _closed = false
+  var _ended = false
+  var _on_close
+  var _timers
+
+  /**
+   * @param ?any writer: the writer from `HttpResponse.stream()`, or
+   *    `nil` for a stream that `open()` holds open
+   */
   @new(writer) {
     self._writer = writer
     self._closed = false
+    self._open_ended = writer == nil
+    self._pending = ''
+    self._timers = []
   }
 
   /**
@@ -58,12 +90,22 @@ class EventStream {
    * @param ?string event: the event name, which the browser dispatches
    *    the event under. If it's left out, the default `message` event
    *    is used.
+   * On a stream from `open()`, an event sent after the stream has ended
+   * is dropped, because `on_close()` is how the application finds out.
+   *
    * @param ?string id: the event ID, which the browser sends back as
    *    `Last-Event-ID` when it reconnects
    * @returns EventStream: this same instance, for chaining
+   * @throws Error on a closed stream from `stream()`
    */
   send(data, event: ?string, id: ?string) {
     if self._closed {
+      # A stream from open() tells the application through on_close(),
+      # so an event sent after that is dropped.
+      if self._open_ended {
+        return self
+      }
+
       raise Error('the event stream is closed')
     }
 
@@ -82,8 +124,7 @@ class EventStream {
       out += 'data: ${line.rtrim("\r")}\n'
     }
 
-    self._writer.write(out + '\n')
-    self._writer.flush()
+    self._emit(out + '\n')
 
     return self
   }
@@ -99,8 +140,7 @@ class EventStream {
    * @returns EventStream: this same instance, for chaining
    */
   comment(text: ?string) {
-    self._writer.write(': ${text == nil ? "" : _one_line(text)}\n\n')
-    self._writer.flush()
+    self._emit(': ${text == nil ? "" : _one_line(text)}\n\n')
 
     return self
   }
@@ -113,27 +153,168 @@ class EventStream {
    * @returns EventStream: this same instance, for chaining
    */
   set_retry(milliseconds: number) {
-    self._writer.write('retry: ${milliseconds // 1}\n\n')
-    self._writer.flush()
+    self._emit('retry: ${milliseconds // 1}\n\n')
 
     return self
   }
 
   /**
-   * Ends the stream. The connection closes, and a browser will
-   * reconnect unless the response said otherwise.
+   * Ends the stream. A browser reconnects unless the response said
+   * otherwise. On a stream from `open()`, the connection goes back to
+   * serving requests once what's queued has been sent.
    */
   close() {
+    if self._closed {
+      return
+    }
+
     self._closed = true
+
+    if self._open_ended {
+      if self._body != nil {
+        self._body.finish()
+      }
+
+      self._end()
+    }
   }
 
   /**
-   * Whether the stream has been closed.
+   * Whether the stream has been closed, or the client has gone.
    *
    * @returns bool
    */
   is_closed() {
     return self._closed
+  }
+
+  /**
+   * Calls `listener` once, when a stream from `open()` ends, whether
+   * the client went away or `close()` was called. This is where to
+   * forget a stream kept in a list of subscribers.
+   *
+   * @param function(0) listener
+   * @returns EventStream: this same instance, for chaining
+   */
+  on_close(listener) {
+    self._on_close = listener
+    return self
+  }
+
+  /**
+   * Calls `action` every `seconds` seconds, on the thread that serves
+   * the stream, until the stream ends. An action that raises an error
+   * is reported to the server's `on_error()` listeners, and the stream
+   * is closed.
+   *
+   * @param number seconds
+   * @param function(0) action
+   * @returns Timer: which `cancel()` stops
+   * @throws Error on a stream from `stream()`, whose producer runs
+   *    without a loop
+   */
+  every(seconds: number, action) {
+    if !self._open_ended {
+      raise Error('every() needs a stream from sse.open()')
+    }
+
+    var timer = Timer(seconds, @() {
+      self._tick(action)
+    })
+
+    self._timers.append(timer)
+
+    if self._closed {
+      timer.cancel()
+    } else if self._body != nil {
+      self._body.schedule(timer)
+    }
+
+    return timer
+  }
+
+  /**
+   * Gives a stream from `open()` the body it writes to, once the
+   * response's head has gone out.
+   *
+   * @internal Called by the server.
+   * @param any body
+   */
+  attach(body) {
+    self._body = body
+
+    if self._pending.length() > 0 {
+      body.write(self._pending)
+      self._pending = ''
+    }
+
+    if self._closed {
+      body.finish()
+      return
+    }
+
+    for timer in self._timers {
+      body.schedule(timer)
+    }
+  }
+
+  /**
+   * Ends a stream from `open()` whose client has gone, or whose body
+   * will never be sent.
+   *
+   * @internal Called by the server.
+   */
+  ended() {
+    self._closed = true
+    self._end()
+  }
+
+  _emit(text) {
+    if self._writer != nil {
+      self._writer.write(text)
+      self._writer.flush()
+    } else if self._closed {
+      return
+    } else if self._body != nil {
+      self._body.write(text)
+    } else {
+      self._pending += text
+    }
+  }
+
+  _tick(action) {
+    if self._closed {
+      return
+    }
+
+    catch {
+      action()
+    } as error {
+      self._body.report(error)
+      self.close()
+    }
+  }
+
+  _end() {
+    for timer in self._timers {
+      timer.cancel()
+    }
+
+    if self._ended {
+      return
+    }
+
+    self._ended = true
+
+    if self._on_close != nil {
+      catch {
+        self._on_close()
+      } as error {
+        if self._body != nil {
+          self._body.report(error)
+        }
+      }
+    }
   }
 }
 
@@ -143,23 +324,69 @@ def _one_line(text) {
   return text.replace('\n', ' ', false).replace('\r', ' ', false)
 }
 
+# The headers that matter for an event stream: its type, no caching,
+# and `X-Accel-Buffering: no` for the benefit of any proxy in front that
+# would otherwise hold the stream in a buffer and defeat the whole
+# exercise.
+def _prepare(response) {
+  response.headers.set('Content-Type', 'text/event-stream; charset=utf-8')
+  response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate')
+  response.headers.set('X-Accel-Buffering', 'no')
+  response.headers.set('Connection', 'keep-alive')
+}
+
+/**
+ * Turns `response` into a server-sent event stream that stays open
+ * after the handler returns, and returns the `EventStream` to send
+ * events on.
+ *
+ * The server's connection loop holds the stream, on `listen()` and on
+ * each worker of `http.serve()`, and goes on answering other requests
+ * while it's open. Events sent before the handler returns go out right
+ * after the response's head.
+ *
+ * ```zuri
+ * var streams = []
+ *
+ * server.subscribe('news', @(item) {
+ *   for events in streams {
+ *     events.send(item, 'news')
+ *   }
+ * })
+ *
+ * server.get('/news', @(request, response) {
+ *   var events = sse.open(response)
+ *
+ *   streams.append(events)
+ *   events.on_close(@() {
+ *     streams.remove(events)
+ *   })
+ * })
+ * ```
+ *
+ * @param HttpResponse response
+ * @returns EventStream
+ */
+def open(response) {
+  _prepare(response)
+
+  var events = EventStream(nil)
+  response.hold(events)
+
+  return events
+}
+
 /**
  * Turns `response` into a server-sent event stream and runs
- * `producer` against it.
- *
- * The headers that matter are set here: `text/event-stream`, no
- * caching, and `X-Accel-Buffering: no` for the benefit of any proxy
- * in front that would otherwise hold the stream in a buffer and
- * defeat the whole exercise.
+ * `producer` against it. The response ends when `producer` returns,
+ * and the isolate is busy until then. For a stream that stays open
+ * while it waits for something to send, use `open()`.
  *
  * @param HttpResponse response
  * @param function(1) producer: called with an `EventStream`
  */
 def stream(response, producer) {
-  response.headers.set('Content-Type', 'text/event-stream; charset=utf-8')
-  response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate')
-  response.headers.set('X-Accel-Buffering', 'no')
-  response.headers.set('Connection', 'keep-alive')
+  _prepare(response)
 
   response.stream(@(writer) {
     var events = EventStream(writer)
